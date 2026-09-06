@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 import tempfile
+import threading
+import traceback
 from datetime import datetime, timezone
 from email import message_from_bytes
 from email.policy import default
@@ -11,12 +14,19 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import cv2
+import numpy as np
 
+from refstudio.analyze.composite import composite_scene
 from refstudio.analyze.pipeline import analyze
+from refstudio.ir.schema import FontGuess
+from refstudio.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from refstudio.review import corrections
 from refstudio.web.estimate import consume_token, estimate, probe_video
 from refstudio.web.jobs import JobStore
 from refstudio.web.liveaction import looks_live_action
 from refstudio.web.workspace import create_project, list_projects, project_dir
+
+CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
 JOBS = JobStore()
 
@@ -66,6 +76,114 @@ def _write_meta(workspace: Path, project_id: str, **updates) -> dict:
     return meta
 
 
+def _png(rgb: np.ndarray) -> bytes:
+    ok, buf = cv2.imencode(".png", cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2BGR))
+    return buf.tobytes()
+
+
+class ReviewState:
+    def __init__(self, root: Path, scene_id: str):
+        self.root, self.scene_id = Path(root), scene_id
+        self.job = {"status": "idle", "op": None, "error": None, "version": None}
+        self.lock = threading.Lock()
+        self._frames: np.ndarray | None | bool = None
+        self._png: dict[tuple[str, int], bytes] = {}
+
+    def frames(self) -> np.ndarray | None:
+        if self._frames is None:
+            npy = scene_dir(self.root, self.scene_id) / "stages" / "frames.npy"
+            self._frames = np.load(npy, mmap_mode="r") if npy.is_file() else False
+        return None if self._frames is False else self._frames
+
+    def scene(self, version: str | None = None):
+        if version:
+            project = load_project(self.root)
+            v = next(
+                v
+                for v in project.versions
+                if v.id == version and v.scene_file.startswith(f"scenes/{self.scene_id}/")
+            )
+            return load_scene(self.root / v.scene_file), v
+        return current_scene(self.root, self.scene_id)
+
+    def orig_png(self, f: int) -> bytes:
+        fr = self.frames()
+        if fr is not None:
+            if not 0 <= f < len(fr):
+                raise IndexError("frame out of range")
+            return _png(np.asarray(fr[f]))
+        video = self.root / "source.mp4"
+        cap = cv2.VideoCapture(str(video))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, f)
+        ok, bgr = cap.read()
+        cap.release()
+        if not ok:
+            raise IndexError("frame out of range")
+        return _png(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+
+    def recon_png(self, f: int, version: str | None) -> bytes:
+        scene, v = self.scene(version)
+        key = (v.id, f)
+        if key not in self._png:
+            rgb = (composite_scene(scene, scene_dir(self.root, self.scene_id), f) * 255).round().clip(0, 255).astype(np.uint8)
+            self._png[key] = _png(rgb)
+        return self._png[key]
+
+    def run_correction(self, op: str, args: dict) -> None:
+        with self.lock:
+            if self.job["status"] == "running":
+                raise RuntimeError("busy")
+            self.job = {"status": "running", "op": op, "error": None, "version": None}
+
+        def work() -> None:
+            try:
+                if op == "reassign":
+                    v = corrections.reassign_id(
+                        self.root,
+                        self.scene_id,
+                        tuple(args["frames"]),
+                        args["from_id"],
+                        args["to_id"],
+                        note=args.get("note", "reassign id"),
+                    )
+                elif op == "mask":
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:
+                        t.write(base64.b64decode(args["mask_png_base64"]))
+                    v = corrections.set_region_mask(
+                        self.root,
+                        self.scene_id,
+                        int(args["frame"]),
+                        Path(t.name),
+                        args["object_id"],
+                        note=args.get("note", "set region mask"),
+                    )
+                elif op == "bbox":
+                    v = corrections.add_bbox_prompt(
+                        self.root,
+                        self.scene_id,
+                        int(args["frame"]),
+                        tuple(int(x) for x in args["bbox"]),
+                        args["object_id"],
+                        note=args.get("note", "bbox prompt"),
+                    )
+                else:
+                    v = corrections.edit_text(
+                        self.root,
+                        self.scene_id,
+                        args["element_id"],
+                        text=args.get("text"),
+                        font=FontGuess(**args["font"]) if args.get("font") else None,
+                        note=args.get("note", "edit text"),
+                    )
+                self._png.clear()
+                self.job = {"status": "done", "op": op, "error": None, "version": v.id}
+            except Exception as e:
+                self.job = {"status": "error", "op": op, "error": f"{type(e).__name__}: {e}", "version": None}
+                traceback.print_exc()
+
+        threading.Thread(target=work, daemon=True).start()
+
+
 def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
     cap = cv2.VideoCapture(str(video))
     cap.set(cv2.CAP_PROP_POS_FRAMES, index)
@@ -80,6 +198,15 @@ def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
 def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admin: bool = False) -> ThreadingHTTPServer:
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
+    review_states: dict[tuple[str, str], ReviewState] = {}
+
+    def review_state(project_id: str, scene_id: str) -> ReviewState | None:
+        if _load_meta(workspace, project_id) is None:
+            return None
+        key = (project_id, scene_id)
+        if key not in review_states:
+            review_states[key] = ReviewState(project_dir(workspace, project_id), scene_id)
+        return review_states[key]
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -163,6 +290,83 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                     return self._json(200, JOBS.get(jid).to_json())
                 except KeyError:
                     return self._json(404, {"error": "not found"})
+
+            q = parse_qs(u.query)
+            pid = q.get("project", [None])[0]
+            sid = q.get("scene", ["s1"])[0]
+            ver = q.get("v", [None])[0]
+
+            if u.path == "/api/state":
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    scene, v = state.scene(ver)
+                    sd = scene_dir(state.root, state.scene_id)
+                    rep = json.loads((sd / "report.json").read_text()) if (sd / "report.json").is_file() else None
+                    return self._json(
+                        200,
+                        {
+                            "project": json.loads(load_project(state.root).model_dump_json(by_alias=True)),
+                            "version": json.loads(v.model_dump_json()),
+                            "scene": json.loads(scene.model_dump_json(by_alias=True)),
+                            "report": rep,
+                            "job": state.job,
+                        },
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+            if u.path == "/api/job":
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                return self._json(200, state.job)
+
+            parts = u.path.strip("/").split("/")
+            if parts[:2] == ["frame", "orig"] and len(parts) == 3:
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    return self._send(200, state.orig_png(int(parts[2])), "image/png")
+                except IndexError:
+                    return self._json(404, {"error": "frame out of range"})
+                except Exception as e:
+                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+            if parts[:2] == ["frame", "recon"] and len(parts) == 3:
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/png")
+                except Exception as e:
+                    traceback.print_exc()
+                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+            if parts and parts[0] == "assets" and len(parts) >= 2:
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                name = "/".join(parts[1:])
+                if ".." in name or not name.endswith(".png"):
+                    return self._json(400, {"error": "bad asset path"})
+                asset = scene_dir(state.root, state.scene_id) / "assets" / name
+                if not asset.is_file():
+                    return self._json(404, {"error": "no such asset"})
+                return self._send(200, asset.read_bytes(), "image/png")
 
             return self._json(404, {"error": "not found"})
 
@@ -283,6 +487,58 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                 )
                 _write_meta(workspace, project_id, job_id=job.id)
                 return self._json(202, {"job": job.to_json()})
+
+            if u.path == "/api/keep":
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                scene_id = data.get("scene", "s1")
+                if not project_id:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(project_id, scene_id)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    scene, _ = state.scene()
+                    wanted = {c["pred"]: bool(c["keep"]) for c in data.get("changes", [])}
+                    for c in scene.constraints:
+                        if c.pred in wanted:
+                            c.keep = wanted[c.pred]
+                    v = new_version(
+                        state.root,
+                        state.scene_id,
+                        scene,
+                        note=data.get("note", "keep 조건 수정"),
+                        auto=False,
+                    )
+                    state._png.clear()
+                    return self._json(200, {"version": json.loads(v.model_dump_json())})
+                except Exception as e:
+                    traceback.print_exc()
+                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+            if u.path == "/api/correct":
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                scene_id = data.get("scene", "s1")
+                if not project_id:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(project_id, scene_id)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                op = data.get("op")
+                if op not in CORRECTION_OPS:
+                    return self._json(400, {"error": f"unknown op {op!r}; expected one of {sorted(CORRECTION_OPS)}"})
+                try:
+                    state.run_correction(op, data.get("args", {}))
+                except RuntimeError:
+                    return self._json(409, {"error": "a correction is already running"})
+                return self._json(202, {"job": state.job})
 
             return self._json(404, {"error": "not found"})
 

@@ -33,4 +33,49 @@ async function fetchFilmstrip(projectId, n = 8) {
   return api(`/api/projects/${projectId}/filmstrip?n=${n}`);
 }
 
-export { api, uploadProject, fetchEstimate, fetchFilmstrip };
+async function fetchReviewState(project, scene, v) {
+  let url = `/api/state?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`;
+  if (v) url += `&v=${encodeURIComponent(v)}`;
+  return api(url);
+}
+
+async function fetchReviewJob(project, scene) {
+  return api(`/api/job?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`);
+}
+
+async function postKeep(project, scene, changes, note) {
+  return api("/api/keep", {
+    method: "POST",
+    body: JSON.stringify({ project, scene, changes, note }),
+  });
+}
+
+async function postCorrect(project, scene, op, args) {
+  return api("/api/correct", {
+    method: "POST",
+    body: JSON.stringify({ project, scene, op, args }),
+  });
+}
+
+function reviewFrameUrl(kind, frame, project, scene, v) {
+  let url = `/frame/${kind}/${frame}?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`;
+  if (v && kind === "recon") url += `&v=${encodeURIComponent(v)}`;
+  return url;
+}
+
+function reviewAssetUrl(name, project, scene) {
+  return `/assets/${encodeURIComponent(name)}?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`;
+}
+
+export {
+  api,
+  uploadProject,
+  fetchEstimate,
+  fetchFilmstrip,
+  fetchReviewState,
+  fetchReviewJob,
+  postKeep,
+  postCorrect,
+  reviewFrameUrl,
+  reviewAssetUrl,
+};
