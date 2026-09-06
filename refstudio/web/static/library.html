@@ -45,33 +45,142 @@
 <button class="chip">내보내기 준비</button>
 </div>
 </div>
-<div class="row">
-<div class="row__thumb"></div>
-<div class="row__body">
-<div class="row__title">Autumn drop · card A</div>
-<div class="row__meta"><span>v4</span><span>신뢰도 0.64</span><span>18분 전</span></div>
-<span class="badge badge--active">검수 중</span>
+<div id="library-empty" class="page-desc" style="padding:24px 0" hidden>
+<!-- library.empty -->
+<p data-i18n="library.empty">프로젝트가 없습니다. 새 프로젝트에서 레퍼런스를 올리세요.</p>
+<p style="margin-top:12px"><a class="btn btn--primary" href="/new" data-i18n="nav.new">새 레퍼런스</a></p>
 </div>
-</div>
-<div class="row" style="margin-top:8px">
-<div class="row__thumb"></div>
-<div class="row__body">
-<div class="row__title">Paywall intro 4s</div>
-<div class="row__meta"><span>v2</span><span>0.91</span><span>어제</span></div>
-<span class="badge badge--done">유지 조건 확정</span>
-</div>
-</div>
-<div class="row" style="margin-top:8px">
-<div class="row__thumb"></div>
-<div class="row__body">
-<div class="row__title">Settings UI sweep</div>
-<div class="row__meta"><span>v1</span><span>3일 전</span></div>
-<span class="badge badge--error">미지원 2건 · 실사 거부됨</span>
-</div>
-</div>
+<div id="project-list"></div>
 </main>
 <footer class="footer">
 <span data-i18n="error.liveaction">실사 푸티지는 열리지 않습니다.</span>
 </footer>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+const STATUS_LABEL = {
+  uploaded: "업로드됨",
+  analyzing: "분석 중",
+  review: "검수 필요",
+  error: "실패",
+  rejected: "거부됨",
+};
+
+const BADGE_CLASS = {
+  uploaded: "badge--done",
+  analyzing: "badge--active",
+  review: "badge--active",
+  error: "badge--error",
+  rejected: "badge--error",
+};
+
+function rowHref(p) {
+  if (p.status === "analyzing") {
+    return p.job_id ? `/analyze?job=${encodeURIComponent(p.id)}` : `/review?project=${encodeURIComponent(p.id)}`;
+  }
+  if (p.status === "review") {
+    return `/review?project=${encodeURIComponent(p.id)}&scene=s1`;
+  }
+  return null;
+}
+
+function formatVersion(v) {
+  if (v == null || v === "") return null;
+  const s = String(v);
+  return s.startsWith("v") ? s : `v${s}`;
+}
+
+function formatConfidence(c) {
+  if (c == null) return null;
+  return typeof c === "number" ? c.toFixed(2) : String(c);
+}
+
+function badgeText(p) {
+  if (p.status === "rejected") {
+    return p.reason || p.error || STATUS_LABEL.rejected;
+  }
+  if (p.status === "error" && p.error) {
+    return p.error;
+  }
+  return STATUS_LABEL[p.status] || p.status;
+}
+
+function renderProject(p, index) {
+  const row = document.createElement("div");
+  row.className = "row";
+  if (index > 0) row.style.marginTop = "8px";
+
+  const thumb = document.createElement("div");
+  thumb.className = "row__thumb";
+  if (p.status !== "rejected") {
+    const img = document.createElement("img");
+    img.src = `/api/projects/${encodeURIComponent(p.id)}/frame/0`;
+    img.alt = "";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    img.onerror = () => { img.remove(); };
+    thumb.appendChild(img);
+  }
+
+  const body = document.createElement("div");
+  body.className = "row__body";
+
+  const title = document.createElement("div");
+  title.className = "row__title";
+  title.textContent = p.title || p.id;
+
+  const meta = document.createElement("div");
+  meta.className = "row__meta";
+  const ver = formatVersion(p.version);
+  if (ver) {
+    const span = document.createElement("span");
+    span.textContent = ver;
+    meta.appendChild(span);
+  }
+  const conf = formatConfidence(p.confidence);
+  if (conf != null) {
+    const span = document.createElement("span");
+    span.textContent = `신뢰도 ${conf}`;
+    meta.appendChild(span);
+  }
+
+  const badge = document.createElement("span");
+  badge.className = `badge ${BADGE_CLASS[p.status] || "badge--done"}`;
+  badge.textContent = badgeText(p);
+
+  body.append(title, meta, badge);
+  row.append(thumb, body);
+
+  const href = rowHref(p);
+  if (href) {
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => { location.href = href; });
+  }
+
+  return row;
+}
+
+(async () => {
+  const list = document.getElementById("project-list");
+  const empty = document.getElementById("library-empty");
+  try {
+    const { projects } = await api("/api/projects");
+    if (!projects.length) {
+      list.innerHTML = "";
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    list.innerHTML = "";
+    projects.forEach((p, i) => list.appendChild(renderProject(p, i)));
+  } catch (err) {
+    empty.hidden = false;
+    list.innerHTML = "";
+    const msg = empty.querySelector("[data-i18n='library.empty']");
+    if (msg) msg.textContent = err.message || "목록을 불러오지 못했습니다.";
+  }
+})();
+</script>
 </body>
 </html>
