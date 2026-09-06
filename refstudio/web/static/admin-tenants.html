@@ -88,76 +88,127 @@
 <div>Usage (Analysis / Quota)</div>
 <div style="text-align:right">Status</div>
 </div>
-<div style="flex:1;overflow-y:auto">
-<div class="admin-table-row admin-table-row--selected">
-<div>
-<div style="font-weight:500;font-size:var(--fs-body-sm)">Northwind Studio</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_northwind</div>
-</div>
-<div style="display:flex;align-items:center;gap:6px">
-<svg class="icon" style="width:14px;height:14px;color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-<span>6</span>
-</div>
-<div>
-<div style="font-size:var(--fs-micro);margin-bottom:4px">41분 <span style="color:var(--muted)">/ 120분</span> · 렌더 18분</div>
-<div class="progress-bar"><div class="progress-bar__fill" style="width:34%"></div></div>
-</div>
-<div style="text-align:right"><span class="status-pill"><span class="status-dot"></span>정상</span></div>
-</div>
-<div class="admin-table-row">
-<div>
-<div style="font-weight:500;font-size:var(--fs-body-sm)">Hanbit Motion</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_hanbit</div>
-</div>
-<div>2</div>
-<div>
-<div style="font-size:var(--fs-micro);margin-bottom:4px;color:var(--error)">120분 <span style="color:var(--muted)">/ 120분</span></div>
-<div class="progress-bar"><div class="progress-bar__fill" style="width:100%;background:var(--error)"></div></div>
-</div>
-<div style="text-align:right"><span class="status-pill status-pill--warn">할당량 초과</span></div>
-</div>
-<div class="admin-table-row">
-<div>
-<div style="font-weight:500;font-size:var(--fs-body-sm)">Solo · lee</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_sololee</div>
-</div>
-<div>1</div>
-<div>
-<div style="font-size:var(--fs-micro);margin-bottom:4px">7분 <span style="color:var(--muted)">/ 30분</span></div>
-<div class="progress-bar"><div class="progress-bar__fill" style="width:23%"></div></div>
-</div>
-<div style="text-align:right"><span class="status-pill"><span class="status-dot"></span>정상</span></div>
-</div>
-</div>
+<div style="flex:1;overflow-y:auto" id="tenant-rows"></div>
 </div>
 <aside class="inspector-panel">
 <div class="inspector-panel__head">
 <div style="width:48px;height:48px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;margin-bottom:12px">
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
 </div>
-<h2 style="margin:0;font-size:var(--fs-headline);font-weight:600">Northwind Studio</h2>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted);margin-top:8px">org_northwind · 2026-08-12</div>
+<h2 id="inspector-name" style="margin:0;font-size:var(--fs-headline);font-weight:600">—</h2>
+<div id="inspector-meta" class="mono" style="font-size:var(--fs-micro);color:var(--muted);margin-top:8px">—</div>
 </div>
 <div class="inspector-panel__body">
 <div style="margin-bottom:32px">
 <div class="section-label">Role Breakdown</div>
-<div class="role-box">
-<div class="role-row"><span style="color:var(--muted)">운영자</span><span>1</span></div>
-<div class="role-row"><span style="color:var(--muted)">검수 리드</span><span>1</span></div>
-<div class="role-row"><span style="color:var(--muted)">제작</span><span>4</span></div>
-</div>
+<div class="role-box" id="role-box"></div>
 </div>
 <div>
 <div class="section-label">Policy Notes</div>
-<p class="policy-note" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.</p>
+<p class="policy-note" id="policy-note" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.</p>
 </div>
 </div>
 <div class="inspector-panel__foot">
-<button class="btn btn--primary-lg" type="button">멤버 보기</button>
-<button class="btn btn--secondary" type="button">정지</button>
+<button class="btn btn--primary-lg" id="btn-members" type="button">멤버 보기</button>
+<button class="btn btn--secondary" id="btn-suspend" type="button">정지</button>
 </div>
 </aside>
 </main>
 </div>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+const STATUS = { ok: "정상", quota: "할당량 초과", suspended: "정지" };
+const ROLE = { admin: "운영자", billing: "결제", review_lead: "검수 리드", maker: "제작" };
+let tenants = [];
+let selected = null;
+let policyNote = "";
+let filter = "ok";
+
+const rowsEl = document.getElementById("tenant-rows");
+const roleBox = document.getElementById("role-box");
+
+function pct(t) {
+  if (!t.analyze_quota_min) return 0;
+  return Math.min(100, Math.round((t.analyze_min / t.analyze_quota_min) * 100));
+}
+
+function renderRows() {
+  rowsEl.innerHTML = "";
+  const list = tenants.filter((t) => t.status === filter);
+  list.forEach((t) => {
+    const row = document.createElement("div");
+    row.className = "admin-table-row" + (selected && selected.id === t.id ? " admin-table-row--selected" : "");
+    const over = t.status === "quota";
+    row.innerHTML = `
+<div>
+<div style="font-weight:500;font-size:var(--fs-body-sm)">${t.name}</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${t.id}</div>
+</div>
+<div>${t.members}</div>
+<div>
+<div style="font-size:var(--fs-micro);margin-bottom:4px${over ? ";color:var(--error)" : ""}">${t.analyze_min}분 <span style="color:var(--muted)">/ ${t.analyze_quota_min}분</span>${t.render_min ? ` · 렌더 ${t.render_min}분` : ""}</div>
+<div class="progress-bar"><div class="progress-bar__fill" style="width:${pct(t)}%${over ? ";background:var(--error)" : ""}"></div></div>
+</div>
+<div style="text-align:right"><span class="status-pill${over || t.status === "suspended" ? " status-pill--warn" : ""}">${t.status === "ok" ? '<span class="status-dot"></span>' : ""}${STATUS[t.status] || t.status}</span></div>`;
+    row.addEventListener("click", () => selectTenant(t));
+    rowsEl.appendChild(row);
+  });
+}
+
+async function loadMembers(t) {
+  const data = await api(`/admin/api/tenants/${encodeURIComponent(t.id)}`);
+  const counts = {};
+  data.members.forEach((m) => { counts[m.role] = (counts[m.role] || 0) + 1; });
+  roleBox.innerHTML = Object.entries(counts).map(([role, n]) =>
+    `<div class="role-row"><span style="color:var(--muted)">${ROLE[role] || role}</span><span>${n}</span></div>`
+  ).join("") || '<div class="role-row"><span style="color:var(--muted)">—</span><span>0</span></div>';
+}
+
+function selectTenant(t) {
+  selected = t;
+  document.getElementById("inspector-name").textContent = t.name;
+  document.getElementById("inspector-meta").textContent = `${t.id} · ${t.created}`;
+  document.getElementById("policy-note").textContent = policyNote;
+  document.getElementById("btn-suspend").disabled = t.status === "suspended";
+  renderRows();
+  loadMembers(t).catch(() => { roleBox.innerHTML = ""; });
+}
+
+document.querySelectorAll(".segmented__btn").forEach((btn, i) => {
+  const keys = ["ok", "quota", "suspended"];
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".segmented__btn").forEach((b) => b.classList.remove("segmented__btn--active"));
+    btn.classList.add("segmented__btn--active");
+    filter = keys[i];
+    renderRows();
+  });
+});
+
+document.getElementById("btn-members").addEventListener("click", () => {
+  if (selected) loadMembers(selected);
+});
+
+document.getElementById("btn-suspend").addEventListener("click", async () => {
+  if (!selected || selected.status === "suspended") return;
+  if (!confirm(`${selected.name} 테넌트를 정지할까요?`)) return;
+  const data = await api(`/admin/api/tenants/${encodeURIComponent(selected.id)}/suspend`, { method: "POST", body: "{}" });
+  const idx = tenants.findIndex((t) => t.id === selected.id);
+  if (idx >= 0) tenants[idx] = data.tenant;
+  selectTenant(data.tenant);
+});
+
+Promise.all([
+  api("/admin/api/tenants"),
+  api("/admin/api/policy"),
+]).then(([tData, pol]) => {
+  tenants = tData.tenants;
+  policyNote = pol.note;
+  if (tenants.length) selectTenant(tenants[0]);
+  else renderRows();
+}).catch((err) => {
+  if (err.status === 401) location = "/admin/login";
+});
+</script>
 </body>
 </html>

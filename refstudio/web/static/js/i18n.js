@@ -19,6 +19,13 @@ const STRINGS = {
     "review.text": "텍스트",
     "error.liveaction": "실사 푸티지는 열리지 않습니다.",
     "empty.elements": "요소 없음",
+    "admin.login": "관리자 로그인",
+    "admin.enter": "들어가기",
+    "admin.tenants": "테넌트",
+    "admin.queue": "작업 큐",
+    "admin.quarantine": "검역",
+    "admin.audit": "감사 로그",
+    "admin.policy": "재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.",
   },
   en: {
     "app.name": "Ref Studio",
@@ -40,6 +47,13 @@ const STRINGS = {
     "review.text": "Text",
     "error.liveaction": "Live-action footage cannot be opened.",
     "empty.elements": "No elements",
+    "admin.login": "Admin login",
+    "admin.enter": "Enter",
+    "admin.tenants": "Tenants",
+    "admin.queue": "Job queue",
+    "admin.quarantine": "Quarantine",
+    "admin.audit": "Audit log",
+    "admin.policy": "Retry cap 4 · asset gen 2 · admins cannot raise limits.",
   },
 };
 

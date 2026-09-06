@@ -77,27 +77,22 @@
 <thead>
 <tr><th>Job ID</th><th>Tenant</th><th>Task</th><th>Target</th><th>Status</th><th>Resource</th><th>Duration</th><th>Retries</th></tr>
 </thead>
-<tbody>
-<tr><td class="mono" style="color:var(--muted)">job_1842</td><td>Northwind</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">analyze</td><td>Autumn drop s1</td><td><span class="badge badge--active">실행</span></td><td class="mono" style="font-size:var(--fs-micro)">GPU 0</td><td style="color:var(--muted)">3분</td><td style="color:var(--muted)">0/4</td></tr>
-<tr><td class="mono" style="color:var(--muted)">job_1841</td><td>Northwind</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">render</td><td>Autumn drop v4</td><td><span class="badge badge--done">대기</span></td><td>—</td><td>—</td><td style="color:var(--muted)">0/4</td></tr>
-<tr class="row-selected"><td class="mono">job_1838</td><td>Hanbit</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">correct/mask</td><td>Paywall s1</td><td><span class="badge badge--error">실패</span></td><td>—</td><td>—</td><td style="color:var(--error)">4/4 한도 소진</td></tr>
-<tr style="opacity:0.6"><td class="mono" style="color:var(--muted)">job_1837</td><td>Solo</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">analyze</td><td>거부됨 실사</td><td colspan="4"><span class="badge">검역으로 이동</span></td></tr>
-</tbody>
+<tbody id="job-rows"></tbody>
 </table>
 </div>
 <aside class="job-drawer">
 <div class="job-drawer__head">
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted);margin-bottom:4px">job_1838</div>
-<h3 style="margin:0;font-size:var(--fs-headline);font-weight:700">Paywall s1</h3>
+<div id="drawer-id" class="mono" style="font-size:var(--fs-micro);color:var(--muted);margin-bottom:4px">—</div>
+<h3 id="drawer-target" style="margin:0;font-size:var(--fs-headline);font-weight:700">—</h3>
 </div>
 <div class="job-drawer__body">
 <div class="section-label" style="font-size:var(--fs-micro);color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">Failure Reason</div>
-<div class="error-box">Verifier keep 실패: dir(m_e3,[1,0]) frame 67</div>
+<div id="drawer-error" class="error-box">—</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px">
-<div class="card"><div style="font-size:var(--fs-micro);color:var(--muted)">Retries</div><div style="font-size:var(--fs-headline);font-weight:700;color:var(--error)">0</div></div>
+<div class="card"><div style="font-size:var(--fs-micro);color:var(--muted)">Retries</div><div id="drawer-retries" style="font-size:var(--fs-headline);font-weight:700">—</div></div>
 <div class="card"><div style="font-size:var(--fs-micro);color:var(--muted)">Priority</div><div style="font-size:var(--fs-headline);font-weight:700">P2</div></div>
 </div>
-<p style="margin-top:24px;font-size:var(--fs-body-sm);color:var(--muted);font-style:italic">"한도는 코드로 고정."</p>
+<p id="drawer-policy" style="margin-top:24px;font-size:var(--fs-body-sm);color:var(--muted);font-style:italic"></p>
 </div>
 <div class="job-drawer__foot">
 <button class="btn btn--secondary" type="button" style="width:auto;padding:8px 16px;margin-left:auto">로그 보기</button>
@@ -106,5 +101,67 @@
 </div>
 </div>
 </div>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+const RETRY_CAP = 4;
+let jobs = [];
+let selected = null;
+let policyNote = "";
+
+const tbody = document.getElementById("job-rows");
+
+function retryLabel(j) {
+  if (j.status === "검역") return "—";
+  const n = j.retries ?? 0;
+  if (n >= RETRY_CAP) return `${n}/${RETRY_CAP} 한도 소진`;
+  return `${n}/${RETRY_CAP}`;
+}
+
+function badgeClass(status) {
+  if (status === "실행") return "badge--active";
+  if (status === "실패") return "badge--error";
+  if (status === "대기") return "badge--done";
+  return "";
+}
+
+function renderTable() {
+  tbody.innerHTML = "";
+  jobs.forEach((j) => {
+    const tr = document.createElement("tr");
+    if (selected && selected.id === j.id) tr.className = "row-selected";
+    if (j.status === "검역") tr.style.opacity = "0.6";
+    const exhausted = (j.retries ?? 0) >= RETRY_CAP;
+    if (j.status === "검역") {
+      tr.innerHTML = `<td class="mono" style="color:var(--muted)">${j.id}</td><td>${j.tenant}</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${j.kind}</td><td>${j.target}</td><td colspan="4"><span class="badge">검역으로 이동</span></td>`;
+    } else {
+      tr.innerHTML = `<td class="mono" style="color:var(--muted)">${j.id}</td><td>${j.tenant}</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${j.kind}</td><td>${j.target}</td><td><span class="badge ${badgeClass(j.status)}">${j.status}</span></td><td class="mono" style="font-size:var(--fs-micro)">${j.gpu || "—"}</td><td style="color:var(--muted)">—</td><td style="color:${exhausted ? "var(--error)" : "var(--muted)"}">${retryLabel(j)}</td>`;
+    }
+    tr.addEventListener("click", () => selectJob(j));
+    tbody.appendChild(tr);
+  });
+}
+
+function selectJob(j) {
+  selected = j;
+  document.getElementById("drawer-id").textContent = j.id;
+  document.getElementById("drawer-target").textContent = j.target;
+  const fail = j.status === "실패";
+  document.getElementById("drawer-error").textContent = fail ? (j.error || "작업 실패") : "—";
+  const retriesEl = document.getElementById("drawer-retries");
+  retriesEl.textContent = fail ? retryLabel(j) : "—";
+  retriesEl.style.color = (j.retries ?? 0) >= RETRY_CAP ? "var(--error)" : "var(--ink)";
+  document.getElementById("drawer-policy").textContent = fail ? `"${policyNote}"` : "";
+  renderTable();
+}
+
+Promise.all([api("/admin/api/jobs"), api("/admin/api/policy")]).then(([jData, pol]) => {
+  jobs = jData.jobs;
+  policyNote = pol.note;
+  const failed = jobs.find((j) => j.status === "실패") || jobs[0];
+  if (failed) selectJob(failed);
+  else renderTable();
+}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
+</script>
 </body>
 </html>

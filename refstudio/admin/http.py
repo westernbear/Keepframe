@@ -178,6 +178,20 @@ class AdminRoutes:
             handler._json(200, {"ok": True})
             return True
 
+        m = re.fullmatch(r"/admin/api/tenants/([^/]+)/suspend", path)
+        if m:
+            actor = self._require(handler)
+            if actor is None:
+                return True
+            tid = m.group(1)
+            try:
+                tenant = self.admin_svc.suspend_tenant(tid, actor)
+            except KeyError:
+                handler._json(404, {"error": "not found"})
+                return True
+            handler._json(200, {"tenant": asdict(tenant)})
+            return True
+
         if path.startswith("/admin"):
             handler._json(404, {"error": "not found"})
             return True

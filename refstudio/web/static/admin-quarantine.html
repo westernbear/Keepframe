@@ -65,40 +65,14 @@
 <div class="quarantine-list">
 <div class="quarantine-list__head">
 <h2 style="margin:0;font-size:var(--fs-headline);font-weight:700">검역 대기 목록</h2>
-<span class="chip" style="font-size:var(--fs-micro)">3 항목</span>
+<span class="chip" id="quarantine-count" style="font-size:var(--fs-micro)">0 항목</span>
 </div>
 <div style="flex:1;overflow-y:auto;padding:16px">
 <div class="card" style="padding:0;overflow:hidden">
 <div class="quarantine-table-head">
 <div>파일명</div><div>테넌트</div><div>거부 일시</div><div>거부 사유</div>
 </div>
-<div class="quarantine-row">
-<div style="display:flex;align-items:center;gap:8px;min-width:0">
-<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
-<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">clip_street.mp4</span>
-</div>
-<div style="color:var(--muted)">Solo</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">2026-09-06 09:12</div>
-<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">실사 푸티지. 평면 2D MG·UI 녹화만 받음.</div>
-</div>
-<div class="quarantine-row quarantine-row--selected">
-<div style="display:flex;align-items:center;gap:8px;min-width:0;font-weight:700">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
-<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">meeting_zoom.mp4</span>
-</div>
-<div>Northwind</div>
-<div class="mono" style="font-size:var(--fs-micro)">2026-09-05 18:40</div>
-<div style="font-size:var(--fs-micro);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">캠우드 배경의 실사 얼굴.</div>
-</div>
-<div class="quarantine-row">
-<div style="display:flex;align-items:center;gap:8px;min-width:0">
-<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
-<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">product_unbox.mov</span>
-</div>
-<div style="color:var(--muted)">Hanbit</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">2026-09-04 11:02</div>
-<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">카메라 연출 실사.</div>
-</div>
+<div id="quarantine-rows"></div>
 </div>
 </div>
 </div>
@@ -107,17 +81,17 @@
 <div class="quarantine-detail__body">
 <div>
 <div class="field-label">대상 파일</div>
-<div class="mono" style="font-size:var(--fs-body-sm);padding:8px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);word-break:break-all">meeting_zoom.mp4</div>
+<div id="detail-filename" class="mono" style="font-size:var(--fs-body-sm);padding:8px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);word-break:break-all">—</div>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-<div><div class="field-label">테넌트</div><div>Northwind</div></div>
-<div><div class="field-label">탐지 시간</div><div class="mono" style="font-size:var(--fs-body-sm)">2026-09-05 18:40</div></div>
+<div><div class="field-label">테넌트</div><div id="detail-tenant">—</div></div>
+<div><div class="field-label">탐지 시간</div><div id="detail-time" class="mono" style="font-size:var(--fs-body-sm)">—</div></div>
 </div>
 <div>
 <div class="field-label" style="color:var(--error)">위반 내역</div>
-<div class="reason-box">캠우드 배경의 실사 얼굴.</div>
+<div id="detail-reason" class="reason-box">—</div>
 </div>
-<p class="policy-box" data-i18n="admin.policy">관리자가 실사 경로를 켜서 우회할 수 없음.</p>
+<p class="policy-box" id="detail-policy" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.</p>
 </div>
 <div class="quarantine-detail__foot">
 <button class="btn btn--secondary" type="button" style="width:auto;padding:8px 16px">로그만 보기</button>
@@ -126,5 +100,60 @@
 </main>
 </div>
 </div>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+const FILE_ICON = '<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';
+let items = [];
+let selected = null;
+const rowsEl = document.getElementById("quarantine-rows");
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function tenantLabel(id) {
+  if (id === "org_solo") return "Solo";
+  if (id === "org_northwind") return "Northwind";
+  if (id === "org_hanbit") return "Hanbit";
+  return id;
+}
+
+function renderRows() {
+  rowsEl.innerHTML = "";
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "quarantine-row" + (selected && selected.id === item.id ? " quarantine-row--selected" : "");
+    row.innerHTML = `
+<div style="display:flex;align-items:center;gap:8px;min-width:0">${FILE_ICON}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.filename}</span></div>
+<div style="color:var(--muted)">${tenantLabel(item.tenant_id)}</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${fmtTime(item.rejected_at)}</div>
+<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.reason}</div>`;
+    row.addEventListener("click", () => selectItem(item));
+    rowsEl.appendChild(row);
+  });
+}
+
+function selectItem(item) {
+  selected = item;
+  document.getElementById("detail-filename").textContent = item.filename;
+  document.getElementById("detail-tenant").textContent = tenantLabel(item.tenant_id);
+  document.getElementById("detail-time").textContent = fmtTime(item.rejected_at);
+  document.getElementById("detail-reason").textContent = item.reason;
+  renderRows();
+}
+
+Promise.all([api("/admin/api/quarantine"), api("/admin/api/policy")]).then(([qData, pol]) => {
+  items = qData.items;
+  document.getElementById("quarantine-count").textContent = `${items.length} 항목`;
+  document.getElementById("detail-policy").textContent = pol.note;
+  if (items.length) selectItem(items[0]);
+  else renderRows();
+}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
+</script>
 </body>
 </html>

@@ -37,7 +37,7 @@
 </div>
 <h1 class="login-title" data-i18n="admin.login">관리자 로그인</h1>
 </header>
-<form class="login-form" action="#" method="POST" onsubmit="event.preventDefault();">
+<form class="login-form" id="login-form" action="#" method="POST">
 <div class="form-field">
 <label for="email">이메일</label>
 <input autocomplete="email" id="email" name="email" placeholder="admin@refstudio.com" required type="email"/>
@@ -54,5 +54,20 @@
 </div>
 </main>
 <footer class="login-footer">로컬판에는 이 화면이 없습니다.</footer>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    await api("/admin/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    location = "/admin/tenants";
+  } catch (err) {
+    alert(err.message || "로그인 실패");
+  }
+});
+</script>
 </body>
 </html>

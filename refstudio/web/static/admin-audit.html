@@ -63,23 +63,42 @@
 <select class="filter-select" aria-label="Tenant"><option>Tenant: All</option><option>Closed shop</option><option>Northwind</option></select>
 <input class="filter-select" type="text" value="Today" aria-label="Date range"/>
 </div>
-<button class="btn btn--secondary" type="button" style="width:auto;padding:6px 16px">Export CSV</button>
+<a class="btn btn--secondary" href="/admin/api/audit.csv" style="width:auto;padding:6px 16px;text-decoration:none">내보내기</a>
 </div>
 <table class="audit-table">
 <thead>
 <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target/Tenant</th><th>Details</th></tr>
 </thead>
-<tbody>
-<tr><td style="color:var(--muted)">14:02</td><td>mina@ref.studio</td><td style="color:var(--error);font-weight:600">테넌트 정지 시도</td><td style="color:var(--muted)">Closed shop</td><td style="color:var(--muted)">-</td></tr>
-<tr><td style="color:var(--muted)">13:41</td><td>lee@hanbit</td><td style="color:var(--secondary)">keep 해제 t_e3</td><td style="color:var(--muted)">Paywall s1</td><td style="color:var(--muted)">술어: "제목은 바꿈"</td></tr>
-<tr><td style="color:var(--muted)">13:18</td><td>mina@ref.studio</td><td>멤버 추가</td><td style="color:var(--muted)">Northwind</td><td style="color:var(--muted)">jun@northwind · 역할 검수 리드</td></tr>
-<tr><td style="color:var(--muted)">12:55</td><td>jun@northwind</td><td>내보내기 MP4+zip</td><td style="color:var(--muted)">Autumn drop v4</td><td style="color:var(--muted)">-</td></tr>
-<tr><td style="color:var(--muted)">09:12</td><td>시스템</td><td style="color:var(--error)">업로드 검역</td><td style="color:var(--muted)">Solo / clip_street.mp4</td><td style="color:var(--muted)">실사</td></tr>
-</tbody>
+<tbody id="audit-rows"></tbody>
 </table>
 <p class="audit-footnote">로그는 삭제할 수 없음. 내보내기만 가능.</p>
 </div>
 </div>
 </div>
+<script type="module">
+import { api } from "/static/js/api.js";
+
+const tbody = document.getElementById("audit-rows");
+
+function actionStyle(action) {
+  if (action.includes("정지") || action.includes("검역")) return "color:var(--error);font-weight:600";
+  if (action.includes("keep")) return "color:var(--secondary)";
+  return "";
+}
+
+api("/admin/api/audit").then((data) => {
+  tbody.innerHTML = "";
+  data.events.forEach((e) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+<td style="color:var(--muted)">${e.ts}</td>
+<td>${e.actor}</td>
+<td style="${actionStyle(e.action)}">${e.action}</td>
+<td style="color:var(--muted)">${e.target}</td>
+<td style="color:var(--muted)">${e.detail || "-"}</td>`;
+    tbody.appendChild(tr);
+  });
+}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
+</script>
 </body>
 </html>
