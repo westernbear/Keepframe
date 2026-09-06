@@ -195,10 +195,22 @@ def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
     return buf.tobytes() if ok else None
 
 
-def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admin: bool = False) -> ThreadingHTTPServer:
+def make_server(
+    workspace: Path,
+    port: int = 8765,
+    host: str = "127.0.0.1",
+    admin: bool = False,
+    admin_svc=None,
+    admin_auth=None,
+) -> ThreadingHTTPServer:
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
+    admin_routes = None
+    if admin and admin_svc is not None and admin_auth is not None:
+        from refstudio.admin.http import AdminRoutes
+
+        admin_routes = AdminRoutes(admin_svc, admin_auth)
 
     def review_state(project_id: str, scene_id: str) -> ReviewState | None:
         if _load_meta(workspace, project_id) is None:
@@ -230,6 +242,8 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
             u = urlparse(self.path)
             if u.path in ("/admin", "/admin/") and not admin:
                 return self._json(404, ADMIN_OFF)
+            if admin_routes and admin_routes.handle_get(self, u):
+                return
             if u.path in PAGES:
                 p = STATIC / PAGES[u.path]
                 if not p.exists():
@@ -372,6 +386,8 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
 
         def do_POST(self):
             u = urlparse(self.path)
+            if admin_routes and admin_routes.handle_post(self, u):
+                return
 
             if u.path == "/api/estimate":
                 body = self._read_body()
@@ -540,6 +556,12 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                     return self._json(409, {"error": "a correction is already running"})
                 return self._json(202, {"job": state.job})
 
+            return self._json(404, {"error": "not found"})
+
+        def do_DELETE(self):
+            u = urlparse(self.path)
+            if admin_routes and admin_routes.handle_delete(self, u):
+                return
             return self._json(404, {"error": "not found"})
 
     return ThreadingHTTPServer((host, port), H)

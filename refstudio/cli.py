@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
     g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--admin", action="store_true")
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -83,8 +84,16 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "serve":
         from .web.server import make_server
         host = "127.0.0.1"
-        srv = make_server(Path(a.workspace), port=a.port, host=host)
+        kwargs: dict = {"admin": a.admin}
+        if a.admin:
+            from .admin.memory import MemoryAdmin
+            from .admin.auth import MemoryAuth
+            kwargs["admin_svc"] = MemoryAdmin()
+            kwargs["admin_auth"] = MemoryAuth()
+        srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)
         print(f"http://{host}:{a.port}/")
+        if a.admin:
+            print(f"http://{host}:{a.port}/admin/")
         srv.serve_forever()
         return 0
     return 2
