@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ref Studio Admin Quarantine Desk</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+<style>
+.admin-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.admin-body { flex: 1; display: flex; overflow: hidden; }
+.admin-sidebar { width: 256px; flex-shrink: 0; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 0; }
+.admin-sidebar__brand { padding: 0 24px 24px; font-weight: 900; letter-spacing: 0.08em; font-size: var(--fs-body-sm); text-transform: uppercase; }
+.admin-sidebar__link { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin: 0 8px; font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); border-left: 2px solid transparent; border-radius: 0 var(--r-xs) var(--r-xs) 0; }
+.admin-sidebar__link:hover { background: var(--surface-1); color: var(--ink); }
+.admin-sidebar__link--active { background: var(--hairline); color: var(--ink); border-left-color: var(--ink); }
+.quarantine-split { flex: 1; display: flex; overflow: hidden; }
+.quarantine-list { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--hairline); min-width: 0; }
+.quarantine-list__head { padding: 16px 24px; border-bottom: 1px solid var(--hairline); display: flex; justify-content: space-between; align-items: center; }
+.quarantine-table-head { display: grid; grid-template-columns: 3fr 2fr 2fr 4fr; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; background: var(--surface-1); }
+.quarantine-row { display: grid; grid-template-columns: 3fr 2fr 2fr 4fr; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-body-sm); align-items: center; cursor: pointer; position: relative; }
+.quarantine-row:hover { background: var(--surface-2); }
+.quarantine-row--selected { background: var(--hairline); }
+.quarantine-row--selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ink); }
+.quarantine-detail { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface-1); }
+.quarantine-detail__head { padding: 16px 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); font-weight: 700; }
+.quarantine-detail__body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+.field-label { font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.reason-box { background: var(--surface-2); border: 1px solid var(--error); border-radius: var(--r-md); padding: 16px; color: var(--error); font-size: var(--fs-body-sm); }
+.policy-box { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 16px; font-size: var(--fs-micro); color: var(--muted); line-height: 1.5; }
+.quarantine-detail__foot { padding: 24px; border-top: 1px solid var(--hairline); display: flex; justify-content: flex-end; }
+</style>
+</head>
+<body class="app app--fill">
+<div class="admin-shell">
+<header class="header header--static">
+<div style="display:flex;align-items:center;gap:12px">
+<span>Ref Studio · 관리 · 검역</span>
+<span class="chip" style="font-size:var(--fs-micro)">운영</span>
+</div>
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</header>
+<div class="admin-body">
+<nav class="admin-sidebar" aria-label="Admin">
+<div class="admin-sidebar__brand">REF ADMIN</div>
+<a class="admin-sidebar__link" href="/admin/tenants">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+<span data-i18n="admin.tenants">테넌트</span>
+</a>
+<a class="admin-sidebar__link" href="/admin/queue">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+<span data-i18n="admin.queue">작업 큐</span>
+</a>
+<a class="admin-sidebar__link admin-sidebar__link--active" href="/admin/quarantine" aria-current="page">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+<span data-i18n="admin.quarantine">검역</span>
+</a>
+<a class="admin-sidebar__link" href="/admin/audit">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+<span data-i18n="admin.audit">감사 로그</span>
+</a>
+</nav>
+<main class="quarantine-split">
+<div class="quarantine-list">
+<div class="quarantine-list__head">
+<h2 style="margin:0;font-size:var(--fs-headline);font-weight:700">검역 대기 목록</h2>
+<span class="chip" style="font-size:var(--fs-micro)">3 항목</span>
+</div>
+<div style="flex:1;overflow-y:auto;padding:16px">
+<div class="card" style="padding:0;overflow:hidden">
+<div class="quarantine-table-head">
+<div>파일명</div><div>테넌트</div><div>거부 일시</div><div>거부 사유</div>
+</div>
+<div class="quarantine-row">
+<div style="display:flex;align-items:center;gap:8px;min-width:0">
+<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
+<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">clip_street.mp4</span>
+</div>
+<div style="color:var(--muted)">Solo</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">2026-09-06 09:12</div>
+<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">실사 푸티지. 평면 2D MG·UI 녹화만 받음.</div>
+</div>
+<div class="quarantine-row quarantine-row--selected">
+<div style="display:flex;align-items:center;gap:8px;min-width:0;font-weight:700">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
+<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">meeting_zoom.mp4</span>
+</div>
+<div>Northwind</div>
+<div class="mono" style="font-size:var(--fs-micro)">2026-09-05 18:40</div>
+<div style="font-size:var(--fs-micro);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">캠우드 배경의 실사 얼굴.</div>
+</div>
+<div class="quarantine-row">
+<div style="display:flex;align-items:center;gap:8px;min-width:0">
+<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
+<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">product_unbox.mov</span>
+</div>
+<div style="color:var(--muted)">Hanbit</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">2026-09-04 11:02</div>
+<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">카메라 연출 실사.</div>
+</div>
+</div>
+</div>
+</div>
+<aside class="quarantine-detail">
+<div class="quarantine-detail__head">거부 상세 정보</div>
+<div class="quarantine-detail__body">
+<div>
+<div class="field-label">대상 파일</div>
+<div class="mono" style="font-size:var(--fs-body-sm);padding:8px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);word-break:break-all">meeting_zoom.mp4</div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+<div><div class="field-label">테넌트</div><div>Northwind</div></div>
+<div><div class="field-label">탐지 시간</div><div class="mono" style="font-size:var(--fs-body-sm)">2026-09-05 18:40</div></div>
+</div>
+<div>
+<div class="field-label" style="color:var(--error)">위반 내역</div>
+<div class="reason-box">캠우드 배경의 실사 얼굴.</div>
+</div>
+<p class="policy-box" data-i18n="admin.policy">관리자가 실사 경로를 켜서 우회할 수 없음.</p>
+</div>
+<div class="quarantine-detail__foot">
+<button class="btn btn--secondary" type="button" style="width:auto;padding:8px 16px">로그만 보기</button>
+</div>
+</aside>
+</main>
+</div>
+</div>
+</body>
+</html>

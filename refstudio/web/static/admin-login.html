@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ref Studio - 관리자 로그인</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+<style>
+.login-page { min-height: 100vh; display: flex; flex-direction: column; }
+.login-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login-card { width: 100%; max-width: 360px; }
+.login-header { margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.login-brand { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+.login-brand__name { font-weight: 700; font-size: var(--fs-headline); letter-spacing: -0.05em; }
+.login-badge { background: var(--surface-2); color: var(--muted); font-size: var(--fs-micro); padding: 2px 6px; border-radius: var(--r-xs); border: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.05em; }
+.login-title { font-size: var(--fs-subhead); font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+.login-form { display: flex; flex-direction: column; gap: 20px; }
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field label { font-size: var(--fs-body-sm); color: var(--muted); font-weight: 500; }
+.form-field input { width: 100%; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 10px 14px; color: var(--ink); font-size: var(--fs-body-sm); }
+.form-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.login-back { margin-top: 32px; text-align: center; }
+.login-back a { font-size: var(--fs-body-sm); color: var(--muted); }
+.login-back a:hover { color: var(--ink); }
+.login-footer { position: fixed; bottom: 24px; left: 0; right: 0; text-align: center; font-size: var(--fs-micro); color: var(--muted); }
+</style>
+</head>
+<body class="login-page">
+<main class="login-main">
+<div class="login-card">
+<header class="login-header">
+<div class="login-brand">
+<span class="login-brand__name" data-i18n="app.name">Ref Studio</span>
+<span class="login-badge">운영</span>
+</div>
+<h1 class="login-title" data-i18n="admin.login">관리자 로그인</h1>
+</header>
+<form class="login-form" action="#" method="POST" onsubmit="event.preventDefault();">
+<div class="form-field">
+<label for="email">이메일</label>
+<input autocomplete="email" id="email" name="email" placeholder="admin@refstudio.com" required type="email"/>
+</div>
+<div class="form-field">
+<label for="password">비밀번호</label>
+<input autocomplete="current-password" id="password" name="password" placeholder="••••••••" required type="password"/>
+</div>
+<button class="btn btn--primary-lg" type="submit" data-i18n="admin.enter">들어가기</button>
+</form>
+<div class="login-back">
+<a href="/">제작 도구로 돌아가기</a>
+</div>
+</div>
+</main>
+<footer class="login-footer">로컬판에는 이 화면이 없습니다.</footer>
+</body>
+</html>

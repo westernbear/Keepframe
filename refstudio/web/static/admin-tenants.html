@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ref Studio - 관리</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+<style>
+.admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
+.admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; border-right: 2px solid transparent; }
+.admin-icon-nav__link:hover { background: var(--surface-1); color: var(--ink); }
+.admin-icon-nav__link--active { background: var(--hairline); color: var(--ink); border-right-color: var(--ink); }
+.admin-icon-nav__link svg { margin-bottom: 4px; }
+.admin-workspace { margin-left: 80px; display: flex; flex-direction: column; height: 100vh; }
+.admin-topbar { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-1); flex-shrink: 0; }
+.admin-topbar__left { display: flex; align-items: center; gap: 16px; font-size: var(--fs-body-sm); }
+.admin-topbar__brand { font-weight: 900; letter-spacing: -0.05em; }
+.admin-topbar__badge { font-size: var(--fs-micro); padding: 2px 8px; border-radius: var(--r-full); background: var(--surface-2); color: var(--muted); border: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.1em; }
+.admin-canvas { flex: 1; display: flex; gap: 16px; padding: 16px; overflow: hidden; min-height: 0; }
+.admin-panel { flex: 1; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; min-width: 0; }
+.admin-panel__toolbar { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
+.admin-table-head { display: grid; grid-template-columns: 4fr 2fr 4fr 2fr; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.admin-table-row { display: grid; grid-template-columns: 4fr 2fr 4fr 2fr; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--hairline); align-items: center; cursor: pointer; position: relative; }
+.admin-table-row:hover { background: var(--surface-2); }
+.admin-table-row--selected { background: var(--surface-2); }
+.admin-table-row--selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--secondary); }
+.progress-bar { height: 4px; background: var(--hairline); border-radius: var(--r-full); overflow: hidden; margin-top: 4px; }
+.progress-bar__fill { height: 100%; background: var(--secondary); border-radius: var(--r-full); }
+.status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-micro); padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--hairline); background: var(--surface-2); }
+.status-pill--warn { color: var(--error); border-color: var(--error); }
+.status-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--secondary); }
+.inspector-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; }
+.inspector-panel__head { padding: 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
+.inspector-panel__body { flex: 1; overflow-y: auto; padding: 24px; }
+.inspector-panel__foot { padding: 16px; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 8px; }
+.section-label { font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+.role-box { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 12px; }
+.role-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: var(--fs-body-sm); }
+.role-row + .role-row { border-top: 1px solid var(--hairline); }
+.policy-note { background: var(--surface-2); border: 1px dashed var(--hairline); border-radius: var(--r-md); padding: 12px; font-size: var(--fs-micro); color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body class="app app--fill">
+<nav class="admin-icon-nav" aria-label="Admin">
+<a class="admin-icon-nav__link admin-icon-nav__link--active" href="/admin/tenants" aria-current="page">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="11" width="20" height="6" rx="1"/><rect x="2" y="19" width="20" height="4" rx="1"/></svg>
+<span data-i18n="admin.tenants">테넌트</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/queue">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+<span data-i18n="admin.queue">작업 큐</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/quarantine">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+<span data-i18n="admin.quarantine">검역</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/audit">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+<span data-i18n="admin.audit">감사 로그</span>
+</a>
+</nav>
+<div class="admin-workspace">
+<header class="admin-topbar">
+<div class="admin-topbar__left">
+<span class="admin-topbar__brand">Ref Studio</span>
+<span style="width:1px;height:16px;background:var(--hairline)"></span>
+<span>관리</span>
+<span class="admin-topbar__badge">운영</span>
+</div>
+<div style="display:flex;align-items:center;gap:16px;font-size:var(--fs-body-sm)">
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</div>
+</header>
+<main class="admin-canvas">
+<div class="admin-panel">
+<div class="admin-panel__toolbar">
+<div class="segmented">
+<button class="segmented__btn segmented__btn--active" type="button">정상</button>
+<button class="segmented__btn" type="button">할당량 초과</button>
+<button class="segmented__btn" type="button">정지</button>
+</div>
+</div>
+<div class="admin-table-head">
+<div>Organization</div>
+<div>Members</div>
+<div>Usage (Analysis / Quota)</div>
+<div style="text-align:right">Status</div>
+</div>
+<div style="flex:1;overflow-y:auto">
+<div class="admin-table-row admin-table-row--selected">
+<div>
+<div style="font-weight:500;font-size:var(--fs-body-sm)">Northwind Studio</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_northwind</div>
+</div>
+<div style="display:flex;align-items:center;gap:6px">
+<svg class="icon" style="width:14px;height:14px;color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+<span>6</span>
+</div>
+<div>
+<div style="font-size:var(--fs-micro);margin-bottom:4px">41분 <span style="color:var(--muted)">/ 120분</span> · 렌더 18분</div>
+<div class="progress-bar"><div class="progress-bar__fill" style="width:34%"></div></div>
+</div>
+<div style="text-align:right"><span class="status-pill"><span class="status-dot"></span>정상</span></div>
+</div>
+<div class="admin-table-row">
+<div>
+<div style="font-weight:500;font-size:var(--fs-body-sm)">Hanbit Motion</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_hanbit</div>
+</div>
+<div>2</div>
+<div>
+<div style="font-size:var(--fs-micro);margin-bottom:4px;color:var(--error)">120분 <span style="color:var(--muted)">/ 120분</span></div>
+<div class="progress-bar"><div class="progress-bar__fill" style="width:100%;background:var(--error)"></div></div>
+</div>
+<div style="text-align:right"><span class="status-pill status-pill--warn">할당량 초과</span></div>
+</div>
+<div class="admin-table-row">
+<div>
+<div style="font-weight:500;font-size:var(--fs-body-sm)">Solo · lee</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">org_sololee</div>
+</div>
+<div>1</div>
+<div>
+<div style="font-size:var(--fs-micro);margin-bottom:4px">7분 <span style="color:var(--muted)">/ 30분</span></div>
+<div class="progress-bar"><div class="progress-bar__fill" style="width:23%"></div></div>
+</div>
+<div style="text-align:right"><span class="status-pill"><span class="status-dot"></span>정상</span></div>
+</div>
+</div>
+</div>
+<aside class="inspector-panel">
+<div class="inspector-panel__head">
+<div style="width:48px;height:48px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;margin-bottom:12px">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+</div>
+<h2 style="margin:0;font-size:var(--fs-headline);font-weight:600">Northwind Studio</h2>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted);margin-top:8px">org_northwind · 2026-08-12</div>
+</div>
+<div class="inspector-panel__body">
+<div style="margin-bottom:32px">
+<div class="section-label">Role Breakdown</div>
+<div class="role-box">
+<div class="role-row"><span style="color:var(--muted)">운영자</span><span>1</span></div>
+<div class="role-row"><span style="color:var(--muted)">검수 리드</span><span>1</span></div>
+<div class="role-row"><span style="color:var(--muted)">제작</span><span>4</span></div>
+</div>
+</div>
+<div>
+<div class="section-label">Policy Notes</div>
+<p class="policy-note" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.</p>
+</div>
+</div>
+<div class="inspector-panel__foot">
+<button class="btn btn--primary-lg" type="button">멤버 보기</button>
+<button class="btn btn--secondary" type="button">정지</button>
+</div>
+</aside>
+</main>
+</div>
+</body>
+</html>
