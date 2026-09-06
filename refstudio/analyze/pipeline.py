@@ -13,7 +13,7 @@ from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import RAW_COLS, sprite_props, z_order
 from .text import Ocr, apply_copy, ocr_frames, text_exclusion_mask, text_props, track_text
-from .tracking import track_regions
+from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 
 STAGES = ("frames", "background", "text", "regions", "tracking", "sprites", "keyframes", "semantics", "constraints", "report")
@@ -94,6 +94,10 @@ def _stage_tracking(rbf, sd):
                 if dst is not None and dst is not t:
                     dst.regions[f] = r; del t.regions[f]
     tracks = [t for t in tracks if t.regions]
+    for t in tracks:
+        _trim_tail_crumbs(t)
+    tracks = [t for t in tracks if t.regions]
+    tracks = _merge_adjacent_tracks(tracks)
     return _pk(sd, "tracks", tracks)
 
 

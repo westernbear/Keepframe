@@ -46,7 +46,8 @@ def props_from_moments(region: Region, canon: np.ndarray) -> dict[str, float]:
     th_r, _ = _orientation(region.mask)
     rot = (th_r - th_c) if aspect >= 1.25 else 0.0
     rot = (rot + 90) % 180 - 90
-    return {"x": region.centroid[0], "y": region.centroid[1], "sx": s, "sy": s, "rot": rot, "skx": 0.0, "sky": 0.0, "opacity": 1.0}
+    x0, y0, x1, y1 = region.bbox
+    return {"x": (x0 + x1) / 2.0, "y": (y0 + y1) / 2.0, "sx": s, "sy": s, "rot": rot, "skx": 0.0, "sky": 0.0, "opacity": 1.0}
 
 
 def _region_scale(region: Region, r_lo: Region, r_cf: Region, sx_cf: float, canon: np.ndarray) -> float:
@@ -144,16 +145,25 @@ def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames
     canon, cf = canonical_texture(track, frames)
     r_cf, r_lo = track.regions[cf], track.regions[track.first]
     sx_cf = math.sqrt(r_cf.area / max(r_lo.area, 1))
-    med_area = float(np.median([r.area for r in track.regions.values()]))
+    areas = [r.area for r in track.regions.values()]
+    med_area = float(np.median(areas))
+    max_area = max(areas)
+    area_thr = 0.85 * med_area if med_area < 0.8 * max_area else 0.6 * max_area
     canon_color = track.regions[track.last].color
     raw = np.full((n_frames, len(RAW_COLS)), np.nan)
-    for f, r in track.regions.items():
-        if r.area < 0.85 * med_area:
+    prev_rot: float | None = None
+    for f, r in sorted(track.regions.items()):
+        if r.area < area_thr:
             continue
         p = props_from_moments(r, canon)
+        if prev_rot is not None:
+            d = ((p["rot"] - prev_rot + 180) % 360) - 180
+            if abs(d) > 1.3:
+                p["rot"] = prev_rot + max(-1.3, min(1.3, d))
         p["sx"] = p["sy"] = _region_scale(r, r_lo, r_cf, sx_cf, canon)
         if use_ecc:
             p = _refine_ecc_xy(frames[f], r, canon, p)
+        prev_rot = p["rot"]
         p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb)
         raw[f - first_frame] = [p[c] for c in RAW_COLS]
     return raw, canon, cf

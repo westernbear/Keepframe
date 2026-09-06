@@ -43,6 +43,34 @@ def _predict(track: ObjectTrack, f: int) -> tuple[float, float]:
     return (r1.centroid[0] + vx * k, r1.centroid[1] + vy * k)
 
 
+def _trim_tail_crumbs(track: ObjectTrack) -> None:
+    """Drop shrunken tail regions after opacity/scale transitions (not whole tracks)."""
+    max_a = max(r.area for r in track.regions.values())
+    med_f = float(np.median(list(track.regions.keys())))
+    for f in list(track.regions):
+        if f > med_f and track.regions[f].area < 0.6 * max_a:
+            del track.regions[f]
+
+
+def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_thr: float = 35.0) -> list[ObjectTrack]:
+    """Merge same-colour tracks separated by a short gap (opacity/scale transitions)."""
+    if len(tracks) < 2:
+        return tracks
+    out = sorted(tracks, key=lambda t: t.first)
+    merged: list[ObjectTrack] = [out[0]]
+    for t in out[1:]:
+        prev = merged[-1]
+        gap = t.first - prev.last
+        if 1 <= gap <= max_gap:
+            c1 = np.mean([r.color for r in prev.regions.values()], axis=0)
+            c2 = np.mean([r.color for r in t.regions.values()], axis=0)
+            if float(np.linalg.norm(c1 - c2)) <= color_thr:
+                prev.regions.update(t.regions)
+                continue
+        merged.append(t)
+    return merged
+
+
 def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0,
                   cost_thr: float = 1.2, max_gap: int = 2) -> list[ObjectTrack]:
     tracks: list[ObjectTrack] = []

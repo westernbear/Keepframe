@@ -19,6 +19,13 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("verify"); v.add_argument("--scene", required=True); v.add_argument("--render-json", default=None)
     v.add_argument("--reference", default=None)
     g = sub.add_parser("gate-m1"); g.add_argument("--out", required=True); g.add_argument("--n", type=int, default=20)
+    an = sub.add_parser("analyze"); an.add_argument("--video", required=True); an.add_argument("--start", type=int, default=0)
+    an.add_argument("--end", type=int, required=True); an.add_argument("--out", required=True); an.add_argument("--copy", default=None)
+    an.add_argument("--no-ocr", action="store_true"); an.add_argument("--no-refine", action="store_true"); an.add_argument("--bg", default=None)
+    co = sub.add_parser("correct"); co.add_argument("--root", required=True); co.add_argument("--scene", default="s1")
+    co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
+    g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
+    g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -44,6 +51,34 @@ def main(argv: list[str] | None = None) -> int:
         for row in res["rows"]:
             print(row)
         print({k: v for k, v in res.items() if k != "rows"}); return 0 if res["passed"] else 1
+    if a.cmd == "analyze":
+        from .analyze.pipeline import AnalyzeOptions, analyze
+        opts = AnalyzeOptions(bg_override=a.bg, copy=a.copy.split(",") if a.copy else None, ocr=not a.no_ocr, refine=not a.no_refine)
+        p = analyze(Path(a.video), a.start, a.end, Path(a.out), opts)
+        print(json.dumps({"scenes": [s.id for s in p.scenes], "version": p.versions[-1].id})); return 0
+    if a.cmd == "correct":
+        from .review import corrections as C
+        from .ir.schema import FontGuess
+        kw = json.loads(a.args)
+        if a.op == "reassign":
+            v = C.reassign_id(Path(a.root), a.scene, tuple(kw["frames"]), kw["from_id"], kw["to_id"], note=kw.get("note", "reassign id"))
+        elif a.op == "mask":
+            v = C.set_region_mask(Path(a.root), a.scene, kw["frame"], Path(kw["mask_png"]), kw["object_id"], note=kw.get("note", "set region mask"))
+        elif a.op == "bbox":
+            v = C.add_bbox_prompt(Path(a.root), a.scene, kw["frame"], tuple(kw["bbox"]), kw["object_id"], note=kw.get("note", "bbox prompt"))
+        else:
+            v = C.edit_text(Path(a.root), a.scene, kw["element_id"], text=kw.get("text"),
+                            font=FontGuess(**kw["font"]) if kw.get("font") else None, note=kw.get("note", "edit text"))
+        print(v.model_dump_json(indent=2)); return 0
+    if a.cmd == "gate-m2":
+        from .gates import m2_gate
+        res = m2_gate(Path(a.out), n=a.n)
+        for row in res["rows"]:
+            print(row)
+        print({k: v for k, v in res.items() if k != "rows"}); return 0 if res["passed"] else 1
+    if a.cmd == "gate-m2-real":
+        from .gates import m2_gate_real
+        print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
     return 2
 
 
