@@ -68,3 +68,9 @@ def render(html: Path, scene: Scene, out_dir: Path, frames: list[int] | None = N
     (out_dir / "render.json").write_text(json.dumps({**asdict(result), "frames_dir": str(frames_dir),
                                                       "mp4": str(result.mp4) if result.mp4 else None}, indent=2))
     return result
+
+
+def render_result_from_json(path: Path) -> RenderResult:
+    d = json.loads(Path(path).read_text())
+    return RenderResult(frames_dir=Path(d["frames_dir"]), frames=d["frames"], hashes=d["hashes"],
+                        bboxes=d["bboxes"], mp4=Path(d["mp4"]) if d.get("mp4") else None)
