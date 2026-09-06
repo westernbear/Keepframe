@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>{{ID}}</title>
+<style>
+  html,body{margin:0;padding:0;background:{{BG}};overflow:hidden}
+  #stage{position:relative;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
+  .el{position:absolute;will-change:transform;transition:none!important}
+  .el img{display:block;width:100%;height:100%;image-rendering:auto}
+  .el span{display:block;width:100%;height:100%;white-space:pre;overflow:visible}
+</style>
+<script>{{GSAP_JS}}</script>
+<script>{{CUSTOMEASE_JS}}</script>
+</head>
+<body>
+<div id="stage" data-composition-id="{{ID}}" data-width="{{WIDTH}}" data-height="{{HEIGHT}}">
+{{ELEMENTS}}
+</div>
+<script>
+const SCENE = {{SCENE_JSON}};
+const FPS = SCENE.fps;
+const DEFAULTS = {x:0,y:0,sx:1,sy:1,rot:0,skx:0,sky:0,opacity:1};
+gsap.registerPlugin(CustomEase);
+const tl = gsap.timeline({paused:true});
+const appliers = [];
+for (const el of SCENE.elements) {
+  const node = document.getElementById('el-' + el.id);
+  const st = Object.assign({}, DEFAULTS);
+  const apply = () => {
+    node.style.transform = `translate(${st.x}px, ${st.y}px) rotate(${st.rot}deg) skewX(${st.skx}deg) scale(${st.sx}, ${st.sy})`;
+    node.style.opacity = String(st.opacity);
+  };
+  for (const [prop, track] of Object.entries(el.tracks)) {
+    const keys = track.keys;
+    st[prop] = keys[0].v;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const a = keys[i], b = keys[i + 1];
+      const ease = a.ease ? CustomEase.create('', `M0,0 C${a.ease[0]},${a.ease[1]} ${a.ease[2]},${a.ease[3]} 1,1`) : 'none';
+      tl.fromTo(st, {[prop]: a.v}, {[prop]: b.v, duration: (b.t - a.t) / FPS, ease, immediateRender: false, onUpdate: apply}, a.t / FPS);
+    }
+  }
+  const zAt = (f) => { let v = el.z.keys[0].v; for (const k of el.z.keys) if (k.t <= f) v = k.v; return v; };
+  appliers.push((f) => {
+    apply();
+    node.style.visibility = (f >= el.visible[0] && f <= el.visible[1]) ? 'visible' : 'hidden';
+    node.style.zIndex = String(zAt(f));
+  });
+}
+window.__seek = (f) => { tl.time(f / FPS, false); for (const a of appliers) a(f); return f; };
+window.__bbox = (id) => {
+  const r = document.getElementById('el-' + id).getBoundingClientRect();
+  const s = document.getElementById('stage').getBoundingClientRect();
+  return [r.left - s.left, r.top - s.top, r.right - s.left, r.bottom - s.top];
+};
+window.__seek(0);
+document.fonts.ready.then(() => { window.__ready = true; });
+</script>
+</body></html>
