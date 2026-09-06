@@ -19,57 +19,228 @@
 <section class="split__main">
 <h1 class="page-title">레퍼런스 영상</h1>
 <p class="page-desc">평면 2D 모션그래픽 또는 UI 화면 녹화. 실사 푸티지는 받지 않습니다.</p>
-<div class="card" style="margin-bottom:32px;display:flex;align-items:center;justify-content:space-between">
+<div class="card" style="margin-bottom:32px;display:flex;align-items:center;justify-content:space-between" data-upload-card hidden>
 <div style="display:flex;align-items:center;gap:16px">
 <div style="width:48px;height:48px;background:var(--hairline);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center">
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>
 </div>
 <div>
-<div style="font-weight:500;margin-bottom:4px">launch-card.mp4</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">1920x1080 · 30 fps · 4.2s</div>
+<div style="font-weight:500;margin-bottom:4px" data-video-name>—</div>
+<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)" data-video-meta>—</div>
 </div>
 </div>
-<button class="btn--icon" aria-label="Remove">
+<button class="btn--icon" type="button" aria-label="Remove" data-remove-video>
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
 </button>
 </div>
-<div class="card">
+<label class="card" style="margin-bottom:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:120px" data-dropzone>
+<input type="file" accept="video/*" hidden data-file-input/>
+<span>영상 파일 선택</span>
+</label>
+<p class="page-desc" style="color:var(--danger)" data-error hidden></p>
+<div class="card" data-editor hidden>
 <div class="segmented" style="margin-bottom:24px">
-<button class="segmented__btn segmented__btn--active" data-i18n="ingest.range">구간 지정</button>
-<button class="segmented__btn" data-i18n="ingest.full">전체 영상</button>
+<button type="button" class="segmented__btn segmented__btn--active" data-mode="range" data-i18n="ingest.range">구간 지정</button>
+<button type="button" class="segmented__btn" data-mode="full" data-i18n="ingest.full">전체 영상</button>
 </div>
-<div data-filmstrip class="filmstrip">
-<div class="filmstrip__frame"></div>
-<div class="filmstrip__frame"></div>
-<div class="filmstrip__frame filmstrip__frame--active"></div>
-<div class="filmstrip__frame filmstrip__frame--active"></div>
-<div class="filmstrip__frame filmstrip__frame--active"></div>
-<div class="filmstrip__frame"></div>
-</div>
-<div class="range-meta">선택 4.0초 · 120프레임 · 장면 1개</div>
-<div style="display:flex;gap:16px;margin-top:16px;align-items:center">
+<div data-filmstrip class="filmstrip"></div>
+<div class="range-meta" data-range-meta>—</div>
+<div style="display:flex;gap:16px;margin-top:16px;align-items:center" data-range-inputs>
 <label style="font-size:var(--fs-micro);color:var(--muted)">시작</label>
-<input class="input" style="width:64px;padding:4px 8px;text-align:center" type="text" value="0.4s"/>
+<input class="input" style="width:64px;padding:4px 8px;text-align:center" type="number" min="0" data-start value="0"/>
 <label style="font-size:var(--fs-micro);color:var(--muted)">끝</label>
-<input class="input" style="width:64px;padding:4px 8px;text-align:center" type="text" value="4.4s"/>
+<input class="input" style="width:64px;padding:4px 8px;text-align:center" type="number" min="0" data-end value="0"/>
 </div>
 </div>
 </section>
 <aside class="split__aside">
 <h2 class="page-title" style="font-size:var(--fs-body-sm);margin-bottom:24px" data-i18n="ingest.confirm">실행 전 확인</h2>
 <ul class="detail-list">
-<li><span>예상 시간</span><span class="mono">3–5분</span></li>
+<li><span>예상 시간</span><span class="mono" data-est-seconds>—</span></li>
 <li><span>GPU 사용 허용</span><span>ON</span></li>
-<li><span>장면</span><span>1</span></li>
+<li><span>장면</span><span data-est-scenes>—</span></li>
 </ul>
+<p class="page-desc" style="font-size:var(--fs-micro);color:var(--muted);margin-top:12px" data-est-note hidden></p>
+<div data-full-confirm hidden style="margin-top:16px;padding:12px;background:var(--hairline);border-radius:var(--r-md);font-size:var(--fs-micro)">
+<p data-confirm-copy></p>
+<button type="button" class="btn btn--secondary" style="margin-top:8px" data-confirm-btn>확인하고 계속</button>
+</div>
 <div style="margin-top:auto;display:flex;flex-direction:column;gap:12px">
-<button class="btn btn--primary-lg" data-i18n="ingest.start">
+<button type="button" class="btn btn--primary-lg" data-i18n="ingest.start" data-start-btn disabled>
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
 분석 시작
 </button>
-<button class="btn btn--secondary">취소</button>
+<button type="button" class="btn btn--secondary" onclick="location.href='/'">취소</button>
 </div>
 </aside>
 </main>
+<script type="module">
+import { uploadProject, fetchEstimate, fetchFilmstrip } from "/static/js/api.js";
+import { T } from "/static/js/i18n.js";
+
+const state = {
+  project: null,
+  mode: "range",
+  confirmToken: null,
+  fullConfirmed: false,
+  totalFrames: 0,
+  fps: 30,
+};
+
+const $ = (sel) => document.querySelector(sel);
+const dropzone = $("[data-dropzone]");
+const fileInput = $("[data-file-input]");
+const uploadCard = $("[data-upload-card]");
+const editor = $("[data-editor]");
+const filmstrip = $("[data-filmstrip]");
+const errorEl = $("[data-error]");
+const startBtn = $("[data-start-btn]");
+const fullConfirm = $("[data-full-confirm]");
+const confirmCopy = $("[data-confirm-copy]");
+const confirmBtn = $("[data-confirm-btn]");
+
+function showError(msg) {
+  errorEl.hidden = !msg;
+  errorEl.textContent = msg || "";
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  state.fullConfirmed = false;
+  fullConfirm.hidden = true;
+  document.querySelectorAll("[data-mode]").forEach((btn) => {
+    btn.classList.toggle("segmented__btn--active", btn.dataset.mode === mode);
+  });
+  $("[data-range-inputs]").hidden = mode === "full";
+  refreshEstimate();
+}
+
+async function loadFilmstrip(projectId) {
+  const { frames } = await fetchFilmstrip(projectId, 8);
+  filmstrip.innerHTML = "";
+  frames.forEach((url, i) => {
+    const div = document.createElement("div");
+    div.className = "filmstrip__frame" + (i === 0 ? " filmstrip__frame--active" : "");
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    div.appendChild(img);
+    filmstrip.appendChild(div);
+  });
+}
+
+async function refreshEstimate() {
+  if (!state.project) return;
+  const start = parseInt($("[data-start]").value, 10) || 0;
+  const end = parseInt($("[data-end]").value, 10) || state.totalFrames - 1;
+  const frames = state.mode === "range" ? Math.max(1, end - start + 1) : state.totalFrames;
+  const est = await fetchEstimate({ mode: state.mode, frames, fps: state.fps });
+  state.confirmToken = est.confirm_token;
+  const mins = Math.round(est.seconds / 60);
+  $("[data-est-seconds]").textContent = `약 ${mins}분 (추정)`;
+  $("[data-est-scenes]").textContent = String(est.scene_count);
+  $("[data-est-note]").hidden = false;
+  $("[data-est-note]").textContent = est.note + ` · 장면당 ${est.seconds_per_scene}초 (추정)`;
+  $("[data-range-meta]").textContent =
+    state.mode === "range"
+      ? `선택 ${(frames / state.fps).toFixed(1)}초 · ${frames}프레임 · 장면 ${est.scene_count}개`
+      : `전체 ${(state.totalFrames / state.fps).toFixed(1)}초 · ${state.totalFrames}프레임 · 장면 ${est.scene_count}개`;
+  updateStartButton(est);
+}
+
+function updateStartButton(est) {
+  if (state.mode === "full" && !state.fullConfirmed) {
+    startBtn.disabled = true;
+    fullConfirm.hidden = false;
+    confirmCopy.textContent = `전체 영상 분석 예상 ${Math.round(est.seconds / 60)}분, 장면 ${est.scene_count}개. 계속하시겠습니까?`;
+  } else {
+    fullConfirm.hidden = state.mode !== "full" || state.fullConfirmed;
+    startBtn.disabled = false;
+  }
+}
+
+async function handleFile(file) {
+  showError("");
+  dropzone.hidden = true;
+  uploadCard.hidden = false;
+  $("[data-video-name]").textContent = file.name;
+  $("[data-video-meta]").textContent = "업로드 중…";
+  editor.hidden = true;
+  startBtn.disabled = true;
+  try {
+    const { project } = await uploadProject({
+      title: file.name.replace(/\.[^.]+$/, ""),
+      video: file,
+      mode: "full",
+      start: 0,
+      end: 0,
+    });
+    state.project = project;
+    const v = project.video || {};
+    state.fps = v.fps || 30;
+    state.totalFrames = v.frames || 1;
+    $("[data-video-meta]").textContent =
+      `${v.width || "?"}x${v.height || "?"} · ${state.fps} fps · ${(v.duration_s || 0).toFixed(1)}s`;
+    await loadFilmstrip(project.id);
+    $("[data-end]").value = String(Math.max(0, state.totalFrames - 1));
+    $("[data-start]").value = "0";
+    editor.hidden = false;
+    setMode("range");
+  } catch (err) {
+    dropzone.hidden = false;
+    uploadCard.hidden = true;
+    editor.hidden = true;
+    if (err.body && err.body.code === "live_action") {
+      showError(T("error.liveaction"));
+    } else {
+      showError(err.message || "업로드 실패");
+    }
+  }
+}
+
+dropzone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+$("[data-remove-video]").addEventListener("click", () => {
+  state.project = null;
+  fileInput.value = "";
+  dropzone.hidden = false;
+  uploadCard.hidden = true;
+  editor.hidden = true;
+  startBtn.disabled = true;
+  showError("");
+});
+
+document.querySelectorAll("[data-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => setMode(btn.dataset.mode));
+});
+$("[data-start]").addEventListener("change", refreshEstimate);
+$("[data-end]").addEventListener("change", refreshEstimate);
+
+confirmBtn.addEventListener("click", () => {
+  state.fullConfirmed = true;
+  fullConfirm.hidden = true;
+  startBtn.disabled = false;
+});
+
+startBtn.addEventListener("click", async () => {
+  if (!state.project) return;
+  try {
+    const est = await fetchEstimate({ project_id: state.project.id });
+    state.confirmToken = est.confirm_token;
+    if (state.mode === "full" && !state.fullConfirmed) {
+      updateStartButton(est);
+      return;
+    }
+    location.href = `/analyze?job=${state.project.id}&token=${est.confirm_token}`;
+  } catch (err) {
+    showError(err.message);
+  }
+});
+</script>
 </body>
 </html>

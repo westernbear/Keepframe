@@ -27,7 +27,7 @@ def test_admin_is_404_without_flag(tmp_path):
 
 def test_missing_page_is_404_json(tmp_path):
     srv = start(tmp_path)
-    code, _, body = get(srv, "/")
+    code, _, body = get(srv, "/nope")
     srv.shutdown()
     assert code == 404
-    assert "library.html" in json.loads(body)["error"]
+    assert json.loads(body)["error"] == "not found"
