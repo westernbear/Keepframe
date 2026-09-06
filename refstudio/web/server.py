@@ -4,6 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from refstudio.web.workspace import list_projects
+
 STATIC = Path(__file__).parent / "static"
 PAGES = {
     "/": "library.html",
@@ -50,6 +52,20 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                     return self._json(404, {"error": "not found"})
                 ctype = "text/css" if p.suffix == ".css" else "application/javascript" if p.suffix == ".js" else "application/octet-stream"
                 return self._send(200, p.read_bytes(), ctype)
+            if u.path == "/api/projects":
+                return self._json(200, {"projects": list_projects(workspace)})
+            return self._json(404, {"error": "not found"})
+
+        def do_POST(self):
+            u = urlparse(self.path)
+            if u.path == "/api/projects":
+                length = int(self.headers.get("content-length", 0))
+                body = self.rfile.read(length) if length else b""
+                try:
+                    json.loads(body.decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                return self._json(400, {"error": "video required"})
             return self._json(404, {"error": "not found"})
 
     return ThreadingHTTPServer((host, port), H)
