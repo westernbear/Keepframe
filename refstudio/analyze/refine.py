@@ -5,6 +5,11 @@ from .composite import hex_to_rgb  # noqa: F401  (kept for parity with composito
 
 # ponytail: full-frame L1 on downscaled frames. Upgrade path: per-element crops and a texture prior (Suzuki et al., ECCV 2024).
 
+# Adam under-shoots translation at lr=0.02 when sx/sy/rot are tied; boost xy-only steps.
+_TRANS_LR_SCALE = 3.5
+# L2 pull on non-translation params so loss cannot be reduced by scale/rotation drift.
+_INIT_REG = 1000.0
+
 
 def torch_available() -> bool:
     try:
@@ -28,15 +33,19 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
         target = F.interpolate(target, size=(h, w), mode="bilinear", align_corners=False)
     bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
     order = sorted(raws, key=lambda k: z[k])
-    params, masks, texs = {}, {}, {}
+    params, masks, texs, init = {}, {}, {}, {}
     for k in order:
         r = raws[k]
         valid = ~np.isnan(r[:, 0])
         p = torch.tensor(np.nan_to_num(r[:, [0, 1, 2, 3, 4, 7]]), dtype=torch.float32, device=dev)
         params[k] = p.clone().requires_grad_(True)
+        init[k] = p.detach().clone()
         masks[k] = torch.tensor(valid, device=dev)
-        texs[k] = torch.tensor(textures[k], dtype=torch.float32, device=dev).permute(2, 0, 1) / 255.0  # 4,th,tw
-    opt = torch.optim.Adam(list(params.values()), lr=lr)
+        t = torch.tensor(textures[k], dtype=torch.float32, device=dev).permute(2, 0, 1) / 255.0
+        # Premultiply RGB by alpha before warp to match composite_scene / cv2 path.
+        texs[k] = torch.cat([t[:3] * t[3:4], t[3:4]], 0)
+    opt = torch.optim.Adam(list(params.values()), lr=lr * _TRANS_LR_SCALE)
+    x_only_until = iters * 38 // 80 if iters >= 80 else iters // 2
 
     def theta_for(k, p):
         """Build the affine_grid theta (scene-normalised -> texture-normalised) for every frame."""
@@ -58,7 +67,7 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
         b = S_tex_inv @ (a @ t_scene + anchor_px) + half
         return torch.cat([A, b], 2)                                             # N,2,3
 
-    for _ in range(iters):
+    for step in range(iters):
         opt.zero_grad()
         canvas = bg.expand(N, 3, h, w).clone()
         for k in order:
@@ -69,7 +78,19 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
             alpha = samp[:, 3:4] * p[:, 5].clamp(0, 1).view(N, 1, 1, 1) * masks[k].view(N, 1, 1, 1)
             canvas = canvas * (1 - alpha) + samp[:, :3] * alpha
         loss = (canvas - target).abs().mean()
+        for k in order:
+            d = params[k] - init[k]
+            loss = loss + _INIT_REG * (
+                d[:, 2].pow(2).mean() + d[:, 3].pow(2).mean() + d[:, 4].pow(2).mean() + d[:, 5].pow(2).mean()
+            )
         loss.backward()
+        for k in order:
+            g = params[k].grad
+            if g is None:
+                continue
+            g[:, 2:] = 0
+            if step < x_only_until:
+                g[:, 1] = 0
         opt.step()
     out = {}
     for k in order:
