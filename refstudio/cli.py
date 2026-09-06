@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
     g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
+    sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -79,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "gate-m2-real":
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
+    if a.cmd == "serve":
+        from .web.server import make_server
+        host = "127.0.0.1"
+        srv = make_server(Path(a.workspace), port=a.port, host=host)
+        print(f"http://{host}:{a.port}/")
+        srv.serve_forever()
+        return 0
     return 2
 
 

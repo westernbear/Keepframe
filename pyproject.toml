@@ -21,7 +21,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["refstudio*"]
 [tool.setuptools.package-data]
-refstudio = ["compose/vendor/*.js", "compose/template.html"]
+refstudio = ["compose/vendor/*.js", "compose/template.html", "web/static/*"]
 [tool.pytest.ini_options]
 markers = [
   "browser: needs playwright chromium",
