@@ -56,14 +56,77 @@
 </ul>
 <div class="progress-panel__foot">
 <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:var(--fs-body-sm);color:var(--muted)">
-<span>예상 남은 시간 2분</span>
-<span class="mono" style="font-size:var(--fs-micro);border:1px solid var(--hairline);padding:2px 8px;border-radius:var(--r-xs)">GPU 사용 중</span>
+<span data-eta>—</span>
+<span class="mono" style="font-size:var(--fs-micro);border:1px solid var(--hairline);padding:2px 8px;border-radius:var(--r-xs)" data-stage>—</span>
 </div>
-<button class="btn btn--secondary">취소</button>
+<p class="page-desc" style="color:var(--danger)" data-status role="status" hidden></p>
+<button class="btn btn--secondary" onclick="location.href='/'">취소</button>
 </div>
 </div>
 </div>
 </main>
 </div>
+<script type="module">
+import { api, fetchFilmstrip } from "/static/js/api.js";
+
+const params = new URLSearchParams(location.search);
+const projectId = params.get("job") || params.get("project");
+const token = params.get("token") || "";
+const statusEl = document.querySelector("[data-status]");
+const stageEl = document.querySelector("[data-stage]");
+const etaEl = document.querySelector("[data-eta]");
+
+function showError(msg) {
+  statusEl.hidden = !msg;
+  statusEl.textContent = msg || "";
+}
+
+function formatEta(seconds) {
+  if (seconds == null) return "—";
+  const mins = Math.max(1, Math.round(seconds / 60));
+  return `예상 남은 시간 약 ${mins}분`;
+}
+
+function updateJob(job) {
+  stageEl.textContent = job.stage || job.status || "—";
+  etaEl.textContent = formatEta(job.eta_s);
+  if (job.status === "done") {
+    location.href = `/review?project=${job.project_id}&scene=s1`;
+  } else if (job.status === "error") {
+    showError(job.error || "분석 실패");
+  }
+}
+
+async function poll(jobId) {
+  try {
+    const job = await api(`/api/jobs/${jobId}`);
+    updateJob(job);
+  } catch (err) {
+    showError(err.message || "상태 조회 실패");
+  }
+}
+
+(async () => {
+  if (!projectId) {
+    showError("프로젝트 ID가 없습니다.");
+    return;
+  }
+  try {
+    await fetchFilmstrip(projectId, 8);
+  } catch {
+    /* filmstrip optional */
+  }
+  try {
+    const { job } = await api("/api/analyze", {
+      method: "POST",
+      body: JSON.stringify({ project_id: projectId, confirm_token: token }),
+    });
+    updateJob(job);
+    setInterval(() => poll(job.id), 1000);
+  } catch (err) {
+    showError(err.message || "분석 시작 실패");
+  }
+})();
+</script>
 </body>
 </html>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+from datetime import datetime, timezone
 from email import message_from_bytes
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,9 +12,13 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 
-from refstudio.web.estimate import estimate, probe_video
+from refstudio.analyze.pipeline import analyze
+from refstudio.web.estimate import consume_token, estimate, probe_video
+from refstudio.web.jobs import JobStore
 from refstudio.web.liveaction import looks_live_action
 from refstudio.web.workspace import create_project, list_projects, project_dir
+
+JOBS = JobStore()
 
 STATIC = Path(__file__).parent / "static"
 PAGES = {
@@ -49,6 +54,16 @@ def _load_meta(workspace: Path, project_id: str) -> dict | None:
     if not meta.is_file():
         return None
     return json.loads(meta.read_text(encoding="utf-8"))
+
+
+def _write_meta(workspace: Path, project_id: str, **updates) -> dict:
+    root = project_dir(workspace, project_id)
+    meta_path = root / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta.update(updates)
+    meta["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    return meta
 
 
 def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
@@ -141,6 +156,14 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                     return self._json(404, {"error": "frame not found"})
                 return self._send(200, jpeg, "image/jpeg")
 
+            m = re.fullmatch(r"/api/jobs/([^/]+)", u.path)
+            if m:
+                jid = m.group(1)
+                try:
+                    return self._json(200, JOBS.get(jid).to_json())
+                except KeyError:
+                    return self._json(404, {"error": "not found"})
+
             return self._json(404, {"error": "not found"})
 
         def do_POST(self):
@@ -209,6 +232,57 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
                 video_path = project_dir(workspace, row["id"]) / "source.mp4"
                 row = {**row, "video": probe_video(video_path)}
                 return self._json(201, {"project": row})
+
+            if u.path == "/api/analyze":
+                body = self._read_body()
+                try:
+                    data = json.loads(body.decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project_id")
+                if not project_id:
+                    return self._json(400, {"error": "project_id required"})
+                meta = _load_meta(workspace, project_id)
+                if meta is None:
+                    return self._json(404, {"error": "not found"})
+                token = data.get("confirm_token") or ""
+                if meta.get("mode") == "full" and not consume_token(token):
+                    return self._json(400, {"error": "confirm required"})
+                root = project_dir(workspace, project_id)
+                video = root / "source.mp4"
+                info = probe_video(video)
+                if meta.get("range"):
+                    start, end = meta["range"]
+                else:
+                    start, end = 0, max(0, info["frames"] - 1)
+                frames = max(1, int(end) - int(start) + 1)
+                est = estimate(meta.get("mode", "full"), frames, info["fps"])
+                _write_meta(workspace, project_id, status="analyzing", job_id=None)
+
+                def run_analyze() -> dict:
+                    try:
+                        analyze(video, int(start), int(end), root)
+                        _write_meta(workspace, project_id, status="review", job_id=None)
+                        return {"project_id": project_id}
+                    except Exception as e:
+                        _write_meta(
+                            workspace,
+                            project_id,
+                            status="error",
+                            error=f"{type(e).__name__}: {e}",
+                        )
+                        raise
+
+                job = JOBS.submit(
+                    "analyze",
+                    run_analyze,
+                    project_id=project_id,
+                    scene_id="s1",
+                    stage="pipeline",
+                    eta_s=est["seconds"],
+                )
+                _write_meta(workspace, project_id, job_id=job.id)
+                return self._json(202, {"job": job.to_json()})
 
             return self._json(404, {"error": "not found"})
 

@@ -1,0 +1,26 @@
+import time
+from refstudio.web.jobs import JobStore
+
+
+def test_job_runs_and_finishes():
+    store = JobStore()
+    j = store.submit("analyze", lambda: {"ok": True}, project_id="p1")
+    assert j.status in ("queued", "running")
+    for _ in range(50):
+        if store.get(j.id).status == "done":
+            break
+        time.sleep(0.02)
+    got = store.get(j.id)
+    assert got.status == "done" and got.result == {"ok": True}
+
+
+def test_job_surfaces_error():
+    store = JobStore()
+    def boom():
+        raise RuntimeError("gpu missing")
+    j = store.submit("analyze", boom, project_id="p1")
+    for _ in range(50):
+        if store.get(j.id).status == "error":
+            break
+        time.sleep(0.02)
+    assert "gpu missing" in store.get(j.id).error
