@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>REF STUDIO - 검수</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;700;900&amp;family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+              "secondary-fixed-dim": "#65afff",
+              "secondary-container": "#00497e",
+              "primary-fixed-dim": "#454747",
+              "inverse-surface": "#e5e2e1",
+              "outline-variant": "#474747",
+              "surface-tint": "#c6c6c7",
+              "on-surface": "#e5e2e1",
+              "tertiary-fixed": "#5c3be7",
+              "on-secondary-container": "#d2e4ff",
+              "on-secondary-fixed-variant": "#003d6b",
+              "on-tertiary-container": "#000000",
+              "inverse-on-surface": "#313030",
+              "inverse-primary": "#5d5f5f",
+              "on-tertiary-fixed-variant": "#e5deff",
+              "secondary-fixed": "#9fcaff",
+              "surface-bright": "#3a3939",
+              "secondary": "#9fcaff",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-fixed": "#ffffff",
+              "tertiary-container": "#917eff",
+              "surface-container-lowest": "#0e0e0e",
+              "outline": "#919191",
+              "surface-container-high": "#2a2a2a",
+              "surface-container": "#201f1f",
+              "surface-dim": "#131313",
+              "error-container": "#93000a",
+              "on-primary-fixed-variant": "#e2e2e2",
+              "primary-fixed": "#5d5f5f",
+              "primary": "#ffffff",
+              "surface-container-highest": "#353534",
+              "on-secondary": "#001d36",
+              "on-primary-container": "#000000",
+              "background": "#131313",
+              "tertiary": "#e5deff",
+              "tertiary-fixed-dim": "#4413d0",
+              "on-primary": "#1a1c1c",
+              "on-primary-fixed": "#ffffff",
+              "on-tertiary": "#1a0063",
+              "on-secondary-fixed": "#001d36",
+              "on-error": "#690005",
+              "surface-variant": "#353534",
+              "on-background": "#e5e2e1",
+              "surface": "#131313",
+              "surface-container-low": "#1c1b1b",
+              "primary-container": "#d4d4d4",
+              "on-surface-variant": "#c6c6c6",
+              "error": "#ffb4ab"
+            },
+            "borderRadius": {
+              "DEFAULT": "1rem",
+              "lg": "2rem",
+              "xl": "3rem",
+              "full": "9999px"
+            },
+            "spacing": {},
+            "fontFamily": {
+              "headline": ["Geist", "sans-serif"],
+              "display": ["Geist", "sans-serif"],
+              "body": ["Inter", "sans-serif"],
+              "label": ["Inter", "sans-serif"]
+            },
+            "fontSize": {
+              "label-xs": ["0.75rem", { lineHeight: "1rem" }],
+              "label-sm": ["0.875rem", { lineHeight: "1.25rem" }]
+            }
+          }
+        }
+      }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .bg-timeline-pattern {
+                background-image: linear-gradient(to right, #474747 1px, transparent 1px);
+                background-size: 5% 100%;
+                background-position: bottom;
+                background-repeat: repeat-x;
+            }
+        }
+        /* Custom scrollbar for dense panels */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #474747;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5d5f5f;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body h-screen w-full flex flex-col overflow-hidden selection:bg-secondary-fixed-dim selection:text-on-secondary-fixed">
+<!-- Header (Based on JSON TopNavBar structural mandates) -->
+<header class="bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center px-4 w-full h-14 z-50 shrink-0">
+<div class="flex items-center gap-4">
+<div class="font-display font-black text-primary tracking-tighter text-lg">REF STUDIO</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<h1 class="font-bold text-primary font-display tracking-tight text-lg">검수</h1>
+<div class="flex items-center gap-2 text-label-sm text-on-surface-variant bg-surface-container px-2.5 py-1 rounded-md border border-transparent">
+<span>s1 · 0:00–0:04</span>
+</div>
+<div class="group relative">
+<button class="flex items-center gap-1 text-label-sm text-on-surface bg-surface-container px-2.5 py-1 rounded-md border border-outline-variant hover:bg-surface-container-high transition-colors">
+<span>v3 · 마스크 적용</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_drop_down</span>
+</button>
+</div>
+</div>
+<div class="flex items-center">
+<button class="text-label-sm font-bold text-on-surface-variant hover:text-primary transition-colors px-2">EN</button>
+</div>
+</header>
+<!-- Main Layout -->
+<main class="flex flex-1 overflow-hidden min-h-0 w-full max-w-[2560px] mx-auto">
+<!-- Left: Workspace (Comparison Viewer + Timeline) -->
+<div class="flex-1 flex flex-col min-w-0 bg-surface">
+<!-- Comparison Viewer -->
+<div class="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+<!-- Split Panes -->
+<div class="flex-1 flex gap-4 min-h-0">
+<!-- 원본 (Left) -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden relative group">
+<div class="h-8 flex items-center justify-between px-3 bg-surface-container border-b border-outline-variant shrink-0 z-10">
+<span class="text-label-xs font-bold text-on-surface-variant">원본</span>
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">image</span>
+</div>
+<div class="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+<img class="w-auto h-[80%] object-contain opacity-90 mix-blend-screen pointer-events-none" data-alt="A sleek, minimalist digital product card with a dark aesthetic, featuring the text 'Launch faster' prominently in a modern sans-serif typeface. The card has a subtle gradient background transitioning from deep charcoal to near black, illuminated by a soft, directional top light. The visual style is high-end UI design, crisp, precise, and professional, suitable for a dark-mode developer tool landing page." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcDot_BGiiLoCAiBMuAzltfld48iDokLWgBH0gWJJ0oxzIUgGivKyZCktx64n0krRVp9_HGS3NdgrFTLTAYHOAXolQRt6WYZUID1vDR5T1z3Iex0zCJomEN-a-1ZDrloC2JVIWWg5E0D1YMoD_pW_r5valK_KXyuYjm7IBWq2G-u_7mc6OrqVanQgrykqdZl8HLsAxex6cuNaeIeiHejSXvOnpJqbzljFPpUogjQGJTz1nNSYpsAM_ZIVLGI4aMLvt-6K1uWgt2bGf"/>
+<!-- Highlight for 'e3' -->
+<div class="absolute border-[1.5px] border-secondary-fixed-dim bg-secondary-fixed-dim/10 w-[240px] h-[40px] top-[45%] left-[50%] -translate-x-1/2 -translate-y-1/2 flex items-start justify-end pointer-events-none z-20 transition-all duration-200">
+<span class="bg-secondary-fixed-dim text-on-secondary-fixed text-[10px] px-1.5 font-mono absolute -top-[18px] -right-[1.5px] font-bold">e3</span>
+</div>
+</div>
+</div>
+<!-- 재구성 (Right) -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden relative group">
+<div class="h-8 flex items-center justify-between px-3 bg-surface-container border-b border-outline-variant shrink-0 z-10">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary-fixed-dim animate-pulse"></span>
+<span class="text-label-xs font-bold text-primary">재구성</span>
+</div>
+<span class="material-symbols-outlined text-[14px] text-secondary-fixed-dim">layers</span>
+</div>
+<div class="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+<img class="w-auto h-[80%] object-contain opacity-95 mix-blend-screen pointer-events-none" data-alt="A precise algorithmic reconstruction of a minimalist digital product card with a dark aesthetic, identical to the original but with subtle rendering artifacts indicating computed output. It features the text 'Launch faster' in a modern sans-serif typeface. The background is a subtle gradient from deep charcoal to black. The lighting is artificial and precise, typical of a 3D or motion graphics render engine preview workspace." src="https://lh3.googleusercontent.com/aida-public/AB6AXuARGGdounVqHe46W9M4xTdgBOk3PdY6EKl6YsrPF4tQX1YlxBaJWRXa-kTNd8mFQkxs1rlPxbmBZ2gYCYGAij--Q0njfRNYTuSEzBOFUY0-JgcJnpAeVM3YFJmMpHMs8FSl53VhrB7Uj-V_wCRBWh6Ik_GQBZDTTdo7M4KoqA5Cf7GY3HS8GClOm_UEGZaRyTqJIem00NqALUg3UFD60sDpdWvfvrGHL3DR6YgYH15RxDho9T85gfu5pSKotgvQZ7Fuq4iccOj2aoZA"/>
+<!-- Highlight for 'e3' in reconstructed view (slightly offset to imply tracking check) -->
+<div class="absolute border-[1.5px] border-secondary-fixed-dim bg-secondary-fixed-dim/10 w-[240px] h-[40px] top-[45%] left-[50.2%] -translate-x-1/2 -translate-y-1/2 flex items-start justify-end pointer-events-none z-20 transition-all duration-200">
+<span class="bg-secondary-fixed-dim text-on-secondary-fixed text-[10px] px-1.5 font-mono absolute -top-[18px] -right-[1.5px] font-bold">e3</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Transport Bar -->
+<div class="h-12 shrink-0 bg-surface-container-low rounded-lg border border-outline-variant flex items-center justify-between px-4">
+<div class="flex items-center gap-6">
+<button class="w-8 h-8 flex items-center justify-center rounded-md bg-surface-container-highest hover:bg-surface-variant text-primary transition-colors active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<div class="flex flex-col justify-center">
+<div class="font-mono text-[13px] font-bold text-primary tracking-wider">18 <span class="text-on-surface-variant font-normal">/ 120</span></div>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<div class="font-mono text-[13px] text-secondary-fixed-dim font-bold tracking-wider">00:00.18</div>
+</div>
+<div class="text-[11px] text-on-surface-variant flex gap-4 font-medium tracking-tight">
+<span class="flex items-center gap-1.5"><kbd class="font-mono bg-surface-container-highest px-1.5 py-0.5 rounded text-[10px] border border-outline-variant text-on-surface">Space</kbd> 재생</span>
+<span class="flex items-center gap-1.5"><kbd class="font-mono bg-surface-container-highest px-1.5 py-0.5 rounded text-[10px] border border-outline-variant text-on-surface">←/→</kbd> 프레임</span>
+<span class="flex items-center gap-1.5"><kbd class="font-mono bg-surface-container-highest px-1.5 py-0.5 rounded text-[10px] border border-outline-variant text-on-surface">[ ]</kbd> 오차 구간</span>
+</div>
+</div>
+</div>
+<!-- Timeline -->
+<div class="h-[280px] shrink-0 border-t border-outline-variant bg-surface-container flex flex-col">
+<!-- Timeline Header / Ruler -->
+<div class="h-6 border-b border-outline-variant bg-surface-container-low flex shrink-0">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex items-center px-4 text-[10px] text-on-surface-variant font-mono tracking-widest uppercase">Tracks</div>
+<div class="flex-1 relative bg-timeline-pattern border-b border-outline-variant overflow-hidden">
+<!-- Ticks -->
+<div class="absolute bottom-0 left-0 text-[9px] text-on-surface-variant pl-1 border-l border-outline-variant h-2 flex items-end pb-0.5">0</div>
+<div class="absolute bottom-0 left-[15%] text-[9px] text-primary font-bold pl-1 border-l border-secondary-fixed-dim h-full bg-secondary-fixed-dim/10 z-10">18</div>
+<div class="absolute bottom-0 left-[50%] text-[9px] text-on-surface-variant pl-1 border-l border-outline-variant h-2 flex items-end pb-0.5">60</div>
+<div class="absolute bottom-0 right-[2%] text-[9px] text-on-surface-variant pl-1 border-l border-outline-variant h-2 flex items-end pb-0.5">120</div>
+</div>
+</div>
+<!-- Track List -->
+<div class="flex-1 overflow-y-auto flex flex-col relative bg-surface-container">
+<!-- Playhead Line -->
+<div class="absolute top-0 bottom-0 left-[15%] w-[1px] bg-secondary-fixed-dim z-30 pointer-events-none shadow-[0_0_8px_rgba(101,175,255,0.8)]">
+<div class="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[6px] border-t-secondary-fixed-dim"></div>
+</div>
+<!-- Track: e1 background -->
+<div class="h-8 min-h-[32px] border-b border-outline-variant flex hover:bg-surface-container-high transition-colors group">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex items-center px-4 text-label-xs text-on-surface gap-3">
+<div class="w-2 h-2 rounded-sm bg-tertiary-fixed"></div>
+<span class="font-mono text-on-surface-variant text-[11px]">e1</span>
+<span class="truncate opacity-80">background</span>
+</div>
+<div class="flex-1 relative py-2">
+<div class="absolute left-0 right-0 h-3 top-1/2 -translate-y-1/2 bg-tertiary-fixed/20 border border-tertiary-fixed/40 rounded-sm"></div>
+</div>
+</div>
+<!-- Track: e2 card -->
+<div class="h-8 min-h-[32px] border-b border-outline-variant flex hover:bg-surface-container-high transition-colors group">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex items-center px-4 text-label-xs text-on-surface gap-3">
+<div class="w-2 h-2 rounded-sm bg-secondary-container"></div>
+<span class="font-mono text-on-surface-variant text-[11px]">e2</span>
+<span class="truncate opacity-80">card</span>
+</div>
+<div class="flex-1 relative py-2">
+<div class="absolute left-[5%] right-[10%] h-3 top-1/2 -translate-y-1/2 bg-secondary-container/40 border border-secondary-container rounded-sm flex items-center">
+<div class="absolute left-0 w-[2px] h-full bg-secondary-container"></div>
+<div class="absolute left-[10%] w-[3px] h-[3px] rotate-45 bg-primary/70"></div>
+<div class="absolute right-0 w-[2px] h-full bg-secondary-container"></div>
+</div>
+</div>
+</div>
+<!-- Track: e3 text (Selected) -->
+<div class="h-8 min-h-[32px] border-b border-outline-variant flex bg-surface-container-highest group relative z-20">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex items-center px-4 text-label-xs text-primary font-bold gap-3">
+<div class="w-2 h-2 rounded-sm bg-secondary-fixed-dim shadow-[0_0_5px_rgba(101,175,255,0.6)]"></div>
+<span class="font-mono text-secondary-fixed-dim text-[11px]">e3</span>
+<span class="truncate">text</span>
+</div>
+<div class="flex-1 relative py-2">
+<div class="absolute left-[10%] right-[15%] h-3 top-1/2 -translate-y-1/2 bg-secondary-fixed-dim/20 border border-secondary-fixed-dim rounded-sm flex items-center shadow-[0_0_10px_rgba(101,175,255,0.15)]">
+<div class="absolute left-0 w-[2px] h-full bg-secondary-fixed-dim"></div>
+<!-- Keyframe exactly at playhead (15% relative to parent, track starts at 10%, so 5% in relative to track length approx. Need to position keyframe precisely on playhead visual line) -->
+<div class="absolute left-[5.55%] w-2 h-2 rounded-sm bg-primary z-10 shadow-[0_0_4px_#fff] top-1/2 -translate-y-1/2 border-[1.5px] border-secondary-fixed-dim scale-110 cursor-pointer"></div>
+<div class="absolute left-[40%] w-[4px] h-[4px] rotate-45 bg-primary/50 top-1/2 -translate-y-1/2"></div>
+<div class="absolute right-0 w-[2px] h-full bg-secondary-fixed-dim"></div>
+</div>
+</div>
+</div>
+<!-- Track: e4 price -->
+<div class="h-8 min-h-[32px] border-b border-outline-variant flex hover:bg-surface-container-high transition-colors group">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex items-center px-4 text-label-xs text-on-surface gap-3">
+<div class="w-2 h-2 rounded-sm bg-secondary-fixed"></div>
+<span class="font-mono text-on-surface-variant text-[11px]">e4</span>
+<span class="truncate opacity-80">price</span>
+</div>
+<div class="flex-1 relative py-2">
+<div class="absolute left-[20%] right-[5%] h-3 top-1/2 -translate-y-1/2 bg-secondary-fixed/20 border border-secondary-fixed/40 rounded-sm"></div>
+</div>
+</div>
+</div>
+<!-- Error Strip (Bottom fixed in timeline area) -->
+<div class="h-16 shrink-0 border-t-2 border-outline-variant bg-surface-container-low flex overflow-hidden">
+<div class="w-[280px] shrink-0 border-r border-outline-variant flex flex-col justify-center px-4 gap-0.5">
+<div class="text-[11px] font-bold text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[12px] text-error">analytics</span>
+                            재구성 오차 L1
+                        </div>
+<div class="text-[10px] text-error font-mono">Max: 2.4px</div>
+</div>
+<div class="flex-1 relative overflow-hidden flex items-end">
+<svg class="w-full h-full opacity-90" preserveaspectratio="none" viewbox="0 0 1000 100">
+<!-- Grid lines -->
+<line stroke="#474747" stroke-dasharray="2 4" stroke-width="0.5" x1="0" x2="1000" y1="25" y2="25"></line>
+<line stroke="#474747" stroke-dasharray="2 4" stroke-width="0.5" x1="0" x2="1000" y1="50" y2="50"></line>
+<line stroke="#474747" stroke-dasharray="2 4" stroke-width="0.5" x1="0" x2="1000" y1="75" y2="75"></line>
+<!-- Area Fill -->
+<path d="M 0 95 Q 50 90, 100 92 T 250 88 T 300 70 Q 320 15, 340 10 T 360 85 Q 400 90, 500 85 T 540 50 Q 560 5, 570 40 T 600 88 T 800 92 T 1000 95 L 1000 100 L 0 100 Z" fill="rgba(255, 180, 171, 0.15)"></path>
+<!-- Error Line -->
+<path d="M 0 95 Q 50 90, 100 92 T 250 88 T 300 70 Q 320 15, 340 10 T 360 85 Q 400 90, 500 85 T 540 50 Q 560 5, 570 40 T 600 88 T 800 92 T 1000 95" fill="none" stroke="#ffb4ab" stroke-width="1.5"></path>
+</svg>
+<!-- Peak Labels -->
+<div class="absolute left-[34%] top-1 flex flex-col items-center">
+<div class="text-[9px] bg-error-container text-on-error-container px-1.5 py-px rounded font-mono font-bold tracking-tight shadow-md border border-error/20">피크 (41)</div>
+<div class="w-px h-8 bg-error/50 mt-1 border-l border-dashed border-error/50"></div>
+</div>
+<div class="absolute left-[56%] top-0 flex flex-col items-center">
+<div class="text-[9px] bg-error-container text-on-error-container px-1.5 py-px rounded font-mono font-bold tracking-tight shadow-md border border-error/20">피크 (67)</div>
+<div class="w-px h-10 bg-error/50 mt-1 border-l border-dashed border-error/50"></div>
+</div>
+<!-- Timeline Playhead extension -->
+<div class="absolute top-0 bottom-0 left-[15%] w-[1px] bg-secondary-fixed-dim/50 z-10 pointer-events-none"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right: Inspector (Based on JSON SideNavBar structural mandates) -->
+<aside class="w-[360px] h-full bg-surface-container border-l border-outline-variant flex flex-col z-40 shrink-0">
+<!-- Header -->
+<div class="h-14 border-b border-outline-variant flex items-center px-5 justify-between bg-surface-container-low shrink-0">
+<h2 class="font-display font-bold text-primary tracking-tight">요소 4</h2>
+<button class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-surface-container-high text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto p-5 flex flex-col gap-6 relative">
+<!-- Element List -->
+<div class="flex flex-col gap-1.5">
+<!-- e1 -->
+<div class="flex items-center justify-between p-2 rounded-md hover:bg-surface-container-high cursor-pointer transition-colors border border-transparent">
+<div class="flex items-center gap-3">
+<div class="w-2.5 h-2.5 rounded-sm bg-tertiary-fixed"></div>
+<div class="font-mono text-label-xs text-on-surface-variant">e1</div>
+<div class="text-label-sm text-on-surface font-medium">background</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex gap-[2px]">
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+</div>
+<div class="text-[10px] bg-surface-variant text-on-surface-variant px-1.5 py-0.5 rounded font-bold tracking-wide border border-transparent">자동</div>
+</div>
+</div>
+<!-- e2 -->
+<div class="flex items-center justify-between p-2 rounded-md hover:bg-surface-container-high cursor-pointer transition-colors border border-transparent">
+<div class="flex items-center gap-3">
+<div class="w-2.5 h-2.5 rounded-sm bg-secondary-container"></div>
+<div class="font-mono text-label-xs text-on-surface-variant">e2</div>
+<div class="text-label-sm text-on-surface font-medium">card</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex gap-[2px]">
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+</div>
+<div class="text-[10px] bg-surface-variant text-on-surface-variant px-1.5 py-0.5 rounded font-bold tracking-wide border border-transparent">자동</div>
+</div>
+</div>
+<!-- e3 (Selected) -->
+<div class="flex items-center justify-between p-2 rounded-md bg-surface-container-highest border border-secondary-fixed-dim/50 cursor-pointer shadow-[0_0_15px_rgba(101,175,255,0.05)] relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary-fixed-dim"></div>
+<div class="flex items-center gap-3 pl-2">
+<div class="w-2.5 h-2.5 rounded-sm bg-secondary-fixed-dim shadow-[0_0_6px_rgba(101,175,255,0.8)]"></div>
+<div class="font-mono text-label-xs text-secondary-fixed-dim font-bold">e3</div>
+<div class="text-label-sm text-primary font-bold">text</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex gap-[2px] group relative">
+<!-- Confidence Bar (0.64 Caution) -->
+<div class="w-[3px] h-[14px] bg-tertiary-container rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-tertiary-container rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-tertiary-container rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+</div>
+<div class="text-[10px] bg-secondary-container/30 text-secondary-fixed-dim px-1.5 py-0.5 rounded font-bold tracking-wide border border-secondary-fixed-dim/50">수동</div>
+</div>
+</div>
+<!-- e4 -->
+<div class="flex items-center justify-between p-2 rounded-md hover:bg-surface-container-high cursor-pointer transition-colors border border-transparent">
+<div class="flex items-center gap-3">
+<div class="w-2.5 h-2.5 rounded-sm bg-secondary-fixed"></div>
+<div class="font-mono text-label-xs text-on-surface-variant">e4</div>
+<div class="text-label-sm text-on-surface font-medium">price</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex gap-[2px]">
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-on-surface-variant rounded-sm"></div>
+<div class="w-[3px] h-[14px] bg-surface-variant rounded-sm"></div>
+</div>
+<div class="text-[10px] bg-surface-variant text-on-surface-variant px-1.5 py-0.5 rounded font-bold tracking-wide border border-transparent">자동</div>
+</div>
+</div>
+</div>
+<div class="w-full h-px bg-outline-variant/60"></div>
+<!-- Selection Block (e3 Constraints) -->
+<div class="flex flex-col gap-4">
+<div class="flex justify-between items-end">
+<h3 class="text-label-sm font-bold text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-secondary-fixed-dim">rule</span>
+                            제약 조건 (e3)
+                        </h3>
+<span class="text-[10px] text-on-surface-variant font-mono border border-outline-variant px-1.5 py-0.5 rounded-sm">추론 엔진 V3</span>
+</div>
+<div class="flex flex-col gap-2.5 bg-surface-container-low p-3.5 rounded-lg border border-outline-variant/80 font-mono text-[11px] shadow-inner">
+<!-- Checked -->
+<label class="flex items-center gap-3 cursor-pointer group">
+<div class="w-3.5 h-3.5 rounded-[3px] border border-secondary-fixed-dim bg-secondary-fixed-dim flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[12px] text-on-secondary-fixed font-bold">check</span>
+</div>
+<span class="text-primary group-hover:text-secondary-fixed-dim transition-colors tracking-tight">type(m_e3, 'translation')</span>
+</label>
+<!-- Checked -->
+<label class="flex items-center gap-3 cursor-pointer group">
+<div class="w-3.5 h-3.5 rounded-[3px] border border-secondary-fixed-dim bg-secondary-fixed-dim flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[12px] text-on-secondary-fixed font-bold">check</span>
+</div>
+<span class="text-primary group-hover:text-secondary-fixed-dim transition-colors tracking-tight">dir(m_e3, [1,0])</span>
+</label>
+<!-- Unchecked -->
+<label class="flex items-center gap-3 cursor-pointer group">
+<div class="w-3.5 h-3.5 rounded-[3px] border border-outline-variant bg-surface group-hover:border-on-surface-variant transition-colors flex items-center justify-center shrink-0">
+</div>
+<span class="text-on-surface-variant group-hover:text-on-surface transition-colors tracking-tight">dur(m_e3, 18)</span>
+</label>
+</div>
+<!-- Primary CTA -->
+<button class="mt-1 w-full bg-primary text-on-primary font-bold text-label-sm py-3 rounded-full hover:scale-[1.02] active:scale-95 transition-transform flex items-center justify-center gap-2 shadow-lg">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                        유지 조건 저장
+                    </button>
+</div>
+<!-- Accordions -->
+<div class="flex flex-col border-t border-outline-variant/60 pt-4 gap-2">
+<!-- Accordion 1 (Closed) -->
+<div class="group cursor-pointer bg-surface-container-low border border-transparent hover:border-outline-variant/50 rounded-md transition-all px-3 py-2.5">
+<div class="flex justify-between items-center text-label-sm font-bold text-on-surface-variant group-hover:text-on-surface transition-colors">
+<span>재할당</span>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+</div>
+<!-- Accordion 2 (Closed) -->
+<div class="group cursor-pointer bg-surface-container-low border border-transparent hover:border-outline-variant/50 rounded-md transition-all px-3 py-2.5">
+<div class="flex justify-between items-center text-label-sm font-bold text-on-surface-variant group-hover:text-on-surface transition-colors">
+<span>마스크</span>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+</div>
+<!-- Accordion 3 (Open) -->
+<div class="bg-surface-container-low border border-outline-variant rounded-md px-3 py-3 flex flex-col gap-3 shadow-sm">
+<div class="flex justify-between items-center text-label-sm font-bold text-primary cursor-pointer border-b border-outline-variant/50 pb-2">
+<span>박스 프롬프트</span>
+<span class="material-symbols-outlined text-[18px] rotate-180 text-secondary-fixed-dim">expand_more</span>
+</div>
+<div class="flex flex-col gap-3 pt-1">
+<div class="bg-surface/50 border border-outline-variant/80 border-dashed rounded-md p-4 text-center flex flex-col items-center justify-center gap-2 relative overflow-hidden group hover:border-secondary-fixed-dim/50 transition-colors">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-secondary-fixed-dim transition-colors">crop</span>
+<span class="text-[11px] text-on-surface-variant leading-relaxed block">원본 화면에서 드래그하면<br/>값이 채워집니다.</span>
+</div>
+<div class="grid grid-cols-4 gap-2">
+<div class="flex flex-col gap-1">
+<span class="text-[9px] text-on-surface-variant text-center font-mono uppercase">X</span>
+<input class="w-full bg-surface border border-outline-variant/60 rounded px-1 py-1.5 text-label-xs text-on-surface-variant text-center opacity-50 cursor-not-allowed" disabled="" placeholder="-" type="text"/>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-[9px] text-on-surface-variant text-center font-mono uppercase">Y</span>
+<input class="w-full bg-surface border border-outline-variant/60 rounded px-1 py-1.5 text-label-xs text-on-surface-variant text-center opacity-50 cursor-not-allowed" disabled="" placeholder="-" type="text"/>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-[9px] text-on-surface-variant text-center font-mono uppercase">W</span>
+<input class="w-full bg-surface border border-outline-variant/60 rounded px-1 py-1.5 text-label-xs text-on-surface-variant text-center opacity-50 cursor-not-allowed" disabled="" placeholder="-" type="text"/>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-[9px] text-on-surface-variant text-center font-mono uppercase">H</span>
+<input class="w-full bg-surface border border-outline-variant/60 rounded px-1 py-1.5 text-label-xs text-on-surface-variant text-center opacity-50 cursor-not-allowed" disabled="" placeholder="-" type="text"/>
+</div>
+</div>
+</div>
+</div>
+<!-- Accordion 4 (Closed) -->
+<div class="group cursor-pointer bg-surface-container-low border border-transparent hover:border-outline-variant/50 rounded-md transition-all px-3 py-2.5">
+<div class="flex justify-between items-center text-label-sm font-bold text-on-surface-variant group-hover:text-on-surface transition-colors">
+<span>텍스트</span>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+</body></html>

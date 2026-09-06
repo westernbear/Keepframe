@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ref Studio - 관리자 로그인</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Geist:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+              "primary-container": "#d4d4d4",
+              "surface-container": "#201f1f",
+              "error": "#ffb4ab",
+              "secondary-fixed": "#9fcaff",
+              "on-tertiary-fixed": "#ffffff",
+              "on-primary-container": "#000000",
+              "surface-container-high": "#2a2a2a",
+              "tertiary-fixed-dim": "#4413d0",
+              "surface-container-low": "#1c1b1b",
+              "inverse-surface": "#e5e2e1",
+              "surface-tint": "#c6c6c7",
+              "outline": "#919191",
+              "primary-fixed": "#5d5f5f",
+              "on-secondary-fixed": "#001d36",
+              "error-container": "#93000a",
+              "on-tertiary-container": "#000000",
+              "surface-container-lowest": "#0e0e0e",
+              "on-secondary-container": "#d2e4ff",
+              "surface-dim": "#131313",
+              "on-error-container": "#ffdad6",
+              "secondary": "#9fcaff",
+              "on-tertiary-fixed-variant": "#e5deff",
+              "on-error": "#690005",
+              "surface-container-highest": "#353534",
+              "tertiary-fixed": "#5c3be7",
+              "primary-fixed-dim": "#454747",
+              "on-surface": "#e5e2e1",
+              "inverse-primary": "#5d5f5f",
+              "surface-variant": "#353534",
+              "tertiary-container": "#917eff",
+              "secondary-fixed-dim": "#65afff",
+              "on-secondary-fixed-variant": "#003d6b",
+              "on-background": "#e5e2e1",
+              "background": "#131313",
+              "outline-variant": "#474747",
+              "on-primary-fixed": "#ffffff",
+              "surface-bright": "#3a3939",
+              "on-primary": "#1a1c1c",
+              "on-surface-variant": "#c6c6c6",
+              "primary": "#ffffff",
+              "on-primary-fixed-variant": "#e2e2e2",
+              "secondary-container": "#00497e",
+              "inverse-on-surface": "#313030",
+              "on-tertiary": "#1a0063",
+              "tertiary": "#e5deff",
+              "surface": "#131313",
+              "on-secondary": "#001d36"
+            },
+            "borderRadius": {
+              "DEFAULT": "1rem",
+              "lg": "2rem",
+              "xl": "3rem",
+              "full": "9999px"
+            },
+            "spacing": {},
+            "fontFamily": {
+              "headline": ["Geist", "sans-serif"],
+              "display": ["Geist", "sans-serif"],
+              "body": ["Inter", "sans-serif"],
+              "label": ["Inter", "sans-serif"]
+            },
+            "fontSize": {}
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Strict Input styling as per guidelines */
+        .strict-input {
+            background-color: #141414; /* Surface 1 */
+            border-radius: 10px;
+            border: 1px solid #262626;
+            transition: all 0.2s ease;
+        }
+        .strict-input:focus {
+            outline: none;
+            border-color: #0099ff;
+            box-shadow: 0 0 0 1px rgba(0, 153, 255, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body min-h-screen flex flex-col antialiased selection:bg-surface-variant selection:text-primary">
+<!-- Main Content Area -->
+<main class="flex-grow flex items-center justify-center p-4">
+<!-- Login Card (Narrow) -->
+<div class="w-full max-w-[360px] flex flex-col">
+<!-- Header Section -->
+<header class="mb-10 flex flex-col items-center sm:items-start text-center sm:text-left">
+<div class="flex items-center gap-2 mb-6">
+<span class="font-display font-bold text-xl tracking-tighter text-primary">Ref Studio</span>
+<span class="bg-[#1c1c1c] text-[#919191] text-[10px] px-1.5 py-0.5 rounded-[4px] font-medium tracking-wide uppercase border border-[#262626]">
+                        운영
+                    </span>
+</div>
+<h1 class="font-headline font-semibold text-3xl tracking-tight text-primary">관리자 로그인</h1>
+</header>
+<!-- Login Form -->
+<form action="#" class="flex flex-col gap-5" method="POST" onsubmit="event.preventDefault();">
+<!-- Email Input -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label text-sm font-medium text-on-surface-variant" for="email">이메일</label>
+<input autocomplete="email" class="strict-input w-full px-3.5 py-2.5 text-sm text-on-background font-body placeholder:text-[#474747]" id="email" name="email" placeholder="admin@refstudio.com" required="" type="email"/>
+</div>
+<!-- Password Input -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label text-sm font-medium text-on-surface-variant" for="password">비밀번호</label>
+<input autocomplete="current-password" class="strict-input w-full px-3.5 py-2.5 text-sm text-on-background font-body placeholder:text-[#474747]" id="password" name="password" placeholder="••••••••" required="" type="password"/>
+</div>
+<!-- Primary CTA -->
+<button class="mt-2 w-full bg-primary text-on-primary font-label font-semibold text-sm rounded-full py-3 transition-transform active:scale-95 flex items-center justify-center" type="submit">
+                    들어가기
+                </button>
+</form>
+<!-- Links -->
+<div class="mt-8 flex justify-center">
+<a class="font-label text-sm text-on-surface-variant hover:text-primary transition-colors hover:opacity-80" href="#">
+                    제작 도구로 돌아가기
+                </a>
+</div>
+</div>
+</main>
+<!-- Footer (Shared Component) -->
+<footer class="fixed bottom-6 left-0 w-full flex justify-center items-center bg-transparent">
+<p class="font-body text-label-sm text-center text-on-surface-variant text-xs">
+            로컬판에는 이 화면이 없습니다.
+        </p>
+</footer>
+</body></html>

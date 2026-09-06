@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ref Studio - 관리</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#d4d4d4",
+                        "on-error": "#690005",
+                        "on-tertiary-container": "#000000",
+                        "on-error-container": "#ffdad6",
+                        "inverse-surface": "#e5e2e1",
+                        "inverse-primary": "#5d5f5f",
+                        "on-tertiary": "#1a0063",
+                        "error": "#ffb4ab",
+                        "secondary-container": "#00497e",
+                        "on-secondary-fixed-variant": "#003d6b",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-low": "#1c1b1b",
+                        "surface-container-highest": "#353534",
+                        "surface-variant": "#353534",
+                        "primary": "#ffffff",
+                        "on-primary": "#1a1c1c",
+                        "on-surface-variant": "#c6c6c6",
+                        "on-secondary-fixed": "#001d36",
+                        "surface-tint": "#c6c6c7",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface": "#e5e2e1",
+                        "primary-fixed": "#5d5f5f",
+                        "surface-bright": "#3a3939",
+                        "tertiary-fixed-dim": "#4413d0",
+                        "secondary-fixed": "#9fcaff",
+                        "tertiary": "#e5deff",
+                        "on-background": "#e5e2e1",
+                        "on-secondary": "#001d36",
+                        "surface": "#131313",
+                        "tertiary-fixed": "#5c3be7",
+                        "primary-fixed-dim": "#454747",
+                        "on-primary-fixed-variant": "#e2e2e2",
+                        "on-primary-fixed": "#ffffff",
+                        "outline-variant": "#474747",
+                        "on-primary-container": "#000000",
+                        "outline": "#919191",
+                        "error-container": "#93000a",
+                        "surface-dim": "#131313",
+                        "surface-container": "#201f1f",
+                        "on-secondary-container": "#d2e4ff",
+                        "secondary-fixed-dim": "#65afff",
+                        "on-tertiary-fixed": "#ffffff",
+                        "secondary": "#9fcaff",
+                        "on-tertiary-fixed-variant": "#e5deff",
+                        "tertiary-container": "#917eff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        '0.5': '0.125rem',
+                        '1': '0.25rem',
+                        '1.5': '0.375rem',
+                        '2': '0.5rem',
+                        '3': '0.75rem',
+                        '4': '1rem',
+                        '5': '1.25rem',
+                        '6': '1.5rem',
+                        '8': '2rem',
+                    },
+                    "fontFamily": {
+                        "headline": ["Geist", "sans-serif"],
+                        "display": ["Geist", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    },
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #090909; color: #e5e2e1; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20; }
+        .filled-icon { font-variation-settings: 'FILL' 1, 'wght' 300; }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #353534; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #474747; }
+    </style>
+</head>
+<body class="font-body text-sm antialiased flex h-screen overflow-hidden bg-background">
+<!-- Shared Component: SideNavBar -->
+<nav class="fixed left-0 top-0 h-full flex flex-col py-4 z-40 border-r border-outline-variant bg-surface-container-low dark:bg-surface-container-low w-20">
+<div class="flex flex-col items-center gap-6 mb-8 flex-shrink-0 px-2">
+<!-- Brand Logo (Hidden per JSON, but leaving structure if needed) -->
+<div aria-label="Ref Studio" class="hidden text-lg font-headline font-black tracking-tighter text-primary">
+                RS
+            </div>
+<img alt="mina@ref.studio" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A highly detailed, professional headshot photo of an operations admin named Mina, wearing a minimalist black turtleneck against a dark studio background, high contrast, cinematic lighting, realistic textures." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbDu61leBJLYkatwTfiOIKD_10eOOB5fqW3kf8r5m5HMQuGWHGCB-PlO4FivThkS-c0L-Xma1-24jeamZf1gY1aPQ6BHOJEbC7rZgWCh2mWDCzmkjAE3QM7HDYR-lUNdbHtWG2Ld7RCUNz5NhoWT8Ea4yBbjc-E4CXfGJ8l1bWDg7LdmpxJDBjdpLGOcLqJPDIDCUXthODO4tlLX54cNawwlBv-ZkRUZN4DRcE5w-vFBeeCIWIPFw_y-kpPs-tqd31INJ3Twr6h_o5"/>
+</div>
+<ul class="flex flex-col w-full flex-grow font-label text-xs uppercase tracking-widest gap-2 px-2">
+<!-- Active Tab -->
+<li>
+<a aria-current="page" class="flex flex-col items-center justify-center p-3 rounded-lg text-primary border-r-2 border-primary bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined filled-icon text-[24px] mb-1">dns</span>
+<span class="truncate w-full text-center scale-90">테넌트</span>
+</a>
+</li>
+<!-- Inactive Tabs -->
+<li>
+<a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">queue_play_next</span>
+<span class="truncate w-full text-center scale-90">작업 큐</span>
+</a>
+</li>
+<li>
+<a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">security</span>
+<span class="truncate w-full text-center scale-90">검역</span>
+</a>
+</li>
+<li>
+<a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">history_edu</span>
+<span class="truncate w-full text-center scale-90">감사 로그</span>
+</a>
+</li>
+</ul>
+<ul class="flex flex-col w-full flex-shrink-0 mt-auto font-label text-xs uppercase tracking-widest gap-2 px-2">
+<li>
+<a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">settings</span>
+<span class="truncate w-full text-center scale-90">설정</span>
+</a>
+</li>
+<li>
+<a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px] mb-1">help</span>
+<span class="truncate w-full text-center scale-90">도움말</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Workspace -->
+<div class="flex-1 ml-20 flex flex-col h-full bg-[#090909] text-on-surface relative">
+<!-- Shared Component: TopNavBar -->
+<header class="flex justify-between items-center w-full px-6 h-12 border-b border-outline-variant bg-surface dark:bg-surface flex-shrink-0">
+<div class="flex items-center gap-4">
+<span class="text-lg font-headline font-black tracking-tighter text-primary">Ref Studio</span>
+<span class="w-[1px] h-4 bg-outline-variant"></span>
+<span class="text-sm font-medium text-primary">관리</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-label uppercase tracking-widest border border-outline-variant">운영</span>
+</div>
+<div class="flex items-center gap-4 font-body text-sm tracking-tight">
+<div class="flex items-center gap-2">
+<span class="text-xs text-on-surface-variant">EN</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">expand_more</span>
+</div>
+<div class="relative w-48 h-7">
+<span class="material-symbols-outlined absolute left-2 top-1.5 text-[16px] text-on-surface-variant">search</span>
+<input class="w-full h-full bg-surface-container-low border border-outline-variant rounded-md pl-8 pr-2 text-xs text-primary placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-[#0099ff]/30 focus:border-transparent transition-all" placeholder="조직 검색" type="text"/>
+</div>
+<div class="flex items-center gap-2 pl-4 border-l border-outline-variant">
+<span class="text-xs text-on-surface-variant">운영</span>
+<img alt="mina@ref.studio" class="w-6 h-6 rounded-full object-cover" data-alt="A small circular avatar showing a highly detailed profile photo of an operations admin named Mina, wearing a black top against a dark neutral background, crisp lighting, high resolution." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDfaz2zm7FGqcDmaKYrNrngnFNMzh_8QaWvcEDOrR-PZgqKB359OIdMwGwoCLuUX6f5HC7mL6lRCGG7voaNKFTjNtYkzbK-SJcY8VCHectntz4KkH9o1F6xu8B_bW_GSUFT2FPvr5GmoSJ3sephYZl7U9DvzWjjzPLF8hckUusMQvRSKMZGOHDh0W4TSl0Le6vvSQmniTx6MMUuS1-7sca4Ae9oTRf37NufFyNcYoFOfmFUAseL42O-i_-jgvJwsVy0DK2UEnWHmL8v"/>
+</div>
+</div>
+</header>
+<!-- Canvas Area -->
+<main class="flex-1 overflow-hidden flex flex-col md:flex-row p-4 gap-4">
+<!-- List/Table Section -->
+<div class="flex-1 flex flex-col bg-[#141414] rounded-xl border border-outline-variant overflow-hidden shadow-sm h-full">
+<!-- Toolbar -->
+<div class="flex items-center justify-between p-4 border-b border-outline-variant bg-[#1c1c1c]/50">
+<div class="flex bg-surface-container-low p-0.5 rounded-md border border-outline-variant">
+<button class="px-3 py-1.5 text-xs font-medium bg-[#2a2a2a] text-primary rounded shadow-sm transition-colors">정상</button>
+<button class="px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:text-primary transition-colors">할당량 초과</button>
+<button class="px-3 py-1.5 text-xs font-medium text-on-surface-variant hover:text-primary transition-colors">정지</button>
+</div>
+<button class="flex items-center justify-center w-8 h-8 rounded hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-primary">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+</button>
+</div>
+<!-- Table Header -->
+<div class="grid grid-cols-12 gap-4 px-6 py-3 border-b border-outline-variant bg-[#141414] text-xs font-label text-on-surface-variant tracking-wider uppercase sticky top-0 z-10">
+<div class="col-span-4">Organization</div>
+<div class="col-span-2">Members</div>
+<div class="col-span-4">Usage (Analysis / Quota)</div>
+<div class="col-span-2 text-right">Status</div>
+</div>
+<!-- Table Body -->
+<div class="flex-1 overflow-y-auto">
+<!-- Row 1: Active/Selected -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant bg-[#1c1c1c] hover:bg-[#201f1f] cursor-pointer transition-colors items-center relative group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary-fixed"></div>
+<div class="col-span-4 flex flex-col gap-1">
+<span class="text-sm font-medium text-primary">Northwind Studio</span>
+<span class="text-xs text-on-surface-variant font-mono">org_northwind</span>
+</div>
+<div class="col-span-2 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">group</span>
+<span class="text-sm text-primary">6</span>
+</div>
+<div class="col-span-4 flex flex-col gap-1">
+<div class="flex justify-between text-xs mb-0.5">
+<span class="text-primary">41분 <span class="text-on-surface-variant">/ 120분</span></span>
+<span class="text-on-surface-variant">렌더 18분</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-secondary-fixed rounded-full" style="width: 34%"></div>
+</div>
+</div>
+<div class="col-span-2 flex justify-end">
+<span class="flex items-center gap-1.5 text-xs text-primary bg-[#2a2a2a] px-2 py-1 rounded-md border border-outline-variant">
+<div class="w-1.5 h-1.5 rounded-full bg-secondary-fixed"></div>
+                                정상
+                            </span>
+</div>
+</div>
+<!-- Row 2: Warning -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group">
+<div class="col-span-4 flex flex-col gap-1">
+<span class="text-sm font-medium text-primary">Hanbit Motion</span>
+<span class="text-xs text-on-surface-variant font-mono">org_hanbit</span>
+</div>
+<div class="col-span-2 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">group</span>
+<span class="text-sm text-primary">2</span>
+</div>
+<div class="col-span-4 flex flex-col gap-1">
+<div class="flex justify-between text-xs mb-0.5">
+<span class="text-error">120분 <span class="text-on-surface-variant">/ 120분</span></span>
+<span class="text-on-surface-variant">렌더 9분</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-error rounded-full" style="width: 100%"></div>
+</div>
+</div>
+<div class="col-span-2 flex justify-end">
+<span class="flex items-center gap-1.5 text-xs text-error bg-error-container/20 px-2 py-1 rounded-md border border-error/30">
+<span class="material-symbols-outlined text-[12px]">warning</span>
+                                할당량 초과
+                            </span>
+</div>
+</div>
+<!-- Row 3: Normal -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group">
+<div class="col-span-4 flex flex-col gap-1">
+<span class="text-sm font-medium text-primary">Solo · lee</span>
+<span class="text-xs text-on-surface-variant font-mono">org_sololee</span>
+</div>
+<div class="col-span-2 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">person</span>
+<span class="text-sm text-primary">1</span>
+</div>
+<div class="col-span-4 flex flex-col gap-1">
+<div class="flex justify-between text-xs mb-0.5">
+<span class="text-primary">7분 <span class="text-on-surface-variant">/ 30분</span></span>
+<span class="text-on-surface-variant">렌더 2분</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 23%"></div>
+</div>
+</div>
+<div class="col-span-2 flex justify-end">
+<span class="flex items-center gap-1.5 text-xs text-primary bg-[#2a2a2a] px-2 py-1 rounded-md border border-outline-variant">
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
+                                정상
+                            </span>
+</div>
+</div>
+<!-- Row 4: Disabled -->
+<div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group opacity-50 grayscale">
+<div class="col-span-4 flex flex-col gap-1">
+<span class="text-sm font-medium text-on-surface-variant line-through decoration-outline-variant">Closed shop</span>
+<span class="text-xs text-outline font-mono">org_closed</span>
+</div>
+<div class="col-span-2 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-outline">group_off</span>
+<span class="text-sm text-on-surface-variant">0</span>
+</div>
+<div class="col-span-4 flex flex-col gap-1">
+<div class="flex justify-between text-xs mb-0.5">
+<span class="text-outline">0분 <span class="text-outline">/ 0분</span></span>
+<span class="text-outline">렌더 0분</span>
+</div>
+<div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden"></div>
+</div>
+<div class="col-span-2 flex justify-end">
+<span class="flex items-center gap-1.5 text-xs text-on-surface-variant bg-surface-container-lowest px-2 py-1 rounded-md border border-outline-variant">
+<span class="material-symbols-outlined text-[12px]">block</span>
+                                정지
+                            </span>
+</div>
+</div>
+</div>
+</div>
+<!-- Detail Panel (Inspector) -->
+<div class="w-80 flex-shrink-0 flex flex-col bg-[#141414] rounded-xl border border-outline-variant overflow-hidden shadow-sm h-full">
+<div class="p-6 border-b border-outline-variant bg-[#1c1c1c]/50 flex flex-col gap-2">
+<div class="flex items-start justify-between">
+<div class="flex items-center justify-center w-12 h-12 bg-[#2a2a2a] rounded-lg border border-outline-variant mb-2">
+<span class="material-symbols-outlined text-[24px] text-primary">domain</span>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+<h2 class="text-xl font-headline font-semibold tracking-tight text-primary">Northwind Studio</h2>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-xs font-mono text-on-surface-variant bg-[#2a2a2a] px-1.5 py-0.5 rounded">org_northwind</span>
+<span class="text-xs text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">calendar_today</span>
+                            2026-08-12
+                        </span>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-8">
+<!-- Roles -->
+<div class="flex flex-col gap-3">
+<h3 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Role Breakdown</h3>
+<div class="bg-[#1c1c1c] rounded-lg border border-outline-variant p-3 flex flex-col gap-2">
+<div class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">admin_panel_settings</span>
+                                    운영자
+                                </span>
+<span class="text-sm font-medium text-primary">1</span>
+</div>
+<div class="w-full h-[1px] bg-outline-variant/50"></div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+                                    검수 리드
+                                </span>
+<span class="text-sm font-medium text-primary">1</span>
+</div>
+<div class="w-full h-[1px] bg-outline-variant/50"></div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">video_camera_front</span>
+                                    제작
+                                </span>
+<span class="text-sm font-medium text-primary">4</span>
+</div>
+</div>
+</div>
+<!-- Notes -->
+<div class="flex flex-col gap-3">
+<h3 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Policy Notes</h3>
+<div class="bg-surface-container-low rounded-lg p-3 border border-outline-variant border-dashed">
+<p class="text-xs text-on-surface-variant leading-relaxed">
+                                재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.
+                            </p>
+</div>
+</div>
+</div>
+<!-- Footer Actions -->
+<div class="p-4 border-t border-outline-variant bg-[#141414] flex flex-col gap-2">
+<button class="w-full py-2.5 bg-primary text-on-primary rounded-full text-sm font-semibold active:scale-95 transition-transform">
+                        멤버 보기
+                    </button>
+<button class="w-full py-2.5 bg-[#141414] border border-outline-variant text-primary rounded-full text-sm font-semibold hover:bg-surface-container-high active:scale-95 transition-all">
+                        정지
+                    </button>
+</div>
+</div>
+</main>
+</div>
+</body></html>

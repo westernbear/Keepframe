@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ref Studio Admin - Job Queue</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Geist:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary": "#e5deff",
+                        "on-tertiary-fixed": "#ffffff",
+                        "on-secondary": "#001d36",
+                        "inverse-surface": "#e5e2e1",
+                        "secondary-fixed": "#9fcaff",
+                        "on-primary": "#1a1c1c",
+                        "inverse-on-surface": "#313030",
+                        "inverse-primary": "#5d5f5f",
+                        "outline-variant": "#474747",
+                        "surface-bright": "#3a3939",
+                        "surface-container": "#201f1f",
+                        "on-error-container": "#ffdad6",
+                        "surface-dim": "#131313",
+                        "primary-container": "#d4d4d4",
+                        "on-background": "#e5e2e1",
+                        "tertiary-fixed": "#5c3be7",
+                        "surface-container-high": "#2a2a2a",
+                        "outline": "#919191",
+                        "on-primary-container": "#000000",
+                        "primary-fixed-dim": "#454747",
+                        "tertiary-container": "#917eff",
+                        "on-tertiary": "#1a0063",
+                        "on-primary-fixed-variant": "#e2e2e2",
+                        "secondary-container": "#00497e",
+                        "on-secondary-fixed-variant": "#003d6b",
+                        "on-surface": "#e5e2e1",
+                        "on-secondary-fixed": "#001d36",
+                        "surface-variant": "#353534",
+                        "background": "#131313",
+                        "on-secondary-container": "#d2e4ff",
+                        "error-container": "#93000a",
+                        "surface-container-highest": "#353534",
+                        "on-tertiary-fixed-variant": "#e5deff",
+                        "surface": "#131313",
+                        "primary-fixed": "#5d5f5f",
+                        "on-surface-variant": "#c6c6c6",
+                        "secondary-fixed-dim": "#65afff",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-tertiary-container": "#000000",
+                        "primary": "#ffffff",
+                        "on-primary-fixed": "#ffffff",
+                        "secondary": "#9fcaff",
+                        "on-error": "#690005",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed-dim": "#4413d0",
+                        "surface-tint": "#c6c6c7",
+                        "surface-container-low": "#1c1b1b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {},
+                    "fontFamily": {
+                        "headline": ["Geist", "sans-serif"],
+                        "display": ["Geist", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {}
+                },
+            },
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.outline-variant'); border-radius: theme('borderRadius.full'); }
+        ::-webkit-scrollbar-thumb:hover { background: theme('colors.outline'); }
+        
+        .table-row-hover:hover { background-color: theme('colors.surface-container-high'); }
+        .table-row-selected { background-color: theme('colors.surface-container-highest'); }
+    </style>
+</head>
+<body class="font-body text-sm antialiased flex h-screen overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- Side Navigation Shell -->
+<nav class="bg-surface-container-low dark:bg-surface-container-low border-r border-outline-variant flex flex-col h-screen py-4 gap-2 docked left-0 w-64 hidden md:flex shrink-0 z-40">
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary font-headline font-black text-xs">
+                R
+            </div>
+<div>
+<h1 class="font-headline font-black text-on-surface tracking-tight leading-none text-lg">REF ADMIN</h1>
+<p class="font-body text-xs text-on-surface-variant tracking-widest uppercase mt-1">V 2.4.0</p>
+</div>
+</div>
+<div class="flex flex-col gap-1 px-3 flex-1">
+<!-- 테넌트 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="domain">domain</span>
+                테넌트
+            </a>
+<!-- 작업 큐 (Selected) -->
+<a class="flex items-center gap-3 px-3 py-2 rounded text-primary border-r-2 border-primary bg-surface-container-high transition-all font-body text-xs uppercase tracking-widest Active: bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="queue" data-weight="fill" style="font-variation-settings: 'FILL' 1;">queue</span>
+                작업 큐
+            </a>
+<!-- 검역 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="security">security</span>
+                검역
+            </a>
+<!-- 감사 로그 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="history">history</span>
+                감사 로그
+            </a>
+</div>
+<div class="flex flex-col gap-1 px-3 mt-auto">
+<a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
+                설정
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="help">help</span>
+                도움말
+            </a>
+</div>
+</nav>
+<!-- Main Workspace -->
+<div class="flex flex-col flex-1 h-screen overflow-hidden bg-background">
+<!-- TopAppBar Shell -->
+<header class="bg-surface-container dark:bg-surface-container border-b border-outline-variant flex justify-between items-center h-12 px-4 w-full z-50 shrink-0">
+<div class="flex items-center gap-4">
+<span class="font-headline font-bold text-primary dark:text-primary tracking-tighter text-sm">Ref Studio · 관리 · 작업 큐</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-headline text-sm tracking-tight text-on-surface-variant">mina@ref.studio</span>
+<span class="font-headline text-sm tracking-tight text-on-surface-variant border border-outline-variant px-2 py-0.5 rounded text-[10px] font-bold">EN</span>
+<button class="text-on-surface-variant hover:text-primary hover:bg-surface-bright transition-colors rounded-full p-1 Active: scale-[0.98] transition-transform flex items-center justify-center">
+<span class="material-symbols-outlined text-lg" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area with Drawer Layout -->
+<main class="flex flex-1 overflow-hidden relative">
+<!-- Job Queue Canvas -->
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 w-full max-w-7xl mx-auto">
+<!-- Metrics Header -->
+<div class="flex items-center justify-between border-b border-outline-variant pb-4">
+<h2 class="font-headline font-bold text-xl tracking-tight">Operation Desk</h2>
+<div class="flex gap-4 items-center">
+<div class="flex gap-3 text-sm font-label items-center bg-surface-container px-4 py-2 rounded-lg border border-outline-variant">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-on-surface-variant">대기</span>
+<span class="font-bold text-on-surface">7</span>
+</div>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary-fixed"></span>
+<span class="text-on-surface-variant">실행</span>
+<span class="font-bold text-on-surface">2</span>
+</div>
+<span class="text-outline-variant">|</span>
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-on-surface-variant">실패</span>
+<span class="font-bold text-on-surface">1</span>
+</div>
+</div>
+<div class="flex gap-2 text-sm font-label items-center bg-surface-container px-4 py-2 rounded-lg border border-outline-variant">
+<span class="material-symbols-outlined text-sm text-on-surface-variant">memory</span>
+<span class="text-on-surface-variant">GPU 점유</span>
+<span class="font-bold text-on-surface font-headline tracking-tighter">1/2</span>
+</div>
+</div>
+</div>
+<!-- Data Table -->
+<div class="bg-surface-container border border-outline-variant rounded-xl overflow-hidden flex-1 flex flex-col">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-container-low text-xs text-on-surface-variant font-label uppercase tracking-wider">
+<th class="py-3 px-4 font-medium">Job ID</th>
+<th class="py-3 px-4 font-medium">Tenant</th>
+<th class="py-3 px-4 font-medium">Task</th>
+<th class="py-3 px-4 font-medium">Target</th>
+<th class="py-3 px-4 font-medium">Status</th>
+<th class="py-3 px-4 font-medium">Resource</th>
+<th class="py-3 px-4 font-medium">Duration</th>
+<th class="py-3 px-4 font-medium">Retries</th>
+</tr>
+</thead>
+<tbody class="font-body text-sm">
+<!-- Row 1 -->
+<tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group">
+<td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1842</td>
+<td class="py-3 px-4 text-on-surface">Northwind</td>
+<td class="py-3 px-4 text-on-surface-variant font-mono text-xs">analyze</td>
+<td class="py-3 px-4 text-on-surface">Autumn drop s1</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-primary-fixed/20 text-on-surface border border-primary-fixed/30">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-fixed"></span> 실행
+                                        </span>
+</td>
+<td class="py-3 px-4 text-on-surface-variant font-mono text-xs">GPU 0</td>
+<td class="py-3 px-4 text-on-surface-variant">3분</td>
+<td class="py-3 px-4 text-on-surface-variant">0/4</td>
+</tr>
+<!-- Row 2 -->
+<tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group">
+<td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1841</td>
+<td class="py-3 px-4 text-on-surface">Northwind</td>
+<td class="py-3 px-4 text-on-surface-variant font-mono text-xs">render</td>
+<td class="py-3 px-4 text-on-surface">Autumn drop v4</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium text-secondary">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> 대기
+                                        </span>
+</td>
+<td class="py-3 px-4 text-outline-variant">—</td>
+<td class="py-3 px-4 text-outline-variant">—</td>
+<td class="py-3 px-4 text-on-surface-variant">0/4</td>
+</tr>
+<!-- Row 3 (Selected) -->
+<tr class="border-b border-outline-variant table-row-selected cursor-pointer relative">
+<td class="absolute left-0 top-0 bottom-0 w-1 bg-error"></td>
+<td class="py-3 px-4 font-headline text-primary">job_1838</td>
+<td class="py-3 px-4 text-on-surface">Hanbit</td>
+<td class="py-3 px-4 text-on-surface-variant font-mono text-xs">correct/mask</td>
+<td class="py-3 px-4 text-on-surface">Paywall s1</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-error/10 text-error border border-error/20">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span> 실패
+                                        </span>
+</td>
+<td class="py-3 px-4 text-outline-variant">—</td>
+<td class="py-3 px-4 text-outline-variant">—</td>
+<td class="py-3 px-4 text-error text-xs font-medium flex items-center gap-1">
+                                        4/4 <span class="text-on-surface-variant font-normal">한도 소진</span>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group opacity-60">
+<td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1837</td>
+<td class="py-3 px-4 text-on-surface">Solo</td>
+<td class="py-3 px-4 text-on-surface-variant font-mono text-xs">analyze</td>
+<td class="py-3 px-4 text-on-surface">거부됨 실사</td>
+<td class="py-3 px-4" colspan="4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium text-tertiary border border-tertiary/30 bg-tertiary/10">
+<span class="material-symbols-outlined text-[14px]">shield</span> 검역으로 이동
+                                        </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Context Drawer (job_1838 Selected) -->
+<aside class="w-80 bg-surface-container border-l border-outline-variant flex flex-col h-full shrink-0 shadow-[-8px_0_24px_rgba(0,0,0,0.5)] z-20">
+<div class="p-6 border-b border-outline-variant flex justify-between items-start">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="font-mono text-xs text-on-surface-variant">job_1838</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-error/10 text-error text-[10px] font-bold uppercase tracking-wider">Failed</span>
+</div>
+<h3 class="font-headline font-bold text-lg text-on-surface">Paywall s1</h3>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-1">
+<span class="material-symbols-outlined text-sm" data-icon="close">close</span>
+</button>
+</div>
+<div class="p-6 flex-1 overflow-y-auto flex flex-col gap-6">
+<!-- Failure Reason Block -->
+<div class="flex flex-col gap-2">
+<h4 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Failure Reason</h4>
+<div class="bg-surface-dim border border-outline-variant rounded-lg p-3 font-mono text-xs text-error overflow-x-auto">
+                            Verifier keep 실패: dir(m_e3,[1,0]) frame 67
+                        </div>
+</div>
+<!-- Metrics Grid -->
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-1 border border-outline-variant rounded-lg p-3 bg-surface-dim">
+<span class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">Retries</span>
+<span class="font-headline font-bold text-xl text-error">0</span>
+</div>
+<div class="flex flex-col gap-1 border border-outline-variant rounded-lg p-3 bg-surface-dim">
+<span class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">Priority</span>
+<span class="font-headline font-bold text-xl text-on-surface">P2</span>
+</div>
+</div>
+<!-- Note Block -->
+<div class="flex flex-col gap-2 border-l-2 border-outline-variant pl-3">
+<h4 class="text-xs font-label uppercase tracking-widest text-on-surface-variant flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm">speaker_notes</span> Note
+                        </h4>
+<p class="text-sm text-on-surface italic">"한도는 코드로 고정."</p>
+</div>
+</div>
+<div class="p-4 border-t border-outline-variant bg-surface-container-low flex justify-end gap-3 mt-auto">
+<button class="px-4 py-2 rounded-full bg-[#141414] text-white text-sm font-medium hover:scale-[0.98] transition-transform border border-outline-variant">
+                        로그 보기
+                    </button>
+</div>
+</aside>
+</main>
+</div>
+</body></html>

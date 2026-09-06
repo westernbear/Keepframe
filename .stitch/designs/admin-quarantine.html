@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Ref Studio Admin Quarantine Desk</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Geist:wght@400;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface-variant": "#c6c6c6",
+                        "secondary": "#9fcaff",
+                        "inverse-surface": "#e5e2e1",
+                        "primary": "#ffffff",
+                        "on-tertiary-fixed": "#ffffff",
+                        "secondary-fixed-dim": "#65afff",
+                        "primary-container": "#d4d4d4",
+                        "tertiary-container": "#917eff",
+                        "inverse-on-surface": "#313030",
+                        "surface-container": "#201f1f",
+                        "error": "#ffb4ab",
+                        "primary-fixed": "#5d5f5f",
+                        "on-tertiary": "#1a0063",
+                        "on-surface": "#e5e2e1",
+                        "surface-dim": "#131313",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-high": "#2a2a2a",
+                        "error-container": "#93000a",
+                        "surface-variant": "#353534",
+                        "primary-fixed-dim": "#454747",
+                        "on-secondary-fixed": "#001d36",
+                        "on-tertiary-container": "#000000",
+                        "inverse-primary": "#5d5f5f",
+                        "outline": "#919191",
+                        "tertiary-fixed-dim": "#4413d0",
+                        "surface": "#131313",
+                        "surface-container-highest": "#353534",
+                        "on-primary-container": "#000000",
+                        "secondary-container": "#00497e",
+                        "on-secondary-fixed-variant": "#003d6b",
+                        "surface-container-lowest": "#0e0e0e",
+                        "tertiary-fixed": "#5c3be7",
+                        "outline-variant": "#474747",
+                        "surface-bright": "#3a3939",
+                        "on-secondary": "#001d36",
+                        "secondary-fixed": "#9fcaff",
+                        "surface-container-low": "#1c1b1b",
+                        "surface-tint": "#c6c6c7",
+                        "on-error": "#690005",
+                        "tertiary": "#e5deff",
+                        "on-secondary-container": "#d2e4ff",
+                        "on-primary-fixed": "#ffffff",
+                        "on-primary": "#1a1c1c",
+                        "background": "#131313",
+                        "on-primary-fixed-variant": "#e2e2e2",
+                        "on-tertiary-fixed-variant": "#e5deff",
+                        "on-background": "#e5e2e1"
+                    },
+                    borderRadius: {
+                        DEFAULT: "1rem",
+                        lg: "2rem",
+                        xl: "3rem",
+                        full: "9999px"
+                    },
+                    fontFamily: {
+                        headline: ["Geist", "sans-serif"],
+                        display: ["Geist", "sans-serif"],
+                        body: ["Inter", "sans-serif"],
+                        label: ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        };
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Geist', sans-serif; }
+        
+        /* Subtle custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #353534; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #474747; }
+    </style>
+</head>
+<body class="bg-background text-on-background h-screen w-screen overflow-hidden flex flex-col antialiased">
+<!-- TopNavBar -->
+<header class="bg-surface-container dark:bg-surface-container font-headline text-sm tracking-tight flex justify-between items-center h-12 px-4 w-full z-50 border-b border-outline-variant shrink-0">
+<div class="flex items-center gap-4">
+<h1 class="font-headline font-bold text-primary dark:text-primary tracking-tighter">Ref Studio · 관리 · 작업 큐</h1>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-[10px] font-medium tracking-wide text-on-surface-variant border border-outline-variant uppercase">운영</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-on-surface-variant font-medium text-xs">EN</span>
+<div class="flex items-center gap-2 hover:bg-surface-bright transition-colors rounded p-1 cursor-pointer">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+<span class="text-xs text-on-surface-variant">mina@ref.studio</span>
+</div>
+</div>
+</header>
+<!-- Main Workspace Area -->
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low dark:bg-surface-container-low flex flex-col h-full w-64 py-4 gap-2 border-r border-outline-variant shrink-0">
+<div class="px-4 mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-sm">settings_b_roll</span>
+</div>
+<div>
+<div class="font-headline font-black text-on-surface text-sm tracking-widest uppercase">REF ADMIN</div>
+<div class="font-body text-[10px] text-on-surface-variant opacity-70 tracking-widest uppercase">V 2.4.0</div>
+</div>
+</div>
+</div>
+<div class="flex-1 px-2 flex flex-col gap-1">
+<!-- Inactive Tab 1 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined text-lg">domain</span>
+                    테넌트
+                </a>
+<!-- Inactive Tab 2 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined text-lg">queue</span>
+                    작업 큐
+                </a>
+<!-- Active Tab -->
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-primary border-r-2 border-primary bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">security</span>
+                    검역
+                </a>
+<!-- Inactive Tab 3 -->
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined text-lg">history</span>
+                    감사 로그
+                </a>
+</div>
+<div class="px-2 mt-auto flex flex-col gap-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined text-lg">settings</span>
+                    설정
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded font-body text-xs uppercase tracking-widest text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all" href="#">
+<span class="material-symbols-outlined text-lg">help</span>
+                    도움말
+                </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex overflow-hidden bg-background">
+<!-- Left Pane: Quarantine Queue List -->
+<div class="flex-1 flex flex-col min-w-[500px] border-r border-outline-variant">
+<div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between shrink-0 bg-surface">
+<h2 class="font-headline font-bold text-primary tracking-tight text-lg">검역 대기 목록</h2>
+<div class="text-xs text-on-surface-variant font-medium bg-surface-container px-2 py-1 rounded border border-outline-variant">3 항목</div>
+</div>
+<div class="flex-1 overflow-auto p-4">
+<div class="bg-surface-container rounded-lg border border-outline-variant overflow-hidden">
+<!-- Table Header -->
+<div class="grid grid-cols-[3fr_2fr_2fr_4fr] gap-4 p-3 border-b border-outline-variant bg-surface-container-low text-xs font-semibold text-on-surface-variant tracking-wider">
+<div>파일명</div>
+<div>테넌트</div>
+<div>거부 일시</div>
+<div>거부 사유</div>
+</div>
+<!-- Row 1 -->
+<div class="grid grid-cols-[3fr_2fr_2fr_4fr] gap-4 p-3 border-b border-outline-variant hover:bg-surface-container-highest cursor-pointer text-sm items-center transition-colors">
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">movie</span>
+<span class="font-medium text-on-surface truncate">clip_street.mp4</span>
+</div>
+<div class="text-on-surface-variant truncate">Solo</div>
+<div class="text-on-surface-variant text-xs font-mono">2026-09-06 09:12</div>
+<div class="text-on-surface-variant truncate text-xs">실사 푸티지. 평면 2D MG·UI 녹화만 받음.</div>
+</div>
+<!-- Row 2 (Selected) -->
+<div class="grid grid-cols-[3fr_2fr_2fr_4fr] gap-4 p-3 border-b border-outline-variant bg-surface-container-high cursor-pointer text-sm items-center relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-primary text-[18px]">movie</span>
+<span class="font-bold text-primary truncate">meeting_zoom.mp4</span>
+</div>
+<div class="text-on-surface truncate">Northwind</div>
+<div class="text-on-surface text-xs font-mono">2026-09-05 18:40</div>
+<div class="text-on-surface truncate text-xs">캠우드 배경의 실사 얼굴.</div>
+</div>
+<!-- Row 3 -->
+<div class="grid grid-cols-[3fr_2fr_2fr_4fr] gap-4 p-3 hover:bg-surface-container-highest cursor-pointer text-sm items-center transition-colors">
+<div class="flex items-center gap-2 truncate">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">movie</span>
+<span class="font-medium text-on-surface truncate">product_unbox.mov</span>
+</div>
+<div class="text-on-surface-variant truncate">Hanbit</div>
+<div class="text-on-surface-variant text-xs font-mono">2026-09-04 11:02</div>
+<div class="text-on-surface-variant truncate text-xs">카메라 연출 실사.</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Pane: Detail Panel -->
+<div class="w-[400px] shrink-0 bg-surface flex flex-col">
+<div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between bg-surface-container-low shrink-0">
+<h3 class="font-headline font-bold text-primary tracking-tight">거부 상세 정보</h3>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-sm">close</span>
+</div>
+<div class="flex-1 p-6 flex flex-col gap-8 overflow-y-auto">
+<!-- Metadata Section -->
+<div class="space-y-4">
+<div>
+<div class="text-xs font-semibold text-outline tracking-wider uppercase mb-1">대상 파일</div>
+<div class="font-mono text-sm text-primary break-all bg-surface-container p-2 rounded border border-outline-variant">meeting_zoom.mp4</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="text-xs font-semibold text-outline tracking-wider uppercase mb-1">테넌트</div>
+<div class="text-sm text-on-surface">Northwind</div>
+</div>
+<div>
+<div class="text-xs font-semibold text-outline tracking-wider uppercase mb-1">탐지 시간</div>
+<div class="text-sm font-mono text-on-surface">2026-09-05 18:40</div>
+</div>
+</div>
+</div>
+<!-- Divider -->
+<hr class="border-t border-outline-variant"/>
+<!-- Reason Section -->
+<div class="space-y-3">
+<div class="flex items-center gap-2 text-error">
+<span class="material-symbols-outlined text-[18px]">warning</span>
+<div class="text-xs font-bold tracking-wider uppercase">위반 내역</div>
+</div>
+<div class="bg-[#1a0f0f] border border-[#3d1c1c] rounded-lg p-4">
+<p class="text-error font-medium text-sm leading-relaxed">
+                                캠우드 배경의 실사 얼굴.
+                            </p>
+</div>
+</div>
+<!-- Policy Note -->
+<div class="bg-surface-container-high rounded-lg p-4 border border-outline-variant flex gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mt-0.5">policy</span>
+<p class="text-xs text-on-surface-variant leading-relaxed">
+                            관리자가 실사 경로를 켜서 우회할 수 없음.
+                        </p>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="p-6 border-t border-outline-variant bg-surface-container-low shrink-0 flex justify-end">
+<!-- Secondary CTA: Charcoal pill with white label -->
+<button class="bg-[#141414] hover:scale-95 transition-transform active:scale-90 text-primary px-6 py-2 rounded-full font-medium text-sm border border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">receipt_long</span>
+                        로그만 보기
+                    </button>
+</div>
+</div>
+</main>
+</div>
+</body></html>

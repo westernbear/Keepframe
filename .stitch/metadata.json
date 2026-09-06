@@ -1,0 +1,57 @@
+{
+  "projectId": "17345649857730883248",
+  "projectName": "projects/17345649857730883248",
+  "designSystem": "assets/18239713153808064386",
+  "updated": "2026-09-06",
+  "screens": {
+    "review": {
+      "id": "556dc3f6b444458981baa3811e204f8e",
+      "title": "검수 데스크",
+      "files": ["designs/review.html", "designs/review.png"]
+    },
+    "ingest": {
+      "id": "3ae824649a4449dd9d0ac66cbbd5b3ba",
+      "title": "새 프로젝트",
+      "files": ["designs/ingest.html", "designs/ingest.png"]
+    },
+    "library": {
+      "id": "fb162a5f5a5d408bacf5c7508bfda4c1",
+      "title": "프로젝트 라이브러리",
+      "files": ["designs/library.html", "designs/library.png"]
+    },
+    "analyze": {
+      "id": "45648a9fadb544d69ba92c9b7307a157",
+      "title": "분석 진행 중"
+    },
+    "admin-login": {
+      "id": "543dd89e913a4b398caf4c7b49366091",
+      "title": "관리자 로그인",
+      "files": ["designs/admin-login.html", "designs/admin-login.png"],
+      "spec": "§13"
+    },
+    "admin-tenants": {
+      "id": "d1a85e6b8da045238139faa18904c732",
+      "title": "테넌트 목록",
+      "files": ["designs/admin-tenants.html", "designs/admin-tenants.png"],
+      "spec": "§13"
+    },
+    "admin-queue": {
+      "id": "6a7c3a9ce4944cad87180e5c90a46e2c",
+      "title": "작업 큐",
+      "files": ["designs/admin-queue.html", "designs/admin-queue.png"],
+      "spec": "§13"
+    },
+    "admin-quarantine": {
+      "id": "99194470bfee46d9826563cb5bf65434",
+      "title": "검역",
+      "files": ["designs/admin-quarantine.html", "designs/admin-quarantine.png"],
+      "spec": "§13"
+    },
+    "admin-audit": {
+      "id": "58edd4f99dfb4d189335b1487aedef6d",
+      "title": "감사 로그",
+      "files": ["designs/admin-audit.html", "designs/admin-audit.png"],
+      "spec": "§13"
+    }
+  }
+}
