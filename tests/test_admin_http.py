@@ -38,3 +38,29 @@ def test_login_and_tenants(tmp_path):
         pol = json.loads(r.read())
     srv.shutdown()
     assert pol["retry_cap"] == 4 and pol["asset_gen_cap"] == 2
+
+
+def test_quarantine_keys_and_no_video(tmp_path):
+    srv = start_admin(tmp_path)
+    code, headers, _ = post(srv, "/admin/api/login", {"email": "mina@ref.studio", "password": "dev-admin"})
+    cookie = headers.get("Set-Cookie").split(";")[0]
+    req = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/quarantine")
+    req.add_header("Cookie", cookie)
+    with urlopen(req) as r:
+        rows = json.loads(r.read())["items"]
+    assert set(rows[0]) <= {"id", "filename", "tenant_id", "rejected_at", "reason"}
+    req2 = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/quarantine/q1/video")
+    req2.add_header("Cookie", cookie)
+    try:
+        urlopen(req2)
+        assert False, "video must 404"
+    except HTTPError as e:
+        assert e.code == 404
+    req3 = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/audit", method="DELETE")
+    req3.add_header("Cookie", cookie)
+    try:
+        urlopen(req3)
+        assert False
+    except HTTPError as e:
+        assert e.code == 404
+    srv.shutdown()
