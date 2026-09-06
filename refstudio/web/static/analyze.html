@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>분석 진행 - Ref Studio</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+</head>
+<body class="app app--fill">
+<header class="header header--static">
+<div style="display:flex;align-items:center;gap:16px">
+<span class="header__brand" data-i18n="app.name">Ref Studio</span>
+<div class="header__divider"></div>
+<span class="header__crumb" data-i18n="nav.analyze">분석</span>
+<span class="header__crumb">launch-card.mp4</span>
+</div>
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</header>
+<div style="display:flex;flex:1;overflow:hidden">
+<aside class="sidebar sidebar--icon">
+<a class="sidebar__icon-link" href="/"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"/></svg></a>
+<a class="sidebar__icon-link sidebar__icon-link--active" href="/analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg></a>
+<a class="sidebar__icon-link" href="/review"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/></svg></a>
+</aside>
+<main class="main main--icon main--no-sidebar" style="margin-top:0;display:flex;padding:24px 32px">
+<div class="analyze-grid" style="width:100%">
+<div class="preview-pane">
+<div class="preview-box">
+<div data-filmstrip>
+<div class="filmstrip__frame"></div>
+<div class="filmstrip__frame filmstrip__frame--active"></div>
+<div class="filmstrip__frame"></div>
+</div>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:var(--fs-body-sm);color:var(--muted)">
+<span>선택된 구간 (4.0s)</span>
+<span class="mono">launch-card.mp4</span>
+</div>
+</div>
+<div class="progress-panel">
+<div class="progress-panel__head">
+<h2 data-i18n="analyze.running">분석 진행 상태</h2>
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+</div>
+<ul class="progress-steps">
+<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span>구간·샷 분할</span></li>
+<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span>배경</span></li>
+<li class="progress-steps li--active" style="background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-sm)"><div class="step-dot"></div><div><strong>텍스트 인식</strong><div style="font-size:var(--fs-micro);color:var(--muted);margin-top:4px">장면당 수 분 허용</div></div></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>영역 추출</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>sprite 최적화</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>키프레임</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>술어 추출</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>리포트</span></li>
+</ul>
+<div class="progress-panel__foot">
+<div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:var(--fs-body-sm);color:var(--muted)">
+<span>예상 남은 시간 2분</span>
+<span class="mono" style="font-size:var(--fs-micro);border:1px solid var(--hairline);padding:2px 8px;border-radius:var(--r-xs)">GPU 사용 중</span>
+</div>
+<button class="btn btn--secondary">취소</button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body>
+</html>

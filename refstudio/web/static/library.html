@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ref Studio - Project Library</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+</head>
+<body class="app">
+<header class="header">
+<div class="header__brand" data-i18n="app.name">Ref Studio</div>
+<div class="header__nav">
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+<a class="btn btn--primary" href="/new">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+<span data-i18n="nav.new">새 레퍼런스</span>
+</a>
+</div>
+</header>
+<nav class="sidebar">
+<a class="sidebar__link sidebar__link--active" href="/">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"/><path d="M3 7l9-4 9 4"/></svg>
+<span data-i18n="nav.library">Library</span>
+</a>
+<a class="sidebar__link" href="/analyze">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
+<span data-i18n="nav.analyze">분석</span>
+</a>
+<a class="sidebar__link" href="/review">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+<span data-i18n="nav.review">검수</span>
+</a>
+</nav>
+<main class="main">
+<div class="toolbar">
+<div class="input-wrap" style="max-width:384px;width:100%">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+<input class="input" type="text" placeholder="프로젝트 검색" data-i18n="library.search"/>
+</div>
+<div class="toolbar__filters">
+<button class="chip">최근</button>
+<button class="chip">검수 필요</button>
+<button class="chip">내보내기 준비</button>
+</div>
+</div>
+<div class="row">
+<div class="row__thumb"></div>
+<div class="row__body">
+<div class="row__title">Autumn drop · card A</div>
+<div class="row__meta"><span>v4</span><span>신뢰도 0.64</span><span>18분 전</span></div>
+<span class="badge badge--active">검수 중</span>
+</div>
+</div>
+<div class="row" style="margin-top:8px">
+<div class="row__thumb"></div>
+<div class="row__body">
+<div class="row__title">Paywall intro 4s</div>
+<div class="row__meta"><span>v2</span><span>0.91</span><span>어제</span></div>
+<span class="badge badge--done">유지 조건 확정</span>
+</div>
+</div>
+<div class="row" style="margin-top:8px">
+<div class="row__thumb"></div>
+<div class="row__body">
+<div class="row__title">Settings UI sweep</div>
+<div class="row__meta"><span>v1</span><span>3일 전</span></div>
+<span class="badge badge--error">미지원 2건 · 실사 거부됨</span>
+</div>
+</div>
+</main>
+<footer class="footer">
+<span data-i18n="error.liveaction">실사 푸티지는 열리지 않습니다.</span>
+</footer>
+</body>
+</html>
