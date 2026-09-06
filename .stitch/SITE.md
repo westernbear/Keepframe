@@ -9,7 +9,7 @@ Project `17345649857730883248`. Design system `assets/18239713153808064386`.
 | 검수 데스크 | `designs/review.html` |
 | 새 프로젝트 | `designs/ingest.html` |
 | 프로젝트 라이브러리 | `designs/library.html` |
-| 분석 진행 중 | Stitch `45648a9fadb544d69ba92c9b7307a157` |
+| 분석 진행 중 | `designs/analyze.html` |
 
 ## Admin (cloud / team only, spec §13)
 

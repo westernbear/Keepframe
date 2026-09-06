@@ -21,7 +21,8 @@
     },
     "analyze": {
       "id": "45648a9fadb544d69ba92c9b7307a157",
-      "title": "분석 진행 중"
+      "title": "분석 진행 중",
+      "files": ["designs/analyze.html", "designs/analyze.png"]
     },
     "admin-login": {
       "id": "543dd89e913a4b398caf4c7b49366091",
