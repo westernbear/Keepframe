@@ -33,29 +33,31 @@
 <header class="login-header">
 <div class="login-brand">
 <span class="login-brand__name" data-i18n="app.name">Keepframe</span>
-<span class="login-badge">운영</span>
+<span class="login-badge" data-i18n="admin.ops">운영</span>
 </div>
 <h1 class="login-title" data-i18n="admin.login">관리자 로그인</h1>
+<button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle style="margin-top:16px">EN</button>
 </header>
 <form class="login-form" id="login-form" action="#" method="POST">
 <div class="form-field">
-<label for="email">이메일</label>
+<label for="email" data-i18n="admin.email">이메일</label>
 <input autocomplete="email" id="email" name="email" placeholder="admin@keepframe.app" required type="email"/>
 </div>
 <div class="form-field">
-<label for="password">비밀번호</label>
+<label for="password" data-i18n="admin.password">비밀번호</label>
 <input autocomplete="current-password" id="password" name="password" placeholder="••••••••" required type="password"/>
 </div>
 <button class="btn btn--primary-lg" type="submit" data-i18n="admin.enter">들어가기</button>
 </form>
 <div class="login-back">
-<a href="/">제작 도구로 돌아가기</a>
+<a href="/" data-i18n="admin.back">제작 도구로 돌아가기</a>
 </div>
 </div>
 </main>
-<footer class="login-footer">로컬판에는 이 화면이 없습니다.</footer>
+<footer class="login-footer" data-i18n="admin.localOff">로컬판에는 이 화면이 없습니다.</footer>
 <script type="module">
 import { api } from "/static/js/api.js";
+import { T } from "/static/js/i18n.js";
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -65,7 +67,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     await api("/admin/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
     location = "/admin/tenants";
   } catch (err) {
-    alert(err.message || "로그인 실패");
+    alert(err.message || T("admin.loginFailed"));
   }
 });
 </script>

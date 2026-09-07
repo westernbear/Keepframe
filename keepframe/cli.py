@@ -4,6 +4,7 @@ from pathlib import Path
 from .compose.composer import compose
 from .ir.store import load_scene, save_scene
 from .ir.synth import make_synthetic_scene
+from .log import configure, get
 from .render.renderer import render, render_result_from_json
 from .verify.verifier import verify
 
@@ -84,18 +85,33 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
     if a.cmd == "serve":
         from .web.server import make_server
+        configure()
+        log = get("keepframe.cli")
         host = a.host
         kwargs: dict = {"admin": a.admin}
         if a.admin:
             from .admin.memory import MemoryAdmin
-            from .admin.auth import MemoryAuth
+            from .admin.auth import MemoryAuth, load_admin_users
+            users = load_admin_users()
             kwargs["admin_svc"] = MemoryAdmin()
-            kwargs["admin_auth"] = MemoryAuth()
+            kwargs["admin_auth"] = MemoryAuth(users)
+            log.info("admin accounts %s", len(users))
         srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)
-        print(f"http://{host}:{a.port}/")
+        try:
+            import torch
+            cuda = torch.cuda.is_available()
+            name = torch.cuda.get_device_name(0) if cuda else "cpu"
+            log.info("torch %s cuda=%s device=%s", torch.__version__, cuda, name)
+        except ImportError:
+            log.info("torch not installed; refine stays on CPU skip")
+        log.info("listening http://%s:%s/ workspace=%s admin=%s", host, a.port, a.workspace, a.admin)
         if a.admin:
-            print(f"http://{host}:{a.port}/admin/")
-        srv.serve_forever()
+            log.info("admin http://%s:%s/admin/", host, a.port)
+        try:
+            srv.serve_forever()
+        except Exception:
+            log.exception("serve stopped")
+            raise
         return 0
     return 2
 

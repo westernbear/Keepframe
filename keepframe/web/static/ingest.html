@@ -17,8 +17,8 @@
 </header>
 <main class="split" style="margin-top:0">
 <section class="split__main">
-<h1 class="page-title">레퍼런스 영상</h1>
-<p class="page-desc">평면 2D 모션그래픽 또는 UI 화면 녹화. 실사 푸티지는 받지 않습니다.</p>
+<h1 class="page-title" data-i18n="ingest.title">레퍼런스 영상</h1>
+<p class="page-desc" data-i18n="ingest.desc">평면 2D 모션그래픽 또는 UI 화면 녹화. 실사 푸티지는 받지 않습니다.</p>
 <div class="card" style="margin-bottom:32px;display:flex;align-items:center;justify-content:space-between" data-upload-card hidden>
 <div style="display:flex;align-items:center;gap:16px">
 <div style="width:48px;height:48px;background:var(--hairline);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center">
@@ -35,7 +35,7 @@
 </div>
 <label class="card" style="margin-bottom:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:120px" data-dropzone>
 <input type="file" accept="video/*" hidden data-file-input/>
-<span>영상 파일 선택</span>
+<span data-i18n="ingest.pickFile">영상 파일 선택</span>
 </label>
 <p class="page-desc" style="color:var(--danger)" data-error role="status" hidden></p>
 <div class="card" data-editor hidden>
@@ -46,9 +46,9 @@
 <div data-filmstrip class="filmstrip"></div>
 <div class="range-meta" data-range-meta>—</div>
 <div style="display:flex;gap:16px;margin-top:16px;align-items:center" data-range-inputs>
-<label style="font-size:var(--fs-micro);color:var(--muted)">시작</label>
+<label style="font-size:var(--fs-micro);color:var(--muted)" data-i18n="ingest.startFrame">시작</label>
 <input class="input" style="width:64px;padding:4px 8px;text-align:center" type="number" min="0" data-start value="0"/>
-<label style="font-size:var(--fs-micro);color:var(--muted)">끝</label>
+<label style="font-size:var(--fs-micro);color:var(--muted)" data-i18n="ingest.endFrame">끝</label>
 <input class="input" style="width:64px;padding:4px 8px;text-align:center" type="number" min="0" data-end value="0"/>
 </div>
 </div>
@@ -56,27 +56,27 @@
 <aside class="split__aside">
 <h2 class="page-title" style="font-size:var(--fs-body-sm);margin-bottom:24px" data-i18n="ingest.confirm">실행 전 확인</h2>
 <ul class="detail-list">
-<li><span>예상 시간</span><span class="mono" data-est-seconds>—</span></li>
-<li><span>GPU 사용 허용</span><span>ON</span></li>
-<li><span>장면</span><span data-est-scenes>—</span></li>
+<li><span data-i18n="ingest.eta">예상 시간</span><span class="mono" data-est-seconds>—</span></li>
+<li><span data-i18n="ingest.gpu">GPU 사용 허용</span><span>ON</span></li>
+<li><span data-i18n="ingest.scenes">장면</span><span data-est-scenes>—</span></li>
 </ul>
 <p class="page-desc" style="font-size:var(--fs-micro);color:var(--muted);margin-top:12px" data-est-note hidden></p>
 <div data-full-confirm hidden style="margin-top:16px;padding:12px;background:var(--hairline);border-radius:var(--r-md);font-size:var(--fs-micro)">
 <p data-confirm-copy></p>
-<button type="button" class="btn btn--secondary" style="margin-top:8px" data-confirm-btn>확인하고 계속</button>
+<button type="button" class="btn btn--secondary" style="margin-top:8px" data-confirm-btn data-i18n="ingest.confirmGo">확인하고 계속</button>
 </div>
 <div style="margin-top:auto;display:flex;flex-direction:column;gap:12px">
 <button type="button" class="btn btn--primary-lg" data-i18n="ingest.start" data-start-btn disabled>
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
 분석 시작
 </button>
-<button type="button" class="btn btn--secondary" onclick="location.href='/'">취소</button>
+<button type="button" class="btn btn--secondary" onclick="location.href='/'" data-i18n="common.cancel">취소</button>
 </div>
 </aside>
 </main>
 <script type="module">
 import { uploadProject, fetchEstimate, fetchFilmstrip } from "/static/js/api.js";
-import { T } from "/static/js/i18n.js";
+import { T, Tf } from "/static/js/i18n.js";
 
 const state = {
   project: null,
@@ -140,14 +140,15 @@ async function refreshEstimate() {
   const est = await fetchEstimate({ mode: state.mode, frames, fps: state.fps });
   state.confirmToken = est.confirm_token;
   const mins = Math.round(est.seconds / 60);
-  $("[data-est-seconds]").textContent = `약 ${mins}분 (추정)`;
+  $("[data-est-seconds]").textContent = Tf("ingest.aboutMin", { m: mins });
   $("[data-est-scenes]").textContent = String(est.scene_count);
   $("[data-est-note]").hidden = false;
-  $("[data-est-note]").textContent = est.note + ` · 장면당 ${est.seconds_per_scene}초 (추정)`;
-  $("[data-range-meta]").textContent =
-    state.mode === "range"
-      ? `선택 ${(frames / state.fps).toFixed(1)}초 · ${frames}프레임 · 장면 ${est.scene_count}개`
-      : `전체 ${(state.totalFrames / state.fps).toFixed(1)}초 · ${state.totalFrames}프레임 · 장면 ${est.scene_count}개`;
+  $("[data-est-note]").textContent = est.note + Tf("ingest.perScene", { s: est.seconds_per_scene });
+  $("[data-range-meta]").textContent = Tf(state.mode === "range" ? "ingest.rangeSummary" : "ingest.fullSummary", {
+    sec: ((state.mode === "range" ? frames : state.totalFrames) / state.fps).toFixed(1),
+    frames: state.mode === "range" ? frames : state.totalFrames,
+    n: est.scene_count,
+  });
   updateStartButton(est);
 }
 
@@ -155,7 +156,7 @@ function updateStartButton(est) {
   if (state.mode === "full" && !state.fullConfirmed) {
     startBtn.disabled = true;
     fullConfirm.hidden = false;
-    confirmCopy.textContent = `전체 영상 분석 예상 ${Math.round(est.seconds / 60)}분, 장면 ${est.scene_count}개. 계속하시겠습니까?`;
+    confirmCopy.textContent = Tf("ingest.fullConfirm", { m: Math.round(est.seconds / 60), n: est.scene_count });
   } else {
     fullConfirm.hidden = state.mode !== "full" || state.fullConfirmed;
     startBtn.disabled = false;
@@ -167,7 +168,7 @@ async function handleFile(file) {
   dropzone.hidden = true;
   uploadCard.hidden = false;
   $("[data-video-name]").textContent = file.name;
-  $("[data-video-meta]").textContent = "업로드 중…";
+  $("[data-video-meta]").textContent = T("ingest.uploading");
   editor.hidden = true;
   startBtn.disabled = true;
   try {
@@ -196,7 +197,7 @@ async function handleFile(file) {
     if (err.body && err.body.code === "live_action") {
       showError(T("error.liveaction"));
     } else {
-      showError(err.message || "업로드 실패");
+      showError(err.message || T("ingest.uploadFailed"));
     }
   }
 }
@@ -225,6 +226,10 @@ confirmBtn.addEventListener("click", () => {
   state.fullConfirmed = true;
   fullConfirm.hidden = true;
   startBtn.disabled = false;
+});
+
+window.addEventListener("keepframe:lang", () => {
+  if (state.project) refreshEstimate();
 });
 
 startBtn.addEventListener("click", async () => {

@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, Version
 from ..ir.store import current_scene, init_project, new_version, scene_dir as _scene_dir
+from ..log import get
 from .background import estimate_background, foreground_mask
 from .constraints import extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
@@ -17,6 +18,7 @@ from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 
 STAGES = ("frames", "background", "text", "regions", "tracking", "sprites", "keyframes", "semantics", "constraints", "report")
+log = get("keepframe.analyze")
 
 
 @dataclass
@@ -172,6 +174,7 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
             ocr: Ocr | None = None) -> Project:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
+    log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
     sd = _scene_dir(out_root, "s1")
     (sd / "stages").mkdir(parents=True, exist_ok=True)
     frames, fps = read_frames(video, start, end)
@@ -190,12 +193,15 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     messages = [m for m in (msg, props.get("_message")) if m]
     scene = _finish(sd, scene, frames, raws, messages)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
-    return init_project(out_root, {"file": str(video), "fps": fps, "size": [W, H], "mode": "range", "range": [start, end]}, scene)
+    project = init_project(out_root, {"file": str(video), "fps": fps, "size": [W, H], "mode": "range", "range": [start, end]}, scene)
+    log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
+    return project
 
 
 def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: AnalyzeOptions | None = None) -> Version:
     if from_stage not in STAGES:
         raise ValueError(from_stage)
+    log.info("rerun scene=%s from=%s note=%s", scene_id, from_stage, note)
     root = Path(root); sd = _scene_dir(root, scene_id)
     opts = options or AnalyzeOptions(**json.loads((sd / "stages" / "options.json").read_text()))
     frames = np.load(sd / "stages" / "frames.npy")

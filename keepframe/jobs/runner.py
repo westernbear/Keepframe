@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib
 import os
 import threading
-import traceback
 from typing import Any, Callable, Protocol
+
+from keepframe.log import get
 
 from .dispatch import run_job
 from .spec import Job, JobSpec
+
+log = get("keepframe.jobs")
 
 
 class JobRunner(Protocol):
@@ -42,13 +45,15 @@ class ThreadRunner:
 
         def work() -> None:
             job.status = "running"
+            log.info("job %s %s start project=%s", job.id, job.kind, job.project_id)
             try:
                 job.result = (run_job(spec) if spec is not None else fn()) or {}
                 job.status = "done"
+                log.info("job %s %s done project=%s", job.id, job.kind, job.project_id)
             except Exception as e:
                 job.status = "error"
                 job.error = f"{type(e).__name__}: {e}"
-                traceback.print_exc()
+                log.exception("job %s %s failed project=%s", job.id, job.kind, job.project_id)
 
         def start() -> None:
             threading.Thread(target=work, daemon=True).start()

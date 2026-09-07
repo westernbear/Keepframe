@@ -35,7 +35,7 @@
 </div>
 </div>
 <div style="display:flex;justify-content:space-between;font-size:var(--fs-body-sm);color:var(--muted)">
-<span>선택된 구간 (4.0s)</span>
+<span data-i18n="analyze.selectedRange">선택된 구간</span>
 <span class="mono">launch-card.mp4</span>
 </div>
 </div>
@@ -45,14 +45,14 @@
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
 </div>
 <ul class="progress-steps">
-<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span>구간·샷 분할</span></li>
-<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span>배경</span></li>
-<li class="progress-steps li--active" style="background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-sm)"><div class="step-dot"></div><div><strong>텍스트 인식</strong><div style="font-size:var(--fs-micro);color:var(--muted);margin-top:4px">장면당 수 분 허용</div></div></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>영역 추출</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>sprite 최적화</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>키프레임</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>술어 추출</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span>리포트</span></li>
+<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span data-i18n="analyze.step.shots">구간·샷 분할</span></li>
+<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span data-i18n="analyze.step.bg">배경</span></li>
+<li class="progress-steps li--active" style="background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-sm)"><div class="step-dot"></div><div><strong data-i18n="analyze.step.text">텍스트 인식</strong><div style="font-size:var(--fs-micro);color:var(--muted);margin-top:4px" data-i18n="analyze.step.textHint">장면당 수 분 허용</div></div></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.regions">영역 추출</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.sprites">sprite 최적화</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.keyframes">키프레임</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.predicates">술어 추출</span></li>
+<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.report">리포트</span></li>
 </ul>
 <div class="progress-panel__foot">
 <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:var(--fs-body-sm);color:var(--muted)">
@@ -60,7 +60,7 @@
 <span class="mono" style="font-size:var(--fs-micro);border:1px solid var(--hairline);padding:2px 8px;border-radius:var(--r-xs)" data-stage>—</span>
 </div>
 <p class="page-desc" style="color:var(--danger)" data-status role="status" hidden></p>
-<button class="btn btn--secondary" onclick="location.href='/'">취소</button>
+<button class="btn btn--secondary" onclick="location.href='/'" data-i18n="common.cancel">취소</button>
 </div>
 </div>
 </div>
@@ -68,6 +68,7 @@
 </div>
 <script type="module">
 import { api, fetchFilmstrip } from "/static/js/api.js";
+import { T, Tf } from "/static/js/i18n.js";
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("job") || params.get("project");
@@ -84,7 +85,7 @@ function showError(msg) {
 function formatEta(seconds) {
   if (seconds == null) return "—";
   const mins = Math.max(1, Math.round(seconds / 60));
-  return `예상 남은 시간 약 ${mins}분`;
+  return Tf("analyze.etaLeft", { m: mins });
 }
 
 function updateJob(job) {
@@ -93,7 +94,7 @@ function updateJob(job) {
   if (job.status === "done") {
     location.href = `/review?project=${job.project_id}&scene=s1`;
   } else if (job.status === "error") {
-    showError(job.error || "분석 실패");
+    showError(job.error || T("analyze.failed"));
     const strip = document.querySelector("[data-filmstrip]");
     if (strip) strip.innerHTML = "";
   }
@@ -104,13 +105,13 @@ async function poll(jobId) {
     const job = await api(`/api/jobs/${jobId}`);
     updateJob(job);
   } catch (err) {
-    showError(err.message || "상태 조회 실패");
+    showError(err.message || T("analyze.pollFailed"));
   }
 }
 
 (async () => {
   if (!projectId) {
-    showError("프로젝트 ID가 없습니다.");
+    showError(T("analyze.noProject"));
     return;
   }
   try {
@@ -124,7 +125,7 @@ async function poll(jobId) {
     updateJob(job);
     setInterval(() => poll(job.id), 1000);
   } catch (err) {
-    showError(err.message || "분석 시작 실패");
+    showError(err.message || T("analyze.startFailed"));
   }
 })();
 </script>

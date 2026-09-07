@@ -1,0 +1,30 @@
+# GPU overlay. Host needs the NVIDIA Container Toolkit.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Do not start the CPU `web` service at the same time on port 8765.
+
+services:
+  web:
+    image: ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gpu
+      args:
+        KEEPFRAME_VERSION: ${KEEPFRAME_TAG:-0.1.0}
+        TORCH_CUDA: ${TORCH_CUDA:-cu124}
+      tags:
+        - ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}-gpu
+    gpus: all
+    environment:
+      KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
+      KEEPFRAME_LOG_LEVEL: ${KEEPFRAME_LOG_LEVEL:-INFO}
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

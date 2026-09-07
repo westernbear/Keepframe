@@ -5,7 +5,6 @@ import json
 import re
 import tempfile
 import threading
-import traceback
 from email import message_from_bytes
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,10 +18,13 @@ from keepframe.analyze.composite import composite_scene
 from keepframe.ir.schema import FontGuess
 from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.jobs import JobSpec, JobStore
+from keepframe.log import configure, get
 from keepframe.review import corrections
 from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
+
+log = get("keepframe.web")
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
@@ -115,6 +117,7 @@ class ReviewState:
             if self.job["status"] == "running":
                 raise RuntimeError("busy")
             self.job = {"status": "running", "op": op, "error": None, "version": None}
+        log.info("correction start scene=%s op=%s", self.scene_id, op)
 
         def work() -> None:
             try:
@@ -162,9 +165,10 @@ class ReviewState:
                     )
                 self._png.clear()
                 self.job = {"status": "done", "op": op, "error": None, "version": v.id}
+                log.info("correction done scene=%s op=%s version=%s", self.scene_id, op, v.id)
             except Exception as e:
                 self.job = {"status": "error", "op": op, "error": f"{type(e).__name__}: {e}", "version": None}
-                traceback.print_exc()
+                log.exception("correction failed scene=%s op=%s", self.scene_id, op)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -188,6 +192,7 @@ def make_server(
     admin_svc=None,
     admin_auth=None,
 ) -> ThreadingHTTPServer:
+    configure()
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
@@ -206,8 +211,11 @@ def make_server(
         return review_states[key]
 
     class H(BaseHTTPRequestHandler):
-        def log_message(self, *a):
-            pass
+        def log_message(self, fmt, *args):
+            log.info("%s %s", self.address_string(), fmt % args)
+
+        def log_error(self, fmt, *args):
+            log.error("%s %s", self.address_string(), fmt % args)
 
         def _send(self, code: int, body: bytes, ctype: str) -> None:
             self.send_response(code)
@@ -316,7 +324,7 @@ def make_server(
                         },
                     )
                 except Exception as e:
-                    traceback.print_exc()
+                    log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
             if u.path == "/api/job":
@@ -350,7 +358,7 @@ def make_server(
                 try:
                     return self._send(200, state.recon_png(int(parts[2]), ver), "image/png")
                 except Exception as e:
-                    traceback.print_exc()
+                    log.exception("recon frame failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
             if parts and parts[0] == "assets" and len(parts) >= 2:
@@ -483,6 +491,7 @@ def make_server(
                     eta_s=est["seconds"],
                 )
                 write_meta(workspace, project_id, job_id=job.id)
+                log.info("analyze queued job=%s project=%s range=[%s,%s] eta_s=%s", job.id, project_id, start, end, est["seconds"])
                 return self._json(202, {"job": job.to_json()})
 
             if u.path == "/api/keep":
@@ -513,7 +522,7 @@ def make_server(
                     state._png.clear()
                     return self._json(200, {"version": json.loads(v.model_dump_json())})
                 except Exception as e:
-                    traceback.print_exc()
+                    log.exception("keep update failed project=%s scene=%s", project_id, scene_id)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
             if u.path == "/api/correct":

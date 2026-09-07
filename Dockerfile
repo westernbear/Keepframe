@@ -1,5 +1,5 @@
 # rapidocr-onnxruntime needs Python <= 3.12
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS base
 
 ARG KEEPFRAME_VERSION=0.1.0
 LABEL org.opencontainers.image.title="Keepframe" \
@@ -44,3 +44,11 @@ WORKDIR /data/workspace
 EXPOSE 8765
 ENTRYPOINT ["keepframe"]
 CMD ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765"]
+
+# CUDA wheels. Host needs nvidia-container-toolkit. Override TORCH_CUDA=cu126 if needed.
+FROM base AS gpu
+ARG TORCH_CUDA=cu124
+RUN pip install --no-cache-dir "torch>=2.2" --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
+
+# Last stage is the default `docker compose build` (CPU).
+FROM base AS runtime

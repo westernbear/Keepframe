@@ -40,9 +40,9 @@
 <input class="input" type="text" placeholder="프로젝트 검색" data-i18n="library.search"/>
 </div>
 <div class="toolbar__filters">
-<button class="chip">최근</button>
-<button class="chip">검수 필요</button>
-<button class="chip">내보내기 준비</button>
+<button class="chip" data-i18n="library.filter.recent">최근</button>
+<button class="chip" data-i18n="library.filter.review">검수 필요</button>
+<button class="chip" data-i18n="library.filter.export">내보내기 준비</button>
 </div>
 </div>
 <div id="library-empty" class="page-desc" style="padding:24px 0" hidden>
@@ -56,14 +56,11 @@
 </footer>
 <script type="module">
 import { api } from "/static/js/api.js";
+import { T, Tf, applyI18n } from "/static/js/i18n.js";
 
-const STATUS_LABEL = {
-  uploaded: "업로드됨",
-  analyzing: "분석 중",
-  review: "검수 필요",
-  error: "실패",
-  rejected: "거부됨",
-};
+function statusLabel(status) {
+  return T(`status.${status}`) === `status.${status}` ? status : T(`status.${status}`);
+}
 
 const BADGE_CLASS = {
   uploaded: "badge--done",
@@ -96,12 +93,12 @@ function formatConfidence(c) {
 
 function badgeText(p) {
   if (p.status === "rejected") {
-    return p.reason || p.error || STATUS_LABEL.rejected;
+    return p.reason || p.error || statusLabel("rejected");
   }
   if (p.status === "error" && p.error) {
     return p.error;
   }
-  return STATUS_LABEL[p.status] || p.status;
+  return statusLabel(p.status);
 }
 
 function renderProject(p, index) {
@@ -140,7 +137,7 @@ function renderProject(p, index) {
   const conf = formatConfidence(p.confidence);
   if (conf != null) {
     const span = document.createElement("span");
-    span.textContent = `신뢰도 ${conf}`;
+    span.textContent = Tf("library.confidence", { c: conf });
     meta.appendChild(span);
   }
 
@@ -160,26 +157,36 @@ function renderProject(p, index) {
   return row;
 }
 
-(async () => {
+let cached = [];
+
+function paint(projects) {
   const list = document.getElementById("project-list");
+  const empty = document.getElementById("library-empty");
+  cached = projects;
+  if (!projects.length) {
+    list.innerHTML = "";
+    empty.hidden = false;
+    applyI18n(empty);
+    return;
+  }
+  empty.hidden = true;
+  list.innerHTML = "";
+  projects.forEach((p, i) => list.appendChild(renderProject(p, i)));
+}
+
+(async () => {
   const empty = document.getElementById("library-empty");
   try {
     const { projects } = await api("/api/projects");
-    if (!projects.length) {
-      list.innerHTML = "";
-      empty.hidden = false;
-      return;
-    }
-    empty.hidden = true;
-    list.innerHTML = "";
-    projects.forEach((p, i) => list.appendChild(renderProject(p, i)));
+    paint(projects);
   } catch (err) {
-    empty.hidden = false;
-    list.innerHTML = "";
+    paint([]);
     const msg = empty.querySelector("[data-i18n='library.empty']");
-    if (msg) msg.textContent = err.message || "목록을 불러오지 못했습니다.";
+    if (msg) msg.textContent = err.message || T("library.loadFailed");
   }
 })();
+
+window.addEventListener("keepframe:lang", () => paint(cached));
 </script>
 </body>
 </html>

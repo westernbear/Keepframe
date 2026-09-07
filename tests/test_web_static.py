@@ -31,8 +31,20 @@ def test_ported_pages_are_offline():
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     assert "keepframe.lang" in src
-    for key in ("ingest.start", "review.keepSave", "error.liveaction"):
-        assert key in src
+    for key in ("ingest.start", "review.keepSave", "error.liveaction", "library.empty"):
+        assert src.count(f'"{key}"') >= 2
+
+
+def test_i18n_markup_keys_exist_in_both_langs():
+    import re
+    src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
+    ko = src.split("en: {", 1)[0]
+    en = src.split("en: {", 1)[1]
+    used = set()
+    for html in STATIC.glob("*.html"):
+        used.update(re.findall(r'data-i18n="([^"]+)"', html.read_text(encoding="utf-8")))
+    missing = [k for k in sorted(used) if f'"{k}"' not in ko or f'"{k}"' not in en]
+    assert missing == []
 
 
 def test_css_tokens_match_design():

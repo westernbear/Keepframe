@@ -5,12 +5,14 @@ name: keepframe
 #   docker compose build
 #   docker compose push
 # Admin too: docker compose --profile admin up -d
+# GPU (torch + NVIDIA device): docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
 x-keepframe: &keepframe
   image: ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}
   build:
     context: .
     dockerfile: Dockerfile
+    target: runtime
     args:
       KEEPFRAME_VERSION: ${KEEPFRAME_TAG:-0.1.0}
     tags:
@@ -22,6 +24,10 @@ x-keepframe: &keepframe
   # OSS default: thread. Cloud sets a module:Class runner; workers only call run_job().
   environment:
     KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
+    KEEPFRAME_LOG_LEVEL: ${KEEPFRAME_LOG_LEVEL:-INFO}
+    KEEPFRAME_ADMIN_EMAIL: ${KEEPFRAME_ADMIN_EMAIL:-}
+    KEEPFRAME_ADMIN_PASSWORD: ${KEEPFRAME_ADMIN_PASSWORD:-}
+    KEEPFRAME_ADMIN_USERS: ${KEEPFRAME_ADMIN_USERS:-}
 
 services:
   web:
