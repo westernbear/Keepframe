@@ -7,15 +7,15 @@ name: keepframe
 # 관리자까지 같이 올리려면: docker compose --profile admin up -d
 
 x-keepframe: &keepframe
-  image: ${KEEPFRAME_IMAGE:-singlerr/keepframe}:${KEEPFRAME_TAG:-0.1.0}
+  image: ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}
   build:
     context: .
     dockerfile: Dockerfile
     args:
       KEEPFRAME_VERSION: ${KEEPFRAME_TAG:-0.1.0}
     tags:
-      - ${KEEPFRAME_IMAGE:-singlerr/keepframe}:${KEEPFRAME_TAG:-0.1.0}
-      - ${KEEPFRAME_IMAGE:-singlerr/keepframe}:latest
+      - ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}
+      - ${KEEPFRAME_IMAGE:-westernbear/keepframe}:latest
   restart: unless-stopped
   volumes:
     - ${KEEPFRAME_WORKSPACE:-./data/workspace}:/data/workspace
