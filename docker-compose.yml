@@ -1,10 +1,10 @@
 name: keepframe
 
-# 이미지 업로드:
-#   cp .env.example .env   # KEEPFRAME_IMAGE / KEEPFRAME_TAG 수정
+# Push the image:
+#   cp .env.example .env   # edit KEEPFRAME_IMAGE / KEEPFRAME_TAG
 #   docker compose build
 #   docker compose push
-# 관리자까지 같이 올리려면: docker compose --profile admin up -d
+# Admin too: docker compose --profile admin up -d
 
 x-keepframe: &keepframe
   image: ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}
@@ -19,7 +19,7 @@ x-keepframe: &keepframe
   restart: unless-stopped
   volumes:
     - ${KEEPFRAME_WORKSPACE:-./data/workspace}:/data/workspace
-  # 오픈소스 기본: thread. 클라우드는 module:Class 실행기를 넣고 워커에서 run_job()만 호출.
+  # OSS default: thread. Cloud sets a module:Class runner; workers only call run_job().
   environment:
     KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
 

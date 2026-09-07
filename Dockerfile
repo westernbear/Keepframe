@@ -8,13 +8,30 @@ LABEL org.opencontainers.image.title="Keepframe" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Hash-sum mismatches on deb.debian.org show up as "Unable to fetch some archives".
+RUN set -eux; \
+    printf '%s\n' \
+      'Acquire::Retries "5";' \
+      'Acquire::http::Pipeline-Depth "0";' \
+      'Acquire::http::No-Cache "true";' \
+      > /etc/apt/apt.conf.d/80-acquire; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends --fix-missing \
         ffmpeg \
         libgl1 \
         libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    || { \
+         rm -rf /var/lib/apt/lists/*; \
+         apt-get update; \
+         apt-get install -y --no-install-recommends \
+            ffmpeg \
+            libgl1 \
+            libglib2.0-0; \
+       }; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml ./
