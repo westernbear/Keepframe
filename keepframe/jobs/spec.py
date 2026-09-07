@@ -12,6 +12,7 @@ class Job:
     project_id: str
     scene_id: str | None = None
     stage: str | None = None
+    detail: str | None = None
     error: str | None = None
     eta_s: int | None = None
     result: dict | None = None

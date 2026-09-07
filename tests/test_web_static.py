@@ -28,6 +28,39 @@ def test_ported_pages_are_offline():
         assert 'src="/static/js/api.js"' in text
 
 
+def test_analyze_main_clears_icon_rail():
+    html = (STATIC / "analyze.html").read_text(encoding="utf-8")
+    css = (STATIC / "css" / "app.css").read_text(encoding="utf-8")
+    assert "sidebar--icon" in html
+    assert "main--icon" in html
+    assert "main--no-sidebar" not in html
+    assert ".main--icon { margin-left: 80px; }" in css
+
+
+def test_analyze_steps_follow_job_stage():
+    html = (STATIC / "analyze.html").read_text(encoding="utf-8")
+    assert 'data-step="shots"' in html
+    assert "updateSteps" in html
+    assert "/api/jobs/" in html
+    assert "li--active" not in html
+
+
+def test_pages_include_logo_and_favicon():
+    assert (STATIC / "logo.png").stat().st_size > 100
+    assert (STATIC / "icon.png").stat().st_size > 100
+    for name in ("library.html", "ingest.html", "analyze.html", "review.html"):
+        text = (STATIC / name).read_text(encoding="utf-8")
+        assert 'src="/static/logo.png"' in text
+        assert 'href="/static/icon.png"' in text
+
+
+def test_ingest_gpu_status_is_not_hardcoded():
+    text = (STATIC / "ingest.html").read_text(encoding="utf-8")
+    assert "data-gpu" in text
+    assert "/api/status" in text
+    assert "<span>ON</span>" not in text
+
+
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     assert "keepframe.lang" in src

@@ -5,27 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>분석 진행 - Keepframe</title>
 <link href="/static/css/app.css" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
 <script type="module" src="/static/js/i18n.js"></script>
 <script type="module" src="/static/js/api.js"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
 <div style="display:flex;align-items:center;gap:16px">
-<span class="header__brand" data-i18n="app.name">Keepframe</span>
+<span class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/><span data-i18n="app.name">Keepframe</span></span>
 <div class="header__divider"></div>
 <span class="header__crumb" data-i18n="nav.analyze">분석</span>
-<span class="header__crumb">launch-card.mp4</span>
+<span class="header__crumb" data-clip-name>—</span>
 </div>
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </header>
-<div style="display:flex;flex:1;overflow:hidden">
+<div class="analyze-shell">
 <aside class="sidebar sidebar--icon">
 <a class="sidebar__icon-link" href="/"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"/></svg></a>
 <a class="sidebar__icon-link sidebar__icon-link--active" href="/analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg></a>
 <a class="sidebar__icon-link" href="/review"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/></svg></a>
 </aside>
-<main class="main main--icon main--no-sidebar" style="margin-top:0;display:flex;padding:24px 32px">
-<div class="analyze-grid" style="width:100%">
+<main class="main main--icon analyze-main">
+<div class="analyze-grid">
 <div class="preview-pane">
 <div class="preview-box">
 <div data-filmstrip>
@@ -36,7 +37,7 @@
 </div>
 <div style="display:flex;justify-content:space-between;font-size:var(--fs-body-sm);color:var(--muted)">
 <span data-i18n="analyze.selectedRange">선택된 구간</span>
-<span class="mono">launch-card.mp4</span>
+<span class="mono" data-clip-name>—</span>
 </div>
 </div>
 <div class="progress-panel">
@@ -44,15 +45,15 @@
 <h2 data-i18n="analyze.running">분석 진행 상태</h2>
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
 </div>
-<ul class="progress-steps">
-<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span data-i18n="analyze.step.shots">구간·샷 분할</span></li>
-<li><div class="step-dot"><svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><span data-i18n="analyze.step.bg">배경</span></li>
-<li class="progress-steps li--active" style="background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-sm)"><div class="step-dot"></div><div><strong data-i18n="analyze.step.text">텍스트 인식</strong><div style="font-size:var(--fs-micro);color:var(--muted);margin-top:4px" data-i18n="analyze.step.textHint">장면당 수 분 허용</div></div></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.regions">영역 추출</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.sprites">sprite 최적화</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.keyframes">키프레임</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.predicates">술어 추출</span></li>
-<li class="progress-steps li--waiting" style="opacity:0.4"><div class="step-dot"></div><span data-i18n="analyze.step.report">리포트</span></li>
+<ul class="progress-steps" data-steps>
+<li data-step="shots" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.shots">구간·샷 분할</span></li>
+<li data-step="bg" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.bg">배경</span></li>
+<li data-step="text" class="is-waiting"><div class="step-dot"></div><div><strong data-i18n="analyze.step.text">텍스트 인식</strong><div class="step-hint" data-i18n="analyze.step.textHint">장면당 수 분 허용</div></div></li>
+<li data-step="regions" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.regions">영역 추출</span></li>
+<li data-step="sprites" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.sprites">sprite 최적화</span></li>
+<li data-step="keyframes" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.keyframes">키프레임</span></li>
+<li data-step="predicates" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.predicates">술어 추출</span></li>
+<li data-step="report" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.report">리포트</span></li>
 </ul>
 <div class="progress-panel__foot">
 <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:var(--fs-body-sm);color:var(--muted)">
@@ -77,6 +78,31 @@ const statusEl = document.querySelector("[data-status]");
 const stageEl = document.querySelector("[data-stage]");
 const etaEl = document.querySelector("[data-eta]");
 
+const PIPELINE = ["frames", "background", "text", "regions", "tracking", "sprites", "keyframes", "semantics", "constraints", "report"];
+const STEP_STAGES = {
+  shots: ["frames"],
+  bg: ["background"],
+  text: ["text"],
+  regions: ["regions", "tracking"],
+  sprites: ["sprites"],
+  keyframes: ["keyframes"],
+  predicates: ["semantics", "constraints"],
+  report: ["report"],
+};
+const STAGE_I18N = {
+  frames: "analyze.step.shots",
+  background: "analyze.step.bg",
+  text: "analyze.step.text",
+  regions: "analyze.step.regions",
+  tracking: "analyze.step.regions",
+  sprites: "analyze.step.sprites",
+  keyframes: "analyze.step.keyframes",
+  semantics: "analyze.step.predicates",
+  constraints: "analyze.step.predicates",
+  report: "analyze.step.report",
+};
+const CHECK = '<svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+
 function showError(msg) {
   statusEl.hidden = !msg;
   statusEl.textContent = msg || "";
@@ -88,16 +114,64 @@ function formatEta(seconds) {
   return Tf("analyze.etaLeft", { m: mins });
 }
 
+function stepState(stepKey, currentStage) {
+  const stages = STEP_STAGES[stepKey];
+  const cur = PIPELINE.indexOf(currentStage);
+  if (cur < 0) return "waiting";
+  const first = PIPELINE.indexOf(stages[0]);
+  const last = PIPELINE.indexOf(stages[stages.length - 1]);
+  if (cur > last) return "done";
+  if (cur >= first) return "active";
+  return "waiting";
+}
+
+function updateSteps(stage) {
+  document.querySelectorAll("[data-step]").forEach((li) => {
+    const state = stepState(li.dataset.step, stage);
+    li.classList.remove("is-active", "is-done", "is-waiting");
+    li.classList.add(`is-${state}`);
+    const dot = li.querySelector(".step-dot");
+    if (!dot) return;
+    dot.classList.toggle("step-dot--live", state === "active");
+    dot.innerHTML = state === "done" ? CHECK : "";
+  });
+}
+
+function stageLabel(job) {
+  const key = STAGE_I18N[job.stage];
+  const name = key ? T(key) : (job.stage || job.status || "—");
+  return job.detail ? `${name} ${job.detail}` : name;
+}
+
 function updateJob(job) {
-  stageEl.textContent = job.stage || job.status || "—";
+  updateSteps(job.stage);
+  stageEl.textContent = stageLabel(job);
   etaEl.textContent = formatEta(job.eta_s);
   if (job.status === "done") {
+    updateSteps("report");
     location.href = `/review?project=${job.project_id}&scene=s1`;
   } else if (job.status === "error") {
     showError(job.error || T("analyze.failed"));
     const strip = document.querySelector("[data-filmstrip]");
     if (strip) strip.innerHTML = "";
   }
+}
+
+async function showFilmstrip(id) {
+  const { frames } = await fetchFilmstrip(id, 8);
+  const strip = document.querySelector("[data-filmstrip]");
+  if (!strip || !frames) return;
+  strip.innerHTML = "";
+  const mid = Math.floor(frames.length / 2);
+  frames.forEach((url, i) => {
+    const div = document.createElement("div");
+    div.className = "filmstrip__frame" + (i === mid ? " filmstrip__frame--active" : "");
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    div.appendChild(img);
+    strip.appendChild(div);
+  });
 }
 
 async function poll(jobId) {
@@ -115,7 +189,14 @@ async function poll(jobId) {
     return;
   }
   try {
-    await fetchFilmstrip(projectId, 8);
+    const { projects } = await api("/api/projects");
+    const p = (projects || []).find((x) => x.id === projectId);
+    if (p && p.title) {
+      document.querySelectorAll("[data-clip-name]").forEach((el) => { el.textContent = p.title; });
+    }
+  } catch {}
+  try {
+    await showFilmstrip(projectId);
   } catch {}
   try {
     const { job } = await api("/api/analyze", {

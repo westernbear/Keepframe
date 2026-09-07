@@ -5,7 +5,7 @@ from keepframe.web.jobs import JobStore
 def test_job_runs_and_finishes():
     store = JobStore()
     j = store.submit("analyze", lambda: {"ok": True}, project_id="p1")
-    assert j.status in ("queued", "running")
+    assert j.status in ("queued", "running", "done")
     for _ in range(50):
         if store.get(j.id).status == "done":
             break

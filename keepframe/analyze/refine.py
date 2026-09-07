@@ -1,7 +1,11 @@
 from __future__ import annotations
 import math
 import numpy as np
+from ..log import get
 from .composite import hex_to_rgb  # noqa: F401  (kept for parity with compositor colours)
+from .device import resolve_device
+
+log = get("keepframe.analyze")
 
 # ponytail: full-frame L1 on downscaled frames. Upgrade path: per-element crops and a texture prior (Suzuki et al., ECCV 2024).
 
@@ -25,8 +29,9 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     if not torch_available():
         raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
     import torch, torch.nn.functional as F
-    dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    dev = resolve_device(device)
     N, H, W = frames.shape[:3]
+    log.info("refine_affine device=%s frames=%s sprites=%s iters=%s", dev, N, len(raws), iters)
     h, w = int(round(H * scale)), int(round(W * scale))
     target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
     if scale != 1.0:

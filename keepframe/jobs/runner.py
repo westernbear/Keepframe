@@ -6,6 +6,7 @@ import threading
 from typing import Any, Callable, Protocol
 
 from keepframe.log import get
+from keepframe.progress import bind_stage, remaining_eta, reset_stage
 
 from .dispatch import run_job
 from .spec import Job, JobSpec
@@ -45,6 +46,16 @@ class ThreadRunner:
 
         def work() -> None:
             job.status = "running"
+            orig_eta = job.eta_s
+
+            def on_stage(name: str, detail: str | None = None) -> None:
+                job.stage = name
+                job.detail = detail
+                job.eta_s = remaining_eta(name, orig_eta)
+                extra = f" {detail}" if detail else ""
+                log.info("job %s stage=%s%s", job.id, name, extra)
+
+            token = bind_stage(on_stage)
             log.info("job %s %s start project=%s", job.id, job.kind, job.project_id)
             try:
                 job.result = (run_job(spec) if spec is not None else fn()) or {}
@@ -54,6 +65,8 @@ class ThreadRunner:
                 job.status = "error"
                 job.error = f"{type(e).__name__}: {e}"
                 log.exception("job %s %s failed project=%s", job.id, job.kind, job.project_id)
+            finally:
+                reset_stage(token)
 
         def start() -> None:
             threading.Thread(target=work, daemon=True).start()

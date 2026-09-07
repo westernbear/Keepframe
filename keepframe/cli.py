@@ -97,13 +97,17 @@ def main(argv: list[str] | None = None) -> int:
             kwargs["admin_auth"] = MemoryAuth(users)
             log.info("admin accounts %s", len(users))
         srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)
-        try:
-            import torch
-            cuda = torch.cuda.is_available()
-            name = torch.cuda.get_device_name(0) if cuda else "cpu"
-            log.info("torch %s cuda=%s device=%s", torch.__version__, cuda, name)
-        except ImportError:
+        from .analyze.device import gpu_status
+        st = gpu_status()
+        if not st["torch"]:
             log.info("torch not installed; refine stays on CPU skip")
+        else:
+            log.info(
+                "torch %s cuda=%s device=%s name=%s required=%s",
+                st["torch_version"], st["cuda"], st["device"], st["name"], st["required"],
+            )
+            if st["required"] and not st["cuda"]:
+                log.error("KEEPFRAME_DEVICE=cuda but CUDA is not available; sprite refine will fail")
         log.info("listening http://%s:%s/ workspace=%s admin=%s", host, a.port, a.workspace, a.admin)
         if a.admin:
             log.info("admin http://%s:%s/admin/", host, a.port)

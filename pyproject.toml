@@ -25,6 +25,7 @@ keepframe = [
   "compose/vendor/*.js",
   "compose/template.html",
   "web/static/*.html",
+  "web/static/*.png",
   "web/static/css/*",
   "web/static/js/*",
 ]

@@ -67,7 +67,8 @@ Image `westernbear/keepframe:0.1.0` (`KEEPFRAME_IMAGE` / `KEEPFRAME_TAG`). Port 
 docker compose --profile admin up -d
 ```
 
-GPU refine needs the NVIDIA Container Toolkit and the `gpu` image layer:
+GPU refine needs an NVIDIA GPU, the NVIDIA Container Toolkit, and the `gpu` image layer.
+Intel iGPU is not used. The overlay sets `KEEPFRAME_DEVICE=cuda` so sprite refine will not silently fall back to CPU.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build

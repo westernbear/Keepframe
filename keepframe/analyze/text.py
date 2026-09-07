@@ -38,8 +38,13 @@ class RapidOcr:
 
 
 def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1) -> list[list[TextBox]]:
+    from keepframe.progress import report_stage
     out: list[list[TextBox]] = []
+    n = len(frames)
+    mark = max(1, n // 10)
     for i, f in enumerate(frames):
+        if i == 0 or i + 1 == n or (i + 1) % mark == 0:
+            report_stage("text", f"{i + 1}/{n}")
         out.append([TextBox(i, t, b, c) for t, b, c in ocr(f)] if i % step == 0 else [])
     return out
 

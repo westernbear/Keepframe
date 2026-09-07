@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 새 프로젝트</title>
 <link href="/static/css/app.css" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
 <script type="module" src="/static/js/i18n.js"></script>
 <script type="module" src="/static/js/api.js"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
-<div class="header__brand" data-i18n="app.name">Keepframe</div>
+<div class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/><span data-i18n="app.name">Keepframe</span></div>
 <div class="header__nav">
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </div>
@@ -57,7 +58,7 @@
 <h2 class="page-title" style="font-size:var(--fs-body-sm);margin-bottom:24px" data-i18n="ingest.confirm">실행 전 확인</h2>
 <ul class="detail-list">
 <li><span data-i18n="ingest.eta">예상 시간</span><span class="mono" data-est-seconds>—</span></li>
-<li><span data-i18n="ingest.gpu">GPU 사용 허용</span><span>ON</span></li>
+<li><span data-i18n="ingest.gpu">GPU 사용 허용</span><span data-gpu>—</span></li>
 <li><span data-i18n="ingest.scenes">장면</span><span data-est-scenes>—</span></li>
 </ul>
 <p class="page-desc" style="font-size:var(--fs-micro);color:var(--muted);margin-top:12px" data-est-note hidden></p>
@@ -75,7 +76,7 @@
 </aside>
 </main>
 <script type="module">
-import { uploadProject, fetchEstimate, fetchFilmstrip } from "/static/js/api.js";
+import { api, uploadProject, fetchEstimate, fetchFilmstrip } from "/static/js/api.js";
 import { T, Tf } from "/static/js/i18n.js";
 
 const state = {
@@ -227,6 +228,19 @@ confirmBtn.addEventListener("click", () => {
   fullConfirm.hidden = true;
   startBtn.disabled = false;
 });
+
+async function refreshGpu() {
+  const el = $("[data-gpu]");
+  if (!el) return;
+  try {
+    const s = await api("/api/status");
+    el.textContent = s.cuda ? (s.name || "ON") : "OFF";
+  } catch {
+    el.textContent = "OFF";
+  }
+}
+
+refreshGpu();
 
 window.addEventListener("keepframe:lang", () => {
   if (state.project) refreshEstimate();

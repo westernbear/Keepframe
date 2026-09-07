@@ -2,6 +2,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 #
 # Do not start the CPU `web` service at the same time on port 8765.
+# NVIDIA GPU required. `docker run --gpus all` must work on the host.
 
 services:
   web:
@@ -21,6 +22,7 @@ services:
       KEEPFRAME_LOG_LEVEL: ${KEEPFRAME_LOG_LEVEL:-INFO}
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      KEEPFRAME_DEVICE: cuda
     deploy:
       resources:
         reservations:

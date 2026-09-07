@@ -31,3 +31,24 @@ def test_missing_page_is_404_json(tmp_path):
     srv.shutdown()
     assert code == 404
     assert json.loads(body)["error"] == "not found"
+
+
+def test_status_reports_cuda_flag(tmp_path):
+    srv = start(tmp_path)
+    code, _, body = get(srv, "/api/status")
+    srv.shutdown()
+    assert code == 200
+    data = json.loads(body)
+    assert data["cuda"] in (True, False)
+    assert data["device"] in ("cpu", "cuda")
+    if not data["cuda"]:
+        assert data["device"] == "cpu"
+
+
+def test_logo_is_served(tmp_path):
+    srv = start(tmp_path)
+    code, ctype, body = get(srv, "/static/logo.png")
+    srv.shutdown()
+    assert code == 200
+    assert ctype == "image/png"
+    assert body[:8] == b"\x89PNG\r\n\x1a\n"

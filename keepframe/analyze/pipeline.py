@@ -6,6 +6,7 @@ import cv2, numpy as np
 from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, Version
 from ..ir.store import current_scene, init_project, new_version, scene_dir as _scene_dir
 from ..log import get
+from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
 from .constraints import extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
@@ -17,7 +18,6 @@ from .text import Ocr, apply_copy, ocr_frames, text_exclusion_mask, text_props, 
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 
-STAGES = ("frames", "background", "text", "regions", "tracking", "sprites", "keyframes", "semantics", "constraints", "report")
 log = get("keepframe.analyze")
 
 
@@ -62,9 +62,11 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 ocr = RapidOcr()
             except Exception as e:  # rapidocr missing
                 msg = f"text stage skipped: {e}"
+                log.info("%s", msg)
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)
             tracks = track_text(boxes)
+            log.info("text boxes=%s tracks=%s", sum(len(b) for b in boxes), len(tracks))
             if opts.copy:
                 apply_copy(tracks, opts.copy)
     _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "message": msg})
@@ -79,8 +81,14 @@ def _stage_regions(frames, bg, boxes, opts, sd):
     for o in ov.get("regions", []):
         m = cv2.imread(str(sd / o["mask"]), cv2.IMREAD_GRAYSCALE) > 127
         ov_by_frame.setdefault(o["frame"], []).append((m, int(o["label"])))
-    rbf = [extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape),
-                           overrides=ov_by_frame.get(i)) for i in range(len(frames))]
+    n = len(frames)
+    rbf = []
+    for i in range(n):
+        if i == 0 or i + 1 == n or (i + 1) % max(1, n // 10) == 0:
+            report_stage("regions", f"{i + 1}/{n}")
+        rbf.append(extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape),
+                                   overrides=ov_by_frame.get(i)))
+    log.info("regions frames=%s labels=%s", n, sum(len(r) for r in rbf))
     return _pk(sd, "regions", rbf)
 
 
@@ -100,6 +108,7 @@ def _stage_tracking(rbf, sd):
         _trim_tail_crumbs(t)
     tracks = [t for t in tracks if t.regions]
     tracks = _merge_adjacent_tracks(tracks)
+    log.info("tracking objects=%s", len(tracks))
     return _pk(sd, "tracks", tracks)
 
 
@@ -121,14 +130,22 @@ def _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n_frames):
             del props[b]
     if opts.refine and any(p["kind"] == "sprite" for p in props.values()):
         try:
+            from .device import resolve_device
             from .refine import refine_affine, torch_available
             if torch_available():
                 keys = [k for k, p in props.items() if p["kind"] == "sprite"]
+                dev = resolve_device()
+                log.info("refine start device=%s sprites=%s iters=%s", dev, len(keys), opts.refine_iters)
+                report_stage("sprites", f"refine {len(keys)} sprites {dev}")
                 refined = refine_affine(frames, bg, {k: props[k]["raw"] for k in keys}, {k: props[k]["canon"] for k in keys},
-                                        {k: (0.5, 0.5) for k in keys}, {k: props[k]["z"] for k in keys}, iters=opts.refine_iters)
+                                        {k: (0.5, 0.5) for k in keys}, {k: props[k]["z"] for k in keys},
+                                        iters=opts.refine_iters, device=dev)
                 for k in keys:
                     props[k]["raw"] = refined[k]
+            else:
+                log.info("refine skipped: torch not installed")
         except Exception as e:
+            log.error("refine skipped: %s", e)
             props["_message"] = f"refine skipped: {e}"
     return _pk(sd, "props", props)
 
@@ -158,9 +175,12 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
 
 
 def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str]) -> Scene:
+    report_stage("semantics")
     assign_roles(scene.elements)
     scene.groups = group_by_motion(scene.elements, raws)
+    report_stage("constraints")
     scene.constraints = extract_constraints(scene)
+    report_stage("report")
     rec = reconstruction_error(scene, sd, frames, 0)
     conf = element_confidence(scene, sd, frames, 0)
     for e in scene.elements:
@@ -177,16 +197,25 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
     sd = _scene_dir(out_root, "s1")
     (sd / "stages").mkdir(parents=True, exist_ok=True)
+    report_stage("frames")
     frames, fps = read_frames(video, start, end)
     np.save(sd / "stages" / "frames.npy", frames)
     n, H, W = frames.shape[:3]
+    log.info("frames n=%s size=%sx%s fps=%s", n, W, H, fps)
+    report_stage("background")
     bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
     (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf}))
+    log.info("background rgb=%s confidence=%s", list(bg), bconf)
+    report_stage("text")
     boxes, text_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
+    report_stage("regions")
     rbf = _stage_regions(frames, bg, boxes, opts, sd)
+    report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
+    report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
     ids: dict = {}
+    report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id="s1", size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
@@ -210,12 +239,26 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     i = STAGES.index(from_stage)
     text = _pk(sd, "text"); boxes, text_tracks = text["boxes"], text["tracks"]
     if i <= STAGES.index("text"):
+        report_stage("text")
         boxes, text_tracks, _ = _stage_text(frames, bg, opts, None, sd)
-    rbf = _stage_regions(frames, bg, boxes, opts, sd) if i <= STAGES.index("regions") else _pk(sd, "regions")
-    obj_tracks = _stage_tracking(rbf, sd) if i <= STAGES.index("tracking") else _pk(sd, "tracks")
-    props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n) if i <= STAGES.index("sprites") else _pk(sd, "props")
+    if i <= STAGES.index("regions"):
+        report_stage("regions")
+        rbf = _stage_regions(frames, bg, boxes, opts, sd)
+    else:
+        rbf = _pk(sd, "regions")
+    if i <= STAGES.index("tracking"):
+        report_stage("tracking")
+        obj_tracks = _stage_tracking(rbf, sd)
+    else:
+        obj_tracks = _pk(sd, "tracks")
+    if i <= STAGES.index("sprites"):
+        report_stage("sprites")
+        props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
+    else:
+        props = _pk(sd, "props")
     ids = json.loads((sd / "stages" / "ids.json").read_text())
     ids.update(_load_overrides(sd).get("ids", {}))
+    report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     prev, _ = current_scene(root, scene_id)

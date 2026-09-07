@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 관리</title>
 <link href="/static/css/app.css" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
 <script type="module" src="/static/js/i18n.js"></script>
 <script type="module" src="/static/js/api.js"></script>
 <style>
@@ -16,7 +17,7 @@
 .admin-workspace { margin-left: 80px; display: flex; flex-direction: column; height: 100vh; }
 .admin-topbar { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-1); flex-shrink: 0; }
 .admin-topbar__left { display: flex; align-items: center; gap: 16px; font-size: var(--fs-body-sm); }
-.admin-topbar__brand { font-weight: 900; letter-spacing: -0.05em; }
+.admin-topbar__brand { font-weight: 900; letter-spacing: -0.05em; display: flex; align-items: center; gap: 8px; }
 .admin-topbar__badge { font-size: var(--fs-micro); padding: 2px 8px; border-radius: var(--r-full); background: var(--surface-2); color: var(--muted); border: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.1em; }
 .admin-canvas { flex: 1; display: flex; gap: 16px; padding: 16px; overflow: hidden; min-height: 0; }
 .admin-panel { flex: 1; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; min-width: 0; }
@@ -64,7 +65,7 @@
 <div class="admin-workspace">
 <header class="admin-topbar">
 <div class="admin-topbar__left">
-<span class="admin-topbar__brand">Keepframe</span>
+<span class="admin-topbar__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/>Keepframe</span>
 <span style="width:1px;height:16px;background:var(--hairline)"></span>
 <span data-i18n="admin.manage">관리</span>
 <span class="admin-topbar__badge">운영</span>

@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.device import gpu_status
 from keepframe.ir.schema import FontGuess
 from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.jobs import JobSpec, JobStore
@@ -249,14 +250,19 @@ def make_server(
                 p = STATIC / rel
                 if not p.is_file():
                     return self._json(404, {"error": "not found"})
-                ctype = (
-                    "text/css"
-                    if p.suffix == ".css"
-                    else "application/javascript"
-                    if p.suffix == ".js"
-                    else "application/octet-stream"
-                )
+                ctype = {
+                    ".css": "text/css",
+                    ".js": "application/javascript",
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".svg": "image/svg+xml",
+                    ".ico": "image/x-icon",
+                    ".webp": "image/webp",
+                }.get(p.suffix.lower(), "application/octet-stream")
                 return self._send(200, p.read_bytes(), ctype)
+            if u.path == "/api/status":
+                return self._json(200, gpu_status())
             if u.path == "/api/projects":
                 return self._json(200, {"projects": list_projects(workspace)})
 
@@ -487,7 +493,7 @@ def make_server(
                     spec=spec,
                     project_id=project_id,
                     scene_id="s1",
-                    stage="pipeline",
+                    stage="frames",
                     eta_s=est["seconds"],
                 )
                 write_meta(workspace, project_id, job_id=job.id)
