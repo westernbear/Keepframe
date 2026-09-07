@@ -23,7 +23,7 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int = 200, lr: float = 0.02,
                   scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]:
     if not torch_available():
-        raise RuntimeError("torch is required for refine_affine (pip install 'refstudio[gpu]')")
+        raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
     import torch, torch.nn.functional as F
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
     N, H, W = frames.shape[:3]

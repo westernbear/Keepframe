@@ -6,3 +6,5 @@ out/
 *.mp4
 .superpowers/
 .worktrees/
+data/
+.env

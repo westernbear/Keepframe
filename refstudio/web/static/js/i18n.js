@@ -1,6 +1,6 @@
 const STRINGS = {
   ko: {
-    "app.name": "Ref Studio",
+    "app.name": "Keepframe",
     "nav.library": "Library",
     "nav.new": "새 레퍼런스",
     "nav.analyze": "분석",
@@ -28,7 +28,7 @@ const STRINGS = {
     "admin.policy": "재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.",
   },
   en: {
-    "app.name": "Ref Studio",
+    "app.name": "Keepframe",
     "nav.library": "Library",
     "nav.new": "New reference",
     "nav.analyze": "Analyze",
@@ -58,7 +58,7 @@ const STRINGS = {
 };
 
 function currentLang() {
-  return localStorage.getItem("refstudio.lang") || "ko";
+  return localStorage.getItem("keepframe.lang") || "ko";
 }
 
 function T(key) {
@@ -81,7 +81,7 @@ function applyI18n(root) {
 
 function toggleLang() {
   const next = currentLang() === "ko" ? "en" : "ko";
-  localStorage.setItem("refstudio.lang", next);
+  localStorage.setItem("keepframe.lang", next);
   applyI18n();
   document.querySelectorAll("[data-i18n='lang.toggle']").forEach((btn) => {
     btn.textContent = T("lang.toggle");

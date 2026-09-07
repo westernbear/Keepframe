@@ -6,7 +6,6 @@ import re
 import tempfile
 import threading
 import traceback
-from datetime import datetime, timezone
 from email import message_from_bytes
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,14 +16,13 @@ import cv2
 import numpy as np
 
 from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.pipeline import analyze
 from refstudio.ir.schema import FontGuess
 from refstudio.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from refstudio.jobs import JobSpec, JobStore
 from refstudio.review import corrections
 from refstudio.web.estimate import consume_token, estimate, probe_video
-from refstudio.web.jobs import JobStore
 from refstudio.web.liveaction import looks_live_action
-from refstudio.web.workspace import create_project, list_projects, project_dir
+from refstudio.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
@@ -57,23 +55,6 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, str | tuple[st
         else:
             out[name] = (payload or b"").decode("utf-8", errors="replace")
     return out
-
-
-def _load_meta(workspace: Path, project_id: str) -> dict | None:
-    meta = project_dir(workspace, project_id) / "meta.json"
-    if not meta.is_file():
-        return None
-    return json.loads(meta.read_text(encoding="utf-8"))
-
-
-def _write_meta(workspace: Path, project_id: str, **updates) -> dict:
-    root = project_dir(workspace, project_id)
-    meta_path = root / "meta.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    meta.update(updates)
-    meta["updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
-    return meta
 
 
 def _png(rgb: np.ndarray) -> bytes:
@@ -213,7 +194,7 @@ def make_server(
         admin_routes = AdminRoutes(admin_svc, admin_auth)
 
     def review_state(project_id: str, scene_id: str) -> ReviewState | None:
-        if _load_meta(workspace, project_id) is None:
+        if load_meta(workspace, project_id) is None:
             return None
         key = (project_id, scene_id)
         if key not in review_states:
@@ -270,7 +251,7 @@ def make_server(
             m = re.fullmatch(r"/api/projects/([^/]+)/filmstrip", u.path)
             if m:
                 pid = m.group(1)
-                meta = _load_meta(workspace, pid)
+                meta = load_meta(workspace, pid)
                 if meta is None:
                     return self._json(404, {"error": "not found"})
                 n = int(parse_qs(u.query).get("n", ["8"])[0])
@@ -288,7 +269,7 @@ def make_server(
             m = re.fullmatch(r"/api/projects/([^/]+)/frame/(\d+)", u.path)
             if m:
                 pid, frame_s = m.group(1), m.group(2)
-                meta = _load_meta(workspace, pid)
+                meta = load_meta(workspace, pid)
                 if meta is None:
                     return self._json(404, {"error": "not found"})
                 video = project_dir(workspace, pid) / "source.mp4"
@@ -396,7 +377,7 @@ def make_server(
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 if "project_id" in data:
-                    meta = _load_meta(workspace, data["project_id"])
+                    meta = load_meta(workspace, data["project_id"])
                     if meta is None:
                         return self._json(404, {"error": "not found"})
                     video = project_dir(workspace, meta["id"]) / "source.mp4"
@@ -462,7 +443,7 @@ def make_server(
                 project_id = data.get("project_id")
                 if not project_id:
                     return self._json(400, {"error": "project_id required"})
-                meta = _load_meta(workspace, project_id)
+                meta = load_meta(workspace, project_id)
                 if meta is None:
                     return self._json(404, {"error": "not found"})
                 token = data.get("confirm_token") or ""
@@ -477,31 +458,27 @@ def make_server(
                     start, end = 0, max(0, info["frames"] - 1)
                 frames = max(1, int(end) - int(start) + 1)
                 est = estimate(meta.get("mode", "full"), frames, info["fps"])
-                _write_meta(workspace, project_id, status="analyzing", job_id=None)
-
-                def run_analyze() -> dict:
-                    try:
-                        analyze(video, int(start), int(end), root)
-                        _write_meta(workspace, project_id, status="review", job_id=None)
-                        return {"project_id": project_id}
-                    except Exception as e:
-                        _write_meta(
-                            workspace,
-                            project_id,
-                            status="error",
-                            error=f"{type(e).__name__}: {e}",
-                        )
-                        raise
-
+                write_meta(workspace, project_id, status="analyzing", job_id=None)
+                spec = JobSpec(
+                    kind="analyze",
+                    args={
+                        "video": str(video),
+                        "start": int(start),
+                        "end": int(end),
+                        "out_root": str(root),
+                        "workspace": str(workspace),
+                        "project_id": project_id,
+                    },
+                )
                 job = JOBS.submit(
                     "analyze",
-                    run_analyze,
+                    spec=spec,
                     project_id=project_id,
                     scene_id="s1",
                     stage="pipeline",
                     eta_s=est["seconds"],
                 )
-                _write_meta(workspace, project_id, job_id=job.id)
+                write_meta(workspace, project_id, job_id=job.id)
                 return self._json(202, {"job": job.to_json()})
 
             if u.path == "/api/keep":

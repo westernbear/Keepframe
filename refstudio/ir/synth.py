@@ -55,7 +55,7 @@ def make_synthetic_scene(scene_root: Path, seed: int, n_elements: int = 4, frame
         color = PALETTE[(i - 1) % len(PALETTE)]
         is_text = with_text and i == n
         if is_text:
-            text = rng.choice(["Launch", "Faster", "Ref Studio", "New"])
+            text = rng.choice(["Launch", "Faster", "Keepframe", "New"])
             tw, th = make_text_texture(scene_root / "assets" / f"{eid}.png", text, 40, color)
             canonical = Canonical(width=tw, height=th, texture=f"assets/{eid}.png", text=text,
                                   font=FontGuess(family_guess="sans-serif", weight=700, size_px=40),

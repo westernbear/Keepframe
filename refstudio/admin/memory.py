@@ -60,7 +60,7 @@ class MemoryAdmin:
             ),
         }
         self._members = [
-            Member(email="mina@ref.studio", role="admin", tenant_id="org_northwind"),
+            Member(email="mina@keepframe.app", role="admin", tenant_id="org_northwind"),
             Member(email="jun@northwind", role="review_lead", tenant_id="org_northwind"),
             Member(email="lee@hanbit", role="maker", tenant_id="org_hanbit"),
             Member(email="solo@lee", role="maker", tenant_id="org_solo"),
@@ -115,7 +115,7 @@ class MemoryAdmin:
         self._audit = [
             AuditEvent(
                 ts="14:02",
-                actor="mina@ref.studio",
+                actor="mina@keepframe.app",
                 action="테넌트 정지 시도",
                 target="Closed shop",
                 detail=None,
@@ -129,7 +129,7 @@ class MemoryAdmin:
             ),
             AuditEvent(
                 ts="13:18",
-                actor="mina@ref.studio",
+                actor="mina@keepframe.app",
                 action="멤버 추가",
                 target="Northwind",
                 detail="jun@northwind · 역할 검수 리드",

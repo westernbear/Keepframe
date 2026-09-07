@@ -30,7 +30,7 @@ def test_ported_pages_are_offline():
 
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
-    assert "refstudio.lang" in src
+    assert "keepframe.lang" in src
     for key in ("ingest.start", "review.keepSave", "error.liveaction"):
         assert key in src
 

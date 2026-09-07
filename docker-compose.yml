@@ -1,0 +1,50 @@
+name: keepframe
+
+# 이미지 업로드:
+#   cp .env.example .env   # KEEPFRAME_IMAGE / KEEPFRAME_TAG 수정
+#   docker compose build
+#   docker compose push
+# 관리자까지 같이 올리려면: docker compose --profile admin up -d
+
+x-keepframe: &keepframe
+  image: ${KEEPFRAME_IMAGE:-singlerr/keepframe}:${KEEPFRAME_TAG:-0.1.0}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      KEEPFRAME_VERSION: ${KEEPFRAME_TAG:-0.1.0}
+    tags:
+      - ${KEEPFRAME_IMAGE:-singlerr/keepframe}:${KEEPFRAME_TAG:-0.1.0}
+      - ${KEEPFRAME_IMAGE:-singlerr/keepframe}:latest
+  restart: unless-stopped
+  volumes:
+    - ${KEEPFRAME_WORKSPACE:-./data/workspace}:/data/workspace
+  # 오픈소스 기본: thread. 클라우드는 module:Class 실행기를 넣고 워커에서 run_job()만 호출.
+  environment:
+    KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
+
+services:
+  web:
+    <<: *keepframe
+    ports:
+      - "${KEEPFRAME_PORT:-8765}:8765"
+    command: ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  admin:
+    <<: *keepframe
+    profiles: ["admin"]
+    ports:
+      - "${KEEPFRAME_ADMIN_PORT:-8766}:8765"
+    command: ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765", "--admin"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/admin/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

@@ -1,9 +1,9 @@
 import secrets
 
-COOKIE = "refstudio_admin"
+COOKIE = "keepframe_admin"
 
 _SEED_USERS = {
-    "mina@ref.studio": "dev-admin",
+    "mina@keepframe.app": "dev-admin",
 }
 
 

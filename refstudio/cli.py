@@ -9,7 +9,7 @@ from .verify.verifier import verify
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="refstudio")
+    ap = argparse.ArgumentParser(prog="keepframe")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("synth"); s.add_argument("--out", required=True); s.add_argument("--seed", type=int, default=1)
     s.add_argument("--frames", type=int, default=60); s.add_argument("--no-text", action="store_true")
@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
     g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action="store_true")
     a = ap.parse_args(argv)
 
@@ -83,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
     if a.cmd == "serve":
         from .web.server import make_server
-        host = "127.0.0.1"
+        host = a.host
         kwargs: dict = {"admin": a.admin}
         if a.admin:
             from .admin.memory import MemoryAdmin

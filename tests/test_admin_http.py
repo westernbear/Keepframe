@@ -28,10 +28,10 @@ def post(srv, path, obj, cookie=None):
 
 def test_login_and_tenants(tmp_path):
     srv = start_admin(tmp_path)
-    code, headers, body = post(srv, "/admin/api/login", {"email": "mina@ref.studio", "password": "dev-admin"})
+    code, headers, body = post(srv, "/admin/api/login", {"email": "mina@keepframe.app", "password": "dev-admin"})
     assert code == 200
     cookie = headers.get("Set-Cookie")
-    assert "refstudio_admin=" in cookie
+    assert "keepframe_admin=" in cookie
     req = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/policy")
     req.add_header("Cookie", cookie.split(";")[0])
     with urlopen(req) as r:
@@ -42,7 +42,7 @@ def test_login_and_tenants(tmp_path):
 
 def test_quarantine_keys_and_no_video(tmp_path):
     srv = start_admin(tmp_path)
-    code, headers, _ = post(srv, "/admin/api/login", {"email": "mina@ref.studio", "password": "dev-admin"})
+    code, headers, _ = post(srv, "/admin/api/login", {"email": "mina@keepframe.app", "password": "dev-admin"})
     cookie = headers.get("Set-Cookie").split(";")[0]
     req = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/quarantine")
     req.add_header("Cookie", cookie)

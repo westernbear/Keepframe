@@ -9,7 +9,7 @@ def test_seed_tenants_and_no_delete():
     assert "org_northwind" in ids and "org_closed" in ids
     assert not hasattr(svc, "delete_audit")
     n = len(svc.list_audit())
-    svc.append_audit(AuditEvent(ts="15:00", actor="mina@ref.studio", action="멤버 추가", target="Northwind", detail="x"))
+    svc.append_audit(AuditEvent(ts="15:00", actor="mina@keepframe.app", action="멤버 추가", target="Northwind", detail="x"))
     assert len(svc.list_audit()) == n + 1
     assert svc.list_audit()[0].action == "멤버 추가"
 
