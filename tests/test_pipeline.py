@@ -1,8 +1,8 @@
 import json, numpy as np
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene, scene_dir
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, rerun, AnalyzeOptions
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene, scene_dir
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, rerun, AnalyzeOptions
 
 def test_analyze_synthetic_video_end_to_end(tmp_scene_dir):
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=61, with_text=False, overlap=False)

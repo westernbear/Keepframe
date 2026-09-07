@@ -1,6 +1,6 @@
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
 
 def test_identical_scene_scores_one(tmp_scene_dir):
     s = make_synthetic_scene(tmp_scene_dir, seed=4)

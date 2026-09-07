@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from refstudio.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background,
+from keepframe.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background,
                                  Constraint, Project, SceneRef, Version, dump, load_scene_json, PROPS, DEFAULTS)
 
 def make_scene():
@@ -12,7 +12,7 @@ def make_scene():
 def test_roundtrip_json_uses_schema_alias():
     s = make_scene()
     text = dump(s)
-    assert '"schema": "refstudio.scene/1"' in text
+    assert '"schema": "keepframe.scene/1"' in text
     s2 = load_scene_json(text)
     assert s2 == s
     assert s2.element("e1").tracks["x"].keys[0].ease == (0.2, 0, 0, 1)
@@ -36,4 +36,4 @@ def test_project_roundtrip():
                 scenes=[SceneRef(id="s1", frames=(0, 59))],
                 versions=[Version(id="v1", parent=None, note="initial", scene_file="scenes/s1/scene.v1.json")])
     text = dump(p)
-    assert '"schema": "refstudio.project/1"' in text
+    assert '"schema": "keepframe.project/1"' in text

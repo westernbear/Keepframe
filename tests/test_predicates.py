@@ -1,6 +1,6 @@
 import pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.verify.predicates import parse_pred, build_context, eval_pred
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.verify.predicates import parse_pred, build_context, eval_pred
 
 
 def scene():

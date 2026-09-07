@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from refstudio.admin.auth import COOKIE, cookie_header
-from refstudio.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
+from keepframe.admin.auth import COOKIE, cookie_header
+from keepframe.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
 
 if TYPE_CHECKING:
-    from refstudio.admin.auth import MemoryAuth
-    from refstudio.admin.memory import MemoryAdmin
+    from keepframe.admin.auth import MemoryAuth
+    from keepframe.admin.memory import MemoryAdmin
 
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 

@@ -1,23 +1,23 @@
-# Ref Studio M1+M2 Stitch UI Implementation Plan
+# Keepframe M1+M2 Stitch UI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Put the Stitch maker screens on the existing M1+M2 core so a local process can list projects, upload a clip (range or full, with a cost gate), watch analysis, and review keep/corrections.
 
-**Architecture:** One Python package `refstudio`. Core IR/analyze/verify stays in `refstudio/{ir,compose,render,verify,analyze,review}` as built by `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md` Tasks 1–25. This plan adds `refstudio/web`: stdlib `http.server`, static HTML copied from `.stitch/designs/` and taken offline, plus JSON APIs. No React, no Next, no CDN at runtime.
+**Architecture:** One Python package `keepframe`. Core IR/analyze/verify stays in `keepframe/{ir,compose,render,verify,analyze,review}` as built by `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` Tasks 1–25. This plan adds `keepframe/web`: stdlib `http.server`, static HTML copied from `.stitch/designs/` and taken offline, plus JSON APIs. No React, no Next, no CDN at runtime.
 
 **Tech Stack:** Python 3.11+, pydantic v2, numpy, opencv-python-headless, playwright (Chromium for renderer and browser smoke), pytest, stdlib `http.server`. Stitch HTML is the visual source; DESIGN.md is the token authority.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-ref-studio-design.md` (§4 IR, §5 analyzer, §6 review, §9 cost gate, §10–§11 M2). Visual: `DESIGN.md`. Screen source: `.stitch/designs/` and Stitch project `17345649857730883248`.
+**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§4 IR, §5 analyzer, §6 review, §9 cost gate, §10–§11 M2). Visual: `DESIGN.md`. Screen source: `.stitch/designs/` and Stitch project `17345649857730883248`.
 
 ## Global Constraints
 
-- Do not edit `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md`.
-- Python ≥ 3.11. Package name `refstudio`. Tests with `pytest`; browser tests `@pytest.mark.browser`.
-- IR schema ids are exactly `refstudio.project/1` and `refstudio.scene/1`.
+- Do not edit `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md`.
+- Python ≥ 3.11. Package name `keepframe`. Tests with `pytest`; browser tests `@pytest.mark.browser`.
+- IR schema ids are exactly `keepframe.project/1` and `keepframe.scene/1`.
 - Corrections are exactly four ops: reassign, mask, bbox, edit_text. Keep predicates are mandatory verifier checks. Retry cap 4, asset-generation cap 2 — display only; no UI control changes them.
 - Local edition is one process (CLI + local web). Admin routes are Plan B; this plan must 404 `/admin` unless `--admin` is later wired.
-- Korean default, English toggle via `localStorage("refstudio.lang")`. Every visible string goes through `T` / `data-i18n`.
+- Korean default, English toggle via `localStorage("keepframe.lang")`. Every visible string goes through `T` / `data-i18n`.
 - Primary CTA is a white pill with a black label. Accent `#0099ff` is focus/selection only. No emoji. Dark only.
 - Runtime HTML/CSS/JS must not load `cdn.tailwindcss.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, or `lh3.googleusercontent.com`.
 - Icons are inline SVG. Material Symbols CDN is forbidden.
@@ -29,16 +29,16 @@
 
 ## Prerequisite (existing plan, not copied)
 
-Execute Tasks 1–25 of `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md` first, using that file as the brief. Those tasks produce the names below. This file starts at Task 1 of the web layer.
+Execute Tasks 1–25 of `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` first, using that file as the brief. Those tasks produce the names below. This file starts at Task 1 of the web layer.
 
 **Consumed from Tasks 1–25 (exact names):**
 
-- `refstudio.ir.schema`: `FontGuess`, `Constraint`, `Scene`, `Project`, `Version`, `dump`, `load_scene_json`, `load_project_json`
-- `refstudio.ir.store`: `save_scene(scene, path)`, `load_scene(path) -> Scene`, `scene_dir(root, scene_id) -> Path`, `load_project(root) -> Project`, `init_project(root, source, scene, note="initial analysis") -> Project`, `current_scene(root, scene_id) -> tuple[Scene, Version]`, `new_version(root, scene_id, scene, note, auto=True) -> Version`
-- `refstudio.ir.tracks`: `eval_track`, `eval_props`, `element_bbox(el, f) -> tuple[float,float,float,float]`
-- `refstudio.analyze.composite`: `composite_scene(scene, scene_dir, f) -> np.ndarray` RGB float 0..1
-- `refstudio.analyze.pipeline`: `AnalyzeOptions`, `analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeOptions | None = None, ocr=None) -> Project`, `rerun(root, scene_id, from_stage, note, options=None) -> Version`
-- `refstudio.review.corrections`: `reassign_id`, `set_region_mask`, `add_bbox_prompt`, `edit_text` (each `-> Version`)
+- `keepframe.ir.schema`: `FontGuess`, `Constraint`, `Scene`, `Project`, `Version`, `dump`, `load_scene_json`, `load_project_json`
+- `keepframe.ir.store`: `save_scene(scene, path)`, `load_scene(path) -> Scene`, `scene_dir(root, scene_id) -> Path`, `load_project(root) -> Project`, `init_project(root, source, scene, note="initial analysis") -> Project`, `current_scene(root, scene_id) -> tuple[Scene, Version]`, `new_version(root, scene_id, scene, note, auto=True) -> Version`
+- `keepframe.ir.tracks`: `eval_track`, `eval_props`, `element_bbox(el, f) -> tuple[float,float,float,float]`
+- `keepframe.analyze.composite`: `composite_scene(scene, scene_dir, f) -> np.ndarray` RGB float 0..1
+- `keepframe.analyze.pipeline`: `AnalyzeOptions`, `analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeOptions | None = None, ocr=None) -> Project`, `rerun(root, scene_id, from_stage, note, options=None) -> Version`
+- `keepframe.review.corrections`: `reassign_id`, `set_region_mask`, `add_bbox_prompt`, `edit_text` (each `-> Version`)
 - CLI already has `synth`, `compose`, `render`, `verify`, `analyze`, `correct`, `gate-m1`, `gate-m2`
 
 ---
@@ -46,20 +46,20 @@ Execute Tasks 1–25 of `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md` 
 ## File Structure
 
 ```
-refstudio/web/__init__.py
-refstudio/web/server.py          ThreadingHTTPServer, routes
-refstudio/web/workspace.py       list/create projects under a workspace dir
-refstudio/web/jobs.py            in-process JobStore (analyze + correct)
-refstudio/web/estimate.py        range/full time estimate + confirm token
-refstudio/web/liveaction.py      cheap live-action reject (no bypass)
-refstudio/web/static/library.html
-refstudio/web/static/ingest.html
-refstudio/web/static/analyze.html
-refstudio/web/static/review.html
-refstudio/web/static/css/app.css
-refstudio/web/static/js/i18n.js
-refstudio/web/static/js/api.js
-refstudio/cli.py                 add `serve`
+keepframe/web/__init__.py
+keepframe/web/server.py          ThreadingHTTPServer, routes
+keepframe/web/workspace.py       list/create projects under a workspace dir
+keepframe/web/jobs.py            in-process JobStore (analyze + correct)
+keepframe/web/estimate.py        range/full time estimate + confirm token
+keepframe/web/liveaction.py      cheap live-action reject (no bypass)
+keepframe/web/static/library.html
+keepframe/web/static/ingest.html
+keepframe/web/static/analyze.html
+keepframe/web/static/review.html
+keepframe/web/static/css/app.css
+keepframe/web/static/js/i18n.js
+keepframe/web/static/js/api.js
+keepframe/cli.py                 add `serve`
 tests/test_web_static.py
 tests/test_web_server.py
 tests/test_web_workspace.py
@@ -125,8 +125,8 @@ git commit -m "chore(stitch): pin analyze progress screen locally"
 ### Task 2: `serve` CLI and static routes
 
 **Files:**
-- Create: `refstudio/web/__init__.py`, `refstudio/web/server.py`
-- Modify: `refstudio/cli.py`, `pyproject.toml` (package-data `web/static/*`)
+- Create: `keepframe/web/__init__.py`, `keepframe/web/server.py`
+- Modify: `keepframe/cli.py`, `pyproject.toml` (package-data `web/static/*`)
 - Test: `tests/test_web_server.py`
 
 **Interfaces:**
@@ -135,9 +135,9 @@ git commit -m "chore(stitch): pin analyze progress screen locally"
   - `PAGES = {"/": "library.html", "/new": "ingest.html", "/analyze": "analyze.html", "/review": "review.html"}`
   - `make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admin: bool = False) -> ThreadingHTTPServer`
   - `GET /`, `/new`, `/analyze`, `/review` → corresponding HTML (404 JSON if file missing)
-  - `GET /static/...` from `refstudio/web/static/` (`..` rejected)
+  - `GET /static/...` from `keepframe/web/static/` (`..` rejected)
   - `GET /admin` and `GET /admin/` → 404 `{"error": "로컬판에는 이 화면이 없습니다."}` when `admin` is False
-  - CLI: `refstudio serve --workspace DIR [--port 8765]` prints `http://127.0.0.1:{port}/`
+  - CLI: `keepframe serve --workspace DIR [--port 8765]` prints `http://127.0.0.1:{port}/`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -149,7 +149,7 @@ from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
 def start(tmp_path):
-    from refstudio.web.server import make_server
+    from keepframe.web.server import make_server
     srv = make_server(tmp_path, port=0)
     import threading
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -181,12 +181,12 @@ def test_missing_page_is_404_json(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_web_server.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.web.server'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.web.server'`
 
 - [ ] **Step 3: Write the server**
 
 ```python
-# refstudio/web/server.py
+# keepframe/web/server.py
 from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -244,7 +244,7 @@ def make_server(workspace: Path, port: int = 8765, host: str = "127.0.0.1", admi
     return ThreadingHTTPServer((host, port), H)
 ```
 
-Add to `refstudio/cli.py` a `serve` subparser with `--workspace` (required) and `--port` (default 8765) that calls `make_server` and `serve_forever`. Add `refstudio/web/static` to package-data.
+Add to `keepframe/cli.py` a `serve` subparser with `--workspace` (required) and `--port` (default 8765) that calls `make_server` and `serve_forever`. Add `keepframe/web/static` to package-data.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -254,7 +254,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/__init__.py refstudio/web/server.py refstudio/cli.py pyproject.toml tests/test_web_server.py
+git add keepframe/web/__init__.py keepframe/web/server.py keepframe/cli.py pyproject.toml tests/test_web_server.py
 git commit -m "feat(web): stdlib serve with maker routes and admin 404"
 ```
 
@@ -263,7 +263,7 @@ git commit -m "feat(web): stdlib serve with maker routes and admin 404"
 ### Task 3: Offline-port the four Stitch pages
 
 **Files:**
-- Create: `refstudio/web/static/library.html`, `ingest.html`, `analyze.html`, `review.html`, `css/app.css`, `js/i18n.js`, `js/api.js`
+- Create: `keepframe/web/static/library.html`, `ingest.html`, `analyze.html`, `review.html`, `css/app.css`, `js/i18n.js`, `js/api.js`
 - Test: `tests/test_web_static.py` (extend)
 
 **Interfaces:**
@@ -295,7 +295,7 @@ Primary button: white background, black text, pill (`border-radius: 9999px`). Fo
 # append to tests/test_web_static.py
 import re
 
-STATIC = ROOT / "refstudio" / "web" / "static"
+STATIC = ROOT / "keepframe" / "web" / "static"
 FORBIDDEN = (
     "cdn.tailwindcss.com",
     "fonts.googleapis.com",
@@ -315,7 +315,7 @@ def test_ported_pages_are_offline():
 
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
-    assert "refstudio.lang" in src
+    assert "keepframe.lang" in src
     for key in ("ingest.start", "review.keepSave", "error.liveaction"):
         assert key in src
 
@@ -327,7 +327,7 @@ def test_css_tokens_match_design():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_web_static.py -v`
-Expected: FAIL with missing `refstudio/web/static/library.html` (analyze source test from Task 1 still passes)
+Expected: FAIL with missing `keepframe/web/static/library.html` (analyze source test from Task 1 still passes)
 
 - [ ] **Step 3: Port the four pages**
 
@@ -341,7 +341,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/static tests/test_web_static.py
+git add keepframe/web/static tests/test_web_static.py
 git commit -m "feat(web): offline-port Stitch library ingest analyze review"
 ```
 
@@ -350,8 +350,8 @@ git commit -m "feat(web): offline-port Stitch library ingest analyze review"
 ### Task 4: Workspace project list and create
 
 **Files:**
-- Create: `refstudio/web/workspace.py`
-- Modify: `refstudio/web/server.py`
+- Create: `keepframe/web/workspace.py`
+- Modify: `keepframe/web/server.py`
 - Test: `tests/test_web_workspace.py`
 
 **Interfaces:**
@@ -371,7 +371,7 @@ git commit -m "feat(web): offline-port Stitch library ingest analyze review"
 # tests/test_web_workspace.py
 import json
 from pathlib import Path
-from refstudio.web.workspace import list_projects, create_project, project_dir
+from keepframe.web.workspace import list_projects, create_project, project_dir
 
 def test_empty_workspace(tmp_path):
     assert list_projects(tmp_path) == []
@@ -385,12 +385,12 @@ def test_create_requires_video(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_web_workspace.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.web.workspace'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.web.workspace'`
 
 - [ ] **Step 3: Implement workspace + GET /api/projects**
 
 ```python
-# refstudio/web/workspace.py
+# keepframe/web/workspace.py
 from __future__ import annotations
 import json, secrets, shutil
 from datetime import datetime, timezone
@@ -436,7 +436,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/workspace.py refstudio/web/server.py tests/test_web_workspace.py
+git add keepframe/web/workspace.py keepframe/web/server.py tests/test_web_workspace.py
 git commit -m "feat(web): workspace project list under serve --workspace"
 ```
 
@@ -445,8 +445,8 @@ git commit -m "feat(web): workspace project list under serve --workspace"
 ### Task 5: Upload, filmstrip, estimate, confirm
 
 **Files:**
-- Create: `refstudio/web/estimate.py`, `refstudio/web/liveaction.py`
-- Modify: `refstudio/web/server.py`, `refstudio/web/static/ingest.html`, `refstudio/web/static/js/api.js`
+- Create: `keepframe/web/estimate.py`, `keepframe/web/liveaction.py`
+- Modify: `keepframe/web/server.py`, `keepframe/web/static/ingest.html`, `keepframe/web/static/js/api.js`
 - Test: `tests/test_web_estimate.py`, `tests/test_web_ingest.py`
 
 **Interfaces:**
@@ -468,7 +468,7 @@ git commit -m "feat(web): workspace project list under serve --workspace"
 
 ```python
 # tests/test_web_estimate.py
-from refstudio.web.estimate import SECONDS_PER_SCENE, estimate
+from keepframe.web.estimate import SECONDS_PER_SCENE, estimate
 
 def test_range_is_one_scene():
     e = estimate("range", frames=90, fps=30)
@@ -506,7 +506,7 @@ def test_upload_range_project(tmp_path):
     vid = tmp_path / "a.mp4"
     _mp4(vid)
     # POST multipart is tested via workspace.create_project here if server multipart lands in Step 3
-    from refstudio.web.workspace import create_project, list_projects
+    from keepframe.web.workspace import create_project, list_projects
     row = create_project(tmp_path / "ws", "Card", vid, "range", (0, 9))
     assert row["status"] == "uploaded"
     assert list_projects(tmp_path / "ws")[0]["id"] == row["id"]
@@ -515,7 +515,7 @@ def test_upload_range_project(tmp_path):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_web_estimate.py tests/test_web_ingest.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.web.estimate'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.web.estimate'`
 
 - [ ] **Step 3: Implement estimate, liveaction, upload routes, bind ingest.html**
 
@@ -551,7 +551,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/estimate.py refstudio/web/liveaction.py refstudio/web/server.py refstudio/web/static/ingest.html refstudio/web/static/js/api.js tests/test_web_estimate.py tests/test_web_ingest.py
+git add keepframe/web/estimate.py keepframe/web/liveaction.py keepframe/web/server.py keepframe/web/static/ingest.html keepframe/web/static/js/api.js tests/test_web_estimate.py tests/test_web_ingest.py
 git commit -m "feat(web): upload filmstrip estimate and live-action reject"
 ```
 
@@ -560,8 +560,8 @@ git commit -m "feat(web): upload filmstrip estimate and live-action reject"
 ### Task 6: Analyze job and progress page
 
 **Files:**
-- Create: `refstudio/web/jobs.py`
-- Modify: `refstudio/web/server.py`, `refstudio/web/static/analyze.html`
+- Create: `keepframe/web/jobs.py`
+- Modify: `keepframe/web/server.py`, `keepframe/web/static/analyze.html`
 - Test: `tests/test_web_jobs.py`
 
 **Interfaces:**
@@ -578,7 +578,7 @@ Range start/end come from `meta.json.range` or `(0, frames-1)`.
 ```python
 # tests/test_web_jobs.py
 import time
-from refstudio.web.jobs import JobStore
+from keepframe.web.jobs import JobStore
 
 def test_job_runs_and_finishes():
     store = JobStore()
@@ -606,12 +606,12 @@ def test_job_surfaces_error():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_web_jobs.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.web.jobs'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.web.jobs'`
 
 - [ ] **Step 3: Implement JobStore and /api/analyze**
 
 ```python
-# refstudio/web/jobs.py
+# keepframe/web/jobs.py
 from __future__ import annotations
 import secrets, threading, traceback
 from dataclasses import dataclass, field, asdict
@@ -672,7 +672,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/jobs.py refstudio/web/server.py refstudio/web/static/analyze.html tests/test_web_jobs.py
+git add keepframe/web/jobs.py keepframe/web/server.py keepframe/web/static/analyze.html tests/test_web_jobs.py
 git commit -m "feat(web): analyze job store and progress page"
 ```
 
@@ -681,7 +681,7 @@ git commit -m "feat(web): analyze job store and progress page"
 ### Task 7: Review APIs bound to Stitch review.html
 
 **Files:**
-- Modify: `refstudio/web/server.py`, `refstudio/web/static/review.html`, `refstudio/web/static/js/api.js`
+- Modify: `keepframe/web/server.py`, `keepframe/web/static/review.html`, `keepframe/web/static/js/api.js`
 - Test: `tests/test_web_review.py`
 
 **Interfaces:**
@@ -707,16 +707,16 @@ git commit -m "feat(web): analyze job store and progress page"
 ```python
 # tests/test_web_review.py
 import json
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import init_project, scene_dir
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import init_project, scene_dir
 from tests.test_web_server import start, get
 
 def test_state_from_synthetic(tmp_path):
     root = tmp_path / "ws" / "p1"
     scene = make_synthetic_scene(root / "gold", seed=11, with_text=False)
     # init_project expects the scene files under root; copy via init_project
-    from refstudio.ir.store import save_scene
-    from refstudio.ir.schema import Scene
+    from keepframe.ir.store import save_scene
+    from keepframe.ir.schema import Scene
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, scene.frames - 1]}, scene)
     (root / "meta.json").write_text(json.dumps({"id": "p1", "title": "t", "status": "review"}))
     srv = start(tmp_path / "ws")
@@ -736,7 +736,7 @@ Expected: FAIL (404 on `/api/state`)
 
 - [ ] **Step 3: Implement review routes and bind review.html**
 
-Port the handler bodies from `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md` Task 26 (`ReviewState`, `/api/state`, frames, keep, correct) into `refstudio/web/server.py`, keyed by `project` under the workspace. Wire review.html to those endpoints. Do not add a fifth correction.
+Port the handler bodies from `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` Task 26 (`ReviewState`, `/api/state`, frames, keep, correct) into `keepframe/web/server.py`, keyed by `project` under the workspace. Wire review.html to those endpoints. Do not add a fifth correction.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -746,7 +746,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/server.py refstudio/web/static/review.html refstudio/web/static/js/api.js tests/test_web_review.py
+git add keepframe/web/server.py keepframe/web/static/review.html keepframe/web/static/js/api.js tests/test_web_review.py
 git commit -m "feat(web): bind Stitch review desk to keep and four corrections"
 ```
 
@@ -755,7 +755,7 @@ git commit -m "feat(web): bind Stitch review desk to keep and four corrections"
 ### Task 8: Library binding and empty / reject / error states
 
 **Files:**
-- Modify: `refstudio/web/static/library.html`, `refstudio/web/static/ingest.html`, `refstudio/web/static/analyze.html`, `refstudio/web/static/review.html`
+- Modify: `keepframe/web/static/library.html`, `keepframe/web/static/ingest.html`, `keepframe/web/static/analyze.html`, `keepframe/web/static/review.html`
 - Test: `tests/test_web_states.py`
 
 **Interfaces:**
@@ -771,7 +771,7 @@ git commit -m "feat(web): bind Stitch review desk to keep and four corrections"
 # tests/test_web_states.py
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parents[1] / "refstudio" / "web" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
 
 def test_library_has_empty_copy():
     html = (STATIC / "library.html").read_text(encoding="utf-8")
@@ -802,7 +802,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/static tests/test_web_states.py
+git add keepframe/web/static tests/test_web_states.py
 git commit -m "feat(web): library rows and reject empty error states"
 ```
 
@@ -832,9 +832,9 @@ pytest.importorskip("playwright")
 @pytest.mark.browser
 def test_library_and_review_render(tmp_path):
     from playwright.sync_api import sync_playwright
-    from refstudio.ir.synth import make_synthetic_scene
-    from refstudio.ir.store import init_project
-    from refstudio.web.server import make_server
+    from keepframe.ir.synth import make_synthetic_scene
+    from keepframe.ir.store import init_project
+    from keepframe.web.server import make_server
     import json, threading
 
     root = tmp_path / "p1"
@@ -872,7 +872,7 @@ Expected: PASS (needs Chromium)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/test_web_smoke.py refstudio/web/static/review.html
+git add tests/test_web_smoke.py keepframe/web/static/review.html
 git commit -m "test(web): browser smoke for library and review at 1280"
 ```
 

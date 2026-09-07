@@ -1,7 +1,7 @@
 import pytest
-from refstudio.admin.memory import MemoryAdmin
-from refstudio.admin.models import AuditEvent, QuarantineItem
-from refstudio.admin.policy import RETRY_CAP
+from keepframe.admin.memory import MemoryAdmin
+from keepframe.admin.models import AuditEvent, QuarantineItem
+from keepframe.admin.policy import RETRY_CAP
 
 def test_seed_tenants_and_no_delete():
     svc = MemoryAdmin()

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-STATIC = Path("refstudio/web/static")
+STATIC = Path("keepframe/web/static")
 FORBIDDEN = ("cdn.tailwindcss.com", "fonts.googleapis.com", "lh3.googleusercontent.com", "material-symbols")
 PAGES = ("admin-login.html", "admin-tenants.html", "admin-queue.html", "admin-quarantine.html", "admin-audit.html")
 

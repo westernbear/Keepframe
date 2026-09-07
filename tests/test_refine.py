@@ -1,8 +1,8 @@
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import eval_props
-from refstudio.analyze.composite import composite_scene, load_texture
-from refstudio.analyze.refine import refine_affine, torch_available
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import eval_props
+from keepframe.analyze.composite import composite_scene, load_texture
+from keepframe.analyze.refine import refine_affine, torch_available
 
 pytestmark = pytest.mark.gpu
 

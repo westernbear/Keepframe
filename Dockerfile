@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY pyproject.toml ./
-COPY refstudio ./refstudio
+COPY keepframe ./keepframe
 
 RUN pip install --no-cache-dir .[ocr] \
     && mkdir -p /data/workspace

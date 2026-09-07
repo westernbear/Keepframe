@@ -1,7 +1,7 @@
 import numpy as np, pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.analyze.composite import composite_scene, hex_to_rgb
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.analyze.composite import composite_scene, hex_to_rgb
 
 def test_translate_only_places_texture_exactly(tmp_scene_dir):
     make_texture(tmp_scene_dir / "assets" / "e1.png", "rect", 20, 10, (0, 255, 0))
@@ -20,8 +20,8 @@ def test_hex():
 
 @pytest.mark.browser
 def test_compositor_matches_browser(tmp_scene_dir):
-    from refstudio.compose.composer import compose
-    from refstudio.render.renderer import render, load_frame
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import render, load_frame
     scene = make_synthetic_scene(tmp_scene_dir, seed=5, with_text=False)
     html = compose(scene, tmp_scene_dir, tmp_scene_dir / "c.html")
     r = render(html, scene, tmp_scene_dir / "r", frames=[0, 20, 40])

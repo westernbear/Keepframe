@@ -1,10 +1,10 @@
 import json, numpy as np, cv2
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene, scene_dir, load_project
-from refstudio.ir.schema import FontGuess
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, AnalyzeOptions
-from refstudio.review.corrections import edit_text, reassign_id, add_bbox_prompt
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene, scene_dir, load_project
+from keepframe.ir.schema import FontGuess
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, AnalyzeOptions
+from keepframe.review.corrections import edit_text, reassign_id, add_bbox_prompt
 
 def project(tmp, seed, frames=24):
     gold = make_synthetic_scene(tmp / "gold", seed=seed, frames=frames, with_text=False, overlap=False)
@@ -36,7 +36,7 @@ def test_reassign_whole_range_merges_elements(tmp_scene_dir):
 def test_bbox_prompt_appends_override_and_reruns(tmp_scene_dir):
     _, root = project(tmp_scene_dir, 73)
     s, _ = current_scene(root, "s1")
-    from refstudio.ir.tracks import element_bbox
+    from keepframe.ir.tracks import element_bbox
     x0, y0, x1, y1 = [int(v) for v in element_bbox(s.elements[0], 0)]
     v = add_bbox_prompt(root, "s1", 0, (x0 - 2, y0 - 2, x1 + 2, y1 + 2), s.elements[0].id)
     assert v.id == "v2"

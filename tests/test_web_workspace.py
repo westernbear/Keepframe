@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from refstudio.web.workspace import list_projects, create_project, project_dir
+from keepframe.web.workspace import list_projects, create_project, project_dir
 
 def test_empty_workspace(tmp_path):
     assert list_projects(tmp_path) == []

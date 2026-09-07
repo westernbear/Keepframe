@@ -1,5 +1,5 @@
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.compose.composer import compose
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.compose.composer import compose
 
 
 def test_compose_is_self_contained_and_has_hooks(tmp_scene_dir):

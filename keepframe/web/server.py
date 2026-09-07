@@ -15,14 +15,14 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
-from refstudio.analyze.composite import composite_scene
-from refstudio.ir.schema import FontGuess
-from refstudio.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
-from refstudio.jobs import JobSpec, JobStore
-from refstudio.review import corrections
-from refstudio.web.estimate import consume_token, estimate, probe_video
-from refstudio.web.liveaction import looks_live_action
-from refstudio.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
+from keepframe.analyze.composite import composite_scene
+from keepframe.ir.schema import FontGuess
+from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from keepframe.jobs import JobSpec, JobStore
+from keepframe.review import corrections
+from keepframe.web.estimate import consume_token, estimate, probe_video
+from keepframe.web.liveaction import looks_live_action
+from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
@@ -130,14 +130,18 @@ class ReviewState:
                 elif op == "mask":
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:
                         t.write(base64.b64decode(args["mask_png_base64"]))
-                    v = corrections.set_region_mask(
-                        self.root,
-                        self.scene_id,
-                        int(args["frame"]),
-                        Path(t.name),
-                        args["object_id"],
-                        note=args.get("note", "set region mask"),
-                    )
+                        tmp = Path(t.name)
+                    try:
+                        v = corrections.set_region_mask(
+                            self.root,
+                            self.scene_id,
+                            int(args["frame"]),
+                            tmp,
+                            args["object_id"],
+                            note=args.get("note", "set region mask"),
+                        )
+                    finally:
+                        tmp.unlink(missing_ok=True)
                 elif op == "bbox":
                     v = corrections.add_bbox_prompt(
                         self.root,
@@ -189,7 +193,7 @@ def make_server(
     review_states: dict[tuple[str, str], ReviewState] = {}
     admin_routes = None
     if admin and admin_svc is not None and admin_auth is not None:
-        from refstudio.admin.http import AdminRoutes
+        from keepframe.admin.http import AdminRoutes
 
         admin_routes = AdminRoutes(admin_svc, admin_auth)
 

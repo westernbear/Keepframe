@@ -1,8 +1,8 @@
 import json, subprocess, sys, pytest
-from refstudio.gates import m1_gate
+from keepframe.gates import m1_gate
 
 def run(*args):
-    return subprocess.run([sys.executable, "-m", "refstudio.cli", *args], capture_output=True, text=True)
+    return subprocess.run([sys.executable, "-m", "keepframe.cli", *args], capture_output=True, text=True)
 
 def test_serve_help_exposes_host():
     r = run("serve", "--help")

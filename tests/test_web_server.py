@@ -4,7 +4,7 @@ from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
 def start(tmp_path):
-    from refstudio.web.server import make_server
+    from keepframe.web.server import make_server
     srv = make_server(tmp_path, port=0)
     import threading
     threading.Thread(target=srv.serve_forever, daemon=True).start()

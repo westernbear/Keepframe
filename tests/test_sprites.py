@@ -1,11 +1,11 @@
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import eval_props
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
-from refstudio.analyze.tracking import track_regions
-from refstudio.analyze.sprites import sprite_props, z_order, RAW_COLS
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import eval_props
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.tracking import track_regions
+from keepframe.analyze.sprites import sprite_props, z_order, RAW_COLS
 
 def analyzed_tracks(scene, d):
     frames = np.stack([(composite_scene(scene, d, f) * 255).round().astype(np.uint8) for f in range(scene.frames)])

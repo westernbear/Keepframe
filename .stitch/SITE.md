@@ -1,4 +1,4 @@
-# Ref Studio Stitch screens
+# Keepframe Stitch screens
 
 Project `17345649857730883248`. Design system `assets/18239713153808064386`.
 

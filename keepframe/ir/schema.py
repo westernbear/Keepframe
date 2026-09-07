@@ -101,7 +101,7 @@ class Background(BaseModel):
 
 class Scene(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    schema_version: str = Field("refstudio.scene/1", alias="schema")
+    schema_version: str = Field("keepframe.scene/1", alias="schema")
     id: str
     size: tuple[int, int]
     fps: float
@@ -134,7 +134,7 @@ class Version(BaseModel):
 
 class Project(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    schema_version: str = Field("refstudio.project/1", alias="schema")
+    schema_version: str = Field("keepframe.project/1", alias="schema")
     source: dict
     scenes: list[SceneRef]
     links: list[dict] = Field(default_factory=list)

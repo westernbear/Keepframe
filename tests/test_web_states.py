@@ -1,6 +1,6 @@
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parents[1] / "refstudio" / "web" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
 
 
 def test_library_has_empty_copy():

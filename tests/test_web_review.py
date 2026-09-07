@@ -1,6 +1,6 @@
 import json
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import init_project
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import init_project
 from tests.test_web_server import start
 
 

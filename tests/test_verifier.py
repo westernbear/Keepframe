@@ -1,8 +1,8 @@
 import pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.schema import Keyframe
-from refstudio.analyze.constraints import extract_constraints
-from refstudio.verify.verifier import verify
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.schema import Keyframe
+from keepframe.analyze.constraints import extract_constraints
+from keepframe.verify.verifier import verify
 
 
 def test_keep_predicates_gate(tmp_scene_dir):
@@ -27,8 +27,8 @@ def test_missing_texture_fails_schema(tmp_scene_dir):
 
 @pytest.mark.browser
 def test_layer_check_against_render(tmp_scene_dir):
-    from refstudio.compose.composer import compose
-    from refstudio.render.renderer import render
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import render
     scene = make_synthetic_scene(tmp_scene_dir, seed=8, with_text=False)
     rr = render(compose(scene, tmp_scene_dir, tmp_scene_dir / "c.html"), scene, tmp_scene_dir / "r", frames=[0, 30, 59])
     r = verify(scene, tmp_scene_dir, render_result=rr)

@@ -1,7 +1,7 @@
 import numpy as np
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.tracks import PRESET_EASES
-from refstudio.verify.matrix import animation_matrix, bbox_matrix, extract_motions, COLS
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.tracks import PRESET_EASES
+from keepframe.verify.matrix import animation_matrix, bbox_matrix, extract_motions, COLS
 
 
 def scene():

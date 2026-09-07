@@ -6,9 +6,9 @@ pytest.importorskip("playwright")
 @pytest.mark.browser
 def test_library_and_review_render(tmp_path):
     from playwright.sync_api import sync_playwright
-    from refstudio.ir.synth import make_synthetic_scene
-    from refstudio.ir.store import init_project
-    from refstudio.web.server import make_server
+    from keepframe.ir.synth import make_synthetic_scene
+    from keepframe.ir.store import init_project
+    from keepframe.web.server import make_server
     import json, threading
 
     root = tmp_path / "p1"

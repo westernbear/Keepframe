@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGNS = ROOT / ".stitch" / "designs"
-STATIC = ROOT / "refstudio" / "web" / "static"
+STATIC = ROOT / "keepframe" / "web" / "static"
 FORBIDDEN = (
     "cdn.tailwindcss.com",
     "fonts.googleapis.com",

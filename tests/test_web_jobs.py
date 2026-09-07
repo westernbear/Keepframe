@@ -1,5 +1,5 @@
 import time
-from refstudio.web.jobs import JobStore
+from keepframe.web.jobs import JobStore
 
 
 def test_job_runs_and_finishes():

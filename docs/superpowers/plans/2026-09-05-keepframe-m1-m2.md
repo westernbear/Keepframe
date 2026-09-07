@@ -1,19 +1,19 @@
-# Ref Studio M1+M2 Implementation Plan
+# Keepframe M1+M2 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the deterministic core of Ref Studio: a JSON IR for motion-graphics scenes, an HTML/GSAP composer, a frame-seeking renderer, a MoVer-style verifier (M1), and an analyzer that turns a flat 2D motion-graphics clip (range mode) into that IR plus the four review corrections (M2).
+**Goal:** Build the deterministic core of Keepframe: a JSON IR for motion-graphics scenes, an HTML/GSAP composer, a frame-seeking renderer, a MoVer-style verifier (M1), and an analyzer that turns a flat 2D motion-graphics clip (range mode) into that IR plus the four review corrections (M2).
 
-**Architecture:** One Python package `refstudio` with five sub-packages: `ir` (schema, track math, store, synthetic fixtures), `compose` (IR → self-contained HTML with a GSAP timeline and `window.__seek`), `render` (Playwright frame seeking → PNG frames → MP4, per-frame hashes, element bbox probe), `verify` (animation matrix, predicates, similarity, report) and `analyze` (video → background → text → regions → tracking → sprites → keyframes → constraints → report) plus `review` (four correction ops that re-run the pipeline from a stage with overrides). Every stage is a pure function over the IR; the only nondeterministic component (LLM edit agent) is out of scope for M1+M2.
+**Architecture:** One Python package `keepframe` with five sub-packages: `ir` (schema, track math, store, synthetic fixtures), `compose` (IR → self-contained HTML with a GSAP timeline and `window.__seek`), `render` (Playwright frame seeking → PNG frames → MP4, per-frame hashes, element bbox probe), `verify` (animation matrix, predicates, similarity, report) and `analyze` (video → background → text → regions → tracking → sprites → keyframes → constraints → report) plus `review` (four correction ops that re-run the pipeline from a stage with overrides). Every stage is a pure function over the IR; the only nondeterministic component (LLM edit agent) is out of scope for M1+M2.
 
 **Tech Stack:** Python 3.11+, pydantic v2, numpy, scipy, opencv-python-headless, playwright (Chromium), GSAP 3.12 + CustomEase (vendored, inlined into HTML), ffmpeg CLI, torch (optional, for sprite refinement), rapidocr-onnxruntime (optional, for OCR), pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-ref-studio-design.md` (read §4 IR, §5 analyzer, §6 corrections, §8 render, §10 evaluation, §11 milestones first).
+**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (read §4 IR, §5 analyzer, §6 corrections, §8 render, §10 evaluation, §11 milestones first).
 
 ## Global Constraints
 
-- Python ≥ 3.11. Package name `refstudio`. Tests with `pytest`; browser tests marked `@pytest.mark.browser`, OCR tests `@pytest.mark.ocr`, GPU-optional tests `@pytest.mark.gpu`.
-- IR schema ids are exactly `refstudio.project/1` and `refstudio.scene/1` (spec §4).
+- Python ≥ 3.11. Package name `keepframe`. Tests with `pytest`; browser tests marked `@pytest.mark.browser`, OCR tests `@pytest.mark.ocr`, GPU-optional tests `@pytest.mark.gpu`.
+- IR schema ids are exactly `keepframe.project/1` and `keepframe.scene/1` (spec §4).
 - L0 raw measurements are never deleted (spec §4 invariant 1). Tracks use cubic-bezier easing; fit error bound is 2 px or 1 frame (invariant 2).
 - Versions are append-only (invariant 4). Corrections are exactly four ops (spec §6).
 - Renderer must be deterministic: same IR → same per-frame hashes (spec §8).
@@ -29,37 +29,37 @@
 ```
 pyproject.toml                       deps, pytest markers
 .gitignore
-refstudio/__init__.py
-refstudio/ir/schema.py               pydantic models (Keyframe, Track, Element, Scene, Project, ...)
-refstudio/ir/tracks.py               cubic-bezier, eval_track, affine matrix/decompose, bbox
-refstudio/ir/store.py                project dir layout, save/load, append-only versions
-refstudio/ir/synth.py                synthetic scenes + textures (fixtures + golden IR)
-refstudio/compose/vendor/gsap.min.js, CustomEase.min.js   (vendored, inlined)
-refstudio/compose/template.html      HTML skeleton with __seek/__bbox
-refstudio/compose/composer.py        Scene → composition.html
-refstudio/render/renderer.py         Playwright frame seek, hashes, bbox probe, ffmpeg
-refstudio/analyze/composite.py       numpy compositor (reference implementation of the render model)
-refstudio/verify/matrix.py           animation matrix + motion intervals
-refstudio/verify/predicates.py       predicate parser/evaluator (MoVer subset)
-refstudio/verify/similarity.py       temporal (displacement correlation) + appearance
-refstudio/verify/verifier.py         VerifyReport
-refstudio/analyze/constraints.py     tracks → Constraint list (strings the verifier can parse)
-refstudio/analyze/video.py           frames in/out (cv2)
-refstudio/analyze/background.py      LAB mode-colour background
-refstudio/analyze/text.py            OCR + text tracking + optional copy-guided correction
-refstudio/analyze/regions.py         colour clusters + connected components
-refstudio/analyze/tracking.py        Hungarian region→object matching, ids
-refstudio/analyze/sprites.py         canonical texture, per-frame affine (moments + ECC), opacity, z
-refstudio/analyze/refine.py          torch affine refinement (optional)
-refstudio/analyze/keyframes.py       keyframe reduction + ease fit
-refstudio/analyze/semantics.py       heuristic roles/groups + Captioner protocol
-refstudio/analyze/report.py          reconstruction error, confidences
-refstudio/analyze/pipeline.py        analyze(video, start, end) → Project; stage cache + overrides
-refstudio/analyze/golden.py          compare analyzed scene to golden synthetic scene
-refstudio/review/corrections.py      reassign_id, set_region_mask, add_bbox_prompt, edit_text
-refstudio/review/server.py           stdlib http.server: state, frames, keep toggles, correction jobs (Task 26)
-refstudio/review/ui.html             single-file bilingual review screen; design rules in DESIGN.md (Task 27)
-refstudio/cli.py                     synth / compose / render / verify / analyze / correct / review / gate
+keepframe/__init__.py
+keepframe/ir/schema.py               pydantic models (Keyframe, Track, Element, Scene, Project, ...)
+keepframe/ir/tracks.py               cubic-bezier, eval_track, affine matrix/decompose, bbox
+keepframe/ir/store.py                project dir layout, save/load, append-only versions
+keepframe/ir/synth.py                synthetic scenes + textures (fixtures + golden IR)
+keepframe/compose/vendor/gsap.min.js, CustomEase.min.js   (vendored, inlined)
+keepframe/compose/template.html      HTML skeleton with __seek/__bbox
+keepframe/compose/composer.py        Scene → composition.html
+keepframe/render/renderer.py         Playwright frame seek, hashes, bbox probe, ffmpeg
+keepframe/analyze/composite.py       numpy compositor (reference implementation of the render model)
+keepframe/verify/matrix.py           animation matrix + motion intervals
+keepframe/verify/predicates.py       predicate parser/evaluator (MoVer subset)
+keepframe/verify/similarity.py       temporal (displacement correlation) + appearance
+keepframe/verify/verifier.py         VerifyReport
+keepframe/analyze/constraints.py     tracks → Constraint list (strings the verifier can parse)
+keepframe/analyze/video.py           frames in/out (cv2)
+keepframe/analyze/background.py      LAB mode-colour background
+keepframe/analyze/text.py            OCR + text tracking + optional copy-guided correction
+keepframe/analyze/regions.py         colour clusters + connected components
+keepframe/analyze/tracking.py        Hungarian region→object matching, ids
+keepframe/analyze/sprites.py         canonical texture, per-frame affine (moments + ECC), opacity, z
+keepframe/analyze/refine.py          torch affine refinement (optional)
+keepframe/analyze/keyframes.py       keyframe reduction + ease fit
+keepframe/analyze/semantics.py       heuristic roles/groups + Captioner protocol
+keepframe/analyze/report.py          reconstruction error, confidences
+keepframe/analyze/pipeline.py        analyze(video, start, end) → Project; stage cache + overrides
+keepframe/analyze/golden.py          compare analyzed scene to golden synthetic scene
+keepframe/review/corrections.py      reassign_id, set_region_mask, add_bbox_prompt, edit_text
+keepframe/review/server.py           stdlib http.server: state, frames, keep toggles, correction jobs (Task 26)
+keepframe/review/ui.html             single-file bilingual review screen; design rules in DESIGN.md (Task 27)
+keepframe/cli.py                     synth / compose / render / verify / analyze / correct / review / gate
 scripts/m1_gate.py, scripts/m2_gate.py
 tests/...                            one test file per module
 ```
@@ -71,10 +71,10 @@ tests/...                            one test file per module
 ### Task 1: Project scaffold and vendored GSAP
 
 **Files:**
-- Create: `pyproject.toml`, `.gitignore`, `refstudio/__init__.py`, `refstudio/ir/__init__.py`, `refstudio/compose/__init__.py`, `refstudio/render/__init__.py`, `refstudio/verify/__init__.py`, `refstudio/analyze/__init__.py`, `refstudio/review/__init__.py`, `tests/conftest.py`, `refstudio/compose/vendor/gsap.min.js`, `refstudio/compose/vendor/CustomEase.min.js`
+- Create: `pyproject.toml`, `.gitignore`, `keepframe/__init__.py`, `keepframe/ir/__init__.py`, `keepframe/compose/__init__.py`, `keepframe/render/__init__.py`, `keepframe/verify/__init__.py`, `keepframe/analyze/__init__.py`, `keepframe/review/__init__.py`, `tests/conftest.py`, `keepframe/compose/vendor/gsap.min.js`, `keepframe/compose/vendor/CustomEase.min.js`
 
 **Interfaces:**
-- Produces: importable package `refstudio`, pytest markers `browser`, `ocr`, `gpu`, fixture `tmp_scene_dir` (a `Path` to a fresh temp dir).
+- Produces: importable package `keepframe`, pytest markers `browser`, `ocr`, `gpu`, fixture `tmp_scene_dir` (a `Path` to a fresh temp dir).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -83,10 +83,10 @@ tests/...                            one test file per module
 import importlib, pathlib
 
 def test_package_imports():
-    assert importlib.import_module("refstudio").__version__ == "0.1.0"
+    assert importlib.import_module("keepframe").__version__ == "0.1.0"
 
 def test_vendor_js_present():
-    v = pathlib.Path("refstudio/compose/vendor")
+    v = pathlib.Path("keepframe/compose/vendor")
     assert (v / "gsap.min.js").stat().st_size > 50_000
     assert (v / "CustomEase.min.js").stat().st_size > 5_000
 ```
@@ -94,14 +94,14 @@ def test_vendor_js_present():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_scaffold.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe'`
 
 - [ ] **Step 3: Create the scaffold**
 
 ```toml
 # pyproject.toml
 [project]
-name = "refstudio"
+name = "keepframe"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -116,14 +116,14 @@ gpu = ["torch>=2.2"]
 ocr = ["rapidocr-onnxruntime>=1.3"]
 dev = ["pytest>=8"]
 [project.scripts]
-refstudio = "refstudio.cli:main"
+keepframe = "keepframe.cli:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
-include = ["refstudio*"]
+include = ["keepframe*"]
 [tool.setuptools.package-data]
-refstudio = ["compose/vendor/*.js", "compose/template.html"]
+keepframe = ["compose/vendor/*.js", "compose/template.html"]
 [tool.pytest.ini_options]
 markers = [
   "browser: needs playwright chromium",
@@ -143,7 +143,7 @@ out/
 ```
 
 ```python
-# refstudio/__init__.py
+# keepframe/__init__.py
 __version__ = "0.1.0"
 ```
 
@@ -153,17 +153,17 @@ import pytest, pathlib, tempfile
 
 @pytest.fixture
 def tmp_scene_dir():
-    d = tempfile.mkdtemp(prefix="refstudio-")
+    d = tempfile.mkdtemp(prefix="keepframe-")
     return pathlib.Path(d)
 ```
 
 Vendor GSAP (all GSAP files are free to use since GSAP 3.13 / Webflow's 2024 announcement; keep the license header inside the files):
 
 ```bash
-mkdir -p refstudio/compose/vendor
-curl -sL -o refstudio/compose/vendor/gsap.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js
-curl -sL -o refstudio/compose/vendor/CustomEase.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/CustomEase.min.js
-head -c 200 refstudio/compose/vendor/gsap.min.js   # must start with /*! gsap 3.12.5
+mkdir -p keepframe/compose/vendor
+curl -sL -o keepframe/compose/vendor/gsap.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js
+curl -sL -o keepframe/compose/vendor/CustomEase.min.js https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/CustomEase.min.js
+head -c 200 keepframe/compose/vendor/gsap.min.js   # must start with /*! gsap 3.12.5
 ```
 
 Then install:
@@ -183,8 +183,8 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pyproject.toml .gitignore refstudio tests/conftest.py tests/test_scaffold.py
-git commit -m "chore: scaffold refstudio package, pytest markers, vendored GSAP"
+git add pyproject.toml .gitignore keepframe tests/conftest.py tests/test_scaffold.py
+git commit -m "chore: scaffold keepframe package, pytest markers, vendored GSAP"
 ```
 
 ---
@@ -192,7 +192,7 @@ git commit -m "chore: scaffold refstudio package, pytest markers, vendored GSAP"
 ### Task 2: IR schema
 
 **Files:**
-- Create: `refstudio/ir/schema.py`
+- Create: `keepframe/ir/schema.py`
 - Test: `tests/test_schema.py`
 
 **Interfaces:**
@@ -216,7 +216,7 @@ git commit -m "chore: scaffold refstudio package, pytest markers, vendored GSAP"
 # tests/test_schema.py
 import pytest
 from pydantic import ValidationError
-from refstudio.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background,
+from keepframe.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background,
                                  Constraint, Project, SceneRef, Version, dump, load_scene_json, PROPS, DEFAULTS)
 
 def make_scene():
@@ -228,7 +228,7 @@ def make_scene():
 def test_roundtrip_json_uses_schema_alias():
     s = make_scene()
     text = dump(s)
-    assert '"schema": "refstudio.scene/1"' in text
+    assert '"schema": "keepframe.scene/1"' in text
     s2 = load_scene_json(text)
     assert s2 == s
     assert s2.element("e1").tracks["x"].keys[0].ease == (0.2, 0, 0, 1)
@@ -252,18 +252,18 @@ def test_project_roundtrip():
                 scenes=[SceneRef(id="s1", frames=(0, 59))],
                 versions=[Version(id="v1", parent=None, note="initial", scene_file="scenes/s1/scene.v1.json")])
     text = dump(p)
-    assert '"schema": "refstudio.project/1"' in text
+    assert '"schema": "keepframe.project/1"' in text
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_schema.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.ir.schema'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.ir.schema'`
 
 - [ ] **Step 3: Write the schema**
 
 ```python
-# refstudio/ir/schema.py
+# keepframe/ir/schema.py
 from __future__ import annotations
 import json
 from typing import Literal, Optional
@@ -367,7 +367,7 @@ class Background(BaseModel):
 
 class Scene(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    schema_version: str = Field("refstudio.scene/1", alias="schema")
+    schema_version: str = Field("keepframe.scene/1", alias="schema")
     id: str
     size: tuple[int, int]
     fps: float
@@ -400,7 +400,7 @@ class Version(BaseModel):
 
 class Project(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    schema_version: str = Field("refstudio.project/1", alias="schema")
+    schema_version: str = Field("keepframe.project/1", alias="schema")
     source: dict
     scenes: list[SceneRef]
     links: list[dict] = Field(default_factory=list)
@@ -427,7 +427,7 @@ Expected: 5 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/ir/schema.py tests/test_schema.py
+git add keepframe/ir/schema.py tests/test_schema.py
 git commit -m "feat(ir): pydantic IR schema for scene/project with validators"
 ```
 
@@ -436,7 +436,7 @@ git commit -m "feat(ir): pydantic IR schema for scene/project with validators"
 ### Task 3: Track evaluation and affine math
 
 **Files:**
-- Create: `refstudio/ir/tracks.py`
+- Create: `keepframe/ir/tracks.py`
 - Test: `tests/test_tracks.py`
 
 **Interfaces:**
@@ -456,8 +456,8 @@ git commit -m "feat(ir): pydantic IR schema for scene/project with validators"
 ```python
 # tests/test_tracks.py
 import math, numpy as np, pytest
-from refstudio.ir.schema import Keyframe, Track, Element, Canonical
-from refstudio.ir.tracks import (bezier_y, eval_track, eval_props, eval_z, affine_matrix,
+from keepframe.ir.schema import Keyframe, Track, Element, Canonical
+from keepframe.ir.tracks import (bezier_y, eval_track, eval_props, eval_z, affine_matrix,
                                  decompose_affine, element_bbox, PRESET_EASES)
 
 def test_bezier_endpoints_and_linear():
@@ -501,12 +501,12 @@ def test_bbox_of_scaled_rotated_box():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_tracks.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.ir.tracks'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.ir.tracks'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/ir/tracks.py
+# keepframe/ir/tracks.py
 from __future__ import annotations
 import math
 import numpy as np
@@ -621,7 +621,7 @@ Expected: 5 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/ir/tracks.py tests/test_tracks.py
+git add keepframe/ir/tracks.py tests/test_tracks.py
 git commit -m "feat(ir): track evaluation, cubic-bezier easing, affine compose/decompose"
 ```
 
@@ -630,7 +630,7 @@ git commit -m "feat(ir): track evaluation, cubic-bezier easing, affine compose/d
 ### Task 4: Project store with append-only versions
 
 **Files:**
-- Create: `refstudio/ir/store.py`
+- Create: `keepframe/ir/store.py`
 - Test: `tests/test_store.py`
 
 **Interfaces:**
@@ -647,8 +647,8 @@ git commit -m "feat(ir): track evaluation, cubic-bezier easing, affine compose/d
 ```python
 # tests/test_store.py
 import pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.store import init_project, load_project, current_scene, new_version, scene_dir, load_scene
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.store import init_project, load_project, current_scene, new_version, scene_dir, load_scene
 
 def scene():
     return Scene(id="s1", size=(64, 32), fps=30, frames=10, background=Background(),
@@ -674,12 +674,12 @@ def test_init_and_versions_are_append_only(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_store.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.ir.store'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.ir.store'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/ir/store.py
+# keepframe/ir/store.py
 from __future__ import annotations
 from pathlib import Path
 from .schema import Project, Scene, SceneRef, Version, dump, load_project_json, load_scene_json
@@ -751,7 +751,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/ir/store.py tests/test_store.py
+git add keepframe/ir/store.py tests/test_store.py
 git commit -m "feat(ir): project store with append-only scene versions"
 ```
 
@@ -760,7 +760,7 @@ git commit -m "feat(ir): project store with append-only scene versions"
 ### Task 5: Synthetic scene generator (fixtures and golden IR)
 
 **Files:**
-- Create: `refstudio/ir/synth.py`
+- Create: `keepframe/ir/synth.py`
 - Test: `tests/test_synth.py`
 
 **Interfaces:**
@@ -774,8 +774,8 @@ git commit -m "feat(ir): project store with append-only scene versions"
 ```python
 # tests/test_synth.py
 import cv2, numpy as np
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.ir.schema import dump
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.ir.schema import dump
 
 def test_texture_is_rgba_with_alpha(tmp_scene_dir):
     p = tmp_scene_dir / "t.png"
@@ -797,12 +797,12 @@ def test_synthetic_scene_is_deterministic_and_valid(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_synth.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.ir.synth'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.ir.synth'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/ir/synth.py
+# keepframe/ir/synth.py
 from __future__ import annotations
 import random
 from pathlib import Path
@@ -859,7 +859,7 @@ def make_synthetic_scene(scene_root: Path, seed: int, n_elements: int = 4, frame
         color = PALETTE[(i - 1) % len(PALETTE)]
         is_text = with_text and i == n
         if is_text:
-            text = rng.choice(["Launch", "Faster", "Ref Studio", "New"])
+            text = rng.choice(["Launch", "Faster", "Keepframe", "New"])
             tw, th = make_text_texture(scene_root / "assets" / f"{eid}.png", text, 40, color)
             canonical = Canonical(width=tw, height=th, texture=f"assets/{eid}.png", text=text,
                                   font=FontGuess(family_guess="sans-serif", weight=700, size_px=40),
@@ -900,7 +900,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/ir/synth.py tests/test_synth.py
+git add keepframe/ir/synth.py tests/test_synth.py
 git commit -m "feat(ir): synthetic scene generator with textures for fixtures and golden IR"
 ```
 
@@ -909,7 +909,7 @@ git commit -m "feat(ir): synthetic scene generator with textures for fixtures an
 ### Task 6: Composer (Scene → self-contained HTML with GSAP timeline)
 
 **Files:**
-- Create: `refstudio/compose/template.html`, `refstudio/compose/composer.py`
+- Create: `keepframe/compose/template.html`, `keepframe/compose/composer.py`
 - Test: `tests/test_composer.py`
 
 **Interfaces:**
@@ -920,8 +920,8 @@ git commit -m "feat(ir): synthetic scene generator with textures for fixtures an
 
 ```python
 # tests/test_composer.py
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.compose.composer import compose
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.compose.composer import compose
 
 def test_compose_is_self_contained_and_has_hooks(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=1)
@@ -942,12 +942,12 @@ def test_compose_is_self_contained_and_has_hooks(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_composer.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.compose.composer'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.compose.composer'`
 
 - [ ] **Step 3: Write the template and composer**
 
 ```html
-<!-- refstudio/compose/template.html -->
+<!-- keepframe/compose/template.html -->
 <!doctype html>
 <html><head><meta charset="utf-8"><title>{{ID}}</title>
 <style>
@@ -1007,7 +1007,7 @@ document.fonts.ready.then(() => { window.__ready = true; });
 ```
 
 ```python
-# refstudio/compose/composer.py
+# keepframe/compose/composer.py
 from __future__ import annotations
 import base64, html, json
 from pathlib import Path
@@ -1066,7 +1066,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/compose/template.html refstudio/compose/composer.py tests/test_composer.py
+git add keepframe/compose/template.html keepframe/compose/composer.py tests/test_composer.py
 git commit -m "feat(compose): self-contained HTML composition with GSAP timeline and seek/bbox hooks"
 ```
 
@@ -1075,7 +1075,7 @@ git commit -m "feat(compose): self-contained HTML composition with GSAP timeline
 ### Task 7: Renderer (frame seeking, hashes, bbox probe, MP4)
 
 **Files:**
-- Create: `refstudio/render/renderer.py`
+- Create: `keepframe/render/renderer.py`
 - Test: `tests/test_renderer.py`
 
 **Interfaces:**
@@ -1091,11 +1091,11 @@ git commit -m "feat(compose): self-contained HTML composition with GSAP timeline
 ```python
 # tests/test_renderer.py
 import numpy as np, pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.ir.tracks import element_bbox
-from refstudio.compose.composer import compose
-from refstudio.render.renderer import render, load_frame
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.ir.tracks import element_bbox
+from keepframe.compose.composer import compose
+from keepframe.render.renderer import render, load_frame
 
 pytestmark = pytest.mark.browser
 
@@ -1139,12 +1139,12 @@ def test_mp4_written(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_renderer.py -v -m browser`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.render.renderer'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.render.renderer'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/render/renderer.py
+# keepframe/render/renderer.py
 from __future__ import annotations
 import hashlib, json, shutil, subprocess
 from dataclasses import dataclass, asdict
@@ -1224,7 +1224,7 @@ Expected: 4 PASS (needs `playwright install chromium` and `ffmpeg` on PATH)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/render/renderer.py tests/test_renderer.py
+git add keepframe/render/renderer.py tests/test_renderer.py
 git commit -m "feat(render): deterministic frame-seek renderer with hashes, bbox probe and mp4"
 ```
 
@@ -1233,7 +1233,7 @@ git commit -m "feat(render): deterministic frame-seek renderer with hashes, bbox
 ### Task 8: Numpy compositor (reference render model)
 
 **Files:**
-- Create: `refstudio/analyze/composite.py`
+- Create: `keepframe/analyze/composite.py`
 - Test: `tests/test_composite.py`
 
 **Interfaces:**
@@ -1249,9 +1249,9 @@ git commit -m "feat(render): deterministic frame-seek renderer with hashes, bbox
 ```python
 # tests/test_composite.py
 import numpy as np, pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.analyze.composite import composite_scene, hex_to_rgb
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.analyze.composite import composite_scene, hex_to_rgb
 
 def test_translate_only_places_texture_exactly(tmp_scene_dir):
     make_texture(tmp_scene_dir / "assets" / "e1.png", "rect", 20, 10, (0, 255, 0))
@@ -1270,8 +1270,8 @@ def test_hex():
 
 @pytest.mark.browser
 def test_compositor_matches_browser(tmp_scene_dir):
-    from refstudio.compose.composer import compose
-    from refstudio.render.renderer import render, load_frame
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import render, load_frame
     scene = make_synthetic_scene(tmp_scene_dir, seed=5, with_text=False)
     html = compose(scene, tmp_scene_dir, tmp_scene_dir / "c.html")
     r = render(html, scene, tmp_scene_dir / "r", frames=[0, 20, 40])
@@ -1284,12 +1284,12 @@ def test_compositor_matches_browser(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_composite.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.composite'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.composite'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/composite.py
+# keepframe/analyze/composite.py
 from __future__ import annotations
 from pathlib import Path
 import cv2, numpy as np
@@ -1359,7 +1359,7 @@ Expected: PASS. If `test_compositor_matches_browser` fails, the culprit is almos
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/composite.py tests/test_composite.py
+git add keepframe/analyze/composite.py tests/test_composite.py
 git commit -m "feat(analyze): numpy compositor matching the browser render model"
 ```
 
@@ -1368,7 +1368,7 @@ git commit -m "feat(analyze): numpy compositor matching the browser render model
 ### Task 9: Animation matrix and motion intervals
 
 **Files:**
-- Create: `refstudio/verify/matrix.py`
+- Create: `keepframe/verify/matrix.py`
 - Test: `tests/test_matrix.py`
 
 **Interfaces:**
@@ -1385,9 +1385,9 @@ git commit -m "feat(analyze): numpy compositor matching the browser render model
 ```python
 # tests/test_matrix.py
 import numpy as np
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.tracks import PRESET_EASES
-from refstudio.verify.matrix import animation_matrix, bbox_matrix, extract_motions, COLS
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.tracks import PRESET_EASES
+from keepframe.verify.matrix import animation_matrix, bbox_matrix, extract_motions, COLS
 
 def scene():
     e1 = Element(id="e1", kind="sprite", canonical=Canonical(width=20, height=20), visible=(0, 59),
@@ -1424,12 +1424,12 @@ def test_motions_extracted_in_order_with_types():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_matrix.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.verify.matrix'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.verify.matrix'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/verify/matrix.py
+# keepframe/verify/matrix.py
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
@@ -1534,7 +1534,7 @@ Expected: 3 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/verify/matrix.py tests/test_matrix.py
+git add keepframe/verify/matrix.py tests/test_matrix.py
 git commit -m "feat(verify): animation matrix, bbox matrix and motion interval extraction"
 ```
 
@@ -1543,7 +1543,7 @@ git commit -m "feat(verify): animation matrix, bbox matrix and motion interval e
 ### Task 10: Predicate parser and evaluator (MoVer subset)
 
 **Files:**
-- Create: `refstudio/verify/predicates.py`
+- Create: `keepframe/verify/predicates.py`
 - Test: `tests/test_predicates.py`
 
 **Interfaces:**
@@ -1561,8 +1561,8 @@ git commit -m "feat(verify): animation matrix, bbox matrix and motion interval e
 ```python
 # tests/test_predicates.py
 import pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.verify.predicates import parse_pred, build_context, eval_pred
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.verify.predicates import parse_pred, build_context, eval_pred
 
 def scene():
     e1 = Element(id="e1", kind="sprite", canonical=Canonical(width=20, height=20), visible=(0, 59),
@@ -1598,12 +1598,12 @@ def test_unknown_predicate_raises():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_predicates.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.verify.predicates'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.verify.predicates'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/verify/predicates.py
+# keepframe/verify/predicates.py
 from __future__ import annotations
 import re
 from dataclasses import dataclass
@@ -1720,7 +1720,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/verify/predicates.py tests/test_predicates.py
+git add keepframe/verify/predicates.py tests/test_predicates.py
 git commit -m "feat(verify): MoVer-subset predicate parser and evaluator"
 ```
 
@@ -1729,7 +1729,7 @@ git commit -m "feat(verify): MoVer-subset predicate parser and evaluator"
 ### Task 11: Constraint extraction from tracks
 
 **Files:**
-- Create: `refstudio/analyze/constraints.py`
+- Create: `keepframe/analyze/constraints.py`
 - Test: `tests/test_constraints.py`
 
 **Interfaces:**
@@ -1740,10 +1740,10 @@ git commit -m "feat(verify): MoVer-subset predicate parser and evaluator"
 
 ```python
 # tests/test_constraints.py
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.schema import Keyframe
-from refstudio.analyze.constraints import extract_constraints
-from refstudio.verify.predicates import build_context, eval_pred
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.schema import Keyframe
+from keepframe.analyze.constraints import extract_constraints
+from keepframe.verify.predicates import build_context, eval_pred
 
 def test_extracted_constraints_hold_on_source_scene(tmp_scene_dir):
     for seed in range(1, 6):
@@ -1769,12 +1769,12 @@ def test_reversed_direction_breaks_dir_constraint(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_constraints.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.constraints'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.constraints'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/constraints.py
+# keepframe/analyze/constraints.py
 from __future__ import annotations
 from itertools import combinations
 from ..ir.schema import Constraint, Scene
@@ -1819,7 +1819,7 @@ Expected: 2 PASS. If `test_extracted_constraints_hold_on_source_scene` fails on 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/constraints.py tests/test_constraints.py
+git add keepframe/analyze/constraints.py tests/test_constraints.py
 git commit -m "feat(analyze): extract MoVer-style constraints from tracks"
 ```
 
@@ -1828,7 +1828,7 @@ git commit -m "feat(analyze): extract MoVer-style constraints from tracks"
 ### Task 12: Similarity metrics (temporal, appearance)
 
 **Files:**
-- Create: `refstudio/verify/similarity.py`
+- Create: `keepframe/verify/similarity.py`
 - Test: `tests/test_similarity.py`
 
 **Interfaces:**
@@ -1844,8 +1844,8 @@ git commit -m "feat(analyze): extract MoVer-style constraints from tracks"
 ```python
 # tests/test_similarity.py
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
 
 def test_identical_scene_scores_one(tmp_scene_dir):
     s = make_synthetic_scene(tmp_scene_dir, seed=4)
@@ -1879,12 +1879,12 @@ def test_appearance_and_frame_l1():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_similarity.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.verify.similarity'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.verify.similarity'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/verify/similarity.py
+# keepframe/verify/similarity.py
 from __future__ import annotations
 import cv2, numpy as np
 from ..ir.schema import Scene
@@ -1942,7 +1942,7 @@ Expected: 4 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/verify/similarity.py tests/test_similarity.py
+git add keepframe/verify/similarity.py tests/test_similarity.py
 git commit -m "feat(verify): temporal displacement-correlation and appearance similarity"
 ```
 
@@ -1951,7 +1951,7 @@ git commit -m "feat(verify): temporal displacement-correlation and appearance si
 ### Task 13: Verifier report
 
 **Files:**
-- Create: `refstudio/verify/verifier.py`
+- Create: `keepframe/verify/verifier.py`
 - Test: `tests/test_verifier.py`
 
 **Interfaces:**
@@ -1966,10 +1966,10 @@ git commit -m "feat(verify): temporal displacement-correlation and appearance si
 ```python
 # tests/test_verifier.py
 import pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.schema import Constraint, Keyframe
-from refstudio.analyze.constraints import extract_constraints
-from refstudio.verify.verifier import verify
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.schema import Constraint, Keyframe
+from keepframe.analyze.constraints import extract_constraints
+from keepframe.verify.verifier import verify
 
 def test_keep_predicates_gate(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=8, with_text=False)
@@ -1991,8 +1991,8 @@ def test_missing_texture_fails_schema(tmp_scene_dir):
 
 @pytest.mark.browser
 def test_layer_check_against_render(tmp_scene_dir):
-    from refstudio.compose.composer import compose
-    from refstudio.render.renderer import render
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import render
     scene = make_synthetic_scene(tmp_scene_dir, seed=8, with_text=False)
     rr = render(compose(scene, tmp_scene_dir, tmp_scene_dir / "c.html"), scene, tmp_scene_dir / "r", frames=[0, 30, 59])
     r = verify(scene, tmp_scene_dir, render_result=rr)
@@ -2002,12 +2002,12 @@ def test_layer_check_against_render(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_verifier.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.verify.verifier'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.verify.verifier'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/verify/verifier.py
+# keepframe/verify/verifier.py
 from __future__ import annotations
 from pathlib import Path
 import numpy as np
@@ -2094,7 +2094,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/verify/verifier.py tests/test_verifier.py
+git add keepframe/verify/verifier.py tests/test_verifier.py
 git commit -m "feat(verify): verifier report with keep predicates, layer bbox check and similarity"
 ```
 
@@ -2103,28 +2103,28 @@ git commit -m "feat(verify): verifier report with keep predicates, layer bbox ch
 ### Task 14: CLI and M1 gate
 
 **Files:**
-- Create: `refstudio/cli.py`, `refstudio/gates.py`, `scripts/m1_gate.py`
+- Create: `keepframe/cli.py`, `keepframe/gates.py`, `scripts/m1_gate.py`
 - Test: `tests/test_cli.py`
 
 **Interfaces:**
-- CLI (`refstudio <cmd>`):
+- CLI (`keepframe <cmd>`):
   - `synth --out DIR --seed N [--frames 60] [--no-text]` → writes `DIR/scene.json` + `DIR/assets/`
   - `compose --scene SCENE.json --out HTML`  (scene dir = the scene file's parent)
   - `render --scene SCENE.json --html HTML --out DIR [--frames 0,10,20] [--mp4]`
   - `verify --scene SCENE.json [--render-json DIR/render.json] [--reference REF.json]` → prints report JSON, exit 1 when `passed` is false
   - `gate-m1 --out DIR [--n 20]` → runs `gates.m1_gate`, prints table, exit 1 on failure
 - `gates.m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict` — for seeds `1..n`: synth → extract constraints → all predicates hold; compose → render the frame set twice → hashes equal; layer bbox error ≤ 2 px. Returns `{"n": n, "constraints_ok": int, "hash_ok": int, "layer_ok": int, "passed": bool, "rows": [...]}`; `passed` requires all three counts == n (spec §11 M1).
-- `render_result_from_json(path: Path) -> RenderResult` (in `refstudio/render/renderer.py`, add in this task).
+- `render_result_from_json(path: Path) -> RenderResult` (in `keepframe/render/renderer.py`, add in this task).
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_cli.py
 import json, subprocess, sys, pytest
-from refstudio.gates import m1_gate
+from keepframe.gates import m1_gate
 
 def run(*args):
-    return subprocess.run([sys.executable, "-m", "refstudio.cli", *args], capture_output=True, text=True)
+    return subprocess.run([sys.executable, "-m", "keepframe.cli", *args], capture_output=True, text=True)
 
 def test_synth_compose_verify_cli(tmp_scene_dir):
     d = tmp_scene_dir / "s"
@@ -2143,11 +2143,11 @@ def test_m1_gate_small(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_cli.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.gates'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.gates'`
 
 - [ ] **Step 3: Implement**
 
-Add to `refstudio/render/renderer.py`:
+Add to `keepframe/render/renderer.py`:
 
 ```python
 def render_result_from_json(path: Path) -> RenderResult:
@@ -2157,7 +2157,7 @@ def render_result_from_json(path: Path) -> RenderResult:
 ```
 
 ```python
-# refstudio/gates.py
+# keepframe/gates.py
 from __future__ import annotations
 from pathlib import Path
 from .analyze.constraints import extract_constraints
@@ -2194,7 +2194,7 @@ def m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict:
 ```
 
 ```python
-# refstudio/cli.py
+# keepframe/cli.py
 from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
@@ -2206,7 +2206,7 @@ from .verify.verifier import verify
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="refstudio")
+    ap = argparse.ArgumentParser(prog="keepframe")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("synth"); s.add_argument("--out", required=True); s.add_argument("--seed", type=int, default=1)
     s.add_argument("--frames", type=int, default=60); s.add_argument("--no-text", action="store_true")
@@ -2251,7 +2251,7 @@ if __name__ == "__main__":
 ```python
 # scripts/m1_gate.py
 import sys
-from refstudio.cli import main
+from keepframe.cli import main
 sys.exit(main(["gate-m1", "--out", "out/m1", "--n", "20"]))
 ```
 
@@ -2263,7 +2263,7 @@ Expected: tests PASS; the gate prints 20 rows and `'passed': True`. This is the 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/cli.py refstudio/gates.py refstudio/render/renderer.py scripts/m1_gate.py tests/test_cli.py
+git add keepframe/cli.py keepframe/gates.py keepframe/render/renderer.py scripts/m1_gate.py tests/test_cli.py
 git commit -m "feat: CLI (synth/compose/render/verify) and M1 gate over 20 synthetic scenes"
 ```
 
@@ -2276,7 +2276,7 @@ Fixture strategy for M2: synthetic scenes from Task 5 are rendered to video with
 ### Task 15: Video I/O and background estimation
 
 **Files:**
-- Create: `refstudio/analyze/video.py`, `refstudio/analyze/background.py`
+- Create: `keepframe/analyze/video.py`, `keepframe/analyze/background.py`
 - Test: `tests/test_video_background.py`
 
 **Interfaces:**
@@ -2293,10 +2293,10 @@ Fixture strategy for M2: synthetic scenes from Task 5 are rendered to video with
 ```python
 # tests/test_video_background.py
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.analyze.video import read_frames, write_video, render_scene_video
-from refstudio.analyze.background import estimate_background, foreground_mask
-from refstudio.analyze.composite import composite_scene
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.analyze.video import read_frames, write_video, render_scene_video
+from keepframe.analyze.background import estimate_background, foreground_mask
+from keepframe.analyze.composite import composite_scene
 
 def test_video_roundtrip_and_background(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=21, frames=12, with_text=False)
@@ -2309,7 +2309,7 @@ def test_video_roundtrip_and_background(tmp_scene_dir):
     assert max(abs(bg[0] - 0x10), abs(bg[1] - 0x14), abs(bg[2] - 0x18)) <= 3 and conf > 0.5
     fg = foreground_mask(frames[5], bg)
     e = scene.elements[0]
-    from refstudio.ir.tracks import element_bbox
+    from keepframe.ir.tracks import element_bbox
     x0, y0, x1, y1 = [int(v) for v in element_bbox(e, 5)]
     cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
     assert fg[cy, cx] and not fg[2, 2]
@@ -2330,12 +2330,12 @@ def test_read_frames_range_and_png_dir(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_video_background.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.video'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.video'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/video.py
+# keepframe/analyze/video.py
 from __future__ import annotations
 import shutil, subprocess, tempfile
 from pathlib import Path
@@ -2387,7 +2387,7 @@ def render_scene_video(scene: Scene, scene_dir: Path, out: Path) -> Path:
 ```
 
 ```python
-# refstudio/analyze/background.py
+# keepframe/analyze/background.py
 from __future__ import annotations
 import cv2, numpy as np
 
@@ -2421,7 +2421,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/video.py refstudio/analyze/background.py tests/test_video_background.py
+git add keepframe/analyze/video.py keepframe/analyze/background.py tests/test_video_background.py
 git commit -m "feat(analyze): video io, synthetic video rendering, LAB background estimation"
 ```
 
@@ -2430,7 +2430,7 @@ git commit -m "feat(analyze): video io, synthetic video rendering, LAB backgroun
 ### Task 16: Region extraction (colour clusters + connected components)
 
 **Files:**
-- Create: `refstudio/analyze/regions.py`
+- Create: `keepframe/analyze/regions.py`
 - Test: `tests/test_regions.py`
 
 **Interfaces:**
@@ -2445,8 +2445,8 @@ git commit -m "feat(analyze): video io, synthetic video rendering, LAB backgroun
 ```python
 # tests/test_regions.py
 import numpy as np
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
 
 def frame_with_rects():
     f = np.full((100, 200, 3), (0x10, 0x14, 0x18), np.uint8)
@@ -2479,12 +2479,12 @@ def test_exclude_mask_and_override():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_regions.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.regions'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.regions'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/regions.py
+# keepframe/analyze/regions.py
 from __future__ import annotations
 from dataclasses import dataclass
 import cv2, numpy as np
@@ -2567,7 +2567,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/regions.py tests/test_regions.py
+git add keepframe/analyze/regions.py tests/test_regions.py
 git commit -m "feat(analyze): palette labelling and connected-component region extraction with overrides"
 ```
 
@@ -2576,7 +2576,7 @@ git commit -m "feat(analyze): palette labelling and connected-component region e
 ### Task 17: Region tracking across frames
 
 **Files:**
-- Create: `refstudio/analyze/tracking.py`
+- Create: `keepframe/analyze/tracking.py`
 - Test: `tests/test_tracking.py`
 
 **Interfaces:**
@@ -2591,13 +2591,13 @@ git commit -m "feat(analyze): palette labelling and connected-component region e
 ```python
 # tests/test_tracking.py
 import numpy as np
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_texture
-from refstudio.ir.tracks import eval_props
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
-from refstudio.analyze.tracking import track_regions
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_texture
+from keepframe.ir.tracks import eval_props
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.tracking import track_regions
 
 def three_object_scene(d):
     make_texture(d / "assets/a.png", "rect", 40, 30, (239, 71, 111))
@@ -2634,12 +2634,12 @@ def test_tracks_are_consistent_and_follow_ground_truth(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_tracking.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.tracking'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.tracking'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/tracking.py
+# keepframe/analyze/tracking.py
 from __future__ import annotations
 import math
 from dataclasses import dataclass, field
@@ -2714,7 +2714,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/tracking.py tests/test_tracking.py
+git add keepframe/analyze/tracking.py tests/test_tracking.py
 git commit -m "feat(analyze): Hungarian region tracking with velocity prediction"
 ```
 
@@ -2723,7 +2723,7 @@ git commit -m "feat(analyze): Hungarian region tracking with velocity prediction
 ### Task 18: Sprites — canonical texture, per-frame affine, opacity, z-order
 
 **Files:**
-- Create: `refstudio/analyze/sprites.py`
+- Create: `keepframe/analyze/sprites.py`
 - Test: `tests/test_sprites.py`
 
 **Interfaces:**
@@ -2741,13 +2741,13 @@ git commit -m "feat(analyze): Hungarian region tracking with velocity prediction
 ```python
 # tests/test_sprites.py
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import eval_props
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
-from refstudio.analyze.tracking import track_regions
-from refstudio.analyze.sprites import sprite_props, z_order, RAW_COLS
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import eval_props
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.tracking import track_regions
+from keepframe.analyze.sprites import sprite_props, z_order, RAW_COLS
 
 def analyzed_tracks(scene, d):
     frames = np.stack([(composite_scene(scene, d, f) * 255).round().astype(np.uint8) for f in range(scene.frames)])
@@ -2786,12 +2786,12 @@ def test_z_order_from_overlap(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_sprites.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.sprites'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.sprites'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/sprites.py
+# keepframe/analyze/sprites.py
 from __future__ import annotations
 import math
 from itertools import combinations
@@ -2925,7 +2925,7 @@ Expected: 2 PASS. If `refine_ecc` makes results worse on some frames, its guard 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/sprites.py tests/test_sprites.py
+git add keepframe/analyze/sprites.py tests/test_sprites.py
 git commit -m "feat(analyze): canonical textures, moment+ECC affine per frame, opacity and z-order"
 ```
 
@@ -2934,7 +2934,7 @@ git commit -m "feat(analyze): canonical textures, moment+ECC affine per frame, o
 ### Task 19: Keyframe reduction and easing fit
 
 **Files:**
-- Create: `refstudio/analyze/keyframes.py`
+- Create: `keepframe/analyze/keyframes.py`
 - Test: `tests/test_keyframes.py`
 
 **Interfaces:**
@@ -2950,9 +2950,9 @@ git commit -m "feat(analyze): canonical textures, moment+ECC affine per frame, o
 ```python
 # tests/test_keyframes.py
 import numpy as np, pytest
-from refstudio.ir.schema import Keyframe, Track, PROPS, DEFAULTS
-from refstudio.ir.tracks import eval_track, PRESET_EASES
-from refstudio.analyze.keyframes import reduce_curve, tracks_from_raw, fill_gaps, ERR
+from keepframe.ir.schema import Keyframe, Track, PROPS, DEFAULTS
+from keepframe.ir.tracks import eval_track, PRESET_EASES
+from keepframe.analyze.keyframes import reduce_curve, tracks_from_raw, fill_gaps, ERR
 
 def dense(track, n):
     return np.array([eval_track(track, f) for f in range(n)])
@@ -2987,12 +2987,12 @@ def test_fill_gaps_interpolates_interior_only():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_keyframes.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.keyframes'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.keyframes'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/keyframes.py
+# keepframe/analyze/keyframes.py
 from __future__ import annotations
 import numpy as np
 from ..ir.schema import DEFAULTS, Ease, FitError, Keyframe, PROPS, Track
@@ -3080,7 +3080,7 @@ Expected: 4 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/keyframes.py tests/test_keyframes.py
+git add keepframe/analyze/keyframes.py tests/test_keyframes.py
 git commit -m "feat(analyze): keyframe reduction with preset cubic-bezier ease fitting"
 ```
 
@@ -3089,7 +3089,7 @@ git commit -m "feat(analyze): keyframe reduction with preset cubic-bezier ease f
 ### Task 20: Text spotting and tracking
 
 **Files:**
-- Create: `refstudio/analyze/text.py`
+- Create: `keepframe/analyze/text.py`
 - Test: `tests/test_text.py`
 
 **Interfaces:**
@@ -3110,10 +3110,10 @@ git commit -m "feat(analyze): keyframe reduction with preset cubic-bezier ease f
 ```python
 # tests/test_text.py
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import element_bbox, eval_props
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.text import TextBox, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import element_bbox, eval_props
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.text import TextBox, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -3148,7 +3148,7 @@ def test_track_text_and_copy(tmp_scene_dir):
 
 @pytest.mark.ocr
 def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
-    from refstudio.analyze.text import RapidOcr
+    from keepframe.analyze.text import RapidOcr
     import difflib
     scene = make_synthetic_scene(tmp_scene_dir, seed=41)
     gold = [e for e in scene.elements if e.kind == "text"][0]
@@ -3161,12 +3161,12 @@ def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_text.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.text'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.text'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/text.py
+# keepframe/analyze/text.py
 from __future__ import annotations
 import difflib, math
 from collections import Counter
@@ -3325,7 +3325,7 @@ Expected: PASS (the `ocr` test needs the `ocr` extra installed)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/text.py tests/test_text.py
+git add keepframe/analyze/text.py tests/test_text.py
 git commit -m "feat(analyze): OCR adapter, text tracking, copy alignment and text sprite props"
 ```
 
@@ -3334,7 +3334,7 @@ git commit -m "feat(analyze): OCR adapter, text tracking, copy alignment and tex
 ### Task 21: Torch affine refinement (optional GPU)
 
 **Files:**
-- Create: `refstudio/analyze/refine.py`
+- Create: `keepframe/analyze/refine.py`
 - Test: `tests/test_refine.py`
 
 **Interfaces:**
@@ -3347,10 +3347,10 @@ git commit -m "feat(analyze): OCR adapter, text tracking, copy alignment and tex
 ```python
 # tests/test_refine.py
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import eval_props
-from refstudio.analyze.composite import composite_scene, load_texture
-from refstudio.analyze.refine import refine_affine, torch_available
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import eval_props
+from keepframe.analyze.composite import composite_scene, load_texture
+from keepframe.analyze.refine import refine_affine, torch_available
 
 pytestmark = pytest.mark.gpu
 
@@ -3374,12 +3374,12 @@ def test_refinement_reduces_position_error(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_refine.py -v -m gpu`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.refine'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.refine'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/refine.py
+# keepframe/analyze/refine.py
 from __future__ import annotations
 import math
 import numpy as np
@@ -3400,7 +3400,7 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int = 200, lr: float = 0.02,
                   scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]:
     if not torch_available():
-        raise RuntimeError("torch is required for refine_affine (pip install 'refstudio[gpu]')")
+        raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
     import torch, torch.nn.functional as F
     dev = device or ("cuda" if torch.cuda.is_available() else "cpu")
     N, H, W = frames.shape[:3]
@@ -3472,7 +3472,7 @@ Expected: PASS on CPU in under a minute. If the loss does not decrease, the sign
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/refine.py tests/test_refine.py
+git add keepframe/analyze/refine.py tests/test_refine.py
 git commit -m "feat(analyze): optional torch refinement of per-frame affine and opacity"
 ```
 
@@ -3481,7 +3481,7 @@ git commit -m "feat(analyze): optional torch refinement of per-frame affine and 
 ### Task 22: Semantics — roles, groups, captioner protocol
 
 **Files:**
-- Create: `refstudio/analyze/semantics.py`
+- Create: `keepframe/analyze/semantics.py`
 - Test: `tests/test_semantics.py`
 
 **Interfaces:**
@@ -3496,8 +3496,8 @@ git commit -m "feat(analyze): optional torch refinement of per-frame affine and 
 ```python
 # tests/test_semantics.py
 import numpy as np
-from refstudio.ir.schema import Element, Canonical, Keyframe, Track
-from refstudio.analyze.semantics import assign_roles, group_by_motion, NullCaptioner
+from keepframe.ir.schema import Element, Canonical, Keyframe, Track
+from keepframe.analyze.semantics import assign_roles, group_by_motion, NullCaptioner
 
 def el(i, w, h, kind="sprite", vis=(0, 59)):
     return Element(id=f"e{i}", kind=kind, canonical=Canonical(width=w, height=h, text="T" if kind == "text" else None), visible=vis)
@@ -3523,12 +3523,12 @@ def test_null_captioner():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_semantics.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.semantics'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.semantics'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/semantics.py
+# keepframe/analyze/semantics.py
 from __future__ import annotations
 from typing import Protocol
 import numpy as np
@@ -3594,7 +3594,7 @@ Expected: 3 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/semantics.py tests/test_semantics.py
+git add keepframe/analyze/semantics.py tests/test_semantics.py
 git commit -m "feat(analyze): heuristic roles, motion groups, captioner protocol"
 ```
 
@@ -3603,7 +3603,7 @@ git commit -m "feat(analyze): heuristic roles, motion groups, captioner protocol
 ### Task 23: Report and analysis pipeline with stage cache
 
 **Files:**
-- Create: `refstudio/analyze/report.py`, `refstudio/analyze/pipeline.py`
+- Create: `keepframe/analyze/report.py`, `keepframe/analyze/pipeline.py`
 - Test: `tests/test_pipeline.py`
 
 **Interfaces:**
@@ -3624,10 +3624,10 @@ git commit -m "feat(analyze): heuristic roles, motion groups, captioner protocol
 ```python
 # tests/test_pipeline.py
 import json, numpy as np
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene, scene_dir
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, rerun, AnalyzeOptions
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene, scene_dir
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, rerun, AnalyzeOptions
 
 def test_analyze_synthetic_video_end_to_end(tmp_scene_dir):
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=61, with_text=False, overlap=False)
@@ -3659,12 +3659,12 @@ def test_rerun_from_keyframes_appends_version(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_pipeline.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.pipeline'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.pipeline'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/report.py
+# keepframe/analyze/report.py
 from __future__ import annotations
 import json
 from pathlib import Path
@@ -3708,7 +3708,7 @@ def write_report(scene_dir: Path, data: dict) -> Path:
 ```
 
 ```python
-# refstudio/analyze/pipeline.py
+# keepframe/analyze/pipeline.py
 from __future__ import annotations
 import json, pickle
 from dataclasses import dataclass, asdict
@@ -3940,7 +3940,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/report.py refstudio/analyze/pipeline.py tests/test_pipeline.py
+git add keepframe/analyze/report.py keepframe/analyze/pipeline.py tests/test_pipeline.py
 git commit -m "feat(analyze): end-to-end analysis pipeline with stage cache, overrides and report"
 ```
 
@@ -3949,7 +3949,7 @@ git commit -m "feat(analyze): end-to-end analysis pipeline with stage cache, ove
 ### Task 24: Review corrections (four operations)
 
 **Files:**
-- Create: `refstudio/review/corrections.py`
+- Create: `keepframe/review/corrections.py`
 - Test: `tests/test_corrections.py`
 
 **Interfaces:**
@@ -3966,12 +3966,12 @@ git commit -m "feat(analyze): end-to-end analysis pipeline with stage cache, ove
 ```python
 # tests/test_corrections.py
 import json, numpy as np, cv2
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene, scene_dir, load_project
-from refstudio.ir.schema import FontGuess
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, AnalyzeOptions
-from refstudio.review.corrections import edit_text, reassign_id, add_bbox_prompt
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene, scene_dir, load_project
+from keepframe.ir.schema import FontGuess
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, AnalyzeOptions
+from keepframe.review.corrections import edit_text, reassign_id, add_bbox_prompt
 
 def project(tmp, seed, frames=24):
     gold = make_synthetic_scene(tmp / "gold", seed=seed, frames=frames, with_text=False, overlap=False)
@@ -4003,7 +4003,7 @@ def test_reassign_whole_range_merges_elements(tmp_scene_dir):
 def test_bbox_prompt_appends_override_and_reruns(tmp_scene_dir):
     _, root = project(tmp_scene_dir, 73)
     s, _ = current_scene(root, "s1")
-    from refstudio.ir.tracks import element_bbox
+    from keepframe.ir.tracks import element_bbox
     x0, y0, x1, y1 = [int(v) for v in element_bbox(s.elements[0], 0)]
     v = add_bbox_prompt(root, "s1", 0, (x0 - 2, y0 - 2, x1 + 2, y1 + 2), s.elements[0].id)
     assert v.id == "v2"
@@ -4016,12 +4016,12 @@ def test_bbox_prompt_appends_override_and_reruns(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_corrections.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.review.corrections'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.review.corrections'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/review/corrections.py
+# keepframe/review/corrections.py
 from __future__ import annotations
 import json, shutil
 from pathlib import Path
@@ -4132,7 +4132,7 @@ Expected: 3 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/review/corrections.py tests/test_corrections.py
+git add keepframe/review/corrections.py tests/test_corrections.py
 git commit -m "feat(review): four correction ops (reassign id, region mask, bbox prompt, edit text) with reruns"
 ```
 
@@ -4141,8 +4141,8 @@ git commit -m "feat(review): four correction ops (reassign id, region mask, bbox
 ### Task 25: Golden comparison, analyze/correct CLI, M2 gate
 
 **Files:**
-- Create: `refstudio/analyze/golden.py`, `scripts/m2_gate.py`
-- Modify: `refstudio/gates.py` (add `m2_gate`, `m2_gate_real`), `refstudio/cli.py` (add `analyze`, `correct`, `gate-m2`, `gate-m2-real`)
+- Create: `keepframe/analyze/golden.py`, `scripts/m2_gate.py`
+- Modify: `keepframe/gates.py` (add `m2_gate`, `m2_gate_real`), `keepframe/cli.py` (add `analyze`, `correct`, `gate-m2`, `gate-m2-real`)
 - Test: `tests/test_golden_gate.py`
 
 **Interfaces:**
@@ -4160,12 +4160,12 @@ git commit -m "feat(review): four correction ops (reassign id, region mask, bbox
 # tests/test_golden_gate.py
 import json, subprocess, sys
 import numpy as np
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene, scene_dir
-from refstudio.analyze.video import render_scene_video, read_frames
-from refstudio.analyze.pipeline import analyze, AnalyzeOptions
-from refstudio.analyze.golden import compare
-from refstudio.gates import m2_gate
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene, scene_dir
+from keepframe.analyze.video import render_scene_video, read_frames
+from keepframe.analyze.pipeline import analyze, AnalyzeOptions
+from keepframe.analyze.golden import compare
+from keepframe.gates import m2_gate
 
 def test_compare_on_analyzed_synthetic(tmp_scene_dir):
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=81, with_text=False, overlap=False)
@@ -4186,11 +4186,11 @@ def test_cli_analyze_and_correct(tmp_scene_dir):
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=82, frames=24, with_text=False, overlap=False)
     vid = render_scene_video(gold, tmp_scene_dir / "gold", tmp_scene_dir / "gold.mp4")
     root = tmp_scene_dir / "proj"
-    r = subprocess.run([sys.executable, "-m", "refstudio.cli", "analyze", "--video", str(vid), "--start", "0", "--end", "23",
+    r = subprocess.run([sys.executable, "-m", "keepframe.cli", "analyze", "--video", str(vid), "--start", "0", "--end", "23",
                         "--out", str(root), "--no-ocr", "--no-refine"], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     s, _ = current_scene(root, "s1")
-    r = subprocess.run([sys.executable, "-m", "refstudio.cli", "correct", "--root", str(root), "--scene", "s1", "--op", "text",
+    r = subprocess.run([sys.executable, "-m", "keepframe.cli", "correct", "--root", str(root), "--scene", "s1", "--op", "text",
                         "--args", json.dumps({"element_id": s.elements[0].id, "text": "Hi"})], capture_output=True, text=True)
     assert r.returncode == 0 and '"id": "v2"' in r.stdout
 ```
@@ -4198,12 +4198,12 @@ def test_cli_analyze_and_correct(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_golden_gate.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.analyze.golden'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.analyze.golden'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/analyze/golden.py
+# keepframe/analyze/golden.py
 from __future__ import annotations
 from pathlib import Path
 import numpy as np
@@ -4247,7 +4247,7 @@ def compare(golden: Scene, golden_dir: Path, analyzed: Scene, analyzed_dir: Path
             "temporal": temporal_similarity(centroid_tracks(golden), centroid_tracks(analyzed)), "frame_l1": fl1}
 ```
 
-Add to `refstudio/gates.py`:
+Add to `keepframe/gates.py`:
 
 ```python
 def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
@@ -4305,7 +4305,7 @@ def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:
     return {"clips": len(rows), "rows": rows}
 ```
 
-Add to `refstudio/cli.py` (inside `main`, new sub-parsers and branches):
+Add to `keepframe/cli.py` (inside `main`, new sub-parsers and branches):
 
 ```python
     an = sub.add_parser("analyze"); an.add_argument("--video", required=True); an.add_argument("--start", type=int, default=0)
@@ -4351,19 +4351,19 @@ Add to `refstudio/cli.py` (inside `main`, new sub-parsers and branches):
 ```python
 # scripts/m2_gate.py
 import sys
-from refstudio.cli import main
+from keepframe.cli import main
 sys.exit(main(["gate-m2", "--out", "out/m2", "--n", "20"]))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_golden_gate.py -v` then `python scripts/m2_gate.py`
-Expected: tests PASS; the gate prints 20 rows and `'passed': True`. If `frame_l1_ok` is below 16/20 with `refine=False`, install the `gpu` extra and rerun — the spec's M2 gate assumes the optimisation step (§5.5) is available. Then run the real-clip hook on the licensed 30-clip set once it exists: `refstudio gate-m2-real --clips data/clips --out out/m2real`.
+Expected: tests PASS; the gate prints 20 rows and `'passed': True`. If `frame_l1_ok` is below 16/20 with `refine=False`, install the `gpu` extra and rerun — the spec's M2 gate assumes the optimisation step (§5.5) is available. Then run the real-clip hook on the licensed 30-clip set once it exists: `keepframe gate-m2-real --clips data/clips --out out/m2real`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/analyze/golden.py refstudio/gates.py refstudio/cli.py scripts/m2_gate.py tests/test_golden_gate.py
+git add keepframe/analyze/golden.py keepframe/gates.py keepframe/cli.py scripts/m2_gate.py tests/test_golden_gate.py
 git commit -m "feat: golden comparison, analyze/correct CLI, M2 synthetic gate and real-clip hook"
 ```
 
@@ -4382,15 +4382,15 @@ Design authority: `PRODUCT.md` and `DESIGN.md` at the repo root (tokens, type, l
 ### Task 26: Review server (stdlib http.server)
 
 **Files:**
-- Create: `refstudio/review/server.py`
-- Modify: `refstudio/cli.py` (add `review --root ROOT [--scene s1] [--port 8765]`)
+- Create: `keepframe/review/server.py`
+- Modify: `keepframe/cli.py` (add `review --root ROOT [--scene s1] [--port 8765]`)
 - Test: `tests/test_review_server.py`
 
 **Interfaces:**
 - `class ReviewState(root: Path, scene_id: str = "s1")` — holds `job = {"status": "idle"|"running"|"done"|"error", "op": str|None, "error": str|None, "version": str|None}`, a lock, lazy `frames()` (mmap of `stages/frames.npy`), a PNG cache keyed `(version_id, frame)`.
 - `make_server(root: Path, scene_id: str = "s1", port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer` — returns an unstarted server (tests call `serve_forever` in a thread).
 - HTTP API (all JSON responses `application/json; charset=utf-8`, errors `{"error": str}` with 4xx/5xx):
-  - `GET /` → `refstudio/review/ui.html` (Task 27; until then a 404 with `{"error": "ui.html missing"}`)
+  - `GET /` → `keepframe/review/ui.html` (Task 27; until then a 404 with `{"error": "ui.html missing"}`)
   - `GET /api/state[?v=vN]` → `{"project": <project.json>, "version": <Version>, "scene": <scene json>, "report": <report.json or null>, "job": <job>}`
   - `GET /frame/orig/<f>` → PNG of source frame `f`; `GET /frame/recon/<f>[?v=vN]` → PNG of `composite_scene` for that version (cached)
   - `GET /assets/<name>` → file from `scenes/<id>/assets/` (PNG only; any `..` → 400)
@@ -4404,11 +4404,11 @@ Design authority: `PRODUCT.md` and `DESIGN.md` at the repo root (tokens, type, l
 ```python
 # tests/test_review_server.py
 import base64, json, threading, time, urllib.request, cv2, numpy as np
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.store import current_scene
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, AnalyzeOptions
-from refstudio.review.server import make_server
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.store import current_scene
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, AnalyzeOptions
+from keepframe.review.server import make_server
 
 def project(tmp, seed=91, frames=16):
     gold = make_synthetic_scene(tmp / "gold", seed=seed, frames=frames, with_text=False, overlap=False)
@@ -4438,7 +4438,7 @@ def test_state_frames_keep_and_correct(tmp_scene_dir):
     st, ct, body = get(base + "/api/state")
     assert st == 200 and "json" in ct
     state = json.loads(body)
-    assert state["version"]["id"] == "v1" and state["scene"]["schema"] == "refstudio.scene/1" and state["report"]["reconstruction"]
+    assert state["version"]["id"] == "v1" and state["scene"]["schema"] == "keepframe.scene/1" and state["report"]["reconstruction"]
     st, ct, png = get(base + "/frame/orig/3")
     assert st == 200 and ct == "image/png" and cv2.imdecode(np.frombuffer(png, np.uint8), 1).shape == (360, 640, 3)
     st, ct, png2 = get(base + "/frame/recon/3")
@@ -4478,12 +4478,12 @@ def test_path_traversal_and_bad_op_rejected(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_review_server.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.review.server'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.review.server'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/review/server.py
+# keepframe/review/server.py
 from __future__ import annotations
 import base64, json, tempfile, threading, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -4641,7 +4641,7 @@ def make_server(root: Path, scene_id: str = "s1", port: int = 8765, host: str = 
     return ThreadingHTTPServer((host, port), H)
 ```
 
-Add to `refstudio/cli.py`:
+Add to `keepframe/cli.py`:
 
 ```python
     rv = sub.add_parser("review"); rv.add_argument("--root", required=True); rv.add_argument("--scene", default="s1"); rv.add_argument("--port", type=int, default=8765)
@@ -4667,7 +4667,7 @@ Expected: 2 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/review/server.py refstudio/cli.py tests/test_review_server.py
+git add keepframe/review/server.py keepframe/cli.py tests/test_review_server.py
 git commit -m "feat(review): stdlib http server with state, frames, keep toggles and correction jobs"
 ```
 
@@ -4676,7 +4676,7 @@ git commit -m "feat(review): stdlib http server with state, frames, keep toggles
 ### Task 27: Review screen (single HTML file)
 
 **Files:**
-- Create: `refstudio/review/ui.html`
+- Create: `keepframe/review/ui.html`
 - Modify: `pyproject.toml` (package-data: add `review/ui.html`)
 - Test: `tests/test_review_ui.py`
 
@@ -4690,7 +4690,7 @@ git commit -m "feat(review): stdlib http server with state, frames, keep toggles
 - Side panel: element list (swatch by role, id, kind, text or texture thumbnail from `/assets/`, confidence as a 5-segment bar with the number, provenance badge 자동/수동; confidence < 0.7 shows the number in `--caution`); selected element section with its constraints (checkbox per predicate, `keep` state) and the four corrections as `<details>` disclosures with forms: 재할당 (from id prefilled, to id select, frame range), 마스크 (file input PNG → base64), 박스 프롬프트 (frame prefilled; drag a rectangle on the original pane fills x0,y0,x1,y1), 텍스트 (text + size). Buttons: "재할당 실행", "마스크 적용", "박스 적용", "텍스트 저장", and "유지 조건 저장" for pending keep changes (disabled until something changed).
 - Jobs: after a correction POST, poll `/api/job` every 700 ms; while running, the whole side panel form group is `disabled` and a banner shows "보정 실행 중: <op>"; on `done` reload with `?v=<new version>`; on `error` show the message in the banner in `--error` with the recovery hint "값을 확인하고 다시 실행하세요".
 - Empty state (no elements): the panel says "인식된 요소가 없습니다. 원본 화면에서 박스를 그려 첫 요소를 지정하세요." and the bbox disclosure is open.
-- i18n: `const T = {ko: {...}, en: {...}}`; every visible string uses `data-i18n="key"` (or `data-i18n-title`); the header toggle button switches `document.documentElement.lang`, re-renders strings and stores the choice in `localStorage("refstudio.lang")`. All keys exist in both languages (test enforces).
+- i18n: `const T = {ko: {...}, en: {...}}`; every visible string uses `data-i18n="key"` (or `data-i18n-title`); the header toggle button switches `document.documentElement.lang`, re-renders strings and stores the choice in `localStorage("keepframe.lang")`. All keys exist in both languages (test enforces).
 - Accessibility: every control has a visible label or `aria-label`; focus ring per DESIGN.md; the timeline SVG has `role="slider"` with `aria-valuenow`; error/job banner uses `role="status"`; contrast pairs from DESIGN.md only.
 - Browser surfaces themed: `::selection`, scrollbar (`scrollbar-width: thin; scrollbar-color`), `caret-color`, focus rings, `accent-color` for checkboxes, `text-underline-offset`.
 
@@ -4700,12 +4700,12 @@ git commit -m "feat(review): stdlib http server with state, frames, keep toggles
 # tests/test_review_ui.py
 import json, re, threading, pytest
 from pathlib import Path
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.analyze.video import render_scene_video
-from refstudio.analyze.pipeline import analyze, AnalyzeOptions
-from refstudio.review.server import make_server
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.pipeline import analyze, AnalyzeOptions
+from keepframe.review.server import make_server
 
-UI = Path("refstudio/review/ui.html")
+UI = Path("keepframe/review/ui.html")
 
 def test_ui_is_self_contained_and_bilingual():
     html = UI.read_text()
@@ -4752,16 +4752,16 @@ def test_ui_loads_scrubs_and_toggles_language(tmp_scene_dir):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_review_ui.py -v`
-Expected: FAIL with `FileNotFoundError: refstudio/review/ui.html`
+Expected: FAIL with `FileNotFoundError: keepframe/review/ui.html`
 
 - [ ] **Step 3: Build the page**
 
-Write `refstudio/review/ui.html` following DESIGN.md. The skeleton below is the required structure; complete the CSS and JS so every behavior in the Interfaces section works.
+Write `keepframe/review/ui.html` following DESIGN.md. The skeleton below is the required structure; complete the CSS and JS so every behavior in the Interfaces section works.
 
 ```html
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ref Studio 검수</title>
+<title>Keepframe 검수</title>
 <style>
 :root{--ink:#1B1E24;--panel:#232730;--line:#343A45;--raise:#2C313B;--text:#E8EAEE;--text-2:#A9B0BC;--accent:#59D3C3;--on-accent:#0F1A18;--caution:#F0B44A;--error:#F27D72;
 --role-text:#B39CFF;--role-primary:#59D3C3;--role-secondary:#7FA6FF;--role-background:#6F7785;--t:150ms cubic-bezier(.16,1,.3,1)}
@@ -4836,11 +4836,11 @@ const T = {
   }
 };
 // state: {scene, report, version, versions, frame, playing, selected, keepChanges}
-// bezierY / evalTrack / corners: mirror of refstudio/ir/tracks.py (cubic-bezier by bisection, clamp outside keys, T·R·SkewX·S about the anchor)
+// bezierY / evalTrack / corners: mirror of keepframe/ir/tracks.py (cubic-bezier by bisection, clamp outside keys, T·R·SkewX·S about the anchor)
 // render(): panes (img src = /frame/orig/{f}, /frame/recon/{f}?v=), overlay rects for the selected element, timeline rows + error strip + playhead, element list, constraints with keep checkboxes
 // keyboard: Space, ArrowLeft/Right (+Shift ×10), Home, End, [ and ] (peaks = per_frame L1 > 80th percentile)
 // timeline pointer events scrub; drag on #orig's overlay fills the bbox form; forms POST /api/correct then poll /api/job every 700 ms
-// applyLang(): every [data-i18n] / [data-i18n-title] from T[lang]; document.documentElement.lang; localStorage "refstudio.lang"
+// applyLang(): every [data-i18n] / [data-i18n-title] from T[lang]; document.documentElement.lang; localStorage "keepframe.lang"
 </script></body></html>
 ```
 
@@ -4851,13 +4851,13 @@ Rules while completing the JS (from DESIGN.md and the craft floor): no extra lib
 Run: `pytest tests/test_review_ui.py -v` and `pytest tests/test_review_ui.py -v -m browser`
 Expected: PASS.
 Then run the mechanical design detector once over the page and fix everything it reports before committing:
-`node /home/singlerr/.claude/skills/impeccable/scripts/detect.mjs --json refstudio/review/ui.html`
+`node /home/singlerr/.claude/skills/impeccable/scripts/detect.mjs --json keepframe/review/ui.html`
 Expected: no findings (an empty list). Finally take two screenshots with Playwright (1280×800 and 1440×900) of a synthetic project, look at them, and fix overlaps or clipped copy in one batch; save the screenshots under `out/review-screens/` (git-ignored).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/review/ui.html pyproject.toml tests/test_review_ui.py
+git add keepframe/review/ui.html pyproject.toml tests/test_review_ui.py
 git commit -m "feat(review): bilingual review screen with side-by-side viewer, error strip timeline and corrections"
 ```
 

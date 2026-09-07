@@ -1,8 +1,8 @@
-# Ref Studio 설계 스펙 (v1)
+# Keepframe 설계 스펙 (v1)
 
 - 날짜: 2026-09-05
 - 상태: 사용자 승인 (2026-09-05). 에이전트 통솔 범위 A안 반영. 구현 계획은 M1+M2를 한 계획으로 작성. 관리자 패널 §13은 2026-09-06 추가(기존 v1에는 없었음).
-- 근거 자료: `docs/research/2026-09-05-ref-studio-tech-research.md` (논문 전문 조사), `사업.txt`
+- 근거 자료: `docs/research/2026-09-05-keepframe-tech-research.md` (논문 전문 조사), `사업.txt`
 
 ## 1. 목표와 비목표
 
@@ -60,7 +60,7 @@
 
 ```json
 {
-  "schema": "refstudio.project/1",
+  "schema": "keepframe.project/1",
   "source": {"file": "ref.mp4", "fps": 30, "size": [1920, 1080], "mode": "full|range", "range": [0, 120]},
   "scenes": [{"id": "s1", "frames": [0, 119], "transition_out": {"type": "cut|fade|slide|unknown", "frames": 6}}],
   "links": [{"from": "s1/e3", "to": "s2/e1", "reason": "same logo"}],
@@ -70,7 +70,7 @@
 
 ```json
 {
-  "schema": "refstudio.scene/1",
+  "schema": "keepframe.scene/1",
   "background": {"kind": "color|image", "value": "#101418", "confidence": 0.98},
   "elements": [{
     "id": "e3", "kind": "text", "role": "primary|secondary|text|background",
@@ -239,4 +239,4 @@ prompt + attachments + IR(v_n) + keep set
 - 생성 모델 교체 콘솔. 모델은 어댑터 뒤이며 운영 화면에서 핫스왑하지 않는다.
 
 ## 14. 참고
-근거 논문·수치는 `docs/research/2026-09-05-ref-studio-tech-research.md` §1·§2·§5 참조. 핵심: Motico(TOG 2023), Sprite Decomposition(ECCV 2024), MoVer(SIGGRAPH 2025), LogoMotion(CHI 2025), Animation2Code(2026), VimTS/GoMatching++(2025–26), CodeGen-3D(2026), Interaction2Code(ASE 2025).
+근거 논문·수치는 `docs/research/2026-09-05-keepframe-tech-research.md` §1·§2·§5 참조. 핵심: Motico(TOG 2023), Sprite Decomposition(ECCV 2024), MoVer(SIGGRAPH 2025), LogoMotion(CHI 2025), Animation2Code(2026), VimTS/GoMatching++(2025–26), CodeGen-3D(2026), Interaction2Code(ASE 2025).

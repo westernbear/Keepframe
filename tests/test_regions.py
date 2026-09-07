@@ -1,6 +1,6 @@
 import numpy as np
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
 
 def frame_with_rects():
     f = np.full((100, 200, 3), (0x10, 0x14, 0x18), np.uint8)

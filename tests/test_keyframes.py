@@ -1,7 +1,7 @@
 import numpy as np, pytest
-from refstudio.ir.schema import Keyframe, Track, PROPS, DEFAULTS
-from refstudio.ir.tracks import eval_track, PRESET_EASES
-from refstudio.analyze.keyframes import reduce_curve, tracks_from_raw, fill_gaps, ERR
+from keepframe.ir.schema import Keyframe, Track, PROPS, DEFAULTS
+from keepframe.ir.tracks import eval_track, PRESET_EASES
+from keepframe.analyze.keyframes import reduce_curve, tracks_from_raw, fill_gaps, ERR
 
 def dense(track, n):
     return np.array([eval_track(track, f) for f in range(n)])

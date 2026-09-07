@@ -1,8 +1,8 @@
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.analyze.video import read_frames, write_video, render_scene_video
-from refstudio.analyze.background import estimate_background, foreground_mask
-from refstudio.analyze.composite import composite_scene
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.analyze.video import read_frames, write_video, render_scene_video
+from keepframe.analyze.background import estimate_background, foreground_mask
+from keepframe.analyze.composite import composite_scene
 
 def test_video_roundtrip_and_background(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=21, frames=12, with_text=False)
@@ -15,7 +15,7 @@ def test_video_roundtrip_and_background(tmp_scene_dir):
     assert max(abs(bg[0] - 0x10), abs(bg[1] - 0x14), abs(bg[2] - 0x18)) <= 3 and conf > 0.5
     fg = foreground_mask(frames[5], bg)
     e = scene.elements[0]
-    from refstudio.ir.tracks import element_bbox
+    from keepframe.ir.tracks import element_bbox
     x0, y0, x1, y1 = [int(v) for v in element_bbox(e, 5)]
     cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
     assert fg[cy, cx] and not fg[2, 2]

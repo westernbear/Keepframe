@@ -18,8 +18,8 @@ def run_job(spec: JobSpec) -> dict[str, Any]:
 
 
 def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
-    from refstudio.analyze.pipeline import AnalyzeOptions, analyze
-    from refstudio.web.workspace import write_meta
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze
+    from keepframe.web.workspace import write_meta
 
     video = Path(args["video"])
     out_root = Path(args["out_root"])
@@ -41,8 +41,8 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_render(args: dict[str, Any]) -> dict[str, Any]:
-    from refstudio.ir.store import load_scene
-    from refstudio.render.renderer import render
+    from keepframe.ir.store import load_scene
+    from keepframe.render.renderer import render
 
     scene = load_scene(Path(args["scene"]))
     frames = args.get("frames")

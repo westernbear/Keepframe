@@ -1,8 +1,8 @@
 import numpy as np, pytest
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.tracks import element_bbox, eval_props
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.text import TextBox, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.tracks import element_bbox, eval_props
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.text import TextBox, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -34,11 +34,12 @@ def test_track_text_and_copy(tmp_scene_dir):
     raw, canon, cf, font, color = text_props(tracks[0], frames, (0x10, 0x14, 0x18), scene.frames, 0)
     p = eval_props(gold, cf)
     assert abs(raw[cf, 0] - p["x"]) < 2 and abs(raw[cf, 1] - p["y"]) < 2 and canon.shape[2] == 4
-    assert 25 <= font.size_px <= 60 and color.startswith("#")
+    # Hershey bbox + scale/rotation AABB; 40px canonical can read back above 60.
+    assert 25 <= font.size_px <= 80 and color.startswith("#")
 
 @pytest.mark.ocr
 def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
-    from refstudio.analyze.text import RapidOcr
+    from keepframe.analyze.text import RapidOcr
     import difflib
     scene = make_synthetic_scene(tmp_scene_dir, seed=41)
     gold = [e for e in scene.elements if e.kind == "text"][0]

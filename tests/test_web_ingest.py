@@ -18,7 +18,7 @@ def _mp4(path: Path, solid=True):
 def test_upload_range_project(tmp_path):
     vid = tmp_path / "a.mp4"
     _mp4(vid)
-    from refstudio.web.workspace import create_project, list_projects
+    from keepframe.web.workspace import create_project, list_projects
     row = create_project(tmp_path / "ws", "Card", vid, "range", (0, 9))
     assert row["status"] == "uploaded"
     assert list_projects(tmp_path / "ws")[0]["id"] == row["id"]

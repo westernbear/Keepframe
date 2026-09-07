@@ -1,11 +1,11 @@
 import numpy as np
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_texture
-from refstudio.ir.tracks import eval_props, element_bbox
-from refstudio.analyze.composite import composite_scene
-from refstudio.analyze.background import foreground_mask
-from refstudio.analyze.regions import build_palette, extract_regions
-from refstudio.analyze.tracking import track_regions
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_texture
+from keepframe.ir.tracks import eval_props, element_bbox
+from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.background import foreground_mask
+from keepframe.analyze.regions import build_palette, extract_regions
+from keepframe.analyze.tracking import track_regions
 
 
 def three_object_scene(d):

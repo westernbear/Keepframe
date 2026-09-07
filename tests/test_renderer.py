@@ -1,9 +1,9 @@
 import numpy as np, pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.ir.tracks import element_bbox
-from refstudio.compose.composer import compose
-from refstudio.render.renderer import render, load_frame
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.ir.tracks import element_bbox
+from keepframe.compose.composer import compose
+from keepframe.render.renderer import render, load_frame
 
 pytestmark = pytest.mark.browser
 

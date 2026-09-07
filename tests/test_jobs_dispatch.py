@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from refstudio.jobs import JobSpec, JobStore, ThreadRunner, load_runner, run_job
+from keepframe.jobs import JobSpec, JobStore, ThreadRunner, load_runner, run_job
 
 
 class RecordingRunner:
@@ -19,7 +19,7 @@ def test_run_job_analyze_calls_pipeline(tmp_path, monkeypatch):
     def fake_analyze(video, start, end, out_root, options=None):
         called["args"] = (Path(video), start, end, Path(out_root), options)
 
-    monkeypatch.setattr("refstudio.analyze.pipeline.analyze", fake_analyze)
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", fake_analyze)
     spec = JobSpec(
         kind="analyze",
         args={"video": "/tmp/a.mp4", "start": 0, "end": 11, "out_root": str(tmp_path)},
@@ -45,8 +45,8 @@ def test_run_job_render_calls_renderer(tmp_path, monkeypatch):
         called["mp4"] = mp4
         return FakeRes()
 
-    monkeypatch.setattr("refstudio.ir.store.load_scene", fake_load)
-    monkeypatch.setattr("refstudio.render.renderer.render", fake_render)
+    monkeypatch.setattr("keepframe.ir.store.load_scene", fake_load)
+    monkeypatch.setattr("keepframe.render.renderer.render", fake_render)
     spec = JobSpec(
         kind="render",
         args={"scene": "/tmp/scene.json", "html": "/tmp/c.html", "out": str(tmp_path / "r"), "mp4": True},

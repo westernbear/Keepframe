@@ -1,53 +1,53 @@
-# Ref Studio Admin Panel Implementation Plan
+# Keepframe Admin Panel Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the cloud/team admin desk (login, tenants, job queue, quarantine, audit log) behind `AdminService`, off by default on the local edition.
 
-**Architecture:** `refstudio/admin` is a protocol plus an in-memory store for tests. `refstudio serve --admin` mounts `/admin/*`. Without the flag, `/admin` stays 404 with the Korean local-edition sentence from Plan A. Admin screens are Stitch HTML taken offline the same way as maker pages. Admin never edits scene IR and never raises retry/asset caps.
+**Architecture:** `keepframe/admin` is a protocol plus an in-memory store for tests. `keepframe serve --admin` mounts `/admin/*`. Without the flag, `/admin` stays 404 with the Korean local-edition sentence from Plan A. Admin screens are Stitch HTML taken offline the same way as maker pages. Admin never edits scene IR and never raises retry/asset caps.
 
 **Tech Stack:** Python 3.11+, pydantic v2 (if already in the package), stdlib `http.server` / `http.cookies`, pytest. No React. No billing prices.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-ref-studio-design.md` §13 (and §7.1 / §9 policy). Visual: `DESIGN.md`. Offline-port rules: `docs/superpowers/plans/2026-09-06-ref-studio-m1-m2-stitch.md` Global Constraints (CDN forbidden, white pill CTA, `#0099ff` signal only). Screen source: `.stitch/designs/admin-*.html`.
+**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` §13 (and §7.1 / §9 policy). Visual: `DESIGN.md`. Offline-port rules: `docs/superpowers/plans/2026-09-06-keepframe-m1-m2-stitch.md` Global Constraints (CDN forbidden, white pill CTA, `#0099ff` signal only). Screen source: `.stitch/designs/admin-*.html`.
 
 ## Global Constraints
 
-- Do not edit `docs/superpowers/plans/2026-09-05-ref-studio-m1-m2.md`.
+- Do not edit `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md`.
 - Local default: `/admin` → 404 `{"error": "로컬판에는 이 화면이 없습니다."}`.
 - `RETRY_CAP = 4`, `ASSET_GEN_CAP = 2`. No function, route, or form field may change these.
 - No endpoint that turns on live-action, skips keep checks, edits IR, swaps models, or sets prices.
-- Admin session cookie name is `refstudio_admin`. Maker must not use that name.
+- Admin session cookie name is `keepframe_admin`. Maker must not use that name.
 - Audit log is append-only. `DELETE /admin/api/audit` must not exist.
 - Quarantine rows expose filename, tenant, rejected_at, reason only. No video URL, no thumbnail.
-- Korean default, `localStorage("refstudio.lang")`, `data-i18n`. No emoji. No invented SLA.
+- Korean default, `localStorage("keepframe.lang")`, `data-i18n`. No emoji. No invented SLA.
 - Runtime admin HTML must not load `cdn.tailwindcss.com`, `fonts.googleapis.com`, `lh3.googleusercontent.com`, or Material Symbols.
 - Commit after every task. Never commit `.venv`, frames, or MP4s.
 
 ## Prerequisite
 
-Plan A (`2026-09-06-ref-studio-m1-m2-stitch.md`) Tasks 1–9 done. This plan consumes:
+Plan A (`2026-09-06-keepframe-m1-m2-stitch.md`) Tasks 1–9 done. This plan consumes:
 
-- `refstudio.web.server.make_server(workspace, port=8765, host="127.0.0.1", admin=False)`
-- `refstudio.web.jobs.Job`, `JobStore` (queue screen lists these when `--admin`)
-- `refstudio/web/static/css/app.css`, `js/i18n.js`, `js/api.js`
+- `keepframe.web.server.make_server(workspace, port=8765, host="127.0.0.1", admin=False)`
+- `keepframe.web.jobs.Job`, `JobStore` (queue screen lists these when `--admin`)
+- `keepframe/web/static/css/app.css`, `js/i18n.js`, `js/api.js`
 
 ---
 
 ## File Structure
 
 ```
-refstudio/admin/__init__.py
-refstudio/admin/policy.py        RETRY_CAP, ASSET_GEN_CAP, display helpers
-refstudio/admin/models.py        Tenant, Member, QuarantineItem, AuditEvent, AdminSession
-refstudio/admin/service.py       AdminService protocol
-refstudio/admin/memory.py        MemoryAdmin
-refstudio/admin/auth.py          login/logout, cookie
-refstudio/admin/http.py          /admin routes mixed into make_server when admin=True
-refstudio/web/static/admin-login.html
-refstudio/web/static/admin-tenants.html
-refstudio/web/static/admin-queue.html
-refstudio/web/static/admin-quarantine.html
-refstudio/web/static/admin-audit.html
+keepframe/admin/__init__.py
+keepframe/admin/policy.py        RETRY_CAP, ASSET_GEN_CAP, display helpers
+keepframe/admin/models.py        Tenant, Member, QuarantineItem, AuditEvent, AdminSession
+keepframe/admin/service.py       AdminService protocol
+keepframe/admin/memory.py        MemoryAdmin
+keepframe/admin/auth.py          login/logout, cookie
+keepframe/admin/http.py          /admin routes mixed into make_server when admin=True
+keepframe/web/static/admin-login.html
+keepframe/web/static/admin-tenants.html
+keepframe/web/static/admin-queue.html
+keepframe/web/static/admin-quarantine.html
+keepframe/web/static/admin-audit.html
 tests/test_admin_policy.py
 tests/test_admin_memory.py
 tests/test_admin_static.py
@@ -61,7 +61,7 @@ tests/test_admin_local_off.py
 ### Task 1: Policy constants (display only)
 
 **Files:**
-- Create: `refstudio/admin/__init__.py`, `refstudio/admin/policy.py`
+- Create: `keepframe/admin/__init__.py`, `keepframe/admin/policy.py`
 - Test: `tests/test_admin_policy.py`
 
 **Interfaces:**
@@ -75,7 +75,7 @@ tests/test_admin_local_off.py
 # tests/test_admin_policy.py
 import ast
 from pathlib import Path
-from refstudio.admin.policy import RETRY_CAP, ASSET_GEN_CAP, policy_note, remaining_retries
+from keepframe.admin.policy import RETRY_CAP, ASSET_GEN_CAP, policy_note, remaining_retries
 
 def test_caps_are_fixed():
     assert RETRY_CAP == 4 and ASSET_GEN_CAP == 2
@@ -84,7 +84,7 @@ def test_caps_are_fixed():
     assert remaining_retries(1) == 3
 
 def test_policy_module_has_no_setter():
-    src = (Path("refstudio/admin/policy.py")).read_text(encoding="utf-8")
+    src = (Path("keepframe/admin/policy.py")).read_text(encoding="utf-8")
     tree = ast.parse(src)
     names = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
     assert "set_retry_cap" not in names
@@ -94,12 +94,12 @@ def test_policy_module_has_no_setter():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_admin_policy.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'refstudio.admin.policy'`
+Expected: FAIL with `ModuleNotFoundError: No module named 'keepframe.admin.policy'`
 
 - [ ] **Step 3: Implement**
 
 ```python
-# refstudio/admin/policy.py
+# keepframe/admin/policy.py
 RETRY_CAP = 4
 ASSET_GEN_CAP = 2
 
@@ -111,7 +111,7 @@ def remaining_retries(used: int) -> int:
 ```
 
 ```python
-# refstudio/admin/__init__.py
+# keepframe/admin/__init__.py
 from .policy import ASSET_GEN_CAP, RETRY_CAP, policy_note, remaining_retries
 ```
 
@@ -123,7 +123,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/admin/__init__.py refstudio/admin/policy.py tests/test_admin_policy.py
+git add keepframe/admin/__init__.py keepframe/admin/policy.py tests/test_admin_policy.py
 git commit -m "feat(admin): fixed retry and asset-generation caps"
 ```
 
@@ -132,7 +132,7 @@ git commit -m "feat(admin): fixed retry and asset-generation caps"
 ### Task 2: Models and MemoryAdmin
 
 **Files:**
-- Create: `refstudio/admin/models.py`, `refstudio/admin/service.py`, `refstudio/admin/memory.py`
+- Create: `keepframe/admin/models.py`, `keepframe/admin/service.py`, `keepframe/admin/memory.py`
 - Test: `tests/test_admin_memory.py`
 
 **Interfaces:**
@@ -159,9 +159,9 @@ git commit -m "feat(admin): fixed retry and asset-generation caps"
 ```python
 # tests/test_admin_memory.py
 import pytest
-from refstudio.admin.memory import MemoryAdmin
-from refstudio.admin.models import AuditEvent, QuarantineItem
-from refstudio.admin.policy import RETRY_CAP
+from keepframe.admin.memory import MemoryAdmin
+from keepframe.admin.models import AuditEvent, QuarantineItem
+from keepframe.admin.policy import RETRY_CAP
 
 def test_seed_tenants_and_no_delete():
     svc = MemoryAdmin()
@@ -202,7 +202,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/admin/models.py refstudio/admin/service.py refstudio/admin/memory.py tests/test_admin_memory.py
+git add keepframe/admin/models.py keepframe/admin/service.py keepframe/admin/memory.py tests/test_admin_memory.py
 git commit -m "feat(admin): in-memory tenants jobs quarantine and audit"
 ```
 
@@ -211,7 +211,7 @@ git commit -m "feat(admin): in-memory tenants jobs quarantine and audit"
 ### Task 3: Offline-port five admin Stitch pages
 
 **Files:**
-- Create: `refstudio/web/static/admin-login.html`, `admin-tenants.html`, `admin-queue.html`, `admin-quarantine.html`, `admin-audit.html`
+- Create: `keepframe/web/static/admin-login.html`, `admin-tenants.html`, `admin-queue.html`, `admin-quarantine.html`, `admin-audit.html`
 - Test: `tests/test_admin_static.py`
 
 **Interfaces:**
@@ -227,7 +227,7 @@ git commit -m "feat(admin): in-memory tenants jobs quarantine and audit"
 # tests/test_admin_static.py
 from pathlib import Path
 
-STATIC = Path("refstudio/web/static")
+STATIC = Path("keepframe/web/static")
 FORBIDDEN = ("cdn.tailwindcss.com", "fonts.googleapis.com", "lh3.googleusercontent.com", "material-symbols")
 PAGES = ("admin-login.html", "admin-tenants.html", "admin-queue.html", "admin-quarantine.html", "admin-audit.html")
 
@@ -262,7 +262,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/static/admin-*.html tests/test_admin_static.py
+git add keepframe/web/static/admin-*.html tests/test_admin_static.py
 git commit -m "feat(admin): offline-port Stitch admin screens"
 ```
 
@@ -271,19 +271,19 @@ git commit -m "feat(admin): offline-port Stitch admin screens"
 ### Task 4: Admin auth, separate cookie
 
 **Files:**
-- Create: `refstudio/admin/auth.py`
+- Create: `keepframe/admin/auth.py`
 - Test: `tests/test_admin_auth.py`
 
 **Interfaces:**
-- `COOKIE = "refstudio_admin"`
+- `COOKIE = "keepframe_admin"`
 - `MemoryAuth`: `login(email, password) -> str | None` (session id). Seed user `mina@ref.studio` / `dev-admin` (test only, documented in the test). `get(session_id) -> str | None` (email). `logout(session_id) -> None`.
-- `cookie_header(session_id: str) -> str` → `refstudio_admin={sid}; HttpOnly; Path=/admin; SameSite=Lax`
+- `cookie_header(session_id: str) -> str` → `keepframe_admin={sid}; HttpOnly; Path=/admin; SameSite=Lax`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_admin_auth.py
-from refstudio.admin.auth import COOKIE, MemoryAuth, cookie_header
+from keepframe.admin.auth import COOKIE, MemoryAuth, cookie_header
 
 def test_login_and_cookie_name():
     auth = MemoryAuth()
@@ -293,7 +293,7 @@ def test_login_and_cookie_name():
     h = cookie_header(sid)
     assert h.startswith(f"{COOKIE}=")
     assert "Path=/admin" in h
-    assert COOKIE == "refstudio_admin"
+    assert COOKIE == "keepframe_admin"
     auth.logout(sid)
     assert auth.get(sid) is None
 ```
@@ -313,7 +313,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/admin/auth.py tests/test_admin_auth.py
+git add keepframe/admin/auth.py tests/test_admin_auth.py
 git commit -m "feat(admin): session cookie separate from maker"
 ```
 
@@ -322,8 +322,8 @@ git commit -m "feat(admin): session cookie separate from maker"
 ### Task 5: Mount /admin when --admin
 
 **Files:**
-- Create: `refstudio/admin/http.py`
-- Modify: `refstudio/web/server.py`, `refstudio/cli.py`
+- Create: `keepframe/admin/http.py`
+- Modify: `keepframe/web/server.py`, `keepframe/cli.py`
 - Test: `tests/test_admin_http.py`, `tests/test_admin_local_off.py`
 
 **Interfaces:**
@@ -341,7 +341,7 @@ git commit -m "feat(admin): session cookie separate from maker"
 - Protected JSON (all except login + HTML login page) require the cookie.
 - `GET /admin/api/quarantine/{id}/video` → 404
 - No `PUT`/`PATCH` for policy. No `DELETE /admin/api/audit`.
-- CLI: `refstudio serve --workspace DIR [--admin]`
+- CLI: `keepframe serve --workspace DIR [--admin]`
 - When `admin=False`, existing Plan A test still holds.
 
 - [ ] **Step 1: Write the failing test**
@@ -364,9 +364,9 @@ def test_admin_still_404_by_default(tmp_path):
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
-from refstudio.web.server import make_server
-from refstudio.admin.memory import MemoryAdmin
-from refstudio.admin.auth import MemoryAuth
+from keepframe.web.server import make_server
+from keepframe.admin.memory import MemoryAdmin
+from keepframe.admin.auth import MemoryAuth
 import threading
 
 def start_admin(tmp_path):
@@ -391,7 +391,7 @@ def test_login_and_tenants(tmp_path):
     code, headers, body = post(srv, "/admin/api/login", {"email": "mina@ref.studio", "password": "dev-admin"})
     assert code == 200
     cookie = headers.get("Set-Cookie")
-    assert "refstudio_admin=" in cookie
+    assert "keepframe_admin=" in cookie
     req = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/api/policy")
     req.add_header("Cookie", cookie.split(";")[0])
     with urlopen(req) as r:
@@ -417,7 +417,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/admin/http.py refstudio/web/server.py refstudio/cli.py tests/test_admin_http.py tests/test_admin_local_off.py
+git add keepframe/admin/http.py keepframe/web/server.py keepframe/cli.py tests/test_admin_http.py tests/test_admin_local_off.py
 git commit -m "feat(admin): mount admin routes only with --admin"
 ```
 
@@ -426,7 +426,7 @@ git commit -m "feat(admin): mount admin routes only with --admin"
 ### Task 6: Bind tenant, queue, quarantine, audit pages
 
 **Files:**
-- Modify: `refstudio/web/static/admin-tenants.html`, `admin-queue.html`, `admin-quarantine.html`, `admin-audit.html`, `admin-login.html`, `js/i18n.js`
+- Modify: `keepframe/web/static/admin-tenants.html`, `admin-queue.html`, `admin-quarantine.html`, `admin-audit.html`, `admin-login.html`, `js/i18n.js`
 - Test: extend `tests/test_admin_static.py`
 
 **Interfaces:**
@@ -467,7 +467,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/web/static/admin-*.html refstudio/web/static/js/i18n.js refstudio/admin/http.py tests/test_admin_static.py
+git add keepframe/web/static/admin-*.html keepframe/web/static/js/i18n.js keepframe/admin/http.py tests/test_admin_static.py
 git commit -m "feat(admin): bind Stitch admin pages to AdminService APIs"
 ```
 
@@ -476,7 +476,7 @@ git commit -m "feat(admin): bind Stitch admin pages to AdminService APIs"
 ### Task 7: Quarantine and audit API contracts
 
 **Files:**
-- Modify: `refstudio/admin/http.py` if needed
+- Modify: `keepframe/admin/http.py` if needed
 - Test: `tests/test_admin_http.py` (extend)
 
 **Interfaces:**
@@ -530,7 +530,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add refstudio/admin/http.py tests/test_admin_http.py
+git add keepframe/admin/http.py tests/test_admin_http.py
 git commit -m "feat(admin): quarantine metadata only and immutable audit"
 ```
 

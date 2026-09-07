@@ -1,6 +1,6 @@
 import math, numpy as np, pytest
-from refstudio.ir.schema import Keyframe, Track, Element, Canonical
-from refstudio.ir.tracks import (bezier_y, eval_track, eval_props, eval_z, affine_matrix,
+from keepframe.ir.schema import Keyframe, Track, Element, Canonical
+from keepframe.ir.tracks import (bezier_y, eval_track, eval_props, eval_z, affine_matrix,
                                  decompose_affine, element_bbox, PRESET_EASES)
 
 def test_bezier_endpoints_and_linear():

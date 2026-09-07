@@ -1,7 +1,7 @@
-from refstudio.ir.synth import make_synthetic_scene
-from refstudio.ir.schema import Keyframe
-from refstudio.analyze.constraints import extract_constraints
-from refstudio.verify.predicates import build_context, eval_pred
+from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.schema import Keyframe
+from keepframe.analyze.constraints import extract_constraints
+from keepframe.verify.predicates import build_context, eval_pred
 
 
 def test_extracted_constraints_hold_on_source_scene(tmp_scene_dir):

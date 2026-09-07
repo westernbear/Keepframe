@@ -1,4 +1,4 @@
-from refstudio.admin.auth import COOKIE, MemoryAuth, cookie_header
+from keepframe.admin.auth import COOKIE, MemoryAuth, cookie_header
 
 def test_login_and_cookie_name():
     auth = MemoryAuth()

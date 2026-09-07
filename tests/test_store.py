@@ -1,6 +1,6 @@
 import pytest
-from refstudio.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
-from refstudio.ir.store import init_project, load_project, current_scene, new_version, scene_dir, load_scene
+from keepframe.ir.schema import Scene, Element, Canonical, Background, Keyframe, Track
+from keepframe.ir.store import init_project, load_project, current_scene, new_version, scene_dir, load_scene
 
 
 def scene():

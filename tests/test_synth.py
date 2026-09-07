@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
-from refstudio.ir.synth import make_synthetic_scene, make_texture
-from refstudio.ir.schema import dump
+from keepframe.ir.synth import make_synthetic_scene, make_texture
+from keepframe.ir.schema import dump
 
 
 def test_texture_is_rgba_with_alpha(tmp_scene_dir):

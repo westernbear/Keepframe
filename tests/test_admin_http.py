@@ -1,9 +1,9 @@
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
-from refstudio.web.server import make_server
-from refstudio.admin.memory import MemoryAdmin
-from refstudio.admin.auth import MemoryAuth
+from keepframe.web.server import make_server
+from keepframe.admin.memory import MemoryAdmin
+from keepframe.admin.auth import MemoryAuth
 import threading
 
 

@@ -1,6 +1,6 @@
 import numpy as np
-from refstudio.ir.schema import Element, Canonical, Keyframe, Track
-from refstudio.analyze.semantics import assign_roles, group_by_motion, NullCaptioner
+from keepframe.ir.schema import Element, Canonical, Keyframe, Track
+from keepframe.analyze.semantics import assign_roles, group_by_motion, NullCaptioner
 
 
 def el(i, w, h, kind="sprite", vis=(0, 59)):

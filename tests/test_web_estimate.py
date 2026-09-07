@@ -1,4 +1,4 @@
-from refstudio.web.estimate import SECONDS_PER_SCENE, estimate
+from keepframe.web.estimate import SECONDS_PER_SCENE, estimate
 
 
 def test_range_is_one_scene():
