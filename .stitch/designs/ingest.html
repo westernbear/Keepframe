@@ -119,7 +119,6 @@
     </style>
 </head>
 <body class="bg-background text-on-background font-body h-screen flex flex-col overflow-hidden selection:bg-secondary-fixed-dim selection:text-on-secondary-fixed antialiased">
-<!-- Top Navigation Bar (Shared Component) -->
 <nav class="bg-surface-container-low border-b border-outline-variant docked full-width top-0 z-50 flex justify-between items-center h-12 px-4 w-full">
 <div class="flex items-center gap-6">
 <div class="text-headline font-headline font-bold text-primary tracking-tighter">
@@ -136,15 +135,12 @@
             </button>
 </div>
 </nav>
-<!-- Main Workspace Layout -->
 <main class="flex-1 flex overflow-hidden">
-<!-- Left Column: Video Selection (Wider) -->
 <section class="flex-1 lg:flex-[2] flex flex-col border-r border-outline-variant bg-surface overflow-y-auto p-6 lg:p-8">
 <header class="mb-8">
 <h1 class="text-2xl font-headline font-medium tracking-tight mb-2 text-primary">레퍼런스 영상</h1>
 <p class="text-on-surface-variant text-sm font-label">평면 2D 모션그래픽 또는 UI 화면 녹화. 실사 푸티지는 받지 않습니다.</p>
 </header>
-<!-- Uploaded File Card -->
 <div class="bg-surface-container-low border border-outline-variant rounded p-4 flex items-center justify-between mb-8 group hover:bg-surface-container transition-colors">
 <div class="flex items-center gap-4">
 <div class="w-12 h-12 bg-surface-variant rounded flex items-center justify-center text-on-surface-variant shrink-0">
@@ -165,9 +161,7 @@
 <span class="material-symbols-outlined">close</span>
 </button>
 </div>
-<!-- Range Controls -->
 <div class="bg-surface-container-low border border-outline-variant rounded p-6 flex flex-col gap-6">
-<!-- Segmented Control -->
 <div class="flex bg-surface-variant p-1 rounded w-fit">
 <button class="px-4 py-1.5 text-xs font-medium bg-surface-container-low text-primary rounded shadow-sm border border-outline-variant transition-all">
                         구간 지정
@@ -176,11 +170,8 @@
                         전체 영상
                     </button>
 </div>
-<!-- Filmstrip & Slider Area -->
 <div class="relative w-full">
-<!-- Filmstrip Preview -->
 <div class="flex gap-1 overflow-x-auto filmstrip-scroll pb-2 mb-2 select-none h-16 w-full items-center relative z-0">
-<!-- Repeated frames for preview using IMAGE_3 -->
 <div class="h-full aspect-video flex-shrink-0 bg-surface-variant relative overflow-hidden rounded-sm border border-outline-variant">
 <img alt="Frame 1" class="w-full h-full object-cover opacity-80" draggable="false" src="https://lh3.googleusercontent.com/aida/AEtjO1UApI6dbOUEGVBVDyDsggTdawyasIAX2kMJ33soC1YTa0lNT_W1LDDf-xOHpmfwOPDbTjt5ce6J9FrKNsRlg-whVN9SZetYz5FQ9AP65Q0c4JIN3TEid_WIGvNIOU6RBP9tDvgIijOtbFnZKWSpIi7HWPThx8ggk0oOWd_ylCoE5GDxeHfEYvc4ttG86dwS1NEcZ4Xr_1h6I2uBnYVrX7JplBqa5jcvaTM-Zq9qS5ihdyNYZZW4wnWw3pM"/>
 </div>
@@ -191,7 +182,6 @@
 <img alt="Frame 3" class="w-full h-full object-cover opacity-90" draggable="false" src="https://lh3.googleusercontent.com/aida/AEtjO1UApI6dbOUEGVBVDyDsggTdawyasIAX2kMJ33soC1YTa0lNT_W1LDDf-xOHpmfwOPDbTjt5ce6J9FrKNsRlg-whVN9SZetYz5FQ9AP65Q0c4JIN3TEid_WIGvNIOU6RBP9tDvgIijOtbFnZKWSpIi7HWPThx8ggk0oOWd_ylCoE5GDxeHfEYvc4ttG86dwS1NEcZ4Xr_1h6I2uBnYVrX7JplBqa5jcvaTM-Zq9qS5ihdyNYZZW4wnWw3pM"/>
 </div>
 <div class="h-full aspect-video flex-shrink-0 bg-surface-variant relative overflow-hidden rounded-sm border border-primary z-10">
-<!-- Active segment starts roughly here -->
 <img alt="Frame 4" class="w-full h-full object-cover" draggable="false" src="https://lh3.googleusercontent.com/aida/AEtjO1UApI6dbOUEGVBVDyDsggTdawyasIAX2kMJ33soC1YTa0lNT_W1LDDf-xOHpmfwOPDbTjt5ce6J9FrKNsRlg-whVN9SZetYz5FQ9AP65Q0c4JIN3TEid_WIGvNIOU6RBP9tDvgIijOtbFnZKWSpIi7HWPThx8ggk0oOWd_ylCoE5GDxeHfEYvc4ttG86dwS1NEcZ4Xr_1h6I2uBnYVrX7JplBqa5jcvaTM-Zq9qS5ihdyNYZZW4wnWw3pM"/>
 </div>
 <div class="h-full aspect-video flex-shrink-0 bg-surface-variant relative overflow-hidden rounded-sm border border-primary z-10">
@@ -204,31 +194,23 @@
 <img alt="Frame 7" class="w-full h-full object-cover" draggable="false" src="https://lh3.googleusercontent.com/aida/AEtjO1UApI6dbOUEGVBVDyDsggTdawyasIAX2kMJ33soC1YTa0lNT_W1LDDf-xOHpmfwOPDbTjt5ce6J9FrKNsRlg-whVN9SZetYz5FQ9AP65Q0c4JIN3TEid_WIGvNIOU6RBP9tDvgIijOtbFnZKWSpIi7HWPThx8ggk0oOWd_ylCoE5GDxeHfEYvc4ttG86dwS1NEcZ4Xr_1h6I2uBnYVrX7JplBqa5jcvaTM-Zq9qS5ihdyNYZZW4wnWw3pM"/>
 </div>
 <div class="h-full aspect-video flex-shrink-0 bg-surface-variant relative overflow-hidden rounded-sm border border-outline-variant">
-<!-- Inactive trailing -->
 <img alt="Frame 8" class="w-full h-full object-cover opacity-80" draggable="false" src="https://lh3.googleusercontent.com/aida/AEtjO1UApI6dbOUEGVBVDyDsggTdawyasIAX2kMJ33soC1YTa0lNT_W1LDDf-xOHpmfwOPDbTjt5ce6J9FrKNsRlg-whVN9SZetYz5FQ9AP65Q0c4JIN3TEid_WIGvNIOU6RBP9tDvgIijOtbFnZKWSpIi7HWPThx8ggk0oOWd_ylCoE5GDxeHfEYvc4ttG86dwS1NEcZ4Xr_1h6I2uBnYVrX7JplBqa5jcvaTM-Zq9qS5ihdyNYZZW4wnWw3pM"/>
 </div>
 </div>
-<!-- Slider Overlay (Visual representation) -->
 <div class="absolute inset-0 top-0 h-16 pointer-events-none flex justify-center">
 <div class="w-full h-full relative">
-<!-- Darken overlay for unselected regions -->
 <div class="absolute top-0 left-0 h-full w-[15%] bg-background/60 z-20"></div>
 <div class="absolute top-0 right-0 h-full w-[15%] bg-background/60 z-20"></div>
-<!-- Selection Box -->
 <div class="absolute top-0 left-[15%] right-[15%] h-full border-y-2 border-secondary-fixed-dim z-20 bg-secondary-fixed-dim/10">
-<!-- Left Handle -->
 <div class="absolute top-0 left-0 w-1 h-full bg-secondary-fixed-dim pointer-events-auto cursor-ew-resize hover:bg-secondary-fixed transition-colors"></div>
-<!-- Right Handle -->
 <div class="absolute top-0 right-0 w-1 h-full bg-secondary-fixed-dim pointer-events-auto cursor-ew-resize hover:bg-secondary-fixed transition-colors"></div>
 </div>
 </div>
 </div>
-<!-- Actual Range Slider (Hidden behind visual overlay but functional for basic interaction if needed, here just visual structure) -->
 <div class="mt-4 px-2">
 <input class="w-full" max="4.8" min="0" step="0.1" type="range" value="0.4"/>
 </div>
 </div>
-<!-- Range Metadata & Inputs -->
 <div class="flex items-center justify-between mt-2 flex-wrap gap-4">
 <div class="text-xs text-secondary-fixed-dim font-medium tracking-wide">
                         선택 4.0초 · 120프레임 · 장면 1개
@@ -252,14 +234,12 @@
                 </p>
 </div>
 </section>
-<!-- Right Column: Action & Execution (Narrower) -->
 <aside class="w-full lg:w-[360px] xl:w-[420px] flex-shrink-0 bg-surface-container-lowest flex flex-col border-l border-outline-variant">
 <div class="p-6 lg:p-8 flex-1 flex flex-col">
 <h2 class="text-lg font-headline font-medium tracking-tight mb-6 text-primary flex items-center gap-2">
 <span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">check_circle</span>
                     실행 전 확인
                 </h2>
-<!-- Details List -->
 <ul class="space-y-4 mb-8">
 <li class="flex items-start justify-between py-3 border-b border-surface-variant">
 <span class="text-sm text-on-surface-variant">예상 시간</span>
@@ -270,7 +250,6 @@
                             GPU 사용 허용
                             <span class="material-symbols-outlined text-[16px] text-outline" title="Requires local CUDA setup">info</span>
 </span>
-<!-- Toggle Switch -->
 <button aria-checked="true" class="relative inline-flex h-5 w-9 items-center rounded-full bg-secondary-fixed-dim transition-colors focus:outline-none" role="switch">
 <span class="inline-block h-3 w-3 translate-x-5 transform rounded-full bg-on-secondary-fixed transition-transform"></span>
 </button>
@@ -280,7 +259,6 @@
 <span class="text-sm font-medium text-primary">1</span>
 </li>
 </ul>
-<!-- Actions -->
 <div class="mt-auto space-y-3">
 <button class="w-full bg-primary text-on-primary-container font-medium text-sm rounded-full py-3 px-4 flex items-center justify-center gap-2 hover:scale-[0.98] transition-transform active:scale-[0.95]">
 <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>

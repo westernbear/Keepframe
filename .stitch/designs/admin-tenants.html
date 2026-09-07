@@ -102,24 +102,20 @@
     </style>
 </head>
 <body class="font-body text-sm antialiased flex h-screen overflow-hidden bg-background">
-<!-- Shared Component: SideNavBar -->
 <nav class="fixed left-0 top-0 h-full flex flex-col py-4 z-40 border-r border-outline-variant bg-surface-container-low dark:bg-surface-container-low w-20">
 <div class="flex flex-col items-center gap-6 mb-8 flex-shrink-0 px-2">
-<!-- Brand Logo (Hidden per JSON, but leaving structure if needed) -->
 <div aria-label="Ref Studio" class="hidden text-lg font-headline font-black tracking-tighter text-primary">
                 RS
             </div>
 <img alt="mina@ref.studio" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A highly detailed, professional headshot photo of an operations admin named Mina, wearing a minimalist black turtleneck against a dark studio background, high contrast, cinematic lighting, realistic textures." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbDu61leBJLYkatwTfiOIKD_10eOOB5fqW3kf8r5m5HMQuGWHGCB-PlO4FivThkS-c0L-Xma1-24jeamZf1gY1aPQ6BHOJEbC7rZgWCh2mWDCzmkjAE3QM7HDYR-lUNdbHtWG2Ld7RCUNz5NhoWT8Ea4yBbjc-E4CXfGJ8l1bWDg7LdmpxJDBjdpLGOcLqJPDIDCUXthODO4tlLX54cNawwlBv-ZkRUZN4DRcE5w-vFBeeCIWIPFw_y-kpPs-tqd31INJ3Twr6h_o5"/>
 </div>
 <ul class="flex flex-col w-full flex-grow font-label text-xs uppercase tracking-widest gap-2 px-2">
-<!-- Active Tab -->
 <li>
 <a aria-current="page" class="flex flex-col items-center justify-center p-3 rounded-lg text-primary border-r-2 border-primary bg-surface-container-high transition-all" href="#">
 <span class="material-symbols-outlined filled-icon text-[24px] mb-1">dns</span>
 <span class="truncate w-full text-center scale-90">테넌트</span>
 </a>
 </li>
-<!-- Inactive Tabs -->
 <li>
 <a class="flex flex-col items-center justify-center p-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-all hover:text-primary" href="#">
 <span class="material-symbols-outlined text-[24px] mb-1">queue_play_next</span>
@@ -154,9 +150,7 @@
 </li>
 </ul>
 </nav>
-<!-- Main Workspace -->
 <div class="flex-1 ml-20 flex flex-col h-full bg-[#090909] text-on-surface relative">
-<!-- Shared Component: TopNavBar -->
 <header class="flex justify-between items-center w-full px-6 h-12 border-b border-outline-variant bg-surface dark:bg-surface flex-shrink-0">
 <div class="flex items-center gap-4">
 <span class="text-lg font-headline font-black tracking-tighter text-primary">Ref Studio</span>
@@ -179,11 +173,8 @@
 </div>
 </div>
 </header>
-<!-- Canvas Area -->
 <main class="flex-1 overflow-hidden flex flex-col md:flex-row p-4 gap-4">
-<!-- List/Table Section -->
 <div class="flex-1 flex flex-col bg-[#141414] rounded-xl border border-outline-variant overflow-hidden shadow-sm h-full">
-<!-- Toolbar -->
 <div class="flex items-center justify-between p-4 border-b border-outline-variant bg-[#1c1c1c]/50">
 <div class="flex bg-surface-container-low p-0.5 rounded-md border border-outline-variant">
 <button class="px-3 py-1.5 text-xs font-medium bg-[#2a2a2a] text-primary rounded shadow-sm transition-colors">정상</button>
@@ -194,16 +185,13 @@
 <span class="material-symbols-outlined text-[18px]">filter_list</span>
 </button>
 </div>
-<!-- Table Header -->
 <div class="grid grid-cols-12 gap-4 px-6 py-3 border-b border-outline-variant bg-[#141414] text-xs font-label text-on-surface-variant tracking-wider uppercase sticky top-0 z-10">
 <div class="col-span-4">Organization</div>
 <div class="col-span-2">Members</div>
 <div class="col-span-4">Usage (Analysis / Quota)</div>
 <div class="col-span-2 text-right">Status</div>
 </div>
-<!-- Table Body -->
 <div class="flex-1 overflow-y-auto">
-<!-- Row 1: Active/Selected -->
 <div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant bg-[#1c1c1c] hover:bg-[#201f1f] cursor-pointer transition-colors items-center relative group">
 <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary-fixed"></div>
 <div class="col-span-4 flex flex-col gap-1">
@@ -230,7 +218,6 @@
                             </span>
 </div>
 </div>
-<!-- Row 2: Warning -->
 <div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group">
 <div class="col-span-4 flex flex-col gap-1">
 <span class="text-sm font-medium text-primary">Hanbit Motion</span>
@@ -256,7 +243,6 @@
                             </span>
 </div>
 </div>
-<!-- Row 3: Normal -->
 <div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group">
 <div class="col-span-4 flex flex-col gap-1">
 <span class="text-sm font-medium text-primary">Solo · lee</span>
@@ -282,7 +268,6 @@
                             </span>
 </div>
 </div>
-<!-- Row 4: Disabled -->
 <div class="grid grid-cols-12 gap-4 px-6 py-4 border-b border-outline-variant hover:bg-[#1c1c1c] cursor-pointer transition-colors items-center group opacity-50 grayscale">
 <div class="col-span-4 flex flex-col gap-1">
 <span class="text-sm font-medium text-on-surface-variant line-through decoration-outline-variant">Closed shop</span>
@@ -308,7 +293,6 @@
 </div>
 </div>
 </div>
-<!-- Detail Panel (Inspector) -->
 <div class="w-80 flex-shrink-0 flex flex-col bg-[#141414] rounded-xl border border-outline-variant overflow-hidden shadow-sm h-full">
 <div class="p-6 border-b border-outline-variant bg-[#1c1c1c]/50 flex flex-col gap-2">
 <div class="flex items-start justify-between">
@@ -329,7 +313,6 @@
 </div>
 </div>
 <div class="flex-1 overflow-y-auto p-6 flex flex-col gap-8">
-<!-- Roles -->
 <div class="flex flex-col gap-3">
 <h3 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Role Breakdown</h3>
 <div class="bg-[#1c1c1c] rounded-lg border border-outline-variant p-3 flex flex-col gap-2">
@@ -358,7 +341,6 @@
 </div>
 </div>
 </div>
-<!-- Notes -->
 <div class="flex flex-col gap-3">
 <h3 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Policy Notes</h3>
 <div class="bg-surface-container-low rounded-lg p-3 border border-outline-variant border-dashed">
@@ -368,7 +350,6 @@
 </div>
 </div>
 </div>
-<!-- Footer Actions -->
 <div class="p-4 border-t border-outline-variant bg-[#141414] flex flex-col gap-2">
 <button class="w-full py-2.5 bg-primary text-on-primary rounded-full text-sm font-semibold active:scale-95 transition-transform">
                         멤버 보기

@@ -1,4 +1,3 @@
-# refstudio/analyze/regions.py
 from __future__ import annotations
 from dataclasses import dataclass
 import cv2, numpy as np

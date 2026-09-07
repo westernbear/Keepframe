@@ -115,9 +115,7 @@ async function poll(jobId) {
   }
   try {
     await fetchFilmstrip(projectId, 8);
-  } catch {
-    /* filmstrip optional */
-  }
+  } catch {}
   try {
     const { job } = await api("/api/analyze", {
       method: "POST",

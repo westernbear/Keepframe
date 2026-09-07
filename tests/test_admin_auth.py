@@ -1,4 +1,3 @@
-# tests/test_admin_auth.py
 from refstudio.admin.auth import COOKIE, MemoryAuth, cookie_header
 
 def test_login_and_cookie_name():

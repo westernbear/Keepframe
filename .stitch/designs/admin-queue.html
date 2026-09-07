@@ -92,7 +92,6 @@
     </style>
 </head>
 <body class="font-body text-sm antialiased flex h-screen overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
-<!-- Side Navigation Shell -->
 <nav class="bg-surface-container-low dark:bg-surface-container-low border-r border-outline-variant flex flex-col h-screen py-4 gap-2 docked left-0 w-64 hidden md:flex shrink-0 z-40">
 <div class="px-6 mb-8 flex items-center gap-3">
 <div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary font-headline font-black text-xs">
@@ -104,22 +103,18 @@
 </div>
 </div>
 <div class="flex flex-col gap-1 px-3 flex-1">
-<!-- 테넌트 -->
 <a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="domain">domain</span>
                 테넌트
             </a>
-<!-- 작업 큐 (Selected) -->
 <a class="flex items-center gap-3 px-3 py-2 rounded text-primary border-r-2 border-primary bg-surface-container-high transition-all font-body text-xs uppercase tracking-widest Active: bg-surface-container-highest transition-all" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="queue" data-weight="fill" style="font-variation-settings: 'FILL' 1;">queue</span>
                 작업 큐
             </a>
-<!-- 검역 -->
 <a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="security">security</span>
                 검역
             </a>
-<!-- 감사 로그 -->
 <a class="flex items-center gap-3 px-3 py-2 rounded text-on-surface-variant opacity-70 hover:bg-surface-container-highest hover:opacity-100 transition-all font-body text-xs uppercase tracking-widest" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="history">history</span>
                 감사 로그
@@ -136,9 +131,7 @@
             </a>
 </div>
 </nav>
-<!-- Main Workspace -->
 <div class="flex flex-col flex-1 h-screen overflow-hidden bg-background">
-<!-- TopAppBar Shell -->
 <header class="bg-surface-container dark:bg-surface-container border-b border-outline-variant flex justify-between items-center h-12 px-4 w-full z-50 shrink-0">
 <div class="flex items-center gap-4">
 <span class="font-headline font-bold text-primary dark:text-primary tracking-tighter text-sm">Ref Studio · 관리 · 작업 큐</span>
@@ -151,11 +144,8 @@
 </button>
 </div>
 </header>
-<!-- Main Content Area with Drawer Layout -->
 <main class="flex flex-1 overflow-hidden relative">
-<!-- Job Queue Canvas -->
 <div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 w-full max-w-7xl mx-auto">
-<!-- Metrics Header -->
 <div class="flex items-center justify-between border-b border-outline-variant pb-4">
 <h2 class="font-headline font-bold text-xl tracking-tight">Operation Desk</h2>
 <div class="flex gap-4 items-center">
@@ -185,7 +175,6 @@
 </div>
 </div>
 </div>
-<!-- Data Table -->
 <div class="bg-surface-container border border-outline-variant rounded-xl overflow-hidden flex-1 flex flex-col">
 <div class="overflow-x-auto">
 <table class="w-full text-left border-collapse">
@@ -202,7 +191,6 @@
 </tr>
 </thead>
 <tbody class="font-body text-sm">
-<!-- Row 1 -->
 <tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group">
 <td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1842</td>
 <td class="py-3 px-4 text-on-surface">Northwind</td>
@@ -217,7 +205,6 @@
 <td class="py-3 px-4 text-on-surface-variant">3분</td>
 <td class="py-3 px-4 text-on-surface-variant">0/4</td>
 </tr>
-<!-- Row 2 -->
 <tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group">
 <td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1841</td>
 <td class="py-3 px-4 text-on-surface">Northwind</td>
@@ -232,7 +219,6 @@
 <td class="py-3 px-4 text-outline-variant">—</td>
 <td class="py-3 px-4 text-on-surface-variant">0/4</td>
 </tr>
-<!-- Row 3 (Selected) -->
 <tr class="border-b border-outline-variant table-row-selected cursor-pointer relative">
 <td class="absolute left-0 top-0 bottom-0 w-1 bg-error"></td>
 <td class="py-3 px-4 font-headline text-primary">job_1838</td>
@@ -250,7 +236,6 @@
                                         4/4 <span class="text-on-surface-variant font-normal">한도 소진</span>
 </td>
 </tr>
-<!-- Row 4 -->
 <tr class="border-b border-outline-variant table-row-hover cursor-pointer transition-colors group opacity-60">
 <td class="py-3 px-4 font-headline text-on-surface-variant group-hover:text-primary transition-colors">job_1837</td>
 <td class="py-3 px-4 text-on-surface">Solo</td>
@@ -267,7 +252,6 @@
 </div>
 </div>
 </div>
-<!-- Context Drawer (job_1838 Selected) -->
 <aside class="w-80 bg-surface-container border-l border-outline-variant flex flex-col h-full shrink-0 shadow-[-8px_0_24px_rgba(0,0,0,0.5)] z-20">
 <div class="p-6 border-b border-outline-variant flex justify-between items-start">
 <div>
@@ -282,14 +266,12 @@
 </button>
 </div>
 <div class="p-6 flex-1 overflow-y-auto flex flex-col gap-6">
-<!-- Failure Reason Block -->
 <div class="flex flex-col gap-2">
 <h4 class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Failure Reason</h4>
 <div class="bg-surface-dim border border-outline-variant rounded-lg p-3 font-mono text-xs text-error overflow-x-auto">
                             Verifier keep 실패: dir(m_e3,[1,0]) frame 67
                         </div>
 </div>
-<!-- Metrics Grid -->
 <div class="grid grid-cols-2 gap-4">
 <div class="flex flex-col gap-1 border border-outline-variant rounded-lg p-3 bg-surface-dim">
 <span class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">Retries</span>
@@ -300,7 +282,6 @@
 <span class="font-headline font-bold text-xl text-on-surface">P2</span>
 </div>
 </div>
-<!-- Note Block -->
 <div class="flex flex-col gap-2 border-l-2 border-outline-variant pl-3">
 <h4 class="text-xs font-label uppercase tracking-widest text-on-surface-variant flex items-center gap-1.5">
 <span class="material-symbols-outlined text-sm">speaker_notes</span> Note

@@ -1,4 +1,3 @@
-# tests/test_cli.py
 import json, subprocess, sys, pytest
 from refstudio.gates import m1_gate
 

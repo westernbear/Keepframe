@@ -1,4 +1,3 @@
-# tests/test_regions.py
 import numpy as np
 from refstudio.analyze.background import foreground_mask
 from refstudio.analyze.regions import build_palette, extract_regions

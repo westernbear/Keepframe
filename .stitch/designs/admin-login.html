@@ -99,11 +99,8 @@
     </style>
 </head>
 <body class="bg-background text-on-background font-body min-h-screen flex flex-col antialiased selection:bg-surface-variant selection:text-primary">
-<!-- Main Content Area -->
 <main class="flex-grow flex items-center justify-center p-4">
-<!-- Login Card (Narrow) -->
 <div class="w-full max-w-[360px] flex flex-col">
-<!-- Header Section -->
 <header class="mb-10 flex flex-col items-center sm:items-start text-center sm:text-left">
 <div class="flex items-center gap-2 mb-6">
 <span class="font-display font-bold text-xl tracking-tighter text-primary">Ref Studio</span>
@@ -113,24 +110,19 @@
 </div>
 <h1 class="font-headline font-semibold text-3xl tracking-tight text-primary">관리자 로그인</h1>
 </header>
-<!-- Login Form -->
 <form action="#" class="flex flex-col gap-5" method="POST" onsubmit="event.preventDefault();">
-<!-- Email Input -->
 <div class="flex flex-col gap-1.5">
 <label class="font-label text-sm font-medium text-on-surface-variant" for="email">이메일</label>
 <input autocomplete="email" class="strict-input w-full px-3.5 py-2.5 text-sm text-on-background font-body placeholder:text-[#474747]" id="email" name="email" placeholder="admin@refstudio.com" required="" type="email"/>
 </div>
-<!-- Password Input -->
 <div class="flex flex-col gap-1.5">
 <label class="font-label text-sm font-medium text-on-surface-variant" for="password">비밀번호</label>
 <input autocomplete="current-password" class="strict-input w-full px-3.5 py-2.5 text-sm text-on-background font-body placeholder:text-[#474747]" id="password" name="password" placeholder="••••••••" required="" type="password"/>
 </div>
-<!-- Primary CTA -->
 <button class="mt-2 w-full bg-primary text-on-primary font-label font-semibold text-sm rounded-full py-3 transition-transform active:scale-95 flex items-center justify-center" type="submit">
                     들어가기
                 </button>
 </form>
-<!-- Links -->
 <div class="mt-8 flex justify-center">
 <a class="font-label text-sm text-on-surface-variant hover:text-primary transition-colors hover:opacity-80" href="#">
                     제작 도구로 돌아가기
@@ -138,7 +130,6 @@
 </div>
 </div>
 </main>
-<!-- Footer (Shared Component) -->
 <footer class="fixed bottom-6 left-0 w-full flex justify-center items-center bg-transparent">
 <p class="font-body text-label-sm text-center text-on-surface-variant text-xs">
             로컬판에는 이 화면이 없습니다.

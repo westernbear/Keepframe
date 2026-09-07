@@ -1,4 +1,3 @@
-# tests/test_sprites.py
 import numpy as np, pytest
 from refstudio.ir.synth import make_synthetic_scene
 from refstudio.ir.tracks import eval_props

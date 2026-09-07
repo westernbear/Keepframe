@@ -1,4 +1,3 @@
-# refstudio/render/renderer.py
 from __future__ import annotations
 import hashlib, json, shutil, subprocess
 from dataclasses import dataclass, asdict
