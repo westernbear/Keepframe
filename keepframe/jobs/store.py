@@ -15,6 +15,16 @@ class JobStore:
     def get(self, jid: str) -> Job:
         return self._jobs[jid]
 
+    def find(self, jid: str) -> Job | None:
+        return self._jobs.get(jid)
+
+    def for_project(self, project_id: str, kind: str | None = None) -> Job | None:
+        found = None
+        for j in self._jobs.values():
+            if j.project_id == project_id and (kind is None or j.kind == kind):
+                found = j
+        return found
+
     def list(self) -> list[Job]:
         return list(self._jobs.values())
 

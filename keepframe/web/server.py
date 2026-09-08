@@ -18,7 +18,7 @@ from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.device import gpu_status
 from keepframe.ir.schema import FontGuess
 from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
-from keepframe.jobs import JobSpec, JobStore
+from keepframe.jobs import Job, JobSpec, JobStore
 from keepframe.log import configure, get
 from keepframe.review import corrections
 from keepframe.web.estimate import consume_token, estimate, probe_video
@@ -30,6 +30,14 @@ log = get("keepframe.web")
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
 JOBS = JobStore()
+
+
+def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
+    job = JOBS.for_project(project_id, "analyze")
+    if job is not None:
+        return job
+    jid = meta.get("job_id")
+    return JOBS.find(jid) if jid else None
 
 STATIC = Path(__file__).parent / "static"
 PAGES = {
@@ -465,7 +473,13 @@ def make_server(
                 if meta is None:
                     return self._json(404, {"error": "not found"})
                 token = data.get("confirm_token") or ""
-                if meta.get("mode") == "full" and not consume_token(token):
+                existing = existing_analyze_job(project_id, meta)
+                if existing is not None and existing.status in ("queued", "running"):
+                    return self._json(202, {"job": existing.to_json()})
+                if existing is not None and existing.status in ("done", "error") and not token:
+                    return self._json(202, {"job": existing.to_json()})
+                # Refresh / re-entry must not demand a token after the first confirm.
+                if meta.get("mode") == "full" and meta.get("status") != "analyzing" and not consume_token(token):
                     return self._json(400, {"error": "confirm required"})
                 root = project_dir(workspace, project_id)
                 video = root / "source.mp4"
@@ -476,7 +490,7 @@ def make_server(
                     start, end = 0, max(0, info["frames"] - 1)
                 frames = max(1, int(end) - int(start) + 1)
                 est = estimate(meta.get("mode", "full"), frames, info["fps"])
-                write_meta(workspace, project_id, status="analyzing", job_id=None)
+                write_meta(workspace, project_id, status="analyzing")
                 spec = JobSpec(
                     kind="analyze",
                     args={
