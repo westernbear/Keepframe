@@ -21,3 +21,20 @@ def test_refinement_reduces_position_error(tmp_scene_dir):
         gt = np.array([[eval_props(e, f)["x"], eval_props(e, f)["y"]] for f in range(8)])
         before = np.abs(raws[e.id][:, :2] - gt).mean(); after = np.abs(out[e.id][:, :2] - gt).mean()
         assert after < before and after < 1.0, (e.id, before, after)
+
+
+@pytest.mark.skipif(not torch_available(), reason="torch not installed")
+def test_refinement_downscales_on_cpu_before_device(tmp_scene_dir):
+    scene = make_synthetic_scene(tmp_scene_dir, seed=51, n_elements=2, frames=8, size=(160, 90), with_text=False, overlap=False)
+    frames = np.stack([(composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8) for f in range(8)])
+    raws, tex, anchors, z = {}, {}, {}, {}
+    for e in scene.elements:
+        r = np.array([[eval_props(e, f)[k] for k in ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity")] for f in range(8)])
+        r[:, 0] += 3.0; r[:, 1] -= 2.0
+        raws[e.id] = r; tex[e.id] = (load_texture(tmp_scene_dir / e.canonical.texture) * 255).astype(np.uint8)
+        anchors[e.id] = e.canonical.anchor; z[e.id] = int(e.z.keys[0].v)
+    out = refine_affine(frames, (0x10, 0x14, 0x18), raws, tex, anchors, z, iters=40, scale=0.5, device="cpu")
+    for e in scene.elements:
+        assert out[e.id].shape == raws[e.id].shape
+        valid = ~np.isnan(raws[e.id][:, 0])
+        assert np.isfinite(out[e.id][valid]).all()
