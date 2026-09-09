@@ -48,7 +48,9 @@ CMD ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "
 # CUDA wheels. Host needs nvidia-container-toolkit. Override TORCH_CUDA=cu126 if needed.
 FROM base AS gpu
 ARG TORCH_CUDA=cu124
-RUN pip install --no-cache-dir "torch>=2.2" --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
+RUN pip install --no-cache-dir "torch>=2.2" --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}" \
+    && pip uninstall -y onnxruntime \
+    && pip install --no-cache-dir onnxruntime-gpu
 
 # Last stage is the default `docker compose build` (CPU).
 FROM base AS runtime

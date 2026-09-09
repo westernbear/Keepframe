@@ -33,11 +33,9 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     N, H, W = frames.shape[:3]
     log.info("refine_affine device=%s frames=%s sprites=%s iters=%s", dev, N, len(raws), iters)
     h, w = int(round(H * scale)), int(round(W * scale))
-    # Downscale on CPU so full-res float32 never lands in VRAM.
-    target = torch.tensor(frames, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
+    target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
     if scale != 1.0:
         target = F.interpolate(target, size=(h, w), mode="bilinear", align_corners=False)
-    target = target.to(dev)
     bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
     order = sorted(raws, key=lambda k: z[k])
     params, masks, texs, init = {}, {}, {}, {}

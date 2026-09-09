@@ -5,7 +5,11 @@ from dataclasses import dataclass, field
 from typing import Protocol
 import numpy as np
 from ..ir.schema import FontGuess
+from ..log import get
 from .background import foreground_mask
+from .device import ocr_cuda, ocr_cuda_expected
+
+log = get("keepframe.analyze")
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
 # DTW copy alignment (Haraguchi et al. 2022), Hi-SAM stroke masks.
@@ -26,7 +30,20 @@ class Ocr(Protocol):
 class RapidOcr:
     def __init__(self):
         from rapidocr_onnxruntime import RapidOCR  # lazy import
-        self._ocr = RapidOCR()
+        use_cuda = ocr_cuda()
+        if use_cuda:
+            log.info("ocr device=cuda")
+            kw = dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
+        else:
+            if ocr_cuda_expected():
+                log.warning(
+                    "ocr on cpu: CUDAExecutionProvider missing "
+                    "(pip uninstall -y onnxruntime && pip install onnxruntime-gpu)"
+                )
+            else:
+                log.info("ocr device=cpu")
+            kw = {}
+        self._ocr = RapidOCR(**kw)
 
     def __call__(self, frame_rgb: np.ndarray):
         result, _ = self._ocr(frame_rgb[..., ::-1])  # expects BGR

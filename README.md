@@ -22,6 +22,12 @@ playwright install chromium
 ```
 
 `pip install .` skips OCR. GPU refine: `pip install '.[gpu]'`.
+OCR on NVIDIA needs the GPU ONNX Runtime (the `[ocr]` extra pulls the CPU wheel):
+
+```bash
+pip uninstall -y onnxruntime
+pip install onnxruntime-gpu
+```
 
 ## Usage
 

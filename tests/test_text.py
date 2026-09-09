@@ -37,6 +37,43 @@ def test_track_text_and_copy(tmp_scene_dir):
     # Hershey bbox + scale/rotation AABB; 40px canonical can read back above 60.
     assert 25 <= font.size_px <= 80 and color.startswith("#")
 
+def test_rapidocr_passes_cuda_flags_when_ep_available(monkeypatch):
+    import sys, types
+    from keepframe.analyze.text import RapidOcr
+
+    seen = {}
+
+    class FakeRapid:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+    fake = types.ModuleType("rapidocr_onnxruntime")
+    fake.RapidOCR = FakeRapid
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", fake)
+    monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: True)
+    RapidOcr()
+    assert seen == dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
+
+
+def test_rapidocr_stays_cpu_without_cuda_ep(monkeypatch):
+    import sys, types
+    from keepframe.analyze.text import RapidOcr
+
+    seen = {}
+
+    class FakeRapid:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+    fake = types.ModuleType("rapidocr_onnxruntime")
+    fake.RapidOCR = FakeRapid
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", fake)
+    monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: False)
+    monkeypatch.setattr("keepframe.analyze.text.ocr_cuda_expected", lambda: False)
+    RapidOcr()
+    assert seen == {}
+
+
 @pytest.mark.ocr
 def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
     from keepframe.analyze.text import RapidOcr

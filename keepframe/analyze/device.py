@@ -20,6 +20,32 @@ def _cuda_available() -> bool:
         return False
 
 
+def onnx_cuda_available() -> bool:
+    """True when onnxruntime can actually run CUDAExecutionProvider."""
+    try:
+        from onnxruntime import get_available_providers, get_device
+    except ImportError:
+        return False
+    return get_device() == "GPU" and "CUDAExecutionProvider" in get_available_providers()
+
+
+def ocr_cuda() -> bool:
+    """OCR uses ONNX Runtime, not torch. KEEPFRAME_DEVICE=cpu stays on CPU."""
+    if _wanted_device() == "cpu":
+        return False
+    return onnx_cuda_available()
+
+
+def ocr_cuda_expected() -> bool:
+    """True when the user asked for GPU, even if the ONNX CUDA EP is missing."""
+    wanted = _wanted_device()
+    if wanted == "cpu":
+        return False
+    if wanted in ("cuda", "gpu"):
+        return True
+    return _cuda_available()
+
+
 def gpu_status() -> dict:
     """What the process can actually run refine on. UI must not hardcode this."""
     wanted = _wanted_device()
