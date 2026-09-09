@@ -55,6 +55,12 @@ def test_rapidocr_passes_cuda_flags_when_ep_available(monkeypatch):
     assert seen == dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
 
 
+def test_ocr_gpu_mem_limit_stays_small():
+    from keepframe.analyze.text import _ocr_gpu_mem_limit, _cap_ort_cuda_arena
+    assert 1024 ** 3 <= _ocr_gpu_mem_limit() <= 4 * 1024 ** 3
+    _cap_ort_cuda_arena(2 * 1024 ** 3)
+
+
 def test_rapidocr_stays_cpu_without_cuda_ep(monkeypatch):
     import sys, types
     from keepframe.analyze.text import RapidOcr

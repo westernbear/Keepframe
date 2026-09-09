@@ -1,8 +1,10 @@
 from __future__ import annotations
+import contextlib
 import math
 import cv2
 import numpy as np
 from ..log import get
+from ..progress import report_stage
 from .composite import hex_to_rgb  # noqa: F401  (kept for parity with compositor colours)
 from .device import resolve_device
 
@@ -16,6 +18,9 @@ _TRANS_LR_SCALE = 3.5
 _INIT_REG = 1000.0
 # Autograd keeps canvas/grid/sample per sprite. ~12 float channels per sprite per pixel.
 _BYTES_PER_SPRITE_PX = 12 * 4
+# Checkpointing stores one warp + canvas/target instead of every sprite.
+_BYTES_PER_CKPT_PX = 16 * 4
+_VRAM_FRAC = 0.75
 
 
 def torch_available() -> bool:
@@ -35,23 +40,40 @@ def _downscale_cpu(frames: np.ndarray, h: int, w: int) -> np.ndarray:
     return out
 
 
-def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
-    """How many frames fit in free VRAM. CPU and tiny clips stay one shot."""
-    if N <= 1 or not str(dev).startswith("cuda"):
-        return N
+def _cuda_mem_info() -> tuple[int, int]:
     import torch
     try:
-        free, _ = torch.cuda.mem_get_info()
+        torch.cuda.empty_cache()
+        return torch.cuda.mem_get_info()
     except Exception:
-        free = 4 * 1024 ** 3
-    per = max(n_sprites, 1) * _BYTES_PER_SPRITE_PX * h * w
-    n = max(1, int(free * 0.45 / max(per, 1)))
-    return min(N, n)
+        return 4 * 1024 ** 3, 4 * 1024 ** 3
+
+
+def _chunk_from_free(N: int, per: int, free: int) -> int:
+    return min(N, max(1, int(free * _VRAM_FRAC / max(per, 1))))
+
+
+def _frame_plan(N: int, h: int, w: int, n_sprites: int, dev: str) -> tuple[int, bool]:
+    """Frames per shot and whether to checkpoint sprite warps. CPU stays one shot."""
+    if N <= 1 or not str(dev).startswith("cuda"):
+        return N, False
+    free, _ = _cuda_mem_info()
+    per_full = max(n_sprites, 1) * _BYTES_PER_SPRITE_PX * h * w
+    chunk = _chunk_from_free(N, per_full, free)
+    if chunk >= N:
+        return N, False
+    per_ckpt = _BYTES_PER_CKPT_PX * h * w
+    return _chunk_from_free(N, per_ckpt, free), True
+
+
+def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
+    """How many frames fit in free VRAM. CPU and tiny clips stay one shot."""
+    return _frame_plan(N, h, w, n_sprites, dev)[0]
 
 
 def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int = 200, lr: float = 0.02,
-                  scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]:
+                  scale: float = 0.5, device: str | None = None, checkpoint: bool | None = None) -> dict[str, np.ndarray]:
     if not torch_available():
         raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
     import torch
@@ -59,36 +81,57 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     N, H, W = frames.shape[:3]
     h, w = int(round(H * scale)), int(round(W * scale))
     work = _downscale_cpu(frames, h, w)
-    chunk = _frame_chunk(N, h, w, len(raws), dev)
+    chunk, auto_ckpt = _frame_plan(N, h, w, len(raws), dev)
+    if checkpoint is not None:
+        auto_ckpt = checkpoint
     log.info(
-        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s",
-        dev, N, H, W, h, w, len(raws), iters, chunk,
+        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s",
+        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt,
     )
+    cuda = str(dev).startswith("cuda")
+    while chunk >= 1:
+        try:
+            return _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
+        except RuntimeError as e:
+            if not cuda or "out of memory" not in str(e).lower() or chunk == 1:
+                raise
+            log.warning("refine OOM chunk=%s; retry half", chunk)
+            torch.cuda.empty_cache()
+            chunk = max(1, chunk // 2)
+            auto_ckpt = True
+
+
+def _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, checkpoint):
+    N = len(work)
     if chunk >= N:
-        return _refine_chunk(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w)
+        return _refine_chunk(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, checkpoint)
     out = {k: r.copy() for k, r in raws.items()}
-    for s in range(0, N, chunk):
+    n_parts = math.ceil(N / chunk)
+    for i, s in enumerate(range(0, N, chunk)):
         e = min(N, s + chunk)
+        report_stage("sprites", f"refine {i + 1}/{n_parts} frames {s + 1}-{e}/{N}")
         part = _refine_chunk(
             work[s:e], bg_rgb, {k: r[s:e] for k, r in raws.items()},
-            textures, anchors, z, iters, lr, dev, H, W, h, w,
+            textures, anchors, z, iters, lr, dev, H, W, h, w, checkpoint,
         )
         for k, r in part.items():
             out[k][s:e] = r
-        if str(dev).startswith("cuda"):
-            torch.cuda.empty_cache()
     return out
 
 
 def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int, lr: float,
-                  dev: str, H: int, W: int, h: int, w: int) -> dict[str, np.ndarray]:
+                  dev: str, H: int, W: int, h: int, w: int, checkpoint: bool = False) -> dict[str, np.ndarray]:
     import torch, torch.nn.functional as F
+    from torch.utils.checkpoint import checkpoint as ckpt
     N = len(frames)
+    cuda = str(dev).startswith("cuda")
     target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
     bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
     order = sorted(raws, key=lambda k: z[k])
     params, masks, texs, init = {}, {}, {}, {}
+    tex_const = {}
+    s_scene = torch.tensor([[W / 2, 0.0], [0.0, H / 2]], device=dev)
     for k in order:
         r = raws[k]
         valid = ~np.isnan(r[:, 0])
@@ -99,45 +142,55 @@ def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
         t = torch.tensor(textures[k], dtype=torch.float32, device=dev).permute(2, 0, 1) / 255.0
         # Premultiply RGB by alpha before warp to match composite_scene / cv2 path.
         texs[k] = torch.cat([t[:3] * t[3:4], t[3:4]], 0)
+        th, tw = texs[k].shape[1:]
+        ax, ay = anchors[k]
+        tex_const[k] = (
+            torch.tensor([[2 / tw, 0.0], [0.0, 2 / th]], device=dev),
+            torch.tensor([ax * tw, ay * th], device=dev).view(1, 2, 1),
+            torch.tensor([1.0 / tw - 1.0, 1.0 / th - 1.0], device=dev).view(1, 2, 1),
+        )
     opt = torch.optim.Adam(list(params.values()), lr=lr * _TRANS_LR_SCALE)
     x_only_until = iters * 38 // 80 if iters >= 80 else iters // 2
+    amp_dtype = None
+    if cuda:
+        amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    amp = torch.autocast(device_type="cuda", dtype=amp_dtype) if amp_dtype is not None else contextlib.nullcontext()
 
     def theta_for(k, p):
         """Build the affine_grid theta (scene-normalised -> texture-normalised) for every frame."""
-        th, tw = texs[k].shape[1:]
-        ax, ay = anchors[k]
         x, y, sx, sy, rot, _ = p.unbind(1)
         r = rot * math.pi / 180
         cos, sin = torch.cos(r), torch.sin(r)
         # scene pixel = T(x,y) R S (tex_px - anchor_px);  invert: tex_px = S^-1 R^-1 (scene - t) + anchor_px
         a = torch.stack([torch.stack([cos / sx, sin / sx], 1), torch.stack([-sin / sy, cos / sy], 1)], 1)   # N,2,2
-        # normalised coordinates: scene [-1,1] over (W,H); texture [-1,1] over (tw,th)
-        S_scene = torch.tensor([[W / 2, 0.0], [0.0, H / 2]], device=dev)
-        S_tex_inv = torch.tensor([[2 / tw, 0.0], [0.0, 2 / th]], device=dev)
-        A = S_tex_inv @ a @ S_scene                                              # N,2,2
-        # align_corners=False: scene px centre = (W/2)*g + (W-1)/2 ; texture normalised n = (2*p + 1)/tw - 1
+        S_tex_inv, anchor_px, half = tex_const[k]
+        A = S_tex_inv @ a @ s_scene                                              # N,2,2
         t_scene = torch.stack([(W - 1) / 2 - x, (H - 1) / 2 - y], 1).unsqueeze(2)   # N,2,1
-        anchor_px = torch.tensor([ax * tw, ay * th], device=dev).view(1, 2, 1)
-        half = torch.tensor([1.0 / tw - 1.0, 1.0 / th - 1.0], device=dev).view(1, 2, 1)
         b = S_tex_inv @ (a @ t_scene + anchor_px) + half
         return torch.cat([A, b], 2)                                             # N,2,3
 
+    def stamp(canvas, p, tex, mask, k):
+        theta = theta_for(k, p)
+        grid = F.affine_grid(theta, (N, 4, h, w), align_corners=False)
+        samp = F.grid_sample(tex.unsqueeze(0).expand(N, -1, -1, -1), grid, align_corners=False, padding_mode="zeros")
+        alpha = samp[:, 3:4] * p[:, 5].clamp(0, 1).view(N, 1, 1, 1) * mask.view(N, 1, 1, 1)
+        return canvas * (1 - alpha) + samp[:, :3] * alpha
+
     for step in range(iters):
-        opt.zero_grad()
-        canvas = bg.expand(N, 3, h, w).clone()
-        for k in order:
-            p = params[k]
-            theta = theta_for(k, p)
-            grid = F.affine_grid(theta, (N, 4, h, w), align_corners=False)
-            samp = F.grid_sample(texs[k].unsqueeze(0).expand(N, -1, -1, -1), grid, align_corners=False, padding_mode="zeros")
-            alpha = samp[:, 3:4] * p[:, 5].clamp(0, 1).view(N, 1, 1, 1) * masks[k].view(N, 1, 1, 1)
-            canvas = canvas * (1 - alpha) + samp[:, :3] * alpha
-        loss = (canvas - target).abs().mean()
-        for k in order:
-            d = params[k] - init[k]
-            loss = loss + _INIT_REG * (
-                d[:, 2].pow(2).mean() + d[:, 3].pow(2).mean() + d[:, 4].pow(2).mean() + d[:, 5].pow(2).mean()
-            )
+        opt.zero_grad(set_to_none=True)
+        with amp:
+            canvas = bg.expand(N, 3, h, w).clone()
+            for k in order:
+                if checkpoint:
+                    canvas = ckpt(stamp, canvas, params[k], texs[k], masks[k], k, use_reentrant=False)
+                else:
+                    canvas = stamp(canvas, params[k], texs[k], masks[k], k)
+            loss = (canvas - target).abs().mean()
+            for k in order:
+                d = params[k] - init[k]
+                loss = loss + _INIT_REG * (
+                    d[:, 2].pow(2).mean() + d[:, 3].pow(2).mean() + d[:, 4].pow(2).mean() + d[:, 5].pow(2).mean()
+                )
         loss.backward()
         for k in order:
             g = params[k].grad

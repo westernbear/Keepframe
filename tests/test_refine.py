@@ -48,7 +48,7 @@ def test_refinement_downscales_on_cpu(tmp_scene_dir):
 @pytest.mark.skipif(not torch_available(), reason="torch not installed")
 def test_refinement_chunks_frames(tmp_scene_dir, monkeypatch):
     from keepframe.analyze import refine as R
-    monkeypatch.setattr(R, "_frame_chunk", lambda N, h, w, n_sprites, dev: 3)
+    monkeypatch.setattr(R, "_frame_plan", lambda N, h, w, n_sprites, dev: (3, False))
     scene = make_synthetic_scene(tmp_scene_dir, seed=51, n_elements=2, frames=8, size=(160, 90), with_text=False, overlap=False)
     frames = np.stack([(composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8) for f in range(8)])
     raws, tex, anchors, z = _perturbed_raws(scene, tmp_scene_dir, 8)
@@ -57,3 +57,26 @@ def test_refinement_chunks_frames(tmp_scene_dir, monkeypatch):
         gt = np.array([[eval_props(e, f)["x"], eval_props(e, f)["y"]] for f in range(8)])
         before = np.abs(raws[e.id][:, :2] - gt).mean(); after = np.abs(out[e.id][:, :2] - gt).mean()
         assert after < before and after < 1.0, (e.id, before, after)
+
+
+@pytest.mark.skipif(not torch_available(), reason="torch not installed")
+def test_refinement_checkpoint_reduces_position_error(tmp_scene_dir):
+    scene = make_synthetic_scene(tmp_scene_dir, seed=51, n_elements=2, frames=8, size=(160, 90), with_text=False, overlap=False)
+    frames = np.stack([(composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8) for f in range(8)])
+    raws, tex, anchors, z = _perturbed_raws(scene, tmp_scene_dir, 8)
+    out = refine_affine(frames, (0x10, 0x14, 0x18), raws, tex, anchors, z, iters=80, scale=1.0, device="cpu", checkpoint=True)
+    for e in scene.elements:
+        gt = np.array([[eval_props(e, f)["x"], eval_props(e, f)["y"]] for f in range(8)])
+        before = np.abs(raws[e.id][:, :2] - gt).mean(); after = np.abs(out[e.id][:, :2] - gt).mean()
+        assert after < before and after < 1.0, (e.id, before, after)
+
+
+def test_frame_plan_uses_checkpoint_when_full_graph_does_not_fit(monkeypatch):
+    from keepframe.analyze import refine as R
+    monkeypatch.setattr(R, "_cuda_mem_info", lambda: (2 * 1024 ** 3, 80 * 1024 ** 3))
+    chunk, ckpt = R._frame_plan(300, 540, 960, 20, "cuda")
+    assert ckpt is True
+    assert chunk > 1
+    monkeypatch.setattr(R, "_cuda_mem_info", lambda: (70 * 1024 ** 3, 80 * 1024 ** 3))
+    fat, fat_ckpt = R._frame_plan(300, 540, 960, 20, "cuda")
+    assert fat == 300 and fat_ckpt is True

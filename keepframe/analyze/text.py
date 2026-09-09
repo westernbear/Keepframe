@@ -27,6 +27,43 @@ class Ocr(Protocol):
     def __call__(self, frame_rgb: np.ndarray) -> list[tuple[str, tuple[int, int, int, int], float]]: ...
 
 
+def _cap_ort_cuda_arena(limit: int) -> None:
+    """Keep OCR from growing a CUDA arena that starves sprite refine."""
+    try:
+        from rapidocr_onnxruntime.utils.infer_engine import OrtInferSession
+    except Exception:
+        return
+    if getattr(OrtInferSession, "_keepframe_capped", False):
+        return
+
+    orig = OrtInferSession._get_ep_list
+
+    def _get_ep_list(self):
+        out = []
+        for name, opts in orig(self):
+            if name == "CUDAExecutionProvider":
+                opts = dict(opts)
+                opts["gpu_mem_limit"] = int(limit)
+                opts["arena_extend_strategy"] = "kSameAsRequested"
+                opts["cudnn_conv_algo_search"] = "DEFAULT"
+            out.append((name, opts))
+        return out
+
+    OrtInferSession._get_ep_list = _get_ep_list
+    OrtInferSession._keepframe_capped = True
+
+
+def _ocr_gpu_mem_limit() -> int:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            total = torch.cuda.get_device_properties(0).total_memory
+            return int(min(4 * 1024 ** 3, max(1024 ** 3, total * 0.08)))
+    except Exception:
+        pass
+    return 2 * 1024 ** 3
+
+
 class RapidOcr:
     def __init__(self):
         from .device import preload_torch_cuda
@@ -34,7 +71,9 @@ class RapidOcr:
         from rapidocr_onnxruntime import RapidOCR  # lazy import
         use_cuda = ocr_cuda()
         if use_cuda:
-            log.info("ocr device=cuda")
+            limit = _ocr_gpu_mem_limit()
+            _cap_ort_cuda_arena(limit)
+            log.info("ocr device=cuda gpu_mem_limit=%s", limit)
             kw = dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
         else:
             if ocr_cuda_expected():
