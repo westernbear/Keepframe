@@ -61,6 +61,14 @@ def test_ocr_gpu_mem_limit_stays_small():
     _cap_ort_cuda_arena(2 * 1024 ** 3)
 
 
+def test_ocr_cuda_opts_keep_exhaustive_conv_search():
+    from keepframe.analyze.text import _cuda_provider_opts
+    opts = _cuda_provider_opts({"cudnn_conv_algo_search": "EXHAUSTIVE"}, 2 * 1024 ** 3)
+    assert opts["cudnn_conv_algo_search"] == "EXHAUSTIVE"
+    assert opts["gpu_mem_limit"] == 2 * 1024 ** 3
+    assert opts["arena_extend_strategy"] == "kSameAsRequested"
+
+
 def test_rapidocr_stays_cpu_without_cuda_ep(monkeypatch):
     import sys, types
     from keepframe.analyze.text import RapidOcr

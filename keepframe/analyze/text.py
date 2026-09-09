@@ -42,15 +42,21 @@ def _cap_ort_cuda_arena(limit: int) -> None:
         out = []
         for name, opts in orig(self):
             if name == "CUDAExecutionProvider":
-                opts = dict(opts)
-                opts["gpu_mem_limit"] = int(limit)
-                opts["arena_extend_strategy"] = "kSameAsRequested"
-                opts["cudnn_conv_algo_search"] = "DEFAULT"
+                opts = _cuda_provider_opts(opts, limit)
             out.append((name, opts))
         return out
 
     OrtInferSession._get_ep_list = _get_ep_list
     OrtInferSession._keepframe_capped = True
+
+
+def _cuda_provider_opts(opts: dict, limit: int) -> dict:
+    # Keep RapidOCR's cudnn_conv_algo_search (EXHAUSTIVE). ORT 1.20+ maps DEFAULT to
+    # cuDNN Fallback and warns "OP Conv running in Fallback mode. May be extremely slow."
+    out = dict(opts)
+    out["gpu_mem_limit"] = int(limit)
+    out["arena_extend_strategy"] = "kSameAsRequested"
+    return out
 
 
 def _ocr_gpu_mem_limit() -> int:
