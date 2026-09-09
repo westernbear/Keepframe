@@ -138,9 +138,19 @@ def _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n_frames):
             from .device import resolve_device
             from .refine import refine_affine, torch_available
             if torch_available():
+                import gc
+                gc.collect()
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except ImportError:
+                    pass
                 keys = [k for k, p in props.items() if p["kind"] == "sprite"]
                 dev = resolve_device()
-                log.info("refine start device=%s sprites=%s iters=%s", dev, len(keys), opts.refine_iters)
+                n, hh, ww = frames.shape[:3]
+                log.info("refine start device=%s sprites=%s frames=%s %sx%s iters=%s",
+                         dev, len(keys), n, hh, ww, opts.refine_iters)
                 report_stage("sprites", f"refine {len(keys)} sprites {dev}")
                 refined = refine_affine(frames, bg, {k: props[k]["raw"] for k in keys}, {k: props[k]["canon"] for k in keys},
                                         {k: (0.5, 0.5) for k in keys}, {k: props[k]["z"] for k in keys},

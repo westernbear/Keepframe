@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+import cv2
 import numpy as np
 from ..log import get
 from .composite import hex_to_rgb  # noqa: F401  (kept for parity with compositor colours)
@@ -13,6 +14,8 @@ log = get("keepframe.analyze")
 _TRANS_LR_SCALE = 3.5
 # L2 pull on non-translation params so loss cannot be reduced by scale/rotation drift.
 _INIT_REG = 1000.0
+# Autograd keeps canvas/grid/sample per sprite. ~12 float channels per sprite per pixel.
+_BYTES_PER_SPRITE_PX = 12 * 4
 
 
 def torch_available() -> bool:
@@ -23,19 +26,66 @@ def torch_available() -> bool:
         return False
 
 
+def _downscale_cpu(frames: np.ndarray, h: int, w: int) -> np.ndarray:
+    if frames.shape[1] == h and frames.shape[2] == w:
+        return frames
+    out = np.empty((len(frames), h, w, frames.shape[3]), dtype=frames.dtype)
+    for i, f in enumerate(frames):
+        out[i] = cv2.resize(f, (w, h), interpolation=cv2.INTER_AREA)
+    return out
+
+
+def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
+    """How many frames fit in free VRAM. CPU and tiny clips stay one shot."""
+    if N <= 1 or not str(dev).startswith("cuda"):
+        return N
+    import torch
+    try:
+        free, _ = torch.cuda.mem_get_info()
+    except Exception:
+        free = 4 * 1024 ** 3
+    per = max(n_sprites, 1) * _BYTES_PER_SPRITE_PX * h * w
+    n = max(1, int(free * 0.45 / max(per, 1)))
+    return min(N, n)
+
+
 def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int = 200, lr: float = 0.02,
                   scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]:
     if not torch_available():
         raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
-    import torch, torch.nn.functional as F
+    import torch
     dev = resolve_device(device)
     N, H, W = frames.shape[:3]
-    log.info("refine_affine device=%s frames=%s sprites=%s iters=%s", dev, N, len(raws), iters)
     h, w = int(round(H * scale)), int(round(W * scale))
+    work = _downscale_cpu(frames, h, w)
+    chunk = _frame_chunk(N, h, w, len(raws), dev)
+    log.info(
+        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s",
+        dev, N, H, W, h, w, len(raws), iters, chunk,
+    )
+    if chunk >= N:
+        return _refine_chunk(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w)
+    out = {k: r.copy() for k, r in raws.items()}
+    for s in range(0, N, chunk):
+        e = min(N, s + chunk)
+        part = _refine_chunk(
+            work[s:e], bg_rgb, {k: r[s:e] for k, r in raws.items()},
+            textures, anchors, z, iters, lr, dev, H, W, h, w,
+        )
+        for k, r in part.items():
+            out[k][s:e] = r
+        if str(dev).startswith("cuda"):
+            torch.cuda.empty_cache()
+    return out
+
+
+def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
+                  anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int, lr: float,
+                  dev: str, H: int, W: int, h: int, w: int) -> dict[str, np.ndarray]:
+    import torch, torch.nn.functional as F
+    N = len(frames)
     target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
-    if scale != 1.0:
-        target = F.interpolate(target, size=(h, w), mode="bilinear", align_corners=False)
     bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
     order = sorted(raws, key=lambda k: z[k])
     params, masks, texs, init = {}, {}, {}, {}
