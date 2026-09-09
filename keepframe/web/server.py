@@ -5,6 +5,7 @@ import json
 import re
 import tempfile
 import threading
+from collections import OrderedDict
 from email import message_from_bytes
 from email.policy import default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -68,8 +69,17 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, str | tuple[st
     return out
 
 
-def _png(rgb: np.ndarray) -> bytes:
-    ok, buf = cv2.imencode(".png", cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2BGR))
+PREVIEW_MAX_W = 960
+PREVIEW_CACHE = 48
+
+
+def _jpeg(rgb: np.ndarray, max_w: int = PREVIEW_MAX_W) -> bytes:
+    rgb = np.ascontiguousarray(rgb)
+    h, w = rgb.shape[:2]
+    if w > max_w:
+        nh = max(1, int(round(h * max_w / w)))
+        rgb = cv2.resize(rgb, (max_w, nh), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     return buf.tobytes()
 
 
@@ -79,7 +89,15 @@ class ReviewState:
         self.job = {"status": "idle", "op": None, "error": None, "version": None}
         self.lock = threading.Lock()
         self._frames: np.ndarray | None | bool = None
-        self._png: dict[tuple[str, int], bytes] = {}
+        self._preview: OrderedDict[tuple[str, str, int], bytes] = OrderedDict()
+        self._tex: dict = {}
+
+    def _remember(self, key: tuple[str, str, int], data: bytes) -> bytes:
+        self._preview[key] = data
+        self._preview.move_to_end(key)
+        while len(self._preview) > PREVIEW_CACHE:
+            self._preview.popitem(last=False)
+        return data
 
     def frames(self) -> np.ndarray | None:
         if self._frames is None:
@@ -99,11 +117,16 @@ class ReviewState:
         return current_scene(self.root, self.scene_id)
 
     def orig_png(self, f: int) -> bytes:
+        key = ("orig", "", f)
+        hit = self._preview.get(key)
+        if hit is not None:
+            self._preview.move_to_end(key)
+            return hit
         fr = self.frames()
         if fr is not None:
             if not 0 <= f < len(fr):
                 raise IndexError("frame out of range")
-            return _png(np.asarray(fr[f]))
+            return self._remember(key, _jpeg(np.asarray(fr[f])))
         video = self.root / "source.mp4"
         cap = cv2.VideoCapture(str(video))
         cap.set(cv2.CAP_PROP_POS_FRAMES, f)
@@ -111,15 +134,17 @@ class ReviewState:
         cap.release()
         if not ok:
             raise IndexError("frame out of range")
-        return _png(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+        return self._remember(key, _jpeg(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)))
 
     def recon_png(self, f: int, version: str | None) -> bytes:
         scene, v = self.scene(version)
-        key = (v.id, f)
-        if key not in self._png:
-            rgb = (composite_scene(scene, scene_dir(self.root, self.scene_id), f) * 255).round().clip(0, 255).astype(np.uint8)
-            self._png[key] = _png(rgb)
-        return self._png[key]
+        key = ("recon", v.id, f)
+        hit = self._preview.get(key)
+        if hit is not None:
+            self._preview.move_to_end(key)
+            return hit
+        rgb = (composite_scene(scene, scene_dir(self.root, self.scene_id), f, self._tex) * 255).round().clip(0, 255).astype(np.uint8)
+        return self._remember(key, _jpeg(rgb))
 
     def run_correction(self, op: str, args: dict) -> None:
         with self.lock:
@@ -172,7 +197,8 @@ class ReviewState:
                         font=FontGuess(**args["font"]) if args.get("font") else None,
                         note=args.get("note", "edit text"),
                     )
-                self._png.clear()
+                self._preview.clear()
+                self._tex.clear()
                 self.job = {"status": "done", "op": op, "error": None, "version": v.id}
                 log.info("correction done scene=%s op=%s version=%s", self.scene_id, op, v.id)
             except Exception as e:
@@ -357,7 +383,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.orig_png(int(parts[2])), "image/png")
+                    return self._send(200, state.orig_png(int(parts[2])), "image/jpeg")
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
@@ -370,7 +396,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/png")
+                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/jpeg")
                 except Exception as e:
                     log.exception("recon frame failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -539,7 +565,8 @@ def make_server(
                         note=data.get("note", "keep 조건 수정"),
                         auto=False,
                     )
-                    state._png.clear()
+                    state._preview.clear()
+                    state._tex.clear()
                     return self._json(200, {"version": json.loads(v.model_dump_json())})
                 except Exception as e:
                     log.exception("keep update failed project=%s scene=%s", project_id, scene_id)

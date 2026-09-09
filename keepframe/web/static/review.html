@@ -17,7 +17,7 @@
 #timeline-tracks { flex: 1; overflow-y: auto; min-height: 0; }
 .inspector__forms[disabled] { opacity: 0.5; pointer-events: none; }
 .job-banner { padding: 8px 12px; margin-bottom: 12px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); background: var(--surface-2); }
-.job-banner--error { color: var(--danger); }
+.job-banner--error { color: var(--error); }
 .constraint-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: var(--fs-body-sm); }
 .accordion__body { display: none; padding-top: 10px; }
 .accordion--open .accordion__body { display: block; }
@@ -38,7 +38,11 @@
 </div>
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </header>
-<main class="review-layout">
+<main class="review-layout is-loading" id="review-root">
+<div class="review-loading" id="review-loading" aria-live="polite">
+<div class="review-loading__spin" aria-hidden="true"></div>
+<p data-i18n="review.loading">장면 불러오는 중</p>
+</div>
 <div class="review-workspace">
 <div class="compare-panes">
 <div class="compare-pane">
@@ -146,6 +150,11 @@ const sceneBadge = document.getElementById("scene-badge");
 const reassignTo = document.getElementById("reassign-to");
 
 let selectedId = null;
+let shownFrame = -1;
+let imgTimer = 0;
+let playheadEl = null;
+const STRIP_BINS = 200;
+const reviewRoot = document.getElementById("review-root");
 
 function formatTime(f, fps) {
   const sec = f / fps;
@@ -155,7 +164,15 @@ function formatTime(f, fps) {
   return `${mm}:${ss}.${ff}`;
 }
 
-function setFrame(f) {
+function loadFrameImages() {
+  imgTimer = 0;
+  if (!state || shownFrame === frame) return;
+  shownFrame = frame;
+  orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
+  recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
+}
+
+function setFrame(f, immediate = false) {
   if (!state) return;
   const n = state.scene.frames;
   frame = Math.max(0, Math.min(n - 1, f));
@@ -163,49 +180,65 @@ function setFrame(f) {
   frameTime.textContent = formatTime(frame, state.scene.fps);
   timelineSvg.setAttribute("aria-valuenow", String(frame));
   timelineSvg.setAttribute("aria-valuemax", String(n - 1));
-  orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
-  recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
   drawPlayhead();
+  if (shownFrame === frame) return;
+  clearTimeout(imgTimer);
+  if (immediate) {
+    loadFrameImages();
+    return;
+  }
+  imgTimer = setTimeout(loadFrameImages, playing ? 100 : 32);
 }
 
 function drawPlayhead() {
   const n = state?.scene?.frames || 1;
   const x = ((frame + 0.5) / n) * 100;
-  timelineSvg.querySelectorAll(".playhead").forEach((el) => el.remove());
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line.setAttribute("class", "playhead");
-  line.setAttribute("x1", `${x}%`);
-  line.setAttribute("x2", `${x}%`);
-  line.setAttribute("y1", "0");
-  line.setAttribute("y2", "72");
-  line.setAttribute("stroke", "var(--accent)");
-  line.setAttribute("stroke-width", "2");
-  timelineSvg.appendChild(line);
+  if (!playheadEl || !playheadEl.isConnected) {
+    playheadEl = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    playheadEl.setAttribute("class", "playhead");
+    playheadEl.setAttribute("y1", "0");
+    playheadEl.setAttribute("y2", "72");
+    playheadEl.setAttribute("stroke", "var(--accent)");
+    playheadEl.setAttribute("stroke-width", "2");
+    timelineSvg.appendChild(playheadEl);
+  }
+  playheadEl.setAttribute("x1", `${x}%`);
+  playheadEl.setAttribute("x2", `${x}%`);
 }
 
 function buildErrorStrip() {
   timelineSvg.innerHTML = "";
-  const rep = state.report;
-  const n = state.scene.frames;
-  const errs = rep?.reconstruction?.per_frame_l1 || [];
-  if (!errs.length) {
-    for (let i = 0; i < n; i++) errs.push(0);
+  playheadEl = null;
+  const raw = state.report?.reconstruction?.per_frame_l1;
+  errorPeaks = [];
+  if (raw && raw.length) {
+    const sorted = raw.slice().sort((a, b) => a - b);
+    const thresh = sorted[Math.floor(sorted.length * 0.8)] || 0;
+    raw.forEach((v, i) => {
+      if (v >= thresh) errorPeaks.push(i);
+    });
+    const max = Math.max(...raw, 1e-6);
+    const bins = Math.min(STRIP_BINS, raw.length);
+    const frag = document.createDocumentFragment();
+    for (let b = 0; b < bins; b++) {
+      const i0 = Math.floor((b / bins) * raw.length);
+      const i1 = Math.max(i0 + 1, Math.floor(((b + 1) / bins) * raw.length));
+      let peak = 0;
+      let hot = false;
+      for (let i = i0; i < i1; i++) {
+        if (raw[i] > peak) peak = raw[i];
+        if (raw[i] >= thresh) hot = true;
+      }
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", `${(b / bins) * 100}%`);
+      rect.setAttribute("y", `${72 - (peak / max) * 64}`);
+      rect.setAttribute("width", `${100 / bins}%`);
+      rect.setAttribute("height", `${(peak / max) * 64}`);
+      rect.setAttribute("fill", hot ? "var(--error)" : "var(--muted)");
+      frag.appendChild(rect);
+    }
+    timelineSvg.appendChild(frag);
   }
-  const sorted = [...errs].sort((a, b) => a - b);
-  const thresh = sorted[Math.floor(sorted.length * 0.8)] || 0;
-  errorPeaks = errs.map((v, i) => (v >= thresh ? i : -1)).filter((i) => i >= 0);
-  const max = Math.max(...errs, 1e-6);
-  errs.forEach((v, i) => {
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", `${(i / n) * 100}%`);
-    rect.setAttribute("y", `${72 - (v / max) * 64}`);
-    rect.setAttribute("width", `${100 / n}%`);
-    rect.setAttribute("height", `${(v / max) * 64}`);
-    rect.setAttribute("fill", v >= thresh ? "var(--danger)" : "var(--muted)");
-    rect.dataset.frame = String(i);
-    rect.addEventListener("click", () => setFrame(i));
-    timelineSvg.appendChild(rect);
-  });
   drawPlayhead();
 }
 
@@ -215,6 +248,7 @@ function renderTracks() {
   els.forEach((el) => {
     const row = document.createElement("div");
     row.className = "track" + (el.id === selectedId ? " track--selected" : "");
+    row.dataset.id = el.id;
     const vis = el.visible || [0, state.scene.frames - 1];
     const left = (vis[0] / state.scene.frames) * 100;
     const right = 100 - ((vis[1] + 1) / state.scene.frames) * 100;
@@ -236,6 +270,7 @@ function renderElements() {
   els.forEach((el) => {
     const row = document.createElement("div");
     row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
+    row.dataset.id = el.id;
     row.innerHTML = `<div style="display:flex;gap:12px"><span class="mono">${el.id}</span><span>${el.kind}</span></div>`;
     row.addEventListener("click", () => selectElement(el.id));
     elementList.appendChild(row);
@@ -276,7 +311,12 @@ function selectElement(id) {
   if (el?.canonical?.text != null) {
     document.getElementById("text-value").value = el.canonical.text;
   }
-  renderElements();
+  elementList.querySelectorAll(".element-row").forEach((row) => {
+    row.classList.toggle("element-row--selected", row.dataset.id === id);
+  });
+  timelineTracks.querySelectorAll(".track").forEach((row) => {
+    row.classList.toggle("track--selected", row.dataset.id === id);
+  });
 }
 
 function fillVersions() {
@@ -304,7 +344,8 @@ async function loadState() {
   renderElements();
   buildErrorStrip();
   if (!selectedId && state.scene.elements.length) selectElement(state.scene.elements[0].id);
-  setFrame(frame);
+  setFrame(frame, true);
+  reviewRoot.classList.remove("is-loading");
 }
 
 function setJobBanner(msg, isError = false) {
@@ -332,9 +373,11 @@ async function pollJob() {
     } else if (job.status === "error") {
       setFormsDisabled(false);
       setJobBanner(Tf("review.retry", { err: job.error || T("review.error") }), true);
+      clearInterval(pollTimer);
     } else {
       setFormsDisabled(false);
       setJobBanner("");
+      clearInterval(pollTimer);
     }
   } catch {
     /* ignore transient poll errors */
@@ -343,6 +386,8 @@ async function pollJob() {
 
 async function runCorrect(op, args) {
   await postCorrect(projectId, sceneId, op, args);
+  clearInterval(pollTimer);
+  pollTimer = setInterval(pollJob, 800);
   pollJob();
 }
 
@@ -399,7 +444,7 @@ document.addEventListener("keydown", (e) => {
 timelineSvg.addEventListener("click", (e) => {
   const rect = timelineSvg.getBoundingClientRect();
   const x = (e.clientX - rect.left) / rect.width;
-  setFrame(Math.floor(x * state.scene.frames));
+  setFrame(Math.floor(x * state.scene.frames), true);
 });
 
 document.querySelectorAll(".accordion__head").forEach((head) => {
@@ -455,14 +500,15 @@ document.getElementById("text-run").addEventListener("click", async () => {
 
 (async () => {
   if (!projectId) {
+    reviewRoot.classList.remove("is-loading");
     setJobBanner(T("review.needProject"), true);
     return;
   }
   try {
     await loadState();
-    pollTimer = setInterval(pollJob, 700);
     pollJob();
   } catch (err) {
+    reviewRoot.classList.remove("is-loading");
     setJobBanner(err.message || T("review.loadFailed"), true);
   }
 })();
