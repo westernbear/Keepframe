@@ -62,6 +62,8 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 ocr = RapidOcr()
             except Exception as e:  # rapidocr missing
                 msg = f"text stage skipped: {e}"
+                if "rapidocr_onnxruntime" in str(e):
+                    msg += "; pip install -e '.[ocr]' (same python as keepframe)"
                 log.info("%s", msg)
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)

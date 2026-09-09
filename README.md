@@ -22,12 +22,16 @@ playwright install chromium
 ```
 
 `pip install .` skips OCR. GPU refine: `pip install '.[gpu]'`.
-OCR on NVIDIA needs the GPU ONNX Runtime (the `[ocr]` extra pulls the CPU wheel):
+NVIDIA OCR needs both `[ocr]` and the GPU ONNX Runtime. The extra pulls CPU `onnxruntime`; swap it after:
 
 ```bash
+pip install -e '.[ocr]'
 pip uninstall -y onnxruntime
 pip install onnxruntime-gpu
+python -c "from rapidocr_onnxruntime import RapidOCR; from onnxruntime import get_available_providers, get_device; print(get_device(), get_available_providers())"
 ```
+
+`No module named 'rapidocr_onnxruntime'` means `[ocr]` is not in the same Python as `keepframe`. Do not run the uninstall/install pair without the first line.
 
 ## Usage
 
