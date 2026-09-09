@@ -49,8 +49,8 @@ CMD ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "
 FROM base AS gpu
 ARG TORCH_CUDA=cu124
 RUN pip install --no-cache-dir "torch>=2.2" --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}" \
-    && pip uninstall -y onnxruntime \
-    && pip install --no-cache-dir onnxruntime-gpu
+    && pip uninstall -y onnxruntime onnxruntime-gpu \
+    && pip install --no-cache-dir "onnxruntime-gpu>=1.19,<1.27"
 
 # Last stage is the default `docker compose build` (CPU).
 FROM base AS runtime

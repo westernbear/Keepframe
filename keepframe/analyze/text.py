@@ -29,6 +29,8 @@ class Ocr(Protocol):
 
 class RapidOcr:
     def __init__(self):
+        from .device import preload_torch_cuda
+        preload_torch_cuda()
         from rapidocr_onnxruntime import RapidOCR  # lazy import
         use_cuda = ocr_cuda()
         if use_cuda:
@@ -38,7 +40,7 @@ class RapidOcr:
             if ocr_cuda_expected():
                 log.warning(
                     "ocr on cpu: CUDAExecutionProvider missing "
-                    "(pip uninstall -y onnxruntime && pip install onnxruntime-gpu)"
+                    "(pip uninstall -y onnxruntime onnxruntime-gpu && pip install 'onnxruntime-gpu>=1.19,<1.27')"
                 )
             else:
                 log.info("ocr device=cpu")

@@ -60,10 +60,13 @@ def _stage_text(frames, bg, opts, ocr, sd):
             try:
                 from .text import RapidOcr
                 ocr = RapidOcr()
-            except Exception as e:  # rapidocr missing
+            except Exception as e:  # rapidocr missing or broken onnxruntime
                 msg = f"text stage skipped: {e}"
-                if "rapidocr_onnxruntime" in str(e):
+                err = str(e)
+                if "No module named 'rapidocr_onnxruntime'" in err:
                     msg += "; pip install -e '.[ocr]' (same python as keepframe)"
+                elif "GraphOptimizationLevel" in err:
+                    msg += "; pip uninstall -y onnxruntime onnxruntime-gpu && pip install 'onnxruntime-gpu>=1.19,<1.27'"
                 log.info("%s", msg)
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)

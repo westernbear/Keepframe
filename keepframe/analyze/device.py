@@ -20,8 +20,17 @@ def _cuda_available() -> bool:
         return False
 
 
+def preload_torch_cuda() -> None:
+    """Import torch first so onnxruntime-gpu can see the CUDA libs it ships."""
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+
+
 def onnx_cuda_available() -> bool:
     """True when onnxruntime can actually run CUDAExecutionProvider."""
+    preload_torch_cuda()
     try:
         from onnxruntime import get_available_providers, get_device
     except ImportError:
