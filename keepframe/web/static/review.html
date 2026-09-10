@@ -159,14 +159,14 @@ let selectedId = null;
 let shownFrame = -1;
 let imgTimer = 0;
 let playheadEl = null;
-const STRIP_BINS = 200;
+const LIST_CHUNK = 32;
+const CONSTRAINT_STEP = 128;
 const reviewRoot = document.getElementById("review-root");
 const loadingMsg = document.getElementById("review-loading-msg");
 const progressBar = document.getElementById("review-progress");
 const progressFill = document.getElementById("review-progress-fill");
 const progressPct = document.getElementById("review-progress-pct");
 const reconLoading = document.getElementById("recon-loading");
-const LIST_CHUNK = 32;
 
 function setProgress(pct, msg) {
   const n = Math.max(0, Math.min(100, Math.round(pct)));
@@ -217,6 +217,15 @@ function loadFrameImages() {
   orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
   recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
   if (recon.complete) reconLoading.hidden = true;
+  if (playing) {
+    const n = state.scene.frames;
+    for (let d = 1; d <= 3 && frame + d < n; d++) {
+      for (const kind of ["orig", "recon"]) {
+        const im = new Image();
+        im.src = reviewFrameUrl(kind, frame + d, projectId, sceneId, versionId);
+      }
+    }
+  }
 }
 
 function setFrame(f, immediate = false) {
@@ -256,32 +265,20 @@ function drawPlayhead() {
 function buildErrorStrip() {
   timelineSvg.innerHTML = "";
   playheadEl = null;
-  const raw = state.report?.reconstruction?.per_frame_l1;
-  errorPeaks = [];
-  if (raw && raw.length) {
-    const sorted = raw.slice().sort((a, b) => a - b);
-    const thresh = sorted[Math.floor(sorted.length * 0.8)] || 0;
-    raw.forEach((v, i) => {
-      if (v >= thresh) errorPeaks.push(i);
-    });
-    const max = Math.max(...raw, 1e-6);
-    const bins = Math.min(STRIP_BINS, raw.length);
+  const rec = state.report?.reconstruction;
+  const bins = rec?.l1_bins || [];
+  const hot = rec?.l1_hot || [];
+  const max = rec?.l1_max || 1e-6;
+  errorPeaks = rec?.l1_peaks || [];
+  if (bins.length) {
     const frag = document.createDocumentFragment();
-    for (let b = 0; b < bins; b++) {
-      const i0 = Math.floor((b / bins) * raw.length);
-      const i1 = Math.max(i0 + 1, Math.floor(((b + 1) / bins) * raw.length));
-      let peak = 0;
-      let hot = false;
-      for (let i = i0; i < i1; i++) {
-        if (raw[i] > peak) peak = raw[i];
-        if (raw[i] >= thresh) hot = true;
-      }
+    for (let b = 0; b < bins.length; b++) {
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("x", `${(b / bins) * 100}%`);
-      rect.setAttribute("y", `${72 - (peak / max) * 64}`);
-      rect.setAttribute("width", `${100 / bins}%`);
-      rect.setAttribute("height", `${(peak / max) * 64}`);
-      rect.setAttribute("fill", hot ? "var(--error)" : "var(--muted)");
+      rect.setAttribute("x", `${(b / bins.length) * 100}%`);
+      rect.setAttribute("y", `${72 - (bins[b] / max) * 64}`);
+      rect.setAttribute("width", `${100 / bins.length}%`);
+      rect.setAttribute("height", `${(bins[b] / max) * 64}`);
+      rect.setAttribute("fill", hot[b] ? "var(--error)" : "var(--muted)");
       frag.appendChild(rect);
     }
     timelineSvg.appendChild(frag);
@@ -350,18 +347,43 @@ async function renderElements() {
     head.style.margin = "12px 0 6px";
     head.textContent = T("review.keep");
     constraintsPanel.appendChild(head);
-    constraints.forEach((c) => {
-      const row = document.createElement("label");
-      row.className = "constraint-row";
-      const checked = keepPending.has(c.pred) ? keepPending.get(c.pred) : !!c.keep;
-      row.innerHTML = `<input type="checkbox" data-pred="${c.pred}" ${checked ? "checked" : ""}/><span class="mono">${c.pred}</span>`;
-      row.querySelector("input").addEventListener("change", (e) => {
-        keepPending.set(c.pred, e.target.checked);
-        keepDirty = true;
-        keepSave.disabled = false;
-      });
-      constraintsPanel.appendChild(row);
+    await renderConstraints(0);
+  }
+}
+
+function appendConstraintRow(frag, c) {
+  const row = document.createElement("label");
+  row.className = "constraint-row";
+  const checked = keepPending.has(c.pred) ? keepPending.get(c.pred) : !!c.keep;
+  row.innerHTML = `<input type="checkbox" data-pred="${c.pred}" ${checked ? "checked" : ""}/><span class="mono">${c.pred}</span>`;
+  row.querySelector("input").addEventListener("change", (e) => {
+    keepPending.set(c.pred, e.target.checked);
+    keepDirty = true;
+    keepSave.disabled = false;
+  });
+  frag.appendChild(row);
+}
+
+async function renderConstraints(from) {
+  const constraints = state.scene.constraints || [];
+  const end = Math.min(constraints.length, from + CONSTRAINT_STEP);
+  for (let s = from; s < end; s += LIST_CHUNK) {
+    const e = Math.min(end, s + LIST_CHUNK);
+    const frag = document.createDocumentFragment();
+    for (let i = s; i < e; i++) appendConstraintRow(frag, constraints[i]);
+    constraintsPanel.appendChild(frag);
+    if (e < constraints.length) await yieldMain();
+  }
+  if (end < constraints.length) {
+    const more = document.createElement("button");
+    more.className = "btn btn--secondary";
+    more.style.margin = "6px 0";
+    more.textContent = Tf("review.moreConstraints", { n: constraints.length - end });
+    more.addEventListener("click", () => {
+      more.remove();
+      renderConstraints(end);
     });
+    constraintsPanel.appendChild(more);
   }
 }
 
@@ -384,7 +406,7 @@ function selectElement(id) {
 
 function fillVersions() {
   versionSelect.innerHTML = "";
-  const versions = (state.project.versions || []).filter((v) => v.scene_file.includes(`scenes/${sceneId}/`));
+  const versions = state.project.versions || [];
   versions.forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v.id;
@@ -393,9 +415,36 @@ function fillVersions() {
     versionSelect.appendChild(opt);
   });
   versionSelect.onchange = () => {
-    const v = versionSelect.value;
-    location.href = `/review?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}&v=${encodeURIComponent(v)}`;
+    refreshState(versionSelect.value);
   };
+}
+
+async function refreshState(v) {
+  const keepFrame = frame;
+  const keepSel = selectedId;
+  versionId = v;
+  setProgress(8, T("review.loading"));
+  try {
+    state = await fetchReviewState(projectId, sceneId, versionId);
+  } catch (err) {
+    clearLoading();
+    setJobBanner(err.message || T("review.loadFailed"), true);
+    return;
+  }
+  versionId = state.version.id;
+  history.replaceState(null, "", `/review?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}&v=${encodeURIComponent(versionId)}`);
+  sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
+  frameTotal.textContent = String(state.scene.frames);
+  if (keepSel && state.scene.elements.some((e) => e.id === keepSel)) selectedId = keepSel;
+  else if (!state.scene.elements.length) selectedId = null;
+  fillVersions();
+  await renderElements();
+  buildErrorStrip();
+  if (selectedId) selectElement(selectedId);
+  frame = Math.max(0, Math.min(keepFrame, state.scene.frames - 1));
+  shownFrame = -1;
+  setFrame(frame, true);
+  clearLoading();
 }
 
 async function loadState() {
@@ -442,7 +491,8 @@ async function pollJob() {
     } else if (job.status === "done" && job.version) {
       setFormsDisabled(false);
       setJobBanner("");
-      location.href = `/review?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}&v=${encodeURIComponent(job.version)}`;
+      clearInterval(pollTimer);
+      refreshState(job.version);
     } else if (job.status === "error") {
       setFormsDisabled(false);
       setJobBanner(Tf("review.retry", { err: job.error || T("review.error") }), true);
@@ -530,7 +580,7 @@ keepSave.addEventListener("click", async () => {
   keepPending.clear();
   keepDirty = false;
   keepSave.disabled = true;
-  location.href = `/review?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}&v=${encodeURIComponent(res.version.id)}`;
+  refreshState(res.version.id);
 });
 
 document.getElementById("reassign-run").addEventListener("click", async () => {

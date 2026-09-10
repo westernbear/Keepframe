@@ -1,6 +1,9 @@
 from __future__ import annotations
 import contextlib
 import math
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 from ..log import get
@@ -35,8 +38,16 @@ def _downscale_cpu(frames: np.ndarray, h: int, w: int) -> np.ndarray:
     if frames.shape[1] == h and frames.shape[2] == w:
         return frames
     out = np.empty((len(frames), h, w, frames.shape[3]), dtype=frames.dtype)
-    for i, f in enumerate(frames):
-        out[i] = cv2.resize(f, (w, h), interpolation=cv2.INTER_AREA)
+    workers = max(1, min(8, os.cpu_count() or 4, len(frames)))
+    if workers == 1:
+        for i, f in enumerate(frames):
+            out[i] = cv2.resize(f, (w, h), interpolation=cv2.INTER_AREA)
+        return out
+    # cv2.resize releases the GIL, so the sequential resize fans out across cores.
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(cv2.resize, f, (w, h), interpolation=cv2.INTER_AREA) for f in frames]
+        for i, fut in enumerate(futs):
+            out[i] = fut.result()
     return out
 
 
@@ -50,7 +61,9 @@ def _cuda_mem_info() -> tuple[int, int]:
 
 
 def _chunk_from_free(N: int, per: int, free: int) -> int:
-    return min(N, max(1, int(free * _VRAM_FRAC / max(per, 1))))
+    # Floor of 8 avoids the chunk=1 mode where a fresh 200-iter Adam run, H2D upload
+    # and per-sprite D2H syncs are paid once per frame; OOM halving remains the backstop.
+    return min(N, max(8, int(free * _VRAM_FRAC / max(per, 1))))
 
 
 def _frame_plan(N: int, h: int, w: int, n_sprites: int, dev: str) -> tuple[int, bool]:
@@ -101,44 +114,13 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
             auto_ckpt = True
 
 
-def _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, checkpoint):
-    N = len(work)
-    if chunk >= N:
-        return _refine_chunk(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, checkpoint)
-    out = {k: r.copy() for k, r in raws.items()}
-    n_parts = math.ceil(N / chunk)
-    for i, s in enumerate(range(0, N, chunk)):
-        e = min(N, s + chunk)
-        report_stage("sprites", f"refine {i + 1}/{n_parts} frames {s + 1}-{e}/{N}")
-        part = _refine_chunk(
-            work[s:e], bg_rgb, {k: r[s:e] for k, r in raws.items()},
-            textures, anchors, z, iters, lr, dev, H, W, h, w, checkpoint,
-        )
-        for k, r in part.items():
-            out[k][s:e] = r
-    return out
-
-
-def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
-                  anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int, lr: float,
-                  dev: str, H: int, W: int, h: int, w: int, checkpoint: bool = False) -> dict[str, np.ndarray]:
-    import torch, torch.nn.functional as F
-    from torch.utils.checkpoint import checkpoint as ckpt
-    N = len(frames)
-    cuda = str(dev).startswith("cuda")
-    target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
-    bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
+def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
+                   anchors: dict[str, tuple[float, float]], z: dict[str, int], H: int, W: int) -> dict:
+    """Upload textures/anchor constants once for the whole refine; chunks reuse them."""
+    import torch
     order = sorted(raws, key=lambda k: z[k])
-    params, masks, texs, init = {}, {}, {}, {}
-    tex_const = {}
-    s_scene = torch.tensor([[W / 2, 0.0], [0.0, H / 2]], device=dev)
+    texs, tex_const = {}, {}
     for k in order:
-        r = raws[k]
-        valid = ~np.isnan(r[:, 0])
-        p = torch.tensor(np.nan_to_num(r[:, [0, 1, 2, 3, 4, 7]]), dtype=torch.float32, device=dev)
-        params[k] = p.clone().requires_grad_(True)
-        init[k] = p.detach().clone()
-        masks[k] = torch.tensor(valid, device=dev)
         t = torch.tensor(textures[k], dtype=torch.float32, device=dev).permute(2, 0, 1) / 255.0
         # Premultiply RGB by alpha before warp to match composite_scene / cv2 path.
         texs[k] = torch.cat([t[:3] * t[3:4], t[3:4]], 0)
@@ -149,6 +131,55 @@ def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
             torch.tensor([ax * tw, ay * th], device=dev).view(1, 2, 1),
             torch.tensor([1.0 / tw - 1.0, 1.0 / th - 1.0], device=dev).view(1, 2, 1),
         )
+    return {
+        "order": order,
+        "bg": torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1),
+        "s_scene": torch.tensor([[W / 2, 0.0], [0.0, H / 2]], device=dev),
+        "texs": texs,
+        "tex_const": tex_const,
+    }
+
+
+def _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, checkpoint):
+    N = len(work)
+    consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W)
+    if chunk >= N:
+        return _refine_chunk(work, consts, raws, iters, lr, dev, H, W, h, w, checkpoint)
+    out = {k: r.copy() for k, r in raws.items()}
+    n_parts = math.ceil(N / chunk)
+    t0 = time.perf_counter()
+    for i, s in enumerate(range(0, N, chunk)):
+        e = min(N, s + chunk)
+        report_stage("sprites", f"refine {i + 1}/{n_parts} frames {s + 1}-{e}/{N}")
+        part = _refine_chunk(
+            work[s:e], consts, {k: r[s:e] for k, r in raws.items()},
+            iters, lr, dev, H, W, h, w, checkpoint,
+        )
+        for k, r in part.items():
+            out[k][s:e] = r
+    log.info("refine chunks=%s frames=%s chunk=%s %.2fs", n_parts, N, chunk, time.perf_counter() - t0)
+    return out
+
+
+def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
+                   iters: int, lr: float, dev: str, H: int, W: int, h: int, w: int,
+                   checkpoint: bool = False) -> dict[str, np.ndarray]:
+    import torch, torch.nn.functional as F
+    from torch.utils.checkpoint import checkpoint as ckpt
+    N = len(frames)
+    cuda = str(dev).startswith("cuda")
+    order = consts["order"]
+    target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
+    params, masks, init = {}, {}, {}
+    for k in order:
+        r = raws[k]
+        valid = ~np.isnan(r[:, 0])
+        p = torch.tensor(np.nan_to_num(r[:, [0, 1, 2, 3, 4, 7]]), dtype=torch.float32, device=dev)
+        params[k] = p.clone().requires_grad_(True)
+        init[k] = p.detach().clone()
+        masks[k] = torch.tensor(valid, device=dev)
+    texs, tex_const = consts["texs"], consts["tex_const"]
+    bg, s_scene = consts["bg"], consts["s_scene"]
     opt = torch.optim.Adam(list(params.values()), lr=lr * _TRANS_LR_SCALE)
     x_only_until = iters * 38 // 80 if iters >= 80 else iters // 2
     amp_dtype = None
@@ -200,10 +231,12 @@ def _refine_chunk(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
             if step < x_only_until:
                 g[:, 1] = 0
         opt.step()
+    # One stacked D2H sync instead of one per sprite.
     out = {}
-    for k in order:
+    P = torch.stack([params[k] for k in order]).detach().cpu().numpy() if order else None
+    for i, k in enumerate(order):
         r = raws[k].copy()
-        p = params[k].detach().cpu().numpy()
+        p = P[i]
         valid = ~np.isnan(r[:, 0])
         r[valid, 0] = p[valid, 0]; r[valid, 1] = p[valid, 1]; r[valid, 2] = p[valid, 2]; r[valid, 3] = p[valid, 3]
         r[valid, 4] = p[valid, 4]; r[valid, 7] = np.clip(p[valid, 5], 0, 1)

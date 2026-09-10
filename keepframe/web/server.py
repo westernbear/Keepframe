@@ -70,21 +70,48 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, str | tuple[st
 
 
 PREVIEW_MAX_W = 960
-PREVIEW_CACHE = 48
+PREVIEW_CACHE = 256
+STRIP_BINS = 200
 
 
 def _slim_report(rep: dict | None, n_frames: int) -> dict | None:
+    """Downsample per-frame L1 to strip bins + peak indices so the browser never sorts a long series."""
     if not rep:
         return None
     rec = rep.get("reconstruction") or {}
     per = rec.get("per_frame_l1") or rec.get("per_frame")
     if isinstance(per, dict):
-        series = [float(per.get(i, per.get(str(i), 0)) or 0) for i in range(n_frames)]
+        series = np.array([float(per.get(i, per.get(str(i), 0)) or 0) for i in range(n_frames)])
     elif isinstance(per, list):
-        series = [float(x) for x in per]
+        series = np.array([float(x) for x in per])
     else:
-        series = []
-    return {"reconstruction": {"per_frame_l1": series}}
+        series = np.array([])
+    if series.size == 0:
+        return {"reconstruction": {"l1_bins": [], "l1_peaks": [], "l1_max": 0.0, "l1_thresh": 0.0}}
+    thresh = float(np.percentile(series, 80))
+    max_v = float(series.max())
+    bins = min(STRIP_BINS, series.size)
+    edges = (np.arange(bins + 1) / bins * series.size).astype(int)
+    edges[-1] = series.size
+    l1_bins = []
+    l1_hot = []
+    for b in range(bins):
+        seg = series[edges[b]:max(edges[b] + 1, edges[b + 1])]
+        l1_bins.append(float(seg.max()))
+        l1_hot.append(bool((seg >= thresh).any()))
+    l1_peaks = np.flatnonzero(series >= thresh).astype(int).tolist()
+    return {"reconstruction": {"l1_bins": l1_bins, "l1_hot": l1_hot, "l1_peaks": l1_peaks,
+                               "l1_max": max_v, "l1_thresh": thresh}}
+
+
+def _slim_project(project, scene_id: str) -> dict:
+    return {
+        "versions": [
+            {"id": v.id, "note": v.note, "scene_file": v.scene_file}
+            for v in project.versions
+            if v.scene_file.startswith(f"scenes/{scene_id}/")
+        ]
+    }
 
 
 def _slim_scene(scene) -> dict:
@@ -100,9 +127,9 @@ def _slim_scene(scene) -> dict:
 
 
 def review_state_payload(project, version, scene, report, job) -> dict:
-    """UI payload without per-frame tracks so the review page can parse off the main thread."""
+    """Slim UI payload: pre-binned error strip, scene-only version list, no per-frame tracks."""
     return {
-        "project": project.model_dump(by_alias=True),
+        "project": _slim_project(project, scene.id),
         "version": version.model_dump(),
         "scene": _slim_scene(scene),
         "report": _slim_report(report, scene.frames),
@@ -289,10 +316,12 @@ def make_server(
         def log_error(self, fmt, *args):
             log.error("%s %s", self.address_string(), fmt % args)
 
-        def _send(self, code: int, body: bytes, ctype: str) -> None:
+        def _send(self, code: int, body: bytes, ctype: str, cache: str | None = None) -> None:
             self.send_response(code)
             self.send_header("content-type", ctype)
             self.send_header("content-length", str(len(body)))
+            if cache:
+                self.send_header("cache-control", cache)
             self.end_headers()
             self.wfile.write(body)
 
@@ -331,7 +360,7 @@ def make_server(
                     ".ico": "image/x-icon",
                     ".webp": "image/webp",
                 }.get(p.suffix.lower(), "application/octet-stream")
-                return self._send(200, p.read_bytes(), ctype)
+                return self._send(200, p.read_bytes(), ctype, cache="public, max-age=604800")
             if u.path == "/api/status":
                 return self._json(200, gpu_status())
             if u.path == "/api/projects":
@@ -411,7 +440,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.orig_png(int(parts[2])), "image/jpeg")
+                    return self._send(200, state.orig_png(int(parts[2])), "image/jpeg", cache="public, max-age=604800")
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
@@ -424,7 +453,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/jpeg")
+                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/jpeg", cache="public, max-age=604800")
                 except Exception as e:
                     log.exception("recon frame failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})

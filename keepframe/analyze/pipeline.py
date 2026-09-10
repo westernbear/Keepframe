@@ -1,5 +1,6 @@
 from __future__ import annotations
-import json, pickle
+import json, pickle, os, time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
@@ -119,13 +120,30 @@ def _stage_tracking(rbf, sd):
 
 def _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n_frames):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
-    for t in text_tracks:
-        raw, canon, cf, font, color = text_props(t, frames, bg, n_frames, 0)
-        props[f"t{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "text", "text": t.text, "font": font, "color": color, "first": t.first, "last": t.last}
+    t0 = time.perf_counter()
+    workers = max(1, min(8, os.cpu_count() or 4))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        text_futs = {
+            ex.submit(text_props, t, frames, bg, n_frames, 0): t for t in text_tracks
+        }
+        for fut, t in text_futs.items():
+            raw, canon, cf, font, color = fut.result()
+            props[f"t{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "text", "text": t.text, "font": font, "color": color, "first": t.first, "last": t.last}
+    log.info("sprites text_props tracks=%s %.2fs", len(text_tracks), time.perf_counter() - t0)
+    t0 = time.perf_counter()
     z = z_order(obj_tracks, frames, bg)
-    for t in obj_tracks:
-        raw, canon, cf = sprite_props(t, frames, bg, n_frames, 0, use_ecc=opts.use_ecc)
-        props[f"o{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": z[t.id], "first": t.first, "last": t.last}
+    log.info("sprites z_order objects=%s %.2fs", len(obj_tracks), time.perf_counter() - t0)
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        # cv2 (moments, findTransformECC) releases the GIL, so tracks refine in parallel.
+        obj_futs = {
+            ex.submit(sprite_props, t, frames, bg, n_frames, 0, opts.use_ecc): t for t in obj_tracks
+        }
+        for fut, t in obj_futs.items():
+            raw, canon, cf = fut.result()
+            props[f"o{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": z[t.id], "first": t.first, "last": t.last}
+    log.info("sprites sprite_props objects=%s workers=%s ecc=%s %.2fs", len(obj_tracks), workers, opts.use_ecc,
+             time.perf_counter() - t0)
     ov = _load_overrides(sd)
     for a, b in ov.get("merge", []):   # merge object b into a (element ids resolved via ids.json at correction time)
         if a in props and b in props:
@@ -152,9 +170,12 @@ def _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n_frames):
                 log.info("refine start device=%s sprites=%s frames=%s %sx%s iters=%s",
                          dev, len(keys), n, hh, ww, opts.refine_iters)
                 report_stage("sprites", f"refine {len(keys)} sprites {dev}")
+                t0 = time.perf_counter()
                 refined = refine_affine(frames, bg, {k: props[k]["raw"] for k in keys}, {k: props[k]["canon"] for k in keys},
                                         {k: (0.5, 0.5) for k in keys}, {k: props[k]["z"] for k in keys},
                                         iters=opts.refine_iters, device=dev)
+                log.info("refine done device=%s sprites=%s frames=%s %.2fs", dev, len(keys), n,
+                         time.perf_counter() - t0)
                 for k in keys:
                     props[k]["raw"] = refined[k]
             else:
