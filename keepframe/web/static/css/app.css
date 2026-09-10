@@ -180,18 +180,40 @@ a { color: inherit; text-decoration: none; }
 .review-workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .review-loading {
   position: absolute; inset: 0; z-index: 8; display: none;
-  flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   background: var(--canvas); color: var(--ink); font-size: var(--fs-body-sm);
 }
 .review-layout.is-loading .review-loading { display: flex; }
-.review-loading__spin {
-  width: 28px; height: 28px; border-radius: var(--r-full);
-  border: 2px solid var(--hairline); border-top-color: var(--ink);
-  animation: review-spin 0.7s linear infinite;
+.review-layout.is-loading .review-workspace,
+.review-layout.is-loading .inspector { visibility: hidden; pointer-events: none; }
+.review-loading__bar {
+  width: min(280px, 70vw); height: 3px; border-radius: var(--r-full);
+  background: var(--hairline); overflow: hidden;
 }
-@keyframes review-spin { to { transform: rotate(360deg); } }
+.review-loading__fill {
+  height: 100%; width: 100%; background: var(--accent);
+  transform: scaleX(0); transform-origin: left center;
+  transition: transform 0.18s ease-out;
+}
+.review-loading__pct { font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
+.review-loading__bar--pane { width: 128px; }
+.review-loading__fill--pulse {
+  transform: none;
+  animation: review-bar-pulse 1.1s ease-in-out infinite;
+}
+@keyframes review-bar-pulse {
+  0% { transform: translateX(-120%) scaleX(0.4); }
+  100% { transform: translateX(280%) scaleX(0.4); }
+}
+.pane-loading {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--canvas);
+}
+.pane-loading[hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  .review-loading__spin { animation: none; border-top-color: var(--hairline); }
+  .review-loading__fill { transition: none; }
+  .review-loading__fill--pulse { animation: none; transform: scaleX(1); }
 }
 .compare-panes { flex: 1; display: flex; gap: 16px; padding: 16px; min-height: 0; }
 .compare-pane { flex: 1; display: flex; flex-direction: column; background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; }

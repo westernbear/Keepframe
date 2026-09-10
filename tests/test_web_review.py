@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import numpy as np
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import init_project, scene_dir
@@ -29,6 +30,14 @@ def test_state_from_synthetic(tmp_path):
     srv.shutdown()
     assert body["scene"]["id"] == scene.id
     assert body["version"]["id"] == "v1"
+    assert "tracks" not in body["scene"]["elements"][0]
+
+
+def test_review_page_has_progress_bar():
+    html = (Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html").read_text(encoding="utf-8")
+    assert 'id="review-progress"' in html
+    assert 'role="progressbar"' in html
+    assert "setProgress" in html
 
 
 def test_review_orig_frame_is_jpeg_preview(tmp_path):

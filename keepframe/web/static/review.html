@@ -38,10 +38,13 @@
 </div>
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </header>
-<main class="review-layout is-loading" id="review-root">
+<main class="review-layout is-loading" id="review-root" aria-busy="true">
 <div class="review-loading" id="review-loading" aria-live="polite">
-<div class="review-loading__spin" aria-hidden="true"></div>
-<p data-i18n="review.loading">장면 불러오는 중</p>
+<p id="review-loading-msg" data-i18n="review.loading">장면 불러오는 중</p>
+<div class="review-loading__bar" id="review-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="review-loading-msg">
+<div class="review-loading__fill" id="review-progress-fill"></div>
+</div>
+<span class="review-loading__pct" id="review-progress-pct">0%</span>
 </div>
 <div class="review-workspace">
 <div class="compare-panes">
@@ -55,6 +58,9 @@
 <div class="compare-pane">
 <div class="compare-pane__head"><span style="color:var(--ink)" data-i18n="review.recon">재구성</span></div>
 <div class="compare-pane__body" id="recon-pane">
+<div class="pane-loading" id="recon-loading" hidden>
+<div class="review-loading__bar review-loading__bar--pane"><div class="review-loading__fill review-loading__fill--pulse"></div></div>
+</div>
 <img id="recon" alt="reconstructed frame" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
 <svg class="compare-pane__overlay" id="recon-overlay"></svg>
 </div>
@@ -155,6 +161,45 @@ let imgTimer = 0;
 let playheadEl = null;
 const STRIP_BINS = 200;
 const reviewRoot = document.getElementById("review-root");
+const loadingMsg = document.getElementById("review-loading-msg");
+const progressBar = document.getElementById("review-progress");
+const progressFill = document.getElementById("review-progress-fill");
+const progressPct = document.getElementById("review-progress-pct");
+const reconLoading = document.getElementById("recon-loading");
+const LIST_CHUNK = 32;
+
+function setProgress(pct, msg) {
+  const n = Math.max(0, Math.min(100, Math.round(pct)));
+  progressFill.style.transform = `scaleX(${n / 100})`;
+  progressBar.setAttribute("aria-valuenow", String(n));
+  progressPct.textContent = `${n}%`;
+  if (msg) loadingMsg.textContent = msg;
+  reviewRoot.classList.add("is-loading");
+  reviewRoot.setAttribute("aria-busy", "true");
+}
+
+function clearLoading() {
+  setProgress(100);
+  reviewRoot.classList.remove("is-loading");
+  reviewRoot.setAttribute("aria-busy", "false");
+}
+
+function yieldMain() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function waitImg(img) {
+  if (img.complete && img.naturalWidth > 1) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      img.removeEventListener("load", done);
+      img.removeEventListener("error", done);
+      resolve();
+    };
+    img.addEventListener("load", done);
+    img.addEventListener("error", done);
+  });
+}
 
 function formatTime(f, fps) {
   const sec = f / fps;
@@ -168,8 +213,10 @@ function loadFrameImages() {
   imgTimer = 0;
   if (!state || shownFrame === frame) return;
   shownFrame = frame;
+  reconLoading.hidden = false;
   orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
   recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
+  if (recon.complete) reconLoading.hidden = true;
 }
 
 function setFrame(f, immediate = false) {
@@ -242,10 +289,13 @@ function buildErrorStrip() {
   drawPlayhead();
 }
 
-function renderTracks() {
-  timelineTracks.innerHTML = "";
+function renderTracks(from = 0) {
   const els = state.scene.elements || [];
-  els.forEach((el) => {
+  if (from === 0) timelineTracks.innerHTML = "";
+  const end = Math.min(els.length, from + LIST_CHUNK);
+  const frag = document.createDocumentFragment();
+  for (let i = from; i < end; i++) {
+    const el = els[i];
     const row = document.createElement("div");
     row.className = "track" + (el.id === selectedId ? " track--selected" : "");
     row.dataset.id = el.id;
@@ -255,11 +305,12 @@ function renderTracks() {
     row.innerHTML = `<div class="track__label"><span class="mono" style="color:var(--accent)">${el.id}</span><span>${el.kind}</span></div>
       <div class="track__lane"><div class="track__bar" style="left:${left}%;right:${right}%"></div></div>`;
     row.addEventListener("click", () => selectElement(el.id));
-    timelineTracks.appendChild(row);
-  });
+    frag.appendChild(row);
+  }
+  timelineTracks.appendChild(frag);
 }
 
-function renderElements() {
+async function renderElements() {
   const els = state.scene.elements || [];
   elementCount.textContent = Tf("review.elements", { n: els.length });
   emptyState.hidden = els.length > 0;
@@ -267,18 +318,31 @@ function renderElements() {
   elementList.innerHTML = "";
   constraintsPanel.innerHTML = "";
   reassignTo.innerHTML = "";
-  els.forEach((el) => {
-    const row = document.createElement("div");
-    row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
-    row.dataset.id = el.id;
-    row.innerHTML = `<div style="display:flex;gap:12px"><span class="mono">${el.id}</span><span>${el.kind}</span></div>`;
-    row.addEventListener("click", () => selectElement(el.id));
-    elementList.appendChild(row);
-    const opt = document.createElement("option");
-    opt.value = el.id;
-    opt.textContent = el.id;
-    reassignTo.appendChild(opt);
-  });
+  timelineTracks.innerHTML = "";
+  const n = Math.max(els.length, 1);
+  for (let from = 0; from < els.length; from += LIST_CHUNK) {
+    const end = Math.min(els.length, from + LIST_CHUNK);
+    const frag = document.createDocumentFragment();
+    const opts = document.createDocumentFragment();
+    for (let i = from; i < end; i++) {
+      const el = els[i];
+      const row = document.createElement("div");
+      row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
+      row.dataset.id = el.id;
+      row.innerHTML = `<div style="display:flex;gap:12px"><span class="mono">${el.id}</span><span>${el.kind}</span></div>`;
+      row.addEventListener("click", () => selectElement(el.id));
+      frag.appendChild(row);
+      const opt = document.createElement("option");
+      opt.value = el.id;
+      opt.textContent = el.id;
+      opts.appendChild(opt);
+    }
+    elementList.appendChild(frag);
+    reassignTo.appendChild(opts);
+    renderTracks(from);
+    setProgress(45 + (end / n) * 30, T("review.loadingList"));
+    if (end < els.length) await yieldMain();
+  }
   const constraints = state.scene.constraints || [];
   if (constraints.length) {
     const head = document.createElement("div");
@@ -299,7 +363,6 @@ function renderElements() {
       constraintsPanel.appendChild(row);
     });
   }
-  renderTracks();
 }
 
 function selectElement(id) {
@@ -336,16 +399,26 @@ function fillVersions() {
 }
 
 async function loadState() {
+  setProgress(8, T("review.loading"));
+  orig.src = reviewFrameUrl("orig", 0, projectId, sceneId, versionId);
+  const origReady = waitImg(orig);
   state = await fetchReviewState(projectId, sceneId, versionId);
+  await yieldMain();
+  setProgress(45, T("review.loading"));
   versionId = state.version.id;
   sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
   frameTotal.textContent = String(state.scene.frames);
   fillVersions();
-  renderElements();
+  reconLoading.hidden = false;
+  recon.src = reviewFrameUrl("recon", 0, projectId, sceneId, versionId);
+  await renderElements();
   buildErrorStrip();
   if (!selectedId && state.scene.elements.length) selectElement(state.scene.elements[0].id);
-  setFrame(frame, true);
-  reviewRoot.classList.remove("is-loading");
+  shownFrame = 0;
+  frame = 0;
+  setProgress(85, T("review.loadingFrames"));
+  await origReady;
+  clearLoading();
 }
 
 function setJobBanner(msg, isError = false) {
@@ -498,9 +571,12 @@ document.getElementById("text-run").addEventListener("click", async () => {
   });
 });
 
+recon.addEventListener("load", () => { reconLoading.hidden = true; });
+recon.addEventListener("error", () => { reconLoading.hidden = true; });
+
 (async () => {
   if (!projectId) {
-    reviewRoot.classList.remove("is-loading");
+    clearLoading();
     setJobBanner(T("review.needProject"), true);
     return;
   }
@@ -508,7 +584,7 @@ document.getElementById("text-run").addEventListener("click", async () => {
     await loadState();
     pollJob();
   } catch (err) {
-    reviewRoot.classList.remove("is-loading");
+    clearLoading();
     setJobBanner(err.message || T("review.loadFailed"), true);
   }
 })();

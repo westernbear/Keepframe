@@ -73,6 +73,43 @@ PREVIEW_MAX_W = 960
 PREVIEW_CACHE = 48
 
 
+def _slim_report(rep: dict | None, n_frames: int) -> dict | None:
+    if not rep:
+        return None
+    rec = rep.get("reconstruction") or {}
+    per = rec.get("per_frame_l1") or rec.get("per_frame")
+    if isinstance(per, dict):
+        series = [float(per.get(i, per.get(str(i), 0)) or 0) for i in range(n_frames)]
+    elif isinstance(per, list):
+        series = [float(x) for x in per]
+    else:
+        series = []
+    return {"reconstruction": {"per_frame_l1": series}}
+
+
+def _slim_scene(scene) -> dict:
+    data = scene.model_dump(by_alias=True)
+    for el in data.get("elements", []):
+        el.pop("tracks", None)
+        el.pop("z", None)
+        el.pop("raw", None)
+        el.pop("fit_error", None)
+        can = el.get("canonical") or {}
+        el["canonical"] = {"text": can.get("text")}
+    return data
+
+
+def review_state_payload(project, version, scene, report, job) -> dict:
+    """UI payload without per-frame tracks so the review page can parse off the main thread."""
+    return {
+        "project": project.model_dump(by_alias=True),
+        "version": version.model_dump(),
+        "scene": _slim_scene(scene),
+        "report": _slim_report(report, scene.frames),
+        "job": job,
+    }
+
+
 def _jpeg(rgb: np.ndarray, max_w: int = PREVIEW_MAX_W) -> bytes:
     rgb = np.ascontiguousarray(rgb)
     h, w = rgb.shape[:2]
@@ -353,16 +390,7 @@ def make_server(
                     scene, v = state.scene(ver)
                     sd = scene_dir(state.root, state.scene_id)
                     rep = json.loads((sd / "report.json").read_text()) if (sd / "report.json").is_file() else None
-                    return self._json(
-                        200,
-                        {
-                            "project": json.loads(load_project(state.root).model_dump_json(by_alias=True)),
-                            "version": json.loads(v.model_dump_json()),
-                            "scene": json.loads(scene.model_dump_json(by_alias=True)),
-                            "report": rep,
-                            "job": state.job,
-                        },
-                    )
+                    return self._json(200, review_state_payload(load_project(state.root), v, scene, rep, state.job))
                 except Exception as e:
                     log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
