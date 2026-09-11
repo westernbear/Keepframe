@@ -61,34 +61,53 @@ def _cuda_mem_info() -> tuple[int, int]:
         return 4 * 1024 ** 3, 4 * 1024 ** 3
 
 
-def _chunk_from_free(N: int, per: int, free: int) -> int:
-    # Floor of 8 avoids the chunk=1 mode where a fresh 200-iter Adam run, H2D upload
-    # and per-sprite D2H syncs are paid once per frame; OOM halving remains the backstop.
-    return min(N, max(8, int(free * _VRAM_FRAC / max(per, 1))))
+def _active_counts(raws: dict[str, np.ndarray], N: int) -> np.ndarray:
+    if not raws:
+        return np.zeros(N, dtype=np.int64)
+    return np.stack([~np.isnan(r[:N, 0]) for r in raws.values()]).sum(axis=0)
+
+
+def _frame_costs(h: int, w: int, active_counts: np.ndarray, ckpt: bool) -> np.ndarray:
+    live = _BYTES_PER_SPRITE_PX * h * w
+    if ckpt:
+        return active_counts * (_BYTES_PER_CKPT_PX * h * w) + live
+    return np.maximum(active_counts, 1) * live
 
 
 def _bytes_per_frame(h: int, w: int, n_sprites: int, ckpt: bool) -> int:
-    n = max(n_sprites, 1)
-    live = _BYTES_PER_SPRITE_PX * h * w
-    if ckpt:
-        return n * _BYTES_PER_CKPT_PX * h * w + live
-    return n * live
+    return int(_frame_costs(h, w, np.array([n_sprites]), ckpt)[0])
 
 
-def _frame_plan(N: int, h: int, w: int, n_sprites: int, dev: str) -> tuple[int, bool]:
+def _chunk_for_costs(costs: np.ndarray, budget: int) -> int:
+    N = len(costs)
+    if N <= 1 or int(costs.sum()) <= budget:
+        return N
+    prefix = np.concatenate(([0], np.cumsum(costs, dtype=np.int64)))
+    lo, hi = 1, N
+    while lo < hi:
+        size = (lo + hi + 1) // 2
+        if int(np.max(prefix[size:] - prefix[:-size])) <= budget:
+            lo = size
+        else:
+            hi = size - 1
+    return lo
+
+
+def _frame_plan(N: int, h: int, w: int, active_counts: np.ndarray, dev: str) -> tuple[int, bool]:
     """Frames per shot and whether to checkpoint sprite warps. CPU stays one shot."""
     if N <= 1 or not str(dev).startswith("cuda"):
         return N, False
     free, _ = _cuda_mem_info()
-    chunk = _chunk_from_free(N, _bytes_per_frame(h, w, n_sprites, False), free)
-    if chunk >= N:
+    budget = int(free * _VRAM_FRAC)
+    dense_costs = _frame_costs(h, w, active_counts, False)
+    if int(dense_costs.sum()) <= budget:
         return N, False
-    return _chunk_from_free(N, _bytes_per_frame(h, w, n_sprites, True), free), True
+    return _chunk_for_costs(_frame_costs(h, w, active_counts, True), budget), True
 
 
 def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
-    """How many frames fit in free VRAM. CPU and tiny clips stay one shot."""
-    return _frame_plan(N, h, w, n_sprites, dev)[0]
+    """How many dense frames fit in free VRAM. CPU and tiny clips stay one shot."""
+    return _frame_plan(N, h, w, np.full(N, n_sprites), dev)[0]
 
 
 def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
@@ -102,27 +121,21 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     h, w = int(round(H * scale)), int(round(W * scale))
     work = _downscale_cpu(frames, h, w)
     consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W)
-    chunk, auto_ckpt = _frame_plan(N, h, w, len(raws), dev)
+    active_counts = _active_counts(raws, N)
+    chunk, auto_ckpt = _frame_plan(N, h, w, active_counts, dev)
     if checkpoint is not None:
         auto_ckpt = checkpoint
     cuda = str(dev).startswith("cuda")
     free, _ = _cuda_mem_info() if cuda else (0, 0)
-    per = _bytes_per_frame(h, w, len(raws), auto_ckpt)
+    visible_pairs = int(active_counts.sum())
+    density = visible_pairs / max(N * len(raws), 1)
     log.info(
-        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s free=%.1fGiB per_frame=%.2fGiB",
-        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt, free / 1024 ** 3, per / 1024 ** 3,
+        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s active_max=%s visible_pairs=%s density=%.3f "
+        "iters=%s chunk=%s ckpt=%s free=%.1fGiB",
+        dev, N, H, W, h, w, len(raws), int(active_counts.max(initial=0)), visible_pairs, density,
+        iters, chunk, auto_ckpt, free / 1024 ** 3,
     )
-    while chunk >= 1:
-        try:
-            return _refine_chunks(work, consts, raws, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
-        except RuntimeError as e:
-            if not cuda or "out of memory" not in str(e).lower() or chunk == 1:
-                raise
-            log.warning("refine OOM chunk=%s; retry half", chunk)
-            gc.collect()
-            torch.cuda.empty_cache()
-            chunk = max(1, chunk // 2)
-            auto_ckpt = True
+    return _refine_chunks(work, consts, raws, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
 
 
 def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
@@ -152,22 +165,40 @@ def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: di
 
 
 def _refine_chunks(work, consts, raws, iters, lr, dev, H, W, h, w, chunk, checkpoint):
+    import torch
     N = len(work)
-    if chunk >= N:
-        return _refine_chunk(work, consts, raws, iters, lr, dev, H, W, h, w, checkpoint)
     out = {k: r.copy() for k, r in raws.items()}
-    n_parts = math.ceil(N / chunk)
+    cuda = str(dev).startswith("cuda")
+    current_chunk = min(N, chunk)
+    completed = 0
+    s = 0
     t0 = time.perf_counter()
-    for i, s in enumerate(range(0, N, chunk)):
-        e = min(N, s + chunk)
-        report_stage("sprites", f"refine {i + 1}/{n_parts} frames {s + 1}-{e}/{N}")
-        part = _refine_chunk(
-            work[s:e], consts, {k: r[s:e] for k, r in raws.items()},
-            iters, lr, dev, H, W, h, w, checkpoint,
-        )
+    while s < N:
+        e = min(N, s + current_chunk)
+        report_stage("sprites", f"refine frames {s + 1}-{e}/{N}")
+        try:
+            part = _refine_chunk(
+                work[s:e], consts, {k: r[s:e] for k, r in raws.items()},
+                iters, lr, dev, H, W, h, w, checkpoint,
+            )
+        except RuntimeError as exc:
+            if not cuda or "out of memory" not in str(exc).lower() or current_chunk == 1:
+                raise
+            next_chunk = max(1, current_chunk // 2)
+            log.warning("refine OOM frames=%s-%s chunk=%s; retry chunk=%s", s + 1, e, current_chunk, next_chunk)
+            part = None
+            del exc
+            gc.collect()
+            torch.cuda.empty_cache()
+            current_chunk = next_chunk
+            checkpoint = True
+            continue
         for k, r in part.items():
             out[k][s:e] = r
-    log.info("refine chunks=%s frames=%s chunk=%s %.2fs", n_parts, N, chunk, time.perf_counter() - t0)
+        completed += 1
+        s = e
+    log.info("refine chunks=%s frames=%s initial_chunk=%s final_chunk=%s %.2fs",
+             completed, N, chunk, current_chunk, time.perf_counter() - t0)
     return out
 
 
@@ -180,14 +211,22 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
     cuda = str(dev).startswith("cuda")
     order = consts["order"]
     target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
-    params, masks, init = {}, {}, {}
+    params, valid_by_key, init = {}, {}, {}
     for k in order:
         r = raws[k]
         valid = ~np.isnan(r[:, 0])
         p = torch.tensor(np.nan_to_num(r[:, [0, 1, 2, 3, 4, 7]]), dtype=torch.float32, device=dev)
         params[k] = p.clone().requires_grad_(True)
         init[k] = p.detach().clone()
-        masks[k] = torch.tensor(valid, device=dev)
+        valid_by_key[k] = valid
+    grouped: dict[tuple[str, ...], list[int]] = {}
+    for i in range(N):
+        active = tuple(k for k in order if valid_by_key[k][i])
+        grouped.setdefault(active, []).append(i)
+    groups = [
+        (active, torch.tensor(indices, dtype=torch.long, device=dev))
+        for active, indices in grouped.items()
+    ]
     texs, tex_const = consts["texs"], consts["tex_const"]
     bg, s_scene = consts["bg"], consts["s_scene"]
     opt = torch.optim.Adam(list(params.values()), lr=lr * _TRANS_LR_SCALE)
@@ -210,23 +249,30 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
         b = S_tex_inv @ (a @ t_scene + anchor_px) + half
         return torch.cat([A, b], 2)                                             # N,2,3
 
-    def stamp(canvas, p, tex, mask, k):
+    def stamp(canvas, p, tex, k):
+        batch = len(p)
         theta = theta_for(k, p)
-        grid = F.affine_grid(theta, (N, 4, h, w), align_corners=False)
-        samp = F.grid_sample(tex.unsqueeze(0).expand(N, -1, -1, -1), grid, align_corners=False, padding_mode="zeros")
-        alpha = samp[:, 3:4] * p[:, 5].clamp(0, 1).view(N, 1, 1, 1) * mask.view(N, 1, 1, 1)
+        grid = F.affine_grid(theta, (batch, 4, h, w), align_corners=False)
+        samp = F.grid_sample(tex.unsqueeze(0).expand(batch, -1, -1, -1), grid, align_corners=False, padding_mode="zeros")
+        alpha = samp[:, 3:4] * p[:, 5].clamp(0, 1).view(batch, 1, 1, 1)
         return canvas * (1 - alpha) + samp[:, :3] * alpha
 
+    loss_size = target.numel()
     for step in range(iters):
         opt.zero_grad(set_to_none=True)
         with amp:
-            canvas = bg.expand(N, 3, h, w).clone()
-            for k in order:
-                if checkpoint:
-                    canvas = ckpt(stamp, canvas, params[k], texs[k], masks[k], k, use_reentrant=False)
-                else:
-                    canvas = stamp(canvas, params[k], texs[k], masks[k], k)
-            loss = (canvas - target).abs().mean()
+            loss = target.new_zeros(())
+            for active, indices in groups:
+                canvas = bg.expand(len(indices), 3, h, w).clone()
+                for k in active:
+                    p = params[k].index_select(0, indices)
+                    if checkpoint:
+                        canvas = ckpt(
+                            stamp, canvas, p, texs[k], k, use_reentrant=False, preserve_rng_state=False,
+                        )
+                    else:
+                        canvas = stamp(canvas, p, texs[k], k)
+                loss = loss + (canvas - target.index_select(0, indices)).abs().sum() / loss_size
             for k in order:
                 d = params[k] - init[k]
                 loss = loss + _INIT_REG * (
