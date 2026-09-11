@@ -82,18 +82,31 @@ def test_frame_plan_uses_checkpoint_when_full_graph_does_not_fit(monkeypatch):
     assert fat == 300 and fat_ckpt is True
 
 
-def test_frame_plan_96gb_does_not_halve_from_overclaimed_chunk(monkeypatch):
-    """219 sprites at 435x794x541 used to plan chunk=541 with per-sprite canvas checkpoints (~200GiB)."""
+def test_frame_plan_ckpt_scales_with_sprite_count(monkeypatch):
     from keepframe.analyze import refine as R
-    monkeypatch.setattr(R, "_cuda_mem_info", lambda: (96 * 1024 ** 3, 96 * 1024 ** 3))
-    chunk, ckpt = R._frame_plan(541, 435, 794, 219, "cuda")
+    monkeypatch.setattr(R, "_cuda_mem_info", lambda: (16 * 1024 ** 3, 16 * 1024 ** 3))
+    chunk_few, ckpt_few = R._frame_plan(200, 435, 794, 10, "cuda")
+    chunk_many, ckpt_many = R._frame_plan(200, 435, 794, 200, "cuda")
+    assert ckpt_few is True and ckpt_many is True
+    assert chunk_many < chunk_few
+
+
+def test_frame_plan_96gb_fits_checkpoint_canvases(monkeypatch):
+    """Compose-once checkpoint planned 541 frames then OOM-halved to 33 on 96GiB (job j88a31ae6)."""
+    from keepframe.analyze import refine as R
+    free = 96 * 1024 ** 3
+    monkeypatch.setattr(R, "_cuda_mem_info", lambda: (free, free))
+    N, h, w, n = 541, 435, 794, 219
+    chunk, ckpt = R._frame_plan(N, h, w, n, "cuda")
     assert ckpt is True
-    assert chunk == 541
+    assert 8 <= chunk < N
+    per = R._bytes_per_frame(h, w, n, True)
+    assert chunk * per <= int(free * R._VRAM_FRAC)
 
 
-def test_refine_checkpoint_composites_once():
+def test_refine_checkpoint_wraps_each_stamp():
     import inspect
     from keepframe.analyze.refine import _refine_chunk
     src = inspect.getsource(_refine_chunk)
-    assert "ckpt(stamp" not in src
-    assert "ckpt(compose" in src or "checkpoint(compose" in src
+    assert "ckpt(stamp" in src
+    assert "ckpt(compose" not in src and "checkpoint(compose" not in src

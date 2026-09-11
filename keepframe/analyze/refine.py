@@ -1,5 +1,6 @@
 from __future__ import annotations
 import contextlib
+import gc
 import math
 import os
 import time
@@ -21,8 +22,8 @@ _TRANS_LR_SCALE = 3.5
 _INIT_REG = 1000.0
 # Autograd keeps canvas/grid/sample per sprite. ~12 float channels per sprite per pixel.
 _BYTES_PER_SPRITE_PX = 12 * 4
-# One checkpoint around the full composite: target + canvas + one warp, not a canvas per sprite.
-_BYTES_PER_CKPT_PX = 16 * 4
+# Per-sprite checkpoint saves the RGB canvas (fp32) and recomputes one warp at a time.
+_BYTES_PER_CKPT_PX = 3 * 4
 _VRAM_FRAC = 0.75
 
 
@@ -66,17 +67,23 @@ def _chunk_from_free(N: int, per: int, free: int) -> int:
     return min(N, max(8, int(free * _VRAM_FRAC / max(per, 1))))
 
 
+def _bytes_per_frame(h: int, w: int, n_sprites: int, ckpt: bool) -> int:
+    n = max(n_sprites, 1)
+    live = _BYTES_PER_SPRITE_PX * h * w
+    if ckpt:
+        return n * _BYTES_PER_CKPT_PX * h * w + live
+    return n * live
+
+
 def _frame_plan(N: int, h: int, w: int, n_sprites: int, dev: str) -> tuple[int, bool]:
     """Frames per shot and whether to checkpoint sprite warps. CPU stays one shot."""
     if N <= 1 or not str(dev).startswith("cuda"):
         return N, False
     free, _ = _cuda_mem_info()
-    per_full = max(n_sprites, 1) * _BYTES_PER_SPRITE_PX * h * w
-    chunk = _chunk_from_free(N, per_full, free)
+    chunk = _chunk_from_free(N, _bytes_per_frame(h, w, n_sprites, False), free)
     if chunk >= N:
         return N, False
-    per_ckpt = _BYTES_PER_CKPT_PX * h * w
-    return _chunk_from_free(N, per_ckpt, free), True
+    return _chunk_from_free(N, _bytes_per_frame(h, w, n_sprites, True), free), True
 
 
 def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
@@ -94,22 +101,25 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     N, H, W = frames.shape[:3]
     h, w = int(round(H * scale)), int(round(W * scale))
     work = _downscale_cpu(frames, h, w)
+    consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W)
     chunk, auto_ckpt = _frame_plan(N, h, w, len(raws), dev)
     if checkpoint is not None:
         auto_ckpt = checkpoint
     cuda = str(dev).startswith("cuda")
     free, _ = _cuda_mem_info() if cuda else (0, 0)
+    per = _bytes_per_frame(h, w, len(raws), auto_ckpt)
     log.info(
-        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s free=%.1fGiB",
-        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt, free / 1024 ** 3,
+        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s free=%.1fGiB per_frame=%.2fGiB",
+        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt, free / 1024 ** 3, per / 1024 ** 3,
     )
     while chunk >= 1:
         try:
-            return _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
+            return _refine_chunks(work, consts, raws, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
         except RuntimeError as e:
             if not cuda or "out of memory" not in str(e).lower() or chunk == 1:
                 raise
             log.warning("refine OOM chunk=%s; retry half", chunk)
+            gc.collect()
             torch.cuda.empty_cache()
             chunk = max(1, chunk // 2)
             auto_ckpt = True
@@ -141,9 +151,8 @@ def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: di
     }
 
 
-def _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, checkpoint):
+def _refine_chunks(work, consts, raws, iters, lr, dev, H, W, h, w, chunk, checkpoint):
     N = len(work)
-    consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W)
     if chunk >= N:
         return _refine_chunk(work, consts, raws, iters, lr, dev, H, W, h, w, checkpoint)
     out = {k: r.copy() for k, r in raws.items()}
@@ -211,17 +220,11 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
     for step in range(iters):
         opt.zero_grad(set_to_none=True)
         with amp:
-            if checkpoint:
-                def compose(*ps):
-                    canvas = bg.expand(N, 3, h, w).clone()
-                    for i, k in enumerate(order):
-                        canvas = stamp(canvas, ps[i], texs[k], masks[k], k)
-                    return canvas
-                ps = [params[k] for k in order]
-                canvas = ckpt(compose, *ps, use_reentrant=False) if ps else bg.expand(N, 3, h, w).clone()
-            else:
-                canvas = bg.expand(N, 3, h, w).clone()
-                for k in order:
+            canvas = bg.expand(N, 3, h, w).clone()
+            for k in order:
+                if checkpoint:
+                    canvas = ckpt(stamp, canvas, params[k], texs[k], masks[k], k, use_reentrant=False)
+                else:
                     canvas = stamp(canvas, params[k], texs[k], masks[k], k)
             loss = (canvas - target).abs().mean()
             for k in order:
