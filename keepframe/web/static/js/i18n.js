@@ -63,7 +63,7 @@ const STRINGS = {
     "review.orig": "원본",
     "review.recon": "재구성",
     "review.elements": "요소 {n}",
-    "review.empty": "인식된 요소가 없습니다. 원본 화면에서 박스를 그려 첫 요소를 지정하세요.",
+    "review.empty": "인식된 요소가 없습니다. 원본에서 드래그해 첫 박스를 지정하세요.",
     "review.keep": "유지 조건",
     "review.runReassign": "재할당 실행",
     "review.runMask": "마스크 적용",
@@ -74,6 +74,25 @@ const STRINGS = {
     "review.error": "오류",
     "review.needProject": "project 쿼리가 필요합니다.",
     "review.loadFailed": "상태 로드 실패",
+    "review.play": "재생",
+    "review.pause": "일시정지",
+    "review.stepBack": "이전 프레임",
+    "review.stepFwd": "다음 프레임",
+    "review.prevPeak": "이전 오차 봉우리",
+    "review.nextPeak": "다음 오차 봉우리",
+    "review.keys": "스페이스 재생 · ← → 프레임 · [ ] 오차",
+    "review.filter": "요소 검색",
+    "review.tracks": "트랙",
+    "review.from": "출발",
+    "review.to": "도착",
+    "review.frames": "프레임",
+    "review.png": "PNG",
+    "review.frame": "프레임",
+    "review.bboxLabel": "박스",
+    "review.drawHint": "원본에서 드래그해 박스를 지정하세요.",
+    "review.reconFailed": "재구성 프레임을 불러오지 못했습니다.",
+    "review.retryFrame": "다시 시도",
+    "review.version": "버전",
     "review.loading": "장면 불러오는 중",
     "review.loadingFrames": "프레임 불러오는 중",
     "review.loadingList": "요소 목록 그리는 중",
@@ -160,7 +179,7 @@ const STRINGS = {
     "review.orig": "Original",
     "review.recon": "Reconstructed",
     "review.elements": "Elements {n}",
-    "review.empty": "No elements. Draw a box on the original pane to add the first one.",
+    "review.empty": "No elements. Drag a box on the original pane to add the first one.",
     "review.keep": "Keep constraints",
     "review.runReassign": "Run reassign",
     "review.runMask": "Apply mask",
@@ -171,6 +190,25 @@ const STRINGS = {
     "review.error": "Error",
     "review.needProject": "project query is required.",
     "review.loadFailed": "Could not load state",
+    "review.play": "Play",
+    "review.pause": "Pause",
+    "review.stepBack": "Previous frame",
+    "review.stepFwd": "Next frame",
+    "review.prevPeak": "Previous error peak",
+    "review.nextPeak": "Next error peak",
+    "review.keys": "Space play · ← → frame · [ ] error",
+    "review.filter": "Search elements",
+    "review.tracks": "Tracks",
+    "review.from": "From",
+    "review.to": "To",
+    "review.frames": "Frames",
+    "review.png": "PNG",
+    "review.frame": "Frame",
+    "review.bboxLabel": "Box",
+    "review.drawHint": "Drag on the original pane to set a box.",
+    "review.reconFailed": "Could not load the reconstructed frame.",
+    "review.retryFrame": "Try again",
+    "review.version": "Version",
     "review.loading": "Loading scene",
     "review.loadingFrames": "Loading frames",
     "review.loadingList": "Drawing elements",
@@ -226,6 +264,12 @@ function applyI18n(root) {
   document.documentElement.lang = currentLang();
   el.querySelectorAll("[data-i18n]").forEach((node) => {
     setTranslated(node, T(node.getAttribute("data-i18n")));
+  });
+  el.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = T(node.getAttribute("data-i18n-placeholder"));
+  });
+  el.querySelectorAll("[data-i18n-aria]").forEach((node) => {
+    node.setAttribute("aria-label", T(node.getAttribute("data-i18n-aria")));
   });
 }
 

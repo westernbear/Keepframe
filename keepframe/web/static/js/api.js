@@ -43,6 +43,12 @@ async function fetchReviewJob(project, scene) {
   return api(`/api/job?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`);
 }
 
+async function fetchBboxes(project, scene, frame, v) {
+  let url = `/api/bboxes?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}&frame=${encodeURIComponent(String(frame))}`;
+  if (v) url += `&v=${encodeURIComponent(v)}`;
+  return api(url);
+}
+
 async function postKeep(project, scene, changes, note) {
   return api("/api/keep", {
     method: "POST",
@@ -74,6 +80,7 @@ export {
   fetchFilmstrip,
   fetchReviewState,
   fetchReviewJob,
+  fetchBboxes,
   postKeep,
   postCorrect,
   reviewFrameUrl,

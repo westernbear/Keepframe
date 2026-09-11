@@ -34,7 +34,7 @@
 <div class="header__divider"></div>
 <h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="nav.review">검수</h1>
 <span id="scene-badge" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
-<select id="version-select" aria-label="version" style="margin-left:8px;padding:4px 8px;border:1px solid var(--hairline);border-radius:var(--r-xs);background:var(--surface-1);color:var(--ink)"></select>
+<select id="version-select" data-i18n-aria="review.version" aria-label="버전" style="margin-left:8px;padding:4px 8px;border:1px solid var(--hairline);border-radius:var(--r-xs);background:var(--surface-1);color:var(--ink)"></select>
 </div>
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </header>
@@ -51,8 +51,9 @@
 <div class="compare-pane">
 <div class="compare-pane__head"><span data-i18n="review.orig">원본</span></div>
 <div class="compare-pane__body" id="orig-pane">
-<img id="orig" alt="original frame" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+<img id="orig" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
 <svg class="compare-pane__overlay" id="orig-overlay"></svg>
+<div class="draw-layer" id="orig-draw" aria-label="박스 그리기"></div>
 </div>
 </div>
 <div class="compare-pane">
@@ -61,49 +62,68 @@
 <div class="pane-loading" id="recon-loading" hidden>
 <div class="review-loading__bar review-loading__bar--pane"><div class="review-loading__fill review-loading__fill--pulse"></div></div>
 </div>
-<img id="recon" alt="reconstructed frame" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+<div class="pane-error" id="recon-error" hidden>
+<p id="recon-error-msg" data-i18n="review.reconFailed">재구성 프레임을 불러오지 못했습니다.</p>
+<button class="btn btn--secondary" type="button" id="recon-retry" data-i18n="review.retryFrame">다시 시도</button>
+</div>
+<img id="recon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
 <svg class="compare-pane__overlay" id="recon-overlay"></svg>
 </div>
 </div>
 </div>
 <div class="transport">
-<div style="display:flex;align-items:center;gap:16px">
-<button class="btn--icon" id="play-btn" type="button" aria-label="play" style="background:var(--hairline)">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
+<div style="display:flex;align-items:center;gap:8px">
+<button class="btn--icon" id="play-btn" type="button" aria-label="재생">
+<svg class="icon" id="play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
+<svg class="icon" id="pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden style="display:none"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
 </button>
+<button class="btn--icon transport__step" id="step-back" type="button" data-i18n-aria="review.stepBack" aria-label="이전 프레임">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg>
+</button>
+<button class="btn--icon transport__step" id="step-fwd" type="button" data-i18n-aria="review.stepFwd" aria-label="다음 프레임">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+</button>
+<button class="btn--icon transport__step" id="peak-back" type="button" data-i18n-aria="review.prevPeak" aria-label="이전 오차 봉우리">[</button>
+<button class="btn--icon transport__step" id="peak-fwd" type="button" data-i18n-aria="review.nextPeak" aria-label="다음 오차 봉우리">]</button>
 <span class="mono" style="font-weight:700"><span id="frame-num">0</span> <span style="color:var(--muted);font-weight:400">/ <span id="frame-total">0</span></span></span>
-<span class="mono" style="color:var(--secondary);font-weight:700" id="frame-time">00:00.00</span>
+<span class="mono" style="color:var(--secondary);font-weight:700" id="frame-time">00:00:00</span>
 </div>
+<div class="transport__keys" id="transport-keys" data-i18n="review.keys">스페이스 재생 · ← → 프레임 · [ ] 오차</div>
 </div>
 <div class="timeline">
 <div class="timeline__ruler">
-<div class="timeline__labels">Tracks</div>
+<div class="timeline__labels" data-i18n="review.tracks">트랙</div>
 <svg id="timeline-svg" role="slider" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="timeline"></svg>
 </div>
+<div class="timeline__body">
+<div id="track-playhead" class="track-playhead" hidden></div>
 <div id="timeline-tracks"></div>
+</div>
 </div>
 </div>
 <aside class="inspector">
 <div class="inspector__head"><span id="element-count">요소 0</span></div>
 <div class="inspector__body">
 <p class="job-banner" id="job-banner" role="status" hidden></p>
-<div id="empty-state" class="empty-state" hidden data-i18n="review.empty">인식된 요소가 없습니다. 원본 화면에서 박스를 그려 첫 요소를 지정하세요.</div>
+<div id="empty-state" class="empty-state" hidden data-i18n="review.empty">인식된 요소가 없습니다. 원본에서 드래그해 첫 박스를 지정하세요.</div>
+<input class="element-filter" id="element-filter" type="search" data-i18n-placeholder="review.filter" placeholder="요소 검색" hidden/>
 <div id="element-list"></div>
 <div id="constraints-panel"></div>
-<button class="btn btn--primary-lg" style="margin:24px 0" id="keep-save" data-i18n="review.keepSave" disabled>유지 조건 저장</button>
+<button class="btn btn--primary-lg" style="margin:24px 0" id="keep-save" data-i18n="review.keepSave" hidden disabled>유지 조건 저장</button>
 <div class="inspector__forms" id="forms-panel">
 <div class="accordion" id="acc-reassign"><div class="accordion__head"><span data-i18n="review.reassign">재할당</span></div>
-<div class="accordion__body"><div class="form-row"><label>from</label><input id="reassign-from" type="text"/></div>
-<div class="form-row"><label>to</label><select id="reassign-to"></select></div>
-<div class="form-row"><label>frames</label><input id="reassign-frames" type="text" placeholder="0,59"/></div>
+<div class="accordion__body"><div class="form-row"><label data-i18n="review.from">출발</label><input id="reassign-from" type="text"/></div>
+<div class="form-row"><label data-i18n="review.to">도착</label><select id="reassign-to"></select></div>
+<div class="form-row"><label data-i18n="review.frames">프레임</label><input id="reassign-frames" type="text" placeholder="0,59"/></div>
 <button class="btn btn--secondary" id="reassign-run" type="button" data-i18n="review.runReassign">재할당 실행</button></div></div>
 <div class="accordion" id="acc-mask"><div class="accordion__head"><span data-i18n="review.mask">마스크</span></div>
-<div class="accordion__body"><div class="form-row"><label>PNG</label><input id="mask-file" type="file" accept="image/png"/></div>
-<div class="form-row"><label>frame</label><input id="mask-frame" type="number"/></div>
+<div class="accordion__body"><div class="form-row"><label data-i18n="review.png">PNG</label><input id="mask-file" type="file" accept="image/png"/></div>
+<div class="form-row"><label data-i18n="review.frame">프레임</label><input id="mask-frame" type="number"/></div>
 <button class="btn btn--secondary" id="mask-run" type="button" data-i18n="review.runMask">마스크 적용</button></div></div>
 <div class="accordion accordion--open" id="acc-bbox"><div class="accordion__head"><span data-i18n="review.bbox">박스 프롬프트</span></div>
-<div class="accordion__body"><div class="form-row"><label>frame</label><input id="bbox-frame" type="number"/></div>
-<div class="form-row"><label>bbox</label><input id="bbox-coords" type="text" placeholder="x0,y0,x1,y1"/></div>
+<div class="accordion__body"><p class="empty-state" data-i18n="review.drawHint">원본에서 드래그해 박스를 지정하세요.</p>
+<div class="form-row"><label data-i18n="review.frame">프레임</label><input id="bbox-frame" type="number"/></div>
+<div class="form-row"><label data-i18n="review.bboxLabel">박스</label><input id="bbox-coords" type="text" placeholder="x0,y0,x1,y1"/></div>
 <button class="btn btn--secondary" id="bbox-run" type="button" data-i18n="review.runBbox">박스 적용</button></div></div>
 <div class="accordion" id="acc-text"><div class="accordion__head"><span data-i18n="review.text">텍스트</span></div>
 <div class="accordion__body"><div class="form-row"><label>text</label><input id="text-value" type="text"/></div>
@@ -116,9 +136,11 @@
 import {
   fetchReviewState,
   fetchReviewJob,
+  fetchBboxes,
   postKeep,
   postCorrect,
   reviewFrameUrl,
+  reviewAssetUrl,
 } from "/static/js/api.js";
 import { T, Tf } from "/static/js/i18n.js";
 
@@ -142,6 +164,10 @@ const frameNum = document.getElementById("frame-num");
 const frameTotal = document.getElementById("frame-total");
 const frameTime = document.getElementById("frame-time");
 const playBtn = document.getElementById("play-btn");
+const playIcon = document.getElementById("play-icon");
+const pauseIcon = document.getElementById("pause-icon");
+const trackPlayhead = document.getElementById("track-playhead");
+const TRACK_GUTTER = 280;
 const versionSelect = document.getElementById("version-select");
 const elementList = document.getElementById("element-list");
 const constraintsPanel = document.getElementById("constraints-panel");
@@ -167,6 +193,14 @@ const progressBar = document.getElementById("review-progress");
 const progressFill = document.getElementById("review-progress-fill");
 const progressPct = document.getElementById("review-progress-pct");
 const reconLoading = document.getElementById("recon-loading");
+const reconError = document.getElementById("recon-error");
+const origOverlay = document.getElementById("orig-overlay");
+const reconOverlay = document.getElementById("recon-overlay");
+const origDraw = document.getElementById("orig-draw");
+const elementFilter = document.getElementById("element-filter");
+let boxes = {};
+let bboxReq = 0;
+let drag = null;
 
 function setProgress(pct, msg) {
   const n = Math.max(0, Math.min(100, Math.round(pct)));
@@ -205,8 +239,8 @@ function formatTime(f, fps) {
   const sec = f / fps;
   const mm = String(Math.floor(sec / 60)).padStart(2, "0");
   const ss = String(Math.floor(sec % 60)).padStart(2, "0");
-  const ff = String(Math.floor((sec % 1) * fps)).padStart(2, "0");
-  return `${mm}:${ss}.${ff}`;
+  const ff = String(Math.floor(f % fps)).padStart(2, "0");
+  return `${mm}:${ss}:${ff}`;
 }
 
 function loadFrameImages() {
@@ -214,9 +248,11 @@ function loadFrameImages() {
   if (!state || shownFrame === frame) return;
   shownFrame = frame;
   reconLoading.hidden = false;
+  reconError.hidden = true;
   orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
   recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
   if (recon.complete) reconLoading.hidden = true;
+  loadBboxes();
   if (playing) {
     const n = state.scene.frames;
     for (let d = 1; d <= 3 && frame + d < n; d++) {
@@ -238,12 +274,70 @@ function setFrame(f, immediate = false) {
   timelineSvg.setAttribute("aria-valuemax", String(n - 1));
   drawPlayhead();
   if (shownFrame === frame) return;
-  clearTimeout(imgTimer);
   if (immediate) {
+    clearTimeout(imgTimer);
+    imgTimer = 0;
     loadFrameImages();
     return;
   }
-  imgTimer = setTimeout(loadFrameImages, playing ? 100 : 32);
+  if (playing && imgTimer) return;
+  clearTimeout(imgTimer);
+  imgTimer = setTimeout(loadFrameImages, playing ? 40 : 32);
+}
+
+function mapBox(box, img, sceneW, sceneH) {
+  const pane = img.parentElement.getBoundingClientRect();
+  const ir = img.getBoundingClientRect();
+  const scaleX = ir.width / Math.max(1, sceneW);
+  const scaleY = ir.height / Math.max(1, sceneH);
+  const ox = ir.left - pane.left;
+  const oy = ir.top - pane.top;
+  const [x0, y0, x1, y1] = box;
+  return { x: ox + x0 * scaleX, y: oy + y0 * scaleY, w: (x1 - x0) * scaleX, h: (y1 - y0) * scaleY };
+}
+
+function overlayToScene(clientX, clientY, img, sceneW, sceneH) {
+  const ir = img.getBoundingClientRect();
+  const x = ((clientX - ir.left) / Math.max(1, ir.width)) * sceneW;
+  const y = ((clientY - ir.top) / Math.max(1, ir.height)) * sceneH;
+  return [x, y];
+}
+
+function paintOverlay(svg, img, box, draft = false) {
+  const pane = img.parentElement;
+  const pr = pane.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${pr.width} ${pr.height}`);
+  svg.replaceChildren();
+  if (!box || !state) return;
+  const [sw, sh] = state.scene.size;
+  const m = mapBox(box, img, sw, sh);
+  const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rect.setAttribute("class", draft ? "overlay-box overlay-box--draft" : "overlay-box");
+  rect.setAttribute("x", String(m.x));
+  rect.setAttribute("y", String(m.y));
+  rect.setAttribute("width", String(Math.max(1, m.w)));
+  rect.setAttribute("height", String(Math.max(1, m.h)));
+  svg.appendChild(rect);
+}
+
+function drawOverlays() {
+  const box = selectedId ? boxes[selectedId] : null;
+  paintOverlay(origOverlay, orig, box);
+  paintOverlay(reconOverlay, recon, box);
+}
+
+async function loadBboxes() {
+  if (!state || !projectId) return;
+  const id = ++bboxReq;
+  const f = frame;
+  try {
+    const data = await fetchBboxes(projectId, sceneId, f, versionId);
+    if (id !== bboxReq || f !== frame) return;
+    boxes = data.boxes || {};
+    drawOverlays();
+  } catch {
+    if (id === bboxReq) boxes = {};
+  }
 }
 
 function drawPlayhead() {
@@ -260,6 +354,12 @@ function drawPlayhead() {
   }
   playheadEl.setAttribute("x1", `${x}%`);
   playheadEl.setAttribute("x2", `${x}%`);
+  if (trackPlayhead) {
+    const body = trackPlayhead.parentElement;
+    const lane = Math.max(0, (body ? body.clientWidth : 0) - TRACK_GUTTER);
+    trackPlayhead.style.left = `${TRACK_GUTTER + (x / 100) * lane}px`;
+    trackPlayhead.hidden = !state;
+  }
 }
 
 function buildErrorStrip() {
@@ -301,7 +401,15 @@ function renderTracks(from = 0) {
     const right = 100 - ((vis[1] + 1) / state.scene.frames) * 100;
     row.innerHTML = `<div class="track__label"><span class="mono" style="color:var(--accent)">${el.id}</span><span>${el.kind}</span></div>
       <div class="track__lane"><div class="track__bar" style="left:${left}%;right:${right}%"></div></div>`;
-    row.addEventListener("click", () => selectElement(el.id));
+    row.addEventListener("click", (ev) => {
+      if (ev.target.closest(".track__lane")) {
+        const lane = row.querySelector(".track__lane");
+        const r = lane.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / r.width;
+        setFrame(Math.floor(x * state.scene.frames), true);
+      }
+      selectElement(el.id);
+    });
     frag.appendChild(row);
   }
   timelineTracks.appendChild(frag);
@@ -311,6 +419,7 @@ async function renderElements() {
   const els = state.scene.elements || [];
   elementCount.textContent = Tf("review.elements", { n: els.length });
   emptyState.hidden = els.length > 0;
+  elementFilter.hidden = els.length === 0;
   document.getElementById("acc-bbox").classList.toggle("accordion--open", els.length === 0);
   elementList.innerHTML = "";
   constraintsPanel.innerHTML = "";
@@ -326,7 +435,11 @@ async function renderElements() {
       const row = document.createElement("div");
       row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
       row.dataset.id = el.id;
-      row.innerHTML = `<div style="display:flex;gap:12px"><span class="mono">${el.id}</span><span>${el.kind}</span></div>`;
+      const tex = el.canonical && el.canonical.texture;
+      const thumb = tex
+        ? `<img class="element-thumb" alt="" src="${reviewAssetUrl(tex, projectId, sceneId)}"/>`
+        : `<span class="element-thumb"></span>`;
+      row.innerHTML = `${thumb}<div style="display:flex;gap:12px;min-width:0"><span class="mono">${el.id}</span><span>${el.kind}</span></div>`;
       row.addEventListener("click", () => selectElement(el.id));
       frag.appendChild(row);
       const opt = document.createElement("option");
@@ -360,6 +473,7 @@ function appendConstraintRow(frag, c) {
     keepPending.set(c.pred, e.target.checked);
     keepDirty = true;
     keepSave.disabled = false;
+    keepSave.hidden = false;
   });
   frag.appendChild(row);
 }
@@ -401,6 +515,16 @@ function selectElement(id) {
   });
   timelineTracks.querySelectorAll(".track").forEach((row) => {
     row.classList.toggle("track--selected", row.dataset.id === id);
+  });
+  drawOverlays();
+}
+
+function applyElementFilter() {
+  const q = (elementFilter.value || "").trim().toLowerCase();
+  document.querySelectorAll(".element-row, .track").forEach((row) => {
+    const id = (row.dataset.id || "").toLowerCase();
+    const kind = (row.textContent || "").toLowerCase();
+    row.hidden = Boolean(q) && !id.includes(q) && !kind.includes(q);
   });
 }
 
@@ -467,6 +591,7 @@ async function loadState() {
   frame = 0;
   setProgress(85, T("review.loadingFrames"));
   await origReady;
+  loadBboxes();
   clearLoading();
 }
 
@@ -479,6 +604,7 @@ function setJobBanner(msg, isError = false) {
 function setFormsDisabled(disabled) {
   formsPanel.toggleAttribute("disabled", disabled);
   keepSave.disabled = disabled || !keepDirty;
+  keepSave.hidden = !keepDirty;
 }
 
 async function pollJob() {
@@ -532,8 +658,8 @@ function tick(ts) {
   if (dt >= 1 / state.scene.fps) {
     lastTick = ts;
     if (frame >= state.scene.frames - 1) {
-      playing = false;
-      setFrame(state.scene.frames - 1);
+      setPlaying(false);
+      setFrame(state.scene.frames - 1, true);
       return;
     }
     setFrame(frame + 1);
@@ -541,11 +667,22 @@ function tick(ts) {
   raf = requestAnimationFrame(tick);
 }
 
-playBtn.addEventListener("click", () => {
-  playing = !playing;
+function setPlaying(on) {
+  playing = !!on;
   lastTick = 0;
+  playBtn.setAttribute("aria-label", playing ? T("review.pause") : T("review.play"));
+  playBtn.classList.toggle("is-playing", playing);
+  playIcon.hidden = playing;
+  pauseIcon.hidden = !playing;
+  playIcon.style.display = playing ? "none" : "";
+  pauseIcon.style.display = playing ? "inline-block" : "none";
+  cancelAnimationFrame(raf);
+  raf = 0;
   if (playing) raf = requestAnimationFrame(tick);
-  else cancelAnimationFrame(raf);
+}
+
+playBtn.addEventListener("click", () => {
+  setPlaying(!playing);
 });
 
 document.addEventListener("keydown", (e) => {
@@ -571,8 +708,51 @@ timelineSvg.addEventListener("click", (e) => {
 });
 
 document.querySelectorAll(".accordion__head").forEach((head) => {
-  head.addEventListener("click", () => head.parentElement.classList.toggle("accordion--open"));
+  head.addEventListener("click", () => {
+    const acc = head.parentElement;
+    const open = acc.classList.contains("accordion--open");
+    document.querySelectorAll(".accordion").forEach((a) => a.classList.remove("accordion--open"));
+    if (!open) acc.classList.add("accordion--open");
+  });
 });
+elementFilter.addEventListener("input", applyElementFilter);
+document.getElementById("step-back").addEventListener("click", () => setFrame(frame - 1, true));
+document.getElementById("step-fwd").addEventListener("click", () => setFrame(frame + 1, true));
+document.getElementById("peak-back").addEventListener("click", () => nextErrorPeak(true));
+document.getElementById("peak-fwd").addEventListener("click", () => nextErrorPeak(false));
+document.getElementById("recon-retry").addEventListener("click", () => setFrame(frame, true));
+
+origDraw.addEventListener("pointerdown", (e) => {
+  if (!state) return;
+  origDraw.setPointerCapture(e.pointerId);
+  const [sw, sh] = state.scene.size;
+  const [x, y] = overlayToScene(e.clientX, e.clientY, orig, sw, sh);
+  drag = { x0: x, y0: y, x1: x, y1: y };
+});
+origDraw.addEventListener("pointermove", (e) => {
+  if (!drag || !state) return;
+  const [sw, sh] = state.scene.size;
+  const [x, y] = overlayToScene(e.clientX, e.clientY, orig, sw, sh);
+  drag.x1 = x;
+  drag.y1 = y;
+  const box = [Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.max(drag.x0, drag.x1), Math.max(drag.y0, drag.y1)];
+  paintOverlay(origOverlay, orig, box, true);
+});
+origDraw.addEventListener("pointerup", () => {
+  if (!drag || !state) return;
+  const box = [Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.max(drag.x0, drag.x1), Math.max(drag.y0, drag.y1)];
+  drag = null;
+  if (box[2] - box[0] < 2 || box[3] - box[1] < 2) {
+    drawOverlays();
+    return;
+  }
+  document.getElementById("bbox-coords").value = box.map((v) => Math.round(v)).join(",");
+  document.getElementById("bbox-frame").value = String(frame);
+  document.querySelectorAll(".accordion").forEach((a) => a.classList.remove("accordion--open"));
+  document.getElementById("acc-bbox").classList.add("accordion--open");
+  paintOverlay(origOverlay, orig, box);
+});
+orig.addEventListener("load", () => drawOverlays());
 
 keepSave.addEventListener("click", async () => {
   const changes = [...keepPending.entries()].map(([pred, keep]) => ({ pred, keep }));
@@ -580,6 +760,7 @@ keepSave.addEventListener("click", async () => {
   keepPending.clear();
   keepDirty = false;
   keepSave.disabled = true;
+  keepSave.hidden = true;
   refreshState(res.version.id);
 });
 
@@ -621,8 +802,17 @@ document.getElementById("text-run").addEventListener("click", async () => {
   });
 });
 
-recon.addEventListener("load", () => { reconLoading.hidden = true; });
-recon.addEventListener("error", () => { reconLoading.hidden = true; });
+recon.addEventListener("load", () => {
+  reconLoading.hidden = true;
+  reconError.hidden = true;
+  drawOverlays();
+});
+recon.addEventListener("error", () => {
+  reconLoading.hidden = true;
+  reconError.hidden = false;
+});
+
+playBtn.setAttribute("aria-label", T("review.play"));
 
 (async () => {
   if (!projectId) {
@@ -641,6 +831,13 @@ recon.addEventListener("error", () => { reconLoading.hidden = true; });
 
 window.addEventListener("keepframe:lang", () => {
   if (state) renderElements();
+  playBtn.setAttribute("aria-label", playing ? T("review.pause") : T("review.play"));
+});
+window.addEventListener("resize", () => {
+  if (state) {
+    drawPlayhead();
+    drawOverlays();
+  }
 });
 </script>
 </body>

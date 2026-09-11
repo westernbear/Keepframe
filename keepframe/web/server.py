@@ -19,6 +19,7 @@ from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.device import gpu_status
 from keepframe.ir.schema import FontGuess
 from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
 from keepframe.log import configure, get
 from keepframe.review import corrections
@@ -122,7 +123,8 @@ def _slim_scene(scene) -> dict:
         el.pop("raw", None)
         el.pop("fit_error", None)
         can = el.get("canonical") or {}
-        el["canonical"] = {"text": can.get("text")}
+        tex = can.get("texture") or ""
+        el["canonical"] = {"text": can.get("text"), "texture": tex.split("/")[-1] if tex else None}
     return data
 
 
@@ -431,6 +433,27 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 return self._json(200, state.job)
+
+            if u.path == "/api/bboxes":
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    scene, _v = state.scene(ver)
+                    f = int(q.get("frame", ["0"])[0])
+                    f = max(0, min(scene.frames - 1, f))
+                    boxes = {}
+                    for el in scene.elements:
+                        a, b = el.visible
+                        if a <= f <= b:
+                            x0, y0, x1, y1 = element_bbox(el, f)
+                            boxes[el.id] = [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)]
+                    return self._json(200, {"size": list(scene.size), "boxes": boxes})
+                except Exception as e:
+                    log.exception("bboxes failed project=%s scene=%s", pid, sid)
+                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
             parts = u.path.strip("/").split("/")
             if parts[:2] == ["frame", "orig"] and len(parts) == 3:
