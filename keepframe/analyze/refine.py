@@ -21,7 +21,7 @@ _TRANS_LR_SCALE = 3.5
 _INIT_REG = 1000.0
 # Autograd keeps canvas/grid/sample per sprite. ~12 float channels per sprite per pixel.
 _BYTES_PER_SPRITE_PX = 12 * 4
-# Checkpointing stores one warp + canvas/target instead of every sprite.
+# One checkpoint around the full composite: target + canvas + one warp, not a canvas per sprite.
 _BYTES_PER_CKPT_PX = 16 * 4
 _VRAM_FRAC = 0.75
 
@@ -97,11 +97,12 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     chunk, auto_ckpt = _frame_plan(N, h, w, len(raws), dev)
     if checkpoint is not None:
         auto_ckpt = checkpoint
-    log.info(
-        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s",
-        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt,
-    )
     cuda = str(dev).startswith("cuda")
+    free, _ = _cuda_mem_info() if cuda else (0, 0)
+    log.info(
+        "refine_affine device=%s frames=%s %sx%s work=%sx%s sprites=%s iters=%s chunk=%s ckpt=%s free=%.1fGiB",
+        dev, N, H, W, h, w, len(raws), iters, chunk, auto_ckpt, free / 1024 ** 3,
+    )
     while chunk >= 1:
         try:
             return _refine_chunks(work, bg_rgb, raws, textures, anchors, z, iters, lr, dev, H, W, h, w, chunk, auto_ckpt)
@@ -210,11 +211,17 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
     for step in range(iters):
         opt.zero_grad(set_to_none=True)
         with amp:
-            canvas = bg.expand(N, 3, h, w).clone()
-            for k in order:
-                if checkpoint:
-                    canvas = ckpt(stamp, canvas, params[k], texs[k], masks[k], k, use_reentrant=False)
-                else:
+            if checkpoint:
+                def compose(*ps):
+                    canvas = bg.expand(N, 3, h, w).clone()
+                    for i, k in enumerate(order):
+                        canvas = stamp(canvas, ps[i], texs[k], masks[k], k)
+                    return canvas
+                ps = [params[k] for k in order]
+                canvas = ckpt(compose, *ps, use_reentrant=False) if ps else bg.expand(N, 3, h, w).clone()
+            else:
+                canvas = bg.expand(N, 3, h, w).clone()
+                for k in order:
                     canvas = stamp(canvas, params[k], texs[k], masks[k], k)
             loss = (canvas - target).abs().mean()
             for k in order:
