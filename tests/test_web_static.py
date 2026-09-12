@@ -30,9 +30,9 @@ def test_ported_pages_are_offline():
         text = (STATIC / name).read_text(encoding="utf-8")
         for bad in FORBIDDEN:
             assert bad not in text, f"{name} still loads {bad}"
-        assert 'href="/static/css/app.css"' in text
-        assert 'src="/static/js/i18n.js"' in text
-        assert 'src="/static/js/api.js"' in text
+        assert "/static/css/app.css" in text
+        assert "/static/js/i18n.js" in text
+        assert "/static/js/api.js" in text
 
 
 def test_analyze_main_clears_icon_rail():
@@ -90,3 +90,33 @@ def test_i18n_markup_keys_exist_in_both_langs():
 def test_css_tokens_match_design():
     css = (STATIC / "css" / "app.css").read_text(encoding="utf-8")
     assert "#090909" in css and "#0099ff" in css and "#ffffff" in css
+
+
+def test_hidden_wins_over_display():
+    css = (STATIC / "css" / "app.css").read_text(encoding="utf-8")
+    assert "[hidden] { display: none !important; }" in css
+
+
+def test_review_empty_project_has_library_exit():
+    html = (STATIC / "review.html").read_text(encoding="utf-8")
+    assert 'id="review-missing"' in html
+    assert "is-empty" in html
+    assert 'href="/library"' in html
+    assert "review.backLibrary" in html
+
+
+def test_landing_and_library_link_to_demo():
+    landing = (STATIC / "landing.html").read_text(encoding="utf-8")
+    library = (STATIC / "library.html").read_text(encoding="utf-8")
+    assert 'href="/demo"' in landing
+    assert 'href="/demo"' in library
+    assert "nav.demo" in landing
+    assert "p.scene" in library
+
+
+def test_library_filters_are_wired():
+    html = (STATIC / "library.html").read_text(encoding="utf-8")
+    assert "data-search" in html
+    assert 'data-filter="review"' in html
+    assert "visibleProjects" in html
+    assert 'library.filter.export' not in html

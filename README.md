@@ -38,7 +38,7 @@ python -c "import torch; from rapidocr_onnxruntime import RapidOCR; print('ocr o
 keepframe serve --workspace ./data/workspace
 ```
 
-http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English)
+http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic sample and opens review — no upload or analysis.
 
 ```bash
 keepframe analyze --video ref.mp4 --start 0 --end 90 --out ./out

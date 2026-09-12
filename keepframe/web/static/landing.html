@@ -4,16 +4,16 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe</title>
-<link href="/static/css/app.css" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260912" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js"></script>
-<script type="module" src="/static/js/api.js"></script>
+<script type="module" src="/static/js/i18n.js?v=20260912"></script>
+<script type="module" src="/static/js/api.js?v=20260912"></script>
 </head>
 <body class="land">
 <header class="land-header">
 <div class="land-wrap land-header__inner">
 <a class="header__brand" href="/">
-<img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/>
+<img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/>
 <span data-i18n="app.name">Keepframe</span>
 </a>
 <div class="land-header__nav">
@@ -31,7 +31,10 @@
 <p class="land-eyebrow" data-i18n="landing.eyebrow">2D 모션 · UI 녹화</p>
 <h1 class="land-display" data-i18n="landing.headline">유지할 것과 바꿀 것을 지정하세요.</h1>
 <p class="land-lead" data-i18n="landing.subhead">평면 2D 모션그래픽과 UI 화면 녹화를 측정해 편집 가능한 장면으로 만듭니다. 실사 푸티지는 거부합니다.</p>
+<div class="land-actions">
 <a class="btn btn--primary land-cta" href="/new"><span data-i18n="nav.new">새 레퍼런스</span></a>
+<a class="btn btn--secondary land-cta" href="/demo"><span data-i18n="nav.demo">샘플 결과</span></a>
+</div>
 </div>
 <div class="land-tile land-tile--violet land-tile--hero" aria-hidden="true">
 <span class="land-tile__label" data-i18n="landing.heroTile">측정 → IR → 검수</span>
@@ -86,6 +89,7 @@
 <span data-i18n="app.name">Keepframe</span>
 <nav class="land-footer__links">
 <a href="/library" data-i18n="nav.library">라이브러리</a>
+<a href="/demo" data-i18n="nav.demo">샘플 결과</a>
 <a href="/new" data-i18n="nav.new">새 레퍼런스</a>
 </nav>
 </div>

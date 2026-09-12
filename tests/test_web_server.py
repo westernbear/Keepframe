@@ -57,6 +57,52 @@ def test_root_is_landing_and_library_moved(tmp_path):
     assert b"project-list" in lib
 
 
+def test_demo_redirects_to_review_and_serves_state(tmp_path):
+    import http.client
+    import json
+
+    srv = start(tmp_path)
+    port = srv.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port)
+    conn.request("GET", "/demo")
+    res = conn.getresponse()
+    loc = res.getheader("location")
+    res.read()
+    conn.close()
+    assert res.status == 302
+    assert loc == "/review?project=demo&scene=synth7"
+    code, _, body = get(srv, "/api/state?project=demo&scene=synth7")
+    code2, _, frame = get(srv, "/frame/orig/0?project=demo&scene=synth7")
+    code3, _, thumb = get(srv, "/api/projects/demo/frame/0")
+    srv.shutdown()
+    assert code == 200
+    state = json.loads(body)
+    assert state["scene"]["id"] == "synth7"
+    assert state["scene"]["frames"] == 24
+    assert code2 == 200
+    assert frame[:2] == b"\xff\xd8"
+    assert code3 == 200
+    assert thumb[:2] == b"\xff\xd8"
+
+
+def test_css_and_js_are_not_week_cached(tmp_path):
+    srv = start(tmp_path)
+    css_url = f"http://127.0.0.1:{srv.server_address[1]}/static/css/app.css"
+    js_url = f"http://127.0.0.1:{srv.server_address[1]}/static/js/i18n.js"
+    png_url = f"http://127.0.0.1:{srv.server_address[1]}/static/logo.png"
+    with urlopen(css_url) as r:
+        css_cache = r.headers.get("cache-control")
+        assert r.status == 200
+    with urlopen(js_url) as r:
+        js_cache = r.headers.get("cache-control")
+    with urlopen(png_url) as r:
+        png_cache = r.headers.get("cache-control")
+    srv.shutdown()
+    assert css_cache and "no-cache" in css_cache
+    assert js_cache and "no-cache" in js_cache
+    assert png_cache and "max-age" in png_cache
+
+
 def test_logo_is_served(tmp_path):
     srv = start(tmp_path)
     code, ctype, body = get(srv, "/static/logo.png")

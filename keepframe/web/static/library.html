@@ -4,14 +4,14 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - Project Library</title>
-<link href="/static/css/app.css" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260912" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js"></script>
-<script type="module" src="/static/js/api.js"></script>
+<script type="module" src="/static/js/i18n.js?v=20260912"></script>
+<script type="module" src="/static/js/api.js?v=20260912"></script>
 </head>
 <body class="app">
 <header class="header">
-<div class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/><span data-i18n="app.name">Keepframe</span></div>
+<div class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/><span data-i18n="app.name">Keepframe</span></div>
 <div class="header__nav">
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 <a class="btn btn--primary" href="/new">
@@ -38,22 +38,24 @@
 <div class="toolbar">
 <div class="input-wrap" style="max-width:384px;width:100%">
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-<input class="input" type="text" placeholder="프로젝트 검색" data-i18n="library.search"/>
+<input class="input" type="search" placeholder="프로젝트 검색" data-i18n="library.search" data-search/>
 </div>
 <div class="toolbar__filters">
-<button class="chip" data-i18n="library.filter.recent">최근</button>
-<button class="chip" data-i18n="library.filter.review">검수 필요</button>
-<button class="chip" data-i18n="library.filter.export">내보내기 준비</button>
+<button class="chip chip--active" type="button" data-filter="all" data-i18n="library.filter.recent">최근</button>
+<button class="chip" type="button" data-filter="review" data-i18n="library.filter.review">검수 필요</button>
 </div>
 </div>
 <div id="library-empty" class="page-desc" style="padding:24px 0" hidden>
 <p data-i18n="library.empty">프로젝트가 없습니다. 새 프로젝트에서 레퍼런스를 올리세요.</p>
-<p style="margin-top:12px"><a class="btn btn--primary" href="/new" data-i18n="nav.new">새 레퍼런스</a></p>
+<p style="margin-top:12px;display:flex;flex-wrap:wrap;gap:12px">
+<a class="btn btn--primary" href="/new" data-i18n="nav.new">새 레퍼런스</a>
+<a class="btn btn--secondary btn--inline" href="/demo" data-i18n="nav.demo">샘플 결과</a>
+</p>
 </div>
 <div id="project-list"></div>
 </main>
 <footer class="footer">
-<span data-i18n="error.liveaction">실사 푸티지는 열리지 않습니다.</span>
+<span data-i18n="library.scope">평면 2D 모션그래픽과 UI 화면 녹화만 받습니다.</span>
 </footer>
 <script type="module">
 import { api } from "/static/js/api.js";
@@ -72,11 +74,12 @@ const BADGE_CLASS = {
 };
 
 function rowHref(p) {
-  if (p.status === "analyzing") {
-    return p.job_id ? `/analyze?job=${encodeURIComponent(p.id)}` : `/review?project=${encodeURIComponent(p.id)}`;
+  if (p.status === "analyzing" || p.status === "uploaded") {
+    return `/analyze?job=${encodeURIComponent(p.id)}`;
   }
   if (p.status === "review") {
-    return `/review?project=${encodeURIComponent(p.id)}&scene=s1`;
+    const scene = p.scene || "s1";
+    return `/review?project=${encodeURIComponent(p.id)}&scene=${encodeURIComponent(scene)}`;
   }
   return null;
 }
@@ -159,21 +162,47 @@ function renderProject(p, index) {
 }
 
 let cached = [];
+let filter = "all";
+let query = "";
+
+function visibleProjects(projects) {
+  const q = query.trim().toLowerCase();
+  return projects.filter((p) => {
+    if (filter === "review" && p.status !== "review") return false;
+    if (!q) return true;
+    const hay = `${p.title || ""} ${p.id || ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
 
 function paint(projects) {
   const list = document.getElementById("project-list");
   const empty = document.getElementById("library-empty");
   cached = projects;
-  if (!projects.length) {
-    list.innerHTML = "";
+  const shown = visibleProjects(projects);
+  list.innerHTML = "";
+  if (!shown.length) {
     empty.hidden = false;
     applyI18n(empty);
     return;
   }
   empty.hidden = true;
-  list.innerHTML = "";
-  projects.forEach((p, i) => list.appendChild(renderProject(p, i)));
+  shown.forEach((p, i) => list.appendChild(renderProject(p, i)));
 }
+
+document.querySelector("[data-search]").addEventListener("input", (e) => {
+  query = e.target.value || "";
+  paint(cached);
+});
+document.querySelectorAll("[data-filter]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    filter = btn.dataset.filter;
+    document.querySelectorAll("[data-filter]").forEach((el) => {
+      el.classList.toggle("chip--active", el === btn);
+    });
+    paint(cached);
+  });
+});
 
 (async () => {
   const empty = document.getElementById("library-empty");

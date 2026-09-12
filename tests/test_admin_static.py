@@ -10,7 +10,7 @@ def test_admin_pages_offline():
         text = (STATIC / name).read_text(encoding="utf-8")
         for bad in FORBIDDEN:
             assert bad not in text, f"{name} {bad}"
-        assert 'href="/static/css/app.css"' in text
+        assert "/static/css/app.css" in text
 
 
 def test_no_maker_cta_or_fake_version():

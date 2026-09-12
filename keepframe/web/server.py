@@ -25,6 +25,7 @@ from keepframe.log import configure, get
 from keepframe.review import corrections
 from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
+from keepframe.web.demo import ensure_demo_project
 from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
@@ -341,6 +342,14 @@ def make_server(
                 return self._json(404, ADMIN_OFF)
             if admin_routes and admin_routes.handle_get(self, u):
                 return
+            if u.path == "/demo":
+                row = ensure_demo_project(workspace)
+                loc = f"/review?project={row['id']}&scene={row['scene']}"
+                self.send_response(302)
+                self.send_header("location", loc)
+                self.send_header("content-length", "0")
+                self.end_headers()
+                return
             if u.path in PAGES:
                 p = STATIC / PAGES[u.path]
                 if not p.exists():
@@ -353,17 +362,23 @@ def make_server(
                 p = STATIC / rel
                 if not p.is_file():
                     return self._json(404, {"error": "not found"})
+                suffix = p.suffix.lower()
                 ctype = {
-                    ".css": "text/css",
-                    ".js": "application/javascript",
+                    ".css": "text/css; charset=utf-8",
+                    ".js": "application/javascript; charset=utf-8",
                     ".png": "image/png",
                     ".jpg": "image/jpeg",
                     ".jpeg": "image/jpeg",
                     ".svg": "image/svg+xml",
                     ".ico": "image/x-icon",
                     ".webp": "image/webp",
-                }.get(p.suffix.lower(), "application/octet-stream")
-                return self._send(200, p.read_bytes(), ctype, cache="public, max-age=604800")
+                }.get(suffix, "application/octet-stream")
+                cache = (
+                    "no-cache, must-revalidate"
+                    if suffix in {".css", ".js"}
+                    else "public, max-age=604800"
+                )
+                return self._send(200, p.read_bytes(), ctype, cache=cache)
             if u.path == "/api/status":
                 return self._json(200, gpu_status())
             if u.path == "/api/projects":
@@ -394,7 +409,15 @@ def make_server(
                 if meta is None:
                     return self._json(404, {"error": "not found"})
                 video = project_dir(workspace, pid) / "source.mp4"
-                jpeg = _read_frame_jpeg(video, int(frame_s))
+                jpeg = _read_frame_jpeg(video, int(frame_s)) if video.is_file() else None
+                if jpeg is None:
+                    sid = meta.get("scene") or "s1"
+                    state = review_state(pid, sid)
+                    if state is not None:
+                        try:
+                            jpeg = state.orig_png(int(frame_s))
+                        except Exception:
+                            jpeg = None
                 if jpeg is None:
                     return self._json(404, {"error": "frame not found"})
                 return self._send(200, jpeg, "image/jpeg")
