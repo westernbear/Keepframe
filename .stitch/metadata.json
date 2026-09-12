@@ -2,7 +2,7 @@
   "projectId": "17345649857730883248",
   "projectName": "projects/17345649857730883248",
   "designSystem": "assets/18239713153808064386",
-  "updated": "2026-09-06",
+  "updated": "2026-09-12",
   "screens": {
     "review": {
       "id": "556dc3f6b444458981baa3811e204f8e",
@@ -13,6 +13,11 @@
       "id": "3ae824649a4449dd9d0ac66cbbd5b3ba",
       "title": "새 프로젝트",
       "files": ["designs/ingest.html", "designs/ingest.png"]
+    },
+    "landing": {
+      "id": "ee72c3b9c150421490ff802e18544d7f",
+      "title": "Keepframe 마케팅 랜딩 페이지",
+      "files": ["designs/landing.html", "designs/landing.png"]
     },
     "library": {
       "id": "fb162a5f5a5d408bacf5c7508bfda4c1",

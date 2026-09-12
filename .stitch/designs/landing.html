@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html class="dark" lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Keepframe</title>
+<!-- stitch screen ee72c3b9c150421490ff802e18544d7f — HTML download URL returned 400; reconstructed from generate_screen_from_text output + screenshot -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          primary: "#ffffff",
+          "on-primary": "#000000",
+          background: "#090909",
+          surface: "#141414",
+          "on-surface": "#ffffff",
+          muted: "#999999",
+          hairline: "#262626",
+          violet: "#6a4cf5",
+          magenta: "#d44df0",
+          orange: "#ff7a3d",
+        },
+        fontFamily: {
+          sans: ["system-ui", "sans-serif"],
+        },
+      },
+    },
+  }
+</script>
+</head>
+<body class="bg-background text-on-surface font-sans antialiased">
+<header class="sticky top-0 z-50 flex items-center justify-between h-14 px-8 border-b border-hairline bg-background/80">
+  <span class="font-bold tracking-tight text-lg">Keepframe</span>
+  <div class="flex items-center gap-6">
+    <a class="text-sm text-muted hover:text-primary" href="#">라이브러리</a>
+    <button class="text-sm text-muted">EN</button>
+    <a class="bg-primary text-on-primary text-sm font-medium px-4 py-1.5 rounded-full" href="#">새 레퍼런스</a>
+  </div>
+</header>
+
+<section class="min-h-[100dvh] max-w-[1200px] mx-auto px-8 pt-28 pb-24 grid md:grid-cols-2 gap-16 items-center">
+  <div>
+    <p class="text-xs tracking-[0.2em] uppercase text-muted mb-6">2D 모션 · UI 녹화</p>
+    <h1 class="font-medium text-6xl leading-[0.95] tracking-tighter mb-6">유지할 것과 바꿀 것을 지정하세요.</h1>
+    <p class="text-lg text-muted max-w-xl mb-8">평면 2D 모션그래픽과 UI 화면 녹화를 측정해 편집 가능한 장면으로 만듭니다. 실사 푸티지는 거부합니다.</p>
+    <a class="inline-flex bg-primary text-on-primary text-sm font-medium px-5 py-2.5 rounded-full" href="#">새 레퍼런스</a>
+  </div>
+  <div class="rounded-[30px] min-h-[360px] flex items-end p-8" style="background:radial-gradient(ellipse at 30% 20%, #6a4cf5 0%, #090909 70%)">
+    <span class="text-sm tracking-wide">측정 → IR → 검수</span>
+  </div>
+</section>
+
+<section class="max-w-[1200px] mx-auto px-8 py-24">
+  <h2 class="text-5xl tracking-tighter mb-20">업로드·분석·검수</h2>
+  <div class="grid md:grid-cols-2 gap-12 items-center mb-20">
+    <div>
+      <p class="text-xs tracking-widest text-muted mb-3">01</p>
+      <h3 class="text-3xl tracking-tight mb-4">업로드</h3>
+      <p class="text-muted">구간 지정이 기본. 전체 영상은 샷 분할 후 장면별로 분석합니다.</p>
+    </div>
+    <div class="rounded-[30px] min-h-[220px]" style="background:radial-gradient(ellipse at 70% 20%, #6a4cf5 0%, #090909 70%)"></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-12 items-center mb-20">
+    <div class="rounded-[30px] min-h-[220px] md:order-1 order-2" style="background:radial-gradient(ellipse at 30% 40%, #d44df0 0%, #090909 70%)"></div>
+    <div class="md:order-2 order-1">
+      <p class="text-xs tracking-widest text-muted mb-3">02</p>
+      <h3 class="text-3xl tracking-tight mb-4">분석</h3>
+      <p class="text-muted">장면을 IR로 바꿉니다. 장면당 수 분 걸릴 수 있습니다. GPU 사용을 허용합니다.</p>
+    </div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <p class="text-xs tracking-widest text-muted mb-3">03</p>
+      <h3 class="text-3xl tracking-tight mb-4">검수</h3>
+      <p class="text-muted">유지 조건을 지정하고 재할당·마스크·박스·텍스트로 보정합니다. 재시도 4회·에셋 생성 2회는 화면에 표시만 합니다.</p>
+    </div>
+    <div class="rounded-[30px] min-h-[220px]" style="background:radial-gradient(ellipse at 40% 80%, #ff7a3d 0%, #090909 70%)"></div>
+  </div>
+</section>
+
+<section class="max-w-[1200px] mx-auto px-8 py-24">
+  <h2 class="text-5xl tracking-tighter mb-12">받지 않는 것</h2>
+  <ul class="divide-y divide-hairline">
+    <li class="py-6 text-lg">실사 푸티지는 열리지 않습니다.</li>
+    <li class="py-6 text-lg">평면 2D 모션그래픽과 UI 화면 녹화만.</li>
+    <li class="py-6 text-lg">재시도 상한 4회, 에셋 생성 2회 — 표시만, 조작 없음.</li>
+  </ul>
+</section>
+
+<footer class="max-w-[1200px] mx-auto px-8 py-16 border-t border-hairline flex flex-wrap gap-6 justify-between text-sm text-muted">
+  <span>Keepframe</span>
+  <div class="flex gap-6">
+    <a href="#">라이브러리</a>
+    <a href="#">새 레퍼런스</a>
+  </div>
+</footer>
+</body>
+</html>

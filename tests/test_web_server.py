@@ -45,6 +45,18 @@ def test_status_reports_cuda_flag(tmp_path):
         assert data["device"] == "cpu"
 
 
+def test_root_is_landing_and_library_moved(tmp_path):
+    srv = start(tmp_path)
+    root_code, _, root = get(srv, "/")
+    lib_code, _, lib = get(srv, "/library")
+    srv.shutdown()
+    assert root_code == 200
+    assert b"land-hero" in root
+    assert "유지할 것과 바꿀 것을 지정하세요".encode("utf-8") in root
+    assert lib_code == 200
+    assert b"project-list" in lib
+
+
 def test_logo_is_served(tmp_path):
     srv = start(tmp_path)
     code, ctype, body = get(srv, "/static/logo.png")

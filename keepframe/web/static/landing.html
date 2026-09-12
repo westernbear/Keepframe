@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Keepframe</title>
+<link href="/static/css/app.css" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
+<script type="module" src="/static/js/i18n.js"></script>
+<script type="module" src="/static/js/api.js"></script>
+</head>
+<body class="land">
+<header class="land-header">
+<div class="land-wrap land-header__inner">
+<a class="header__brand" href="/">
+<img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/>
+<span data-i18n="app.name">Keepframe</span>
+</a>
+<div class="land-header__nav">
+<a class="land-nav" href="/library" data-i18n="nav.library">라이브러리</a>
+<button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+<a class="btn btn--primary" href="/new"><span data-i18n="nav.new">새 레퍼런스</span></a>
+</div>
+</div>
+</header>
+
+<main>
+<section class="land-hero">
+<div class="land-wrap land-hero__grid">
+<div class="land-hero__copy">
+<p class="land-eyebrow" data-i18n="landing.eyebrow">2D 모션 · UI 녹화</p>
+<h1 class="land-display" data-i18n="landing.headline">유지할 것과 바꿀 것을 지정하세요.</h1>
+<p class="land-lead" data-i18n="landing.subhead">평면 2D 모션그래픽과 UI 화면 녹화를 측정해 편집 가능한 장면으로 만듭니다. 실사 푸티지는 거부합니다.</p>
+<a class="btn btn--primary land-cta" href="/new"><span data-i18n="nav.new">새 레퍼런스</span></a>
+</div>
+<div class="land-tile land-tile--violet land-tile--hero" aria-hidden="true">
+<span class="land-tile__label" data-i18n="landing.heroTile">측정 → IR → 검수</span>
+</div>
+</div>
+</section>
+
+<section class="land-section">
+<div class="land-wrap">
+<h2 class="land-section__title" data-i18n="landing.howTitle">업로드·분석·검수</h2>
+<div class="land-zig">
+<div class="land-zig__copy">
+<p class="land-step" data-i18n="landing.stepUpload">01</p>
+<h3 class="land-h3" data-i18n="landing.uploadTitle">업로드</h3>
+<p class="land-body" data-i18n="landing.uploadBody">구간 지정이 기본. 전체 영상은 샷 분할 후 장면별로 분석합니다.</p>
+</div>
+<div class="land-tile land-tile--violet" aria-hidden="true"></div>
+</div>
+<div class="land-zig land-zig--flip">
+<div class="land-tile land-tile--magenta" aria-hidden="true"></div>
+<div class="land-zig__copy">
+<p class="land-step" data-i18n="landing.stepAnalyze">02</p>
+<h3 class="land-h3" data-i18n="landing.analyzeTitle">분석</h3>
+<p class="land-body" data-i18n="landing.analyzeBody">장면을 IR로 바꿉니다. 장면당 수 분 걸릴 수 있습니다. GPU 사용을 허용합니다.</p>
+</div>
+</div>
+<div class="land-zig">
+<div class="land-zig__copy">
+<p class="land-step" data-i18n="landing.stepReview">03</p>
+<h3 class="land-h3" data-i18n="landing.reviewTitle">검수</h3>
+<p class="land-body" data-i18n="landing.reviewBody">유지 조건을 지정하고 재할당·마스크·박스·텍스트로 보정합니다. 재시도 4회·에셋 생성 2회는 화면에 표시만 합니다.</p>
+</div>
+<div class="land-tile land-tile--orange" aria-hidden="true"></div>
+</div>
+</div>
+</section>
+
+<section class="land-section">
+<div class="land-wrap">
+<h2 class="land-section__title" data-i18n="landing.limitsTitle">받지 않는 것</h2>
+<ul class="land-limits">
+<li data-i18n="landing.limitLive">실사 푸티지는 열리지 않습니다.</li>
+<li data-i18n="landing.limitScope">평면 2D 모션그래픽과 UI 화면 녹화만.</li>
+<li data-i18n="landing.limitCaps">재시도 상한 4회, 에셋 생성 2회 — 표시만, 조작 없음.</li>
+</ul>
+</div>
+</section>
+</main>
+
+<footer class="land-footer">
+<div class="land-wrap land-footer__inner">
+<span data-i18n="app.name">Keepframe</span>
+<nav class="land-footer__links">
+<a href="/library" data-i18n="nav.library">라이브러리</a>
+<a href="/new" data-i18n="nav.new">새 레퍼런스</a>
+</nav>
+</div>
+</footer>
+</body>
+</html>

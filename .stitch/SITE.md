@@ -6,6 +6,7 @@ Project `17345649857730883248`. Design system `assets/18239713153808064386`.
 
 | Screen | File |
 | --- | --- |
+| 랜딩 | `designs/landing.html` |
 | 검수 데스크 | `designs/review.html` |
 | 새 프로젝트 | `designs/ingest.html` |
 | 프로젝트 라이브러리 | `designs/library.html` |

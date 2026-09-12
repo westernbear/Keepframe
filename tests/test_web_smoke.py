@@ -22,6 +22,8 @@ def test_library_and_review_render(tmp_path):
         with sync_playwright() as p:
             page = p.chromium.launch().new_page(viewport={"width": 1280, "height": 800})
             page.goto(base + "/")
+            assert page.locator(".land-hero").count() == 1
+            page.goto(base + "/library")
             assert page.locator("body").count() == 1
             page.goto(base + "/review?project=p1&scene=" + scene.id)
             page.wait_for_selector("#orig, [data-pane=orig]")

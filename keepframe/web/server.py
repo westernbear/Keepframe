@@ -43,7 +43,8 @@ def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
 
 STATIC = Path(__file__).parent / "static"
 PAGES = {
-    "/": "library.html",
+    "/": "landing.html",
+    "/library": "library.html",
     "/new": "ingest.html",
     "/analyze": "analyze.html",
     "/review": "review.html",

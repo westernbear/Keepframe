@@ -18,8 +18,15 @@ def test_analyze_stitch_source_exists():
     assert (DESIGNS / "analyze.png").stat().st_size > 1000
 
 
+def test_landing_stitch_source_exists():
+    html = (DESIGNS / "landing.html").read_text(encoding="utf-8")
+    assert "<html" in html.lower()
+    assert "유지할 것과 바꿀 것을 지정하세요" in html
+    assert (DESIGNS / "landing.png").stat().st_size > 1000
+
+
 def test_ported_pages_are_offline():
-    for name in ("library.html", "ingest.html", "analyze.html", "review.html"):
+    for name in ("landing.html", "library.html", "ingest.html", "analyze.html", "review.html"):
         text = (STATIC / name).read_text(encoding="utf-8")
         for bad in FORBIDDEN:
             assert bad not in text, f"{name} still loads {bad}"
@@ -48,7 +55,7 @@ def test_analyze_steps_follow_job_stage():
 def test_pages_include_logo_and_favicon():
     assert (STATIC / "logo.png").stat().st_size > 100
     assert (STATIC / "icon.png").stat().st_size > 100
-    for name in ("library.html", "ingest.html", "analyze.html", "review.html"):
+    for name in ("landing.html", "library.html", "ingest.html", "analyze.html", "review.html"):
         text = (STATIC / name).read_text(encoding="utf-8")
         assert 'src="/static/logo.png"' in text
         assert 'href="/static/icon.png"' in text
@@ -64,7 +71,7 @@ def test_ingest_gpu_status_is_not_hardcoded():
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     assert "keepframe.lang" in src
-    for key in ("ingest.start", "review.keepSave", "error.liveaction", "library.empty"):
+    for key in ("ingest.start", "review.keepSave", "error.liveaction", "library.empty", "landing.headline"):
         assert src.count(f'"{key}"') >= 2
 
 
