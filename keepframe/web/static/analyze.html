@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>분석 진행 - Keepframe</title>
-<link href="/static/css/app.css?v=20260912" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260912"></script>
-<script type="module" src="/static/js/api.js?v=20260912"></script>
+<script type="module" src="/static/js/i18n.js?v=20260913"></script>
+<script type="module" src="/static/js/api.js?v=20260913"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -71,8 +71,8 @@
 </main>
 </div>
 <script type="module">
-import { api, fetchFilmstrip } from "/static/js/api.js";
-import { T, Tf } from "/static/js/i18n.js";
+import { api, fetchFilmstrip } from "/static/js/api.js?v=20260913";
+import { T, Tf } from "/static/js/i18n.js?v=20260913";
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("job") || params.get("project");

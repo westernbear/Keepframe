@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 관리</title>
-<link href="/static/css/app.css?v=20260912" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260912"></script>
-<script type="module" src="/static/js/api.js?v=20260912"></script>
+<script type="module" src="/static/js/i18n.js?v=20260913"></script>
+<script type="module" src="/static/js/api.js?v=20260913"></script>
 <style>
 .admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
 .admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; border-right: 2px solid transparent; }
@@ -117,7 +117,7 @@
 </main>
 </div>
 <script type="module">
-import { api } from "/static/js/api.js";
+import { api } from "/static/js/api.js?v=20260913";
 
 const STATUS = { ok: "정상", quota: "할당량 초과", suspended: "정지" };
 const ROLE = { admin: "운영자", billing: "결제", review_lead: "검수 리드", maker: "제작" };

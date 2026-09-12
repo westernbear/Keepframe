@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 검수</title>
-<link href="/static/css/app.css?v=20260912" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260912"></script>
-<script type="module" src="/static/js/api.js?v=20260912"></script>
+<script type="module" src="/static/js/i18n.js?v=20260913"></script>
+<script type="module" src="/static/js/api.js?v=20260913"></script>
 <style>
 .review-layout { height: calc(100vh - 56px); }
 .compare-pane__body { position: relative; overflow: hidden; }
@@ -149,8 +149,8 @@ import {
   postCorrect,
   reviewFrameUrl,
   reviewAssetUrl,
-} from "/static/js/api.js";
-import { T, Tf } from "/static/js/i18n.js";
+} from "/static/js/api.js?v=20260913";
+import { T, Tf } from "/static/js/i18n.js?v=20260913";
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
