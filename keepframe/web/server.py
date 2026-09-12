@@ -53,6 +53,28 @@ PAGES = {
 ADMIN_OFF = {"error": "로컬판에는 이 화면이 없습니다."}
 
 
+def clip_range(start: int, end: int, n_frames: int) -> tuple[int, int]:
+    last = max(0, int(n_frames) - 1)
+    a = max(0, min(int(start), last))
+    b = max(a, min(int(end), last))
+    return a, b
+
+
+def resolve_analyze_window(meta: dict, data: dict, n_frames: int) -> tuple[str, int, int]:
+    mode = str(data.get("mode") or meta.get("mode") or "full")
+    if mode not in ("range", "full"):
+        mode = "full"
+    if mode != "range":
+        return "full", 0, max(0, int(n_frames) - 1)
+    if data.get("start") is not None and data.get("end") is not None:
+        start, end = clip_range(int(data["start"]), int(data["end"]), n_frames)
+    elif meta.get("range"):
+        start, end = clip_range(meta["range"][0], meta["range"][1], n_frames)
+    else:
+        return "full", 0, max(0, int(n_frames) - 1)
+    return "range", start, end
+
+
 def _parse_multipart(body: bytes, content_type: str) -> dict[str, str | tuple[str, bytes]]:
     msg = message_from_bytes(
         b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body,
@@ -538,12 +560,14 @@ def make_server(
                         return self._json(404, {"error": "not found"})
                     video = project_dir(workspace, meta["id"]) / "source.mp4"
                     info = probe_video(video)
-                    mode = meta.get("mode", "full")
-                    if mode == "range" and meta.get("range"):
-                        start, end = meta["range"]
-                        frames = max(1, int(end) - int(start) + 1)
-                    else:
-                        frames = info["frames"]
+                    mode, start, end = resolve_analyze_window(meta, data, info["frames"])
+                    write_meta(
+                        workspace,
+                        meta["id"],
+                        mode=mode,
+                        range=[start, end] if mode == "range" else None,
+                    )
+                    frames = max(1, int(end) - int(start) + 1)
                     return self._json(200, estimate(mode, frames, info["fps"]))
                 mode = data.get("mode", "full")
                 frames = int(data.get("frames", 0))
@@ -608,19 +632,22 @@ def make_server(
                     return self._json(202, {"job": existing.to_json()})
                 if existing is not None and existing.status in ("done", "error") and not token:
                     return self._json(202, {"job": existing.to_json()})
-                # Refresh / re-entry must not demand a token after the first confirm.
-                if meta.get("mode") == "full" and meta.get("status") != "analyzing" and not consume_token(token):
-                    return self._json(400, {"error": "confirm required"})
                 root = project_dir(workspace, project_id)
                 video = root / "source.mp4"
                 info = probe_video(video)
-                if meta.get("range"):
-                    start, end = meta["range"]
-                else:
-                    start, end = 0, max(0, info["frames"] - 1)
+                mode, start, end = resolve_analyze_window(meta, data, info["frames"])
+                # Refresh / re-entry must not demand a token after the first confirm.
+                if mode == "full" and meta.get("status") != "analyzing" and not consume_token(token):
+                    return self._json(400, {"error": "confirm required"})
                 frames = max(1, int(end) - int(start) + 1)
-                est = estimate(meta.get("mode", "full"), frames, info["fps"])
-                write_meta(workspace, project_id, status="analyzing")
+                est = estimate(mode, frames, info["fps"])
+                write_meta(
+                    workspace,
+                    project_id,
+                    status="analyzing",
+                    mode=mode,
+                    range=[start, end] if mode == "range" else None,
+                )
                 spec = JobSpec(
                     kind="analyze",
                     args={

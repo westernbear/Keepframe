@@ -40,7 +40,7 @@
 </div>
 <div style="display:flex;justify-content:space-between;font-size:var(--fs-body-sm);color:var(--muted)">
 <span data-i18n="analyze.selectedRange">선택된 구간</span>
-<span class="mono" data-clip-name>—</span>
+<span class="mono" data-range-label>—</span>
 </div>
 </div>
 <div class="progress-panel">
@@ -77,6 +77,9 @@ import { T, Tf } from "/static/js/i18n.js?v=20260913";
 const params = new URLSearchParams(location.search);
 const projectId = params.get("job") || params.get("project");
 const token = params.get("token") || "";
+const analyzeMode = params.get("mode") || "";
+const analyzeStart = params.get("start");
+const analyzeEnd = params.get("end");
 const statusEl = document.querySelector("[data-status]");
 const stageEl = document.querySelector("[data-stage]");
 const etaEl = document.querySelector("[data-eta]");
@@ -197,14 +200,26 @@ async function poll(jobId) {
     if (p && p.title) {
       document.querySelectorAll("[data-clip-name]").forEach((el) => { el.textContent = p.title; });
     }
+    const rangeEl = document.querySelector("[data-range-label]");
+    if (rangeEl) {
+      if (analyzeMode === "range" && analyzeStart != null && analyzeEnd != null && analyzeStart !== "") {
+        rangeEl.textContent = `${analyzeStart}–${analyzeEnd}`;
+      } else if (p && p.range) {
+        rangeEl.textContent = `${p.range[0]}–${p.range[1]}`;
+      }
+    }
   } catch {}
   try {
     await showFilmstrip(projectId);
   } catch {}
   try {
+    const payload = { project_id: projectId, confirm_token: token };
+    if (analyzeMode) payload.mode = analyzeMode;
+    if (analyzeStart != null && analyzeStart !== "") payload.start = Number(analyzeStart);
+    if (analyzeEnd != null && analyzeEnd !== "") payload.end = Number(analyzeEnd);
     const { job } = await api("/api/analyze", {
       method: "POST",
-      body: JSON.stringify({ project_id: projectId, confirm_token: token }),
+      body: JSON.stringify(payload),
     });
     updateJob(job);
     setInterval(() => poll(job.id), 1000);

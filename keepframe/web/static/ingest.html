@@ -134,12 +134,27 @@ async function loadFilmstrip(projectId) {
   });
 }
 
+function selectedWindow() {
+  const start = parseInt($("[data-start]").value, 10);
+  const end = parseInt($("[data-end]").value, 10);
+  const last = Math.max(0, state.totalFrames - 1);
+  const s = Number.isFinite(start) ? Math.max(0, start) : 0;
+  const e = Number.isFinite(end) ? Math.max(s, end) : last;
+  return { mode: state.mode, start: s, end: Math.min(e, last) };
+}
+
 async function refreshEstimate() {
   if (!state.project) return;
-  const start = parseInt($("[data-start]").value, 10) || 0;
-  const end = parseInt($("[data-end]").value, 10) || state.totalFrames - 1;
-  const frames = state.mode === "range" ? Math.max(1, end - start + 1) : state.totalFrames;
-  const est = await fetchEstimate({ mode: state.mode, frames, fps: state.fps });
+  const win = selectedWindow();
+  const frames = win.mode === "range" ? Math.max(1, win.end - win.start + 1) : state.totalFrames;
+  const est = await fetchEstimate({
+    project_id: state.project.id,
+    mode: win.mode,
+    start: win.start,
+    end: win.end,
+    frames,
+    fps: state.fps,
+  });
   state.confirmToken = est.confirm_token;
   const mins = Math.round(est.seconds / 60);
   $("[data-est-seconds]").textContent = Tf("ingest.aboutMin", { m: mins });
@@ -256,13 +271,29 @@ window.addEventListener("keepframe:lang", () => {
 startBtn.addEventListener("click", async () => {
   if (!state.project) return;
   try {
-    const est = await fetchEstimate({ project_id: state.project.id });
+    const win = selectedWindow();
+    const frames = win.mode === "range" ? Math.max(1, win.end - win.start + 1) : state.totalFrames;
+    const est = await fetchEstimate({
+      project_id: state.project.id,
+      mode: win.mode,
+      start: win.start,
+      end: win.end,
+      frames,
+      fps: state.fps,
+    });
     state.confirmToken = est.confirm_token;
-    if (state.mode === "full" && !state.fullConfirmed) {
+    if (win.mode === "full" && !state.fullConfirmed) {
       updateStartButton(est);
       return;
     }
-    location.href = `/analyze?job=${state.project.id}&token=${est.confirm_token}`;
+    const q = new URLSearchParams({
+      job: state.project.id,
+      token: est.confirm_token,
+      mode: win.mode,
+      start: String(win.start),
+      end: String(win.end),
+    });
+    location.href = `/analyze?${q}`;
   } catch (err) {
     showError(err.message);
   }

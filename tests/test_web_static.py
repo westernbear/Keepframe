@@ -61,6 +61,15 @@ def test_pages_include_logo_and_favicon():
         assert 'href="/static/icon.png"' in text
 
 
+def test_ingest_sends_selected_range_to_analyze():
+    ingest = (STATIC / "ingest.html").read_text(encoding="utf-8")
+    analyze = (STATIC / "analyze.html").read_text(encoding="utf-8")
+    assert "selectedWindow" in ingest
+    assert "mode: win.mode" in ingest
+    assert "payload.start" in analyze
+    assert "payload.end" in analyze
+
+
 def test_ingest_gpu_status_is_not_hardcoded():
     text = (STATIC / "ingest.html").read_text(encoding="utf-8")
     assert "data-gpu" in text

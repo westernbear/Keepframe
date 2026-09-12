@@ -3,8 +3,8 @@ import time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-from keepframe.web.server import JOBS
-from keepframe.web.workspace import create_project, write_meta
+from keepframe.web.server import JOBS, resolve_analyze_window
+from keepframe.web.workspace import create_project, load_meta, write_meta
 from tests.test_web_ingest import _mp4
 from tests.test_web_server import start
 
@@ -18,6 +18,37 @@ def _post(srv, path, payload):
             return r.status, json.loads(r.read())
     except HTTPError as e:
         return e.code, json.loads(e.read())
+
+
+def test_posted_range_overrides_full_upload_meta():
+    mode, start, end = resolve_analyze_window(
+        {"mode": "full", "range": None},
+        {"mode": "range", "start": 2, "end": 5},
+        10,
+    )
+    assert (mode, start, end) == ("range", 2, 5)
+
+
+def test_estimate_persists_range_on_uploaded_full_project(tmp_path):
+    ws = tmp_path / "ws"
+    vid = tmp_path / "a.mp4"
+    _mp4(vid)
+    row = create_project(ws, "Clip", vid, "full", None)
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/estimate", {
+            "project_id": row["id"],
+            "mode": "range",
+            "start": 2,
+            "end": 5,
+        })
+    finally:
+        srv.shutdown()
+    assert code == 200
+    assert body["scene_count"] == 1
+    meta = load_meta(ws, row["id"])
+    assert meta["mode"] == "range"
+    assert meta["range"] == [2, 5]
 
 
 def test_full_analyze_without_token_is_confirm_required(tmp_path):
