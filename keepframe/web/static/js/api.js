@@ -49,6 +49,12 @@ async function fetchBboxes(project, scene, frame, v) {
   return api(url);
 }
 
+async function postApprove(project, scene, v) {
+  const body = { project, scene };
+  if (v) body.v = v;
+  return api("/api/approve", { method: "POST", body: JSON.stringify(body) });
+}
+
 async function postKeep(project, scene, changes, note) {
   return api("/api/keep", {
     method: "POST",
@@ -81,6 +87,7 @@ export {
   fetchReviewState,
   fetchReviewJob,
   fetchBboxes,
+  postApprove,
   postKeep,
   postCorrect,
   reviewFrameUrl,

@@ -1,11 +1,25 @@
 import json
 import re
 from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import numpy as np
 import pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import init_project, scene_dir
+from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
+
+
+def _post(srv, path, payload):
+    url = f"http://127.0.0.1:{srv.server_address[1]}{path}"
+    req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urlopen(req) as r:
+            return r.status, json.loads(r.read())
+    except HTTPError as e:
+        return e.code, json.loads(e.read())
 
 
 def test_state_from_synthetic(tmp_path):
@@ -41,6 +55,7 @@ def test_state_from_synthetic(tmp_path):
     assert len(rec["l1_bins"]) <= 200 and len(rec["l1_bins"]) == len(rec["l1_hot"])
     assert rec["l1_max"] == 0.2 and rec["l1_peaks"] and max(rec["l1_peaks"]) < 200
     assert set(body["project"].keys()) == {"versions"}
+    assert body["status"] == "review"
     assert body["project"]["versions"][0]["id"] == "v1"
     assert body["project"]["versions"][0]["scene_file"].startswith(f"scenes/{scene.id}/")
     assert "texture" in body["scene"]["elements"][0]["canonical"]
@@ -73,6 +88,52 @@ def test_review_bboxes_for_frame(tmp_path):
     assert visible and visible[0] in data["boxes"]
     box = data["boxes"][visible[0]]
     assert len(box) == 4 and box[2] > box[0] and box[3] > box[1]
+
+
+def test_review_page_has_approve_button():
+    html = REVIEW_HTML.read_text(encoding="utf-8")
+    assert 'id="review-approve"' in html
+    assert "postApprove" in html
+    assert "paintApprove" in html
+    css = REVIEW_CSS.read_text(encoding="utf-8")
+    assert ".review-empty #review-approve" in css
+
+
+def test_approve_marks_project(tmp_path):
+    root = tmp_path / "ws" / "p1"
+    scene = make_synthetic_scene(root / "gold", seed=11, with_text=False)
+    init_project(
+        root,
+        {
+            "file": "ref.mp4",
+            "fps": scene.fps,
+            "size": list(scene.size),
+            "mode": "range",
+            "range": [0, scene.frames - 1],
+        },
+        scene,
+    )
+    (root / "meta.json").write_text(json.dumps({"id": "p1", "title": "t", "status": "review"}))
+    srv = start(tmp_path / "ws")
+    try:
+        missing = _post(srv, "/api/approve", {"scene": scene.id})
+        unknown = _post(srv, "/api/approve", {"project": "missing", "scene": scene.id})
+        code, body = _post(srv, "/api/approve", {"project": "p1", "scene": scene.id})
+        again, again_body = _post(srv, "/api/approve", {"project": "p1", "scene": scene.id})
+        st_code, _, state = get(srv, f"/api/state?project=p1&scene={scene.id}")
+    finally:
+        srv.shutdown()
+    assert missing == (400, {"error": "project required"})
+    assert unknown[0] == 404
+    assert code == 200
+    assert body["project"]["status"] == "approved"
+    assert body["version"] == "v1"
+    assert again == 200
+    assert again_body["project"]["status"] == "approved"
+    assert st_code == 200
+    assert json.loads(state)["status"] == "approved"
+    assert load_meta(tmp_path / "ws", "p1")["status"] == "approved"
+    assert load_meta(tmp_path / "ws", "p1")["scene"] == scene.id
 
 
 def test_review_page_has_progress_bar():

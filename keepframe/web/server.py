@@ -152,7 +152,7 @@ def _slim_scene(scene) -> dict:
     return data
 
 
-def review_state_payload(project, version, scene, report, job) -> dict:
+def review_state_payload(project, version, scene, report, job, status=None) -> dict:
     """Slim UI payload: pre-binned error strip, scene-only version list, no per-frame tracks."""
     return {
         "project": _slim_project(project, scene.id),
@@ -160,6 +160,7 @@ def review_state_payload(project, version, scene, report, job) -> dict:
         "scene": _slim_scene(scene),
         "report": _slim_report(report, scene.frames),
         "job": job,
+        "status": status,
     }
 
 
@@ -467,7 +468,8 @@ def make_server(
                     scene, v = state.scene(ver)
                     sd = scene_dir(state.root, state.scene_id)
                     rep = json.loads((sd / "report.json").read_text()) if (sd / "report.json").is_file() else None
-                    return self._json(200, review_state_payload(load_project(state.root), v, scene, rep, state.job))
+                    meta = load_meta(workspace, pid) or {}
+                    return self._json(200, review_state_payload(load_project(state.root), v, scene, rep, state.job, meta.get("status")))
                 except Exception as e:
                     log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -670,6 +672,32 @@ def make_server(
                 write_meta(workspace, project_id, job_id=job.id)
                 log.info("analyze queued job=%s project=%s range=[%s,%s] eta_s=%s", job.id, project_id, start, end, est["seconds"])
                 return self._json(202, {"job": job.to_json()})
+
+            if u.path == "/api/approve":
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                scene_id = data.get("scene", "s1")
+                if not project_id:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(project_id, scene_id)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    _scene, version = state.scene(data.get("v"))
+                except Exception as e:
+                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                meta = write_meta(
+                    workspace,
+                    project_id,
+                    status="approved",
+                    version=version.id,
+                    scene=scene_id,
+                )
+                log.info("approved project=%s scene=%s version=%s", project_id, scene_id, version.id)
+                return self._json(200, {"project": meta, "version": version.id})
 
             if u.path == "/api/keep":
                 try:
