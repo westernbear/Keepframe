@@ -114,25 +114,11 @@ class MemoryAdmin:
         ]
         self._audit = [
             AuditEvent(
-                ts="14:02",
-                actor="mina@keepframe.app",
-                action="테넌트 정지 시도",
-                target="Closed shop",
-                detail=None,
-            ),
-            AuditEvent(
-                ts="13:41",
-                actor="lee@hanbit",
-                action="keep 해제 t_e3",
-                target="Paywall s1",
-                detail='술어: "제목은 바꿈"',
-            ),
-            AuditEvent(
-                ts="13:18",
-                actor="mina@keepframe.app",
-                action="멤버 추가",
-                target="Northwind",
-                detail="jun@northwind · 역할 검수 리드",
+                ts="09:12",
+                actor="시스템",
+                action="업로드 검역",
+                target="Solo / clip_street.mp4",
+                detail="실사",
             ),
             AuditEvent(
                 ts="12:55",
@@ -142,11 +128,25 @@ class MemoryAdmin:
                 detail=None,
             ),
             AuditEvent(
-                ts="09:12",
-                actor="시스템",
-                action="업로드 검역",
-                target="Solo / clip_street.mp4",
-                detail="실사",
+                ts="13:18",
+                actor="mina@keepframe.app",
+                action="멤버 추가",
+                target="Northwind",
+                detail="jun@northwind · 역할 검수 리드",
+            ),
+            AuditEvent(
+                ts="13:41",
+                actor="lee@hanbit",
+                action="keep 해제 t_e3",
+                target="Paywall s1",
+                detail='술어: "제목은 바꿈"',
+            ),
+            AuditEvent(
+                ts="14:02",
+                actor="mina@keepframe.app",
+                action="테넌트 정지 시도",
+                target="Closed shop",
+                detail=None,
             ),
         ]
 

@@ -13,6 +13,13 @@ def test_seed_tenants_and_no_delete():
     assert len(svc.list_audit()) == n + 1
     assert svc.list_audit()[0].action == "멤버 추가"
 
+
+def test_seed_audit_is_newest_first():
+    svc = MemoryAdmin()
+    actions = [e.action for e in svc.list_audit()]
+    assert actions[0] == "테넌트 정지 시도"
+    assert actions[-1] == "업로드 검역"
+
 def test_quarantine_has_no_video_field():
     item = QuarantineItem(id="q1", filename="a.mp4", tenant_id="org_solo", rejected_at="2026-09-06T09:12:00Z",
                           reason="실사 푸티지. 평면 2D MG·UI 녹화만 받음.")

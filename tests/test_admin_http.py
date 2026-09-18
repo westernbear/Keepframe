@@ -40,6 +40,14 @@ def test_login_and_tenants(tmp_path):
     assert pol["retry_cap"] == 4 and pol["asset_gen_cap"] == 2
 
 
+def test_logout_requires_cookie(tmp_path):
+    srv = start_admin(tmp_path)
+    code, _, body = post(srv, "/admin/api/logout", {})
+    srv.shutdown()
+    assert code == 401
+    assert body.get("error") == "unauthorized"
+
+
 def test_quarantine_keys_and_no_video(tmp_path):
     srv = start_admin(tmp_path)
     code, headers, _ = post(srv, "/admin/api/login", {"email": "mina@keepframe.app", "password": "dev-admin"})

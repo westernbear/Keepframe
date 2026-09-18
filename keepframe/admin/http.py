@@ -172,6 +172,8 @@ class AdminRoutes:
             return True
 
         if path == "/admin/api/logout":
+            if self._require(handler) is None:
+                return True
             sid = _session_id(handler)
             if sid:
                 self.admin_auth.logout(sid)

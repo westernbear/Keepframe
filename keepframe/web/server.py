@@ -26,6 +26,7 @@ from keepframe.review import corrections
 from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
+from keepframe.edit.agent import edit as run_edit
 from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
@@ -730,6 +731,42 @@ def make_server(
                 except Exception as e:
                     log.exception("keep update failed project=%s scene=%s", project_id, scene_id)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+            if u.path == "/api/edit":
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                scene_id = data.get("scene", "s1")
+                prompt = (data.get("prompt") or "").strip()
+                if not project_id:
+                    return self._json(400, {"error": "project required"})
+                if not prompt and not data.get("intent"):
+                    return self._json(400, {"error": "prompt required"})
+                state = review_state(project_id, scene_id)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    result = run_edit(
+                        state.root,
+                        scene_id,
+                        prompt,
+                        attachment=data.get("attachment"),
+                        element=data.get("element"),
+                        confirm=bool(data.get("confirm")),
+                        intent=data.get("intent"),
+                        choices=data.get("choices"),
+                        version=data.get("v"),
+                    )
+                except Exception as e:
+                    log.exception("edit failed project=%s scene=%s", project_id, scene_id)
+                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                if result.status == "done" and result.version is not None:
+                    write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
+                    state._preview.clear()
+                    state._tex.clear()
+                return self._json(200, result.to_json())
 
             if u.path == "/api/correct":
                 try:

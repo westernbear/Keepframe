@@ -80,7 +80,7 @@ def test_ingest_gpu_status_is_not_hardcoded():
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     assert "keepframe.lang" in src
-    for key in ("ingest.start", "review.keepSave", "review.approve", "error.liveaction", "library.empty", "landing.headline"):
+    for key in ("ingest.start", "review.keepSave", "review.approve", "review.editRun", "error.liveaction", "library.empty", "landing.headline"):
         assert src.count(f'"{key}"') >= 2
 
 

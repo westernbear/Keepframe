@@ -90,6 +90,13 @@ def test_review_bboxes_for_frame(tmp_path):
     assert len(box) == 4 and box[2] > box[0] and box[3] > box[1]
 
 
+def test_review_page_has_edit_form():
+    html = REVIEW_HTML.read_text(encoding="utf-8")
+    assert 'id="edit-prompt"' in html
+    assert "postEdit" in html
+    assert 'data-i18n="review.editRun"' in html
+
+
 def test_review_page_has_approve_button():
     html = REVIEW_HTML.read_text(encoding="utf-8")
     assert 'id="review-approve"' in html

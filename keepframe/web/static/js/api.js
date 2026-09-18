@@ -62,6 +62,10 @@ async function postKeep(project, scene, changes, note) {
   });
 }
 
+async function postEdit(body) {
+  return api("/api/edit", { method: "POST", body: JSON.stringify(body) });
+}
+
 async function postCorrect(project, scene, op, args) {
   return api("/api/correct", {
     method: "POST",
@@ -89,6 +93,7 @@ export {
   fetchBboxes,
   postApprove,
   postKeep,
+  postEdit,
   postCorrect,
   reviewFrameUrl,
   reviewAssetUrl,

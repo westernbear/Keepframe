@@ -27,6 +27,15 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
     g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
+    ed = sub.add_parser("edit")
+    ed.add_argument("--root", required=True)
+    ed.add_argument("--scene", default="s1")
+    ed.add_argument("--prompt", required=True)
+    ed.add_argument("--attach", default=None)
+    ed.add_argument("--element", default=None)
+    ed.add_argument("--confirm", action="store_true")
+    ed.add_argument("--choice", action="append", default=[])
+    g3 = sub.add_parser("gate-m3"); g3.add_argument("--out", required=True); g3.add_argument("--n", type=int, default=8)
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action="store_true")
@@ -80,6 +89,31 @@ def main(argv: list[str] | None = None) -> int:
         for row in res["rows"]:
             print(row)
         print({k: v for k, v in res.items() if k != "rows"}); return 0 if res["passed"] else 1
+    if a.cmd == "edit":
+        from .edit.agent import edit
+        choices = {}
+        for item in a.choice:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                choices[k] = v
+        res = edit(
+            Path(a.root),
+            a.scene,
+            a.prompt,
+            attachment=Path(a.attach) if a.attach else None,
+            element=a.element,
+            confirm=a.confirm,
+            choices=choices or None,
+        )
+        print(json.dumps(res.to_json(), ensure_ascii=False, indent=2))
+        return 0 if res.status in ("done", "needs_confirm", "needs_choice") else 1
+    if a.cmd == "gate-m3":
+        from .gates import m3_gate
+        res = m3_gate(Path(a.out), n=a.n)
+        for row in res["rows"]:
+            print(row)
+        print({k: v for k, v in res.items() if k != "rows"})
+        return 0 if res["passed"] else 1
     if a.cmd == "gate-m2-real":
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0

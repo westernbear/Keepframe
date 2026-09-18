@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 검수</title>
-<link href="/static/css/app.css?v=20260914" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260915" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260914"></script>
-<script type="module" src="/static/js/api.js?v=20260914"></script>
+<script type="module" src="/static/js/i18n.js?v=20260915"></script>
+<script type="module" src="/static/js/api.js?v=20260915"></script>
 <style>
 .header--review { height: auto; min-height: 56px; flex-wrap: wrap; gap: 8px; padding-top: 8px; padding-bottom: 8px; }
 .header--review .header__nav { flex-wrap: wrap; }
@@ -119,6 +119,18 @@
 <input class="element-filter" id="element-filter" type="search" data-i18n-placeholder="review.filter" placeholder="요소 검색" hidden/>
 <div id="element-list"></div>
 <div id="constraints-panel"></div>
+<div class="accordion accordion--open" id="acc-edit">
+<div class="accordion__head"><span data-i18n="review.edit">재해석</span></div>
+<div class="accordion__body">
+<div class="form-row"><label data-i18n="review.editPrompt">바꿀 문구, 색, 이미지</label><input id="edit-prompt" type="text"/></div>
+<div class="form-row"><label data-i18n="review.editAttach">이미지 첨부</label><input id="edit-file" type="file" accept="image/png,image/jpeg,image/webp"/></div>
+<p class="empty-state" id="edit-summary" hidden></p>
+<div id="edit-conflicts" hidden></div>
+<button class="btn btn--secondary" id="edit-run" type="button" data-i18n="review.editRun">재해석</button>
+<button class="btn btn--primary-lg" id="edit-confirm" type="button" data-i18n="review.editConfirm" hidden>확인하고 적용</button>
+<button class="btn btn--ghost" id="edit-cancel" type="button" data-i18n="review.editCancel" hidden>취소</button>
+</div>
+</div>
 <button class="btn btn--primary-lg" style="margin:24px 0" id="keep-save" data-i18n="review.keepSave" hidden disabled>유지 조건 저장</button>
 <div class="inspector__forms" id="forms-panel">
 <div class="accordion" id="acc-reassign"><div class="accordion__head"><span data-i18n="review.reassign">재할당</span></div>
@@ -149,11 +161,12 @@ import {
   fetchBboxes,
   postApprove,
   postKeep,
+  postEdit,
   postCorrect,
   reviewFrameUrl,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20260914";
-import { T, Tf } from "/static/js/i18n.js?v=20260914";
+} from "/static/js/api.js?v=20260915";
+import { T, Tf } from "/static/js/i18n.js?v=20260915";
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -776,6 +789,132 @@ origDraw.addEventListener("pointerup", () => {
   paintOverlay(origOverlay, orig, box);
 });
 orig.addEventListener("load", () => drawOverlays());
+
+const editPrompt = document.getElementById("edit-prompt");
+const editFile = document.getElementById("edit-file");
+const editSummary = document.getElementById("edit-summary");
+const editConflicts = document.getElementById("edit-conflicts");
+const editRun = document.getElementById("edit-run");
+const editConfirm = document.getElementById("edit-confirm");
+const editCancel = document.getElementById("edit-cancel");
+let pendingIntent = null;
+
+function resetEditUi() {
+  pendingIntent = null;
+  editSummary.hidden = true;
+  editSummary.textContent = "";
+  editConflicts.hidden = true;
+  editConflicts.innerHTML = "";
+  editConfirm.hidden = true;
+  editCancel.hidden = true;
+}
+
+function paintEditResult(res) {
+  pendingIntent = res.intent || null;
+  const summary = res.summary || "";
+  editSummary.hidden = !summary;
+  editSummary.textContent = summary;
+  const conflicts = (res.plan && res.plan.conflicts) || [];
+  const cands = (res.intent && res.intent.candidates) || [];
+  editConflicts.innerHTML = "";
+  if (conflicts.length) {
+    conflicts.forEach((c) => {
+      const wrap = document.createElement("div");
+      wrap.className = "form-row";
+      const lab = document.createElement("label");
+      lab.textContent = c.reason || c.element;
+      wrap.appendChild(lab);
+      (c.choices || []).forEach((ch) => {
+        const row = document.createElement("label");
+        row.className = "constraint-row";
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = `edit-${c.id}`;
+        radio.value = ch;
+        row.append(radio, document.createTextNode(T(`review.editChoice.${ch}`)));
+        wrap.appendChild(row);
+      });
+      editConflicts.appendChild(wrap);
+    });
+    editConflicts.hidden = false;
+  } else if (cands.length) {
+    editConflicts.hidden = false;
+    editConflicts.textContent = T("review.editNeedElement");
+  } else {
+    editConflicts.hidden = true;
+  }
+  const wait = res.status === "needs_confirm" || res.status === "needs_choice";
+  editConfirm.hidden = !wait;
+  editCancel.hidden = !wait;
+}
+
+function editChoices() {
+  const out = {};
+  editConflicts.querySelectorAll("input[type=radio]:checked").forEach((el) => {
+    out[el.name.replace(/^edit-/, "")] = el.value;
+  });
+  return out;
+}
+
+async function readEditAttachment() {
+  const file = editFile.files[0];
+  if (!file) return null;
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+async function editBody(confirm) {
+  return {
+    project: projectId,
+    scene: sceneId,
+    v: versionId,
+    prompt: (editPrompt.value || "").trim(),
+    element: selectedId,
+    attachment: await readEditAttachment(),
+    confirm,
+    intent: pendingIntent,
+    choices: editChoices(),
+  };
+}
+
+editRun.addEventListener("click", async () => {
+  if (!projectId) return;
+  try {
+    const res = await postEdit(await editBody(false));
+    paintEditResult(res);
+    if (res.status === "failed") setJobBanner(res.error || T("review.editFailed"), true);
+  } catch (err) {
+    setJobBanner(err.message || T("review.editFailed"), true);
+  }
+});
+
+editConfirm.addEventListener("click", async () => {
+  if (!projectId || !pendingIntent) return;
+  editConfirm.disabled = true;
+  try {
+    const res = await postEdit(await editBody(true));
+    paintEditResult(res);
+    if (res.status === "done" && res.version) {
+      const k = res.verify ? Number(res.verify.keep_pass_rate || 0).toFixed(2) : "—";
+      const t = res.verify && res.verify.temporal != null ? Number(res.verify.temporal).toFixed(2) : "—";
+      setJobBanner(Tf("review.editOk", { k, t }), false);
+      resetEditUi();
+      await refreshState(res.version.id);
+    } else if (res.status === "failed") {
+      setJobBanner(res.error || T("review.editFailed"), true);
+    }
+  } catch (err) {
+    setJobBanner(err.message || T("review.editFailed"), true);
+  } finally {
+    editConfirm.disabled = false;
+  }
+});
+
+editCancel.addEventListener("click", () => resetEditUi());
 
 keepSave.addEventListener("click", async () => {
   const changes = [...keepPending.entries()].map(([pred, keep]) => ({ pred, keep }));

@@ -86,3 +86,48 @@ def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:
             row["pos_err_px"] = float(np.mean(errs)) if errs else None
         rows.append(row)
     return {"clips": len(rows), "rows": rows}
+
+
+def m3_gate(out_root: Path, n: int = 8) -> dict:
+    from .analyze.constraints import extract_constraints
+    from .edit.agent import edit
+    from .ir.store import init_project
+
+    out_root = Path(out_root)
+    rows = []
+    keep_ok = 0
+    time_ok = 0
+    done = 0
+    for seed in range(1, n + 1):
+        d = out_root / f"m3{seed}"
+        root = d / "proj"
+        sd = root / "scenes" / "s1"
+        scene = make_synthetic_scene(sd, seed=seed, with_text=True)
+        scene = scene.model_copy(update={"id": "s1"})
+        scene.constraints = [
+            c.model_copy(update={"keep": c.pred.startswith("type(")})
+            for c in extract_constraints(scene)
+        ]
+        text = next(e for e in scene.elements if e.kind == "text")
+        init_project(
+            root,
+            {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, scene.frames - 1]},
+            scene,
+        )
+        res = edit(root, "s1", "문구를 Hello로", element=text.id, confirm=True)
+        keep = res.verify.keep_pass_rate if res.verify else 0.0
+        temporal = res.verify.temporal if res.verify and res.verify.temporal is not None else 0.0
+        ok_keep = keep >= 0.95
+        ok_time = temporal >= 0.7
+        keep_ok += ok_keep
+        time_ok += ok_time
+        done += res.status == "done"
+        rows.append({"seed": seed, "status": res.status, "keep": keep, "temporal": temporal})
+    return {
+        "n": n,
+        "done": done,
+        "keep_ok": keep_ok,
+        "temporal_ok": time_ok,
+        "passed": done == n and keep_ok == n and time_ok == n,
+        "rows": rows,
+    }
