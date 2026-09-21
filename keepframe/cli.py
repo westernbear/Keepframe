@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     g3 = sub.add_parser("gate-m3"); g3.add_argument("--out", required=True); g3.add_argument("--n", type=int, default=8)
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
-    sv.add_argument("--admin", action="store_true")
+    sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":

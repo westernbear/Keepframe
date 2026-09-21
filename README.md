@@ -38,7 +38,7 @@ python -c "import torch; from rapidocr_onnxruntime import RapidOCR; print('ocr o
 keepframe serve --workspace ./data/workspace
 ```
 
-http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic sample and opens review — no upload or analysis.
+http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic sample and opens review — no upload or analysis. `/admin` is on by default (seed `mina@keepframe.app` / `dev-admin`). `--no-admin` turns it off.
 
 ```bash
 keepframe analyze --video ref.mp4 --start 0 --end 90 --out ./out
@@ -54,7 +54,7 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 
 | Command | Role |
 | --- | --- |
-| `serve` | Maker UI. `--admin` mounts `/admin` |
+| `serve` | Maker UI. `/admin` on by default; `--no-admin` turns it off |
 | `analyze` | Video to IR |
 | `compose` | Scene JSON to HTML + GSAP |
 | `render` | Chromium frames, optional MP4 |

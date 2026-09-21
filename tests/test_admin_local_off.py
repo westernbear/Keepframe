@@ -2,7 +2,7 @@ import json
 from tests.test_web_server import start, get
 
 
-def test_admin_still_404_by_default(tmp_path):
+def test_admin_404_when_explicitly_off(tmp_path):
     srv = start(tmp_path)
     code, _, body = get(srv, "/admin")
     srv.shutdown()

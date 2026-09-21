@@ -28,3 +28,27 @@ def test_pages_call_admin_api():
     assert "<video" not in q.lower()
     assert "/admin/api/audit" in (STATIC / "admin-audit.html").read_text(encoding="utf-8")
     assert "delete" not in (STATIC / "admin-audit.html").read_text(encoding="utf-8").lower()
+
+
+MAKER_PAGES = (
+    "landing.html",
+    "library.html",
+    "ingest.html",
+    "analyze.html",
+    "review.html",
+    "agent.html",
+)
+
+
+def test_maker_pages_link_admin():
+    for name in MAKER_PAGES:
+        text = (STATIC / name).read_text(encoding="utf-8")
+        assert 'href="/admin"' in text, name
+        assert 'data-i18n="admin.manage"' in text, name
+
+
+def test_login_footer_is_seed_not_local_off():
+    text = (STATIC / "admin-login.html").read_text(encoding="utf-8")
+    assert "admin.localSeed" in text
+    assert "로컬판에는 이 화면이 없습니다." not in text
+    assert "admin.localOff" not in text
