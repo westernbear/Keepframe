@@ -52,3 +52,15 @@ def test_login_footer_is_seed_not_local_off():
     assert "admin.localSeed" in text
     assert "로컬판에는 이 화면이 없습니다." not in text
     assert "admin.localOff" not in text
+
+
+def test_llm_page_has_oauth_fields():
+    text = (STATIC / "admin-llm.html").read_text(encoding="utf-8")
+    assert 'id="auth"' in text
+    assert 'value="oauth"' in text
+    assert 'id="clientId"' in text
+    assert 'id="tokenUrl"' in text
+    assert 'id="tenantId"' in text
+    assert 'id="chatgptConnect"' in text
+    assert "/admin/api/llm/oauth/start" in text
+    assert '["chatgpt", "ChatGPT"]' in text

@@ -78,7 +78,56 @@ def test_provider_config_model_and_credentials(monkeypatch):
     assert ProviderConfig(provider="openai", model="gpt-4o").credentials_present() is False
     assert ProviderConfig(provider="openai", model="gpt-4o", api_key="k").credentials_present() is True
     assert ProviderConfig(provider="ollama", model="llama3").credentials_present() is True
-    assert ProviderConfig(provider="azure", model="gpt-4o", extra={"tenant_id": "x"}).credentials_present() is True
+    assert ProviderConfig(provider="azure", model="gpt-4o", extra={"tenant_id": "x"}).credentials_present() is False
+    assert ProviderConfig(
+        provider="azure", model="gpt-4o", auth="oauth", client_id="id", client_secret="sec", tenant_id="tid"
+    ).credentials_present() is True
+    assert ProviderConfig(
+        provider="chatgpt", model="gpt-5.4", auth="oauth", refresh_token="rt"
+    ).credentials_present() is True
+    dumped = ProviderConfig(
+        provider="chatgpt", model="gpt-5.4", auth="oauth", api_key="secret-jwt", refresh_token="rt"
+    ).public_dump()
+    assert dumped["chatgpt_connected"] is True
+    assert dumped["api_key"] == ""
+    assert dumped["refresh_token"] == "***"
+
+
+def test_litellm_client_oauth_azure_uses_ad_token(monkeypatch):
+    class _Msg:
+        content = "ok"
+        tool_calls = []
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    captured = {}
+
+    def _fake(**kwargs):
+        captured["kwargs"] = kwargs
+        return _Resp()
+
+    monkeypatch.setattr("litellm.completion", _fake)
+    monkeypatch.setattr("keepframe.session.llm.fetch_access_token", lambda params, provider="": "entra-token")
+    client = LiteLLMClient(
+        ProviderConfig(
+            provider="azure",
+            model="gpt-4o",
+            auth="oauth",
+            client_id="id",
+            client_secret="sec",
+            tenant_id="tid",
+            extra={"api_version": "2024-02-15-preview", "client_secret": "should-strip"},
+        )
+    )
+    reply = client.complete([{"role": "user", "content": "hi"}], [])
+    assert reply.content == "ok"
+    assert captured["kwargs"]["azure_ad_token"] == "entra-token"
+    assert captured["kwargs"]["api_version"] == "2024-02-15-preview"
+    assert "client_secret" not in captured["kwargs"]
 
 
 def test_litellm_client_calls_and_parses(monkeypatch):
@@ -113,6 +162,34 @@ def test_litellm_client_calls_and_parses(monkeypatch):
     assert reply.tool_calls[0]["arguments"] == {"prompt": "문구를 Hello로"}
     assert captured["kwargs"]["model"] == "openai/gpt-4o-mini"
     assert captured["kwargs"]["api_key"] == "k"
+
+
+def test_litellm_client_chatgpt_omits_api_key(monkeypatch):
+    class _Msg:
+        content = "ok"
+        tool_calls = []
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    captured = {}
+
+    def _fake(**kwargs):
+        captured["kwargs"] = kwargs
+        return _Resp()
+
+    monkeypatch.setattr("litellm.completion", _fake)
+    client = LiteLLMClient(
+        ProviderConfig(provider="chatgpt", model="gpt-5.4", auth="oauth", api_key="should-not-pass", refresh_token="rt")
+    )
+    reply = client.complete([{"role": "user", "content": "hi"}], [])
+    assert reply.content == "ok"
+    assert captured["kwargs"]["model"] == "chatgpt/gpt-5.4"
+    assert "api_key" not in captured["kwargs"]
+    assert "azure_ad_token" not in captured["kwargs"]
 
 
 def test_make_llm_falls_back_to_null_without_credentials(monkeypatch):

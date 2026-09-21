@@ -10,7 +10,9 @@ import threading
 
 
 def start_admin(tmp_path):
-    srv = make_server(tmp_path, port=0, admin=True, admin_svc=MemoryAdmin(), admin_auth=MemoryAuth())
+    admin = MemoryAdmin()
+    srv = make_server(tmp_path, port=0, admin=True, admin_svc=admin, admin_auth=MemoryAuth())
+    srv.admin_svc = admin
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -67,6 +69,87 @@ def test_admin_llm_api_get_and_post(tmp_path):
 
         code, body = _api(srv, "/admin/api/llm", cookie)
         assert body["settings"]["model"] == "claude-3-5-sonnet"
+
+        code, body = _api(
+            srv,
+            "/admin/api/llm",
+            cookie,
+            method="POST",
+            body={
+                "settings": {
+                    "provider": "azure",
+                    "model": "gpt-4o",
+                    "auth": "oauth",
+                    "client_id": "app",
+                    "client_secret": "secret",
+                    "tenant_id": "tid",
+                    "scope": "https://cognitiveservices.azure.com/.default",
+                }
+            },
+        )
+        assert code == 200
+        assert body["settings"]["auth"] == "oauth"
+        assert body["settings"]["client_id"] == "app"
+        assert body["settings"]["tenant_id"] == "tid"
+        assert body["settings"]["chatgpt_connected"] is False
+    finally:
+        srv.shutdown()
+
+
+def test_admin_chatgpt_oauth_start_and_disconnect(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(tmp_path))
+    monkeypatch.setattr("keepframe.session.chatgpt_oauth.ChatGPTOAuth.ensure_listener", lambda self: None)
+    srv = start_admin(tmp_path)
+    try:
+        cookie = _login(srv)
+        code, body = _api(srv, "/admin/api/llm/oauth/start?provider=chatgpt", cookie)
+        assert code == 200
+        assert "client_id=app_EMoamEEZ73f0CkXaXp7hrann" in body["url"]
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback" in body["url"]
+
+        code, body = _api(srv, "/admin/api/llm/oauth/start?provider=azure", cookie)
+        assert code == 400
+
+        code, body = _api(srv, "/admin/api/llm/oauth/start?provider=chatgpt", "keepframe_admin=bad")
+        assert code == 401
+
+        from keepframe.session.provider import ProviderConfig
+
+        srv.admin_svc.set_llm_settings(
+            ProviderConfig(provider="chatgpt", auth="oauth", api_key="at", refresh_token="rt", model="gpt-5.4"),
+            "mina@keepframe.app",
+        )
+        (tmp_path / "auth.json").write_text("{}", encoding="utf-8")
+        code, body = _api(srv, "/admin/api/llm/oauth/disconnect", cookie, method="POST")
+        assert code == 200
+        assert body["settings"]["chatgpt_connected"] is False
+        assert body["settings"]["provider"] == "openai"
+        assert not (tmp_path / "auth.json").exists()
+    finally:
+        srv.shutdown()
+
+
+def test_admin_llm_save_keeps_chatgpt_tokens(tmp_path):
+    srv = start_admin(tmp_path)
+    try:
+        cookie = _login(srv)
+        from keepframe.session.provider import ProviderConfig
+
+        srv.admin_svc.set_llm_settings(
+            ProviderConfig(provider="chatgpt", auth="oauth", api_key="at", refresh_token="rt", model="gpt-5.4"),
+            "mina@keepframe.app",
+        )
+        code, body = _api(
+            srv,
+            "/admin/api/llm",
+            cookie,
+            method="POST",
+            body={"settings": {"provider": "chatgpt", "model": "gpt-5.4", "auth": "oauth"}},
+        )
+        assert code == 200
+        assert body["settings"]["chatgpt_connected"] is True
+        assert srv.admin_svc.get_llm_settings().refresh_token == "rt"
+        assert body["settings"]["refresh_token"] == "***"
     finally:
         srv.shutdown()
 

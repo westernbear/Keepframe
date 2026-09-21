@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from ..log import get
+from .oauth import fetch_access_token
 from .provider import ProviderConfig
 
 log = get("keepframe.session")
@@ -104,11 +105,18 @@ class LiteLLMClient:
             "tools": tools,
             "tool_choice": "auto",
         }
-        if self.config.api_key:
+        if self.config.api_key and self.config.provider != "chatgpt":
             kwargs["api_key"] = self.config.api_key
         if self.config.base_url:
             kwargs["api_base"] = self.config.base_url
-        kwargs.update(self.config.extra or {})
+        oauth = self.config.oauth_params()
+        if oauth.present() and self.config.provider != "chatgpt":
+            token = fetch_access_token(oauth, provider=self.config.provider)
+            if self.config.provider == "azure":
+                kwargs["azure_ad_token"] = token
+            else:
+                kwargs["api_key"] = token
+        kwargs.update(self.config.litellm_extra())
         resp = self._litellm.completion(**kwargs)
         msg = (resp.choices[0].message) if resp and resp.choices else None
         reply = AssistantReply()

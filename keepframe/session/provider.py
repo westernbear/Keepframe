@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import os
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+from .oauth import OAuthParams, OAUTH_KEYS
 
 # Providers that do not need an API key (local runtimes).
 LOCAL_PROVIDERS = {"ollama", "vllm", "lm_studio", "local", "llamacpp", "huggingface"}
@@ -33,20 +37,57 @@ class ProviderConfig(BaseModel):
 
     provider: str = "openai"
     model: str = "gpt-4o-mini"
+    auth: Literal["api_key", "oauth"] = "api_key"
     api_key: str = ""
     base_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    tenant_id: str = ""
+    token_url: str = ""
+    scope: str = ""
+    refresh_token: str = ""
+    id_token: str = ""
+    account_id: str = ""
+    oauth_expires_at: float = 0.0
     extra: dict = Field(default_factory=dict)
 
     @property
     def litellm_model(self) -> str:
         return f"{self.provider}/{self.model}"
 
+    def chatgpt_connected(self) -> bool:
+        return self.provider == "chatgpt" and self.auth == "oauth" and bool(self.refresh_token or self.api_key)
+
+    def public_dump(self) -> dict:
+        d = self.model_dump()
+        d["chatgpt_connected"] = self.chatgpt_connected()
+        if self.chatgpt_connected():
+            d["api_key"] = ""
+            d["refresh_token"] = "***" if self.refresh_token else ""
+            d["id_token"] = ""
+        return d
+
+    def oauth_params(self) -> OAuthParams:
+        extra = self.extra or {}
+        return OAuthParams(
+            client_id=self.client_id or str(extra.get("client_id") or ""),
+            client_secret=self.client_secret or str(extra.get("client_secret") or ""),
+            tenant_id=self.tenant_id or str(extra.get("tenant_id") or ""),
+            token_url=self.token_url or str(extra.get("token_url") or ""),
+            scope=self.scope or str(extra.get("scope") or extra.get("azure_scope") or ""),
+        )
+
+    def litellm_extra(self) -> dict:
+        return {k: v for k, v in (self.extra or {}).items() if k not in OAUTH_KEYS}
+
     def credentials_present(self) -> bool:
+        if self.chatgpt_connected():
+            return True
+        if self.oauth_params().present():
+            return True
         if self.api_key or self.base_url:
             return True
         if self.provider in LOCAL_PROVIDERS:
-            return True
-        if self.extra and any(k in self.extra for k in ("client_secret", "token_url", "client_id", "tenant_id")):
             return True
         return bool(os.environ.get(PROVIDER_ENV_KEYS.get(self.provider, "")))
 

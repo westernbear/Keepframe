@@ -6,10 +6,11 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import parse_qs
 
 from keepframe.admin.auth import COOKIE, cookie_header
 from keepframe.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
+from keepframe.session.chatgpt_oauth import FLOW, clear_litellm_auth, preserve_chatgpt_tokens
 from keepframe.session.provider import ProviderConfig
 
 if TYPE_CHECKING:
@@ -142,7 +143,25 @@ class AdminRoutes:
         if path == "/admin/api/llm":
             if self._require(handler) is None:
                 return True
-            handler._json(200, {"settings": self.admin_svc.get_llm_settings().model_dump()})
+            handler._json(200, {"settings": self.admin_svc.get_llm_settings().public_dump()})
+            return True
+
+        if path == "/admin/api/llm/oauth/start":
+            actor = self._require(handler)
+            if actor is None:
+                return True
+            provider = (parse_qs(u.query).get("provider") or ["chatgpt"])[0]
+            if provider != "chatgpt":
+                handler._json(400, {"error": "unsupported oauth provider"})
+                return True
+            host = handler.headers.get("Host") or "127.0.0.1:8765"
+            origin = f"http://{host}"
+            try:
+                url = FLOW.begin(actor, origin, self.admin_svc)
+            except RuntimeError as e:
+                handler._json(409, {"error": str(e)})
+                return True
+            handler._json(200, {"url": url, "provider": "chatgpt"})
             return True
 
         if re.fullmatch(r"/admin/api/quarantine/[^/]+/video", path):
@@ -216,8 +235,20 @@ class AdminRoutes:
             except Exception as e:  # pydantic ValidationError
                 handler._json(400, {"error": f"{type(e).__name__}: {e}"})
                 return True
+            config = preserve_chatgpt_tokens(config, self.admin_svc.get_llm_settings())
             self.admin_svc.set_llm_settings(config, actor)
-            handler._json(200, {"settings": config.model_dump()})
+            handler._json(200, {"settings": config.public_dump()})
+            return True
+
+        if path == "/admin/api/llm/oauth/disconnect":
+            actor = self._require(handler)
+            if actor is None:
+                return True
+            clear_litellm_auth()
+            prev = self.admin_svc.get_llm_settings()
+            if prev.chatgpt_connected() or prev.provider == "chatgpt":
+                self.admin_svc.set_llm_settings(ProviderConfig(), actor)
+            handler._json(200, {"settings": self.admin_svc.get_llm_settings().public_dump()})
             return True
 
         if path.startswith("/admin"):
