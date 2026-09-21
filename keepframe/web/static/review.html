@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 검수</title>
-<link href="/static/css/app.css?v=20260915" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260921" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260915"></script>
-<script type="module" src="/static/js/api.js?v=20260915"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
+<script type="module" src="/static/js/api.js?v=20260921t"></script>
 <style>
 .header--review { height: auto; min-height: 56px; flex-wrap: wrap; gap: 8px; padding-top: 8px; padding-bottom: 8px; }
 .header--review .header__nav { flex-wrap: wrap; }
@@ -42,12 +42,12 @@
 <a class="btn btn--ghost" href="/library" data-i18n="nav.library">라이브러리</a>
 <a class="btn btn--ghost" href="/admin" data-i18n="admin.manage">관리</a>
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
-<p class="job-banner" id="demo-note" hidden data-i18n="review.demoNote">분석 없이 보는 합성 샘플입니다.</p>
+<p class="job-banner" id="demo-note" hidden data-i18n="review.demoNote">합성 샘플입니다. 분석은 안 돌렸습니다.</p>
 </div>
 </header>
 <main class="review-layout is-loading" id="review-root" aria-busy="true">
 <div class="review-missing" id="review-missing">
-<p data-i18n="review.needProject">열린 프로젝트가 없습니다. 라이브러리에서 장면을 고르세요.</p>
+<p data-i18n="review.needProject">지금 볼 프로젝트가 없습니다. 라이브러리에서 장면을 고르세요.</p>
 <a class="btn btn--primary" href="/library" data-i18n="review.backLibrary">라이브러리로</a>
 </div>
 <div class="review-loading" id="review-loading" aria-live="polite">
@@ -116,7 +116,7 @@
 <div class="inspector__head"><span id="element-count">요소 0</span></div>
 <div class="inspector__body">
 <p class="job-banner" id="job-banner" role="status" hidden></p>
-<div id="empty-state" class="empty-state" hidden data-i18n="review.empty">인식된 요소가 없습니다. 원본에서 드래그해 첫 박스를 지정하세요.</div>
+<div id="empty-state" class="empty-state" hidden data-i18n="review.empty">요소가 없습니다. 원본에서 드래그해 첫 박스를 그리세요.</div>
 <input class="element-filter" id="element-filter" type="search" data-i18n-placeholder="review.filter" placeholder="요소 검색" hidden/>
 <div id="element-list"></div>
 <div id="constraints-panel"></div>
@@ -144,7 +144,7 @@
 <div class="form-row"><label data-i18n="review.frame">프레임</label><input id="mask-frame" type="number"/></div>
 <button class="btn btn--secondary" id="mask-run" type="button" data-i18n="review.runMask">마스크 적용</button></div></div>
 <div class="accordion accordion--open" id="acc-bbox"><div class="accordion__head"><span data-i18n="review.bbox">박스 프롬프트</span></div>
-<div class="accordion__body"><p class="empty-state" data-i18n="review.drawHint">원본에서 드래그해 박스를 지정하세요.</p>
+<div class="accordion__body"><p class="empty-state" data-i18n="review.drawHint">원본에서 드래그해 박스를 그리세요.</p>
 <div class="form-row"><label data-i18n="review.frame">프레임</label><input id="bbox-frame" type="number"/></div>
 <div class="form-row"><label data-i18n="review.bboxLabel">박스</label><input id="bbox-coords" type="text" placeholder="x0,y0,x1,y1"/></div>
 <button class="btn btn--secondary" id="bbox-run" type="button" data-i18n="review.runBbox">박스 적용</button></div></div>
@@ -164,10 +164,23 @@ import {
   postKeep,
   postEdit,
   postCorrect,
-  reviewFrameUrl,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20260915";
-import { T, Tf } from "/static/js/i18n.js?v=20260915";
+} from "/static/js/api.js?v=20260921t";
+import { T, Tf } from "/static/js/i18n.js?v=20260921t";
+import {
+  createPreviewCache,
+  isImageDecoded,
+  isDueForNextFrame,
+  isLastPlaybackFrame,
+  seekDelayMs,
+  isSeekQueuedWhilePlaying,
+  frameStep,
+} from "/static/js/playback.js?v=20260921t";
+
+const JOB_POLL_INTERVAL_MS = 800;
+const LOADING_PCT_START = 8;
+const LOADING_PCT_STATE = 45;
+const LOADING_PCT_FRAMES = 85;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -178,6 +191,12 @@ let frame = 0;
 let playing = false;
 let raf = 0;
 let lastTick = 0;
+let waiting = false;
+const previews = createPreviewCache({
+  project: projectId,
+  scene: sceneId,
+  version: () => versionId,
+});
 let keepDirty = false;
 const keepPending = new Map();
 let errorPeaks = [];
@@ -249,7 +268,7 @@ function yieldMain() {
 }
 
 function waitImg(img) {
-  if (img.complete && img.naturalWidth > 1) return Promise.resolve();
+  if (isImageDecoded(img)) return Promise.resolve();
   return new Promise((resolve) => {
     const done = () => {
       img.removeEventListener("load", done);
@@ -261,6 +280,10 @@ function waitImg(img) {
   });
 }
 
+function isFrameAlreadyOnScreen(index) {
+  return shownFrame === index && isImageDecoded(orig);
+}
+
 function formatTime(f, fps) {
   const sec = f / fps;
   const mm = String(Math.floor(sec / 60)).padStart(2, "0");
@@ -269,46 +292,67 @@ function formatTime(f, fps) {
   return `${mm}:${ss}:${ff}`;
 }
 
-function loadFrameImages() {
-  imgTimer = 0;
-  if (!state || shownFrame === frame) return;
-  shownFrame = frame;
-  reconLoading.hidden = false;
-  reconError.hidden = true;
-  orig.src = reviewFrameUrl("orig", frame, projectId, sceneId, versionId);
-  recon.src = reviewFrameUrl("recon", frame, projectId, sceneId, versionId);
-  if (recon.complete) reconLoading.hidden = true;
-  loadBboxes();
-  if (playing) {
-    const n = state.scene.frames;
-    for (let d = 1; d <= 3 && frame + d < n; d++) {
-      for (const kind of ["orig", "recon"]) {
-        const im = new Image();
-        im.src = reviewFrameUrl(kind, frame + d, projectId, sceneId, versionId);
-      }
-    }
-  }
-}
-
-function setFrame(f, immediate = false) {
+function paintPlayhead() {
   if (!state) return;
   const n = state.scene.frames;
-  frame = Math.max(0, Math.min(n - 1, f));
   frameNum.textContent = String(frame);
   frameTime.textContent = formatTime(frame, state.scene.fps);
   timelineSvg.setAttribute("aria-valuenow", String(frame));
   timelineSvg.setAttribute("aria-valuemax", String(n - 1));
   drawPlayhead();
-  if (shownFrame === frame) return;
+}
+
+function applyReadyFrame(f) {
+  orig.src = previews.src("orig", f);
+  recon.src = previews.src("recon", f);
+  shownFrame = f;
+  reconLoading.hidden = true;
+  reconError.hidden = true;
+  loadBboxes();
+  previews.prefetch(f + 1, state.scene.frames);
+}
+
+async function loadFrameImages() {
+  imgTimer = 0;
+  if (!state) return;
+  const target = frame;
+  if (isFrameAlreadyOnScreen(target)) return;
+  previews.prefetch(target, state.scene.frames);
+  if (!previews.isReady(target)) {
+    reconLoading.hidden = false;
+    reconError.hidden = true;
+  }
+  const ok = await previews.wait(target);
+  if (frame !== target) return;
+  if (ok) applyReadyFrame(target);
+  else {
+    reconLoading.hidden = true;
+    reconError.hidden = false;
+  }
+}
+
+function clampFrame(f) {
+  return Math.max(0, Math.min(state.scene.frames - 1, f));
+}
+
+function scheduleFrameLoad(immediate) {
+  if (isFrameAlreadyOnScreen(frame)) return;
   if (immediate) {
     clearTimeout(imgTimer);
     imgTimer = 0;
     loadFrameImages();
     return;
   }
-  if (playing && imgTimer) return;
+  if (isSeekQueuedWhilePlaying(playing, imgTimer)) return;
   clearTimeout(imgTimer);
-  imgTimer = setTimeout(loadFrameImages, playing ? 40 : 32);
+  imgTimer = setTimeout(loadFrameImages, seekDelayMs(playing));
+}
+
+function setFrame(f, immediate = false) {
+  if (!state) return;
+  frame = clampFrame(f);
+  paintPlayhead();
+  scheduleFrameLoad(immediate);
 }
 
 function mapBox(box, img, sceneW, sceneH) {
@@ -554,12 +598,17 @@ function applyElementFilter() {
   });
 }
 
+function goAgent() {
+  const v = versionId ? `&v=${encodeURIComponent(versionId)}` : "";
+  location.href = `/agent?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}${v}`;
+}
+
 function paintApprove(status) {
   if (!approveBtn) return;
   const approved = status === "approved";
   approveBtn.hidden = false;
-  approveBtn.disabled = approved;
-  approveBtn.dataset.i18n = approved ? "review.approved" : "review.approve";
+  approveBtn.disabled = false;
+  approveBtn.dataset.i18n = approved ? "review.openAgent" : "review.approve";
   approveBtn.textContent = T(approveBtn.dataset.i18n);
 }
 
@@ -582,7 +631,7 @@ async function refreshState(v) {
   const keepFrame = frame;
   const keepSel = selectedId;
   versionId = v;
-  setProgress(8, T("review.loading"));
+  setProgress(LOADING_PCT_START, T("review.loading"));
   try {
     state = await fetchReviewState(projectId, sceneId, versionId);
   } catch (err) {
@@ -608,25 +657,25 @@ async function refreshState(v) {
 }
 
 async function loadState() {
-  setProgress(8, T("review.loading"));
-  orig.src = reviewFrameUrl("orig", 0, projectId, sceneId, versionId);
+  setProgress(LOADING_PCT_START, T("review.loading"));
+  orig.src = previews.src("orig", 0);
   const origReady = waitImg(orig);
   state = await fetchReviewState(projectId, sceneId, versionId);
   await yieldMain();
-  setProgress(45, T("review.loading"));
+  setProgress(LOADING_PCT_STATE, T("review.loading"));
   versionId = state.version.id;
   sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
   frameTotal.textContent = String(state.scene.frames);
   fillVersions();
   paintApprove(state.status);
   reconLoading.hidden = false;
-  recon.src = reviewFrameUrl("recon", 0, projectId, sceneId, versionId);
+  recon.src = previews.src("recon", 0);
   await renderElements();
   buildErrorStrip();
   if (!selectedId && state.scene.elements.length) selectElement(state.scene.elements[0].id);
   shownFrame = 0;
   frame = 0;
-  setProgress(85, T("review.loadingFrames"));
+  setProgress(LOADING_PCT_FRAMES, T("review.loadingFrames"));
   await origReady;
   loadBboxes();
   clearLoading();
@@ -673,7 +722,7 @@ async function pollJob() {
 async function runCorrect(op, args) {
   await postCorrect(projectId, sceneId, op, args);
   clearInterval(pollTimer);
-  pollTimer = setInterval(pollJob, 800);
+  pollTimer = setInterval(pollJob, JOB_POLL_INTERVAL_MS);
   pollJob();
 }
 
@@ -688,18 +737,43 @@ function nextErrorPeak(backward = false) {
   }
 }
 
+function showNextPlaybackFrame(next) {
+  frame = next;
+  paintPlayhead();
+  applyReadyFrame(next);
+}
+
 function tick(ts) {
   if (!playing) return;
+  if (waiting) {
+    raf = requestAnimationFrame(tick);
+    return;
+  }
   if (!lastTick) lastTick = ts;
-  const dt = (ts - lastTick) / 1000;
-  if (dt >= 1 / state.scene.fps) {
+  if (isDueForNextFrame(ts - lastTick, state.scene.fps)) {
     lastTick = ts;
-    if (frame >= state.scene.frames - 1) {
+    if (isLastPlaybackFrame(frame, state.scene.frames)) {
       setPlaying(false);
-      setFrame(state.scene.frames - 1, true);
       return;
     }
-    setFrame(frame + 1);
+    const next = frame + 1;
+    previews.prefetch(next, state.scene.frames);
+    if (previews.isReady(next)) {
+      showNextPlaybackFrame(next);
+    } else {
+      waiting = true;
+      previews.wait(next).then((ok) => {
+        waiting = false;
+        if (!playing) return;
+        lastTick = performance.now();
+        if (!ok) {
+          setPlaying(false);
+          reconError.hidden = false;
+          return;
+        }
+        showNextPlaybackFrame(next);
+      });
+    }
   }
   raf = requestAnimationFrame(tick);
 }
@@ -707,6 +781,7 @@ function tick(ts) {
 function setPlaying(on) {
   playing = !!on;
   lastTick = 0;
+  waiting = false;
   playBtn.setAttribute("aria-label", playing ? T("review.pause") : T("review.play"));
   playBtn.classList.toggle("is-playing", playing);
   playIcon.hidden = playing;
@@ -715,7 +790,10 @@ function setPlaying(on) {
   pauseIcon.style.display = playing ? "inline-block" : "none";
   cancelAnimationFrame(raf);
   raf = 0;
-  if (playing) raf = requestAnimationFrame(tick);
+  if (playing && state) {
+    previews.prefetch(frame, state.scene.frames);
+    raf = requestAnimationFrame(tick);
+  }
 }
 
 playBtn.addEventListener("click", () => {
@@ -728,9 +806,9 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     playBtn.click();
   } else if (e.code === "ArrowLeft") {
-    setFrame(frame - (e.shiftKey ? 10 : 1));
+    setFrame(frame - frameStep(e.shiftKey));
   } else if (e.code === "ArrowRight") {
-    setFrame(frame + (e.shiftKey ? 10 : 1));
+    setFrame(frame + frameStep(e.shiftKey));
   } else if (e.key === "[") {
     nextErrorPeak(true);
   } else if (e.key === "]") {
@@ -844,9 +922,9 @@ function paintEditResult(res) {
   } else {
     editConflicts.hidden = true;
   }
-  const wait = res.status === "needs_confirm" || res.status === "needs_choice";
-  editConfirm.hidden = !wait;
-  editCancel.hidden = !wait;
+  const needsEditConfirm = res.status === "needs_confirm" || res.status === "needs_choice";
+  editConfirm.hidden = !needsEditConfirm;
+  editCancel.hidden = !needsEditConfirm;
 }
 
 function editChoices() {
@@ -967,11 +1045,14 @@ document.getElementById("text-run").addEventListener("click", async () => {
 
 approveBtn.addEventListener("click", async () => {
   if (!projectId || approveBtn.disabled) return;
+  if (state && state.status === "approved") {
+    goAgent();
+    return;
+  }
   approveBtn.disabled = true;
   try {
     await postApprove(projectId, sceneId, versionId);
-    const v = versionId ? `&v=${encodeURIComponent(versionId)}` : "";
-    location.href = `/agent?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}${v}`;
+    goAgent();
   } catch (err) {
     paintApprove(state && state.status);
     setJobBanner(err.message || T("review.approveFailed"), true);

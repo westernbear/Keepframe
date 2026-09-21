@@ -80,7 +80,7 @@ def test_ingest_gpu_status_is_not_hardcoded():
 def test_i18n_has_ko_and_en_keys():
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     assert "keepframe.lang" in src
-    for key in ("ingest.start", "review.keepSave", "review.approve", "review.editRun", "error.liveaction", "library.empty", "landing.headline"):
+    for key in ("ingest.start", "review.keepSave", "review.approve", "review.openAgent", "review.editRun", "error.liveaction", "library.empty", "landing.headline"):
         assert src.count(f'"{key}"') >= 2
 
 
@@ -94,6 +94,14 @@ def test_i18n_markup_keys_exist_in_both_langs():
         used.update(re.findall(r'data-i18n="([^"]+)"', html.read_text(encoding="utf-8")))
     missing = [k for k in sorted(used) if f'"{k}"' not in ko or f'"{k}"' not in en]
     assert missing == []
+
+
+def test_api_prefetches_review_frames():
+    src = (STATIC / "js" / "playback.js").read_text(encoding="utf-8")
+    assert "function createPreviewCache" in src
+    assert "img.decode" in src
+    assert "PREFETCH_AHEAD" in src
+    assert "PREVIEW_CACHE_LIMIT" in src
 
 
 def test_css_tokens_match_design():
@@ -122,6 +130,8 @@ def test_landing_and_library_link_to_demo():
     assert "nav.demo" in landing
     assert "p.scene" in library
     assert 'p.status === "approved"' in library
+    assert "/agent?project=" in library
+    assert 'p.status === "review"' in library
 
 
 def test_library_filters_are_wired():

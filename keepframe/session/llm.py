@@ -29,7 +29,7 @@ class NullClient:
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         return AssistantReply(
-            content="세션 에이전트가 설정되지 않았습니다. KEEPFRAME_LLM_API_KEY(또는 OPENAI_API_KEY)를 지정하세요."
+            content="에이전트가 설정되지 않았습니다. KEEPFRAME_LLM_API_KEY(또는 OPENAI_API_KEY)를 넣으세요."
         )
 
 

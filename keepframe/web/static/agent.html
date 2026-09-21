@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Keepframe - 세션 에이전트</title>
+<title>Keepframe - 에이전트</title>
 <link href="/static/css/app.css?v=20260921" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921"></script>
-<script type="module" src="/static/js/api.js?v=20260921"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
+<script type="module" src="/static/js/api.js?v=20260921t"></script>
 <style>
 :root {
   --agent-headline: "Geist", "Inter", system-ui, sans-serif;
@@ -103,7 +103,7 @@
 <div style="display:flex;align-items:center;gap:14px">
 <span class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/><span data-i18n="app.name">Keepframe</span></span>
 <div class="header__divider"></div>
-<h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="agent.title">세션 에이전트</h1>
+<h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="agent.title">에이전트</h1>
 <span id="agent-scene" class="mono" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
 </div>
 <div class="header__nav">
@@ -115,11 +115,11 @@
 <main class="agent-shell" id="agent-root">
 <aside class="agent-chat">
 <div class="agent-chat__head">
-<h2 data-i18n="agent.title">세션 에이전트</h2>
+<h2 data-i18n="agent.title">에이전트</h2>
 <span class="agent-chat__meta" id="agent-model">—</span>
 </div>
 <div class="agent-chat__log" id="agent-log">
-<p class="agent-empty" id="agent-empty" data-i18n="agent.empty">승인한 장면을 자연어로 다듬으세요. 예: 문구를 Hello로 바꿔줘</p>
+<p class="agent-empty" id="agent-empty" data-i18n="agent.empty">예: 문구를 Hello로 바꿔줘</p>
 </div>
 <div class="agent-tools" id="agent-tools">
 <button class="tool" type="button" data-tool="analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="agent.tool.analyze">분석</span></button>
@@ -132,7 +132,7 @@
 <button class="tool" type="button" data-tool="report"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span data-i18n="agent.tool.report">보고서</span></button>
 </div>
 <div class="agent-compose">
-<textarea id="agent-input" rows="2" data-i18n-placeholder="agent.placeholder" placeholder="자연어로 장면 수정·검증·출력을 요청하세요."></textarea>
+<textarea id="agent-input" rows="2" data-i18n-placeholder="agent.placeholder" placeholder="수정이나 검증, 내보내기를 적어 보내세요."></textarea>
 <div class="agent-compose__row">
 <span class="agent-compose__hint">Ctrl+Enter 전송</span>
 <button class="btn btn--primary" id="agent-send" type="button" data-i18n="agent.send">전송</button>
@@ -171,10 +171,16 @@ import {
   fetchReviewState,
   postAgent,
   postEdit,
-  reviewFrameUrl,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20260921";
-import { T, Tf } from "/static/js/i18n.js?v=20260921";
+} from "/static/js/api.js?v=20260921t";
+import { T } from "/static/js/i18n.js?v=20260921t";
+import {
+  createPreviewCache,
+  isDueForNextFrame,
+  isLastPlaybackFrame,
+} from "/static/js/playback.js?v=20260921t";
+
+const KEEP_PASS_RATE = 0.95;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
@@ -185,9 +191,15 @@ let frame = 0;
 let playing = false;
 let raf = 0;
 let lastTick = 0;
+let waiting = false;
 let selectedId = null;
 let pendingIntent = null;
 let pendingPrompt = "";
+const previews = createPreviewCache({
+  project: projectId,
+  scene: sceneId,
+  version: () => versionId,
+});
 
 const logEl = document.getElementById("agent-log");
 const inputEl = document.getElementById("agent-input");
@@ -218,39 +230,84 @@ function hideEmpty() {
   emptyEl.hidden = true;
 }
 
-function frameUrl(kind) {
-  return reviewFrameUrl(kind, frame, projectId, sceneId, versionId);
+function applyReadyFrame(f) {
+  orig.src = previews.src("orig", f);
+  recon.src = previews.src("recon", f);
+  previews.prefetch(f + 1, state.scene.frames);
 }
 
 function loadFrame() {
   if (!state) return;
-  orig.src = frameUrl("orig");
-  recon.src = frameUrl("recon");
+  const target = frame;
+  previews.prefetch(target, state.scene.frames);
+  previews.wait(target).then((ok) => {
+    if (!ok || frame !== target) return;
+    applyReadyFrame(target);
+  });
+}
+
+function clampFrame(f) {
+  return Math.max(0, Math.min(state.scene.frames - 1, f));
 }
 
 function setFrame(f) {
   if (!state) return;
-  frame = Math.max(0, Math.min(state.scene.frames - 1, f));
+  frame = clampFrame(f);
   frameNum.textContent = String(frame);
   loadFrame();
 }
 
 function setPlaying(on) {
   playing = !!on;
+  lastTick = 0;
+  waiting = false;
   playBtn.classList.toggle("is-playing", playing);
   playIcon.hidden = playing;
   pauseIcon.hidden = !playing;
-  if (playing) raf = requestAnimationFrame(tick);
-  else { cancelAnimationFrame(raf); raf = 0; }
+  cancelAnimationFrame(raf);
+  raf = 0;
+  if (playing && state) {
+    previews.prefetch(frame, state.scene.frames);
+    raf = requestAnimationFrame(tick);
+  }
+}
+
+function showNextPlaybackFrame(next) {
+  frame = next;
+  frameNum.textContent = String(frame);
+  applyReadyFrame(next);
 }
 
 function tick(ts) {
   if (!playing) return;
+  if (waiting) {
+    raf = requestAnimationFrame(tick);
+    return;
+  }
   if (!lastTick) lastTick = ts;
-  if ((ts - lastTick) / 1000 >= 1 / state.scene.fps) {
+  if (isDueForNextFrame(ts - lastTick, state.scene.fps)) {
     lastTick = ts;
-    if (frame >= state.scene.frames - 1) { setPlaying(false); setFrame(0); return; }
-    setFrame(frame + 1);
+    if (isLastPlaybackFrame(frame, state.scene.frames)) {
+      setPlaying(false);
+      return;
+    }
+    const next = frame + 1;
+    previews.prefetch(next, state.scene.frames);
+    if (previews.isReady(next)) {
+      showNextPlaybackFrame(next);
+    } else {
+      waiting = true;
+      previews.wait(next).then((ok) => {
+        waiting = false;
+        if (!playing) return;
+        lastTick = performance.now();
+        if (!ok) {
+          setPlaying(false);
+          return;
+        }
+        showNextPlaybackFrame(next);
+      });
+    }
   }
   raf = requestAnimationFrame(tick);
 }
@@ -324,10 +381,10 @@ function appendToolCall(name, args, result) {
 
 function appendVerify(verify) {
   if (!verify) return;
-  const pass = verify.passed !== false && verify.keep_pass_rate >= 0.95;
+  const keepPassed = verify.passed !== false && verify.keep_pass_rate >= KEEP_PASS_RATE;
   const chip = document.createElement("span");
-  chip.className = "verify-chip " + (pass ? "verify-chip--pass" : "verify-chip--fail");
-  chip.textContent = `${pass ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * 100)}% · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
+  chip.className = "verify-chip " + (keepPassed ? "verify-chip--pass" : "verify-chip--fail");
+  chip.textContent = `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * 100)}% · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
   logEl.appendChild(chip);
   logEl.scrollTop = logEl.scrollHeight;
 }

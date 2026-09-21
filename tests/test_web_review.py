@@ -102,6 +102,8 @@ def test_review_page_has_approve_button():
     assert 'id="review-approve"' in html
     assert "postApprove" in html
     assert "paintApprove" in html
+    assert "goAgent" in html
+    assert "review.openAgent" in html
     css = REVIEW_CSS.read_text(encoding="utf-8")
     assert ".review-empty #review-approve" in css
 
@@ -172,7 +174,10 @@ def test_review_play_button_toggles_pause_icon():
 
 def test_review_playing_does_not_reset_image_timer():
     html = REVIEW_HTML.read_text(encoding="utf-8")
-    assert "if (playing && imgTimer)" in html
+    assert "isSeekQueuedWhilePlaying" in html
+    assert "createPreviewCache" in html
+    assert "previews.wait" in html
+    assert "waiting" in html
 
 
 def test_review_timeline_playhead_spans_tracks_without_overflowing_ruler():

@@ -29,7 +29,9 @@ async function fetchEstimate(body) {
   return api("/api/estimate", { method: "POST", body: JSON.stringify(body) });
 }
 
-async function fetchFilmstrip(projectId, n = 8) {
+const DEFAULT_FILMSTRIP_COUNT = 8;
+
+async function fetchFilmstrip(projectId, n = DEFAULT_FILMSTRIP_COUNT) {
   return api(`/api/projects/${projectId}/filmstrip?n=${n}`);
 }
 
@@ -102,4 +104,5 @@ export {
   postCorrect,
   reviewFrameUrl,
   reviewAssetUrl,
+  DEFAULT_FILMSTRIP_COUNT,
 };

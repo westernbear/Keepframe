@@ -38,8 +38,12 @@ def test_agent_page_serves(tmp_path):
     finally:
         srv.shutdown()
     assert code == 200
-    assert "agent-chat" in body.decode("utf-8")
-    assert "세션 에이전트".encode("utf-8") in body
+    html = body.decode("utf-8")
+    assert "agent-chat" in html
+    assert "세션 에이전트" not in html
+    assert "에이전트" in html
+    assert "createPreviewCache" in html
+    assert "previews.wait" in html
 
 
 def test_agent_api_returns_reply(tmp_path, monkeypatch):

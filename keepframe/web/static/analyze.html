@@ -6,8 +6,8 @@
 <title>분석 진행 - Keepframe</title>
 <link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260913"></script>
-<script type="module" src="/static/js/api.js?v=20260913"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
+<script type="module" src="/static/js/api.js?v=20260921t"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -52,7 +52,7 @@
 <ul class="progress-steps" data-steps>
 <li data-step="shots" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.shots">구간·샷 분할</span></li>
 <li data-step="bg" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.bg">배경</span></li>
-<li data-step="text" class="is-waiting"><div class="step-dot"></div><div><strong data-i18n="analyze.step.text">텍스트 인식</strong><div class="step-hint" data-i18n="analyze.step.textHint">장면당 수 분 허용</div></div></li>
+<li data-step="text" class="is-waiting"><div class="step-dot"></div><div><strong data-i18n="analyze.step.text">텍스트 인식</strong><div class="step-hint" data-i18n="analyze.step.textHint">장면당 몇 분 걸림</div></div></li>
 <li data-step="regions" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.regions">영역 추출</span></li>
 <li data-step="sprites" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.sprites">sprite 최적화</span></li>
 <li data-step="keyframes" class="is-waiting"><div class="step-dot"></div><span data-i18n="analyze.step.keyframes">키프레임</span></li>
@@ -72,8 +72,10 @@
 </main>
 </div>
 <script type="module">
-import { api, fetchFilmstrip } from "/static/js/api.js?v=20260913";
-import { T, Tf } from "/static/js/i18n.js?v=20260913";
+import { api, fetchFilmstrip, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921t";
+import { T, Tf } from "/static/js/i18n.js?v=20260921t";
+
+const ANALYZE_POLL_INTERVAL_MS = 1000;
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("job") || params.get("project");
@@ -165,7 +167,7 @@ function updateJob(job) {
 }
 
 async function showFilmstrip(id) {
-  const { frames } = await fetchFilmstrip(id, 8);
+  const { frames } = await fetchFilmstrip(id, DEFAULT_FILMSTRIP_COUNT);
   const strip = document.querySelector("[data-filmstrip]");
   if (!strip || !frames) return;
   strip.innerHTML = "";
@@ -223,7 +225,7 @@ async function poll(jobId) {
       body: JSON.stringify(payload),
     });
     updateJob(job);
-    setInterval(() => poll(job.id), 1000);
+    setInterval(() => poll(job.id), ANALYZE_POLL_INTERVAL_MS);
   } catch (err) {
     showError(err.message || T("analyze.startFailed"));
   }

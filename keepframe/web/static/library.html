@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - Project Library</title>
-<link href="/static/css/app.css?v=20260914" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260921" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260914"></script>
-<script type="module" src="/static/js/api.js?v=20260914"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
+<script type="module" src="/static/js/api.js?v=20260921t"></script>
 </head>
 <body class="app">
 <header class="header">
@@ -34,6 +34,10 @@
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
 <span data-i18n="nav.review">검수</span>
 </a>
+<a class="sidebar__link" href="/agent">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+<span data-i18n="nav.agent">에이전트</span>
+</a>
 </nav>
 <main class="main">
 <div class="toolbar">
@@ -47,7 +51,7 @@
 </div>
 </div>
 <div id="library-empty" class="page-desc" style="padding:24px 0" hidden>
-<p data-i18n="library.empty">프로젝트가 없습니다. 새 프로젝트에서 레퍼런스를 올리세요.</p>
+<p data-i18n="library.empty">프로젝트가 없습니다. 새 레퍼런스를 올리세요.</p>
 <p style="margin-top:12px;display:flex;flex-wrap:wrap;gap:12px">
 <a class="btn btn--primary" href="/new" data-i18n="nav.new">새 레퍼런스</a>
 <a class="btn btn--secondary btn--inline" href="/demo" data-i18n="nav.demo">샘플 결과</a>
@@ -56,11 +60,11 @@
 <div id="project-list"></div>
 </main>
 <footer class="footer">
-<span data-i18n="library.scope">평면 2D 모션그래픽과 UI 화면 녹화만 받습니다.</span>
+<span data-i18n="library.scope">지금은 평면 2D 모션그래픽과 UI 화면 녹화만 받습니다.</span>
 </footer>
 <script type="module">
-import { api } from "/static/js/api.js?v=20260914";
-import { T, Tf, applyI18n } from "/static/js/i18n.js?v=20260914";
+import { api } from "/static/js/api.js?v=20260921t";
+import { T, Tf, applyI18n } from "/static/js/i18n.js?v=20260921t";
 
 function statusLabel(status) {
   return T(`status.${status}`) === `status.${status}` ? status : T(`status.${status}`);
@@ -75,13 +79,22 @@ const BADGE_CLASS = {
   rejected: "badge--error",
 };
 
-function rowHref(p) {
-  if (p.status === "analyzing" || p.status === "uploaded") {
+function isAnalyzeQueue(status) {
+  return status === "analyzing" || status === "uploaded";
+}
+
+function hrefForProject(p) {
+  if (isAnalyzeQueue(p.status)) {
     return `/analyze?job=${encodeURIComponent(p.id)}`;
   }
-  if (p.status === "review" || p.status === "approved") {
-    const scene = p.scene || "s1";
+  const scene = p.scene || "s1";
+  if (p.status === "review") {
     return `/review?project=${encodeURIComponent(p.id)}&scene=${encodeURIComponent(scene)}`;
+  }
+  if (p.status === "approved") {
+    let url = `/agent?project=${encodeURIComponent(p.id)}&scene=${encodeURIComponent(scene)}`;
+    if (p.version) url += `&v=${encodeURIComponent(p.version)}`;
+    return url;
   }
   return null;
 }
@@ -154,7 +167,7 @@ function renderProject(p, index) {
   body.append(title, meta, badge);
   row.append(thumb, body);
 
-  const href = rowHref(p);
+  const href = hrefForProject(p);
   if (href) {
     row.style.cursor = "pointer";
     row.addEventListener("click", () => { location.href = href; });

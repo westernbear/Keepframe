@@ -112,7 +112,7 @@ class MemoryAdmin:
                 filename="clip_street.mp4",
                 tenant_id="org_solo",
                 rejected_at="2026-09-06T09:12:00Z",
-                reason="실사 푸티지. 평면 2D MG·UI 녹화만 받음.",
+                reason="실사. 평면 2D MG·UI 녹화만.",
             ),
         ]
         self._audit = [

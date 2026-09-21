@@ -22,7 +22,7 @@ def test_seed_audit_is_newest_first():
 
 def test_quarantine_has_no_video_field():
     item = QuarantineItem(id="q1", filename="a.mp4", tenant_id="org_solo", rejected_at="2026-09-06T09:12:00Z",
-                          reason="실사 푸티지. 평면 2D MG·UI 녹화만 받음.")
+                          reason="실사. 평면 2D MG·UI 녹화만.")
     assert not hasattr(item, "video")
     assert "mp4" not in item.__dataclass_fields__ or "video" not in item.__dataclass_fields__
 

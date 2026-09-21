@@ -6,8 +6,8 @@
 <title>Keepframe - LLM 프로바이더</title>
 <link href="/static/css/app.css?v=20260921d" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921d"></script>
-<script type="module" src="/static/js/api.js?v=20260921d"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
+<script type="module" src="/static/js/api.js?v=20260921t"></script>
 <style>
 .admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
 .admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; }
@@ -90,7 +90,7 @@
 <div class="admin-panel">
 <div class="admin-panel__head">
 <h2 data-i18n="admin.llm.title">LLM 프로바이더</h2>
-<p data-i18n="admin.llm.desc">세션 에이전트가 사용할 모델 공급자를 지정합니다. LiteLLM 통합으로 OpenAI·Anthropic·Gemini 등 100개 이상 프로바이더를 한 인터페이스로 호출합니다.</p>
+<p data-i18n="admin.llm.desc">에이전트가 쓸 모델 공급자.</p>
 </div>
 <div class="status-note" id="status" hidden></div>
 <div class="admin-form">
@@ -120,7 +120,7 @@
 </div>
 <div class="oauth-fields" id="oauthFields" hidden>
 <div class="oauth-chatgpt" id="chatgptOAuth">
-<p data-i18n="admin.llm.chatgptHint">ChatGPT 구독으로 연결합니다. 브라우저가 열리면 로그인하세요. 자격 증명을 붙여넣을 필요는 없습니다.</p>
+<p data-i18n="admin.llm.chatgptHint">ChatGPT 구독으로 연결합니다. 뜨는 창에서 로그인하세요.</p>
 <div class="oauth-chatgpt__row">
 <button class="btn btn--primary" id="chatgptConnect" type="button" data-i18n="admin.llm.chatgptConnect">ChatGPT로 연결</button>
 <button class="btn btn--ghost" id="chatgptDisconnect" type="button" hidden data-i18n="admin.llm.chatgptDisconnect">연결 해제</button>
@@ -149,7 +149,7 @@
 <label for="scope" data-i18n="admin.llm.scope">Scope</label>
 <input id="scope" type="text" placeholder="https://cognitiveservices.azure.com/.default"/>
 </div>
-<span class="mono" data-i18n="admin.llm.oauthHint">Azure Entra는 Tenant ID와 앱 자격 증명이 필요합니다. ChatGPT는 위의 연결 버튼을 쓰세요.</span>
+<span class="mono" data-i18n="admin.llm.oauthHint">Azure Entra는 Tenant ID와 앱 자격 증명이 필요합니다. ChatGPT는 위 버튼을 쓰세요.</span>
 </details>
 </div>
 <div class="field field--row" id="baseUrlField">
@@ -159,7 +159,7 @@
 <div class="field">
 <label for="extra" data-i18n="admin.llm.extra">추가 파라미터 (JSON)</label>
 <textarea id="extra" spellcheck="false" placeholder='{"api_version":"2024-02-15-preview"}'></textarea>
-<span class="mono" data-i18n="admin.llm.extraHint">api_version, vertex_project 등 LiteLLM 옵션. OAuth는 위에서 지정합니다.</span>
+<span class="mono" data-i18n="admin.llm.extraHint">api_version, vertex_project 등 LiteLLM 옵션. OAuth는 위에서 고릅니다.</span>
 </div>
 </div>
 </div>
@@ -171,7 +171,7 @@
 </main>
 </div>
 <script type="module">
-import { api } from "/static/js/api.js?v=20260921d";
+import { api } from "/static/js/api.js?v=20260921t";
 
 const select = document.getElementById("provider");
 const model = document.getElementById("model");
@@ -198,7 +198,7 @@ const statusEl = document.getElementById("status");
 let current = null;
 let catalog = [];
 let modelsTimer = 0;
-
+const MODEL_RELOAD_DEBOUNCE_MS = 400;
 const AZURE_SCOPE = "https://cognitiveservices.azure.com/.default";
 
 function specOf(id) {
@@ -313,7 +313,7 @@ async function loadModels(announce) {
 
 function scheduleModels() {
   window.clearTimeout(modelsTimer);
-  modelsTimer = window.setTimeout(() => loadModels(false), 400);
+  modelsTimer = window.setTimeout(() => loadModels(false), MODEL_RELOAD_DEBOUNCE_MS);
 }
 
 auth.addEventListener("change", () => {
