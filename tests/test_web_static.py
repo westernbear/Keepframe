@@ -12,6 +12,10 @@ FORBIDDEN = (
 )
 
 
+def static_src(*names):
+    return "\n".join((STATIC / name).read_text(encoding="utf-8") for name in names)
+
+
 def test_analyze_stitch_source_exists():
     html = (DESIGNS / "analyze.html").read_text(encoding="utf-8")
     assert "<html" in html.lower()
@@ -45,11 +49,11 @@ def test_analyze_main_clears_icon_rail():
 
 
 def test_analyze_steps_follow_job_stage():
-    html = (STATIC / "analyze.html").read_text(encoding="utf-8")
-    assert 'data-step="shots"' in html
-    assert "updateSteps" in html
-    assert "/api/jobs/" in html
-    assert "li--active" not in html
+    src = static_src("analyze.html", "js/analyze.js", "js/api.js")
+    assert 'data-step="shots"' in src
+    assert "updateSteps" in src
+    assert "/api/jobs/" in src
+    assert "li--active" not in src
 
 
 def test_pages_include_logo_and_favicon():
@@ -62,8 +66,8 @@ def test_pages_include_logo_and_favicon():
 
 
 def test_ingest_sends_selected_range_to_analyze():
-    ingest = (STATIC / "ingest.html").read_text(encoding="utf-8")
-    analyze = (STATIC / "analyze.html").read_text(encoding="utf-8")
+    ingest = static_src("ingest.html", "js/ingest.js")
+    analyze = static_src("analyze.html", "js/analyze.js")
     assert "selectedWindow" in ingest
     assert "mode: win.mode" in ingest
     assert "payload.start" in analyze
@@ -71,7 +75,7 @@ def test_ingest_sends_selected_range_to_analyze():
 
 
 def test_ingest_gpu_status_is_not_hardcoded():
-    text = (STATIC / "ingest.html").read_text(encoding="utf-8")
+    text = static_src("ingest.html", "js/ingest.js", "js/api.js")
     assert "data-gpu" in text
     assert "/api/status" in text
     assert "<span>ON</span>" not in text
@@ -99,6 +103,7 @@ def test_i18n_markup_keys_exist_in_both_langs():
 def test_api_prefetches_review_frames():
     src = (STATIC / "js" / "playback.js").read_text(encoding="utf-8")
     assert "function createPreviewCache" in src
+    assert "function createFrameTransport" in src
     assert "img.decode" in src
     assert "PREFETCH_AHEAD" in src
     assert "PREVIEW_CACHE_LIMIT" in src
@@ -115,16 +120,16 @@ def test_hidden_wins_over_display():
 
 
 def test_review_empty_project_has_library_exit():
-    html = (STATIC / "review.html").read_text(encoding="utf-8")
-    assert 'id="review-missing"' in html
-    assert "is-empty" in html
-    assert 'href="/library"' in html
-    assert "review.backLibrary" in html
+    src = static_src("review.html", "js/review.js")
+    assert 'id="review-missing"' in src
+    assert "is-empty" in src
+    assert 'href="/library"' in src
+    assert "review.backLibrary" in src
 
 
 def test_landing_and_library_link_to_demo():
-    landing = (STATIC / "landing.html").read_text(encoding="utf-8")
-    library = (STATIC / "library.html").read_text(encoding="utf-8")
+    landing = static_src("landing.html")
+    library = static_src("library.html", "js/library.js")
     assert 'href="/demo"' in landing
     assert 'href="/demo"' in library
     assert "nav.demo" in landing
@@ -135,8 +140,8 @@ def test_landing_and_library_link_to_demo():
 
 
 def test_library_filters_are_wired():
-    html = (STATIC / "library.html").read_text(encoding="utf-8")
-    assert "data-search" in html
-    assert 'data-filter="review"' in html
-    assert "visibleProjects" in html
-    assert 'library.filter.export' not in html
+    src = static_src("library.html", "js/library.js")
+    assert "data-search" in src
+    assert 'data-filter="review"' in src
+    assert "visibleProjects" in src
+    assert 'library.filter.export' not in src

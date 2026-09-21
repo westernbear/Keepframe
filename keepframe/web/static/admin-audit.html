@@ -6,8 +6,9 @@
 <title>Keepframe · 관리 · 감사 로그</title>
 <link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
-<script type="module" src="/static/js/api.js?v=20260921t"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921u"></script>
+<script type="module" src="/static/js/api.js?v=20260921u"></script>
+<script type="module" src="/static/js/admin-audit.js?v=20260921u"></script>
 <style>
 .admin-shell { display: flex; height: 100vh; overflow: hidden; }
 .admin-sidebar { width: 256px; flex-shrink: 0; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 0; }
@@ -80,30 +81,5 @@
 </div>
 </div>
 </div>
-<script type="module">
-import { api } from "/static/js/api.js?v=20260921t";
-
-const tbody = document.getElementById("audit-rows");
-
-function actionStyle(action) {
-  if (action.includes("정지") || action.includes("검역")) return "color:var(--error);font-weight:600";
-  if (action.includes("keep")) return "color:var(--secondary)";
-  return "";
-}
-
-api("/admin/api/audit").then((data) => {
-  tbody.innerHTML = "";
-  data.events.forEach((e) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-<td style="color:var(--muted)">${e.ts}</td>
-<td>${e.actor}</td>
-<td style="${actionStyle(e.action)}">${e.action}</td>
-<td style="color:var(--muted)">${e.target}</td>
-<td style="color:var(--muted)">${e.detail || "-"}</td>`;
-    tbody.appendChild(tr);
-  });
-}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
-</script>
 </body>
 </html>

@@ -10,6 +10,19 @@ from keepframe.ir.store import init_project, scene_dir
 from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
 
+REVIEW_HTML = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html"
+REVIEW_JS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "review.js"
+REVIEW_PLAYBACK = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "playback.js"
+REVIEW_CSS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "css" / "app.css"
+
+
+def review_src():
+    return "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (REVIEW_HTML, REVIEW_JS, REVIEW_PLAYBACK)
+    )
+
+
 
 def _post(srv, path, payload):
     url = f"http://127.0.0.1:{srv.server_address[1]}{path}"
@@ -91,14 +104,14 @@ def test_review_bboxes_for_frame(tmp_path):
 
 
 def test_review_page_has_edit_form():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     assert 'id="edit-prompt"' in html
     assert "postEdit" in html
     assert 'data-i18n="review.editRun"' in html
 
 
 def test_review_page_has_approve_button():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     assert 'id="review-approve"' in html
     assert "postApprove" in html
     assert "paintApprove" in html
@@ -146,24 +159,20 @@ def test_approve_marks_project(tmp_path):
 
 
 def test_review_page_has_progress_bar():
-    html = (Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html").read_text(encoding="utf-8")
+    html = review_src()
     assert 'id="review-progress"' in html
     assert 'role="progressbar"' in html
     assert "setProgress" in html
 
 
 def test_review_page_refreshes_in_place():
-    html = (Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html").read_text(encoding="utf-8")
+    html = review_src()
     assert "refreshState" in html
     assert "location.href = `/review" not in html
 
 
-REVIEW_HTML = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html"
-REVIEW_CSS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "css" / "app.css"
-
-
 def test_review_play_button_toggles_pause_icon():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     assert "function setPlaying" in html
     assert 'id="pause-icon"' in html
     assert 'id="play-icon"' in html
@@ -173,7 +182,7 @@ def test_review_play_button_toggles_pause_icon():
 
 
 def test_review_playing_does_not_reset_image_timer():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     assert "isSeekQueuedWhilePlaying" in html
     assert "createPreviewCache" in html
     assert "previews.wait" in html
@@ -181,7 +190,7 @@ def test_review_playing_does_not_reset_image_timer():
 
 
 def test_review_timeline_playhead_spans_tracks_without_overflowing_ruler():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     css = REVIEW_CSS.read_text(encoding="utf-8")
     assert 'id="track-playhead"' in html
     assert "timeline__body" in html
@@ -191,7 +200,7 @@ def test_review_timeline_playhead_spans_tracks_without_overflowing_ruler():
 
 
 def test_review_diff_microscope_controls():
-    html = REVIEW_HTML.read_text(encoding="utf-8")
+    html = review_src()
     css = REVIEW_CSS.read_text(encoding="utf-8")
     assert "drawOverlays" in html
     assert "fetchBboxes" in html

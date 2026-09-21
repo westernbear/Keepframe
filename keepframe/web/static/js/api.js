@@ -1,11 +1,28 @@
+const ADMIN_LOGIN_PATH = "/admin/login";
+
+function jsonHeaders(extra) {
+  return { "Content-Type": "application/json", ...(extra || {}) };
+}
+
+function withQuery(url, params) {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null || value === "") return;
+    q.set(key, String(value));
+  });
+  const encoded = q.toString();
+  return encoded ? `${url}?${encoded}` : url;
+}
+
 async function api(path, opts = {}) {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(path, {
-    headers: isForm ? { ...(opts.headers || {}) } : { "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: isForm ? { ...(opts.headers || {}) } : jsonHeaders(opts.headers),
     ...opts,
   });
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("json") ? await res.json().catch(() => ({})) : null;
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("json");
+  const data = isJson ? await res.json().catch(() => ({})) : null;
   if (!res.ok) {
     const err = new Error((data && data.error) || res.statusText);
     err.status = res.status;
@@ -13,6 +30,36 @@ async function api(path, opts = {}) {
     throw err;
   }
   return data;
+}
+
+async function fetchAdminOrRedirect(path, opts = {}) {
+  try {
+    return await api(path, opts);
+  } catch (err) {
+    const isUnauthorized = err.status === 401;
+    if (isUnauthorized) location.assign(ADMIN_LOGIN_PATH);
+    throw err;
+  }
+}
+
+async function fetchProjects() {
+  return api("/api/projects");
+}
+
+async function fetchStatus() {
+  return api("/api/status");
+}
+
+async function fetchJob(jobId) {
+  return api(`/api/jobs/${jobId}`);
+}
+
+async function postAnalyze(body) {
+  return api("/api/analyze", { method: "POST", body: JSON.stringify(body) });
+}
+
+async function postAdminLogin({ email, password }) {
+  return api("/admin/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
 }
 
 async function uploadProject({ title, video, mode, start, end }) {
@@ -36,19 +83,15 @@ async function fetchFilmstrip(projectId, n = DEFAULT_FILMSTRIP_COUNT) {
 }
 
 async function fetchReviewState(project, scene, v) {
-  let url = `/api/state?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`;
-  if (v) url += `&v=${encodeURIComponent(v)}`;
-  return api(url);
+  return api(withQuery("/api/state", { project, scene, v }));
 }
 
 async function fetchReviewJob(project, scene) {
-  return api(`/api/job?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`);
+  return api(withQuery("/api/job", { project, scene }));
 }
 
 async function fetchBboxes(project, scene, frame, v) {
-  let url = `/api/bboxes?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}&frame=${encodeURIComponent(String(frame))}`;
-  if (v) url += `&v=${encodeURIComponent(v)}`;
-  return api(url);
+  return api(withQuery("/api/bboxes", { project, scene, frame, v }));
 }
 
 async function postApprove(project, scene, v) {
@@ -80,9 +123,8 @@ async function postCorrect(project, scene, op, args) {
 }
 
 function reviewFrameUrl(kind, frame, project, scene, v) {
-  let url = `/frame/${kind}/${frame}?project=${encodeURIComponent(project)}&scene=${encodeURIComponent(scene)}`;
-  if (v && kind === "recon") url += `&v=${encodeURIComponent(v)}`;
-  return url;
+  const version = kind === "recon" ? v : null;
+  return withQuery(`/frame/${kind}/${frame}`, { project, scene, v: version });
 }
 
 function reviewAssetUrl(name, project, scene) {
@@ -91,6 +133,12 @@ function reviewAssetUrl(name, project, scene) {
 
 export {
   api,
+  fetchAdminOrRedirect,
+  fetchProjects,
+  fetchStatus,
+  fetchJob,
+  postAnalyze,
+  postAdminLogin,
   uploadProject,
   fetchEstimate,
   fetchFilmstrip,

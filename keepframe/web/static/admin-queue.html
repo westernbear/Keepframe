@@ -6,8 +6,9 @@
 <title>Keepframe Admin - Job Queue</title>
 <link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
-<script type="module" src="/static/js/api.js?v=20260921t"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921u"></script>
+<script type="module" src="/static/js/api.js?v=20260921u"></script>
+<script type="module" src="/static/js/admin-queue.js?v=20260921u"></script>
 <style>
 .admin-shell { display: flex; height: 100vh; overflow: hidden; }
 .admin-sidebar { width: 256px; flex-shrink: 0; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 0; }
@@ -106,67 +107,5 @@
 </div>
 </div>
 </div>
-<script type="module">
-import { api } from "/static/js/api.js?v=20260921t";
-
-const RETRY_CAP = 4;
-let jobs = [];
-let selected = null;
-let policyNote = "";
-
-const tbody = document.getElementById("job-rows");
-
-function retryLabel(j) {
-  if (j.status === "검역") return "—";
-  const n = j.retries ?? 0;
-  if (n >= RETRY_CAP) return `${n}/${RETRY_CAP} 한도 소진`;
-  return `${n}/${RETRY_CAP}`;
-}
-
-function badgeClass(status) {
-  if (status === "실행") return "badge--active";
-  if (status === "실패") return "badge--error";
-  if (status === "대기") return "badge--done";
-  return "";
-}
-
-function renderTable() {
-  tbody.innerHTML = "";
-  jobs.forEach((j) => {
-    const tr = document.createElement("tr");
-    if (selected && selected.id === j.id) tr.className = "row-selected";
-    if (j.status === "검역") tr.style.opacity = "0.6";
-    const exhausted = (j.retries ?? 0) >= RETRY_CAP;
-    if (j.status === "검역") {
-      tr.innerHTML = `<td class="mono" style="color:var(--muted)">${j.id}</td><td>${j.tenant}</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${j.kind}</td><td>${j.target}</td><td colspan="4"><span class="badge">검역으로 이동</span></td>`;
-    } else {
-      tr.innerHTML = `<td class="mono" style="color:var(--muted)">${j.id}</td><td>${j.tenant}</td><td class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${j.kind}</td><td>${j.target}</td><td><span class="badge ${badgeClass(j.status)}">${j.status}</span></td><td class="mono" style="font-size:var(--fs-micro)">${j.gpu || "—"}</td><td style="color:var(--muted)">—</td><td style="color:${exhausted ? "var(--error)" : "var(--muted)"}">${retryLabel(j)}</td>`;
-    }
-    tr.addEventListener("click", () => selectJob(j));
-    tbody.appendChild(tr);
-  });
-}
-
-function selectJob(j) {
-  selected = j;
-  document.getElementById("drawer-id").textContent = j.id;
-  document.getElementById("drawer-target").textContent = j.target;
-  const fail = j.status === "실패";
-  document.getElementById("drawer-error").textContent = fail ? (j.error || "작업 실패") : "—";
-  const retriesEl = document.getElementById("drawer-retries");
-  retriesEl.textContent = fail ? retryLabel(j) : "—";
-  retriesEl.style.color = (j.retries ?? 0) >= RETRY_CAP ? "var(--error)" : "var(--ink)";
-  document.getElementById("drawer-policy").textContent = fail ? `"${policyNote}"` : "";
-  renderTable();
-}
-
-Promise.all([api("/admin/api/jobs"), api("/admin/api/policy")]).then(([jData, pol]) => {
-  jobs = jData.jobs;
-  policyNote = pol.note;
-  const failed = jobs.find((j) => j.status === "실패") || jobs[0];
-  if (failed) selectJob(failed);
-  else renderTable();
-}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
-</script>
 </body>
 </html>

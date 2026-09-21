@@ -35,15 +35,19 @@ def test_agent_page_serves(tmp_path):
     srv = start(tmp_path)
     try:
         code, ctype, body = get(srv, "/agent")
+        js_code, _, js_body = get(srv, "/static/js/agent.js")
     finally:
         srv.shutdown()
     assert code == 200
     html = body.decode("utf-8")
+    js = js_body.decode("utf-8")
+    src = html + "\n" + js
     assert "agent-chat" in html
     assert "세션 에이전트" not in html
     assert "에이전트" in html
-    assert "createPreviewCache" in html
-    assert "previews.wait" in html
+    assert "createPreviewCache" in src
+    assert "previews.wait" in src
+    assert js_code == 200
 
 
 def test_agent_api_returns_reply(tmp_path, monkeypatch):

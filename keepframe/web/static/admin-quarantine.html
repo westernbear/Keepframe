@@ -6,8 +6,9 @@
 <title>Keepframe Admin Quarantine Desk</title>
 <link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921t"></script>
-<script type="module" src="/static/js/api.js?v=20260921t"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921u"></script>
+<script type="module" src="/static/js/api.js?v=20260921u"></script>
+<script type="module" src="/static/js/admin-quarantine.js?v=20260921u"></script>
 <style>
 .admin-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .admin-body { flex: 1; display: flex; overflow: hidden; }
@@ -105,60 +106,5 @@
 </main>
 </div>
 </div>
-<script type="module">
-import { api } from "/static/js/api.js?v=20260921t";
-
-const FILE_ICON = '<svg class="icon" style="color:var(--muted)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';
-let items = [];
-let selected = null;
-const rowsEl = document.getElementById("quarantine-rows");
-
-function fmtTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function tenantLabel(id) {
-  if (id === "org_solo") return "Solo";
-  if (id === "org_northwind") return "Northwind";
-  if (id === "org_hanbit") return "Hanbit";
-  return id;
-}
-
-function renderRows() {
-  rowsEl.innerHTML = "";
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "quarantine-row" + (selected && selected.id === item.id ? " quarantine-row--selected" : "");
-    row.innerHTML = `
-<div style="display:flex;align-items:center;gap:8px;min-width:0">${FILE_ICON}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.filename}</span></div>
-<div style="color:var(--muted)">${tenantLabel(item.tenant_id)}</div>
-<div class="mono" style="font-size:var(--fs-micro);color:var(--muted)">${fmtTime(item.rejected_at)}</div>
-<div style="font-size:var(--fs-micro);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.reason}</div>`;
-    row.addEventListener("click", () => selectItem(item));
-    rowsEl.appendChild(row);
-  });
-}
-
-function selectItem(item) {
-  selected = item;
-  document.getElementById("detail-filename").textContent = item.filename;
-  document.getElementById("detail-tenant").textContent = tenantLabel(item.tenant_id);
-  document.getElementById("detail-time").textContent = fmtTime(item.rejected_at);
-  document.getElementById("detail-reason").textContent = item.reason;
-  renderRows();
-}
-
-Promise.all([api("/admin/api/quarantine"), api("/admin/api/policy")]).then(([qData, pol]) => {
-  items = qData.items;
-  document.getElementById("quarantine-count").textContent = `${items.length} 항목`;
-  document.getElementById("detail-policy").textContent = pol.note;
-  if (items.length) selectItem(items[0]);
-  else renderRows();
-}).catch((err) => { if (err.status === 401) location = "/admin/login"; });
-</script>
 </body>
 </html>

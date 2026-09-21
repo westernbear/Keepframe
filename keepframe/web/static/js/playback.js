@@ -1,4 +1,4 @@
-import { reviewFrameUrl } from "/static/js/api.js?v=20260921t";
+import { reviewFrameUrl } from "/static/js/api.js?v=20260921u";
 
 const PREFETCH_AHEAD = 4;
 const PREVIEW_CACHE_LIMIT = 48;
@@ -32,6 +32,91 @@ function isSeekQueuedWhilePlaying(playing, seekTimer) {
 
 function frameStep(shiftKey) {
   return shiftKey ? FRAME_SKIP_SHIFT : 1;
+}
+
+function createFrameTransport({
+  getFrame,
+  setFrameIndex,
+  getFps,
+  getFrameCount,
+  prefetch,
+  isReady,
+  wait,
+  showFrame,
+  canPlay,
+  onPlayingChange,
+  onFrameUnavailable,
+}) {
+  let playing = false;
+  let raf = 0;
+  let lastTick = 0;
+  let waiting = false;
+
+  function isPlaying() {
+    return playing;
+  }
+
+  function isWaiting() {
+    return waiting;
+  }
+
+  function showNextPlaybackFrame(next) {
+    setFrameIndex(next);
+    showFrame(next);
+  }
+
+  function tick(ts) {
+    if (!playing) return;
+    if (waiting) {
+      raf = requestAnimationFrame(tick);
+      return;
+    }
+    if (!lastTick) lastTick = ts;
+    if (isDueForNextFrame(ts - lastTick, getFps())) {
+      lastTick = ts;
+      const frame = getFrame();
+      const total = getFrameCount();
+      if (isLastPlaybackFrame(frame, total)) {
+        setPlaying(false);
+        return;
+      }
+      const next = frame + 1;
+      prefetch(next, total);
+      if (isReady(next)) {
+        showNextPlaybackFrame(next);
+      } else {
+        waiting = true;
+        wait(next).then((ok) => {
+          waiting = false;
+          if (!playing) return;
+          lastTick = performance.now();
+          if (!ok) {
+            setPlaying(false);
+            if (onFrameUnavailable) onFrameUnavailable();
+            return;
+          }
+          showNextPlaybackFrame(next);
+        });
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function setPlaying(on) {
+    playing = Boolean(on);
+    lastTick = 0;
+    waiting = false;
+    cancelAnimationFrame(raf);
+    raf = 0;
+    if (onPlayingChange) onPlayingChange(playing);
+    const allowed = !canPlay || canPlay();
+    if (playing && allowed) {
+      prefetch(getFrame(), getFrameCount());
+      raf = requestAnimationFrame(tick);
+    }
+  }
+
+  return { setPlaying, isPlaying, isWaiting };
 }
 
 function createPreviewCache({
@@ -141,5 +226,6 @@ export {
   seekDelayMs,
   isSeekQueuedWhilePlaying,
   frameStep,
+  createFrameTransport,
   createPreviewCache,
 };
