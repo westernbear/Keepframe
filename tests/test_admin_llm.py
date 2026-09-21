@@ -49,6 +49,19 @@ def test_memory_admin_llm_settings():
     assert admin.list_audit()[0].action == "LLM 프로바이더 변경"
 
 
+def test_memory_admin_llm_settings_persist(tmp_path):
+    admin = MemoryAdmin(workspace=tmp_path)
+    admin.set_llm_settings(
+        ProviderConfig(provider="openai", model="gpt-4o-mini", api_key="sk-live"),
+        "mina@keepframe.app",
+    )
+    path = tmp_path / "admin" / "llm.json"
+    assert path.is_file()
+    reloaded = MemoryAdmin(workspace=tmp_path, seed=False)
+    assert reloaded.get_llm_settings().api_key == "sk-live"
+    assert reloaded.get_llm_settings().model == "gpt-4o-mini"
+
+
 def test_admin_llm_api_get_and_post(tmp_path):
     srv = start_admin(tmp_path)
     try:

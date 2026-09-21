@@ -2,20 +2,22 @@ from __future__ import annotations
 
 import csv
 import io
+from pathlib import Path
 
-from keepframe.session.provider import ProviderConfig
+from keepframe.session.provider import ProviderConfig, load_llm_settings, save_llm_settings
 
 from .models import AuditEvent, Member, QuarantineItem, Tenant
 
 
 class MemoryAdmin:
-    def __init__(self, seed: bool = True) -> None:
+    def __init__(self, seed: bool = True, workspace: Path | None = None) -> None:
+        self._workspace = Path(workspace) if workspace is not None else None
         self._tenants: dict[str, Tenant] = {}
         self._members: list[Member] = []
         self._jobs: list[dict] = []
         self._quarantine: list[QuarantineItem] = []
         self._audit: list[AuditEvent] = []
-        self._llm_settings = ProviderConfig()
+        self._llm_settings = load_llm_settings(self._workspace) or ProviderConfig()
         if seed:
             self._seed()
 
@@ -207,6 +209,8 @@ class MemoryAdmin:
 
     def set_llm_settings(self, config: ProviderConfig, actor: str) -> ProviderConfig:
         self._llm_settings = config
+        if self._workspace is not None:
+            save_llm_settings(self._workspace, config)
         self.append_audit(
             AuditEvent(
                 ts="",

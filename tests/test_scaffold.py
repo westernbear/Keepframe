@@ -21,3 +21,4 @@ def test_dockerfile_has_gpu_stage():
     assert "1455:1455" in compose
     assert "CHATGPT_CALLBACK_BIND" in compose
     assert "EXPOSE 8765 1455" in text
+    assert '".[ocr,llm]"' in text or ".[ocr,llm]" in text

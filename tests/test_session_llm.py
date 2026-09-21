@@ -198,3 +198,26 @@ def test_make_llm_falls_back_to_null_without_credentials(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("KEEPFRAME_LLM_API_KEY", raising=False)
     assert isinstance(make_llm(ProviderConfig(provider="openai", model="gpt-4o")), NullClient)
+
+
+def test_make_llm_falls_back_to_openai_compatible_without_litellm(monkeypatch):
+    class Boom:
+        def __init__(self, config):
+            raise ImportError("no litellm")
+
+    monkeypatch.setattr("keepframe.session.llm.LiteLLMClient", Boom)
+    client = make_llm(ProviderConfig(provider="openai", model="gpt-4o-mini", api_key="sk-test"))
+    assert isinstance(client, OpenAICompatibleClient)
+    assert client.api_key == "sk-test"
+    assert client.model == "gpt-4o-mini"
+
+
+def test_make_llm_stays_null_for_anthropic_without_litellm(monkeypatch):
+    class Boom:
+        def __init__(self, config):
+            raise ImportError("no litellm")
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("keepframe.session.llm.LiteLLMClient", Boom)
+    client = make_llm(ProviderConfig(provider="anthropic", model="claude-sonnet-4-5", api_key="sk-ant"))
+    assert isinstance(client, NullClient)

@@ -28,6 +28,7 @@ from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
 from keepframe.session import SessionAgent, SessionContext, make_llm
+from keepframe.session.provider import load_llm_settings
 from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
@@ -330,7 +331,8 @@ def make_server(
     def agent_llm():
         if admin_svc is not None:
             return make_llm(admin_svc.get_llm_settings())
-        return make_llm()
+        saved = load_llm_settings(workspace)
+        return make_llm(saved) if saved is not None else make_llm()
 
     admin_routes = None
     if admin and admin_svc is not None and admin_auth is not None:

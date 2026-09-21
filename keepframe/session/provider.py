@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from typing import Literal
 
@@ -8,8 +9,26 @@ from pydantic import BaseModel, Field
 
 from .oauth import OAuthParams, OAUTH_KEYS
 
+LLM_SETTINGS_REL = Path("admin") / "llm.json"
+
 # Providers that do not need an API key (local runtimes).
 LOCAL_PROVIDERS = {"ollama", "vllm", "lm_studio", "local", "llamacpp", "huggingface", "openai_compatible"}
+
+# Chat Completions fallback when litellm is not installed (Docker default until rebuild).
+OPENAI_COMPATIBLE_FALLBACK = {
+    "openai",
+    "openai_compatible",
+    "groq",
+    "deepseek",
+    "openrouter",
+    "xai",
+    "together_ai",
+    "fireworks_ai",
+    "mistral",
+    "perplexity",
+    "vllm",
+    "lm_studio",
+}
 
 # Admin LLM picker. `id` is the LiteLLM prefix except openai_compatible → openai/.
 PROVIDER_CATALOG: tuple[dict, ...] = (
@@ -142,3 +161,29 @@ class ProviderConfig(BaseModel):
             or ""
         )
         return cls(provider=provider, model=model, api_key=api_key, base_url=base_url)
+
+
+def llm_settings_path(workspace: Path) -> Path:
+    return Path(workspace) / LLM_SETTINGS_REL
+
+
+def load_llm_settings(workspace: Path | None) -> ProviderConfig | None:
+    if workspace is None:
+        return None
+    path = llm_settings_path(workspace)
+    if not path.is_file():
+        return None
+    try:
+        return ProviderConfig.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def save_llm_settings(workspace: Path, config: ProviderConfig) -> None:
+    path = llm_settings_path(workspace)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass

@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             from .admin.memory import MemoryAdmin
             from .admin.auth import MemoryAuth, load_admin_users
             users = load_admin_users()
-            kwargs["admin_svc"] = MemoryAdmin()
+            kwargs["admin_svc"] = MemoryAdmin(workspace=Path(a.workspace))
             kwargs["admin_auth"] = MemoryAuth(users)
             log.info("admin accounts %s", len(users))
         srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)

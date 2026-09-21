@@ -73,3 +73,31 @@ def test_agent_api_requires_message(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
     assert code == 400
+
+
+def test_agent_uses_workspace_llm_settings(tmp_path, monkeypatch):
+    from keepframe.session.llm import AssistantReply
+    from keepframe.session.provider import ProviderConfig, save_llm_settings
+
+    captured = {}
+
+    class Fake:
+        def complete(self, messages, tools):
+            return AssistantReply(content="saved-settings")
+
+    def fake_make(config=None):
+        captured["config"] = config
+        return Fake()
+
+    monkeypatch.setattr("keepframe.web.server.make_llm", fake_make)
+    _project(tmp_path)
+    ws = tmp_path / "ws"
+    save_llm_settings(ws, ProviderConfig(provider="openai", model="gpt-4o-mini", api_key="sk-from-admin"))
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/agent", {"project": "p1", "scene": "synth11", "message": "안녕"})
+    finally:
+        srv.shutdown()
+    assert code == 200
+    assert body["reply"] == "saved-settings"
+    assert captured["config"].api_key == "sk-from-admin"

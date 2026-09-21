@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from ..log import get
 from .oauth import fetch_access_token
-from .provider import ProviderConfig
+from .provider import OPENAI_COMPATIBLE_FALLBACK, ProviderConfig, default_base_url
 
 log = get("keepframe.session")
 
@@ -29,7 +29,7 @@ class NullClient:
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         return AssistantReply(
-            content="에이전트가 설정되지 않았습니다. KEEPFRAME_LLM_API_KEY(또는 OPENAI_API_KEY)를 넣으세요."
+            content="에이전트가 설정되지 않았습니다. 관리자 LLM 페이지에 API 키를 저장하거나 KEEPFRAME_LLM_API_KEY(또는 OPENAI_API_KEY)를 넣으세요."
         )
 
 
@@ -137,6 +137,17 @@ class LiteLLMClient:
         return reply
 
 
+def _openai_compatible_fallback(cfg: ProviderConfig) -> OpenAICompatibleClient | None:
+    base = (cfg.base_url or default_base_url(cfg.provider) or "").rstrip("/")
+    if cfg.provider in OPENAI_COMPATIBLE_FALLBACK or base.endswith("/v1"):
+        return OpenAICompatibleClient(
+            base_url=base or None,
+            api_key=cfg.api_key or None,
+            model=cfg.model or None,
+        )
+    return None
+
+
 def make_llm(config: ProviderConfig | None = None) -> LLMClient:
     cfg = config if config is not None else ProviderConfig.from_env()
     if not cfg.credentials_present():
@@ -145,5 +156,9 @@ def make_llm(config: ProviderConfig | None = None) -> LLMClient:
     try:
         return LiteLLMClient(cfg)
     except Exception as e:  # noqa: BLE001 - litellm missing or broken
+        fallback = _openai_compatible_fallback(cfg)
+        if fallback is not None:
+            log.warning("litellm unavailable (%s); session agent uses OpenAI-compatible fallback", e)
+            return fallback
         log.warning("litellm unavailable (%s); session agent falls back to NullClient", e)
         return NullClient()

@@ -19,6 +19,7 @@ def test_serve_defaults_admin_on(tmp_path):
     kwargs = ms.call_args.kwargs
     assert kwargs["admin"] is True
     assert kwargs["admin_svc"] is not None
+    assert kwargs["admin_svc"]._workspace == tmp_path
     assert kwargs["admin_auth"] is not None
     srv.serve_forever.assert_called_once()
 

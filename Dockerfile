@@ -37,7 +37,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY keepframe ./keepframe
 
-RUN pip install --no-cache-dir .[ocr] \
+RUN pip install --no-cache-dir ".[ocr,llm]" \
     && mkdir -p /data/workspace
 
 WORKDIR /data/workspace
