@@ -51,14 +51,40 @@ def test_list_models_openai_compatible(monkeypatch):
         def read(self):
             return json.dumps({"data": [{"id": "qwen2.5"}]}).encode()
 
-    def _fake(req, timeout=None):
+    def _fake(req, data=None, timeout=None):
         captured["url"] = req.full_url
-        captured["auth"] = req.headers.get("Authorization")
+        captured["auth"] = req.get_header("Authorization")
+        captured["ua"] = req.get_header("User-agent")
         return _Resp()
 
-    monkeypatch.setattr("keepframe.session.models.urllib.request.urlopen", _fake)
+    monkeypatch.setattr("keepframe.session.models._OPENER.open", _fake)
     models, source = list_models("openai_compatible", base_url="http://127.0.0.1:8000/v1", api_key="sk-x")
     assert source == "live"
     assert models == ["qwen2.5"]
     assert captured["url"] == "http://127.0.0.1:8000/v1/models"
     assert captured["auth"] == "Bearer sk-x"
+    assert captured["ua"] == "Keepframe/0.1.0"
+
+
+def test_cloudflare_1010_message_hides_blob(monkeypatch):
+    import io
+    import urllib.error
+
+    def _fake(req, data=None, timeout=None):
+        body = (
+            b'{"type":"https://developers.cloudflare.com/support/troubleshooting/'
+            b'http-status-codes/cloudflare-1xxx-errors/error-1010/",'
+            b'"title":"Error 1010: Access denied","status":403,"detail":"The site owner has banned"}'
+        )
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", None, io.BytesIO(body))
+
+    monkeypatch.setattr("keepframe.session.models._OPENER.open", _fake)
+    try:
+        list_models("openai_compatible", base_url="https://proxy.example/v1", api_key="x")
+    except RuntimeError as e:
+        msg = str(e)
+        assert "거부" in msg
+        assert "developers.cloudflare.com" not in msg
+        assert "The site owner" not in msg
+    else:
+        raise AssertionError("expected ModelListError")

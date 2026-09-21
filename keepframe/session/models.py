@@ -5,9 +5,51 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .. import __version__
 from .provider import PROVIDER_CATALOG, catalog_entry, default_base_url
 
 CHATGPT_MODELS = ("gpt-5.4", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o")
+USER_AGENT = f"Keepframe/{__version__}"
+_OPENER = urllib.request.build_opener()
+_OPENER.addheaders = []
+
+
+class ModelListError(RuntimeError):
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def _request_headers(extra: dict | None = None) -> dict[str, str]:
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+    }
+    if extra:
+        headers.update({k: v for k, v in extra.items() if v})
+    return headers
+
+
+def _http_error_text(code: int, detail: str) -> str:
+    low = (detail or "").lower()
+    if "error 1010" in low or "cloudflare" in low:
+        return (
+            f"모델 목록이 거부되었습니다({code}). "
+            "엔드포인트가 이 서버의 요청을 차단했습니다. OpenAI Compatible Base URL과 API 키를 확인하세요."
+        )
+    try:
+        payload = json.loads(detail)
+        msg = payload.get("error") or payload.get("message") or payload.get("title") or payload.get("detail")
+        if isinstance(msg, dict):
+            msg = msg.get("message") or msg.get("code")
+        if msg:
+            return f"모델 목록 요청 실패({code}): {str(msg)[:180]}"
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        pass
+    stripped = " ".join((detail or "").split())
+    if not stripped or stripped.startswith("<"):
+        return f"모델 목록 요청 실패({code})"
+    return f"모델 목록 요청 실패({code}): {stripped[:180]}"
 
 
 def openai_models_url(base: str) -> str:
@@ -89,13 +131,13 @@ def list_models(provider: str, base_url: str = "", api_key: str = "", timeout: f
 
 
 def _openai_models(base: str, api_key: str, timeout: float) -> dict:
-    headers = {"Accept": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    headers = _request_headers({"Authorization": f"Bearer {api_key}"} if api_key else None)
     url = openai_models_url(base)
     try:
         return _json_get(url, timeout=timeout, headers=headers)
-    except RuntimeError:
+    except ModelListError as e:
+        if e.status in (401, 403):
+            raise
         alt = f"{base.rstrip('/')}/models"
         if alt == url:
             raise
@@ -103,15 +145,15 @@ def _openai_models(base: str, api_key: str, timeout: float) -> dict:
 
 
 def _json_get(url: str, timeout: float, headers: dict | None = None) -> dict:
-    req = urllib.request.Request(url, headers=headers or {"Accept": "application/json"}, method="GET")
+    req = urllib.request.Request(url, headers=_request_headers(headers), method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _OPENER.open(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"모델 목록 요청 실패({e.code}): {detail[:200]}") from e
+        raise ModelListError(_http_error_text(e.code, detail), e.code) from e
     except urllib.error.URLError as e:
-        raise RuntimeError(f"모델 목록에 연결하지 못했습니다: {e.reason}") from e
+        raise ModelListError(f"모델 목록에 연결하지 못했습니다: {e.reason}") from e
     if isinstance(payload, dict):
         return payload
     return {}

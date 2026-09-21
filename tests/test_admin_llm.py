@@ -184,7 +184,7 @@ def test_admin_llm_models_chatgpt_and_compatible(tmp_path, monkeypatch):
             def read(self):
                 return json.dumps({"data": [{"id": "local-llama"}, {"id": "local-qwen"}]}).encode()
 
-        monkeypatch.setattr("keepframe.session.models.urllib.request.urlopen", lambda req, timeout=None: _Resp())
+        monkeypatch.setattr("keepframe.session.models._OPENER.open", lambda req, data=None, timeout=None: _Resp())
         code, body = _api(
             srv,
             "/admin/api/llm/models",
