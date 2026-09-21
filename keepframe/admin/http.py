@@ -11,6 +11,7 @@ from urllib.parse import parse_qs
 from keepframe.admin.auth import COOKIE, cookie_header
 from keepframe.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
 from keepframe.session.chatgpt_oauth import FLOW, clear_litellm_auth, preserve_chatgpt_tokens
+from keepframe.session.models import catalog_public, list_models
 from keepframe.session.provider import ProviderConfig
 
 if TYPE_CHECKING:
@@ -58,6 +59,21 @@ class AdminRoutes:
     def __init__(self, admin_svc: MemoryAdmin, admin_auth: MemoryAuth) -> None:
         self.admin_svc = admin_svc
         self.admin_auth = admin_auth
+
+    def _llm_models(self, handler: BaseHTTPRequestHandler, provider: str, base_url: str, api_key: str) -> None:
+        saved = self.admin_svc.get_llm_settings()
+        if not provider:
+            provider = saved.provider
+        if not api_key and saved.provider == provider:
+            api_key = saved.api_key
+        if not base_url and saved.provider == provider:
+            base_url = saved.base_url
+        try:
+            models, source = list_models(provider, base_url=base_url, api_key=api_key)
+        except RuntimeError as e:
+            handler._json(502, {"error": str(e), "models": [], "source": "error", "provider": provider})
+            return
+        handler._json(200, {"models": models, "source": source, "provider": provider})
 
     def _require(self, handler: BaseHTTPRequestHandler) -> str | None:
         sid = _session_id(handler)
@@ -143,7 +159,19 @@ class AdminRoutes:
         if path == "/admin/api/llm":
             if self._require(handler) is None:
                 return True
-            handler._json(200, {"settings": self.admin_svc.get_llm_settings().public_dump()})
+            handler._json(
+                200,
+                {"settings": self.admin_svc.get_llm_settings().public_dump(), "catalog": catalog_public()},
+            )
+            return True
+
+        if path == "/admin/api/llm/models":
+            if self._require(handler) is None:
+                return True
+            qs = parse_qs(u.query)
+            provider = (qs.get("provider") or [""])[0]
+            base_url = (qs.get("base_url") or [""])[0]
+            self._llm_models(handler, provider, base_url, "")
             return True
 
         if path == "/admin/api/llm/oauth/start":
@@ -237,7 +265,24 @@ class AdminRoutes:
                 return True
             config = preserve_chatgpt_tokens(config, self.admin_svc.get_llm_settings())
             self.admin_svc.set_llm_settings(config, actor)
-            handler._json(200, {"settings": config.public_dump()})
+            handler._json(200, {"settings": config.public_dump(), "catalog": catalog_public()})
+            return True
+
+        if path == "/admin/api/llm/models":
+            actor = self._require(handler)
+            if actor is None:
+                return True
+            try:
+                data = json.loads(handler._read_body().decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                handler._json(400, {"error": "bad json"})
+                return True
+            self._llm_models(
+                handler,
+                str(data.get("provider") or ""),
+                str(data.get("base_url") or ""),
+                str(data.get("api_key") or ""),
+            )
             return True
 
         if path == "/admin/api/llm/oauth/disconnect":
@@ -248,7 +293,7 @@ class AdminRoutes:
             prev = self.admin_svc.get_llm_settings()
             if prev.chatgpt_connected() or prev.provider == "chatgpt":
                 self.admin_svc.set_llm_settings(ProviderConfig(), actor)
-            handler._json(200, {"settings": self.admin_svc.get_llm_settings().public_dump()})
+            handler._json(200, {"settings": self.admin_svc.get_llm_settings().public_dump(), "catalog": catalog_public()})
             return True
 
         if path.startswith("/admin"):

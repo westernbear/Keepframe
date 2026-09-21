@@ -41,7 +41,7 @@ RUN pip install --no-cache-dir .[ocr] \
     && mkdir -p /data/workspace
 
 WORKDIR /data/workspace
-EXPOSE 8765
+EXPOSE 8765 1455
 ENTRYPOINT ["keepframe"]
 CMD ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765"]
 

@@ -145,6 +145,15 @@ def main(argv: list[str] | None = None) -> int:
         log.info("listening http://%s:%s/ workspace=%s admin=%s", host, a.port, a.workspace, a.admin)
         if a.admin:
             log.info("admin http://%s:%s/admin/", host, a.port)
+            from .session.chatgpt_oauth import CHATGPT_CALLBACK_PORT, FLOW, callback_bind_host
+
+            FLOW.workspace = Path(a.workspace)
+            FLOW.bind_host = callback_bind_host(host)
+            try:
+                FLOW.ensure_listener()
+                log.info("chatgpt oauth callback http://localhost:%s/auth/callback", CHATGPT_CALLBACK_PORT)
+            except RuntimeError as e:
+                log.warning("%s", e)
         try:
             srv.serve_forever()
         except Exception:

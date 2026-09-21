@@ -91,6 +91,8 @@ def test_provider_config_model_and_credentials(monkeypatch):
     assert dumped["chatgpt_connected"] is True
     assert dumped["api_key"] == ""
     assert dumped["refresh_token"] == "***"
+    assert ProviderConfig(provider="openai_compatible", model="llama3", base_url="http://127.0.0.1:8000/v1").litellm_model == "openai/llama3"
+    assert ProviderConfig(provider="openai_compatible", model="llama3", base_url="http://127.0.0.1:8000/v1").credentials_present() is True
 
 
 def test_litellm_client_oauth_azure_uses_ad_token(monkeypatch):

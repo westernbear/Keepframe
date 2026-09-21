@@ -63,4 +63,9 @@ def test_llm_page_has_oauth_fields():
     assert 'id="tenantId"' in text
     assert 'id="chatgptConnect"' in text
     assert "/admin/api/llm/oauth/start" in text
-    assert '["chatgpt", "ChatGPT"]' in text
+    assert 'id="chatgptOAuth"' in text
+    assert "chatgptOAuth.hidden" in text
+    assert "applyProviderDefaults" in text
+    assert 'id="modelOptions"' in text
+    assert "/admin/api/llm/models" in text
+    assert "default_base_url" in text

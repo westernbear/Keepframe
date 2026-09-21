@@ -9,7 +9,42 @@ from pydantic import BaseModel, Field
 from .oauth import OAuthParams, OAUTH_KEYS
 
 # Providers that do not need an API key (local runtimes).
-LOCAL_PROVIDERS = {"ollama", "vllm", "lm_studio", "local", "llamacpp", "huggingface"}
+LOCAL_PROVIDERS = {"ollama", "vllm", "lm_studio", "local", "llamacpp", "huggingface", "openai_compatible"}
+
+# Admin LLM picker. `id` is the LiteLLM prefix except openai_compatible → openai/.
+PROVIDER_CATALOG: tuple[dict, ...] = (
+    {"id": "chatgpt", "label": "ChatGPT", "default_model": "gpt-5.4", "default_base_url": "", "auth_modes": ["oauth"], "live_models": False, "hide_base_url": True, "hide_api_key": True},
+    {"id": "openai", "label": "OpenAI", "default_model": "gpt-4o-mini", "default_base_url": "https://api.openai.com/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "openai_compatible", "label": "OpenAI Compatible", "default_model": "", "default_base_url": "http://127.0.0.1:8000/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "anthropic", "label": "Anthropic Claude", "default_model": "claude-sonnet-4-5", "default_base_url": "https://api.anthropic.com", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "gemini", "label": "Google Gemini", "default_model": "gemini-2.5-flash", "default_base_url": "https://generativelanguage.googleapis.com/v1beta", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "vertex_ai", "label": "Google Vertex AI", "default_model": "gemini-2.5-flash", "default_base_url": "", "auth_modes": ["api_key"], "live_models": False, "hide_base_url": True},
+    {"id": "azure", "label": "Azure OpenAI", "default_model": "gpt-4o", "default_base_url": "", "auth_modes": ["api_key", "oauth"], "live_models": True},
+    {"id": "bedrock", "label": "AWS Bedrock", "default_model": "anthropic.claude-3-5-sonnet-20241022-v2:0", "default_base_url": "", "auth_modes": ["api_key"], "live_models": False, "hide_base_url": True},
+    {"id": "groq", "label": "Groq", "default_model": "llama-3.3-70b-versatile", "default_base_url": "https://api.groq.com/openai/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "mistral", "label": "Mistral", "default_model": "mistral-small-latest", "default_base_url": "https://api.mistral.ai/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "cohere", "label": "Cohere", "default_model": "command-r-plus", "default_base_url": "https://api.cohere.ai/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "deepseek", "label": "DeepSeek", "default_model": "deepseek-chat", "default_base_url": "https://api.deepseek.com", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "openrouter", "label": "OpenRouter", "default_model": "openai/gpt-4o-mini", "default_base_url": "https://openrouter.ai/api/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "together_ai", "label": "Together AI", "default_model": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "default_base_url": "https://api.together.xyz/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "fireworks_ai", "label": "Fireworks AI", "default_model": "accounts/fireworks/models/llama-v3p1-70b-instruct", "default_base_url": "https://api.fireworks.ai/inference/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "xai", "label": "xAI Grok", "default_model": "grok-3", "default_base_url": "https://api.x.ai/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "perplexity", "label": "Perplexity", "default_model": "sonar", "default_base_url": "https://api.perplexity.ai", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "ollama", "label": "Ollama (로컬)", "default_model": "llama3.2", "default_base_url": "http://127.0.0.1:11434", "auth_modes": ["api_key"], "live_models": True, "hide_api_key": True},
+    {"id": "vllm", "label": "vLLM (로컬)", "default_model": "", "default_base_url": "http://127.0.0.1:8000/v1", "auth_modes": ["api_key"], "live_models": True},
+    {"id": "lm_studio", "label": "LM Studio (로컬)", "default_model": "", "default_base_url": "http://127.0.0.1:1234/v1", "auth_modes": ["api_key"], "live_models": True},
+)
+
+
+def catalog_entry(provider: str) -> dict:
+    for row in PROVIDER_CATALOG:
+        if row["id"] == provider:
+            return row
+    return {}
+
+
+def default_base_url(provider: str) -> str:
+    return str(catalog_entry(provider).get("default_base_url") or "")
 
 # Canonical env var each provider reads when no explicit api_key is given.
 PROVIDER_ENV_KEYS = {
@@ -53,6 +88,8 @@ class ProviderConfig(BaseModel):
 
     @property
     def litellm_model(self) -> str:
+        if self.provider == "openai_compatible":
+            return f"openai/{self.model}"
         return f"{self.provider}/{self.model}"
 
     def chatgpt_connected(self) -> bool:
@@ -86,6 +123,8 @@ class ProviderConfig(BaseModel):
         if self.oauth_params().present():
             return True
         if self.api_key or self.base_url:
+            return True
+        if self.provider == "openai_compatible" and self.base_url:
             return True
         if self.provider in LOCAL_PROVIDERS:
             return True

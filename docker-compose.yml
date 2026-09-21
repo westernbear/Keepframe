@@ -28,12 +28,14 @@ x-keepframe: &keepframe
     KEEPFRAME_ADMIN_EMAIL: ${KEEPFRAME_ADMIN_EMAIL:-}
     KEEPFRAME_ADMIN_PASSWORD: ${KEEPFRAME_ADMIN_PASSWORD:-}
     KEEPFRAME_ADMIN_USERS: ${KEEPFRAME_ADMIN_USERS:-}
+    CHATGPT_CALLBACK_BIND: "0.0.0.0"
 
 services:
   web:
     <<: *keepframe
     ports:
       - "${KEEPFRAME_PORT:-8765}:8765"
+      - "1455:1455"
     command: ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/')"]

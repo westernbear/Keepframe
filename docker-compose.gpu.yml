@@ -23,6 +23,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       KEEPFRAME_DEVICE: cuda
+      CHATGPT_CALLBACK_BIND: "0.0.0.0"
     deploy:
       resources:
         reservations:

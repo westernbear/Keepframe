@@ -4,10 +4,10 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - LLM 프로바이더</title>
-<link href="/static/css/app.css?v=20260921c" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20260921d" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921c"></script>
-<script type="module" src="/static/js/api.js?v=20260921c"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921d"></script>
+<script type="module" src="/static/js/api.js?v=20260921d"></script>
 <style>
 .admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
 .admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; }
@@ -44,6 +44,8 @@
 .oauth-advanced > summary { cursor: pointer; list-style: none; font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 8px 0; }
 .oauth-advanced > summary::-webkit-details-marker { display: none; }
 .oauth-advanced[open] > summary { color: var(--ink); }
+.model-pick { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.model-pick input, .model-pick select { flex: 1; min-width: 0; }
 .admin-form__foot { padding: 16px 24px; border-top: 1px solid var(--hairline); display: flex; align-items: center; gap: 12px; background: var(--surface-2); }
 .status-note { margin: 12px 24px 0; padding: 10px 12px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); background: var(--surface-2); border: 1px solid var(--hairline); }
 .status-note--err { color: var(--error); border-color: var(--error); }
@@ -99,9 +101,13 @@
 </div>
 <div class="field field--row">
 <label for="model" data-i18n="admin.llm.model">모델</label>
-<input id="model" type="text" placeholder="gpt-4o-mini"/>
+<div class="model-pick">
+<input id="model" type="text" list="modelOptions" placeholder="gpt-4o-mini" autocomplete="off"/>
+<datalist id="modelOptions"></datalist>
+<button class="btn btn--ghost" id="reloadModels" type="button" data-i18n="admin.llm.reloadModels">불러오기</button>
 </div>
-<div class="field field--row">
+</div>
+<div class="field field--row" id="authField">
 <label for="auth" data-i18n="admin.llm.auth">인증</label>
 <select id="auth">
 <option value="api_key" data-i18n="admin.llm.auth.apiKey">API 키</option>
@@ -146,7 +152,7 @@
 <span class="mono" data-i18n="admin.llm.oauthHint">Azure Entra는 Tenant ID와 앱 자격 증명이 필요합니다. ChatGPT는 위의 연결 버튼을 쓰세요.</span>
 </details>
 </div>
-<div class="field field--row">
+<div class="field field--row" id="baseUrlField">
 <label for="baseUrl" data-i18n="admin.llm.baseUrl">Base URL</label>
 <input id="baseUrl" type="text" placeholder="https://… (선택)"/>
 </div>
@@ -165,37 +171,18 @@
 </main>
 </div>
 <script type="module">
-import { api } from "/static/js/api.js?v=20260921c";
-
-const PROVIDERS = [
-  ["chatgpt", "ChatGPT"],
-  ["openai", "OpenAI"],
-  ["anthropic", "Anthropic Claude"],
-  ["gemini", "Google Gemini"],
-  ["vertex_ai", "Google Vertex AI"],
-  ["azure", "Azure OpenAI"],
-  ["bedrock", "AWS Bedrock"],
-  ["groq", "Groq"],
-  ["mistral", "Mistral"],
-  ["cohere", "Cohere"],
-  ["deepseek", "DeepSeek"],
-  ["openrouter", "OpenRouter"],
-  ["together_ai", "Together AI"],
-  ["fireworks_ai", "Fireworks AI"],
-  ["xai", "xAI Grok"],
-  ["perplexity", "Perplexity"],
-  ["ollama", "Ollama (로컬)"],
-  ["vllm", "vLLM (로컬)"],
-  ["lm_studio", "LM Studio (로컬)"],
-];
+import { api } from "/static/js/api.js?v=20260921d";
 
 const select = document.getElementById("provider");
 const model = document.getElementById("model");
+const modelOptions = document.getElementById("modelOptions");
 const auth = document.getElementById("auth");
+const authField = document.getElementById("authField");
 const apiKey = document.getElementById("apiKey");
 const apiKeyField = document.getElementById("apiKeyField");
 const oauthFields = document.getElementById("oauthFields");
 const oauthAdvanced = document.getElementById("oauthAdvanced");
+const chatgptOAuth = document.getElementById("chatgptOAuth");
 const chatgptConnect = document.getElementById("chatgptConnect");
 const chatgptDisconnect = document.getElementById("chatgptDisconnect");
 const chatgptStatus = document.getElementById("chatgptStatus");
@@ -205,25 +192,48 @@ const tenantId = document.getElementById("tenantId");
 const tokenUrl = document.getElementById("tokenUrl");
 const scope = document.getElementById("scope");
 const baseUrl = document.getElementById("baseUrl");
+const baseUrlField = document.getElementById("baseUrlField");
 const extra = document.getElementById("extra");
 const statusEl = document.getElementById("status");
 let current = null;
+let catalog = [];
+let modelsTimer = 0;
 
 const AZURE_SCOPE = "https://cognitiveservices.azure.com/.default";
-const CHATGPT_MODEL = "gpt-5.4";
 
-PROVIDERS.forEach(([value, label]) => {
-  const opt = document.createElement("option");
-  opt.value = value;
-  opt.textContent = label;
-  select.appendChild(opt);
-});
+function specOf(id) {
+  return catalog.find((p) => p.id === id) || {};
+}
 
-function showAuth(mode) {
-  const oauth = mode === "oauth";
-  apiKeyField.hidden = oauth;
-  oauthFields.hidden = !oauth;
-  oauthAdvanced.open = select.value === "azure";
+function fillCatalog(items) {
+  catalog = items || [];
+  const prev = select.value;
+  select.innerHTML = "";
+  catalog.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    select.appendChild(opt);
+  });
+  if (prev && catalog.some((p) => p.id === prev)) select.value = prev;
+}
+
+function showFields() {
+  const p = select.value;
+  const spec = specOf(p);
+  const modes = spec.auth_modes || ["api_key"];
+  [...auth.options].forEach((opt) => { opt.hidden = !modes.includes(opt.value); });
+  if (!modes.includes(auth.value)) auth.value = modes[0];
+  const chatgpt = p === "chatgpt";
+  const azureOauth = p === "azure" && auth.value === "oauth";
+  const oauth = auth.value === "oauth";
+  authField.hidden = chatgpt || modes.length === 1;
+  apiKeyField.hidden = chatgpt || Boolean(spec.hide_api_key) || oauth;
+  oauthFields.hidden = !chatgpt && !azureOauth;
+  chatgptOAuth.hidden = !chatgpt;
+  oauthAdvanced.hidden = p !== "azure";
+  oauthAdvanced.open = azureOauth;
+  baseUrlField.hidden = Boolean(spec.hide_base_url);
 }
 
 function setChatgptStatus(s) {
@@ -234,13 +244,25 @@ function setChatgptStatus(s) {
   chatgptStatus.textContent = connected ? "ChatGPT 연결됨" : "";
 }
 
+function applyProviderDefaults() {
+  const spec = specOf(select.value);
+  auth.value = (spec.auth_modes || ["api_key"])[0];
+  baseUrl.value = spec.default_base_url || "";
+  if (spec.default_model) model.value = spec.default_model;
+  else model.value = "";
+  if (select.value === "azure" && auth.value === "oauth" && !scope.value) scope.value = AZURE_SCOPE;
+  showFields();
+  loadModels(false);
+}
+
 function fill(s) {
   current = s;
   select.value = s.provider || "openai";
   model.value = s.model || "";
-  const mode = s.auth || (s.client_id ? "oauth" : "api_key");
+  const spec = specOf(select.value);
+  const modes = spec.auth_modes || ["api_key"];
+  const mode = s.auth && modes.includes(s.auth) ? s.auth : modes[0];
   auth.value = mode;
-  showAuth(mode);
   setChatgptStatus(s);
   apiKey.value = s.api_key || "";
   clientId.value = s.client_id || "";
@@ -248,8 +270,10 @@ function fill(s) {
   tenantId.value = s.tenant_id || "";
   tokenUrl.value = s.token_url || "";
   scope.value = s.scope || "";
-  baseUrl.value = s.base_url || "";
+  baseUrl.value = s.base_url || spec.default_base_url || "";
   extra.value = s.extra && Object.keys(s.extra).length ? JSON.stringify(s.extra, null, 2) : "";
+  showFields();
+  loadModels(false);
 }
 
 function note(msg, isErr = false) {
@@ -258,18 +282,48 @@ function note(msg, isErr = false) {
   statusEl.classList.toggle("status-note--err", isErr);
 }
 
-auth.addEventListener("change", () => {
-  showAuth(auth.value);
-  if (auth.value === "oauth" && select.value === "azure" && !scope.value) scope.value = AZURE_SCOPE;
-});
-select.addEventListener("change", () => {
-  if (select.value === "chatgpt") {
-    auth.value = "oauth";
-    if (!model.value || model.value === "gpt-4o-mini") model.value = CHATGPT_MODEL;
+function setModelOptions(ids) {
+  modelOptions.innerHTML = "";
+  (ids || []).forEach((id) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    modelOptions.appendChild(opt);
+  });
+}
+
+async function loadModels(announce) {
+  setModelOptions([]);
+  try {
+    const data = await api("/admin/api/llm/models", {
+      method: "POST",
+      body: JSON.stringify({
+        provider: select.value,
+        base_url: baseUrl.value.trim(),
+        api_key: apiKey.value.trim(),
+      }),
+    });
+    const ids = data.models || [];
+    setModelOptions(ids);
+    if (!model.value && ids.length) model.value = ids[0];
+    if (announce) note(ids.length ? `모델 ${ids.length}개를 불러왔습니다.` : "모델 목록이 비어 있습니다.");
+  } catch (err) {
+    if (announce) note(err.message || "모델 목록을 불러오지 못했습니다.", true);
   }
-  showAuth(auth.value);
+}
+
+function scheduleModels() {
+  window.clearTimeout(modelsTimer);
+  modelsTimer = window.setTimeout(() => loadModels(false), 400);
+}
+
+auth.addEventListener("change", () => {
+  showFields();
   if (auth.value === "oauth" && select.value === "azure" && !scope.value) scope.value = AZURE_SCOPE;
 });
+select.addEventListener("change", () => applyProviderDefaults());
+baseUrl.addEventListener("change", scheduleModels);
+apiKey.addEventListener("change", scheduleModels);
+document.getElementById("reloadModels").addEventListener("click", () => loadModels(true));
 
 chatgptConnect.addEventListener("click", async () => {
   note("");
@@ -285,6 +339,7 @@ chatgptConnect.addEventListener("click", async () => {
 chatgptDisconnect.addEventListener("click", async () => {
   try {
     const data = await api("/admin/api/llm/oauth/disconnect", { method: "POST" });
+    if (data.catalog) fillCatalog(data.catalog);
     fill(data.settings);
     note("ChatGPT 연결을 해제했습니다.");
   } catch (err) {
@@ -315,6 +370,7 @@ document.getElementById("save").addEventListener("click", async () => {
   };
   try {
     const data = await api("/admin/api/llm", { method: "POST", body: JSON.stringify(body) });
+    if (data.catalog) fillCatalog(data.catalog);
     fill(data.settings);
     note("저장했습니다.");
   } catch (err) {
@@ -329,6 +385,7 @@ document.getElementById("reset").addEventListener("click", () => {
 
 const oauthFlag = new URLSearchParams(location.search).get("oauth");
 api("/admin/api/llm").then((data) => {
+  fillCatalog(data.catalog);
   fill(data.settings);
   if (oauthFlag === "ok") {
     note("ChatGPT 연결이 완료되었습니다.");

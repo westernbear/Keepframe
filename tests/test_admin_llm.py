@@ -56,6 +56,8 @@ def test_admin_llm_api_get_and_post(tmp_path):
         code, body = _api(srv, "/admin/api/llm", cookie)
         assert code == 200
         assert body["settings"]["provider"] == "openai"
+        assert any(p["id"] == "openai_compatible" for p in body["catalog"])
+        assert any(p["id"] == "chatgpt" for p in body["catalog"])
 
         code, body = _api(
             srv,
@@ -159,5 +161,39 @@ def test_admin_llm_page_requires_auth(tmp_path):
     try:
         code, body = _api(srv, "/admin/api/llm", "keepframe_admin=bad")
         assert code == 401
+    finally:
+        srv.shutdown()
+
+
+def test_admin_llm_models_chatgpt_and_compatible(tmp_path, monkeypatch):
+    srv = start_admin(tmp_path)
+    try:
+        cookie = _login(srv)
+        code, body = _api(srv, "/admin/api/llm/models", cookie, method="POST", body={"provider": "chatgpt"})
+        assert code == 200
+        assert body["source"] == "static"
+        assert "gpt-5.4" in body["models"]
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"data": [{"id": "local-llama"}, {"id": "local-qwen"}]}).encode()
+
+        monkeypatch.setattr("keepframe.session.models.urllib.request.urlopen", lambda req, timeout=None: _Resp())
+        code, body = _api(
+            srv,
+            "/admin/api/llm/models",
+            cookie,
+            method="POST",
+            body={"provider": "openai_compatible", "base_url": "http://127.0.0.1:8000/v1", "api_key": "x"},
+        )
+        assert code == 200
+        assert body["source"] == "live"
+        assert body["models"] == ["local-llama", "local-qwen"]
     finally:
         srv.shutdown()

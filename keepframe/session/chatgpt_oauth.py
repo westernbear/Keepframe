@@ -72,6 +72,15 @@ def safe_origin(origin: str) -> str:
     return origin.rstrip("/")
 
 
+def callback_bind_host(serve_host: str | None = None) -> str:
+    env = (os.getenv("CHATGPT_CALLBACK_BIND") or "").strip()
+    if env:
+        return env
+    if serve_host and serve_host not in ("127.0.0.1", "localhost", "::1"):
+        return "0.0.0.0"
+    return "127.0.0.1"
+
+
 def chatgpt_auth_file() -> Path:
     token_dir = os.getenv("CHATGPT_TOKEN_DIR") or os.path.expanduser("~/.config/litellm/chatgpt")
     name = os.getenv("CHATGPT_AUTH_FILE") or "auth.json"
@@ -220,21 +229,72 @@ class ChatGPTOAuth:
         self._admin_svc = None
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self.bind_host = callback_bind_host()
+        self.workspace: Path | None = None
+
+    def _pending_path(self) -> Path | None:
+        if self.workspace is None:
+            return None
+        return Path(self.workspace) / ".chatgpt-oauth-pending.json"
+
+    def _store_pending(self, pending: PendingLogin) -> None:
+        self._pending = {pending.state: pending}
+        path = self._pending_path()
+        if path is None:
+            return
+        path.write_text(
+            json.dumps(
+                {
+                    "state": pending.state,
+                    "verifier": pending.verifier,
+                    "actor": pending.actor,
+                    "origin": pending.origin,
+                    "created": pending.created,
+                }
+            ),
+            encoding="utf-8",
+        )
+        path.chmod(0o600)
+
+    def _load_pending(self, state: str) -> PendingLogin | None:
+        hit = self._pending.pop(state, None)
+        if hit is not None:
+            path = self._pending_path()
+            if path is not None and path.is_file():
+                path.unlink()
+            return hit
+        path = self._pending_path()
+        if path is None or not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if str(data.get("state") or "") != state:
+            return None
+        path.unlink()
+        return PendingLogin(
+            state=str(data.get("state") or ""),
+            verifier=str(data.get("verifier") or ""),
+            actor=str(data.get("actor") or ""),
+            origin=str(data.get("origin") or ""),
+            created=float(data.get("created") or 0),
+        )
 
     def begin(self, actor: str, origin: str, admin_svc, listen: bool = True) -> str:
         verifier, challenge = generate_pkce()
         state = secrets.token_urlsafe(24)
         pending = PendingLogin(state=state, verifier=verifier, actor=actor, origin=safe_origin(origin))
         with self._lock:
-            self._pending = {state: pending}
             self._admin_svc = admin_svc
+            self._store_pending(pending)
         if listen:
             self.ensure_listener()
         return authorize_url(state, challenge)
 
     def complete(self, code: str, state: str) -> ProviderConfig:
         with self._lock:
-            pending = self._pending.pop(state, None)
+            pending = self._load_pending(state)
             admin_svc = self._admin_svc
         if pending is None or time.time() - pending.created > 600:
             raise RuntimeError("OAuth state가 만료되었거나 올바르지 않습니다.")
@@ -249,14 +309,24 @@ class ChatGPTOAuth:
     def origin_for(self, state: str) -> str:
         with self._lock:
             pending = self._pending.get(state)
+            if pending is None:
+                path = self._pending_path()
+                if path is not None and path.is_file():
+                    try:
+                        data = json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        data = {}
+                    if str(data.get("state") or "") == state:
+                        return str(data.get("origin") or "http://127.0.0.1:8765")
         return pending.origin if pending else "http://127.0.0.1:8765"
 
     def ensure_listener(self) -> None:
         with self._lock:
             if self._server is not None:
                 return
+            host = self.bind_host or callback_bind_host()
             try:
-                server = ThreadingHTTPServer(("127.0.0.1", CHATGPT_CALLBACK_PORT), _CallbackHandler)
+                server = ThreadingHTTPServer((host, CHATGPT_CALLBACK_PORT), _CallbackHandler)
             except OSError as e:
                 raise RuntimeError(
                     f"ChatGPT 콜백 포트 {CHATGPT_CALLBACK_PORT}를 열 수 없습니다. Codex 등 다른 프로그램이 쓰고 있으면 종료하세요."
@@ -266,7 +336,7 @@ class ChatGPTOAuth:
             thread = threading.Thread(target=server.serve_forever, daemon=True, name="chatgpt-oauth")
             self._thread = thread
             thread.start()
-            log.info("chatgpt oauth callback http://127.0.0.1:%s/auth/callback", CHATGPT_CALLBACK_PORT)
+            log.info("chatgpt oauth callback http://localhost:%s/auth/callback bind=%s", CHATGPT_CALLBACK_PORT, host)
 
 
 FLOW = ChatGPTOAuth()

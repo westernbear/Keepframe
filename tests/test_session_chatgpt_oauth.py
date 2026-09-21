@@ -10,6 +10,7 @@ from keepframe.session.chatgpt_oauth import (
     ChatGPTOAuth,
     account_id_from_token,
     authorize_url,
+    callback_bind_host,
     generate_pkce,
     preserve_chatgpt_tokens,
     write_litellm_auth,
@@ -91,3 +92,11 @@ def test_preserve_chatgpt_tokens_on_save():
     assert kept.api_key == "at"
     other = preserve_chatgpt_tokens(ProviderConfig(provider="azure", auth="oauth"), prev)
     assert other.refresh_token == ""
+
+
+def test_callback_bind_host(monkeypatch):
+    monkeypatch.delenv("CHATGPT_CALLBACK_BIND", raising=False)
+    assert callback_bind_host("127.0.0.1") == "127.0.0.1"
+    assert callback_bind_host("0.0.0.0") == "0.0.0.0"
+    monkeypatch.setenv("CHATGPT_CALLBACK_BIND", "0.0.0.0")
+    assert callback_bind_host("127.0.0.1") == "0.0.0.0"

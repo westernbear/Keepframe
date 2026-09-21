@@ -17,3 +17,7 @@ def test_dockerfile_has_gpu_stage():
     overlay = pathlib.Path("docker-compose.gpu.yml").read_text(encoding="utf-8")
     assert "target: gpu" in overlay and "gpus: all" in overlay
     assert "KEEPFRAME_DEVICE: cuda" in overlay
+    compose = pathlib.Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "1455:1455" in compose
+    assert "CHATGPT_CALLBACK_BIND" in compose
+    assert "EXPOSE 8765 1455" in text
