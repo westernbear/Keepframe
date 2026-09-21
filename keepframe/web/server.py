@@ -27,6 +27,7 @@ from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
+from keepframe.session import SessionAgent, SessionContext, make_llm
 from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
@@ -50,6 +51,7 @@ PAGES = {
     "/new": "ingest.html",
     "/analyze": "analyze.html",
     "/review": "review.html",
+    "/agent": "agent.html",
 }
 ADMIN_OFF = {"error": "로컬판에는 이 화면이 없습니다."}
 
@@ -323,6 +325,13 @@ def make_server(
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
+    agent_states: dict[tuple[str, str], list[dict]] = {}
+
+    def agent_llm():
+        if admin_svc is not None:
+            return make_llm(admin_svc.get_llm_settings())
+        return make_llm()
+
     admin_routes = None
     if admin and admin_svc is not None and admin_auth is not None:
         from keepframe.admin.http import AdminRoutes
@@ -767,6 +776,89 @@ def make_server(
                     state._preview.clear()
                     state._tex.clear()
                 return self._json(200, result.to_json())
+
+            if u.path == "/api/agent":
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                scene_id = data.get("scene", "s1")
+                message = (data.get("message") or "").strip()
+                if not project_id:
+                    return self._json(400, {"error": "project required"})
+                if not message:
+                    return self._json(400, {"error": "message required"})
+                meta = load_meta(workspace, project_id)
+                if meta is None:
+                    return self._json(404, {"error": "not found"})
+                root = project_dir(workspace, project_id)
+                version = data.get("v")
+
+                def submit_agent_job(kind: str, args: dict, stage: str) -> dict:
+                    if kind == "analyze":
+                        video = root / "source.mp4"
+                        info = probe_video(video)
+                        mode, start, end = resolve_analyze_window(meta, args or {}, info["frames"])
+                        spec = JobSpec(
+                            kind="analyze",
+                            args={"video": str(video), "start": int(start), "end": int(end),
+                                  "out_root": str(root), "workspace": str(workspace), "project_id": project_id},
+                        )
+                        job = JOBS.submit("analyze", spec=spec, project_id=project_id, scene_id="s1", stage="frames")
+                    elif kind in ("render", "export"):
+                        job = JOBS.submit(kind, spec=JobSpec(kind=kind, args=args), project_id=project_id, scene_id=scene_id, stage=stage)
+                    elif kind == "correct":
+                        op = (args or {}).get("op")
+                        cargs = (args or {}).get("args", {})
+
+                        def work():
+                            if op == "reassign":
+                                v = corrections.reassign_id(root, scene_id, tuple(cargs["frames"]), cargs["from_id"], cargs["to_id"], note=cargs.get("note", "reassign id"))
+                            elif op == "mask":
+                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:
+                                    t.write(base64.b64decode(cargs["mask_png_base64"]))
+                                    tmp = Path(t.name)
+                                try:
+                                    v = corrections.set_region_mask(root, scene_id, int(cargs["frame"]), tmp, cargs["object_id"], note=cargs.get("note", "set region mask"))
+                                finally:
+                                    tmp.unlink(missing_ok=True)
+                            elif op == "bbox":
+                                v = corrections.add_bbox_prompt(root, scene_id, int(cargs["frame"]), tuple(int(x) for x in cargs["bbox"]), cargs["object_id"], note=cargs.get("note", "bbox prompt"))
+                            else:
+                                v = corrections.edit_text(root, scene_id, cargs["element_id"], text=cargs.get("text"),
+                                                            font=FontGuess(**cargs["font"]) if cargs.get("font") else None,
+                                                            note=cargs.get("note", "edit text"))
+                            return {"version": v.model_dump()}
+
+                        job = JOBS.submit("correct", fn=work, project_id=project_id, scene_id=scene_id, stage="correct")
+                    else:
+                        raise ValueError(f"unknown job kind {kind!r}")
+                    return job.to_json()
+
+                key = (project_id, scene_id)
+                history = agent_states.setdefault(key, [])
+                ctx = SessionContext(
+                    root=root,
+                    scene_id=scene_id,
+                    version=version,
+                    workspace=workspace,
+                    project_id=project_id,
+                    jobs=JOBS,
+                    submit_job=submit_agent_job,
+                )
+                try:
+                    turn = SessionAgent(agent_llm()).turn(ctx, message, history)
+                except Exception as e:
+                    log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
+                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                history.append({"role": "user", "content": message})
+                history.append({"role": "assistant", "content": turn.reply})
+                for res in turn.results:
+                    ver = (res.get("payload") or {}).get("version")
+                    if ver and ver.get("id"):
+                        write_meta(workspace, project_id, status="review", version=ver["id"], scene=scene_id)
+                return self._json(200, turn.to_json())
 
             if u.path == "/api/correct":
                 try:

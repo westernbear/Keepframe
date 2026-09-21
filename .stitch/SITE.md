@@ -11,6 +11,7 @@ Project `17345649857730883248`. Design system `assets/18239713153808064386`.
 | 새 프로젝트 | `designs/ingest.html` |
 | 프로젝트 라이브러리 | `designs/library.html` |
 | 분석 진행 중 | `designs/analyze.html` |
+| 세션 에이전트 | `designs/agent.html` |
 
 ## Admin (cloud / team only, spec §13)
 

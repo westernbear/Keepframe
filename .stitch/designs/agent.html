@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Keepframe - 세션 에이전트 대화형 편집 데스크</title>
+  <!-- Fonts: Geist & Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <!-- Material Symbols -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "background": "#0b0b0c",
+            "surface": "#121214",
+            "surface-low": "#18181b",
+            "surface-high": "#222226",
+            "surface-highest": "#2e2e34",
+            "outline-dim": "#28282e",
+            "outline-subtle": "#36363f",
+            "primary": "#ffffff",
+            "on-surface": "#f1f1f3",
+            "on-surface-muted": "#9e9ea8",
+            "secondary": "#0099ff",
+            "secondary-tint": "rgba(0, 153, 255, 0.12)",
+            "secondary-border": "rgba(0, 153, 255, 0.35)",
+            "accent-green": "#10b981",
+            "accent-amber": "#f59e0b",
+            "accent-red": "#ef4444"
+          },
+          fontFamily: {
+            headline: ["Geist", "sans-serif"],
+            display: ["Geist", "sans-serif"],
+            body: ["Inter", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 380, 'GRAD' 0, 'opsz' 20;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #27272e;
+      border-radius: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: #3e3e48;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body antialiased selection:bg-secondary selection:text-background h-screen w-screen overflow-hidden flex flex-col">
+
+  <!-- ========================================================================= -->
+  <!-- 1. HEADER (Keepframe 로고/브랜드, 제목, 장면 배지, 검수 복귀, 언어 토글)       -->
+  <!-- ========================================================================= -->
+  <header class="flex justify-between items-center w-full px-4 h-12 bg-surface border-b border-outline-dim flex-shrink-0 z-40 select-none">
+    <!-- Left: Brand & Breadcrumb / Badges -->
+    <div class="flex items-center gap-3">
+      <!-- Keepframe Logo Icon SVG -->
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded bg-surface-low border border-outline-subtle flex items-center justify-center text-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="5" width="20" height="14" rx="3" stroke="currentColor" stroke-width="2"/>
+            <path d="M2 12H22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/>
+            <polygon points="12,9 15,12 12,15 9,12" fill="#0099ff"/>
+          </svg>
+        </div>
+        <span class="font-headline text-sm font-bold tracking-tight text-primary">Keepframe</span>
+      </div>
+
+      <span class="text-outline-subtle font-mono">/</span>
+
+      <!-- Title: 세션 에이전트 -->
+      <div class="flex items-center gap-2">
+        <h1 class="font-headline text-xs font-semibold text-primary uppercase tracking-wider">세션 에이전트</h1>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-secondary-tint text-secondary border border-secondary-border">v2.4 Active</span>
+      </div>
+
+      <div class="h-3.5 w-[1px] bg-outline-dim mx-1"></div>
+
+      <!-- Scene Badge: s1-04 (120f) -->
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low border border-outline-dim text-xs font-mono">
+        <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+        <span class="text-primary font-medium">장면 s1-04</span>
+        <span class="text-on-surface-muted">·</span>
+        <span class="text-on-surface-muted text-[11px]">120 프레임 (00:04.00)</span>
+      </div>
+    </div>
+
+    <!-- Right: Status / Return to Audit / Language Toggle -->
+    <div class="flex items-center gap-2.5">
+      <!-- Sync State -->
+      <div class="hidden md:flex items-center gap-1.5 text-[11px] font-mono text-on-surface-muted mr-1">
+        <span class="material-symbols-outlined text-accent-green" style="font-size: 15px;">cloud_done</span>
+        <span>IR 캐시 동기화됨</span>
+      </div>
+
+      <!-- Language Toggle -->
+      <button type="button" class="px-2 py-1 text-[11px] font-mono text-on-surface-muted hover:text-primary hover:bg-surface-high rounded border border-transparent hover:border-outline-dim transition-colors" title="언어 전환">
+        KO / EN
+      </button>
+
+      <!-- Return to Review Button -->
+      <a href="#review" class="flex items-center gap-1.5 px-3 py-1.5 rounded bg-surface-low hover:bg-surface-high border border-outline-subtle text-xs font-medium text-on-surface transition-all active:scale-[0.98]">
+        <span class="material-symbols-outlined" style="font-size: 15px;">arrow_back</span>
+        <span>검수로 돌아가기</span>
+      </a>
+
+      <!-- Operator Badge -->
+      <div class="w-7 h-7 rounded-full bg-surface-high border border-outline-subtle flex items-center justify-center text-[10px] font-mono font-bold text-secondary ml-1" title="Operator: user@keepframe.io">
+        OP
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 2. TOOL PALETTE BAR: 8개 도구 (분석, 보정, 유지 지정, 재해석, 렌더, 검증, 내보내기, 보고서) -->
+  <!-- ========================================================================= -->
+  <nav class="w-full bg-surface border-b border-outline-dim px-4 py-1.5 flex items-center justify-between flex-shrink-0 select-none z-30">
+    <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll py-0.5">
+      <div class="flex items-center gap-1 text-[10px] font-mono text-on-surface-muted uppercase tracking-wider pr-2.5 border-r border-outline-dim mr-1">
+        <span class="material-symbols-outlined" style="font-size: 14px;">build_circle</span>
+        <span>TOOLS</span>
+      </div>
+
+      <!-- 1. 분석 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">analytics</span>
+        <span>분석</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">1</kbd>
+      </button>
+
+      <!-- 2. 보정 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">auto_fix_high</span>
+        <span>보정</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">2</kbd>
+      </button>
+
+      <!-- 3. 유지 지정 (Selected / Active in this scenario) -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-secondary-tint text-secondary border border-secondary-border text-xs font-medium shadow-[0_0_12px_rgba(0,153,255,0.15)] transition-all">
+        <span class="material-symbols-outlined text-secondary" style="font-size: 15px;">lock</span>
+        <span class="font-semibold">유지 지정</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-secondary/20 text-secondary font-bold">3</kbd>
+      </button>
+
+      <!-- 4. 재해석 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">auto_mode</span>
+        <span>재해석</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">4</kbd>
+      </button>
+
+      <!-- 5. 렌더 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">movie_creation</span>
+        <span>렌더</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">5</kbd>
+      </button>
+
+      <!-- 6. 검증 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">verified</span>
+        <span>검증</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">6</kbd>
+      </button>
+
+      <!-- 7. 내보내기 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">ios_share</span>
+        <span>내보내기</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">7</kbd>
+      </button>
+
+      <!-- 8. 보고서 -->
+      <button type="button" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-low hover:bg-surface-high text-on-surface border border-outline-dim hover:border-outline-subtle text-xs font-medium transition-all group">
+        <span class="material-symbols-outlined text-on-surface-muted group-hover:text-primary" style="font-size: 15px;">description</span>
+        <span>보고서</span>
+        <kbd class="text-[9px] font-mono px-1 rounded bg-surface text-on-surface-muted">8</kbd>
+      </button>
+    </div>
+
+    <!-- Quick Shortcuts hint -->
+    <div class="hidden lg:flex items-center gap-2 pl-3 border-l border-outline-dim flex-shrink-0 text-[10px] font-mono text-on-surface-muted">
+      <span>단축키 [1~8]</span>
+      <span class="px-1.5 py-0.5 rounded bg-surface-high border border-outline-dim text-on-surface">Auto-Chain ON</span>
+    </div>
+  </nav>
+
+  <!-- ========================================================================= -->
+  <!-- 3. MAIN SPLIT: 2-COLUMN COCKPIT (Left: 대화형 패널 / Right: 장면 뷰어)         -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ======================================================================= -->
+    <!-- LEFT COLUMN: 대화형 편집 데스크 (470px)                                  -->
+    <!-- ======================================================================= -->
+    <aside class="w-[470px] flex-shrink-0 bg-surface border-r border-outline-dim flex flex-col justify-between h-full z-20">
+      
+      <!-- Chat Desk Header -->
+      <div class="px-4 py-2.5 border-b border-outline-dim flex items-center justify-between bg-surface-low/60 flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-secondary"></div>
+          <div>
+            <h2 class="font-headline text-xs font-bold text-primary tracking-wide">Session Agent Cockpit</h2>
+            <p class="text-[10px] font-mono text-on-surface-muted">Gemini 2.5 Multi-modal · Context 128k</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1 text-on-surface-muted">
+          <button type="button" class="p-1 rounded hover:text-primary hover:bg-surface-high" title="대화 지우기">
+            <span class="material-symbols-outlined" style="font-size: 16px;">delete_sweep</span>
+          </button>
+          <button type="button" class="p-1 rounded hover:text-primary hover:bg-surface-high" title="실행 로그 세부정보">
+            <span class="material-symbols-outlined" style="font-size: 16px;">terminal</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Stream Log Area (Scrollable) -->
+      <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4 custom-scroll text-xs">
+        
+        <!-- Turn 1: User Request -->
+        <div class="flex flex-col items-end gap-1 pl-8">
+          <div class="flex items-center gap-1.5 text-[10px] font-mono text-on-surface-muted">
+            <span>Operator</span>
+            <span>14:02:18</span>
+          </div>
+          <div class="bg-surface-high text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tr-xs border border-outline-subtle leading-relaxed">
+            텍스트 <code class="font-mono text-secondary bg-surface px-1 py-0.5 rounded border border-outline-dim">e3</code>의 모션 방향을 <span class="font-mono text-primary font-bold">[1, 0]</span>으로 고정하고 60~90 프레임 구간의 가속도를 완만하게 조정해줘.
+          </div>
+        </div>
+
+        <!-- Turn 1: Agent Response with Tool Call & Verify Metric -->
+        <div class="flex flex-col items-start gap-1.5 pr-4">
+          <div class="flex items-center gap-1.5 text-[10px] font-mono text-secondary">
+            <span class="material-symbols-outlined" style="font-size: 14px;">smart_toy</span>
+            <span class="font-bold">Keepframe Agent</span>
+            <span class="text-on-surface-muted">14:02:22</span>
+          </div>
+
+          <div class="space-y-2.5 w-full">
+            <!-- Natural Language Explanation -->
+            <div class="bg-surface-low text-on-surface px-3.5 py-2.5 rounded-2xl rounded-tl-xs border border-outline-dim leading-relaxed">
+              요청하신 <span class="font-mono text-secondary font-semibold">e3 (Launch faster)</span> 요소의 방향 벡터를 수평축 [1, 0]으로 고정하고, f60~f90 구간의 3차 베지에 이징(cubic-bezier) 곡선을 재합성했습니다.
+            </div>
+
+            <!-- Tool Call Block (도구 이름 및 결과 요약) -->
+            <div class="bg-background border border-outline-dim rounded-lg p-3 font-mono text-[11px] space-y-2">
+              <div class="flex items-center justify-between text-on-surface-muted border-b border-outline-dim pb-1.5 text-[10px]">
+                <span class="flex items-center gap-1 text-secondary font-semibold">
+                  <span class="material-symbols-outlined" style="font-size: 13px;">data_object</span>
+                  <span>TOOL CALL: apply_motion_constraint</span>
+                </span>
+                <span class="text-accent-green font-bold flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-accent-green"></span>
+                  SUCCESS (28ms)
+                </span>
+              </div>
+              <div class="text-on-surface bg-surface-low p-2 rounded border border-outline-dim/70 overflow-x-auto text-[10.5px]">
+                <span class="text-secondary">apply_motion_constraint</span>(target="<span class="text-primary font-bold">e3</span>", dir=[<span class="text-accent-amber font-bold">1, 0</span>], ease="<span class="text-primary">cubic-bezier(0.25, 0.1, 0.25, 1.0)</span>")
+              </div>
+              <div class="text-[10px] text-on-surface-muted flex items-center justify-between pt-0.5">
+                <span>결과 요약: f60~f90 키프레임 4개 갱신</span>
+                <span class="text-secondary font-mono">추적 오차 1.2px → 0.4px</span>
+              </div>
+            </div>
+
+            <!-- Verify Indicator Block (통과/실패 지표) -->
+            <div class="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <!-- Check 1: Invariance Check (PASS) -->
+              <div class="bg-surface-low border border-outline-dim p-2 rounded flex flex-col gap-1">
+                <div class="flex items-center justify-between text-on-surface-muted">
+                  <span>INVARIANCE CHECK</span>
+                  <span class="px-1.5 py-0.2 rounded bg-accent-green/15 text-accent-green font-bold text-[9px]">PASS</span>
+                </div>
+                <div class="text-primary font-bold text-xs">99.4% 일치</div>
+                <div class="text-on-surface-muted text-[9px]">기존 형태 보존율 (임계 95%)</div>
+              </div>
+
+              <!-- Check 2: BBox Jitter (PASS) -->
+              <div class="bg-surface-low border border-outline-dim p-2 rounded flex flex-col gap-1">
+                <div class="flex items-center justify-between text-on-surface-muted">
+                  <span>BBOX JITTER VERIFY</span>
+                  <span class="px-1.5 py-0.2 rounded bg-accent-green/15 text-accent-green font-bold text-[9px]">PASS</span>
+                </div>
+                <div class="text-primary font-bold text-xs">0.08 px</div>
+                <div class="text-on-surface-muted text-[9px]">프레임 흔들림 임계 0.5px 미만</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Banner 1: Constraint Conflict Resolution (충돌 선택지) -->
+        <div class="bg-amber-950/20 border border-accent-amber/40 rounded-lg p-3 space-y-2">
+          <div class="flex items-center justify-between text-accent-amber font-mono text-[11px] font-semibold">
+            <span class="flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size: 15px;">warning</span>
+              <span>제약 충돌 감지 (Constraint Conflict)</span>
+            </span>
+            <span class="text-[9px] px-1.5 py-0.2 rounded bg-accent-amber/20 border border-accent-amber/30">f72 ~ f75</span>
+          </div>
+          <p class="text-[11px] text-on-surface-muted leading-relaxed">
+            <span class="text-primary font-mono font-medium">e2 card shadow</span> 영역과 <span class="text-secondary font-mono font-medium">e3 text boundary</span>가 3프레임 구간에서 경계 침범을 일으킵니다. 처리 방식을 선택하세요:
+          </p>
+          <div class="flex flex-col gap-1.5 pt-1">
+            <button type="button" class="w-full text-left px-2.5 py-1.5 rounded bg-surface-low border border-secondary-border hover:bg-secondary-tint transition-all flex items-center justify-between group">
+              <span class="text-[11px] text-primary group-hover:text-secondary font-medium">
+                A. e3 텍스트 레이어 상위 배치 (Z-index +1 권장)
+              </span>
+              <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-secondary/20 text-secondary font-bold">REORDER</span>
+            </button>
+            <button type="button" class="w-full text-left px-2.5 py-1.5 rounded bg-surface-low border border-outline-dim hover:bg-surface-high transition-all flex items-center justify-between">
+              <span class="text-[11px] text-on-surface-muted hover:text-on-surface font-medium">
+                B. e2 그림자 블러 마스크 15% 축소
+              </span>
+              <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-surface text-on-surface-muted">MASK CROP</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Notification Banner 2: Progress Banner (도구 실행 중 상태) -->
+        <div class="bg-surface-low border border-secondary-border rounded-lg p-2.5 flex items-center gap-3">
+          <div class="w-4 h-4 border-2 border-secondary border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between text-[10px] font-mono text-secondary">
+              <span class="font-semibold">GPU IR 래스터 재구성 렌더링 중...</span>
+              <span>78% (GPU Node 0)</span>
+            </div>
+            <div class="w-full bg-surface-highest h-1 rounded-full overflow-hidden mt-1.5">
+              <div class="bg-secondary h-full rounded-full transition-all duration-300" style="width: 78%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Banner 3: Retry/Failure Reason Banner (실패 사유) -->
+        <div class="bg-red-950/20 border border-accent-red/30 rounded-lg p-2.5 flex items-start gap-2 text-[11px]">
+          <span class="material-symbols-outlined text-accent-red flex-shrink-0 mt-0.5" style="font-size: 15px;">info</span>
+          <div class="flex-1">
+            <div class="font-mono text-accent-red font-semibold text-[10px]">이전 검증 실패 사유 (Resolved)</div>
+            <p class="text-on-surface-muted text-[10.5px] mt-0.5 leading-tight">
+              Frame 67: 요소 e3의 Y축 지터가 허용 임계(0.5px)를 초과(0.82px)하여 수평 구속조건으로 재연산되었습니다.
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Chat Prompt Input Dock -->
+      <div class="p-3 border-t border-outline-dim bg-surface-low/80 space-y-2 flex-shrink-0">
+        <!-- Quick Prompt Chips -->
+        <div class="flex items-center gap-1.5 overflow-x-auto custom-scroll pb-1 text-[10px] font-mono">
+          <button type="button" class="px-2 py-0.5 rounded-full bg-surface text-on-surface-muted border border-outline-dim hover:border-secondary hover:text-primary whitespace-nowrap transition-colors">
+            + e3 유지 지정
+          </button>
+          <button type="button" class="px-2 py-0.5 rounded-full bg-surface text-on-surface-muted border border-outline-dim hover:border-secondary hover:text-primary whitespace-nowrap transition-colors">
+            + 배경 분리 고정
+          </button>
+          <button type="button" class="px-2 py-0.5 rounded-full bg-surface text-on-surface-muted border border-outline-dim hover:border-secondary hover:text-primary whitespace-nowrap transition-colors">
+            + 가속도 완만화
+          </button>
+          <button type="button" class="px-2 py-0.5 rounded-full bg-surface text-on-surface-muted border border-outline-dim hover:border-secondary hover:text-primary whitespace-nowrap transition-colors">
+            + 렌더 재시도
+          </button>
+        </div>
+
+        <!-- Textarea & Action Controls -->
+        <div class="relative bg-background border border-outline-dim focus-within:border-secondary rounded-lg p-2 transition-colors">
+          <textarea class="w-full bg-transparent border-0 p-0 text-xs text-on-surface placeholder:text-on-surface-muted focus:ring-0 resize-none font-body leading-relaxed" placeholder="자연어로 장면 수정, 마스크 재지정, 모션 제약 조건 입력... (Ctrl+Enter 전송)" rows="2"></textarea>
+          
+          <div class="flex items-center justify-between pt-1.5 border-t border-outline-dim/60 mt-1">
+            <div class="flex items-center gap-1 text-on-surface-muted">
+              <button type="button" class="p-1 rounded hover:text-primary hover:bg-surface-high transition-colors" title="요소 피커 선택">
+                <span class="material-symbols-outlined" style="font-size: 15px;">colorize</span>
+              </button>
+              <button type="button" class="p-1 rounded hover:text-primary hover:bg-surface-high transition-colors" title="제약 조건 템플릿">
+                <span class="material-symbols-outlined" style="font-size: 15px;">tune</span>
+              </button>
+              <span class="text-[9px] font-mono text-secondary ml-1 bg-secondary-tint px-1.5 py-0.2 rounded border border-secondary-border">target: e3</span>
+            </div>
+
+            <button type="button" class="flex items-center gap-1 px-3 py-1 bg-primary text-background rounded font-mono text-[10px] font-bold hover:bg-on-surface active:scale-[0.98] transition-all">
+              <span>RUN</span>
+              <span class="material-symbols-outlined" style="font-size: 13px;">send</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ======================================================================= -->
+    <!-- RIGHT COLUMN: 장면 뷰어 데스크 (듀얼 뷰어, 타임라인 스트립, 요소 목록)           -->
+    <!-- ======================================================================= -->
+    <section class="flex-1 flex flex-col bg-background overflow-hidden">
+
+      <!-- Viewport Header Bar (듀얼 뷰어 상태 및 컨트롤) -->
+      <div class="h-9 px-4 border-b border-outline-dim bg-surface flex items-center justify-between flex-shrink-0 text-xs select-none">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5 text-[11px] font-mono text-on-surface">
+            <span class="material-symbols-outlined text-secondary" style="font-size: 15px;">splitscreen</span>
+            <span class="font-bold">듀얼 프레임 비교 (Side-by-Side Dual Viewer)</span>
+          </div>
+          <div class="h-3 w-[1px] bg-outline-dim"></div>
+          <!-- Overlay Toggles -->
+          <div class="flex items-center gap-1 font-mono text-[10px]">
+            <button type="button" class="px-2 py-0.5 rounded bg-secondary-tint text-secondary border border-secondary-border font-medium">
+              BBox [ON]
+            </button>
+            <button type="button" class="px-2 py-0.5 rounded bg-surface-low text-on-surface-muted hover:text-on-surface border border-outline-dim">
+              Vector [ON]
+            </button>
+            <button type="button" class="px-2 py-0.5 rounded bg-surface-low text-on-surface-muted hover:text-on-surface border border-outline-dim">
+              오차 히트맵 [OFF]
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 text-[10px] font-mono bg-surface-low px-2 py-0.5 rounded border border-outline-dim text-on-surface-muted">
+            <span>ZOOM:</span>
+            <span class="text-primary font-bold">100%</span>
+          </div>
+          <div class="flex items-center rounded border border-outline-dim bg-surface-low p-0.5 text-on-surface-muted">
+            <button type="button" class="p-1 rounded bg-surface-high text-primary" title="나란히 보기">
+              <span class="material-symbols-outlined" style="font-size: 14px;">view_column</span>
+            </button>
+            <button type="button" class="p-1 rounded hover:text-primary" title="오니언 스킨 오버레이">
+              <span class="material-symbols-outlined" style="font-size: 14px;">layers</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- 듀얼 나란히 비교 뷰어 패널 (Left: 원본 / Right: 재구성)                    -->
+      <!-- ===================================================================== -->
+      <div class="flex-1 grid grid-cols-2 gap-[1px] bg-outline-dim overflow-hidden min-h-0 relative">
+        
+        <!-- Viewport 1: 원본 레퍼런스 (Original Frame) -->
+        <div class="bg-[#070708] relative flex flex-col justify-between overflow-hidden group">
+          <!-- Top Badge -->
+          <div class="absolute top-2.5 left-3 z-20 flex items-center gap-2 pointer-events-none">
+            <span class="px-2 py-0.5 rounded bg-surface-low/90 backdrop-blur border border-outline-dim text-[10px] font-mono text-on-surface-muted uppercase tracking-wider">
+              원본 레퍼런스 (Original IR)
+            </span>
+            <span class="px-1.5 py-0.5 rounded bg-surface/90 text-[10px] font-mono text-on-surface">
+              Frame 18 / 120
+            </span>
+          </div>
+
+          <!-- Video Canvas Mock with Interactive BBoxes -->
+          <div class="w-full h-full flex items-center justify-center p-4 relative">
+            <div class="relative w-full max-w-[580px] aspect-video bg-[#111114] border border-outline-dim rounded shadow-2xl overflow-hidden flex items-center justify-center">
+              <!-- Dark Cinematic Mock Content -->
+              <div class="absolute inset-0 bg-gradient-to-br from-[#121318] via-[#09090b] to-[#15161c]"></div>
+
+              <!-- Mock Screen Dashboard UI -->
+              <div class="relative z-10 w-4/5 h-4/5 border border-outline-dim/80 bg-surface/50 rounded-lg p-3 flex flex-col justify-between">
+                <div class="flex justify-between items-center text-[10px] font-mono text-on-surface-muted border-b border-outline-dim pb-1">
+                  <span>Ref Studio 검수 데스크</span>
+                  <span>FPS: 30</span>
+                </div>
+
+                <!-- Element Bounding Box 2: e2 card -->
+                <div class="relative my-auto w-4/5 mx-auto h-24 border border-dashed border-secondary/50 bg-secondary/5 rounded p-2 flex flex-col items-center justify-center">
+                  <span class="absolute -top-3 left-2 font-mono text-[9px] bg-secondary/80 text-background px-1 rounded font-bold">e2:card [97.4%]</span>
+                  
+                  <!-- Element Bounding Box 3: e3 text (Original diagonal vector) -->
+                  <div class="relative px-3 py-1 border-2 border-accent-amber bg-accent-amber/10 rounded">
+                    <span class="absolute -top-3.5 left-0 font-mono text-[9px] bg-accent-amber text-background font-bold px-1 rounded-t">e3:text "Launch faster"</span>
+                    <span class="text-base font-bold font-headline text-primary tracking-tight">Launch faster</span>
+                    
+                    <!-- Original Diagonal Vector Arrow -->
+                    <div class="absolute -right-5 top-1 w-6 h-[1.5px] bg-accent-amber rotate-[-20deg]">
+                      <div class="absolute right-0 -top-[3px] border-solid border-l-accent-amber border-l-[5px] border-y-transparent border-y-[3px] border-r-0"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-[9px] font-mono text-on-surface-muted flex justify-between">
+                  <span>Target: launch-card.mp4</span>
+                  <span>Codec: ProRes 422</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Viewport Metric -->
+          <div class="p-2 bg-surface/90 border-t border-outline-dim flex items-center justify-between text-[10px] font-mono text-on-surface-muted">
+            <span>RES: 1920x1080 (16:9)</span>
+            <span>SOURCE: Vector IR Graph</span>
+          </div>
+        </div>
+
+        <!-- Viewport 2: 재구성 프레임 (Reconstructed Synth Frame) -->
+        <div class="bg-[#070708] relative flex flex-col justify-between overflow-hidden group">
+          <!-- Top Badge -->
+          <div class="absolute top-2.5 left-3 z-20 flex items-center gap-2 pointer-events-none">
+            <span class="px-2 py-0.5 rounded bg-secondary-tint text-secondary border border-secondary-border text-[10px] font-mono uppercase font-bold tracking-wider">
+              재구성 프레임 (Reconstructed Synth)
+            </span>
+            <span class="px-1.5 py-0.5 rounded bg-accent-green/20 text-accent-green border border-accent-green/30 text-[10px] font-mono font-medium">
+              Live Synthesis
+            </span>
+          </div>
+
+          <!-- Video Canvas Mock with Corrected Constraint Overlay -->
+          <div class="w-full h-full flex items-center justify-center p-4 relative">
+            <div class="relative w-full max-w-[580px] aspect-video bg-[#111114] border border-secondary-border rounded shadow-2xl overflow-hidden flex items-center justify-center">
+              <!-- Dark Cinematic Mock Content -->
+              <div class="absolute inset-0 bg-gradient-to-br from-[#121318] via-[#09090b] to-[#15161c]"></div>
+
+              <!-- Reconstructed Screen Dashboard UI -->
+              <div class="relative z-10 w-4/5 h-4/5 border border-secondary/40 bg-surface/60 rounded-lg p-3 flex flex-col justify-between shadow-[0_0_20px_rgba(0,153,255,0.08)]">
+                <div class="flex justify-between items-center text-[10px] font-mono text-secondary border-b border-outline-dim pb-1">
+                  <span>Ref Studio Synth v2.4</span>
+                  <span class="text-accent-green font-bold">동기화 완료</span>
+                </div>
+
+                <!-- Element Bounding Box 2: e2 card -->
+                <div class="relative my-auto w-4/5 mx-auto h-24 border border-secondary/50 bg-secondary/10 rounded p-2 flex flex-col items-center justify-center">
+                  <span class="absolute -top-3 left-2 font-mono text-[9px] bg-secondary text-background px-1 rounded font-bold">e2:card</span>
+                  
+                  <!-- Element Bounding Box 3: e3 text (Corrected horizontal [1, 0] vector) -->
+                  <div class="relative px-3 py-1 border-2 border-secondary bg-secondary/20 rounded shadow-[0_0_15px_rgba(0,153,255,0.35)]">
+                    <span class="absolute -top-3.5 left-0 font-mono text-[9px] bg-secondary text-background font-black px-1 rounded-t">e3:text [수평 고정]</span>
+                    <span class="text-base font-bold font-headline text-primary tracking-tight">Launch faster</span>
+                    
+                    <!-- Corrected Pure Horizontal Direction Vector Arrow [1, 0] -->
+                    <div class="absolute -right-8 top-1/2 w-8 h-[2px] bg-secondary animate-pulse">
+                      <div class="absolute right-0 -top-[3px] border-solid border-l-secondary border-l-[6px] border-y-transparent border-y-[4px] border-r-0"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-[9px] font-mono text-on-surface-muted flex justify-between">
+                  <span>RMS Error: 0.18px</span>
+                  <span class="text-accent-green font-bold">오차 0.4px (허용 내)</span>
+                </div>
+              </div>
+
+              <!-- Residual Badge -->
+              <div class="absolute bottom-2 right-2 bg-background/90 px-2 py-0.5 rounded text-[9px] font-mono text-accent-green border border-outline-dim">
+                Vector Invariance: 99.4%
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Viewport Metric -->
+          <div class="p-2 bg-surface/90 border-t border-outline-dim flex items-center justify-between text-[10px] font-mono text-on-surface-muted">
+            <span class="text-secondary font-medium">ENGINE: Neuro-Vector v2.4</span>
+            <span class="text-accent-green font-semibold">동기화 오차 0.4px</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- TIMELINE STRIP (Frames 0 ~ 120, 재생 제어, 트랙 및 키프레임)            -->
+      <!-- ===================================================================== -->
+      <div class="h-44 bg-surface-low border-t border-outline-dim flex flex-col flex-shrink-0 select-none">
+        <!-- Playback Controls Strip -->
+        <div class="h-8 px-4 bg-surface flex items-center justify-between border-b border-outline-dim text-xs">
+          <!-- Transport Controls -->
+          <div class="flex items-center gap-1 font-mono text-on-surface-muted">
+            <button type="button" class="p-1 hover:text-primary" title="처음으로"><span class="material-symbols-outlined" style="font-size: 15px;">first_page</span></button>
+            <button type="button" class="p-1 hover:text-primary" title="1프레임 이전"><span class="material-symbols-outlined" style="font-size: 15px;">chevron_left</span></button>
+            <button type="button" class="px-2.5 py-0.5 rounded bg-primary text-background hover:bg-on-surface font-bold flex items-center gap-1" title="재생 / 정지">
+              <span class="material-symbols-outlined" style="font-size: 14px;">play_arrow</span>
+            </button>
+            <button type="button" class="p-1 hover:text-primary" title="1프레임 이후"><span class="material-symbols-outlined" style="font-size: 15px;">chevron_right</span></button>
+            <button type="button" class="p-1 hover:text-primary" title="끝으로"><span class="material-symbols-outlined" style="font-size: 15px;">last_page</span></button>
+            
+            <span class="text-outline-dim mx-2">|</span>
+            <span class="text-primary font-bold text-xs">f18</span>
+            <span class="text-on-surface-muted text-[11px]">(00:00.18) / 120f</span>
+          </div>
+
+          <!-- Legend & Markers -->
+          <div class="flex items-center gap-4 font-mono text-[10px]">
+            <div class="flex items-center gap-1.5 text-accent-amber">
+              <span class="w-1.5 h-1.5 rounded-full bg-accent-amber"></span>
+              <span>피크 오차 지점: f41, f67</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-secondary">
+              <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+              <span>세션 수정 구간: f60 ~ f90</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tracks Canvas Area -->
+        <div class="flex-1 overflow-y-auto custom-scroll p-2 space-y-1 font-mono text-[10px]">
+          <!-- Frame Ruler -->
+          <div class="flex items-center h-4 text-on-surface-muted border-b border-outline-dim pb-1">
+            <div class="w-24 text-[9px] uppercase tracking-wider pl-1 font-bold">Ruler</div>
+            <div class="flex-1 relative h-full">
+              <div class="absolute inset-0 flex justify-between text-[9px]">
+                <span>f0</span>
+                <span>f20</span>
+                <span>f40</span>
+                <span>f60</span>
+                <span>f80</span>
+                <span>f100</span>
+                <span>f120</span>
+              </div>
+              <!-- Playhead Indicator Line at f18 (~15%) -->
+              <div class="absolute top-0 bottom-0 left-[15%] w-[1px] bg-secondary z-30">
+                <div class="w-2 h-2 -ml-[3.5px] -top-1 bg-secondary rotate-45"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Track 1: e1 (Background) -->
+          <div class="flex items-center h-6 rounded bg-surface border border-outline-dim hover:bg-surface-high transition-colors">
+            <div class="w-24 px-2 text-on-surface-muted flex items-center justify-between border-r border-outline-dim">
+              <span>e1:bg</span>
+              <span class="material-symbols-outlined text-on-surface-muted" style="font-size: 13px;">lock</span>
+            </div>
+            <div class="flex-1 h-full relative flex items-center px-1">
+              <div class="w-full h-2 rounded bg-surface-highest"></div>
+            </div>
+          </div>
+
+          <!-- Track 2: e2 (Card Container) -->
+          <div class="flex items-center h-6 rounded bg-surface border border-outline-dim hover:bg-surface-high transition-colors">
+            <div class="w-24 px-2 text-on-surface-muted flex items-center justify-between border-r border-outline-dim">
+              <span>e2:card</span>
+              <span class="material-symbols-outlined text-on-surface-muted" style="font-size: 13px;">visibility</span>
+            </div>
+            <div class="flex-1 h-full relative flex items-center px-1">
+              <div class="w-full h-2 rounded bg-surface-highest relative">
+                <!-- Conflict marker at f72~f75 -->
+                <div class="absolute left-[60%] w-[4%] h-full bg-accent-amber/90 rounded" title="f72-f75 충돌 감지 구간"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Track 3: e3 (Text Vector - Agent Focused) -->
+          <div class="flex items-center h-6 rounded bg-secondary-tint border border-secondary-border">
+            <div class="w-24 px-2 text-secondary font-bold flex items-center justify-between border-r border-secondary-border">
+              <span>e3:text</span>
+              <span class="material-symbols-outlined text-secondary" style="font-size: 13px;">edit</span>
+            </div>
+            <div class="flex-1 h-full relative flex items-center px-1">
+              <div class="w-full h-2 rounded bg-surface-highest relative">
+                <!-- Modified range: f60 ~ f90 with 4 keyframes -->
+                <div class="absolute left-[50%] w-[25%] h-full bg-secondary rounded shadow-[0_0_8px_rgba(0,153,255,0.4)] flex items-center justify-between px-1">
+                  <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Track 4: e4 (Price) -->
+          <div class="flex items-center h-6 rounded bg-surface border border-outline-dim hover:bg-surface-high transition-colors">
+            <div class="w-24 px-2 text-on-surface-muted flex items-center justify-between border-r border-outline-dim">
+              <span>e4:price</span>
+              <span class="material-symbols-outlined text-on-surface-muted" style="font-size: 13px;">visibility</span>
+            </div>
+            <div class="flex-1 h-full relative flex items-center px-1">
+              <div class="w-2/3 ml-auto h-2 rounded bg-surface-highest"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- ELEMENT INSPECTOR TABLE (요소 목록: ID, 종류, 신뢰도, 상태, 제약 조건)  -->
+      <!-- ===================================================================== -->
+      <div class="h-36 bg-surface border-t border-outline-dim flex flex-col flex-shrink-0 select-none">
+        <!-- Table Header Control -->
+        <div class="px-3 py-1.5 bg-surface-low border-b border-outline-dim flex items-center justify-between text-[11px] font-mono">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-on-surface-muted" style="font-size: 15px;">table_chart</span>
+            <span class="font-bold text-on-surface">요소 목록 (Scene Element Inspector)</span>
+            <span class="text-on-surface-muted text-[10px]">총 4개 감지됨</span>
+          </div>
+          <div class="text-on-surface-muted text-[10px] flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent-green"></span>
+            <span>신뢰도 임계 95% 충족</span>
+          </div>
+        </div>
+
+        <!-- Table View (Scrollable) -->
+        <div class="flex-1 overflow-y-auto custom-scroll">
+          <table class="w-full text-left font-mono text-[11px] border-collapse">
+            <thead>
+              <tr class="text-on-surface-muted border-b border-outline-dim text-[10px] bg-surface">
+                <th class="py-1.5 px-3 font-medium">요소 ID</th>
+                <th class="py-1.5 px-3 font-medium">식별 레이어</th>
+                <th class="py-1.5 px-3 font-medium">종류 (Type)</th>
+                <th class="py-1.5 px-3 font-medium">신뢰도 (IR)</th>
+                <th class="py-1.5 px-3 font-medium">동작 상태</th>
+                <th class="py-1.5 px-3 font-medium text-right">부여된 제약 조건</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-outline-dim text-on-surface-muted">
+              
+              <!-- Row e1 -->
+              <tr class="hover:bg-surface-low transition-colors">
+                <td class="py-1.5 px-3 font-semibold text-primary">e1</td>
+                <td class="py-1.5 px-3 text-on-surface">background</td>
+                <td class="py-1.5 px-3 text-on-surface-muted">Image / BG</td>
+                <td class="py-1.5 px-3 text-accent-green font-medium">99.1%</td>
+                <td class="py-1.5 px-3">
+                  <span class="px-1.5 py-0.2 rounded bg-surface-low border border-outline-dim text-on-surface-muted text-[10px]">고정됨 (Frozen)</span>
+                </td>
+                <td class="py-1.5 px-3 text-right text-on-surface-muted">Freeze Matrix</td>
+              </tr>
+
+              <!-- Row e2 -->
+              <tr class="hover:bg-surface-low transition-colors">
+                <td class="py-1.5 px-3 font-semibold text-primary">e2</td>
+                <td class="py-1.5 px-3 text-on-surface">card</td>
+                <td class="py-1.5 px-3 text-on-surface-muted">Container Box</td>
+                <td class="py-1.5 px-3 text-accent-green font-medium">97.4%</td>
+                <td class="py-1.5 px-3">
+                  <span class="px-1.5 py-0.2 rounded bg-surface-low border border-outline-dim text-secondary text-[10px]">자동 추적</span>
+                </td>
+                <td class="py-1.5 px-3 text-right text-on-surface-muted">BBox Tracking</td>
+              </tr>
+
+              <!-- Row e3 (Active Agent Target) -->
+              <tr class="bg-secondary-tint hover:bg-secondary-tint/80 transition-colors text-on-surface">
+                <td class="py-1.5 px-3 font-bold text-secondary">e3</td>
+                <td class="py-1.5 px-3 font-medium text-primary">text "Launch faster"</td>
+                <td class="py-1.5 px-3 text-secondary font-medium">Text Vector</td>
+                <td class="py-1.5 px-3 text-accent-green font-bold">98.8%</td>
+                <td class="py-1.5 px-3">
+                  <span class="px-2 py-0.5 rounded bg-secondary text-background font-bold text-[9px] animate-pulse">
+                    에이전트 수정 활성
+                  </span>
+                </td>
+                <td class="py-1.5 px-3 text-right text-secondary font-bold">dir=[1,0], ease=cubic</td>
+              </tr>
+
+              <!-- Row e4 -->
+              <tr class="hover:bg-surface-low transition-colors">
+                <td class="py-1.5 px-3 font-semibold text-primary">e4</td>
+                <td class="py-1.5 px-3 text-on-surface">price</td>
+                <td class="py-1.5 px-3 text-on-surface-muted">Numeric Value</td>
+                <td class="py-1.5 px-3 text-accent-green font-medium">95.0%</td>
+                <td class="py-1.5 px-3">
+                  <span class="px-1.5 py-0.2 rounded bg-surface-low border border-outline-dim text-on-surface-muted text-[10px]">대기 중</span>
+                </td>
+                <td class="py-1.5 px-3 text-right text-on-surface-muted">None</td>
+              </tr>
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+</body>
+</html>

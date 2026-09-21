@@ -66,6 +66,10 @@ async function postEdit(body) {
   return api("/api/edit", { method: "POST", body: JSON.stringify(body) });
 }
 
+async function postAgent(body) {
+  return api("/api/agent", { method: "POST", body: JSON.stringify(body) });
+}
+
 async function postCorrect(project, scene, op, args) {
   return api("/api/correct", {
     method: "POST",
@@ -94,6 +98,7 @@ export {
   postApprove,
   postKeep,
   postEdit,
+  postAgent,
   postCorrect,
   reviewFrameUrl,
   reviewAssetUrl,

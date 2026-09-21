@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import io
 
+from keepframe.session.provider import ProviderConfig
+
 from .models import AuditEvent, Member, QuarantineItem, Tenant
 
 
@@ -13,6 +15,7 @@ class MemoryAdmin:
         self._jobs: list[dict] = []
         self._quarantine: list[QuarantineItem] = []
         self._audit: list[AuditEvent] = []
+        self._llm_settings = ProviderConfig()
         if seed:
             self._seed()
 
@@ -198,6 +201,22 @@ class MemoryAdmin:
 
     def append_audit(self, event: AuditEvent) -> None:
         self._audit.append(event)
+
+    def get_llm_settings(self) -> ProviderConfig:
+        return self._llm_settings
+
+    def set_llm_settings(self, config: ProviderConfig, actor: str) -> ProviderConfig:
+        self._llm_settings = config
+        self.append_audit(
+            AuditEvent(
+                ts="",
+                actor=actor,
+                action="LLM 프로바이더 변경",
+                target=f"{config.provider}/{config.model}",
+                detail=None,
+            )
+        )
+        return config
 
     def audit_csv(self) -> str:
         buf = io.StringIO()

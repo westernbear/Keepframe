@@ -969,8 +969,8 @@ approveBtn.addEventListener("click", async () => {
   approveBtn.disabled = true;
   try {
     await postApprove(projectId, sceneId, versionId);
-    if (state) state.status = "approved";
-    paintApprove("approved");
+    const v = versionId ? `&v=${encodeURIComponent(versionId)}` : "";
+    location.href = `/agent?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneId)}${v}`;
   } catch (err) {
     paintApprove(state && state.status);
     setJobBanner(err.message || T("review.approveFailed"), true);

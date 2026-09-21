@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Keepframe - 세션 에이전트</title>
+<link href="/static/css/app.css?v=20260921" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
+<script type="module" src="/static/js/i18n.js?v=20260921"></script>
+<script type="module" src="/static/js/api.js?v=20260921"></script>
+<style>
+:root {
+  --agent-headline: "Geist", "Inter", system-ui, sans-serif;
+  --agent-body: "Inter", system-ui, sans-serif;
+  --agent-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+.agent-shell { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.agent-chat {
+  width: 460px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--surface-1); border-right: 1px solid var(--hairline); min-width: 0;
+}
+.agent-chat__head {
+  height: 44px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; border-bottom: 1px solid var(--hairline); flex-shrink: 0;
+}
+.agent-chat__head h2 { margin: 0; font-family: var(--agent-headline); font-size: var(--fs-caption); font-weight: 700; letter-spacing: -0.01em; }
+.agent-chat__meta { font-family: var(--agent-mono); font-size: 11px; color: var(--muted); }
+.agent-chat__log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.agent-empty { margin: auto; max-width: 260px; text-align: center; color: var(--muted); font-size: var(--fs-body-sm); line-height: 1.5; }
+.msg { max-width: 88%; }
+.msg--user { align-self: flex-end; }
+.msg--agent { align-self: flex-start; }
+.msg__label { font-family: var(--agent-mono); font-size: 10px; color: var(--muted); margin-bottom: 3px; letter-spacing: 0.04em; }
+.msg--agent .msg__label { color: var(--accent); }
+.msg__body {
+  padding: 9px 12px; font-size: var(--fs-body-sm); line-height: 1.45; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--hairline); color: var(--ink);
+  white-space: pre-wrap; word-break: break-word;
+}
+.msg--user .msg__body { background: var(--hairline); border-color: var(--hairline); border-bottom-right-radius: var(--r-xs); }
+.msg--agent .msg__body { border-top-left-radius: var(--r-xs); }
+.toolcall { width: 100%; border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--canvas); overflow: hidden; }
+.toolcall__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; border-bottom: 1px solid var(--hairline); font-family: var(--agent-mono); font-size: 11px;
+}
+.toolcall__name { color: var(--accent); font-weight: 600; }
+.toolcall__status { color: var(--muted); }
+.toolcall__status--ok { color: var(--secondary); }
+.toolcall__status--fail { color: var(--error); }
+.toolcall__args { padding: 7px 10px; font-family: var(--agent-mono); font-size: 11px; color: var(--muted); overflow-x: auto; white-space: pre; }
+.toolcall__msg { padding: 7px 10px; font-size: var(--fs-body-sm); color: var(--ink); border-top: 1px solid var(--hairline); }
+.verify-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--agent-mono); font-size: 11px; padding: 3px 8px; border-radius: var(--r-pill); border: 1px solid var(--hairline); }
+.verify-chip--pass { color: var(--secondary); border-color: var(--secondary); }
+.verify-chip--fail { color: var(--error); border-color: var(--error); }
+.agent-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--hairline); flex-shrink: 0; }
+.tool {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--hairline); background: var(--surface-2); color: var(--muted);
+  font-size: var(--fs-micro); cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.tool:hover { color: var(--ink); border-color: var(--accent); }
+.tool .icon { width: 15px; height: 15px; }
+.agent-compose { padding: 10px 14px 14px; border-top: 1px solid var(--hairline); flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.agent-compose textarea {
+  width: 100%; resize: none; background: var(--canvas); border: 1px solid var(--hairline);
+  border-radius: var(--r-md); color: var(--ink); font-family: var(--agent-body); font-size: var(--fs-body-sm);
+  line-height: 1.45; padding: 10px 12px; min-height: 64px;
+}
+.agent-compose textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.agent-compose__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agent-compose__hint { font-family: var(--agent-mono); font-size: 10px; color: var(--muted); }
+.agent-banner { margin: 0 14px 12px; padding: 8px 12px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); background: var(--surface-2); border: 1px solid var(--hairline); }
+.agent-banner--error { color: var(--error); border-color: var(--error); }
+.agent-banner[hidden] { display: none; }
+.agent-viewer { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--canvas); }
+.agent-viewer .compare-panes { flex: 1; }
+.agent-elements { height: 168px; flex-shrink: 0; border-top: 1px solid var(--hairline); background: var(--surface-1); display: flex; flex-direction: column; }
+.agent-elements__head {
+  height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; border-bottom: 1px solid var(--hairline); font-family: var(--agent-mono); font-size: 11px; color: var(--muted);
+}
+.agent-elements__list { flex: 1; overflow-y: auto; padding: 6px; }
+.element-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; border: 1px solid transparent; }
+.element-row--selected { background: var(--hairline); border-color: var(--accent); }
+.element-thumb { width: 26px; height: 26px; border-radius: var(--r-xs); object-fit: cover; background: var(--hairline); flex-shrink: 0; }
+.element-row__id { font-family: var(--agent-mono); color: var(--accent); }
+.element-row__kind { font-family: var(--agent-mono); color: var(--muted); font-size: var(--fs-micro); }
+.element-row__conf { margin-left: auto; font-family: var(--agent-mono); font-size: 11px; color: var(--secondary); }
+.agent-transport { height: 44px; margin: 0 14px 12px; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 0 12px; }
+.agent-transport .mono { font-family: var(--agent-mono); }
+.agent-choice { border: 1px solid var(--hairline); border-radius: var(--r-md); padding: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.agent-choice label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body-sm); cursor: pointer; }
+@media (max-width: 860px) {
+  .agent-shell { flex-direction: column; overflow-y: auto; }
+  .agent-chat { width: 100%; border-right: none; border-bottom: 1px solid var(--hairline); height: 50vh; }
+  .agent-viewer { min-height: 50vh; }
+}
+</style>
+</head>
+<body class="app app--fill">
+<header class="header header--static">
+<div style="display:flex;align-items:center;gap:14px">
+<span class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/><span data-i18n="app.name">Keepframe</span></span>
+<div class="header__divider"></div>
+<h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="agent.title">세션 에이전트</h1>
+<span id="agent-scene" class="mono" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
+</div>
+<div class="header__nav">
+<a class="btn btn--ghost" id="agent-back" href="/review" data-i18n="agent.backReview">검수로 돌아가기</a>
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</div>
+</header>
+<main class="agent-shell" id="agent-root">
+<aside class="agent-chat">
+<div class="agent-chat__head">
+<h2 data-i18n="agent.title">세션 에이전트</h2>
+<span class="agent-chat__meta" id="agent-model">—</span>
+</div>
+<div class="agent-chat__log" id="agent-log">
+<p class="agent-empty" id="agent-empty" data-i18n="agent.empty">승인한 장면을 자연어로 다듬으세요. 예: 문구를 Hello로 바꿔줘</p>
+</div>
+<div class="agent-tools" id="agent-tools">
+<button class="tool" type="button" data-tool="analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="agent.tool.analyze">분석</span></button>
+<button class="tool" type="button" data-tool="correct"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7h-9M14 3l6 4-6 4"/></svg><span data-i18n="agent.tool.correct">보정</span></button>
+<button class="tool" type="button" data-tool="set_keep"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="agent.tool.keep">유지 지정</span></button>
+<button class="tool" type="button" data-tool="edit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span data-i18n="agent.tool.edit">재해석</span></button>
+<button class="tool" type="button" data-tool="render"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3Z"/></svg><span data-i18n="agent.tool.render">렌더</span></button>
+<button class="tool" type="button" data-tool="verify"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></svg><span data-i18n="agent.tool.verify">검증</span></button>
+<button class="tool" type="button" data-tool="export"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg><span data-i18n="agent.tool.export">내보내기</span></button>
+<button class="tool" type="button" data-tool="report"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span data-i18n="agent.tool.report">보고서</span></button>
+</div>
+<div class="agent-compose">
+<textarea id="agent-input" rows="2" data-i18n-placeholder="agent.placeholder" placeholder="자연어로 장면 수정·검증·출력을 요청하세요."></textarea>
+<div class="agent-compose__row">
+<span class="agent-compose__hint">Ctrl+Enter 전송</span>
+<button class="btn btn--primary" id="agent-send" type="button" data-i18n="agent.send">전송</button>
+</div>
+</div>
+<div class="agent-banner" id="agent-banner" role="status" hidden></div>
+</aside>
+<section class="agent-viewer">
+<div class="compare-panes">
+<div class="compare-pane">
+<div class="compare-pane__head"><span data-i18n="agent.orig">원본</span></div>
+<div class="compare-pane__body"><img id="agent-orig" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
+</div>
+<div class="compare-pane">
+<div class="compare-pane__head"><span style="color:var(--ink)" data-i18n="agent.recon">재구성</span></div>
+<div class="compare-pane__body"><img id="agent-recon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
+</div>
+</div>
+<div class="agent-transport">
+<button class="btn--icon" id="agent-play" type="button" aria-label="재생">
+<svg class="icon" id="agent-play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
+<svg class="icon" id="agent-pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+</button>
+<button class="btn--icon transport__step" id="agent-prev" type="button" aria-label="이전 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+<button class="btn--icon transport__step" id="agent-next" type="button" aria-label="다음 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+<span class="mono" style="font-weight:700"><span id="agent-frame">0</span> <span style="color:var(--muted);font-weight:400">/ <span id="agent-total">0</span></span></span>
+</div>
+<div class="agent-elements">
+<div class="agent-elements__head"><span data-i18n="agent.elements">요소 목록</span><span id="agent-count" class="mono">0</span></div>
+<div class="agent-elements__list" id="agent-elements-list"></div>
+</div>
+</section>
+</main>
+<script type="module">
+import {
+  fetchReviewState,
+  postAgent,
+  postEdit,
+  reviewFrameUrl,
+  reviewAssetUrl,
+} from "/static/js/api.js?v=20260921";
+import { T, Tf } from "/static/js/i18n.js?v=20260921";
+
+const params = new URLSearchParams(location.search);
+const projectId = params.get("project");
+const sceneId = params.get("scene") || "s1";
+let versionId = params.get("v") || null;
+let state = null;
+let frame = 0;
+let playing = false;
+let raf = 0;
+let lastTick = 0;
+let selectedId = null;
+let pendingIntent = null;
+let pendingPrompt = "";
+
+const logEl = document.getElementById("agent-log");
+const inputEl = document.getElementById("agent-input");
+const sendBtn = document.getElementById("agent-send");
+const bannerEl = document.getElementById("agent-banner");
+const emptyEl = document.getElementById("agent-empty");
+const orig = document.getElementById("agent-orig");
+const recon = document.getElementById("agent-recon");
+const frameNum = document.getElementById("agent-frame");
+const frameTotal = document.getElementById("agent-total");
+const elementsList = document.getElementById("agent-elements-list");
+const countEl = document.getElementById("agent-count");
+const playBtn = document.getElementById("agent-play");
+const playIcon = document.getElementById("agent-play-icon");
+const pauseIcon = document.getElementById("agent-pause-icon");
+const sceneBadge = document.getElementById("agent-scene");
+const modelEl = document.getElementById("agent-model");
+
+document.getElementById("agent-back").href = `/review?project=${encodeURIComponent(projectId || "")}&scene=${encodeURIComponent(sceneId)}`;
+
+function setBanner(msg, isError = false) {
+  bannerEl.hidden = !msg;
+  bannerEl.textContent = msg || "";
+  bannerEl.classList.toggle("agent-banner--error", isError);
+}
+
+function hideEmpty() {
+  emptyEl.hidden = true;
+}
+
+function frameUrl(kind) {
+  return reviewFrameUrl(kind, frame, projectId, sceneId, versionId);
+}
+
+function loadFrame() {
+  if (!state) return;
+  orig.src = frameUrl("orig");
+  recon.src = frameUrl("recon");
+}
+
+function setFrame(f) {
+  if (!state) return;
+  frame = Math.max(0, Math.min(state.scene.frames - 1, f));
+  frameNum.textContent = String(frame);
+  loadFrame();
+}
+
+function setPlaying(on) {
+  playing = !!on;
+  playBtn.classList.toggle("is-playing", playing);
+  playIcon.hidden = playing;
+  pauseIcon.hidden = !playing;
+  if (playing) raf = requestAnimationFrame(tick);
+  else { cancelAnimationFrame(raf); raf = 0; }
+}
+
+function tick(ts) {
+  if (!playing) return;
+  if (!lastTick) lastTick = ts;
+  if ((ts - lastTick) / 1000 >= 1 / state.scene.fps) {
+    lastTick = ts;
+    if (frame >= state.scene.frames - 1) { setPlaying(false); setFrame(0); return; }
+    setFrame(frame + 1);
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+function renderElements() {
+  const els = state.scene.elements || [];
+  countEl.textContent = String(els.length);
+  elementsList.innerHTML = "";
+  els.forEach((el) => {
+    const row = document.createElement("div");
+    row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
+    row.dataset.id = el.id;
+    const tex = el.canonical && el.canonical.texture;
+    const thumb = tex ? `<img class="element-thumb" alt="" src="${reviewAssetUrl(tex, projectId, sceneId)}"/>` : `<span class="element-thumb"></span>`;
+    row.innerHTML = `${thumb}<span class="element-row__id">${el.id}</span><span class="element-row__kind">${el.kind}</span><span class="element-row__conf">${el.confidence != null ? Math.round(el.confidence * 100) + "%" : ""}</span>`;
+    row.addEventListener("click", () => {
+      selectedId = el.id;
+      elementsList.querySelectorAll(".element-row").forEach((r) => r.classList.toggle("element-row--selected", r.dataset.id === el.id));
+    });
+    elementsList.appendChild(row);
+  });
+}
+
+async function loadState() {
+  state = await fetchReviewState(projectId, sceneId, versionId);
+  versionId = state.version.id;
+  sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
+  frameTotal.textContent = String(state.scene.frames);
+  modelEl.textContent = "LLM 도구";
+  renderElements();
+  setFrame(0);
+}
+
+function appendUser(text) {
+  hideEmpty();
+  const wrap = document.createElement("div");
+  wrap.className = "msg msg--user";
+  const label = document.createElement("div");
+  label.className = "msg__label";
+  label.textContent = T("agent.you");
+  const body = document.createElement("div");
+  body.className = "msg__body";
+  body.textContent = text;
+  wrap.append(label, body);
+  logEl.appendChild(wrap);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendToolCall(name, args, result) {
+  const el = document.createElement("div");
+  el.className = "toolcall";
+  const head = document.createElement("div");
+  head.className = "toolcall__head";
+  const nameEl = document.createElement("span");
+  nameEl.className = "toolcall__name";
+  nameEl.textContent = `TOOL ${name}`;
+  const status = document.createElement("span");
+  status.className = "toolcall__status" + (result.ok ? " toolcall__status--ok" : " toolcall__status--fail");
+  status.textContent = result.ok ? "OK" : "FAIL";
+  head.append(nameEl, status);
+  const argsEl = document.createElement("div");
+  argsEl.className = "toolcall__args";
+  argsEl.textContent = JSON.stringify(args || {}, null, 0);
+  const msgEl = document.createElement("div");
+  msgEl.className = "toolcall__msg";
+  msgEl.textContent = result.message || "";
+  el.append(head, argsEl, msgEl);
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendVerify(verify) {
+  if (!verify) return;
+  const pass = verify.passed !== false && verify.keep_pass_rate >= 0.95;
+  const chip = document.createElement("span");
+  chip.className = "verify-chip " + (pass ? "verify-chip--pass" : "verify-chip--fail");
+  chip.textContent = `${pass ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * 100)}% · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
+  logEl.appendChild(chip);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendAgent(text) {
+  hideEmpty();
+  const wrap = document.createElement("div");
+  wrap.className = "msg msg--agent";
+  const label = document.createElement("div");
+  label.className = "msg__label";
+  label.textContent = T("agent.assistant");
+  const body = document.createElement("div");
+  body.className = "msg__body";
+  body.textContent = text;
+  wrap.append(label, body);
+  logEl.appendChild(wrap);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendChoices(plan) {
+  const conflicts = (plan && plan.conflicts) || [];
+  if (!conflicts.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "agent-choice";
+  conflicts.forEach((c) => {
+    const title = document.createElement("div");
+    title.className = "mono";
+    title.style.cssText = "font-size:11px;color:var(--muted)";
+    title.textContent = c.reason || c.element;
+    wrap.appendChild(title);
+    (c.choices || []).forEach((ch, i) => {
+      const label = document.createElement("label");
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `agent-${c.id}`;
+      radio.value = ch;
+      if (i === 0) radio.checked = true;
+      const span = document.createElement("span");
+      span.textContent = T(`review.editChoice.${ch}`);
+      label.append(radio, span);
+      wrap.appendChild(label);
+    });
+  });
+  const confirm = document.createElement("button");
+  confirm.className = "btn btn--primary";
+  confirm.type = "button";
+  confirm.textContent = T("agent.choose");
+  confirm.addEventListener("click", () => runConfirmWithChoices());
+  wrap.appendChild(confirm);
+  logEl.appendChild(wrap);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function editChoices() {
+  const out = {};
+  logEl.querySelectorAll(".agent-choice input[type=radio]:checked").forEach((el) => {
+    out[el.name.replace(/^agent-/, "")] = el.value;
+  });
+  return out;
+}
+
+function paintPending(turn) {
+  const intent = (turn.results.find((r) => r.payload && r.payload.intent) || {}).payload?.intent;
+  const plan = (turn.results.find((r) => r.payload && r.payload.plan) || {}).payload?.plan;
+  pendingIntent = intent || null;
+  if (turn.needs_choice) appendChoices(plan);
+  if (turn.needs_confirm) {
+    const confirm = document.createElement("button");
+    confirm.className = "btn btn--primary";
+    confirm.type = "button";
+    confirm.textContent = T("agent.confirm");
+    confirm.addEventListener("click", () => runConfirm(false));
+    logEl.appendChild(confirm);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+async function runConfirm(withChoices) {
+  setBanner("");
+  try {
+    const res = await postEdit({
+      project: projectId,
+      scene: sceneId,
+      v: versionId,
+      prompt: pendingPrompt,
+      element: selectedId,
+      intent: pendingIntent,
+      confirm: true,
+      choices: withChoices ? editChoices() : {},
+    });
+    pendingIntent = null;
+    if (res.status === "done" && res.version) {
+      appendVerify(res.verify);
+      appendAgent(res.summary || "적용 완료.");
+      await refreshAfterEdit(res.version.id);
+    } else {
+      setBanner(res.error || T("agent.failed"), true);
+    }
+  } catch (err) {
+    setBanner(err.message || T("agent.failed"), true);
+  }
+}
+
+async function runConfirmWithChoices() {
+  return runConfirm(true);
+}
+
+async function refreshAfterEdit(version) {
+  versionId = version;
+  await loadState();
+}
+
+async function send(message) {
+  const text = (message || inputEl.value || "").trim();
+  if (!text || !projectId) return;
+  inputEl.value = "";
+  pendingPrompt = text;
+  appendUser(text);
+  setBanner(T("agent.thinking"));
+  sendBtn.disabled = true;
+  try {
+    const turn = await postAgent({ project: projectId, scene: sceneId, v: versionId, message: text });
+    setBanner("");
+    (turn.tool_calls || []).forEach((tc, i) => {
+      appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" });
+    });
+    if (turn.reply) appendAgent(turn.reply);
+    const ver = (turn.results || []).map((r) => r.payload && r.payload.verify).find(Boolean);
+    appendVerify(ver);
+    if (turn.status === "pending") paintPending(turn);
+    if (turn.status === "error") setBanner(turn.reply || T("agent.failed"), true);
+  } catch (err) {
+    setBanner(err.message || T("agent.failed"), true);
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener("click", () => send());
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
+});
+
+document.querySelectorAll("#agent-tools .tool").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const prompts = {
+      analyze: "이 장면을 다시 분석해줘",
+      correct: "보정할 대상을 지정해서 고쳐줘",
+      set_keep: "유지할 조건을 지정해줘",
+      edit: "문구를 바꿔줘",
+      render: "장면을 렌더해줘",
+      verify: "장면을 검증해줘",
+      export: "MP4와 프로젝트를 내보내줘",
+      report: "재구성 리포트를 요약해줘",
+    };
+    inputEl.value = prompts[btn.dataset.tool] || "";
+    inputEl.focus();
+  });
+});
+
+playBtn.addEventListener("click", () => setPlaying(!playing));
+document.getElementById("agent-prev").addEventListener("click", () => { setPlaying(false); setFrame(frame - 1); });
+document.getElementById("agent-next").addEventListener("click", () => { setPlaying(false); setFrame(frame + 1); });
+
+window.addEventListener("keepframe:lang", () => {
+  if (state) { renderElements(); }
+});
+
+(async () => {
+  if (!projectId) {
+    emptyEl.textContent = T("agent.needProject");
+    emptyEl.hidden = false;
+    return;
+  }
+  try {
+    await loadState();
+  } catch (err) {
+    setBanner(err.message || T("agent.failed"), true);
+  }
+})();
+</script>
+</body>
+</html>

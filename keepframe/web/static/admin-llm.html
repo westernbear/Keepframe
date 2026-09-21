@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Keepframe - LLM 프로바이더</title>
+<link href="/static/css/app.css?v=20260921" rel="stylesheet"/>
+<link rel="icon" href="/static/icon.png" type="image/png"/>
+<script type="module" src="/static/js/i18n.js?v=20260921"></script>
+<script type="module" src="/static/js/api.js?v=20260921"></script>
+<style>
+.admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
+.admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; }
+.admin-icon-nav__link:hover { background: var(--surface-1); color: var(--ink); }
+.admin-icon-nav__link--active { background: var(--hairline); color: var(--ink); }
+.admin-icon-nav__link svg { margin-bottom: 4px; }
+.admin-workspace { margin-left: 80px; display: flex; flex-direction: column; height: 100vh; }
+.admin-topbar { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-1); flex-shrink: 0; }
+.admin-topbar__left { display: flex; align-items: center; gap: 16px; font-size: var(--fs-body-sm); }
+.admin-topbar__brand { font-weight: 900; letter-spacing: -0.05em; display: flex; align-items: center; gap: 8px; }
+.admin-canvas { flex: 1; display: flex; gap: 16px; padding: 16px; overflow: hidden; min-height: 0; }
+.admin-panel { flex: 1; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; min-width: 0; }
+.admin-panel__head { padding: 20px 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
+.admin-panel__head h2 { margin: 0 0 6px; font-size: var(--fs-headline); font-weight: 600; }
+.admin-panel__head p { margin: 0; font-size: var(--fs-body-sm); color: var(--muted); line-height: 1.5; }
+.admin-form { flex: 1; overflow-y: auto; padding: 24px; max-width: 640px; }
+.form-grid { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.field input, .field select, .field textarea { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--surface-2); color: var(--ink); font-size: var(--fs-body-sm); }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.field .mono { font-size: 11px; color: var(--muted); }
+.field textarea { font-family: ui-monospace, monospace; min-height: 88px; resize: vertical; }
+.field--row { flex-direction: row; align-items: center; gap: 12px; }
+.field--row label { width: 180px; flex-shrink: 0; }
+.field--row input, .field--row select, .field--row textarea { flex: 1; }
+.admin-form__foot { padding: 16px 24px; border-top: 1px solid var(--hairline); display: flex; align-items: center; gap: 12px; background: var(--surface-2); }
+.status-note { margin: 12px 24px 0; padding: 10px 12px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); background: var(--surface-2); border: 1px solid var(--hairline); }
+.status-note--err { color: var(--error); border-color: var(--error); }
+.status-note[hidden] { display: none; }
+</style>
+</head>
+<body class="app app--fill">
+<nav class="admin-icon-nav" aria-label="Admin">
+<a class="admin-icon-nav__link" href="/admin/tenants">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="11" width="20" height="6" rx="1"/><rect x="2" y="19" width="20" height="4" rx="1"/></svg>
+<span data-i18n="admin.tenants">테넌트</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/queue">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+<span data-i18n="admin.queue">작업 큐</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/quarantine">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+<span data-i18n="admin.quarantine">검역</span>
+</a>
+<a class="admin-icon-nav__link" href="/admin/audit">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+<span data-i18n="admin.audit">감사 로그</span>
+</a>
+<a class="admin-icon-nav__link admin-icon-nav__link--active" href="/admin/llm" aria-current="page">
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 15l.75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75z"/></svg>
+<span data-i18n="admin.llm">LLM</span>
+</a>
+</nav>
+<div class="admin-workspace">
+<header class="admin-topbar">
+<div class="admin-topbar__left">
+<span class="admin-topbar__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/>Keepframe</span>
+<span style="width:1px;height:16px;background:var(--hairline)"></span>
+<span data-i18n="admin.manage">관리</span>
+</div>
+<div style="display:flex;align-items:center;gap:16px;font-size:var(--fs-body-sm)">
+<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</div>
+</header>
+<main class="admin-canvas">
+<div class="admin-panel">
+<div class="admin-panel__head">
+<h2 data-i18n="admin.llm.title">LLM 프로바이더</h2>
+<p data-i18n="admin.llm.desc">세션 에이전트가 사용할 모델 공급자를 지정합니다. LiteLLM 통합으로 OpenAI·Anthropic·Gemini 등 100개 이상 프로바이더를 한 인터페이스로 호출합니다.</p>
+</div>
+<div class="status-note" id="status" hidden></div>
+<div class="admin-form">
+<div class="form-grid">
+<div class="field field--row">
+<label for="provider" data-i18n="admin.llm.provider">프로바이더</label>
+<select id="provider"></select>
+</div>
+<div class="field field--row">
+<label for="model" data-i18n="admin.llm.model">모델</label>
+<input id="model" type="text" placeholder="gpt-4o-mini"/>
+</div>
+<div class="field field--row">
+<label for="apiKey" data-i18n="admin.llm.apiKey">API 키</label>
+<input id="apiKey" type="password" placeholder="sk-…" autocomplete="off"/>
+</div>
+<div class="field field--row">
+<label for="baseUrl" data-i18n="admin.llm.baseUrl">Base URL</label>
+<input id="baseUrl" type="text" placeholder="https://… (선택)"/>
+</div>
+<div class="field">
+<label for="extra" data-i18n="admin.llm.extra">추가 파라미터 (JSON)</label>
+<textarea id="extra" spellcheck="false" placeholder='{"tenant_id":"…","client_id":"…","client_secret":"…"}'></textarea>
+<span class="mono" data-i18n="admin.llm.extraHint">Azure AD·OAuth 등 프로바이더별 옵션. 비워두면 기본값을 씁니다.</span>
+</div>
+</div>
+</div>
+<div class="admin-form__foot">
+<button class="btn btn--primary" id="save" type="button" data-i18n="admin.llm.save">저장</button>
+<button class="btn btn--ghost" id="reset" type="button" data-i18n="admin.llm.reset">초기화</button>
+</div>
+</div>
+</main>
+</div>
+<script type="module">
+import { api } from "/static/js/api.js?v=20260921";
+
+const PROVIDERS = [
+  ["openai", "OpenAI"],
+  ["anthropic", "Anthropic Claude"],
+  ["gemini", "Google Gemini"],
+  ["vertex_ai", "Google Vertex AI"],
+  ["azure", "Azure OpenAI"],
+  ["bedrock", "AWS Bedrock"],
+  ["groq", "Groq"],
+  ["mistral", "Mistral"],
+  ["cohere", "Cohere"],
+  ["deepseek", "DeepSeek"],
+  ["openrouter", "OpenRouter"],
+  ["together_ai", "Together AI"],
+  ["fireworks_ai", "Fireworks AI"],
+  ["xai", "xAI Grok"],
+  ["perplexity", "Perplexity"],
+  ["ollama", "Ollama (로컬)"],
+  ["vllm", "vLLM (로컬)"],
+  ["lm_studio", "LM Studio (로컬)"],
+];
+
+const select = document.getElementById("provider");
+const model = document.getElementById("model");
+const apiKey = document.getElementById("apiKey");
+const baseUrl = document.getElementById("baseUrl");
+const extra = document.getElementById("extra");
+const statusEl = document.getElementById("status");
+let current = null;
+
+PROVIDERS.forEach(([value, label]) => {
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = label;
+  select.appendChild(opt);
+});
+
+function fill(s) {
+  current = s;
+  select.value = s.provider || "openai";
+  model.value = s.model || "";
+  apiKey.value = s.api_key || "";
+  baseUrl.value = s.base_url || "";
+  extra.value = s.extra && Object.keys(s.extra).length ? JSON.stringify(s.extra, null, 2) : "";
+}
+
+function note(msg, isErr = false) {
+  statusEl.hidden = !msg;
+  statusEl.textContent = msg || "";
+  statusEl.classList.toggle("status-note--err", isErr);
+}
+
+document.getElementById("save").addEventListener("click", async () => {
+  let extraObj = {};
+  if (extra.value.trim()) {
+    try { extraObj = JSON.parse(extra.value); }
+    catch { note("추가 파라미터가 올바른 JSON이 아닙니다.", true); return; }
+  }
+  const body = {
+    settings: {
+      provider: select.value,
+      model: model.value.trim(),
+      api_key: apiKey.value.trim(),
+      base_url: baseUrl.value.trim(),
+      extra: extraObj,
+    },
+  };
+  try {
+    const data = await api("/admin/api/llm", { method: "POST", body: JSON.stringify(body) });
+    fill(data.settings);
+    note("저장했습니다.");
+  } catch (err) {
+    note(err.message || "저장 실패", true);
+  }
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  if (current) fill(current);
+  else note("");
+});
+
+api("/admin/api/llm").then((data) => fill(data.settings)).catch((err) => {
+  if (err.status === 401) location = "/admin/login";
+  else note(err.message || "불러오기 실패", true);
+});
+</script>
+</body>
+</html>

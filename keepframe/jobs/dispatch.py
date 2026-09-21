@@ -18,6 +18,8 @@ def run_job(spec: JobSpec) -> dict[str, Any]:
         return _run_analyze(spec.args)
     if spec.kind == "render":
         return _run_render(spec.args)
+    if spec.kind == "export":
+        return _run_export(spec.args)
     raise ValueError(f"unknown job kind {spec.kind!r}")
 
 
@@ -60,3 +62,26 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
     res = render(Path(args["html"]), scene, Path(args["out"]), frames=frames, mp4=bool(args.get("mp4")))
     log.info("render done frames=%s mp4=%s", len(res.frames), res.mp4)
     return {"frames": len(res.frames), "mp4": str(res.mp4) if res.mp4 else None}
+
+
+def _run_export(args: dict[str, Any]) -> dict[str, Any]:
+    import shutil
+
+    from keepframe.compose.composer import compose
+    from keepframe.ir.store import load_scene
+    from keepframe.render.renderer import render
+
+    scene_path = Path(args["scene"])
+    out = Path(args["out"])
+    log.info("export start scene=%s out=%s", scene_path, out)
+    scene = load_scene(scene_path)
+    sd = scene_path.parent
+    html = sd / "composition.export.html"
+    compose(scene, sd, html)
+    res = render(html, scene, out, mp4=True)
+    root = sd.parent.parent
+    out.mkdir(parents=True, exist_ok=True)
+    zip_path = out / "project.zip"
+    shutil.make_archive(str(zip_path.with_suffix("")), "zip", root)
+    log.info("export done mp4=%s zip=%s", res.mp4, zip_path)
+    return {"mp4": str(res.mp4) if res.mp4 else None, "zip": str(zip_path), "frames": len(res.frames)}

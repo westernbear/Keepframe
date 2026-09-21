@@ -324,10 +324,6 @@ a { color: inherit; text-decoration: none; }
 .land-nav:hover { color: var(--ink); }
 .land-hero { min-height: 100dvh; display: flex; align-items: center; padding: 96px 0; }
 .land-hero__grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 64px; align-items: center; }
-.land-eyebrow {
-  margin: 0 0 20px; font-size: var(--fs-micro); letter-spacing: 0.18em;
-  text-transform: uppercase; color: var(--muted);
-}
 .land-display {
   margin: 0 0 24px; font-size: clamp(32px, 6.4vw, 85px); font-weight: 500;
   line-height: 1.15; letter-spacing: -0.02em;

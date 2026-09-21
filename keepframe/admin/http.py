@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from keepframe.admin.auth import COOKIE, cookie_header
 from keepframe.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
+from keepframe.session.provider import ProviderConfig
 
 if TYPE_CHECKING:
     from keepframe.admin.auth import MemoryAuth
@@ -25,6 +26,7 @@ ADMIN_PAGES = {
     "/admin/queue": "admin-queue.html",
     "/admin/quarantine": "admin-quarantine.html",
     "/admin/audit": "admin-audit.html",
+    "/admin/llm": "admin-llm.html",
 }
 
 _LOGIN_PATHS = {"/admin/api/login"}
@@ -137,6 +139,12 @@ class AdminRoutes:
             handler._send(200, body, "text/csv; charset=utf-8")
             return True
 
+        if path == "/admin/api/llm":
+            if self._require(handler) is None:
+                return True
+            handler._json(200, {"settings": self.admin_svc.get_llm_settings().model_dump()})
+            return True
+
         if re.fullmatch(r"/admin/api/quarantine/[^/]+/video", path):
             if self._require(handler) is None:
                 return True
@@ -192,6 +200,24 @@ class AdminRoutes:
                 handler._json(404, {"error": "not found"})
                 return True
             handler._json(200, {"tenant": asdict(tenant)})
+            return True
+
+        if path == "/admin/api/llm":
+            actor = self._require(handler)
+            if actor is None:
+                return True
+            try:
+                data = json.loads(handler._read_body().decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                handler._json(400, {"error": "bad json"})
+                return True
+            try:
+                config = ProviderConfig.model_validate(data.get("settings", {}))
+            except Exception as e:  # pydantic ValidationError
+                handler._json(400, {"error": f"{type(e).__name__}: {e}"})
+                return True
+            self.admin_svc.set_llm_settings(config, actor)
+            handler._json(200, {"settings": config.model_dump()})
             return True
 
         if path.startswith("/admin"):

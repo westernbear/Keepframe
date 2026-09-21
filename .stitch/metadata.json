@@ -29,6 +29,11 @@
       "title": "분석 진행 중",
       "files": ["designs/analyze.html", "designs/analyze.png"]
     },
+    "agent": {
+      "id": "2995e1498d7b4e3cb3d9b97a8204cb1f",
+      "title": "세션 에이전트",
+      "files": ["designs/agent.html", "designs/agent.png"]
+    },
     "admin-login": {
       "id": "543dd89e913a4b398caf4c7b49366091",
       "title": "관리자 로그인",
