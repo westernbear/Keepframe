@@ -1,5 +1,5 @@
-import { fetchProjects, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921u";
-import { T, Tf } from "/static/js/i18n.js?v=20260921u";
+import { fetchProjects, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921v";
+import { T, Tf } from "/static/js/i18n.js?v=20260921v";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -39,6 +39,8 @@ const STAGE_I18N = {
   report: "analyze.step.report",
 };
 const CHECK = '<svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+
+let pollTimer = 0;
 
 function showError(msg) {
   statusEl.hidden = !msg;
@@ -129,6 +131,11 @@ async function poll(jobId) {
   }
 }
 
+function startPolling(jobId) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => poll(jobId), ANALYZE_POLL_INTERVAL_MS);
+}
+
 function hasExplicitRange() {
   return analyzeMode === "range" && analyzeStart != null && analyzeStart !== "" && analyzeEnd != null;
 }
@@ -162,21 +169,37 @@ async function loadProjectChrome() {
   paintRangeLabel(p);
 }
 
+async function loadOptionalChrome() {
+  try {
+    await loadProjectChrome();
+  } catch (err) {
+    showError(err.message || T("analyze.chromeFailed"));
+  }
+}
+
+async function loadOptionalFilmstrip() {
+  try {
+    await showFilmstrip(projectId);
+  } catch (err) {
+    showError(err.message || T("analyze.filmstripFailed"));
+  }
+}
+
+async function startAnalyzeJob() {
+  const { job } = await postAnalyze(analyzePayload());
+  updateJob(job);
+  startPolling(job.id);
+}
+
 async function bootAnalyze() {
   if (!projectId) {
     showError(T("analyze.noProject"));
     return;
   }
+  await loadOptionalChrome();
+  await loadOptionalFilmstrip();
   try {
-    await loadProjectChrome();
-  } catch {}
-  try {
-    await showFilmstrip(projectId);
-  } catch {}
-  try {
-    const { job } = await postAnalyze(analyzePayload());
-    updateJob(job);
-    setInterval(() => poll(job.id), ANALYZE_POLL_INTERVAL_MS);
+    await startAnalyzeJob();
   } catch (err) {
     showError(err.message || T("analyze.startFailed"));
   }

@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
     if a.cmd == "serve":
-        from .web.server import make_server
+        from .web.server import JOBS, make_server
         configure()
         log = get("keepframe.cli")
         host = a.host
@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             from .admin.memory import MemoryAdmin
             from .admin.auth import MemoryAuth, load_admin_users
             users = load_admin_users()
-            kwargs["admin_svc"] = MemoryAdmin(workspace=Path(a.workspace))
+            kwargs["admin_svc"] = MemoryAdmin(workspace=Path(a.workspace), job_store=JOBS)
             kwargs["admin_auth"] = MemoryAuth(users)
             log.info("admin accounts %s", len(users))
         srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)

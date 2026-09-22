@@ -18,5 +18,5 @@ def looks_live_action(path: Path) -> str | None:
     skin = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
     frac = float(np.mean(skin > 0))
     if sharp > 120 and frac > 0.08:
-        return "실사. 평면 2D MG·UI 녹화만."
+        return "실사 푸티지. 평면 2D MG·UI 녹화만 받음."
     return None

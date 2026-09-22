@@ -1,4 +1,7 @@
 import json, subprocess, sys
+import math
+from types import SimpleNamespace
+import pytest
 import numpy as np
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import current_scene, scene_dir
@@ -20,7 +23,34 @@ def test_compare_on_analyzed_synthetic(tmp_scene_dir):
 
 def test_m2_gate_small(tmp_scene_dir):
     res = m2_gate(tmp_scene_dir, n=3, refine=False)
-    assert res["n"] == 3 and len(res["rows"]) == 3 and "passed" in res
+    expected = (res["frame_l1_ok"] >= math.ceil(0.8 * res["n"])
+                and res["tracking_ok"] and res["temporal_mean"] >= 0.7)
+    assert res["passed"] == expected
+
+@pytest.mark.parametrize("l1,tracking,temporal,passed", [
+    ([0.01, 0.01, 0.03], 0, 1.0, False),
+    ([0.01, 0.01, 0.02], 5, 0.7, True),
+    ([0.01, 0.01, 0.02], 6, 0.7, False),
+    ([0.01, 0.01, 0.02], 5, 0.69, False),
+])
+def test_m2_gate_acceptance_boundaries(tmp_path, monkeypatch, l1, tracking, temporal, passed):
+    from keepframe import gates
+    from keepframe.analyze import golden, pipeline, video
+    from keepframe.ir import store
+
+    scene = SimpleNamespace(frames=1)
+    monkeypatch.setattr(gates, "make_synthetic_scene", lambda *a, **kw: scene)
+    monkeypatch.setattr(gates, "save_scene", lambda *a: None)
+    monkeypatch.setattr(video, "render_scene_video", lambda scene, root, out: out)
+    monkeypatch.setattr(video, "read_frames", lambda *a: (None, 30))
+    monkeypatch.setattr(pipeline, "analyze", lambda *a: None)
+    monkeypatch.setattr(store, "current_scene", lambda *a: (scene, None))
+    errors = iter(l1)
+    monkeypatch.setattr(golden, "compare", lambda *a: {
+        "frame_l1": next(errors), "tracking_errors": tracking, "temporal": temporal,
+    })
+
+    assert m2_gate(tmp_path, n=3, refine=False)["passed"] is passed
 
 def test_cli_analyze_and_correct(tmp_scene_dir):
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=82, frames=24, with_text=False, overlap=False)

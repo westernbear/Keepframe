@@ -132,11 +132,11 @@ def test_landing_and_library_link_to_demo():
     library = static_src("library.html", "js/library.js")
     assert 'href="/demo"' in landing
     assert 'href="/demo"' in library
+    assert "isApprovedStatus" in library
     assert "nav.demo" in landing
     assert "p.scene" in library
-    assert 'p.status === "approved"' in library
     assert "/agent?project=" in library
-    assert 'p.status === "review"' in library
+    assert "isReviewStatus" in library
 
 
 def test_library_filters_are_wired():

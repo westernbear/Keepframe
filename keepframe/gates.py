@@ -1,5 +1,7 @@
 from __future__ import annotations
+import math
 from pathlib import Path
+from statistics import mean
 from .analyze.constraints import extract_constraints
 from .compose.composer import compose
 from .ir.store import save_scene
@@ -34,7 +36,6 @@ def m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict:
 
 
 def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
-    import numpy as np
     from .analyze.golden import compare
     from .analyze.pipeline import AnalyzeOptions, analyze
     from .analyze.video import read_frames, render_scene_video
@@ -56,9 +57,9 @@ def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
         rows.append({"seed": seed, **m})
     l1_ok = sum(r["frame_l1"] <= 0.02 for r in rows)
     trk_ok = all(r["tracking_errors"] <= 5 for r in rows)
-    temporal = float(np.mean([r["temporal"] for r in rows]))
+    temporal = float(mean(r["temporal"] for r in rows))
     return {"n": n, "refine": refine, "frame_l1_ok": l1_ok, "tracking_ok": trk_ok, "temporal_mean": temporal,
-            "passed": l1_ok >= int(round(0.8 * n)) and trk_ok and temporal >= 0.7, "rows": rows}
+            "passed": l1_ok >= math.ceil(0.8 * n) and trk_ok and temporal >= 0.7, "rows": rows}
 
 
 def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:

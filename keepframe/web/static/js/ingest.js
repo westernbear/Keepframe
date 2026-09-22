@@ -1,5 +1,5 @@
-import { uploadProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921u";
-import { T, Tf } from "/static/js/i18n.js?v=20260921u";
+import { uploadProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921v";
+import { T, Tf } from "/static/js/i18n.js?v=20260921v";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;
@@ -87,9 +87,7 @@ async function loadFilmstrip(projectId) {
     const img = document.createElement("img");
     img.src = url;
     img.alt = "";
-    img.style.width = "100%";
-    img.style.height = "100%";
-    img.style.objectFit = "cover";
+    img.className = "cover-img";
     div.appendChild(img);
     filmstrip.appendChild(div);
   });
@@ -174,7 +172,7 @@ async function handleFile(file) {
   }
 }
 
-function bindIngest() {
+function bindFilePicker() {
   dropzone.addEventListener("click", () => fileInput.click());
   dropzone.addEventListener("dragover", (e) => { e.preventDefault(); });
   dropzone.addEventListener("drop", (e) => {
@@ -191,6 +189,9 @@ function bindIngest() {
     resetFileUi();
     showError("");
   });
+}
+
+function bindWindowControls() {
   document.querySelectorAll("[data-mode]").forEach((btn) => {
     btn.addEventListener("click", () => setMode(btn.dataset.mode));
   });
@@ -201,7 +202,16 @@ function bindIngest() {
     fullConfirm.hidden = true;
     startBtn.disabled = false;
   });
+}
+
+function bindSubmit() {
   startBtn.addEventListener("click", startAnalysis);
+}
+
+function bindIngest() {
+  bindFilePicker();
+  bindWindowControls();
+  bindSubmit();
 }
 
 async function refreshGpu() {

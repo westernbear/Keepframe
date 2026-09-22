@@ -30,3 +30,39 @@ def test_job_retries_cannot_exceed_cap_in_seed():
     svc = MemoryAdmin()
     for j in svc.list_jobs():
         assert j["retries"] <= RETRY_CAP
+def test_live_jobs_merge_seed_and_track_shared_store():
+    from keepframe.jobs import JobStore
+
+    class ControlledRunner:
+        def enqueue(self, job, *, spec=None, fn=None):
+            pass
+
+    store = JobStore(runner=ControlledRunner())
+    svc = MemoryAdmin(job_store=store)
+    seed_ids = {row["id"] for row in svc.list_jobs()}
+    job = store.submit("analyze", project_id="proj", scene_id="s1")
+    rows = {row["id"]: row for row in svc.list_jobs()}
+    assert seed_ids <= rows.keys()
+    assert rows[job.id]["status"] == "대기"
+    job.status = "running"
+    assert {row["id"]: row for row in svc.list_jobs()}[job.id]["status"] == "실행"
+    job.status = "done"
+    assert {row["id"]: row for row in svc.list_jobs()}[job.id]["status"] == "완료"
+    job.status = "error"
+    job.error = "boom"
+    row = {row["id"]: row for row in svc.list_jobs()}[job.id]
+    assert row["status"] == "실패" and row["error"] == "boom"
+
+
+def test_live_job_replaces_seed_id():
+    from keepframe.jobs import Job, JobStore
+
+    class ControlledRunner:
+        def enqueue(self, job, *, spec=None, fn=None):
+            pass
+
+    store = JobStore(runner=ControlledRunner())
+    svc = MemoryAdmin(job_store=store)
+    store._jobs["job_1842"] = Job("job_1842", "export", "queued", "proj")
+    rows = [row for row in svc.list_jobs() if row["id"] == "job_1842"]
+    assert len(rows) == 1 and rows[0]["tenant"] == "Local" and rows[0]["kind"] == "export"

@@ -1,5 +1,5 @@
-import { fetchProjects } from "/static/js/api.js?v=20260921u";
-import { T, Tf, applyI18n } from "/static/js/i18n.js?v=20260921u";
+import { fetchProjects } from "/static/js/api.js?v=20260921v";
+import { T, Tf, applyI18n } from "/static/js/i18n.js?v=20260921v";
 
 const DEFAULT_SCENE_ID = "s1";
 const ROW_GAP_PX = 8;
@@ -38,11 +38,19 @@ function agentHref(projectId, sceneId, version) {
   return url;
 }
 
+function isReviewStatus(status) {
+  return status === "review";
+}
+
+function isApprovedStatus(status) {
+  return status === "approved";
+}
+
 function hrefForProject(p) {
   if (isAnalyzeQueue(p.status)) return analyzeJobHref(p.id);
   const scene = p.scene || DEFAULT_SCENE_ID;
-  if (p.status === "review") return reviewHref(p.id, scene);
-  if (p.status === "approved") return agentHref(p.id, scene, p.version);
+  if (isReviewStatus(p.status)) return reviewHref(p.id, scene);
+  if (isApprovedStatus(p.status)) return agentHref(p.id, scene, p.version);
   return null;
 }
 
@@ -69,9 +77,7 @@ function appendThumb(thumb, p) {
   const img = document.createElement("img");
   img.src = `/api/projects/${encodeURIComponent(p.id)}/frame/0`;
   img.alt = "";
-  img.style.width = "100%";
-  img.style.height = "100%";
-  img.style.objectFit = "cover";
+  img.className = "cover-img";
   img.onerror = () => { img.remove(); };
   thumb.appendChild(img);
 }

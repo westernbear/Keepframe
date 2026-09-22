@@ -14,15 +14,20 @@ function withQuery(url, params) {
   return encoded ? `${url}?${encoded}` : url;
 }
 
+async function readJsonOrNull(res) {
+  const contentType = res.headers.get("content-type") || "";
+  const isJson = contentType.includes("json");
+  if (!isJson) return null;
+  return res.json().catch(() => ({}));
+}
+
 async function api(path, opts = {}) {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(path, {
     headers: isForm ? { ...(opts.headers || {}) } : jsonHeaders(opts.headers),
     ...opts,
   });
-  const contentType = res.headers.get("content-type") || "";
-  const isJson = contentType.includes("json");
-  const data = isJson ? await res.json().catch(() => ({})) : null;
+  const data = await readJsonOrNull(res);
   if (!res.ok) {
     const err = new Error((data && data.error) || res.statusText);
     err.status = res.status;

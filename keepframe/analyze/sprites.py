@@ -38,8 +38,8 @@ def _mask_max_side(region: Region) -> float:
     return float(max(w, h))
 
 
-def props_from_moments(region: Region, canon_area: int, th_c: float, aspect: float) -> dict[str, float]:
-    """Moment init; canon-derived values (canon_area, th_c, aspect) are hoisted per track."""
+def _props_from_moments(region: Region, canon_area: int, th_c: float, aspect: float) -> dict[str, float]:
+    """Moment init; canon-derived values are hoisted per track."""
     s = math.sqrt(region.area / max(canon_area, 1))
     th_r, _ = _orientation(region.mask)
     rot = (th_r - th_c) if aspect >= 1.25 else 0.0
@@ -48,19 +48,20 @@ def props_from_moments(region: Region, canon_area: int, th_c: float, aspect: flo
     return {"x": (x0 + x1) / 2.0, "y": (y0 + y1) / 2.0, "sx": s, "sy": s, "rot": rot, "skx": 0.0, "sky": 0.0, "opacity": 1.0}
 
 
-def _region_scale(region: Region, r_lo: Region, r_cf: Region, sx_cf: float, th_c: float, ac: float,
-                  cf_max_side: float) -> float:
-    """Scale vs track-first; area-based when upright, min-area-rect when rotated.
+def props_from_moments(region: Region, canon: np.ndarray) -> dict[str, float]:
+    """Compute initial sprite properties from a region and canonical texture."""
+    canon_mask = canon[..., 3] > 127
+    canon_area = int(canon_mask.sum())
+    th_c, aspect = _orientation(canon_mask)
+    return _props_from_moments(region, canon_area, th_c, aspect)
 
-    th_c/ac/cf_max_side are canon/track constants hoisted out of the per-frame loop."""
+
+def _region_scale(region: Region, canon_area: int, th_c: float, ac: float, cf_max_side: float) -> float:
+    """Scale relative to the canonical frame; area-based unless elongated/rotated."""
     th_r, ar = _orientation(region.mask)
     if ac >= 1.25 or ar >= 1.25 or abs(th_r - th_c) > 5:
-        side = _mask_max_side(region) / max(_mask_max_side(r_lo), 1e-6)
-        cal = cf_max_side / max(_mask_max_side(r_lo), 1e-6) / max(sx_cf, 1e-6)
-        if ac < 1.25 and ar < 1.25:
-            cal *= 1.04
-        return side * cal
-    return sx_cf * math.sqrt(region.area / max(r_cf.area, 1))
+        return _mask_max_side(region) / max(cf_max_side, 1e-6)
+    return math.sqrt(region.area / max(canon_area, 1))
 
 
 def _canon_anchor_px(canon: np.ndarray, anchor: tuple[float, float]) -> tuple[float, float]:
@@ -77,8 +78,8 @@ def _ecc_constants(canon: np.ndarray, anchor: tuple[float, float]) -> tuple[np.n
     return L, tpl
 
 
-def refine_ecc(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarray,
-               init: dict[str, float], margin: int = 8) -> dict[str, float]:
+def _refine_ecc(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarray,
+                init: dict[str, float], margin: int = 8) -> dict[str, float]:
     """ECC on a crop around the region so other objects do not pull the warp."""
     H, W = frame.shape[:2]
     x0, y0 = max(0, region.bbox[0] - margin), max(0, region.bbox[1] - margin)
@@ -100,10 +101,17 @@ def refine_ecc(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarray
     return props
 
 
+def refine_ecc(frame: np.ndarray, region: Region, canon: np.ndarray,
+               anchor: tuple[float, float], init: dict[str, float]) -> dict[str, float]:
+    """Refine sprite properties with ECC using a canonical texture and anchor."""
+    L, tpl = _ecc_constants(canon, anchor)
+    return _refine_ecc(frame, region, L, tpl, init)
+
+
 def _refine_ecc_xy(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarray, init: dict[str, float]) -> dict[str, float]:
     """Refine position/rotation; keep moment scale (ECC often shrinks sx on rotated objects)."""
     sx, sy = init["sx"], init["sy"]
-    props = refine_ecc(frame, region, L, tpl, init)
+    props = _refine_ecc(frame, region, L, tpl, init)
     props["sx"], props["sy"] = sx, sy
     return props
 
@@ -146,8 +154,6 @@ def z_order(tracks: list[ObjectTrack], frames: np.ndarray, bg_rgb: tuple) -> dic
 def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int,
                  use_ecc: bool = True) -> tuple[np.ndarray, np.ndarray, int]:
     canon, cf = canonical_texture(track, frames)
-    r_cf, r_lo = track.regions[cf], track.regions[track.first]
-    sx_cf = math.sqrt(r_cf.area / max(r_lo.area, 1))
     areas = [r.area for r in track.regions.values()]
     med_area = float(np.median(areas))
     max_area = max(areas)
@@ -157,21 +163,21 @@ def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames
     canon_mask = canon[..., 3] > 127
     canon_area = int(canon_mask.sum())
     th_c, aspect = _orientation(canon_mask)
-    cf_max_side = _mask_max_side(r_cf)
+    cf_max_side = _mask_max_side(track.regions[cf])
     L, tpl = _ecc_constants(canon, (0.5, 0.5))
     raw = np.full((n_frames, len(RAW_COLS)), np.nan)
     prev_rot: float | None = None
     for f, r in sorted(track.regions.items()):
         if r.area < area_thr:
             continue
-        p = props_from_moments(r, canon_area, th_c, aspect)
+        p = _props_from_moments(r, canon_area, th_c, aspect)
         if prev_rot is not None:
-            d = ((p["rot"] - prev_rot + 180) % 360) - 180
-            if abs(d) > 1.3:
-                p["rot"] = prev_rot + max(-1.3, min(1.3, d))
-        p["sx"] = p["sy"] = _region_scale(r, r_lo, r_cf, sx_cf, th_c, aspect, cf_max_side)
+            p["rot"] = prev_rot + ((p["rot"] - prev_rot + 90) % 180 - 90)
+        p["sx"] = p["sy"] = _region_scale(r, canon_area, th_c, aspect, cf_max_side)
         if use_ecc:
             p = _refine_ecc_xy(frames[f], r, L, tpl, p)
+            if prev_rot is not None:
+                p["rot"] = prev_rot + ((p["rot"] - prev_rot + 90) % 180 - 90)
         prev_rot = p["rot"]
         p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb)
         raw[f - first_frame] = [p[c] for c in RAW_COLS]

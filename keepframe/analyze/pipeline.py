@@ -5,7 +5,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, Version
-from ..ir.store import current_scene, init_project, new_version, scene_dir as _scene_dir
+from ..ir.store import current_scene, init_project, load_project, new_version, scene_dir as _scene_dir
 from ..log import get
 from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
@@ -233,7 +233,9 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
     sd = _scene_dir(out_root, "s1")
     (sd / "stages").mkdir(parents=True, exist_ok=True)
-    report_stage("frames")
+    overrides = sd / "stages" / "overrides.json"
+    if not overrides.exists():
+        overrides.write_text(json.dumps({"regions": [], "ids": {}, "merge": []}))
     frames, fps = read_frames(video, start, end)
     np.save(sd / "stages" / "frames.npy", frames)
     n, H, W = frames.shape[:3]
@@ -268,26 +270,45 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         raise ValueError(from_stage)
     log.info("rerun scene=%s from=%s note=%s", scene_id, from_stage, note)
     root = Path(root); sd = _scene_dir(root, scene_id)
+    project = load_project(root)
+    prev, _ = current_scene(root, scene_id)
     opts = options or AnalyzeOptions(**json.loads((sd / "stages" / "options.json").read_text()))
-    frames = np.load(sd / "stages" / "frames.npy")
-    bgj = json.loads((sd / "stages" / "background.json").read_text()); bg = tuple(bgj["rgb"])
-    n = len(frames)
-    i = STAGES.index(from_stage)
-    text = _pk(sd, "text"); boxes, text_tracks = text["boxes"], text["tracks"]
-    if i <= STAGES.index("text"):
+    boundary = STAGES.index(from_stage)
+
+    if boundary <= STAGES.index("frames"):
+        source = Path(project.source["file"])
+        start, end = project.source.get("range", [0, None])
+        frames, fps = read_frames(source, start, end)
+        np.save(sd / "stages" / "frames.npy", frames)
+    else:
+        frames = np.load(sd / "stages" / "frames.npy")
+        fps = prev.fps
+    n, H, W = frames.shape[:3]
+
+    if boundary <= STAGES.index("background"):
+        bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
+        (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf}))
+    else:
+        bgj = json.loads((sd / "stages" / "background.json").read_text())
+        bg, bconf = tuple(bgj["rgb"]), bgj.get("confidence", 1.0)
+
+    if boundary <= STAGES.index("text"):
         report_stage("text")
         boxes, text_tracks, _ = _stage_text(frames, bg, opts, None, sd)
-    if i <= STAGES.index("regions"):
+    else:
+        text = _pk(sd, "text")
+        boxes, text_tracks = text["boxes"], text["tracks"]
+    if boundary <= STAGES.index("regions"):
         report_stage("regions")
         rbf = _stage_regions(frames, bg, boxes, opts, sd)
     else:
         rbf = _pk(sd, "regions")
-    if i <= STAGES.index("tracking"):
+    if boundary <= STAGES.index("tracking"):
         report_stage("tracking")
         obj_tracks = _stage_tracking(rbf, sd)
     else:
         obj_tracks = _pk(sd, "tracks")
-    if i <= STAGES.index("sprites"):
+    if boundary <= STAGES.index("sprites"):
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
     else:
@@ -297,7 +318,6 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    prev, _ = current_scene(root, scene_id)
     for e in elements:   # keep manual text edits across reruns
         try:
             old = prev.element(e.id)
@@ -305,6 +325,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
                 e.canonical.text, e.canonical.font, e.provenance = old.canonical.text, old.canonical.font, "manual"
         except KeyError:
             pass
-    scene = Scene(id=scene_id, size=prev.size, fps=prev.fps, frames=n, background=prev.background, elements=elements)
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
+                  background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m])
     return new_version(root, scene_id, scene, note=note, auto=False)

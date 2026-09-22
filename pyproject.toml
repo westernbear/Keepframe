@@ -29,6 +29,7 @@ keepframe = [
   "web/static/*.png",
   "web/static/css/*",
   "web/static/js/*",
+  "web/static/js/review/*",
 ]
 [tool.pytest.ini_options]
 markers = [

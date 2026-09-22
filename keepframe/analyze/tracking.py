@@ -51,22 +51,40 @@ def _trim_tail_crumbs(track: ObjectTrack) -> None:
             del track.regions[f]
 
 
-def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_thr: float = 35.0) -> list[ObjectTrack]:
-    """Merge same-colour tracks separated by a short gap (opacity/scale transitions)."""
+def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_thr: float = 35.0,
+                           max_dist: float = 80.0) -> list[ObjectTrack]:
+    """Join nearby same-colour fragments across short, non-overlapping gaps."""
     if len(tracks) < 2:
         return tracks
-    out = sorted(tracks, key=lambda t: t.first)
-    merged: list[ObjectTrack] = [out[0]]
-    for t in out[1:]:
-        prev = merged[-1]
-        gap = t.first - prev.last
-        if 1 <= gap <= max_gap:
-            c1 = np.mean([r.color for r in prev.regions.values()], axis=0)
-            c2 = np.mean([r.color for r in t.regions.values()], axis=0)
-            if float(np.linalg.norm(c1 - c2)) <= color_thr:
-                prev.regions.update(t.regions)
+    colors = {t.id: np.mean([r.color for r in t.regions.values()], axis=0) for t in tracks}
+    merged: list[ObjectTrack] = []
+    for t in sorted(tracks, key=lambda t: t.first):
+        first = t.regions[t.first]
+        match = None
+        best_distance = math.inf
+        for prev in merged:
+            if not 1 <= t.first - prev.last <= max_gap:
                 continue
-        merged.append(t)
+            if float(np.linalg.norm(colors[prev.id] - colors[t.id])) > color_thr:
+                continue
+            last = prev.regions[prev.last]
+            predicted = _predict(prev, t.first)
+            dx, dy = predicted[0] - last.centroid[0], predicted[1] - last.centroid[1]
+            # Occlusion can move a visible centroid across the object's width.
+            gap_x = max(first.bbox[0] - last.bbox[2] - dx, last.bbox[0] + dx - first.bbox[2], 0)
+            gap_y = max(first.bbox[1] - last.bbox[3] - dy, last.bbox[1] + dy - first.bbox[3], 0)
+            if math.hypot(gap_x, gap_y) > max_dist:
+                continue
+            distance = math.dist(predicted, first.centroid)
+            if distance < best_distance:
+                match, best_distance = prev, distance
+        if match is None:
+            merged.append(t)
+        else:
+            colors[match.id] = (
+                colors[match.id] * len(match.regions) + colors[t.id] * len(t.regions)
+            ) / (len(match.regions) + len(t.regions))
+            match.regions.update(t.regions)
     return merged
 
 

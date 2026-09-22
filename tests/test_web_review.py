@@ -16,11 +16,13 @@ REVIEW_PLAYBACK = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "s
 REVIEW_CSS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "css" / "app.css"
 
 
+REVIEW_DIR = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "review"
+
+
 def review_src():
-    return "\n".join(
-        p.read_text(encoding="utf-8")
-        for p in (REVIEW_HTML, REVIEW_JS, REVIEW_PLAYBACK)
-    )
+    review_modules = sorted(REVIEW_DIR.glob("*.js"))
+    parts = [REVIEW_HTML, REVIEW_JS, REVIEW_PLAYBACK, *review_modules]
+    return "\n".join(p.read_text(encoding="utf-8") for p in parts)
 
 
 
@@ -275,22 +277,10 @@ def test_review_playback_updates_icon_frame_and_playhead(tmp_path):
     pytest.importorskip("playwright")
     from playwright.sync_api import sync_playwright
     from keepframe.web.server import make_server
+    from keepframe.web.demo import ensure_demo_project
     import threading
 
-    root = tmp_path / "p1"
-    scene = make_synthetic_scene(tmp_path / "gold", seed=3, with_text=False, frames=24)
-    init_project(
-        root,
-        {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 23]},
-        scene,
-    )
-    (root / "meta.json").write_text(json.dumps({"id": "p1", "title": "t", "status": "review"}))
-    stages = scene_dir(root, scene.id) / "stages"
-    stages.mkdir(parents=True, exist_ok=True)
-    frames = np.zeros((scene.frames, 36, 64, 3), np.uint8)
-    for i in range(scene.frames):
-        frames[i] = i
-    np.save(stages / "frames.npy", frames)
+    row = ensure_demo_project(tmp_path)
     srv = make_server(tmp_path, port=0)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -298,7 +288,7 @@ def test_review_playback_updates_icon_frame_and_playhead(tmp_path):
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--no-sandbox"], chromium_sandbox=False)
             page = browser.new_page(viewport={"width": 1280, "height": 800})
-            page.goto(f"{base}/review?project=p1&scene={scene.id}")
+            page.goto(f"{base}/review?project={row['id']}&scene={row['scene']}")
             page.wait_for_function(
                 "() => !document.getElementById('review-root').classList.contains('is-loading')",
                 timeout=15000,
@@ -325,5 +315,6 @@ def test_review_playback_updates_icon_frame_and_playhead(tmp_path):
             browser.close()
     finally:
         srv.shutdown()
+        srv.server_close()
     assert metrics["overlap"] <= 1
     assert metrics["headX"] > metrics["tracksX"] + 270

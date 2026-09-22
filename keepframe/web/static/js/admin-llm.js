@@ -1,8 +1,9 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20260921u";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20260921v";
 
 const MODEL_RELOAD_DEBOUNCE_MS = 400;
 const AZURE_SCOPE = "https://cognitiveservices.azure.com/.default";
 const LLM_PATH = "/admin/llm";
+const DEFAULT_AUTH_MODES = ["api_key"];
 
 const select = document.getElementById("provider");
 const model = document.getElementById("model");
@@ -47,22 +48,41 @@ function fillCatalog(items) {
   if (prev && catalog.some((p) => p.id === prev)) select.value = prev;
 }
 
+function visibleFields(provider, authMode, spec) {
+  const modes = spec.auth_modes || DEFAULT_AUTH_MODES;
+  const isChatgpt = provider === "chatgpt";
+  const isAzure = provider === "azure";
+  const isOauth = authMode === "oauth";
+  const isAzureOauth = isAzure && isOauth;
+  const hideAuth = isChatgpt || modes.length === 1;
+  const hideApiKey = isChatgpt || Boolean(spec.hide_api_key) || isOauth;
+  const hideOauth = !isChatgpt && !isAzureOauth;
+  return {
+    modes,
+    hideAuth,
+    hideApiKey,
+    hideOauth,
+    hideChatgptOAuth: !isChatgpt,
+    hideOauthAdvanced: !isAzure,
+    openOauthAdvanced: isAzureOauth,
+    hideBaseUrl: Boolean(spec.hide_base_url),
+  };
+}
+
 function showFields() {
   const p = select.value;
   const spec = specOf(p);
-  const modes = spec.auth_modes || ["api_key"];
-  [...auth.options].forEach((opt) => { opt.hidden = !modes.includes(opt.value); });
-  if (!modes.includes(auth.value)) auth.value = modes[0];
-  const isChatgpt = p === "chatgpt";
-  const isAzureOauth = p === "azure" && auth.value === "oauth";
-  const isOauth = auth.value === "oauth";
-  authField.hidden = isChatgpt || modes.length === 1;
-  apiKeyField.hidden = isChatgpt || Boolean(spec.hide_api_key) || isOauth;
-  oauthFields.hidden = !isChatgpt && !isAzureOauth;
-  chatgptOAuth.hidden = !isChatgpt;
-  oauthAdvanced.hidden = p !== "azure";
-  oauthAdvanced.open = isAzureOauth;
-  baseUrlField.hidden = Boolean(spec.hide_base_url);
+  const vis = visibleFields(p, auth.value, spec);
+  [...auth.options].forEach((opt) => { opt.hidden = !vis.modes.includes(opt.value); });
+  if (!vis.modes.includes(auth.value)) auth.value = vis.modes[0];
+  const next = visibleFields(p, auth.value, spec);
+  authField.hidden = next.hideAuth;
+  apiKeyField.hidden = next.hideApiKey;
+  oauthFields.hidden = next.hideOauth;
+  chatgptOAuth.hidden = next.hideChatgptOAuth;
+  oauthAdvanced.hidden = next.hideOauthAdvanced;
+  oauthAdvanced.open = next.openOauthAdvanced;
+  baseUrlField.hidden = next.hideBaseUrl;
 }
 
 function setChatgptStatus(s) {
@@ -73,13 +93,16 @@ function setChatgptStatus(s) {
   chatgptStatus.textContent = connected ? "ChatGPT 연결됨" : "";
 }
 
+function shouldFillAzureScope() {
+  return select.value === "azure" && auth.value === "oauth" && !scope.value;
+}
+
 function applyProviderDefaults() {
   const spec = specOf(select.value);
-  auth.value = (spec.auth_modes || ["api_key"])[0];
+  auth.value = (spec.auth_modes || DEFAULT_AUTH_MODES)[0];
   baseUrl.value = spec.default_base_url || "";
   model.value = spec.default_model || "";
-  const shouldFillAzureScope = select.value === "azure" && auth.value === "oauth" && !scope.value;
-  if (shouldFillAzureScope) scope.value = AZURE_SCOPE;
+  if (shouldFillAzureScope()) scope.value = AZURE_SCOPE;
   showFields();
   loadModels(false);
 }
@@ -89,7 +112,7 @@ function fill(s) {
   select.value = s.provider || "openai";
   model.value = s.model || "";
   const spec = specOf(select.value);
-  const modes = spec.auth_modes || ["api_key"];
+  const modes = spec.auth_modes || DEFAULT_AUTH_MODES;
   const mode = s.auth && modes.includes(s.auth) ? s.auth : modes[0];
   auth.value = mode;
   setChatgptStatus(s);
@@ -183,17 +206,7 @@ function announceOAuthReturn(flag) {
   }
 }
 
-auth.addEventListener("change", () => {
-  showFields();
-  const shouldFillAzureScope = auth.value === "oauth" && select.value === "azure" && !scope.value;
-  if (shouldFillAzureScope) scope.value = AZURE_SCOPE;
-});
-select.addEventListener("change", () => applyProviderDefaults());
-baseUrl.addEventListener("change", scheduleModels);
-apiKey.addEventListener("change", scheduleModels);
-document.getElementById("reloadModels").addEventListener("click", () => loadModels(true));
-
-chatgptConnect.addEventListener("click", async () => {
+async function startChatgptOAuth() {
   note("");
   try {
     const data = await fetchAdminOrRedirect("/admin/api/llm/oauth/start?provider=chatgpt");
@@ -202,9 +215,9 @@ chatgptConnect.addEventListener("click", async () => {
   } catch (err) {
     note(err.message || "연결 시작 실패", true);
   }
-});
+}
 
-chatgptDisconnect.addEventListener("click", async () => {
+async function disconnectChatgpt() {
   try {
     const data = await fetchAdminOrRedirect("/admin/api/llm/oauth/disconnect", { method: "POST" });
     if (data.catalog) fillCatalog(data.catalog);
@@ -213,9 +226,9 @@ chatgptDisconnect.addEventListener("click", async () => {
   } catch (err) {
     note(err.message || "연결 해제 실패", true);
   }
-});
+}
 
-document.getElementById("save").addEventListener("click", async () => {
+async function saveSettings() {
   const parsed = parseExtraJson(extra.value);
   if (!parsed.ok) {
     note("추가 파라미터가 올바른 JSON이 아닙니다.", true);
@@ -230,8 +243,19 @@ document.getElementById("save").addEventListener("click", async () => {
   } catch (err) {
     note(err.message || "저장 실패", true);
   }
-});
+}
 
+auth.addEventListener("change", () => {
+  showFields();
+  if (shouldFillAzureScope()) scope.value = AZURE_SCOPE;
+});
+select.addEventListener("change", () => applyProviderDefaults());
+baseUrl.addEventListener("change", scheduleModels);
+apiKey.addEventListener("change", scheduleModels);
+document.getElementById("reloadModels").addEventListener("click", () => loadModels(true));
+chatgptConnect.addEventListener("click", startChatgptOAuth);
+chatgptDisconnect.addEventListener("click", disconnectChatgpt);
+document.getElementById("save").addEventListener("click", saveSettings);
 document.getElementById("reset").addEventListener("click", () => {
   if (current) fill(current);
   else note("");

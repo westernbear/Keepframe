@@ -62,9 +62,9 @@ class ThreadRunner:
                 job.status = "done"
                 log.info("job %s %s done project=%s", job.id, job.kind, job.project_id)
             except Exception as e:
-                job.status = "error"
                 job.error = f"{type(e).__name__}: {e}"
                 log.exception("job %s %s failed project=%s", job.id, job.kind, job.project_id)
+                job.status = "error"
             finally:
                 reset_stage(token)
 

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime, timezone
 from pathlib import Path
+
+from keepframe.jobs import JobStore
 
 from keepframe.session.provider import ProviderConfig, load_llm_settings, save_llm_settings
 
@@ -10,8 +13,14 @@ from .models import AuditEvent, Member, QuarantineItem, Tenant
 
 
 class MemoryAdmin:
-    def __init__(self, seed: bool = True, workspace: Path | None = None) -> None:
+    def __init__(
+        self,
+        seed: bool = True,
+        workspace: Path | None = None,
+        job_store: JobStore | None = None,
+    ) -> None:
         self._workspace = Path(workspace) if workspace is not None else None
+        self._job_store = job_store
         self._tenants: dict[str, Tenant] = {}
         self._members: list[Member] = []
         self._jobs: list[dict] = []
@@ -20,6 +29,7 @@ class MemoryAdmin:
         self._llm_settings = load_llm_settings(self._workspace) or ProviderConfig()
         if seed:
             self._seed()
+
 
     def _seed(self) -> None:
         self._tenants = {
@@ -114,7 +124,7 @@ class MemoryAdmin:
                 filename="clip_street.mp4",
                 tenant_id="org_solo",
                 rejected_at="2026-09-06T09:12:00Z",
-                reason="실사. 평면 2D MG·UI 녹화만.",
+                reason="실사 푸티지. 평면 2D MG·UI 녹화만 받음.",
             ),
         ]
         self._audit = [
@@ -179,7 +189,7 @@ class MemoryAdmin:
         self._tenants[id] = updated
         self.append_audit(
             AuditEvent(
-                ts="",
+                ts=datetime.now(timezone.utc).strftime("%H:%M"),
                 actor=actor,
                 action="테넌트 정지",
                 target=tenant.name,
@@ -189,7 +199,25 @@ class MemoryAdmin:
         return updated
 
     def list_jobs(self) -> list[dict]:
-        return list(self._jobs)
+        if self._job_store is None:
+            return list(self._jobs)
+        statuses = {"queued": "대기", "running": "실행", "done": "완료", "error": "실패"}
+        live: dict[str, dict] = {}
+        for job in self._job_store.list():
+            target = job.project_id + (f" {job.scene_id}" if job.scene_id else "")
+            live[job.id] = {
+                "id": job.id,
+                "tenant": "Local",
+                "kind": job.kind,
+                "target": target,
+                "status": statuses.get(job.status, job.status),
+                "retries": 0,
+                "gpu": "",
+                "error": job.error,
+            }
+        rows = [live.pop(row["id"], row) for row in self._jobs]
+        rows.extend(live.values())
+        return rows
 
     def list_quarantine(self) -> list[QuarantineItem]:
         return list(self._quarantine)
@@ -213,7 +241,7 @@ class MemoryAdmin:
             save_llm_settings(self._workspace, config)
         self.append_audit(
             AuditEvent(
-                ts="",
+                ts=datetime.now(timezone.utc).strftime("%H:%M"),
                 actor=actor,
                 action="LLM 프로바이더 변경",
                 target=f"{config.provider}/{config.model}",

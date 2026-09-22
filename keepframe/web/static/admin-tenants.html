@@ -3,36 +3,19 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Keepframe - 관리</title>
-<link href="/static/css/app.css?v=20260913" rel="stylesheet"/>
+<title data-i18n="admin.title.tenants">Keepframe - 테넌트 관리</title>
+<link href="/static/css/app.css?v=20260921v" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20260921u"></script>
-<script type="module" src="/static/js/api.js?v=20260921u"></script>
-<script type="module" src="/static/js/admin-tenants.js?v=20260921u"></script>
+<script type="module" src="/static/js/i18n.js?v=20260921v"></script>
+<script type="module" src="/static/js/api.js?v=20260921v"></script>
+<script type="module" src="/static/js/admin-tenants.js?v=20260921v"></script>
 <style>
-.admin-icon-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 80px; background: var(--surface-2); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding: 16px 8px; z-index: 40; }
-.admin-icon-nav__link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; margin-bottom: 4px; border-radius: var(--r-md); color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.08em; text-align: center; border-right: 2px solid transparent; }
-.admin-icon-nav__link:hover { background: var(--surface-1); color: var(--ink); }
-.admin-icon-nav__link--active { background: var(--hairline); color: var(--ink); border-right-color: var(--ink); }
-.admin-icon-nav__link svg { margin-bottom: 4px; }
-.admin-workspace { margin-left: 80px; display: flex; flex-direction: column; height: 100vh; }
-.admin-topbar { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-1); flex-shrink: 0; }
-.admin-topbar__left { display: flex; align-items: center; gap: 16px; font-size: var(--fs-body-sm); }
-.admin-topbar__brand { font-weight: 900; letter-spacing: -0.05em; display: flex; align-items: center; gap: 8px; }
-.admin-topbar__badge { font-size: var(--fs-micro); padding: 2px 8px; border-radius: var(--r-full); background: var(--surface-2); color: var(--muted); border: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.1em; }
-.admin-canvas { flex: 1; display: flex; gap: 16px; padding: 16px; overflow: hidden; min-height: 0; }
-.admin-panel { flex: 1; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; min-width: 0; }
 .admin-panel__toolbar { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
 .admin-table-head { display: grid; grid-template-columns: 4fr 2fr 4fr 2fr; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .admin-table-row { display: grid; grid-template-columns: 4fr 2fr 4fr 2fr; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--hairline); align-items: center; cursor: pointer; position: relative; }
 .admin-table-row:hover { background: var(--surface-2); }
 .admin-table-row--selected { background: var(--surface-2); }
 .admin-table-row--selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--secondary); }
-.progress-bar { height: 4px; background: var(--hairline); border-radius: var(--r-full); overflow: hidden; margin-top: 4px; }
-.progress-bar__fill { height: 100%; background: var(--secondary); border-radius: var(--r-full); }
-.status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-micro); padding: 4px 8px; border-radius: var(--r-sm); border: 1px solid var(--hairline); background: var(--surface-2); }
-.status-pill--warn { color: var(--error); border-color: var(--error); }
-.status-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--secondary); }
 .inspector-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--r-md); overflow: hidden; }
 .inspector-panel__head { padding: 24px; border-bottom: 1px solid var(--hairline); background: var(--surface-2); }
 .inspector-panel__body { flex: 1; overflow-y: auto; padding: 24px; }
@@ -45,7 +28,7 @@
 </style>
 </head>
 <body class="app app--fill">
-<nav class="admin-icon-nav" aria-label="Admin">
+<nav class="admin-icon-nav" data-i18n-aria="admin.ariaLabel" aria-label="Admin">
 <a class="admin-icon-nav__link admin-icon-nav__link--active" href="/admin/tenants" aria-current="page">
 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="11" width="20" height="6" rx="1"/><rect x="2" y="19" width="20" height="4" rx="1"/></svg>
 <span data-i18n="admin.tenants">테넌트</span>
@@ -70,10 +53,10 @@
 <div class="admin-workspace">
 <header class="admin-topbar">
 <div class="admin-topbar__left">
-<span class="admin-topbar__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/>Keepframe</span>
+<span class="admin-topbar__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe" data-i18n-aria="app.name"/>Keepframe</span>
 <span style="width:1px;height:16px;background:var(--hairline)"></span>
 <span data-i18n="admin.manage">관리</span>
-<span class="admin-topbar__badge">운영</span>
+<span class="admin-topbar__badge" data-i18n="admin.ops">운영</span>
 </div>
 <div style="display:flex;align-items:center;gap:16px;font-size:var(--fs-body-sm)">
 <button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
@@ -83,16 +66,16 @@
 <div class="admin-panel">
 <div class="admin-panel__toolbar">
 <div class="segmented">
-<button class="segmented__btn segmented__btn--active" type="button">정상</button>
-<button class="segmented__btn" type="button">할당량 초과</button>
-<button class="segmented__btn" type="button">정지</button>
+<button class="segmented__btn segmented__btn--active" type="button" data-filter="ok" data-i18n="admin.filter.ok">정상</button>
+<button class="segmented__btn" type="button" data-filter="quota" data-i18n="admin.filter.quota">할당량 초과</button>
+<button class="segmented__btn" type="button" data-filter="suspended" data-i18n="admin.filter.suspended">정지</button>
 </div>
 </div>
 <div class="admin-table-head">
-<div>Organization</div>
-<div>Members</div>
-<div>Usage (Analysis / Quota)</div>
-<div style="text-align:right">Status</div>
+<div data-i18n="admin.table.organization">Organization</div>
+<div data-i18n="admin.table.members">Members</div>
+<div data-i18n="admin.table.usage">Usage (Analysis / Quota)</div>
+<div style="text-align:right" data-i18n="admin.table.status">Status</div>
 </div>
 <div style="flex:1;overflow-y:auto" id="tenant-rows"></div>
 </div>
@@ -106,17 +89,17 @@
 </div>
 <div class="inspector-panel__body">
 <div style="margin-bottom:32px">
-<div class="section-label">Role Breakdown</div>
+<div class="section-label" data-i18n="admin.roles.title">Role Breakdown</div>
 <div class="role-box" id="role-box"></div>
 </div>
 <div>
-<div class="section-label">Policy Notes</div>
-<p class="policy-note" id="policy-note" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자는 못 올립니다.</p>
+<div class="section-label" data-i18n="admin.policy.title">Policy Notes</div>
+<p class="policy-note" id="policy-note" data-i18n="admin.policy">재시도 상한 4회 · 에셋 생성 2회 · 관리자가 올릴 수 없음.</p>
 </div>
 </div>
 <div class="inspector-panel__foot">
-<button class="btn btn--primary-lg" id="btn-members" type="button">멤버 보기</button>
-<button class="btn btn--secondary" id="btn-suspend" type="button">정지</button>
+<button class="btn btn--primary-lg" id="btn-members" type="button" data-i18n="admin.members.view">멤버 보기</button>
+<button class="btn btn--secondary" id="btn-suspend" type="button" data-i18n="admin.tenant.suspend">정지</button>
 </div>
 </aside>
 </main>

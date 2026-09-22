@@ -3,16 +3,18 @@ import {
   postAgent,
   postEdit,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20260921u";
-import { T } from "/static/js/i18n.js?v=20260921u";
+} from "/static/js/api.js?v=20260921v";
+import { T } from "/static/js/i18n.js?v=20260921v";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20260921u";
+} from "/static/js/playback.js?v=20260921v";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
 const DEFAULT_SCENE_ID = "s1";
+const MODEL_LABEL = "LLM 도구";
+const EDIT_APPLIED = "적용 완료.";
 
 const TOOL_PROMPTS = {
   analyze: "이 장면을 다시 분석해줘",
@@ -51,27 +53,6 @@ const playIcon = document.getElementById("agent-play-icon");
 const pauseIcon = document.getElementById("agent-pause-icon");
 const sceneBadge = document.getElementById("agent-scene");
 const modelEl = document.getElementById("agent-model");
-
-const previews = createPreviewCache({
-  project: projectId,
-  scene: sceneId,
-  version: () => versionId,
-});
-
-const transport = createFrameTransport({
-  getFrame: () => frame,
-  setFrameIndex: (next) => { frame = next; },
-  getFps: () => state.scene.fps,
-  getFrameCount: () => state.scene.frames,
-  prefetch: (from, total) => previews.prefetch(from, total),
-  isReady: (index) => previews.isReady(index),
-  wait: (index) => previews.wait(index),
-  showFrame: showNextPlaybackFrame,
-  canPlay: () => Boolean(state),
-  onPlayingChange: syncPlayButton,
-});
-
-document.getElementById("agent-back").href = `/review?project=${encodeURIComponent(projectId || "")}&scene=${encodeURIComponent(sceneId)}`;
 
 function setBanner(msg, isError = false) {
   bannerEl.hidden = !msg;
@@ -145,12 +126,16 @@ function renderElements() {
   });
 }
 
+function applySceneChrome() {
+  sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
+  frameTotal.textContent = String(state.scene.frames);
+  modelEl.textContent = MODEL_LABEL;
+}
+
 async function loadState() {
   state = await fetchReviewState(projectId, sceneId, versionId);
   versionId = state.version.id;
-  sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
-  frameTotal.textContent = String(state.scene.frames);
-  modelEl.textContent = "LLM 도구";
+  applySceneChrome();
   renderElements();
   setFrame(0);
 }
@@ -268,42 +253,56 @@ function payloadOf(results, key) {
   return hit && hit.payload ? hit.payload[key] : null;
 }
 
+function appendConfirmButton() {
+  const confirm = document.createElement("button");
+  confirm.className = "btn btn--primary";
+  confirm.type = "button";
+  confirm.textContent = T("agent.confirm");
+  confirm.addEventListener("click", () => runConfirm(false));
+  logEl.appendChild(confirm);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
 function paintPending(turn) {
   pendingIntent = payloadOf(turn.results, "intent");
   const plan = payloadOf(turn.results, "plan");
-  if (turn.needs_choice) appendChoices(plan);
-  if (turn.needs_confirm) {
-    const confirm = document.createElement("button");
-    confirm.className = "btn btn--primary";
-    confirm.type = "button";
-    confirm.textContent = T("agent.confirm");
-    confirm.addEventListener("click", () => runConfirm(false));
-    logEl.appendChild(confirm);
-    logEl.scrollTop = logEl.scrollHeight;
+  const needsChoice = Boolean(turn.needs_choice);
+  const needsConfirm = Boolean(turn.needs_confirm);
+  if (needsChoice) appendChoices(plan);
+  if (needsConfirm) appendConfirmButton();
+}
+
+function confirmEditBody(withChoices) {
+  return {
+    project: projectId,
+    scene: sceneId,
+    v: versionId,
+    prompt: pendingPrompt,
+    element: selectedId,
+    intent: pendingIntent,
+    confirm: true,
+    choices: withChoices ? editChoices() : {},
+  };
+}
+
+async function applyConfirmedEdit(res) {
+  pendingIntent = null;
+  const editDone = res.status === "done" && res.version;
+  if (editDone) {
+    appendVerify(res.verify);
+    appendAgent(res.summary || EDIT_APPLIED);
+    await refreshAfterEdit(res.version.id);
+    return true;
   }
+  setBanner(res.error || T("agent.failed"), true);
+  return false;
 }
 
 async function runConfirm(withChoices) {
   setBanner("");
   try {
-    const res = await postEdit({
-      project: projectId,
-      scene: sceneId,
-      v: versionId,
-      prompt: pendingPrompt,
-      element: selectedId,
-      intent: pendingIntent,
-      confirm: true,
-      choices: withChoices ? editChoices() : {},
-    });
-    pendingIntent = null;
-    if (res.status === "done" && res.version) {
-      appendVerify(res.verify);
-      appendAgent(res.summary || "적용 완료.");
-      await refreshAfterEdit(res.version.id);
-      return;
-    }
-    setBanner(res.error || T("agent.failed"), true);
+    const res = await postEdit(confirmEditBody(withChoices));
+    await applyConfirmedEdit(res);
   } catch (err) {
     setBanner(err.message || T("agent.failed"), true);
   }
@@ -318,15 +317,24 @@ async function refreshAfterEdit(version) {
   await loadState();
 }
 
-function paintTurn(turn) {
+function paintToolCalls(turn) {
   (turn.tool_calls || []).forEach((tc, i) => {
     appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" });
   });
+}
+
+function verifyFromTurn(turn) {
+  return (turn.results || []).map((r) => r.payload && r.payload.verify).find(Boolean);
+}
+
+function paintTurn(turn) {
+  paintToolCalls(turn);
   if (turn.reply) appendAgent(turn.reply);
-  const ver = (turn.results || []).map((r) => r.payload && r.payload.verify).find(Boolean);
-  appendVerify(ver);
-  if (turn.status === "pending") paintPending(turn);
-  if (turn.status === "error") setBanner(turn.reply || T("agent.failed"), true);
+  appendVerify(verifyFromTurn(turn));
+  const isPending = turn.status === "pending";
+  const isError = turn.status === "error";
+  if (isPending) paintPending(turn);
+  if (isError) setBanner(turn.reply || T("agent.failed"), true);
 }
 
 async function send(message) {
@@ -357,6 +365,27 @@ function showMissingProject() {
   emptyEl.textContent = T("agent.needProject");
   emptyEl.hidden = false;
 }
+
+const previews = createPreviewCache({
+  project: projectId,
+  scene: sceneId,
+  version: () => versionId,
+});
+
+const transport = createFrameTransport({
+  getFrame: () => frame,
+  setFrameIndex: (next) => { frame = next; },
+  getFps: () => state.scene.fps,
+  getFrameCount: () => state.scene.frames,
+  prefetch: (from, total) => previews.prefetch(from, total),
+  isReady: (index) => previews.isReady(index),
+  wait: (index) => previews.wait(index),
+  showFrame: showNextPlaybackFrame,
+  canPlay: () => Boolean(state),
+  onPlayingChange: syncPlayButton,
+});
+
+document.getElementById("agent-back").href = `/review?project=${encodeURIComponent(projectId || "")}&scene=${encodeURIComponent(sceneId)}`;
 
 sendBtn.addEventListener("click", () => send());
 inputEl.addEventListener("keydown", (e) => {

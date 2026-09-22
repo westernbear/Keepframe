@@ -40,6 +40,10 @@ keepframe serve --workspace ./data/workspace
 
 http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic sample and opens review — no upload or analysis. `/admin` is on by default (seed `mina@keepframe.app` / `dev-admin`). `--no-admin` turns it off.
 
+CLI-generated project directories placed under the workspace appear in the library even without `meta.json`; the first metadata change creates that file. Analysis creates `overrides.json` without overwriting existing overrides, and frame-stage reruns reuse the recorded source range.
+
+The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
+
 ```bash
 keepframe analyze --video ref.mp4 --start 0 --end 90 --out ./out
 keepframe compose --scene ./out/scenes/s1/scene.json --out ./out/comp.html

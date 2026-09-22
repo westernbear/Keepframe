@@ -8,12 +8,16 @@ from tests.test_web_server import get, start
 
 def test_info_and_error_go_to_stdout(capsys):
     configure(force=True)
-    log = get_log("keepframe.test")
-    log.info("hello-info")
-    log.error("hello-error")
-    out = capsys.readouterr().out
-    assert "INFO" in out and "hello-info" in out
-    assert "ERROR" in out and "hello-error" in out
+    try:
+        log = get_log("keepframe.test")
+        log.info("hello-info")
+        log.error("hello-error")
+        out = capsys.readouterr().out
+        assert "INFO" in out and "hello-info" in out
+        assert "ERROR" in out and "hello-error" in out
+    finally:
+        with capsys.disabled():
+            configure(force=True)
 
 
 def test_http_access_is_logged(tmp_path, caplog):
@@ -37,4 +41,10 @@ def test_job_error_is_logged(caplog):
             break
         time.sleep(0.05)
     assert job.status == "error"
-    assert any(r.levelname == "ERROR" and "failed" in r.message for r in caplog.records)
+    assert job.error == "RuntimeError: gpu missing"
+    assert any(
+        r.levelno == logging.ERROR and r.exc_info
+        and isinstance(r.exc_info[1], RuntimeError)
+        and str(r.exc_info[1]) == "gpu missing"
+        for r in caplog.records
+    )
