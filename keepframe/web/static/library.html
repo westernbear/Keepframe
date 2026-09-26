@@ -12,34 +12,16 @@
 </head>
 <body class="app">
 <header class="header">
-<div class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/><span data-i18n="app.name">Keepframe</span></div>
-<div class="header__nav">
+<a class="header__brand" href="/" aria-label="Keepframe"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/><span data-i18n="app.name">Keepframe</span></a>
+<nav class="header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
+<a href="/" data-i18n="nav.home">처음</a>
+<a href="/library" aria-current="page" data-i18n="nav.library">라이브러리</a>
+<a href="/new" class="maker-nav__action" data-i18n="nav.new">새 레퍼런스</a>
+<a href="/agent" data-i18n="nav.agent">에이전트</a>
 <a class="btn btn--ghost" href="/admin" data-i18n="admin.manage">관리</a>
-<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
-<a class="btn btn--primary" href="/new">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-<span data-i18n="nav.new">새 레퍼런스</span>
-</a>
-</div>
-</header>
-<nav class="sidebar">
-<a class="sidebar__link sidebar__link--active" href="/library">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"/><path d="M3 7l9-4 9 4"/></svg>
-<span data-i18n="nav.library">Library</span>
-</a>
-<a class="sidebar__link" href="/analyze">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
-<span data-i18n="nav.analyze">분석</span>
-</a>
-<a class="sidebar__link" href="/review">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-<span data-i18n="nav.review">검수</span>
-</a>
-<a class="sidebar__link" href="/agent">
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-<span data-i18n="nav.agent">에이전트</span>
-</a>
+<button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle>EN</button>
 </nav>
+</header>
 <main class="main">
 <div class="toolbar">
 <div class="input-wrap" style="max-width:384px;width:100%">

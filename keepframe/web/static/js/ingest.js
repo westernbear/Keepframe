@@ -1,5 +1,6 @@
 import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921v";
 import { T, Tf } from "/static/js/i18n.js?v=20260921v";
+import { setWorkflowStage } from "/static/js/workflow.js?v=20260926v";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;
@@ -100,6 +101,7 @@ function resetFileUi() {
 
 async function showProject(project, filmstripData = null) {
   state.project = project;
+  setWorkflowStage({ stage: "ingest", projectName: project.title || project.id, projectStatus: project.status || "" });
   const v = project.video || {};
   state.fps = v.fps || DEFAULT_FPS;
   state.totalFrames = v.frames || 1;
@@ -190,7 +192,9 @@ function startAnalysis() {
     job: state.project.id, token: snapshot.confirm_token, mode: snapshot.mode,
     start: String(snapshot.start), end: String(snapshot.end),
   });
-  location.href = `/analyze?${params}`;
+  const query = params.toString();
+  sessionStorage.setItem("keepframe.analyze-start", `?${query}`);
+  location.href = `/analyze?${query}`;
 }
 
 bindIngest();

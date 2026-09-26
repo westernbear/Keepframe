@@ -1,5 +1,6 @@
-import { fetchProjects, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921v";
+import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20260921v";
 import { T, Tf } from "/static/js/i18n.js?v=20260921v";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20260926v";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -11,6 +12,8 @@ const token = params.get("token") || "";
 const analyzeMode = params.get("mode") || "";
 const analyzeStart = params.get("start");
 const analyzeEnd = params.get("end");
+const explicitStart = sessionStorage.getItem("keepframe.analyze-start") === location.search;
+if (explicitStart) sessionStorage.removeItem("keepframe.analyze-start");
 const statusEl = document.querySelector("[data-status]");
 const stageEl = document.querySelector("[data-stage]");
 const etaEl = document.querySelector("[data-eta]");
@@ -92,6 +95,7 @@ function updateJob(job) {
   updateSteps(job.stage);
   stageEl.textContent = stageLabel(job);
   etaEl.textContent = formatEta(job.eta_s);
+  setWorkflowStage({ stage: "analyze" });
   if (job.status === "done") {
     updateSteps("report");
     goToReview(job.project_id);
@@ -161,11 +165,10 @@ function analyzePayload() {
 }
 
 async function loadProjectChrome() {
-  const { projects } = await fetchProjects();
-  const p = (projects || []).find((x) => x.id === projectId);
-  if (p && p.title) {
-    document.querySelectorAll("[data-clip-name]").forEach((el) => { el.textContent = p.title; });
-  }
+  const { project: p } = await fetchProject(projectId);
+  const title = p.title || projectId;
+  document.querySelectorAll("[data-clip-name]").forEach((el) => { el.textContent = title; });
+  setWorkflowProject(title, (p && p.status) || "");
   paintRangeLabel(p);
 }
 
@@ -191,6 +194,19 @@ async function startAnalyzeJob() {
   startPolling(job.id);
 }
 
+async function resumeAnalyzeJob() {
+  const { projects } = await fetchProjects();
+  const project = (projects || []).find((row) => row.id === projectId);
+  if (!project || !project.job_id) throw new Error(T("analyze.noProject"));
+  const job = await fetchJob(project.job_id);
+  if (job.status === "done") {
+    goToReview(job.project_id);
+    return;
+  }
+  updateJob(job);
+  startPolling(job.id);
+}
+
 async function bootAnalyze() {
   if (!projectId) {
     showError(T("analyze.noProject"));
@@ -198,6 +214,14 @@ async function bootAnalyze() {
   }
   await loadOptionalChrome();
   await loadOptionalFilmstrip();
+  if (!explicitStart) {
+    try {
+      await resumeAnalyzeJob();
+    } catch (err) {
+      showError(err.message || T("analyze.noProject"));
+    }
+    return;
+  }
   try {
     await startAnalyzeJob();
   } catch (err) {
