@@ -29,8 +29,8 @@ function render() {
     if (isComplete) step.dataset.complete = "true";
   });
   const title = shell.querySelector("[data-workflow-project]");
-  title.hidden = !projectName;
-  title.textContent = projectName;
+  title.hidden = false;
+  title.textContent = projectName || T("workflow.projectFallback");
   const status = shell.querySelector("[data-workflow-status]");
   status.textContent = current ? T(`workflow.status.${current}`) : "";
   status.setAttribute("role", "status");

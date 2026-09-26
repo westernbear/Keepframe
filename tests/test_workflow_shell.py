@@ -130,6 +130,10 @@ def test_workflow_stepper_tracks_page_and_review_failure_state(tmp_path):
             assert page.locator('[data-workflow-step="ingest"][aria-current="step"]').count() == 1
             assert page.locator("[data-workflow-step][aria-current=step]").count() == 1
             assert page.locator('[data-workflow-step][data-complete="true"]').count() == 0
+            assert page.locator("[data-workflow-project]").inner_text() == "프로젝트 없음"
+            page.locator("[data-lang-toggle]").click()
+            assert page.locator("[data-workflow-project]").inner_text() == "No project selected"
+            page.locator("[data-lang-toggle]").click()
 
             page.goto(f"{base}/analyze?job=missing-project&token=already-confirmed")
             page.wait_for_function("() => document.querySelector('[data-status]').hidden === false")
