@@ -77,6 +77,14 @@ def test_edit_keeps_tracks_and_passes_verify(tmp_path):
     assert after == before
 
 
+def test_edit_does_not_accept_missing_layer_proof(monkeypatch):
+    from keepframe.edit.agent import _passed
+    from keepframe.verify.verifier import VerifyReport
+
+    report = VerifyReport(schema_ok=True, keep_pass_rate=1.0, temporal=1.0, layer_probe_complete=False, passed=False)
+
+    assert not _passed(report)
+
 def test_edit_overflow_waits_for_choice(tmp_path):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"

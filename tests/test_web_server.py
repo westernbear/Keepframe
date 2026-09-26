@@ -80,9 +80,8 @@ def test_demo_redirects_to_review_and_serves_state(tmp_path):
     assert state["scene"]["id"] == "synth7"
     assert state["scene"]["frames"] == 24
     assert code2 == 200
-    assert frame[:2] == b"\xff\xd8"
-    assert code3 == 200
-    assert thumb[:2] == b"\xff\xd8"
+    assert frame.startswith(b"\x89PNG\r\n\x1a\n")
+    assert code3 == 404
 
 
 def test_css_and_js_are_not_week_cached(tmp_path):

@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from ..compose.composer import compose
+from ..render.renderer import render
 from ..ir.schema import Scene, Version
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from ..verify.verifier import VerifyReport, verify
@@ -35,7 +36,7 @@ class EditResult(BaseModel):
 
 def _passed(rep: VerifyReport) -> bool:
     temporal_ok = rep.temporal is None or rep.temporal >= TEMPORAL_MIN
-    return bool(rep.schema_ok and rep.keep_pass_rate >= KEEP_MIN and temporal_ok)
+    return bool(rep.schema_ok and rep.keep_pass_rate >= KEEP_MIN and rep.layer_probe_complete and rep.passed and temporal_ok)
 
 
 def _load(root: Path, scene_id: str, version: str | None) -> tuple[Scene, Version]:
@@ -95,8 +96,9 @@ def edit(
         for target in built.items:
             key = f"{target.element}:{target.property}"
             asset_uses[key] = asset_uses.get(key, 0) + 1
-        compose(edited, sd, sd / f"composition.edit{attempt}.html")
-        last_rep = verify(edited, sd, reference=scene, reference_dir=sd)
+        html = compose(edited, sd, sd / f"composition.edit{attempt}.html")
+        probes = render(html, edited, sd / f"render.edit{attempt}")
+        last_rep = verify(edited, sd, render_result=probes, reference=scene, reference_dir=sd)
         if _passed(last_rep):
             v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True)
             return EditResult(

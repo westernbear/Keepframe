@@ -77,7 +77,12 @@ class MemoryAdmin:
         self._members = [
             Member(email="mina@keepframe.app", role="admin", tenant_id="org_northwind"),
             Member(email="jun@northwind", role="review_lead", tenant_id="org_northwind"),
+            Member(email="ara@northwind", role="maker", tenant_id="org_northwind"),
+            Member(email="choi@northwind", role="maker", tenant_id="org_northwind"),
+            Member(email="seo@northwind", role="maker", tenant_id="org_northwind"),
+            Member(email="kim@northwind", role="billing", tenant_id="org_northwind"),
             Member(email="lee@hanbit", role="maker", tenant_id="org_hanbit"),
+            Member(email="park@hanbit", role="maker", tenant_id="org_hanbit"),
             Member(email="solo@lee", role="maker", tenant_id="org_solo"),
         ]
         self._jobs = [

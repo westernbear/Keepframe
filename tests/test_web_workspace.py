@@ -23,6 +23,24 @@ def test_create_requires_video(tmp_path):
     with pytest.raises(FileNotFoundError):
         create_project(tmp_path, "Autumn", tmp_path / "nope.mp4", "range", (0, 30))
 
+def test_get_uploaded_project_includes_video_metadata(tmp_path):
+    video = tmp_path / "clip.mp4"
+    from tests.test_web_ingest import _mp4
+    _mp4(video)
+    project = create_project(tmp_path / "ws", "Clip", video, "range", (2, 7))
+    srv = start(tmp_path / "ws")
+    try:
+        code, _, body = get(srv, f"/api/projects/{project['id']}")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    data = json.loads(body)
+    assert code == 200
+    assert data["project"]["status"] == "uploaded"
+    assert data["project"]["range"] == [2, 7]
+    assert data["project"]["video"]["frames"] == 10
+
 def test_explicit_metadata_wins_and_rows_are_sorted(tmp_path):
     older = tmp_path / "older"
     newer = tmp_path / "newer"

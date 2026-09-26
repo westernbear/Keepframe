@@ -214,7 +214,7 @@ def test_review_diff_microscope_controls():
     assert "keepSave.hidden" in html or "keep-save" in html and "hidden" in html
 
 
-def test_review_orig_frame_is_jpeg_preview(tmp_path):
+def test_review_frames_are_png_previews(tmp_path):
     root = tmp_path / "ws" / "p1"
     scene = make_synthetic_scene(root / "gold", seed=11, with_text=False)
     init_project(
@@ -229,17 +229,23 @@ def test_review_orig_frame_is_jpeg_preview(tmp_path):
         scene,
     )
     (root / "meta.json").write_text(json.dumps({"id": "p1", "title": "t", "status": "review"}))
+    for asset in (root / "gold" / "assets").glob("*.png"):
+        target = scene_dir(root, scene.id) / "assets" / asset.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(asset.read_bytes())
     stages = scene_dir(root, scene.id) / "stages"
     stages.mkdir(parents=True, exist_ok=True)
     np.save(stages / "frames.npy", np.zeros((scene.frames, 36, 64, 3), np.uint8))
     srv = start(tmp_path / "ws")
     try:
-        code, ctype, body = get(srv, f"/frame/orig/0?project=p1&scene={scene.id}")
+        orig = get(srv, f"/frame/orig/0?project=p1&scene={scene.id}")
+        recon = get(srv, f"/frame/recon/0?project=p1&scene={scene.id}&v=v1")
     finally:
         srv.shutdown()
-    assert code == 200
-    assert ctype == "image/jpeg"
-    assert body[:2] == b"\xff\xd8"
+    assert orig[0] == recon[0] == 200
+    assert orig[1] == recon[1] == "image/png"
+    assert orig[2].startswith(b"\x89PNG\r\n\x1a\n")
+    assert recon[2].startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_review_frame_has_cache_control(tmp_path):

@@ -17,8 +17,8 @@ class RenderResult:
 
 
 def frame_hash(png_bytes: bytes) -> str:
-    arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
-    return hashlib.sha256(np.ascontiguousarray(arr).tobytes()).hexdigest()
+    rgb = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)[:, :, ::-1]
+    return hashlib.sha256(np.ascontiguousarray(rgb).tobytes()).hexdigest()
 
 
 def load_frame(path: Path) -> np.ndarray:

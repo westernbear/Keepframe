@@ -11,7 +11,7 @@ import threading
 
 def start_admin(tmp_path):
     admin = MemoryAdmin()
-    srv = make_server(tmp_path, port=0, admin=True, admin_svc=admin, admin_auth=MemoryAuth())
+    srv = make_server(tmp_path, port=0, admin=True, admin_svc=admin, admin_auth=MemoryAuth({"mina@keepframe.app": "dev-admin"}))
     srv.admin_svc = admin
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

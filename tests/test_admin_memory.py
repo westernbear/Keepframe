@@ -66,3 +66,9 @@ def test_live_job_replaces_seed_id():
     store._jobs["job_1842"] = Job("job_1842", "export", "queued", "proj")
     rows = [row for row in svc.list_jobs() if row["id"] == "job_1842"]
     assert len(rows) == 1 and rows[0]["tenant"] == "Local" and rows[0]["kind"] == "export"
+
+def test_tenant_member_totals_match_membership_rows():
+    svc = MemoryAdmin()
+    expected = {"org_northwind": 6, "org_hanbit": 2, "org_solo": 1, "org_closed": 0}
+    for tenant in svc.list_tenants():
+        assert tenant.members == expected[tenant.id] == len(svc.list_members(tenant.id))

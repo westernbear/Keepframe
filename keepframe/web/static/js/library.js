@@ -20,12 +20,12 @@ function statusLabel(status) {
   return isMissingKey ? status : label;
 }
 
-function isAnalyzeQueue(status) {
-  return status === "analyzing" || status === "uploaded";
-}
-
-function analyzeJobHref(projectId) {
-  return `/analyze?job=${encodeURIComponent(projectId)}`;
+function projectHref(p) {
+  if (p.status === "uploaded") return `/new?project=${encodeURIComponent(p.id)}`;
+  if (p.status === "analyzing") return p.job_id
+    ? `/analyze?job=${encodeURIComponent(p.id)}`
+    : reviewHref(p.id, p.scene || DEFAULT_SCENE_ID);
+  return null;
 }
 
 function reviewHref(projectId, sceneId) {
@@ -47,7 +47,8 @@ function isApprovedStatus(status) {
 }
 
 function hrefForProject(p) {
-  if (isAnalyzeQueue(p.status)) return analyzeJobHref(p.id);
+  const statusHref = projectHref(p);
+  if (statusHref) return statusHref;
   const scene = p.scene || DEFAULT_SCENE_ID;
   if (isReviewStatus(p.status)) return reviewHref(p.id, scene);
   if (isApprovedStatus(p.status)) return agentHref(p.id, scene, p.version);

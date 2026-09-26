@@ -29,7 +29,7 @@ from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
 from keepframe.session import SessionAgent, SessionContext, make_llm
 from keepframe.session.provider import load_llm_settings
-from keepframe.web.workspace import create_project, list_projects, load_meta, project_dir, write_meta
+from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
 
@@ -177,6 +177,15 @@ def _jpeg(rgb: np.ndarray, max_w: int = PREVIEW_MAX_W) -> bytes:
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     return buf.tobytes()
 
+def _png(rgb: np.ndarray, max_w: int = PREVIEW_MAX_W) -> bytes:
+    rgb = np.ascontiguousarray(rgb)
+    h, w = rgb.shape[:2]
+    if w > max_w:
+        nh = max(1, int(round(h * max_w / w)))
+        rgb = cv2.resize(rgb, (max_w, nh), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+    return buf.tobytes() if ok else b""
+
 
 class ReviewState:
     def __init__(self, root: Path, scene_id: str):
@@ -221,7 +230,7 @@ class ReviewState:
         if fr is not None:
             if not 0 <= f < len(fr):
                 raise IndexError("frame out of range")
-            return self._remember(key, _jpeg(np.asarray(fr[f])))
+            return self._remember(key, _png(np.asarray(fr[f])))
         video = self.root / "source.mp4"
         cap = cv2.VideoCapture(str(video))
         cap.set(cv2.CAP_PROP_POS_FRAMES, f)
@@ -229,7 +238,7 @@ class ReviewState:
         cap.release()
         if not ok:
             raise IndexError("frame out of range")
-        return self._remember(key, _jpeg(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)))
+        return self._remember(key, _png(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)))
 
     def recon_png(self, f: int, version: str | None) -> bytes:
         scene, v = self.scene(version)
@@ -239,7 +248,7 @@ class ReviewState:
             self._preview.move_to_end(key)
             return hit
         rgb = (composite_scene(scene, scene_dir(self.root, self.scene_id), f, self._tex) * 255).round().clip(0, 255).astype(np.uint8)
-        return self._remember(key, _jpeg(rgb))
+        return self._remember(key, _png(rgb))
 
     def run_correction(self, op: str, args: dict) -> None:
         with self.lock:
@@ -419,11 +428,19 @@ def make_server(
             if u.path == "/api/projects":
                 return self._json(200, {"projects": list_projects(workspace)})
 
+            m = re.fullmatch(r"/api/projects/([^/]+)", u.path)
+            if m:
+                meta = load_meta(workspace, m.group(1))
+                if meta is None:
+                    return self._json(404, {"error": "not found"})
+                source = project_dir(workspace, m.group(1)) / "source.mp4"
+                project = {**meta, "video": probe_video(source) if source.is_file() else None}
+                return self._json(200, {"project": project})
             m = re.fullmatch(r"/api/projects/([^/]+)/filmstrip", u.path)
             if m:
                 pid = m.group(1)
                 meta = load_meta(workspace, pid)
-                if meta is None:
+                if meta is None or meta.get("status") == "rejected" or not (project_dir(workspace, pid) / "source.mp4").is_file():
                     return self._json(404, {"error": "not found"})
                 n = int(parse_qs(u.query).get("n", ["8"])[0])
                 video = project_dir(workspace, pid) / "source.mp4"
@@ -441,7 +458,7 @@ def make_server(
             if m:
                 pid, frame_s = m.group(1), m.group(2)
                 meta = load_meta(workspace, pid)
-                if meta is None:
+                if meta is None or meta.get("status") == "rejected" or not (project_dir(workspace, pid) / "source.mp4").is_file():
                     return self._json(404, {"error": "not found"})
                 video = project_dir(workspace, pid) / "source.mp4"
                 jpeg = _read_frame_jpeg(video, int(frame_s)) if video.is_file() else None
@@ -523,7 +540,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.orig_png(int(parts[2])), "image/jpeg", cache="public, max-age=604800")
+                    return self._send(200, state.orig_png(int(parts[2])), "image/png", cache="public, max-age=604800")
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
@@ -536,7 +553,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/jpeg", cache="public, max-age=604800")
+                    return self._send(200, state.recon_png(int(parts[2]), ver), "image/png", cache="public, max-age=604800")
                 except Exception as e:
                     log.exception("recon frame failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -582,7 +599,7 @@ def make_server(
                         range=[start, end] if mode == "range" else None,
                     )
                     frames = max(1, int(end) - int(start) + 1)
-                    return self._json(200, estimate(mode, frames, info["fps"]))
+                    return self._json(200, estimate(mode, frames, info["fps"], project_id=meta["id"], start=start, end=end))
                 mode = data.get("mode", "full")
                 frames = int(data.get("frames", 0))
                 fps = float(data.get("fps", 30))
@@ -620,6 +637,7 @@ def make_server(
                     reason = looks_live_action(tmp_path)
                     if reason:
                         tmp_path.unlink(missing_ok=True)
+                        create_rejected_project(workspace, title, reason)
                         return self._json(422, {"error": reason, "code": "live_action"})
                     row = create_project(workspace, title, tmp_path, mode, range_)
                 finally:
@@ -651,10 +669,10 @@ def make_server(
                 info = probe_video(video)
                 mode, start, end = resolve_analyze_window(meta, data, info["frames"])
                 # Refresh / re-entry must not demand a token after the first confirm.
-                if mode == "full" and meta.get("status") != "analyzing" and not consume_token(token):
+                if mode == "full" and meta.get("status") != "analyzing" and not consume_token(token, project_id=project_id, mode=mode, start=start, end=end):
                     return self._json(400, {"error": "confirm required"})
                 frames = max(1, int(end) - int(start) + 1)
-                est = estimate(mode, frames, info["fps"])
+                est = estimate(mode, frames, info["fps"], project_id=project_id, start=start, end=end)
                 write_meta(
                     workspace,
                     project_id,
@@ -889,6 +907,12 @@ def make_server(
             u = urlparse(self.path)
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
+            return self._json(404, {"error": "not found"})
+
+        def do_PUT(self):
+            return self._json(404, {"error": "not found"})
+
+        def do_PATCH(self):
             return self._json(404, {"error": "not found"})
 
     return ThreadingHTTPServer((host, port), H)

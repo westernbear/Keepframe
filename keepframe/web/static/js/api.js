@@ -51,6 +51,10 @@ async function fetchProjects() {
   return api("/api/projects");
 }
 
+async function fetchProject(projectId) {
+  return api(`/api/projects/${encodeURIComponent(projectId)}`);
+}
+
 async function fetchStatus() {
   return api("/api/status");
 }
@@ -139,6 +143,7 @@ function reviewAssetUrl(name, project, scene) {
 export {
   api,
   fetchAdminOrRedirect,
+  fetchProject,
   fetchProjects,
   fetchStatus,
   fetchJob,

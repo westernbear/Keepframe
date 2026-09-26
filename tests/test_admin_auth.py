@@ -1,7 +1,7 @@
 from keepframe.admin.auth import COOKIE, MemoryAuth, cookie_header, load_admin_users
 
 def test_login_and_cookie_name():
-    auth = MemoryAuth()
+    auth = MemoryAuth({"mina@keepframe.app": "dev-admin"})
     assert auth.login("mina@keepframe.app", "wrong") is None
     sid = auth.login("mina@keepframe.app", "dev-admin")
     assert sid and auth.get(sid) == "mina@keepframe.app"
@@ -28,5 +28,6 @@ def test_load_admin_users_from_email_and_list():
     assert auth.login("mina@keepframe.app", "dev-admin") is None
 
 
-def test_load_admin_users_falls_back_to_seed():
-    assert load_admin_users({}) == {"mina@keepframe.app": "dev-admin"}
+def test_admin_users_require_explicit_configuration():
+    assert load_admin_users({}) == {}
+    assert MemoryAuth().login("mina@keepframe.app", "dev-admin") is None

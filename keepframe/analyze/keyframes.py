@@ -1,7 +1,7 @@
 from __future__ import annotations
 import numpy as np
+from ..ir.tracks import PRESET_EASES, bezier_y, eval_track
 from ..ir.schema import DEFAULTS, Ease, FitError, Keyframe, PROPS, Track
-from ..ir.tracks import PRESET_EASES, bezier_y
 
 ERR = {"x": 2.0, "y": 2.0, "sx": 0.01, "sy": 0.01, "rot": 1.0, "skx": 1.0, "sky": 1.0, "opacity": 0.02}
 
@@ -66,12 +66,19 @@ def fill_gaps(raw_full: np.ndarray) -> np.ndarray:
 def tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitError]:
     tracks: dict[str, Track] = {}
     max_px, max_frames = 0.0, 0
+    over_tolerance = np.zeros(len(raw), dtype=bool)
     for i, prop in enumerate(PROPS):
         col = raw[:, i]
         if np.abs(col - DEFAULTS[prop]).max() <= ERR[prop]:
             continue
         keys, err = reduce_curve(col, first, ERR[prop])
-        tracks[prop] = Track(keys=keys)
+        track = Track(keys=keys)
+        tracks[prop] = track
+        over_tolerance |= np.abs(np.array([eval_track(track, first + j) for j in range(len(col))]) - col) > ERR[prop]
         if prop in ("x", "y"):
             max_px = max(max_px, err)
-    return tracks, FitError(max_px=max_px, max_frames=max_frames)
+    run = longest = 0
+    for exceeds in over_tolerance:
+        run = run + 1 if exceeds else 0
+        longest = max(longest, run)
+    return tracks, FitError(max_px=max_px, max_frames=longest)

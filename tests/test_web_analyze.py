@@ -65,16 +65,120 @@ def test_full_analyze_without_token_is_confirm_required(tmp_path):
     assert body["error"] == "confirm required"
 
 
+def _setup_token_test(tmp_path, monkeypatch):
+    from keepframe.web import server as web_server
+    from keepframe.jobs import JobStore
+
+    class IdleRunner:
+        def enqueue(self, job, *, spec=None, fn=None):
+            pass
+
+    monkeypatch.setattr(web_server, "JOBS", JobStore(runner=IdleRunner()))
+    video = tmp_path / "a.mp4"
+    _mp4(video)
+    return create_project(tmp_path / "ws", "Clip", video, "full", None)
+
+
+def test_full_analyze_rejects_token_for_another_project(tmp_path, monkeypatch):
+    first = _setup_token_test(tmp_path, monkeypatch)
+    second = create_project(tmp_path / "ws", "Other", tmp_path / "a.mp4", "full", None)
+    srv = start(tmp_path / "ws")
+    try:
+        code, estimate_body = _post(srv, "/api/estimate", {
+            "project_id": first["id"], "mode": "full", "start": 0, "end": 9,
+        })
+        assert code == 200
+        code, body = _post(srv, "/api/analyze", {
+            "project_id": second["id"], "mode": "full", "start": 0, "end": 9,
+            "confirm_token": estimate_body["confirm_token"],
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    assert code == 400
+    assert body["error"] == "confirm required"
+
+
+def test_full_analyze_rejects_range_estimate_token(tmp_path, monkeypatch):
+    project = _setup_token_test(tmp_path, monkeypatch)
+    srv = start(tmp_path / "ws")
+    try:
+        code, estimate_body = _post(srv, "/api/estimate", {
+            "project_id": project["id"], "mode": "range", "start": 0, "end": 2,
+        })
+        assert code == 200
+        code, body = _post(srv, "/api/analyze", {
+            "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
+            "confirm_token": estimate_body["confirm_token"],
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    assert code == 400
+    assert body["error"] == "confirm required"
+
+def test_full_analyze_rejects_token_for_different_frame_window(tmp_path, monkeypatch):
+    from keepframe.web import server as web_server
+
+    project = _setup_token_test(tmp_path, monkeypatch)
+    original_probe = web_server.probe_video
+    calls = 0
+
+    def probe(path):
+        nonlocal calls
+        calls += 1
+        info = original_probe(path)
+        return {**info, "frames": info["frames"] - (calls > 1)}
+
+    monkeypatch.setattr(web_server, "probe_video", probe)
+    srv = start(tmp_path / "ws")
+    try:
+        code, estimate_body = _post(srv, "/api/estimate", {"project_id": project["id"], "mode": "full"})
+        assert code == 200
+        code, body = _post(srv, "/api/analyze", {
+            "project_id": project["id"], "mode": "full",
+            "confirm_token": estimate_body["confirm_token"],
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    assert code == 400
+    assert body["error"] == "confirm required"
+
+
+def test_full_analyze_accepts_matching_estimate_token(tmp_path, monkeypatch):
+    project = _setup_token_test(tmp_path, monkeypatch)
+    srv = start(tmp_path / "ws")
+    try:
+        code, estimate_body = _post(srv, "/api/estimate", {
+            "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
+        })
+        assert code == 200
+        code, body = _post(srv, "/api/analyze", {
+            "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
+            "confirm_token": estimate_body["confirm_token"],
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    assert code == 202
+    assert body["job"]["status"] == "queued"
+
+
 def test_analyze_refresh_resumes_running_job_without_token(tmp_path):
     ws = tmp_path / "ws"
     vid = tmp_path / "a.mp4"
     _mp4(vid)
-    row = create_project(ws, "Full", vid, "full", None)
 
     def hang():
         time.sleep(0.4)
         return {"ok": True}
 
+    row = create_project(ws, "Full", vid, "full", None)
     job = JOBS.submit("analyze", hang, project_id=row["id"], scene_id="s1", stage="text")
     write_meta(ws, row["id"], status="analyzing", job_id=job.id)
     srv = start(ws)

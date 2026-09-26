@@ -37,6 +37,22 @@ def create_project(workspace: Path, title: str, video: Path, mode: str, range_: 
     (root / "meta.json").write_text(json.dumps(row, indent=2, sort_keys=True))
     return row
 
+def create_rejected_project(workspace: Path, title: str, reason: str) -> dict:
+    pid = "p" + secrets.token_hex(4)
+    root = project_dir(workspace, pid)
+    root.mkdir(parents=True)
+    row = {
+        "id": pid,
+        "title": title,
+        "status": "rejected",
+        "reason": reason,
+        "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "version": None,
+        "confidence": None,
+    }
+    (root / "meta.json").write_text(json.dumps(row, indent=2, sort_keys=True), encoding="utf-8")
+    return row
+
 
 def load_meta(workspace: Path, project_id: str) -> dict | None:
     root = project_dir(workspace, project_id)

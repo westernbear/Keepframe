@@ -78,13 +78,36 @@ def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:
         row = {"clip": clip.name, "elements": len(scene.elements), "mean_l1": rep["reconstruction"]["mean_l1"], "messages": rep["messages"]}
         gt = clip.with_suffix(".gt.json")
         if gt.exists():
-            M = animation_matrix(scene); errs = []
-            for g in json.loads(gt.read_text())["elements"]:
-                items = sorted((int(f), np.array(xy)) for f, xy in g["frames"].items())
+            try:
+                annotations = json.loads(gt.read_text()).get("elements", [])
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                annotations = None
+            if not isinstance(annotations, list):
+                row["pos_err_px"] = None
+                row["messages"].append("invalid ground truth JSON; pos_err_px unavailable")
+                rows.append(row)
+                continue
+            M = animation_matrix(scene); errs = []; invalid_annotation = False
+            for g in annotations:
+                try:
+                    items = sorted((int(f), np.asarray(xy, dtype=float)) for f, xy in g.get("frames", {}).items())
+                    if any(xy.shape != (2,) or not np.isfinite(xy).all() for _, xy in items):
+                        raise ValueError("invalid frame coordinates")
+                except (AttributeError, TypeError, ValueError):
+                    invalid_annotation = True
+                    continue
+                if not items or not M:
+                    continue
                 f0, xy0 = items[0]
-                best = min(M, key=lambda k: np.linalg.norm(np.nan_to_num(M[k][f0, :2], nan=1e6) - xy0))
-                errs += [float(np.linalg.norm(np.nan_to_num(M[best][f, :2], nan=1e6) - xy)) for f, xy in items]
+                candidates = [k for k in M if 0 <= f0 < len(M[k]) and np.isfinite(M[k][f0, :2]).all()]
+                if not candidates:
+                    continue
+                best = min(candidates, key=lambda k: np.linalg.norm(M[k][f0, :2] - xy0))
+                errs += [float(np.linalg.norm(np.nan_to_num(M[best][f, :2], nan=1e6) - xy))
+                         for f, xy in items if 0 <= f < len(M[best])]
             row["pos_err_px"] = float(np.mean(errs)) if errs else None
+            if invalid_annotation:
+                row["messages"].append("invalid ground truth annotation; pos_err_px may be incomplete")
         rows.append(row)
     return {"clips": len(rows), "rows": rows}
 

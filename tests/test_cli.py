@@ -39,7 +39,8 @@ def test_synth_compose_verify_cli(tmp_scene_dir):
     assert run("synth", "--out", str(d), "--seed", "11").returncode == 0
     assert (d / "scene.json").exists()
     assert run("compose", "--scene", str(d / "scene.json"), "--out", str(d / "c.html")).returncode == 0
-    r = run("verify", "--scene", str(d / "scene.json"))
+    assert run("render", "--scene", str(d / "scene.json"), "--html", str(d / "c.html"), "--out", str(d / "render")).returncode == 0
+    r = run("verify", "--scene", str(d / "scene.json"), "--render-json", str(d / "render" / "render.json"))
     assert r.returncode == 0 and json.loads(r.stdout)["passed"] is True
 
 @pytest.mark.browser

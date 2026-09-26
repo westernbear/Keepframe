@@ -23,8 +23,8 @@ def compare(golden: Scene, golden_dir: Path, analyzed: Scene, analyzed_dir: Path
     pos, scale, rgb, alpha = [], [], [], []
     for g, a in pairs:
         pos.append(C[gids.index(g), aids.index(a)])
-        ok = ~(np.isnan(G[g][:, 2]) | np.isnan(A[a][:, 2]))
-        scale.append(float(np.abs(G[g][ok, 2] - A[a][ok, 2]).mean()) if ok.any() else 0.0)
+        ok = ~(np.isnan(G[g][:, 2]) | np.isnan(G[g][:, 3]) | np.isnan(A[a][:, 2]) | np.isnan(A[a][:, 3]))
+        scale.append(float(np.abs(G[g][ok, 2:4] - A[a][ok, 2:4]).mean()) if ok.any() else 0.0)
         tg = load_texture(golden_dir / golden.element(g).canonical.texture)
         ta = load_texture(analyzed_dir / analyzed.element(a).canonical.texture)
         import cv2

@@ -129,7 +129,6 @@ def main(argv: list[str] | None = None) -> int:
             users = load_admin_users()
             kwargs["admin_svc"] = MemoryAdmin(workspace=Path(a.workspace), job_store=JOBS)
             kwargs["admin_auth"] = MemoryAuth(users)
-            log.info("admin accounts %s", len(users))
         srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)
         from .analyze.device import gpu_status
         st = gpu_status()

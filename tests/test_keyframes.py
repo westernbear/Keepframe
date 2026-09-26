@@ -27,6 +27,19 @@ def test_tracks_from_raw_skips_constant_defaults_and_reports_fit_error():
     assert set(tracks) == {"x"} and tracks["x"].keys[0].t == 5 and tracks["x"].keys[-1].t == 24
     assert fe.max_px <= 2.0
 
+def test_tracks_from_raw_reports_longest_over_tolerance_run(monkeypatch):
+    import keepframe.analyze.keyframes as keyframes
+
+    raw = np.tile([0., 0., 1., 1., 0., 0., 0., 1.], (6, 1))
+    raw[:, 0] = [0, 0, 5, 5, 0, 0]
+    monkeypatch.setattr(keyframes, "reduce_curve", lambda values, first, tol: ([Keyframe(t=first, v=0)], 5.0))
+
+    tracks, error = keyframes.tracks_from_raw(raw, first=10)
+
+    assert tracks["x"].keys[0].t == 10
+    assert error.max_px == 5.0
+    assert error.max_frames == 2
+
 def test_fill_gaps_interpolates_interior_only():
     raw = np.full((6, 8), np.nan); raw[1] = 0; raw[2] = np.nan; raw[3] = 2; raw[4] = 3
     out = fill_gaps(raw)

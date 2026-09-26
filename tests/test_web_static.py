@@ -145,3 +145,15 @@ def test_library_filters_are_wired():
     assert 'data-filter="review"' in src
     assert "visibleProjects" in src
     assert 'library.filter.export' not in src
+
+def test_review_empty_copy_uses_the_exact_korean_guidance():
+    source = static_src("review.html", "js/i18n.js")
+    assert 'data-i18n="review.empty">인식된 요소가 없습니다. 원본 화면에서 박스를 그려 첫 요소를 지정하세요.' in source
+    assert '"review.empty": "인식된 요소가 없습니다. 원본 화면에서 박스를 그려 첫 요소를 지정하세요."' in source
+
+def test_all_linked_runtime_assets_exist_locally():
+    import re
+    for page in STATIC.glob("*.html"):
+        text = page.read_text(encoding="utf-8")
+        for asset in re.findall(r"(?:src|href)=\"(/static/[^\"?#]+)", text):
+            assert (STATIC / asset.removeprefix("/static/")).is_file(), f"{page.name} links missing {asset}"

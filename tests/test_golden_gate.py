@@ -27,6 +27,158 @@ def test_m2_gate_small(tmp_scene_dir):
                 and res["tracking_ok"] and res["temporal_mean"] >= 0.7)
     assert res["passed"] == expected
 
+def test_compare_scale_error_includes_both_axes(tmp_path, monkeypatch):
+    from keepframe.analyze import golden
+
+    class Element:
+        def __init__(self, texture):
+            self.id = texture
+            self.visible = (0, 1)
+            self.canonical = SimpleNamespace(texture="texture.png")
+
+    class Scene:
+        frames = 2
+        elements = [Element("e")]
+
+        @staticmethod
+        def element(element_id):
+            return Scene.elements[0]
+
+    golden_scene = Scene()
+    analyzed_scene = Scene()
+    monkeypatch.setattr(golden, "animation_matrix", lambda _scene: {
+        "e": np.array([[0, 0, 1., 1., 0, 1], [1, 1, 1., 1., 0, 1]])
+    } if _scene is golden_scene else {
+        "e": np.array([[0, 0, 1., 1.2, 0, 1], [1, 1, 1., 1.2, 0, 1]])
+    })
+    monkeypatch.setattr(golden, "load_texture", lambda _path: np.zeros((1, 1, 4), dtype=np.float32))
+    monkeypatch.setattr(golden, "composite_scene", lambda *_args: np.zeros((1, 1, 3), dtype=np.float32))
+    monkeypatch.setattr(golden, "temporal_similarity", lambda *_args: 1.0)
+    monkeypatch.setattr(golden, "centroid_tracks", lambda _scene: {"e": np.array([[0., 0.], [1., 1.]])})
+
+    result = golden.compare(golden_scene, tmp_path, analyzed_scene, tmp_path, np.zeros((2, 1, 1, 3)))
+
+    assert result["scale_err"] == pytest.approx(0.1)
+
+def test_real_gate_returns_empty_rows_for_missing_clip_directory(tmp_path):
+    from keepframe.gates import m2_gate_real
+
+    result = m2_gate_real(tmp_path / "clips", tmp_path / "out")
+
+    assert result == {"clips": 0, "rows": []}
+
+
+def test_real_gate_reports_null_for_unmatchable_annotations(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from keepframe import gates
+    from keepframe.analyze import video
+    from keepframe.ir import store
+    from keepframe.verify.matrix import animation_matrix
+
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    clip = clips / "empty.mp4"
+    clip.touch()
+    clip.with_suffix(".gt.json").write_text(json.dumps({"elements": [{"frames": {}}]}))
+    scene = SimpleNamespace(elements=[])
+    monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
+    monkeypatch.setattr(gates, "analyze", lambda *_args, **_kwargs: None, raising=False)
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
+    monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    (tmp_path / "scene").mkdir()
+    (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
+    monkeypatch.setattr("keepframe.verify.matrix.animation_matrix", lambda _scene: {})
+
+    result = gates.m2_gate_real(clips, tmp_path / "out")
+
+    assert result["clips"] == 1
+    assert result["rows"][0]["pos_err_px"] is None
+
+
+def test_real_gate_reports_malformed_ground_truth(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from keepframe import gates
+    from keepframe.analyze import video
+    from keepframe.ir import store
+
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    clip = clips / "bad.mp4"
+    clip.touch()
+    clip.with_suffix(".gt.json").write_text("not json")
+    scene = SimpleNamespace(elements=[])
+    monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
+    monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    (tmp_path / "scene").mkdir()
+    (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
+
+    result = gates.m2_gate_real(clips, tmp_path / "out")
+
+    assert result["clips"] == 1
+    assert result["rows"][0]["pos_err_px"] is None
+    assert "ground truth" in result["rows"][0]["messages"][-1].lower()
+
+def test_real_gate_keeps_processing_after_malformed_annotation_entry(tmp_path, monkeypatch):
+    from keepframe import gates
+    from keepframe.analyze import video
+    from keepframe.ir import store
+
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    bad = clips / "a-bad.mp4"
+    bad.touch()
+    bad.with_suffix(".gt.json").write_text(json.dumps({"elements": [{"frames": None}]}))
+    good = clips / "b-good.mp4"
+    good.touch()
+    good.with_suffix(".gt.json").write_text(json.dumps({"elements": [{"frames": {}}]}))
+    scene = SimpleNamespace(elements=[])
+    monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
+    monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    (tmp_path / "scene").mkdir()
+    (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
+
+    result = gates.m2_gate_real(clips, tmp_path / "out")
+
+    assert [row["clip"] for row in result["rows"]] == ["a-bad.mp4", "b-good.mp4"]
+    assert result["rows"][0]["pos_err_px"] is None
+    assert "ground truth" in result["rows"][0]["messages"][-1].lower()
+    assert result["rows"][1]["pos_err_px"] is None
+
+@pytest.mark.parametrize("elements", [None, {"bad": {}}, 7])
+def test_real_gate_keeps_processing_after_malformed_elements_container(tmp_path, monkeypatch, elements):
+    from keepframe import gates
+    from keepframe.analyze import video
+    from keepframe.ir import store
+
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    bad = clips / "a-bad.mp4"
+    bad.touch()
+    bad.with_suffix(".gt.json").write_text(json.dumps({"elements": elements}))
+    good = clips / "b-good.mp4"
+    good.touch()
+    good.with_suffix(".gt.json").write_text(json.dumps({"elements": []}))
+    scene = SimpleNamespace(elements=[])
+    monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
+    monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    (tmp_path / "scene").mkdir()
+    (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
+
+    result = gates.m2_gate_real(clips, tmp_path / "out")
+
+    assert [row["clip"] for row in result["rows"]] == ["a-bad.mp4", "b-good.mp4"]
+    assert result["rows"][0]["pos_err_px"] is None
+    assert "ground truth" in result["rows"][0]["messages"][-1].lower()
+    assert result["rows"][1]["pos_err_px"] is None
 @pytest.mark.parametrize("l1,tracking,temporal,passed", [
     ([0.01, 0.01, 0.03], 0, 1.0, False),
     ([0.01, 0.01, 0.02], 5, 0.7, True),

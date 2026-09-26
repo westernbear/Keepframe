@@ -5,16 +5,12 @@ import secrets
 
 COOKIE = "keepframe_admin"
 
-_DEFAULT_USERS = {
-    "mina@keepframe.app": "dev-admin",
-}
 
 
 def load_admin_users(env: dict[str, str] | None = None) -> dict[str, str]:
     """Users from KEEPFRAME_ADMIN_EMAIL/PASSWORD and KEEPFRAME_ADMIN_USERS.
 
     KEEPFRAME_ADMIN_USERS is comma-separated email:password pairs.
-    If none are set, the local seed account is used.
     """
     src = env if env is not None else os.environ
     users: dict[str, str] = {}
@@ -28,7 +24,7 @@ def load_admin_users(env: dict[str, str] | None = None) -> dict[str, str]:
     password = src.get("KEEPFRAME_ADMIN_PASSWORD") or ""
     if email and password:
         users[email] = password
-    return users or dict(_DEFAULT_USERS)
+    return users
 
 
 class MemoryAuth:

@@ -54,11 +54,11 @@ def test_maker_pages_link_admin():
         assert 'data-i18n="admin.manage"' in text, name
 
 
-def test_login_footer_is_seed_not_local_off():
+def test_login_page_returns_to_maker_without_seed_credential_disclosure():
     text = (STATIC / "admin-login.html").read_text(encoding="utf-8")
-    assert "admin.localSeed" in text
-    assert "로컬판에는 이 화면이 없습니다." not in text
-    assert "admin.localOff" not in text
+    assert 'href="/"' in text
+    assert "admin.localSeed" not in text
+    assert "mina@keepframe.app" not in text and "dev-admin" not in text
 
 
 def test_llm_page_has_oauth_fields():
