@@ -35,6 +35,8 @@ function appendCell(tr, value, className = "", colspan = 1) {
 }
 function renderRow(j) {
   const tr = document.createElement("tr");
+  tr.tabIndex = 0;
+  tr.setAttribute("aria-label", `${j.id} ${j.target}`);
   if (selected && selected.id === j.id) tr.className = "row-selected";
   if (isQuarantined(j)) tr.classList.add("row-dimmed");
   appendCell(tr, j.id, "mono tenant-id");
@@ -61,6 +63,7 @@ function renderRow(j) {
     appendCell(tr, retryLabel(j), retriesExhausted(j) ? "retry--exhausted" : "quota-muted");
   }
   tr.addEventListener("click", () => selectJob(j));
+  tr.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectJob(j); } });
   return tr;
 }
 function renderTable() {

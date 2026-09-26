@@ -11,6 +11,9 @@ function renderRows() {
   rowsEl.innerHTML = "";
   items.forEach((item) => {
     const row = document.createElement("div");
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", item.filename);
     row.className = "quarantine-row" + (selected && selected.id === item.id ? " quarantine-row--selected" : "");
     const name = document.createElement("div");
     name.className = "quarantine-row__file";
@@ -30,6 +33,7 @@ function renderRows() {
     reason.textContent = item.reason;
     row.append(name, tenant, time, reason);
     row.addEventListener("click", () => selectItem(item));
+    row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectItem(item); } });
     rowsEl.appendChild(row);
   });
 }

@@ -62,6 +62,9 @@ function createStatusCell(t) {
 function createTenantRow(t) {
   const row = document.createElement("div");
   const isSelected = selected && selected.id === t.id;
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+  row.setAttribute("aria-label", t.name);
   row.className = "admin-table-row" + (isSelected ? " admin-table-row--selected" : "");
   const nameCell = document.createElement("div");
   const name = document.createElement("div");
@@ -75,6 +78,7 @@ function createTenantRow(t) {
   memberCount.textContent = String(t.members);
   row.append(nameCell, memberCount, createQuotaCell(t), createStatusCell(t));
   row.addEventListener("click", () => selectTenant(t));
+  row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectTenant(t); } });
   return row;
 }
 

@@ -16,12 +16,14 @@
 <img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/>
 <span data-i18n="app.name">Keepframe</span>
 </a>
-<div class="land-header__nav">
-<a class="land-nav" href="/library" data-i18n="nav.library">라이브러리</a>
+<nav class="land-header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
+<a href="/" aria-current="page" data-i18n="nav.home">처음</a>
+<a href="/library" data-i18n="nav.library">라이브러리</a>
+<a href="/new" class="maker-nav__action" data-i18n="nav.new">새 레퍼런스</a>
+<a href="/agent" data-i18n="nav.agent">에이전트</a>
 <a class="btn btn--ghost" href="/admin" data-i18n="admin.manage">관리</a>
 <button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle>EN</button>
-<a class="btn btn--primary" href="/new"><span data-i18n="nav.new">새 레퍼런스</span></a>
-</div>
+</nav>
 </div>
 </header>
 

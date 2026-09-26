@@ -18,11 +18,15 @@
 <h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="agent.title">에이전트</h1>
 <span id="agent-scene" class="mono" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
 </div>
-<div class="header__nav">
+<nav class="header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
+<a href="/" data-i18n="nav.home">처음</a>
+<a href="/library" data-i18n="nav.library">라이브러리</a>
+<a href="/new" class="maker-nav__action" data-i18n="nav.new">새 레퍼런스</a>
+<a href="/agent" aria-current="page" data-i18n="nav.agent">에이전트</a>
 <a class="btn btn--ghost" id="agent-back" href="/review" data-i18n="agent.backReview">검수로 돌아가기</a>
 <a class="btn btn--ghost" href="/admin" data-i18n="admin.manage">관리</a>
-<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
-</div>
+<button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</nav>
 </header>
 <main class="agent-shell" id="agent-root">
 <aside class="agent-chat">

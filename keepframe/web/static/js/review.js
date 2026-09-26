@@ -1,4 +1,5 @@
 import { T } from "/static/js/i18n.js?v=20260921v";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20260926v";
 import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20260921v";
 import { attachPlayback } from "/static/js/review/playback-ui.js?v=20260921v";
 import { attachTimeline } from "/static/js/review/timeline.js?v=20260921v";
@@ -40,6 +41,11 @@ function showDemoNote() {
 async function bootReviewWorkspace() {
   try {
     await ws.loadState();
+    setWorkflowStage({ stage: "review", projectName: ws.projectId, projectStatus: ws.state.status });
+    fetchProjects().then(({ projects }) => {
+      const project = (projects || []).find((row) => row.id === ws.projectId);
+      if (project && project.title) setWorkflowProject(project.title, ws.state.status);
+    }).catch(() => {});
     ws.pollJob();
   } catch (err) {
     ws.clearLoading();

@@ -7,18 +7,23 @@
 <link href="/static/css/app.css?v=20260921v" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
 <script type="module" src="/static/js/i18n.js?v=20260921v"></script>
+<script type="module" src="/static/js/workflow.js?v=20260926v"></script>
 <script type="module" src="/static/js/api.js?v=20260921v"></script>
 <script type="module" src="/static/js/ingest.js?v=20260921v"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
-<div class="header__brand"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt="Keepframe"/><span data-i18n="app.name">Keepframe</span></div>
-<div class="header__nav">
-<a class="btn btn--ghost" href="/library" data-i18n="nav.library">라이브러리</a>
+<a class="header__brand" href="/" aria-label="Keepframe"><img class="header__logo" src="/static/logo.png" width="28" height="28" alt=""/><span data-i18n="app.name">Keepframe</span></a>
+<nav class="header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
+<a href="/" data-i18n="nav.home">처음</a>
+<a href="/library" data-i18n="nav.library">라이브러리</a>
+<a href="/new" class="maker-nav__action" aria-current="page" data-i18n="nav.new">새 레퍼런스</a>
+<a href="/agent" data-i18n="nav.agent">에이전트</a>
 <a class="btn btn--ghost" href="/admin" data-i18n="admin.manage">관리</a>
-<button class="btn btn--ghost" data-i18n="lang.toggle" data-lang-toggle>EN</button>
-</div>
+<button class="btn btn--ghost" type="button" data-i18n="lang.toggle" data-lang-toggle>EN</button>
+</nav>
 </header>
+<div data-workflow-shell></div>
 <main class="split" style="margin-top:0">
 <section class="split__main">
 <h1 class="page-title" data-i18n="ingest.title">레퍼런스 영상</h1>

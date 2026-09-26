@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -64,12 +65,13 @@
 </div>
 <a class="btn btn--secondary" href="/admin/api/audit.csv" style="width:auto;padding:6px 16px;text-decoration:none" data-i18n="admin.audit.export">내보내기</a>
 </div>
-<table class="audit-table">
+<div class="admin-data-scroll"><table class="audit-table">
 <thead>
 <tr><th data-i18n="admin.audit.time">Time</th><th data-i18n="admin.audit.actor">Actor</th><th data-i18n="admin.audit.action">Action</th><th data-i18n="admin.audit.targetTenant">Target/Tenant</th><th data-i18n="admin.audit.details">Details</th></tr>
 </thead>
 <tbody id="audit-rows"></tbody>
-</table>
+</table></div>
+</div>
 <p class="audit-footnote" data-i18n="admin.audit.appendOnly">로그는 삭제할 수 없음. 내보내기만 가능.</p>
 </div>
 </div>

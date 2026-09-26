@@ -39,13 +39,11 @@ def test_ported_pages_are_offline():
         assert "/static/js/api.js" in text
 
 
-def test_analyze_main_clears_icon_rail():
+def test_analyze_uses_primary_navigation_without_duplicate_icon_rail():
     html = (STATIC / "analyze.html").read_text(encoding="utf-8")
-    css = (STATIC / "css" / "app.css").read_text(encoding="utf-8")
-    assert "sidebar--icon" in html
-    assert "main--icon" in html
-    assert "main--no-sidebar" not in html
-    assert ".main--icon { margin-left: 80px; }" in css
+    assert 'class="header__nav maker-nav"' in html
+    assert "sidebar--icon" not in html
+    assert "main--icon" not in html
 
 
 def test_analyze_steps_follow_job_stage():
