@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -64,7 +64,7 @@ def _identifier(value: str) -> str:
     return value
 
 
-def _digest(value: str) -> str:
+def _digest(value: str | None) -> str | None:
     if value is None:
         return value
     if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
@@ -87,40 +87,223 @@ class AEPlugin(_FrozenRecord):
     _sha = field_validator("sha256")(_digest)
 
 
+def _bounded_text(value: str) -> str:
+    if not isinstance(value, str) or len(value) > 4096 or "\x00" in value:
+        raise ValueError("text is invalid")
+    return value
+
+
+def _optional_bounded_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = _bounded_text(value)
+    if not value.strip():
+        raise ValueError("text must not be blank")
+    return value
+
+
 class AEFont(_FrozenRecord):
-    family: str
-    style: str | None = None
+    match_name: str
+    family: str = ""
+    style: str = ""
     version: str | None = None
+    version_or_hash: str | None = None
     sha256: str | None = None
 
-    _family = field_validator("family", "style", "version")(_nonempty)
+    _match_name = field_validator("match_name")(_nonempty)
+    _text = field_validator("family", "style")(_bounded_text)
+    _versions = field_validator("version", "version_or_hash")(_optional_bounded_text)
     _sha = field_validator("sha256")(_digest)
+
+    @model_validator(mode="after")
+    def _exact_identity(self) -> "AEFont":
+        if self.version_or_hash is None and self.sha256 is None:
+            raise ValueError("font requires a version or hash")
+        return self
+
+
+class AEEffect(_FrozenRecord):
+    match_name: str
+    display_name: str = ""
+    version: str | None = None
+    version_or_hash: str | None = None
+    properties: dict[str, str] = Field(default_factory=dict)
+
+    _match_name = field_validator("match_name")(_nonempty)
+    _text = field_validator("display_name")(_bounded_text)
+    _versions = field_validator("version", "version_or_hash")(_optional_bounded_text)
+
+    @field_validator("properties")
+    @classmethod
+    def _properties(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 100_000:
+            raise ValueError("effect properties are too large")
+        for name, schema in value.items():
+            _nonempty(name)
+            _nonempty(schema)
+        return dict(value)
+
+
+class AECapabilityCatalog(_FrozenRecord):
+    font_names: tuple[str, ...] = ()
+    fonts: tuple[AEFont, ...] = ()
+    effect_names: tuple[str, ...] = ()
+    effects: tuple[AEEffect, ...] = ()
+    property_schemas: dict[str, str] = Field(default_factory=dict)
+    # The panel currently emits both spellings.  Persist both after checking
+    # they describe the same object so the wire snapshot remains lossless.
+    properties: dict[str, str] = Field(default_factory=dict)
+    plugin_versions: dict[str, str | None] = Field(default_factory=dict)
+
+    @field_validator("font_names", "effect_names", mode="before")
+    @classmethod
+    def _name_sequence(cls, values: Any) -> Any:
+        if isinstance(values, list):
+            return tuple(values)
+        return values
+
+    @field_validator("font_names", "effect_names")
+    @classmethod
+    def _names(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 100_000:
+            raise ValueError("capability names are too large")
+        normalized = tuple(_nonempty(item) for item in values)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("capability names contain duplicates")
+        return normalized
+    @field_validator("fonts", "effects", mode="before")
+    @classmethod
+    def _record_sequence(cls, values: Any) -> Any:
+        if isinstance(values, list):
+            return tuple(values)
+        return values
+
+    @staticmethod
+    def _schemas(value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 100_000:
+            raise ValueError("property schemas are too large")
+        for name, schema in value.items():
+            _nonempty(name)
+            _nonempty(schema)
+        return dict(value)
+
+    @field_validator("property_schemas", "properties")
+    @classmethod
+    def _property_schemas(cls, value: dict[str, str]) -> dict[str, str]:
+        return cls._schemas(value)
+
+    @field_validator("plugin_versions")
+    @classmethod
+    def _plugin_versions(cls, value: dict[str, str | None]) -> dict[str, str | None]:
+        if len(value) > 100_000:
+            raise ValueError("plugin versions are too large")
+        for name, version in value.items():
+            _nonempty(name)
+            _optional_bounded_text(version)
+        return dict(value)
+
+    @model_validator(mode="after")
+    def _normalize_catalog(self) -> "AECapabilityCatalog":
+        if self.property_schemas and self.properties and self.property_schemas != self.properties:
+            raise ValueError("property schema aliases differ")
+        if not self.property_schemas and self.properties:
+            object.__setattr__(self, "property_schemas", dict(self.properties))
+        elif not self.properties and self.property_schemas:
+            object.__setattr__(self, "properties", dict(self.property_schemas))
+        font_metadata = [font.match_name for font in self.fonts]
+        effect_metadata = [effect.match_name for effect in self.effects]
+        if len(set(font_metadata)) != len(font_metadata):
+            raise ValueError("font metadata contains duplicates")
+        if len(set(effect_metadata)) != len(effect_metadata):
+            raise ValueError("effect metadata contains duplicates")
+        if set(font_metadata) != set(self.font_names):
+            raise ValueError("font names do not match font metadata")
+        if set(effect_metadata) != set(self.effect_names):
+            raise ValueError("effect names do not match effect metadata")
+        object.__setattr__(self, "font_names", tuple(sorted(self.font_names)))
+        object.__setattr__(
+            self,
+            "fonts",
+            tuple(sorted(self.fonts, key=lambda item: item.match_name)),
+        )
+        object.__setattr__(self, "effect_names", tuple(sorted(self.effect_names)))
+        object.__setattr__(
+            self,
+            "effects",
+            tuple(sorted(self.effects, key=lambda item: item.match_name)),
+        )
+        return self
 
 
 class AECapabilities(_FrozenRecord):
-    """The connector capability snapshot bound into an approved render plan."""
+    """Canonical wire snapshot returned by the installed AE panel."""
 
-    ae_version: str
-    os_version: str | None = None
-    fonts: tuple[AEFont | dict[str, Any], ...] = ()
-    plugins: tuple[AEPlugin | dict[str, Any], ...] = ()
-    effects: tuple[dict[str, Any], ...] = ()
-    property_schemas: tuple[dict[str, Any], ...] = ()
-    # These scalar catalogs are useful for a connector that only reports names.
-    font_names: tuple[str, ...] = ()
-    effect_names: tuple[str, ...] = ()
-    plugin_versions: tuple[dict[str, Any], ...] = ()
-    version: str | None = None
-    digest: str | None = None
+    version: str
+    major: int
+    host: str
+    ready: bool
+    project_open: bool
+    capabilities: AECapabilityCatalog
+    timestamp: float | None = None
     capability_hash: str | None = None
 
-    _ae_version = field_validator("ae_version", "os_version", "version")(_nonempty)
-    _digest_fields = field_validator("digest", "capability_hash")(_digest)
-    _json_fields = field_validator("effects", "property_schemas", "plugin_versions")(_finite_json)
-    _names = field_validator("font_names", "effect_names")(
-        lambda values: tuple(_nonempty(item) for item in values)
-    )
+    _version = field_validator("version")(_nonempty)
 
+    @field_validator("timestamp")
+    @classmethod
+    def _time(cls, value: float | None) -> float | None:
+        if value is not None and (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError("heartbeat timestamp is invalid")
+        return value
+
+    @field_validator("major")
+    @classmethod
+    def _major(cls, value: int) -> int:
+        return _bounded_int(value, minimum=0, maximum=1_000_000)
+
+    @field_validator("host")
+    @classmethod
+    def _host(cls, value: str) -> str:
+        if value != "after-effects":
+            raise ValueError("heartbeat host is invalid")
+        return value
+
+    @field_validator("capability_hash")
+    @classmethod
+    def _hash(cls, value: str | None) -> str | None:
+        return _digest(value)
+
+    @model_validator(mode="after")
+    def _canonical_hash(self) -> "AECapabilities":
+        payload = self.model_dump(
+            mode="json",
+            exclude={"capability_hash", "project_open", "timestamp"},
+        )
+        encoded = canonical_json(payload)
+        if len(encoded) > 1 * 1024 * 1024:
+            raise ValueError("capability snapshot exceeds 1 MiB")
+        digest = hashlib.sha256(encoded).hexdigest()
+        if self.capability_hash is not None and self.capability_hash != digest:
+            raise ValueError("capability hash does not match snapshot")
+        object.__setattr__(self, "capability_hash", digest)
+        return self
+
+    @classmethod
+    def from_heartbeat(cls, value: Any) -> "AECapabilities":
+        return cls.model_validate(value)
+
+    @property
+    def ae_version(self) -> str:
+        return self.version
+
+    @property
+    def digest(self) -> str:
+        return self.capability_hash or ""
 
 
 
@@ -253,6 +436,7 @@ class AECommand(_FrozenRecord):
     nonce: str
     project_id: str
     plan_id: str
+    plan_digest: str
     session_id: str
     device_id: str
     kind: CommandKind
@@ -278,7 +462,7 @@ class AECommand(_FrozenRecord):
         lambda value: value if value is None else _bounded_int(value, minimum=0)
     )
     _payload = field_validator("payload")(_finite_json)
-    _payload_digest = field_validator("payload_digest")(_digest)
+    _plan_digest = field_validator("plan_digest", "payload_digest")(_digest)
     _result = field_validator("result")(_finite_json)
     _result_digest = field_validator("result_digest")(_digest)
     _lease = field_validator("lease_seconds")(
@@ -368,6 +552,8 @@ __all__ = [
     "AECommand",
     "AECommandResult",
     "AECapabilities",
+    "AECapabilityCatalog",
+    "AEEffect",
     "AEFont",
     "AEPlugin",
     "AEPublishedArtifact",

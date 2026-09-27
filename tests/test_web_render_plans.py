@@ -8,14 +8,20 @@ import pytest
 
 from keepframe.after_effects.auth import AEProjectAuth
 from keepframe.after_effects.coordinator import AECoordinator
-
+from keepframe.after_effects.models import AECapabilities
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.jobs import JobStore
 from keepframe.render.plan import create_render_plan
 from keepframe.web import server as web_server
 from tests.test_native_plan import RecordingRunner
-from tests.test_ae_coordinator import _artifact_payload, _committed_checkpoint
+from tests.test_ae_coordinator import (
+    _AE_CAPABILITY_HASH,
+    _AE_CAPABILITY_MANIFEST,
+    _artifact_payload,
+    _committed_checkpoint,
+)
+from tests.test_ae_auth import _capability_snapshot
 from tests.test_web_server import get, start
 
 
@@ -37,7 +43,7 @@ def _post(server, path, payload, *, cookie=None, origin=None):
         return response.status, json.loads(response.read())
 
 
-def _pair(server, project="p1", *, origin=None):
+def _pair(server, workspace, project="p1", *, origin=None):
     origin = origin or _origin(server)
     request = Request(
         f"{_origin(server)}/api/ae/pairings",
@@ -51,7 +57,11 @@ def _pair(server, project="p1", *, origin=None):
         assert "SameSite=Strict" in set_cookie
         assert "Domain=" not in set_cookie
         assert ("Secure" in set_cookie) == origin.startswith("https://")
-        return set_cookie.split(";", 1)[0], json.loads(response.read())
+        payload = json.loads(response.read())
+    auth = AEProjectAuth(Path(workspace) / project, project)
+    grant = auth.redeem_pairing(payload["code"])
+    auth.publish_capabilities(grant.identity.device_id, _capability_snapshot())
+    return set_cookie.split(";", 1)[0], payload, grant
 
 
 def _get_ae(server, path, cookie, *, origin=None):
@@ -80,7 +90,14 @@ def _plan(workspace: Path, backend="native", mode="preview"):
         json.dumps({"id": "p1", "status": "approved", "version": "v1", "scene": "s1"}),
         encoding="utf-8",
     )
-    kwargs = {"capability_hash": "a" * 64} if backend == "after_effects" else {}
+    kwargs = (
+        {
+            "capability_hash": _AE_CAPABILITY_HASH,
+            "capability_manifest": _AE_CAPABILITY_MANIFEST,
+        }
+        if backend == "after_effects"
+        else {}
+    )
     return create_render_plan(
         root,
         project_id="p1",
@@ -124,7 +141,7 @@ def test_ae_plan_approval_creates_durable_waiting_session(tmp_path):
     plan = _plan(workspace, backend="after_effects")
     server = start(workspace, ae_relay_url="https://relay.example")
     try:
-        cookie, _ = _pair(server)
+        cookie, _, _ = _pair(server, workspace)
         payload = {"project": "p1", "digest": plan.digest, "revision": 0}
         first_code, first = _ae_post(
             server, cookie, f"/api/render-plans/{plan.id}/approve", payload
@@ -147,12 +164,51 @@ def test_ae_plan_approval_creates_durable_waiting_session(tmp_path):
     assert state["session"]["id"] == first["session"]["id"]
 
 
+def test_ae_approval_rechecks_capabilities_only_before_consumption(tmp_path):
+    workspace = tmp_path / "ws"
+    plan = _plan(workspace, backend="after_effects")
+    server = start(workspace, ae_relay_url="https://relay.example")
+    try:
+        cookie, _, _ = _pair(server, workspace)
+        controller_token = cookie.split("=", 1)[1]
+        auth = AEProjectAuth(workspace / "p1", "p1")
+        original = _capability_snapshot()
+        changed_payload = original.model_dump(mode="json")
+        changed_payload.pop("capability_hash", None)
+        changed_payload["version"] = "24.2.0"
+        changed = AECapabilities.model_validate(changed_payload)
+
+        replacement = auth.create_pairing(controller_token, {})
+        device = auth.redeem_pairing(replacement.code)
+        auth.publish_capabilities(device.identity.device_id, changed)
+        payload = {"project": "p1", "digest": plan.digest, "revision": 0}
+        with pytest.raises(HTTPError) as stale:
+            _ae_post(server, cookie, f"/api/render-plans/{plan.id}/approve", payload)
+        assert stale.value.code == 409
+
+        auth.publish_capabilities(device.identity.device_id, original)
+        first_code, first = _ae_post(
+            server, cookie, f"/api/render-plans/{plan.id}/approve", payload
+        )
+        replacement = auth.create_pairing(controller_token, {})
+        device = auth.redeem_pairing(replacement.code)
+        auth.publish_capabilities(device.identity.device_id, changed)
+        retry_code, retry = _ae_post(
+            server, cookie, f"/api/render-plans/{plan.id}/approve", payload
+        )
+    finally:
+        server.shutdown()
+
+    assert first_code == retry_code == 202
+    assert first["session"]["id"] == retry["session"]["id"]
+
+
 def test_ae_private_controls_enforce_revision_and_transition_table(tmp_path):
     workspace = tmp_path / "ws"
     plan = _plan(workspace, backend="after_effects", mode="final")
     server = start(workspace, ae_relay_url="https://relay.example")
     try:
-        cookie, _ = _pair(server)
+        cookie, _, _ = _pair(server, workspace)
         _, approved = _ae_post(
             server,
             cookie,
@@ -270,7 +326,7 @@ def test_ae_private_control_rejects_missing_resources_and_bad_encoding(tmp_path)
     plan = _plan(workspace, backend="after_effects")
     server = start(workspace, ae_relay_url="https://relay.example")
     try:
-        cookie, _ = _pair(server)
+        cookie, _, _ = _pair(server, workspace)
         for plan_id in ("b" * 32, plan.id):
             with pytest.raises(HTTPError) as missing:
                 _ae_post(
@@ -313,7 +369,7 @@ def test_ae_browser_routes_require_same_origin_controller_and_revoke_on_unpair(t
             urlopen(pairing_request)
         assert cross_site_pairing.value.code == 403
 
-        cookie, pairing = _pair(server)
+        cookie, pairing, device = _pair(server, workspace)
         assert pairing["relay_url"] == "https://relay.example"
         assert len(pairing["code"]) >= 22
         unauthorized_repair = Request(
@@ -356,7 +412,6 @@ def test_ae_browser_routes_require_same_origin_controller_and_revoke_on_unpair(t
         assert state_without_cookie.value.code == 401
 
         auth = AEProjectAuth(workspace / "p1", "p1")
-        device = auth.redeem_pairing(pairing["code"])
         assert approved["session"]["status"] == "waiting_for_connector"
         delete = Request(
             f"{_origin(server)}/api/ae/pairings/p1",
@@ -380,15 +435,12 @@ def test_ae_artifact_download_requires_controller_and_streams_verified_bytes(tmp
     plan = _plan(workspace, backend="after_effects")
     server = start(workspace, ae_relay_url="https://relay.example")
     try:
-        cookie, pairing = _pair(server)
+        cookie, _, device = _pair(server, workspace)
         _, approved = _ae_post(
             server,
             cookie,
             f"/api/render-plans/{plan.id}/approve",
             {"project": "p1", "digest": plan.digest, "revision": 0},
-        )
-        device = AEProjectAuth(workspace / "p1", "p1").redeem_pairing(
-            pairing["code"]
         )
         coordinator = AECoordinator.cached(workspace / "p1", plan.id)
         coordinator.transition(
@@ -457,7 +509,7 @@ def test_ae_replacement_drains_active_lease_before_new_device_can_bind(tmp_path)
     plan = _plan(workspace, backend="after_effects")
     server = start(workspace, ae_relay_url="https://relay.example")
     try:
-        cookie, pairing = _pair(server)
+        cookie, _, old_device = _pair(server, workspace)
         _, approved = _ae_post(
             server,
             cookie,
@@ -465,7 +517,6 @@ def test_ae_replacement_drains_active_lease_before_new_device_can_bind(tmp_path)
             {"project": "p1", "digest": plan.digest, "revision": 0},
         )
         auth = AEProjectAuth(workspace / "p1", "p1")
-        old_device = auth.redeem_pairing(pairing["code"])
         coordinator = AECoordinator.cached(workspace / "p1", plan.id)
         session = coordinator.transition(
             "device_ready",

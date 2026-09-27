@@ -162,6 +162,78 @@ def test_serve_propagates_relay_thread_failure_and_stops_private_listener(
     relay.shutdown.assert_called_once()
     relay.server_close.assert_called_once()
 
+
+def test_ae_install_dispatches_and_prints_manual_step(tmp_path, capsys):
+    ae_path = tmp_path / "Adobe After Effects 2025"
+    panel_path = ae_path / "Support Files" / "Scripts" / "ScriptUI Panels" / "keepframe_panel.jsx"
+    with (
+        patch(
+            "keepframe.after_effects.installer.install_panel",
+            return_value=panel_path,
+        ) as install,
+        patch(
+            "keepframe.after_effects.installer.manual_instructions",
+            return_value="Enable scripting, then open Window > Keepframe.",
+        ),
+    ):
+        assert main(["ae-install", "--ae-path", str(ae_path)]) == 0
+    install.assert_called_once_with(ae_path)
+    output = capsys.readouterr().out
+    assert str(panel_path) in output
+    assert "Window > Keepframe" in output
+
+
+def test_ae_connect_prompts_without_putting_pairing_code_in_argv():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass", return_value="p1.pairing-code") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+            ]
+        ) == 0
+    prompt.assert_called_once()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code="p1.pairing-code",
+        project=None,
+    )
+    help_result = run("ae-connect", "--help")
+    assert help_result.returncode == 0
+    assert "--code" not in help_result.stdout
+
+
+def test_ae_connect_resumes_a_project_without_prompting():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+                "--project",
+                "p1",
+            ]
+        ) == 0
+    prompt.assert_not_called()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code=None,
+        project="p1",
+    )
+
+
 def test_synth_compose_verify_cli(tmp_scene_dir):
     d = tmp_scene_dir / "s"
     assert run("synth", "--out", str(d), "--seed", "11").returncode == 0

@@ -1228,7 +1228,9 @@ class AECoordinator:
                 }
             )
         elif event in {"disconnect", "timeout", "unpair", "capabilities_changed", "verification_failed", "upload_failed", "render_failed", "package_failed", "command_failed", "pause_error"}:
-            if status not in _ACTIVE_STATES and not _paused(status):
+            if status not in _ACTIVE_STATES and not _paused(status) and not (
+                event == "capabilities_changed" and status == "waiting_for_connector"
+            ):
                 raise CoordinatorConflict("pause error is illegal in the current state")
             reason = _status_reason(event, data)
             updated = session.model_copy(
@@ -1427,6 +1429,7 @@ class AECoordinator:
                 nonce="nonce-" + secrets.token_urlsafe(24),
                 project_id=self.project_id,
                 plan_id=self.plan_id,
+                plan_digest=self.plan.digest,
                 session_id=session.id,
                 device_id=bound_device,
                 kind=kind,
@@ -1720,15 +1723,19 @@ class AECoordinator:
                     device_id,
                     reservation_id,
                 )
-            if reservation.status == "committed":
-                raise CoordinatorConflict("artifact is already committed")
+            if reservation.status not in {"reserved", "committed"}:
+                raise CoordinatorConflict("artifact reservation is not available")
             if content_length > reservation.max_length:
                 raise CoordinatorConflict("artifact length exceeds reservation")
             _ensure_no_symlink(self.artifacts_dir, kind="directory")
             final_path = self.artifacts_dir / reservation.id
-            _ensure_no_symlink(final_path)
-            if final_path.exists() or final_path.is_symlink() or _is_reparse(final_path):
-                raise CoordinatorConflict("artifact destination already exists")
+            if reservation.status == "reserved":
+                _ensure_no_symlink(final_path)
+                if final_path.exists() or final_path.is_symlink() or _is_reparse(final_path):
+                    raise CoordinatorConflict("artifact destination already exists")
+            else:
+                if reservation.length is None or reservation.sha256 is None:
+                    raise CoordinatorConflict("committed artifact reservation is incomplete")
             temporary: Path | None = None
             try:
                 fd, raw_name = tempfile.mkstemp(
@@ -1801,22 +1808,70 @@ class AECoordinator:
                         device_id,
                         reservation_id,
                     )
-                if reservation.status == "committed":
-                    raise CoordinatorConflict("artifact is already committed")
-                if reservation.status != "reserved":
+                if reservation.status not in {"reserved", "committed"}:
                     raise CoordinatorConflict("artifact reservation is not available")
                 if content_length > reservation.max_length:
                     raise CoordinatorConflict("artifact length exceeds reservation")
                 _ensure_no_symlink(self.artifacts_dir, kind="directory")
                 final_path = self.artifacts_dir / reservation.id
-                _ensure_no_symlink(final_path)
-                if final_path.exists() or final_path.is_symlink() or _is_reparse(final_path):
-                    raise CoordinatorConflict("artifact destination already exists")
+                if reservation.status == "reserved":
+                    _ensure_no_symlink(final_path)
+                    if final_path.exists() or final_path.is_symlink() or _is_reparse(final_path):
+                        raise CoordinatorConflict("artifact destination already exists")
                 _validate_artifact_file(reservation.kind, temporary, total)
                 if require_live_command:
                     self._require_live_artifact_command_unlocked(
                         device_id,
                         reservation_id,
+                    )
+                if reservation.status == "committed":
+                    if reservation.length is None or reservation.sha256 is None:
+                        raise CoordinatorConflict("committed artifact reservation is incomplete")
+                    if total != reservation.length:
+                        raise CoordinatorConflict(
+                            "artifact length does not match committed reservation"
+                        )
+                    if sha256 != reservation.sha256:
+                        raise CoordinatorConflict(
+                            "artifact digest does not match committed reservation"
+                        )
+                    _ensure_no_symlink(final_path, kind="file")
+                    if not final_path.is_file():
+                        raise CoordinatorConflict("committed artifact is missing")
+                    existing_digest = hashlib.sha256()
+                    existing_length = 0
+                    try:
+                        with final_path.open("rb") as existing:
+                            while chunk := existing.read(1024 * 1024):
+                                existing_digest.update(chunk)
+                                existing_length += len(chunk)
+                    except OSError as exc:
+                        raise CoordinatorConflict("committed artifact is unreadable") from exc
+                    if existing_length != reservation.length:
+                        raise CoordinatorConflict(
+                            "committed artifact length does not match reservation"
+                        )
+                    if existing_digest.hexdigest() != reservation.sha256:
+                        raise CoordinatorConflict(
+                            "committed artifact digest does not match reservation"
+                        )
+                    _validate_artifact_file(reservation.kind, final_path, existing_length)
+                    if require_live_command:
+                        self._require_live_artifact_command_unlocked(
+                            device_id,
+                            reservation_id,
+                        )
+                    temporary.unlink()
+                    temporary = None
+                    return AEPublishedArtifact(
+                        id=reservation.id,
+                        reservation_id=reservation.id,
+                        plan_id=self.plan_id,
+                        session_id=reservation.session_id,
+                        kind=reservation.kind,
+                        length=reservation.length,
+                        sha256=reservation.sha256,
+                        mime_type=_MIME[reservation.kind],
                     )
                 try:
                     os.link(temporary, final_path, follow_symlinks=False)

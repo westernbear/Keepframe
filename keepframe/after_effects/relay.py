@@ -5,6 +5,7 @@ import hmac
 import json
 import math
 import re
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,14 +13,23 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs, urlparse
 
 from .auth import AEAuthError, AEDeviceIdentity, AEProjectAuth
+from .bridge import MAX_BRIDGE_JSON_BYTES
 from .coordinator import AECoordinator, CoordinatorConflict
-
+from .models import AECapabilities, canonical_json
 
 _PROJECT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _PLAN_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 _COMMAND_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,255}$")
 _MAX_PAIR_BODY = 64 * 1024
+# /results carries one bridge-sized object plus a fixed sequence/result wrapper.
+_MAX_RESULT_ENVELOPE_BYTES = len(b'{"sequence":1000000000,"result":}')
+_MAX_RESULT_BODY = MAX_BRIDGE_JSON_BYTES + _MAX_RESULT_ENVELOPE_BYTES
+_MAX_CAPABILITY_BODY = MAX_BRIDGE_JSON_BYTES
 _UPLOAD_READ_TIMEOUT = 60.0
+_REQUEST_TIMEOUT = 15.0
+_MAX_HANDLERS = 64
+
+
 def _is_reparse(path: Path) -> bool:
     if path.is_symlink():
         return True
@@ -73,6 +83,7 @@ def _context(
     identity: AEDeviceIdentity,
     *,
     bind: bool,
+    allow_unbound: bool = False,
 ) -> AECoordinator:
     requested_project = query.get("project", [identity.project_id])[0]
     plan = query.get("plan", [None])[0]
@@ -93,9 +104,125 @@ def _context(
             revision=session.revision,
             device_id=identity.device_id,
         )
-    if session.device_id != identity.device_id:
+    if session.device_id != identity.device_id and not (
+        allow_unbound and session.device_id is None
+    ):
         raise CoordinatorConflict("relay authorization failed")
     return coordinator
+
+
+
+def _capabilities_match(
+    coordinator: AECoordinator,
+    snapshot: AECapabilities | None,
+) -> bool:
+    plan = coordinator.plan
+    if snapshot is None or plan.capability_hash is None or plan.capability_manifest is None:
+        return False
+    if snapshot.capability_hash != plan.capability_hash:
+        return False
+    try:
+        manifest = snapshot.model_dump(
+            mode="json",
+            exclude={"capability_hash", "project_open", "timestamp"},
+        )
+        return canonical_json(manifest) == canonical_json(plan.capability_manifest)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _pause_for_capabilities(coordinator: AECoordinator, session: Any) -> None:
+    if session.status in {"paused:capabilities_changed", "done", "failed"}:
+        return
+    try:
+        coordinator.transition(
+            "capabilities_changed",
+            revision=session.revision,
+        )
+    except CoordinatorConflict:
+        # A concurrent state transition is not a relay protocol error.  The
+        # capability check still prevents this request from binding or leasing.
+        return
+
+
+def _project_plan_ids(workspace: Path, identity: AEDeviceIdentity) -> tuple[str, ...]:
+    project_root = _project_root(workspace, identity.project_id)
+    renders = project_root / "renders"
+    if not renders.exists():
+        return ()
+    try:
+        renders_real = renders.resolve(strict=True)
+    except OSError as exc:
+        raise CoordinatorConflict("relay authorization failed") from exc
+    if (
+        _is_reparse(renders)
+        or not renders_real.is_dir()
+        or renders_real.parent != project_root
+    ):
+        raise CoordinatorConflict("relay authorization failed")
+    plans = []
+    for candidate in renders_real.iterdir():
+        if (
+            not _PLAN_RE.fullmatch(candidate.name)
+            or _is_reparse(candidate)
+            or not candidate.is_dir()
+        ):
+            continue
+        state_path = candidate / "ae" / "session.json"
+        if state_path.is_file() and not _is_reparse(state_path):
+            plans.append(candidate.name)
+    return tuple(sorted(plans))
+
+
+def _next_command(
+    workspace: Path,
+    query: dict[str, list[str]],
+    identity: AEDeviceIdentity,
+    snapshot: AECapabilities | None,
+):
+    requested_plan = "plan" in query
+    plan_ids = (
+        (query["plan"][0],)
+        if requested_plan
+        else _project_plan_ids(workspace, identity)
+    )
+    for plan_id in plan_ids:
+        target_query = {**query, "plan": [plan_id]}
+        try:
+            coordinator = _context(
+                workspace,
+                target_query,
+                identity,
+                bind=False,
+                allow_unbound=True,
+            )
+            session = coordinator.state()
+        except CoordinatorConflict:
+            if requested_plan:
+                raise
+            continue
+        if session.status in {"paused:capabilities_changed", "done", "failed"}:
+            continue
+        if not _capabilities_match(coordinator, snapshot):
+            _pause_for_capabilities(coordinator, session)
+            continue
+        try:
+            coordinator = _context(
+                workspace,
+                target_query,
+                identity,
+                bind=True,
+            )
+        except CoordinatorConflict:
+            # State races are intentionally invisible to the connector.  A
+            # later poll rechecks capabilities and the current session state.
+            continue
+        command = coordinator.next_command(identity.device_id)
+        if command is not None:
+            return command
+    return None
+
+
 
 
 def make_relay_server(
@@ -112,9 +239,40 @@ def make_relay_server(
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
 
+    class RelayServer(ThreadingHTTPServer):
+        request_queue_size = _MAX_HANDLERS
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._handler_slots = threading.BoundedSemaphore(_MAX_HANDLERS)
+            super().__init__(*args, **kwargs)
+
+        def process_request(self, request: Any, client_address: Any) -> None:
+            if not self._handler_slots.acquire(blocking=False):
+                self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except Exception:
+                self._handler_slots.release()
+                raise
+
+        def process_request_thread(
+            self,
+            request: Any,
+            client_address: Any,
+        ) -> None:
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self._handler_slots.release()
+
     class RelayHandler(BaseHTTPRequestHandler):
         server_version = "Keepframe-AE-Relay/1"
         sys_version = ""
+        def setup(self) -> None:
+            super().setup()
+            self.connection.settimeout(_REQUEST_TIMEOUT)
+
 
         def log_message(self, format: str, *args: Any) -> None:
             return
@@ -146,7 +304,11 @@ def make_relay_server(
             if length < 0 or length > limit:
                 self._json(413, {"error": "request body is too large"})
                 return None
-            return self.rfile.read(length)
+            body = self.rfile.read(length)
+            if len(body) != length:
+                self._json(400, {"error": "request body is incomplete"})
+                return None
+            return body
 
         def _bearer(self) -> str | None:
             values = self.headers.get_all("Authorization") or []
@@ -220,19 +382,19 @@ def make_relay_server(
                     deadline = time.monotonic() + wait
                     command = None
                     while True:
-                        with auth.authorize_device(
+                        with auth.authorize_device_with_capabilities(
                             token,
                             allow_draining=False,
-                        ) as identity:
+                        ) as authorized:
+                            identity, snapshot = authorized
                             if identity is None:
                                 return self._unauthorized()
-                            coordinator = _context(
+                            command = _next_command(
                                 workspace,
                                 query,
                                 identity,
-                                bind=True,
+                                snapshot,
                             )
-                            command = coordinator.next_command(identity.device_id)
                         if command is not None or time.monotonic() >= deadline:
                             break
                         time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
@@ -277,8 +439,12 @@ def make_relay_server(
 
         def do_POST(self):
             parsed = urlparse(self.path)
-            if parsed.path != "/pair" and not (
-                parsed.path.startswith("/results/") and parsed.path.count("/") == 2
+            if (
+                parsed.path != "/pair"
+                and parsed.path != "/capabilities"
+                and not (
+                    parsed.path.startswith("/results/") and parsed.path.count("/") == 2
+                )
             ):
                 return self._json(404, {"error": "not found"})
             if parsed.path == "/pair":
@@ -314,6 +480,31 @@ def make_relay_server(
                     )
                 except Exception:
                     return self._unauthorized()
+            if parsed.path == "/capabilities":
+                query = self._query(parsed)
+                target = self._auth_target(query)
+                if target is None:
+                    return self._unauthorized()
+                auth, token = target
+                identity = auth.authenticate_device(token, allow_draining=False)
+                if identity is None:
+                    return self._unauthorized()
+                body = self._body(_MAX_CAPABILITY_BODY)
+                if body is None:
+                    return
+                try:
+                    payload = json.loads(body.decode("utf-8") or "{}")
+                    snapshot = AECapabilities.model_validate(payload)
+                    encoded = canonical_json(snapshot.model_dump(mode="json"))
+                    if len(encoded) > _MAX_CAPABILITY_BODY:
+                        raise ValueError("capability snapshot is too large")
+                    stored = auth.publish_capabilities(identity.device_id, snapshot)
+                    return self._json(
+                        200,
+                        {"capability_hash": stored.capability_hash},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    return self._error(exc)
             query = self._query(parsed)
             target = self._auth_target(query)
             if target is None:
@@ -329,7 +520,7 @@ def make_relay_server(
                 )
                 if identity is None:
                     return self._unauthorized()
-                body = self._body()
+                body = self._body(_MAX_RESULT_BODY)
                 if body is None:
                     return
                 payload = json.loads(body.decode("utf-8") or "{}")
@@ -418,7 +609,7 @@ def make_relay_server(
         def do_PATCH(self):
             return self._json(404, {"error": "not found"})
 
-    server = ThreadingHTTPServer((host, port), RelayHandler)
+    server = RelayServer((host, port), RelayHandler)
     server.daemon_threads = True
     return server
 

@@ -1,0 +1,461 @@
+import json
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from keepframe.after_effects.bridge import (
+    BRIDGE_SCHEMA_VERSION,
+    Bridge,
+    BridgeBusy,
+    BridgeConflict,
+    BridgeResult,
+    BridgeUnavailable,
+    FIXED_KINDS,
+)
+
+
+def test_bridge_rejects_reparse_components_without_following_links(tmp_path, monkeypatch):
+    unsafe_parent = tmp_path / "unsafe"
+    unsafe_parent.mkdir()
+    bridge_root = unsafe_parent / "bridge"
+    real_stat = Path.stat
+
+    def guarded_stat(path, *args, **kwargs):
+        assert kwargs.get("follow_symlinks") is False
+        result = real_stat(path, *args, **kwargs)
+        if path == unsafe_parent:
+            return SimpleNamespace(
+                st_mode=result.st_mode,
+                st_size=result.st_size,
+                st_file_attributes=0x0400,
+            )
+        return result
+
+    monkeypatch.setattr(Path, "stat", guarded_stat)
+    with pytest.raises(BridgeUnavailable):
+        Bridge(bridge_root)
+
+
+def test_bridge_writes_bounded_nonce_digest_records_atomically_and_replays(tmp_path):
+    bridge = Bridge(tmp_path / "bridge")
+    command = bridge.write_command(
+        "capability_heartbeat",
+        {"request": "status"},
+        command_id="command-1",
+        nonce="nonce-1",
+    )
+    assert command.schema_version == BRIDGE_SCHEMA_VERSION
+    assert command.payload_digest == bridge.payload_digest({"request": "status"})
+    assert bridge.read_command() == command
+    with pytest.raises(BridgeBusy):
+        bridge.write_command("save_checkpoint", {}, command_id="command-2", nonce="nonce-2")
+
+    result = bridge.write_result(
+        command.command_id,
+        command.nonce,
+        {"ae_version": "24.0", "ok": True},
+    )
+    assert result.command_id == command.command_id
+    assert result.nonce == command.nonce
+    assert result.kind == command.kind
+    assert result.payload_digest == command.payload_digest
+    assert bridge.read_result(command.command_id, command.nonce) == result
+    assert bridge.replay(command.command_id, command.nonce) == result
+    completed = list((tmp_path / "bridge" / "completed").glob("*.json"))
+    assert len(completed) == 1
+    assert not (tmp_path / "bridge" / "completed.json").exists()
+    replay = bridge.write_command(
+        "capability_heartbeat",
+        {"request": "status"},
+        command_id=command.command_id,
+        nonce=command.nonce,
+    )
+    assert isinstance(replay, BridgeResult)
+    assert replay == result
+    with pytest.raises(BridgeConflict):
+        bridge.write_command(
+            "capability_heartbeat",
+            {"request": "changed"},
+            command_id=command.command_id,
+            nonce=command.nonce,
+        )
+
+
+
+def test_bridge_replay_rejects_conflicting_errors(tmp_path):
+    bridge = Bridge(tmp_path / "bridge")
+    command = bridge.write_command("render_preview", {}, command_id="command-1", nonce="nonce-1")
+    bridge.write_result(command.command_id, command.nonce, {}, ok=False, error="first")
+    with pytest.raises(BridgeConflict):
+        bridge.write_result(command.command_id, command.nonce, {}, ok=False, error="changed")
+
+
+def test_bridge_rejects_nonce_digest_size_and_result_mismatches(tmp_path):
+    bridge = Bridge(tmp_path / "bridge")
+    command = bridge.write_command("render_preview", {"frame": 0}, command_id="command-1", nonce="nonce-1")
+    with pytest.raises(BridgeConflict):
+        bridge.write_result(command.command_id, "wrong", {"ok": True})
+    with pytest.raises(BridgeConflict):
+        bridge.write_result(command.command_id, command.nonce, {"__digest__": "bad"}, result_digest="0" * 64)
+    with pytest.raises(BridgeConflict):
+        bridge.read_result(command.command_id, "wrong")
+    with pytest.raises(BridgeConflict):
+        bridge.write_command("render_preview", {"blob": "x" * (1024 * 1024)}, command_id="command-2", nonce="nonce-2")
+
+
+def test_bridge_is_serialized_and_stop_is_cooperative(tmp_path):
+    bridge = Bridge(tmp_path / "bridge")
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def submit(index):
+        barrier.wait()
+        try:
+            outcomes.append(bridge.write_command("save_checkpoint", {"index": index}, command_id=f"command-{index}", nonce=f"nonce-{index}"))
+        except BridgeBusy:
+            outcomes.append("busy")
+
+    threads = [threading.Thread(target=submit, args=(index,)) for index in (1, 2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sum(item == "busy" for item in outcomes) == 1
+
+    bridge.request_stop("user")
+    stop = bridge.read_stop()
+    assert stop["requested"] is True
+    assert stop["reason"] == "user"
+    bridge.clear_stop()
+    assert bridge.read_stop() is None
+
+
+def test_fixed_kinds_are_exact_and_result_json_is_bounded(tmp_path):
+    assert FIXED_KINDS == {
+        "capability_heartbeat",
+        "create_or_open_project",
+        "import_server_asset",
+        "apply_operation_batch",
+        "inspect_mapped_layers",
+        "save_checkpoint",
+        "render_preview",
+        "render_final",
+        "package_project",
+    }
+    result = BridgeResult(command_id="command-1", nonce="nonce-1", result={"ok": True})
+    parsed = json.loads(result.model_dump_json())
+    assert parsed["schema_version"] == BRIDGE_SCHEMA_VERSION
+
+
+def test_mcp_registry_contains_only_fixed_forwarders_without_importing_mcp():
+    import sys
+
+    from keepframe.after_effects import mcp_server
+
+    assert "mcp" not in sys.modules
+    calls = []
+
+    class FakeBridge:
+        def dispatch(self, kind, payload, *, command_id, nonce):
+            calls.append((kind, payload, command_id, nonce))
+            return {"kind": kind, "payload": payload, "command_id": command_id, "nonce": nonce}
+
+    registry = mcp_server.fixed_tool_registry(FakeBridge())
+    assert tuple(registry) == (
+        "capability_heartbeat",
+        "create_or_open_project",
+        "import_server_asset",
+        "apply_operation_batch",
+        "inspect_mapped_layers",
+        "save_checkpoint",
+        "render_preview",
+        "render_final",
+        "package_project",
+    )
+    assert registry["render_preview"](
+        {"command_id": "command-1", "nonce": "nonce-1", "payload": {"frame": 0}}
+    )["kind"] == "render_preview"
+    assert calls == [("render_preview", {"frame": 0}, "command-1", "nonce-1")]
+
+
+def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
+    from keepframe.after_effects.operations import ApprovedCapabilities
+    from keepframe.after_effects import mcp_server
+
+    capability_digest = "a" * 64
+    capabilities = ApprovedCapabilities(
+        digest=capability_digest,
+        properties={"ADBE Opacity": "number"},
+    )
+    calls = []
+
+    class FakeBridge:
+        def dispatch(self, kind, payload, *, command_id, nonce):
+            calls.append((kind, payload, command_id, nonce))
+            return BridgeResult(
+                command_id=command_id,
+                nonce=nonce,
+                result={"applied": True},
+            )
+
+    envelope = {
+        "command_id": "command-9",
+        "nonce": "nonce-9",
+        "payload": {
+            "batch": {
+                "capability_digest": capability_digest,
+                "operations": [
+                    {
+                        "kind": "set_opacity",
+                        "layer_instance_id": "layer-1",
+                        "opacity": 0.5,
+                    }
+                ],
+            },
+            "approved_capabilities": capabilities.model_dump(mode="json"),
+            "scene_frame_count": 10,
+            "duration": 5.0,
+            "layer_count": 1,
+            "project_id": "project-1",
+            "plan_id": "plan-1",
+            "session_id": "session-1",
+        },
+    }
+    assert mcp_server.fixed_tool_registry(FakeBridge())["apply_operation_batch"](envelope) == {"applied": True}
+    kind, payload, command_id, nonce = calls[0]
+    assert kind == "apply_operation_batch"
+    assert command_id == "command-9"
+    assert nonce == "nonce-9"
+    assert payload["batch"]["operations"][0]["kind"] == "set_opacity"
+    assert payload["scene_frame_count"] == 10
+    assert payload["duration"] == 5.0
+    assert payload["layer_count"] == 1
+    assert payload["project_id"] == "project-1"
+    assert payload["plan_id"] == "plan-1"
+    assert payload["session_id"] == "session-1"
+
+
+def test_mcp_rejects_fill_color_without_fill_effect_capability():
+    from keepframe.after_effects import mcp_server
+    from keepframe.after_effects.operations import ApprovedCapabilities
+
+    capability_digest = "b" * 64
+    capabilities = ApprovedCapabilities(
+        digest=capability_digest,
+        properties={"ADBE Fill Color": "color"},
+    )
+    envelope = {
+        "command_id": "command-fill",
+        "nonce": "nonce-fill",
+        "payload": {
+            "batch": {
+                "capability_digest": capability_digest,
+                "operations": [
+                    {
+                        "kind": "set_color",
+                        "layer_instance_id": "layer-1",
+                        "color": [1.0, 0.0, 0.0],
+                    }
+                ],
+            },
+            "approved_capabilities": capabilities.model_dump(mode="json"),
+            "scene_frame_count": 10,
+            "duration": 5.0,
+            "layer_count": 1,
+            "project_id": "project-1",
+            "plan_id": "plan-1",
+            "session_id": "session-1",
+        },
+    }
+    with pytest.raises(ValueError, match="requires effect"):
+        mcp_server.fixed_tool_registry(object())["apply_operation_batch"](envelope)
+
+
+def test_mcp_apply_requires_bounds_and_scope_fields():
+    from keepframe.after_effects import mcp_server
+    from keepframe.after_effects.operations import ApprovedCapabilities
+
+    capability_digest = "c" * 64
+    capabilities = ApprovedCapabilities(
+        digest=capability_digest,
+        properties={"ADBE Opacity": "number"},
+    )
+    payload = {
+        "batch": {
+            "capability_digest": capability_digest,
+            "operations": [
+                {
+                    "kind": "set_opacity",
+                    "layer_instance_id": "layer-1",
+                    "opacity": 0.5,
+                }
+            ],
+        },
+        "approved_capabilities": capabilities.model_dump(mode="json"),
+        "scene_frame_count": 10,
+        "duration": 5.0,
+        "layer_count": 1,
+        "project_id": "project-1",
+        "plan_id": "plan-1",
+        "session_id": "session-1",
+    }
+    registry = mcp_server.fixed_tool_registry(object())
+    for field in payload:
+        missing = dict(payload)
+        missing.pop(field)
+        envelope = {
+            "command_id": "command-missing-" + field,
+            "nonce": "nonce-missing-" + field,
+            "payload": missing,
+        }
+        with pytest.raises(ValueError, match="requires"):
+            registry["apply_operation_batch"](envelope)
+
+    for field, value in {
+        "project_id": "../project",
+        "plan_id": "",
+        "session_id": "x" * 257,
+    }.items():
+        invalid = dict(payload)
+        invalid[field] = value
+        envelope = {
+            "command_id": "command-invalid-" + field,
+            "nonce": "nonce-invalid-" + field,
+            "payload": invalid,
+        }
+        with pytest.raises(ValueError, match="safe identifier"):
+            registry["apply_operation_batch"](envelope)
+
+
+def test_panel_capabilities_use_runtime_catalogs_and_fixed_metadata():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    assert "allFonts" in panel
+    assert "app.effects" in panel
+    assert "font_names" in panel
+    assert "effect_names" in panel
+    assert "property_schemas" in panel
+    assert "plugin_versions" in panel
+    assert "ADBE Gaussian Blur 2-0001" in panel
+    assert "ADBE Fill-0002" in panel
+    assert "effect.property(1)" in panel
+    assert "fill.property(2)" in panel
+    for installed_font in ('"Arial"', '"Helvetica"', '"Verdana"'):
+        assert installed_font not in panel
+    assert 'property("Blurriness")' not in panel
+    assert 'property("Color")' not in panel
+    fixed_schema_source = panel.split("function fixedPropertySchemas()", 1)[1].split(
+        "function fontMetadata", 1
+    )[0]
+    assert '"ADBE Fill Color": "color"' not in fixed_schema_source
+    assert 'catalogName(effects, "effect_names", "ADBE Fill")' in panel
+    assert "operation.keyframes.length > keyframeLimit" in panel
+    assert "operation.keyframes.length > 128" not in panel
+    assert "function validateAuthoritativeBounds" in panel
+    assert "var MAX_KEYFRAMES = 1000000;" in panel
+    assert "property requires an approved effect" in panel
+    assert "propertyTime(frame, time)" in panel
+    assert "setTemporalEaseAtKey" in panel
+    assert "Number(operation.value) * 100" in panel
+    assert "Number(keyframe.value) * 100" in panel
+    assert "temporal easing is unavailable" in panel
+    assert "source_element_id: layerSourceId(layer)" in panel
+    assert "keepframe:layer=" in panel and ";source_element_id=" in panel
+    assert "--([A-Za-z0-9]" in panel
+    assert "assertEffectPropertyOperation" in panel
+    assert "effect properties require set_effect" in panel
+    assert "SESSION_COMP_MARKER" in panel
+    assert "refusing to reuse an unrelated After Effects project" in panel
+    assert "requireSessionComposition()" in panel
+    assert r"/^([A-Za-z0-9][A-Za-z0-9_.-]{0,255})--([A-Za-z0-9][A-Za-z0-9_.-]{0,255})\.json$/" in panel
+    assert "completed bridge record is invalid" in panel
+    assert 'var INFLIGHT_DIR = Folder(BRIDGE_ROOT.fsName + "/inflight");' in panel
+    assert "function inflightAttempt(command)" in panel
+    assert "command outcome is indeterminate after panel interruption" in panel
+    poll_source = panel.split("function KeepframeBridge_poll()", 1)[1]
+    assert poll_source.index("completedResult(command)") < poll_source.index("inflightAttempt(command)")
+    assert poll_source.index("markAttempt(command)") < poll_source.index("dispatchCommand(command)")
+    assert poll_source.index("markCompleted(response)") < poll_source.index("writeAtomic(RESULT_FILE, response)")
+    assert "Leave the command available for a later retry" not in panel
+
+def test_panel_binds_scope_before_dispatch_and_rejects_stale_comp_bounds():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    marker_source = panel.split("function sessionMarker", 1)[1].split(
+        "function hasSessionMarker", 1
+    )[0]
+    assert "typeof projectId !== \"string\"" in marker_source
+    assert "typeof planId !== \"string\"" in marker_source
+    assert "typeof sessionId !== \"string\"" in marker_source
+    assert "SESSION_COMP_MARKER_PREFIX + JSON.stringify([projectId, planId, sessionId])" in marker_source
+    assert "sessionMarker(payload.project_id, payload.plan_id, payload.session_id)" in panel
+    create_source = panel.split("function createOrOpenProject", 1)[1].split(
+        "function importServerAsset", 1
+    )[0]
+    assert "comp.comment = marker" in create_source
+    assert "hasSessionMarker(comp, marker)" in create_source
+    assert "heartbeat(false)" in create_source
+    inspect_source = panel.split("function inspectLayers", 1)[1].split(
+        "function saveCheckpoint", 1
+    )[0]
+    assert "heartbeat(false)" in inspect_source
+    scope_source = panel.split("function validateCommandScope", 1)[1].split(
+        "function requireSessionComposition", 1
+    )[0]
+    assert "requireSessionComposition()" in scope_source
+    assert "hasAnyScope = hasProject || hasPlan || hasSession" in scope_source
+    assert "kind === \"capability_heartbeat\" && !hasAnyScope" in scope_source
+    assert "Keepframe command scope is incomplete" in scope_source
+
+    dispatch_source = panel.split("function dispatchCommand(command)", 1)[1].split(
+        "function KeepframeBridge_poll", 1
+    )[0]
+    assert "validateCommandScope(command.kind, command.payload || {})" in dispatch_source
+    assert dispatch_source.index("validateCommandScope") < dispatch_source.index("switch (command.kind)")
+    assert "var includeLocalPaths = validateCommandScope(command.kind, command.payload || {});" in dispatch_source
+    assert "return heartbeat(includeLocalPaths);" in dispatch_source
+    assert "heartbeat(true)" not in panel
+    poll_source = panel.split("function KeepframeBridge_poll", 1)[1]
+    assert poll_source.index("validateCommandScope") < poll_source.index("markAttempt")
+    assert "removeStop();" not in poll_source
+    batch_source = panel.split("function applyBatch(payload)", 1)[1].split(
+        "function createOrOpenProject", 1
+    )[0]
+    assert "payload.scene_frame_count" in batch_source
+    assert "payload.duration" in batch_source
+    assert "payload.layer_count" in batch_source
+    bounds_source = panel.split("function validateAuthoritativeBounds", 1)[1].split(
+        "function validateTiming", 1
+    )[0]
+    assert "comp.duration * comp.frameRate" in bounds_source
+    assert "comp.numLayers !== layerCount" in bounds_source
+    assert "Math.floor(sceneFrameCount) !== sceneFrameCount" in bounds_source
+    assert "duration <= 0" in bounds_source
+    assert "Math.floor(layerCount) !== layerCount" in bounds_source
+    assert "batch.scene_frame_count" not in panel
+    assert "batch.frame_count" not in panel
+    assert "batch.duration" not in panel
+    assert batch_source.index("validateAuthoritativeBounds") < batch_source.index("app.beginUndoGroup")
+    assert "removeStop();" in batch_source
+    assert batch_source.index("stopped = STOP_FILE.exists") < batch_source.index("removeStop();")
+
+    font_source = panel.split("function fontLocalPath", 1)[1].split(
+        "function enumerateFonts", 1
+    )[0]
+    assert "font.location" in font_source
+    assert "font.file" in font_source
+    assert "includeLocalPath === true" in font_source
+    assert "fontLocalPath(font)" in font_source
+    assert "sha256" not in font_source.lower()

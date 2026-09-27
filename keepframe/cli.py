@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
+    ae_install = sub.add_parser("ae-install")
+    ae_install.add_argument("--ae-path")
+    ae_connect = sub.add_parser("ae-connect")
+    ae_connect.add_argument("--url", required=True)
+    ae_connect.add_argument("--project")
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -165,6 +170,20 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "gate-m2-real":
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
+    if a.cmd == "ae-install":
+        from .after_effects.installer import install_panel, manual_instructions
+
+        panel = install_panel(Path(a.ae_path) if a.ae_path else None)
+        print(panel)
+        print(manual_instructions())
+        return 0
+    if a.cmd == "ae-connect":
+        from getpass import getpass
+
+        from .after_effects.connector import run_connector
+
+        code = None if a.project else getpass("Pairing code: ")
+        return run_connector(a.url, code=code, project=a.project)
     if a.cmd == "serve":
         from .web.server import JOBS, make_server
         configure()

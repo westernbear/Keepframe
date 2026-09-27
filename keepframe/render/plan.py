@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..ir.store import load_project, load_scene
 
@@ -104,6 +104,7 @@ class RenderPlan(BaseModel):
     permitted_operations: tuple[dict[str, Any], ...] = ()
     effect_schemas: tuple[dict[str, Any], ...] = ()
     capability_hash: str | None = None
+    capability_manifest: dict[str, Any] | None = None
     substitutions: tuple[dict[str, Any], ...] = ()
     substitutions_acknowledged: bool = False
     artifact_contract: dict[str, Any] = Field(default_factory=dict)
@@ -145,6 +146,24 @@ class RenderPlan(BaseModel):
         if any(not item for item in value):
             raise ValueError("locked target identifiers must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _capability_binding(self) -> "RenderPlan":
+        if self.backend != "after_effects":
+            return self
+        if self.capability_hash is None or self.capability_manifest is None:
+            raise ValueError(
+                "after_effects plans require a capability hash and manifest"
+            )
+        try:
+            manifest_hash = hashlib.sha256(
+                _canonical_payload(self.capability_manifest)
+            ).hexdigest()
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("capability manifest is invalid") from exc
+        if manifest_hash != self.capability_hash:
+            raise ValueError("capability manifest does not match capability hash")
+        return self
 
 
 class RenderPlanState(BaseModel):
@@ -495,6 +514,7 @@ def create_render_plan(
     effect_schemas: Sequence[Mapping[str, Any]] = (),
     capability_hash: str | None = None,
     connector_capability_hash: str | None = None,
+    capability_manifest: Mapping[str, Any] | None = None,
     substitutions: Sequence[Mapping[str, Any]] = (),
     substitutions_acknowledged: bool = False,
     artifact_contract: Mapping[str, Any] | None = None,
@@ -511,8 +531,27 @@ def create_render_plan(
     if capability_hash is not None and connector_capability_hash is not None and capability_hash != connector_capability_hash:
         raise PlanConflict("conflicting capability hashes")
     capability_hash = capability_hash if capability_hash is not None else connector_capability_hash
-    if backend == "after_effects" and not capability_hash:
-        raise PlanConflict("after_effects plans require a capability hash")
+    if backend == "after_effects" and (
+        not capability_hash or capability_manifest is None
+    ):
+        raise PlanConflict(
+            "after_effects plans require a capability hash and manifest"
+        )
+    if capability_manifest is not None:
+        if not isinstance(capability_manifest, Mapping):
+            raise TypeError("capability manifest must be a mapping or None")
+        try:
+            capability_manifest = json.loads(
+                _canonical_payload(dict(capability_manifest)).decode("utf-8")
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PlanConflict("capability manifest is invalid") from exc
+        if backend == "after_effects" and capability_hash:
+            manifest_hash = hashlib.sha256(
+                _canonical_payload(capability_manifest)
+            ).hexdigest()
+            if manifest_hash != capability_hash:
+                raise PlanConflict("capability manifest does not match capability hash")
     substitutions = tuple(dict(item) for item in substitutions)
     if substitutions and not substitutions_acknowledged:
         raise PlanConflict("substitution acknowledgement is required")
@@ -533,7 +572,7 @@ def create_render_plan(
 
     scene_sha256, _ = _hash_file(scene_path)
     scene_dir = scene_path.parent
-    refs: list[tuple[str, str]] = []
+    refs: list[tuple[str, Literal["texture", "raw", "substitution"]]] = []
     for element in scene.elements:
         if element.canonical.texture:
             refs.append((element.canonical.texture, "texture"))
@@ -615,6 +654,7 @@ def create_render_plan(
                 "permitted_operations": [dict(item) for item in permitted_operations],
                 "effect_schemas": [dict(item) for item in effect_schemas],
                 "capability_hash": capability_hash,
+                "capability_manifest": capability_manifest,
                 "substitutions": list(substitutions),
                 "substitutions_acknowledged": substitutions_acknowledged,
                 "artifact_contract": artifact,

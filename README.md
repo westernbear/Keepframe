@@ -54,6 +54,17 @@ stop new connector leases, allow the active lease to settle, then rotate or
 revoke the hashed device credential. Browser artifact downloads require the
 same controller cookie and same-origin request.
 
+Install the optional Windows connector with `pip install 'keepframe[ae]'`.
+`keepframe ae-install [--ae-path ...]` installs the ScriptUI panel for After
+Effects 2022 or newer; restart After Effects, enable **Allow Scripts to Write
+Files and Access Network**, then open **Window > Keepframe Panel**. With
+`KEEPFRAME_AE_RELAY_TOKEN` set only in the connector environment, run
+`keepframe ae-connect --url https://relay.example`; the command prompts for the
+one-use pairing code without echoing it. Later starts use
+`keepframe ae-connect --url https://relay.example --project PROJECT_ID` and the
+current-user DPAPI-protected device record. The MCP child receives neither
+relay credential.
+
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash
@@ -76,6 +87,8 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 | `render` | Chromium frames, optional MP4 |
 | `verify` | Schema, keep predicates, frame compare |
 | `correct` | Review ops on a scene |
+| `ae-install` | Windows-only After Effects ScriptUI panel installer |
+| `ae-connect` | Pair or resume the Windows connector and local MCP bridge |
 | `synth` | Synthetic scene |
 | `gate-m1` / `gate-m2` | Synthetic gates |
 

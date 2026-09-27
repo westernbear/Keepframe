@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from ..render.plan import _atomic_write, _state_lock
 
-from .models import canonical_json
+from .models import AECapabilities, canonical_json
 
 
 _PROJECT_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -89,14 +89,34 @@ class _DeviceCredential(_AuthRecord):
         return value
 
 
+class _StoredCapabilities(_AuthRecord):
+    device_id: str
+    capability_request_hash: str
+    snapshot: AECapabilities
+
+    @field_validator("device_id")
+    @classmethod
+    def _device_id(cls, value: str) -> str:
+        if not re.fullmatch(r"device-[A-Za-z0-9_-]{16,64}", value):
+            raise ValueError("device id is invalid")
+        return value
+
+    @field_validator("capability_request_hash")
+    @classmethod
+    def _request_digest(cls, value: str) -> str:
+        if not _SHA256.fullmatch(value):
+            raise ValueError("capability request digest is invalid")
+        return value
+
+
 class _AuthState(_AuthRecord):
     project_id: str
     revision: int = 0
     controller_hash: str | None = None
     pending: _PendingPairing | None = None
     device: _DeviceCredential | None = None
+    capability_snapshot: _StoredCapabilities | None = None
     revoking: bool = False
-
     @field_validator("project_id")
     @classmethod
     def _project(cls, value: str) -> str:
@@ -247,7 +267,7 @@ class AEProjectAuth:
                     "controller authorization failed"
                 )
             controller_hash = _hash_secret(controller)
-            code = secrets.token_urlsafe(24)
+            code = f"{self.project_id}.{secrets.token_urlsafe(24)}"
             expires_at = created_at + _PAIRING_TTL_SECONDS
             pending = _PendingPairing(
                 code_hash=_hash_secret(code),
@@ -309,6 +329,7 @@ class AEProjectAuth:
                         "revision": state.revision + 1,
                         "pending": None,
                         "device": credential,
+                        "capability_snapshot": None,
                         "revoking": False,
                     }
                 )
@@ -333,6 +354,50 @@ class AEProjectAuth:
             _ = _secret_matches(token, None)
             return False
 
+    @staticmethod
+    def _authorized_identity_unlocked(
+        state: _AuthState,
+        project_id: str,
+        token: str | None,
+        *,
+        allow_draining: bool,
+    ) -> AEDeviceIdentity | None:
+        device = state.device
+        if (
+            not _secret_matches(token, device.token_hash if device is not None else None)
+            or device is None
+            or not hmac.compare_digest(
+                device.controller_hash,
+                state.controller_hash or _DUMMY_HASH,
+            )
+            or (device.status == "draining" and not allow_draining)
+        ):
+            return None
+        return AEDeviceIdentity(
+            project_id=project_id,
+            device_id=device.id,
+            status=device.status,
+        )
+
+    @staticmethod
+    def _capabilities_unlocked(
+        state: _AuthState,
+        device_id: str | None = None,
+    ) -> AECapabilities | None:
+        device = state.device
+        stored = state.capability_snapshot
+        if (
+            device is None
+            or stored is None
+            or stored.device_id != device.id
+            or stored.capability_request_hash != device.capability_request_hash
+            or device.status != "active"
+            or state.revoking
+            or (device_id is not None and device_id != device.id)
+        ):
+            return None
+        return stored.snapshot
+
     @contextmanager
     def authorize_device(
         self,
@@ -349,23 +414,56 @@ class AEProjectAuth:
             raise AEAuthError("authentication time is invalid")
         with _state_lock(self.path):
             state = self._refresh_expired_unlocked(self._load_unlocked(), current_time)
-            device = state.device
-            if (
-                not _secret_matches(token, device.token_hash if device is not None else None)
-                or device is None
-                or not hmac.compare_digest(
-                    device.controller_hash,
-                    state.controller_hash or _DUMMY_HASH,
-                )
-                or (device.status == "draining" and not allow_draining)
-            ):
-                yield None
-                return
-            yield AEDeviceIdentity(
-                project_id=self.project_id,
-                device_id=device.id,
-                status=device.status,
+            yield self._authorized_identity_unlocked(
+                state,
+                self.project_id,
+                token,
+                allow_draining=allow_draining,
             )
+
+
+    @contextmanager
+    def authorize_device_with_capabilities(
+        self,
+        token: str | None,
+        *,
+        allow_draining: bool = False,
+        now: float | None = None,
+    ) -> Generator[tuple[AEDeviceIdentity | None, AECapabilities | None]]:
+        try:
+            current_time = time.time() if now is None else float(now)
+        except (TypeError, ValueError) as exc:
+            raise AEAuthError("authentication time is invalid") from exc
+        if not math.isfinite(current_time) or current_time < 0:
+            raise AEAuthError("authentication time is invalid")
+        with _state_lock(self.path):
+            state = self._refresh_expired_unlocked(self._load_unlocked(), current_time)
+            identity = self._authorized_identity_unlocked(
+                state,
+                self.project_id,
+                token,
+                allow_draining=allow_draining,
+            )
+            if identity is None:
+                yield None, None
+                return
+            yield identity, self._capabilities_unlocked(
+                state,
+                identity.device_id,
+            )
+
+    @contextmanager
+    def authorize_controller_with_capabilities(
+        self,
+        token: str | None,
+    ) -> Generator[AECapabilities | None]:
+        """Hold the auth-state lock while reading the current controller snapshot."""
+        with _state_lock(self.path):
+            state = self._load_unlocked()
+            if not _secret_matches(token, state.controller_hash):
+                raise AEControllerAuthorizationError("controller authorization failed")
+            yield self._capabilities_unlocked(state)
+
 
     def authenticate_device(
         self,
@@ -389,6 +487,52 @@ class AEProjectAuth:
         with _state_lock(self.path):
             state = self._load_unlocked()
             return state.device.id if state.device is not None else None
+
+    def read_capabilities(self, device_id: str | None = None) -> AECapabilities | None:
+        with _state_lock(self.path):
+            return self._capabilities_unlocked(
+                self._load_unlocked(),
+                device_id,
+            )
+
+    def publish_capabilities(
+        self,
+        device_id: str,
+        snapshot: AECapabilities | Mapping[str, Any],
+    ) -> AECapabilities:
+        try:
+            payload = (
+                snapshot.model_dump(mode="json")
+                if isinstance(snapshot, AECapabilities)
+                else snapshot
+            )
+            normalized = AECapabilities.model_validate(payload)
+        except (TypeError, ValueError) as exc:
+            raise AEAuthError("capability snapshot is invalid") from exc
+        if not isinstance(device_id, str) or not re.fullmatch(
+            r"device-[A-Za-z0-9_-]{16,64}", device_id
+        ):
+            raise AEAuthError("device authorization failed")
+        with _state_lock(self.path):
+            state = self._load_unlocked()
+            device = state.device
+            if device is None or device.id != device_id or device.status != "active":
+                raise AEAuthError("device authorization failed")
+            stored = _StoredCapabilities(
+                device_id=device.id,
+                capability_request_hash=device.capability_request_hash,
+                snapshot=normalized,
+            )
+            self._write_unlocked(
+                state.model_copy(
+                    update={
+                        "revision": state.revision + 1,
+                        "capability_snapshot": stored,
+                    }
+                )
+            )
+            return normalized
+
 
     def begin_unpair(self, controller_token: str | None) -> str | None:
         with _state_lock(self.path):
@@ -431,6 +575,7 @@ class AEProjectAuth:
                         "controller_hash": None,
                         "pending": None,
                         "device": None,
+                        "capability_snapshot": None,
                         "revoking": False,
                     }
                 )

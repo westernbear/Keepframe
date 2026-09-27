@@ -1,10 +1,49 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
 
 import pytest
 
 from keepframe.after_effects.auth import AEAuthError, AEProjectAuth
+from keepframe.after_effects.models import AECapabilities
 from tests.test_ae_coordinator import _coordinator
+
+
+def _capability_snapshot() -> AECapabilities:
+    return AECapabilities.model_validate(
+        {
+            "version": "24.1.0",
+            "major": 24,
+            "host": "after-effects",
+            "ready": True,
+            "project_open": True,
+            "capabilities": {
+                "font_names": ["Arial"],
+                "fonts": [
+                    {
+                        "match_name": "Arial",
+                        "family": "Arial",
+                        "style": "Regular",
+                        "version": "1",
+                        "version_or_hash": "1",
+                    }
+                ],
+                "effect_names": ["ADBE Fill"],
+                "effects": [
+                    {
+                        "match_name": "ADBE Fill",
+                        "display_name": "Fill",
+                        "version": "1",
+                        "version_or_hash": "1",
+                        "properties": {"ADBE Fill-0002": "color"},
+                    }
+                ],
+                "property_schemas": {"ADBE Opacity": "number"},
+                "properties": {"ADBE Opacity": "number"},
+                "plugin_versions": {"ADBE Fill": "1"},
+            },
+        }
+    )
 
 
 def test_pairing_secrets_are_hashed_bound_and_consumed_once(tmp_path):
@@ -13,6 +52,7 @@ def test_pairing_secrets_are_hashed_bound_and_consumed_once(tmp_path):
     auth = AEProjectAuth(root, "p1")
 
     pairing = auth.create_pairing(None, {"required": ["ae_version", "fonts"]}, now=100.0)
+    assert pairing.code.startswith("p1.")
     persisted = (root / "ae-auth.json").read_text(encoding="utf-8")
     assert pairing.code not in persisted
     assert pairing.controller_token not in persisted
@@ -123,3 +163,87 @@ def test_device_detach_waits_for_lease_and_allows_authenticated_rebind(tmp_path,
         device_id="device-2",
     )
     assert rebound.device_id == "device-2"
+
+
+def test_capability_snapshot_is_bound_and_survives_auth_reload(tmp_path):
+    root = tmp_path / "p1"
+    root.mkdir()
+    auth = AEProjectAuth(root, "p1")
+    pairing = auth.create_pairing(None, {"required": ["fonts"]})
+    device = auth.redeem_pairing(pairing.code)
+    assert auth.read_capabilities() is None
+    snapshot = _capability_snapshot()
+
+    auth.publish_capabilities(device.identity.device_id, snapshot)
+    reloaded = AEProjectAuth(root, "p1")
+    stored = reloaded.read_capabilities()
+
+    assert stored is not None
+    assert stored.capability_hash == snapshot.capability_hash
+    assert stored.model_dump(mode="json") == snapshot.model_dump(mode="json")
+
+
+@pytest.mark.parametrize("state", ["draining", "revoking"])
+def test_read_capabilities_requires_current_active_device(tmp_path, state):
+    root = tmp_path / "p1"
+    root.mkdir()
+    auth = AEProjectAuth(root, "p1")
+    pairing = auth.create_pairing(None, {})
+    device = auth.redeem_pairing(pairing.code)
+    auth.publish_capabilities(device.identity.device_id, _capability_snapshot())
+
+    if state == "draining":
+        auth.create_pairing(pairing.controller_token, {})
+    else:
+        auth.begin_unpair(pairing.controller_token)
+
+    assert auth.read_capabilities() is None
+
+
+def test_controller_capability_context_holds_auth_lock(tmp_path):
+    root = tmp_path / "p1"
+    root.mkdir()
+    auth = AEProjectAuth(root, "p1")
+    pairing = auth.create_pairing(None, {})
+    device = auth.redeem_pairing(pairing.code)
+    snapshot = _capability_snapshot()
+    auth.publish_capabilities(device.identity.device_id, snapshot)
+
+    entered = Event()
+    attempting = Event()
+    finished = Event()
+    release = Event()
+    ready = Barrier(2)
+
+    def hold_lock():
+        with auth.authorize_controller_with_capabilities(
+            pairing.controller_token
+        ) as current:
+            assert current is not None
+            assert current.capability_hash == snapshot.capability_hash
+            entered.set()
+            assert release.wait(timeout=2)
+
+    def unpair():
+        assert entered.wait(timeout=2)
+        attempting.set()
+        ready.wait(timeout=2)
+        auth.begin_unpair(pairing.controller_token)
+        finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        holder = pool.submit(hold_lock)
+        revoker = None
+        try:
+            assert entered.wait(timeout=2)
+            revoker = pool.submit(unpair)
+            assert attempting.wait(timeout=2)
+            ready.wait(timeout=2)
+            assert not finished.is_set()
+        finally:
+            release.set()
+        holder.result(timeout=2)
+        if revoker is not None:
+            revoker.result(timeout=2)
+
+    assert auth.read_capabilities() is None

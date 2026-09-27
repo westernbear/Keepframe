@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import struct
@@ -12,6 +13,49 @@ from keepframe.after_effects.models import AECheckpoint
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.render.plan import RenderMode, approve_render_plan, create_render_plan
+
+
+_AE_CAPABILITY_MANIFEST = {
+    "version": "24.1.0",
+    "major": 24,
+    "host": "after-effects",
+    "ready": True,
+    "capabilities": {
+        "font_names": ["Arial"],
+        "fonts": [
+            {
+                "match_name": "Arial",
+                "family": "Arial",
+                "style": "Regular",
+                "version": "1",
+                "version_or_hash": "1",
+                "sha256": None,
+            }
+        ],
+        "effect_names": ["ADBE Fill"],
+        "effects": [
+            {
+                "match_name": "ADBE Fill",
+                "display_name": "Fill",
+                "version": "1",
+                "version_or_hash": "1",
+                "properties": {"ADBE Fill-0002": "color"},
+            }
+        ],
+        "property_schemas": {"ADBE Opacity": "number"},
+        "properties": {"ADBE Opacity": "number"},
+        "plugin_versions": {"ADBE Fill": "1"},
+    },
+}
+_AE_CAPABILITY_HASH = hashlib.sha256(
+    json.dumps(
+        _AE_CAPABILITY_MANIFEST,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+).hexdigest()
 
 
 def _coordinator(tmp_path: Path, *, mode: RenderMode = "preview"):
@@ -30,8 +74,8 @@ def _coordinator(tmp_path: Path, *, mode: RenderMode = "preview"):
         version_id="v1",
         backend="after_effects",
         mode=mode,
-        capability_hash="a" * 64,
-        permitted_operations=({"kind": "create_project"}, {"kind": "apply_batch"}),
+        capability_hash=_AE_CAPABILITY_HASH,
+        capability_manifest=_AE_CAPABILITY_MANIFEST,
     )
     approval = approve_render_plan(root, plan.id, digest=plan.digest, revision=0)
     coordinator = AECoordinator(root, plan.id)
@@ -178,7 +222,7 @@ def test_restart_recovers_every_active_state_to_paused(tmp_path):
 
 
 def test_command_leases_redeliver_without_reapplying_and_results_are_idempotent(tmp_path):
-    _, _, coordinator, session = _coordinator(tmp_path)
+    _, plan, coordinator, session = _coordinator(tmp_path)
     session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     command = coordinator.enqueue_command(
         "heartbeat",
@@ -187,6 +231,7 @@ def test_command_leases_redeliver_without_reapplying_and_results_are_idempotent(
         expected_checkpoint=None,
         lease_seconds=10,
     )
+    assert command.plan_digest == plan.digest
 
     leased = coordinator.next_command("device-1", now=100)
     assert leased is not None and leased.id == command.id and leased.sequence == 1
@@ -446,12 +491,38 @@ def test_artifact_reservations_stream_validate_and_publish_once(tmp_path):
 
     path = root / "renders" / plan.id / "ae" / "artifacts" / reservation.id
     assert artifact.sha256
+    reservations_path = root / "renders" / plan.id / "ae" / "reservations.json"
+    committed_state = reservations_path.read_bytes()
     assert path.read_bytes() == payload
-    with pytest.raises(CoordinatorConflict, match="committed"):
+    retry = coordinator.publish_artifact(
+        "device-1",
+        reservation.id,
+        io.BytesIO(payload),
+        content_length=len(payload),
+    )
+    assert retry == artifact
+    assert path.read_bytes() == payload
+    assert reservations_path.read_bytes() == committed_state
+    different = bytearray(payload)
+    different[19] = 2
+    different[29:33] = struct.pack(
+        ">I",
+        zlib.crc32(different[12:29]) & 0xFFFFFFFF,
+    )
+    with pytest.raises(CoordinatorConflict, match="digest"):
         coordinator.publish_artifact(
-            "device-1", reservation.id, io.BytesIO(payload), content_length=len(payload)
+            "device-1",
+            reservation.id,
+            io.BytesIO(different),
+            content_length=len(different),
         )
-
+    with pytest.raises(CoordinatorConflict):
+        coordinator.publish_artifact(
+            "device-1",
+            reservation.id,
+            io.BytesIO(payload[:-1]),
+            content_length=len(payload) - 1,
+        )
     too_small = coordinator.reserve_artifact("png", max_length=4)
     with pytest.raises(CoordinatorConflict, match="length"):
         coordinator.publish_artifact(

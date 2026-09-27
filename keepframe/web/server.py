@@ -1067,7 +1067,70 @@ def make_server(
                 if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
                     return self._json(400, {"error": "revision is invalid"})
                 try:
-                    state = approve_render_plan(root, plan.id, digest=digest, revision=revision)
+                    if plan.backend == "after_effects":
+                        pending_state = load_render_plan_state(root, plan.id)
+                        if pending_state.status == "approved":
+                            state = approve_render_plan(
+                                root,
+                                plan.id,
+                                digest=digest,
+                                revision=revision,
+                            )
+                        else:
+                            auth = AEProjectAuth(root, project_id)
+                            with auth.authorize_controller_with_capabilities(
+                                self._controller_token(project_id)
+                            ) as snapshot:
+                                pending_state = load_render_plan_state(root, plan.id)
+                                if (
+                                    pending_state.status == "awaiting_approval"
+                                    and pending_state.revision == revision
+                                    and digest == plan.digest
+                                ):
+                                    if snapshot is None:
+                                        return self._json(
+                                            409,
+                                            {
+                                                "error": (
+                                                    "active published AE capabilities "
+                                                    "are required"
+                                                )
+                                            },
+                                        )
+                                    manifest = snapshot.model_dump(
+                                        mode="json",
+                                        exclude={
+                                            "capability_hash",
+                                            "project_open",
+                                            "timestamp",
+                                        },
+                                    )
+                                    if (
+                                        snapshot.capability_hash != plan.capability_hash
+                                        or manifest != plan.capability_manifest
+                                    ):
+                                        return self._json(
+                                            409,
+                                            {
+                                                "error": (
+                                                    "AE capabilities changed since "
+                                                    "plan creation"
+                                                )
+                                            },
+                                        )
+                                state = approve_render_plan(
+                                    root,
+                                    plan.id,
+                                    digest=digest,
+                                    revision=revision,
+                                )
+                    else:
+                        state = approve_render_plan(
+                            root,
+                            plan.id,
+                            digest=digest,
+                            revision=revision,
+                        )
                     if not state.execution_id:
                         raise PlanConflict("approved render plan has no execution id")
                     if plan.backend == "after_effects":
@@ -1103,6 +1166,10 @@ def make_server(
                             "status": _render_status(state, job),
                         },
                     )
+                except AEControllerAuthorizationError as exc:
+                    return self._json(401, {"error": str(exc)})
+                except AEAuthError as exc:
+                    return self._json(409, {"error": str(exc)})
                 except (PlanConflict, CoordinatorConflict) as exc:
                     return self._json(409, {"error": str(exc)})
 
@@ -1501,12 +1568,23 @@ def make_server(
                 def prepare_agent_render(mode: str, backend: str, direction: str | None):
                     if (
                         backend == "after_effects"
-                        and not agent_auth.authenticate_controller(
-                            agent_controller_token
-                        )
+                        and not agent_auth.authenticate_controller(agent_controller_token)
                     ):
                         raise AEControllerAuthorizationError(
                             "controller authorization failed"
+                        )
+                    capability_hash = None
+                    capability_manifest = None
+                    if backend == "after_effects":
+                        snapshot = agent_auth.read_capabilities()
+                        if snapshot is None:
+                            raise PlanConflict(
+                                "active published AE capabilities are required"
+                            )
+                        capability_hash = snapshot.capability_hash
+                        capability_manifest = snapshot.model_dump(
+                            mode="json",
+                            exclude={"capability_hash", "project_open", "timestamp"},
                         )
                     return create_render_plan(
                         root,
@@ -1516,6 +1594,8 @@ def make_server(
                         backend=backend,
                         mode=mode,
                         direction=direction,
+                        capability_hash=capability_hash,
+                        capability_manifest=capability_manifest,
                     )
 
                 def submit_agent_job(kind: str, args: dict, stage: str) -> dict:

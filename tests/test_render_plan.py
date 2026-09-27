@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -47,6 +48,7 @@ def test_plan_is_canonical_immutable_and_pins_assets(tmp_path):
 
     stored = load_render_plan(root, plan.id)
     assert stored == plan
+    assert stored.capability_manifest is None
     assert stored.digest == plan.digest
     assert stored.scene_sha256
     assert stored.assets
@@ -120,6 +122,51 @@ def test_ae_plan_requires_bound_capabilities(tmp_path):
             version_id="v1",
             backend="after_effects",
             mode="preview",
+        )
+
+
+def test_ae_plan_pins_capability_manifest_and_hash(tmp_path):
+    root, _ = _project(tmp_path)
+    manifest = {
+        "version": "24.1.0",
+        "major": 24,
+        "host": "after-effects",
+        "ready": True,
+        "capabilities": {
+            "font_names": ["Arial"],
+            "effect_names": ["ADBE Fill"],
+            "property_schemas": {"ADBE Opacity": "number"},
+            "plugin_versions": {"ADBE Fill": "1"},
+        },
+    }
+    capability_hash = hashlib.sha256(
+        render_plan_module._canonical_payload(manifest)
+    ).hexdigest()
+
+    plan = create_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="after_effects",
+        mode="preview",
+        capability_hash=capability_hash,
+        capability_manifest=manifest,
+    )
+
+    stored = load_render_plan(root, plan.id)
+    assert stored.capability_hash == capability_hash
+    assert stored.capability_manifest == manifest
+    with pytest.raises(PlanConflict, match="manifest"):
+        create_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            backend="after_effects",
+            mode="preview",
+            capability_hash="a" * 64,
+            capability_manifest=manifest,
         )
 
 
