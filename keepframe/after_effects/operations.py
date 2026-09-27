@@ -28,13 +28,34 @@ MAX_OPERATIONS = 128
 MAX_RECORD_BYTES = 1 * 1024 * 1024
 MAX_STRING_LENGTH = 4096
 MAX_LAYERS = 1000
+MIN_KEYFRAME_EASE_INFLUENCE = 0.1
+MIN_SOLID_DIMENSION = 4
+MAX_SOLID_DIMENSION = 30000
 ABSOLUTE_NUMBER_CEILING = 1_000_000
-_PROPERTY_SCHEMAS = frozenset(
-    {"number", "float", "integer", "int", "boolean", "bool", "string", "str", "enum", "color", "rgba", "vec2", "vector2", "vec3", "vector3", "vec4", "vector4"}
-)
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _URL_RE = re.compile(r"^(?:https?|file|javascript|data):", re.IGNORECASE)
+_PROPERTY_SCHEMAS = frozenset(
+    {
+        "number",
+        "float",
+        "integer",
+        "int",
+        "boolean",
+        "bool",
+        "string",
+        "str",
+        "enum",
+        "color",
+        "rgba",
+        "vec2",
+        "vector2",
+        "vec3",
+        "vector3",
+        "vec4",
+        "vector4",
+    }
+)
 MAX_LAYER_ID_LENGTH = 256
 _FORBIDDEN_KEYS = frozenset(
     {
@@ -177,18 +198,63 @@ def _digest(value: str, *, label: str = "digest") -> str:
 
 def _identifier(value: str, *, label: str = "identifier") -> str:
     return _string(value, label=label, identifier=True)
+_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$")
+
+
+def _asset_identifier(value: str, *, label: str = "asset id") -> str:
+    _string(value, label=label)
+    if not _ASSET_ID_RE.fullmatch(value):
+        raise ValueError(f"{label} is not a safe identifier")
+    return value
+
 
 
 def _finite(value: Any, *, label: str = "number") -> float | int:
     return _number(value, label=label)
 
 
+def _duration(value: Any, *, label: str) -> float | int:
+    number = _number(value, label=label)
+    if number <= 0:
+        raise ValueError(f"{label} must be greater than zero")
+    return number
+
+
+
+
+def _color_value(value: Any, *, label: str = "color") -> str | list[float | int]:
+    if isinstance(value, str):
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            raise ValueError(f"{label} must be an RGB color in #RRGGBB form")
+        return value
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"{label} must contain exactly three RGB channels")
+    return [
+        _number(channel, label=f"{label} channel", minimum=0, maximum=1)
+        for channel in value
+    ]
+
+
+def _ease_pair(value: Any, *, label: str) -> list[float | int]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError(f"{label} must contain speed and influence")
+    return [
+        _number(value[0], label=f"{label} speed"),
+        _number(
+            value[1],
+            label=f"{label} influence",
+            minimum=MIN_KEYFRAME_EASE_INFLUENCE,
+            maximum=100,
+        ),
+    ]
+
+
 class Keyframe(_StrictRecord):
     frame: int
     value: Any
     time: float | int | None = None
-    ease_in: list[float | int] | None = None
-    ease_out: list[float | int] | None = None
+    ease_in: list[float | int] | list[list[float | int]] | None = None
+    ease_out: list[float | int] | list[list[float | int]] | None = None
 
     _frame = field_validator("frame")(
         lambda value: _integer(value, label="keyframe frame")
@@ -202,14 +268,16 @@ class Keyframe(_StrictRecord):
 
     @field_validator("ease_in", "ease_out")
     @classmethod
-    def _ease(cls, value: list[float | int] | None):
+    def _ease(cls, value: list[float | int] | list[list[float | int]] | None):
         if value is None:
             return None
-        if len(value) != 2:
-            raise ValueError("temporal ease must contain two numbers")
+        if len(value) == 2 and all(not isinstance(item, list) for item in value):
+            return _ease_pair(value, label="temporal ease")
+        if not value or any(not isinstance(item, list) for item in value):
+            raise ValueError("temporal ease must contain one pair or nonempty per-dimension pairs")
         return [
-            _number(value[0], label="temporal ease speed"),
-            _number(value[1], label="temporal ease influence", minimum=0, maximum=100),
+            _ease_pair(item, label="temporal ease")
+            for item in value
         ]
 
 
@@ -250,6 +318,8 @@ class SetTransformOperation(_StrictRecord):
     layer_instance_id: str
     property_name: Literal[
         "position",
+        "position_x",
+        "position_y",
         "scale",
         "scale_x",
         "scale_y",
@@ -257,6 +327,7 @@ class SetTransformOperation(_StrictRecord):
         "skew",
         "skew_x",
         "skew_y",
+        "anchor",
     ] = Field(
         validation_alias=AliasChoices("property", "property_name"),
         serialization_alias="property_name",
@@ -311,19 +382,9 @@ class SetColorOperation(_StrictRecord):
         lambda value: _identifier(value, label="layer_instance_id")
     )
 
-    @field_validator("color")
-    @classmethod
-    def _color(cls, value: str | list[float | int]):
-        if isinstance(value, str):
-            if not re.fullmatch(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?", value):
-                raise ValueError("color must be #RRGGBB or #RRGGBBAA")
-            return value
-        if not isinstance(value, list) or len(value) not in (3, 4):
-            raise ValueError("color must contain three or four channels")
-        return [
-            _number(channel, label="color channel", minimum=0, maximum=1)
-            for channel in value
-        ]
+    _color = field_validator("color")(
+        lambda value: _color_value(value)
+    )
 
     _frame = field_validator("frame")(
         lambda value: None if value is None else _integer(value, label="frame")
@@ -370,6 +431,8 @@ class SetTextOperation(_StrictRecord):
         validation_alias=AliasChoices("font", "font_name"),
         serialization_alias="font_name",
     )
+    font_size: float | int | None = None
+    color: str | list[float | int] | None = None
 
     _layer = field_validator("layer_instance_id")(
         lambda value: _identifier(value, label="layer_instance_id")
@@ -379,6 +442,16 @@ class SetTextOperation(_StrictRecord):
     )
     _font = field_validator("font_name")(
         lambda value: None if value is None else _string(value, label="font name")
+    )
+    _font_size = field_validator("font_size")(
+        lambda value: (
+            None
+            if value is None
+            else _number(value, label="font size", minimum=0.000001)
+        )
+    )
+    _color = field_validator("color")(
+        lambda value: None if value is None else _color_value(value, label="text color")
     )
 
 
@@ -421,10 +494,14 @@ class SetEffectOperation(_StrictRecord):
 class AddLayerOperation(_StrictRecord):
     kind: Literal["add_layer"] = "add_layer"
     layer_instance_id: str
-    layer_type: Literal["text", "solid", "null"]
+    layer_type: Literal["text", "solid", "null", "footage"]
     name: str
     source_element_id: str | None = None
     parent_instance_id: str | None = None
+    asset_id: str | None = None
+    width: int | None = None
+    height: int | None = None
+    color: str | list[float | int] | None = None
 
     _layer = field_validator("layer_instance_id")(
         lambda value: _identifier(value, label="layer_instance_id")
@@ -432,9 +509,50 @@ class AddLayerOperation(_StrictRecord):
     _name = field_validator("name")(
         lambda value: _string(value, label="layer name")
     )
-    _source = field_validator("source_element_id", "parent_instance_id")(
-        lambda value: None if value is None else _identifier(value, label="layer id")
+    _source = field_validator("source_element_id", "parent_instance_id", "asset_id")(
+        lambda value, info: (
+            None
+            if value is None
+            else (
+                _asset_identifier(value, label=info.field_name)
+                if info.field_name == "asset_id"
+                else _identifier(value, label=info.field_name)
+            )
+        )
     )
+    _dimensions = field_validator("width", "height")(
+        lambda value, info: (
+            None
+            if value is None
+            else _integer(
+                value,
+                label=info.field_name,
+                minimum=MIN_SOLID_DIMENSION,
+                maximum=MAX_SOLID_DIMENSION,
+            )
+        )
+    )
+    _color = field_validator("color")(
+        lambda value: None if value is None else _color_value(value, label="solid color")
+    )
+
+    @model_validator(mode="after")
+    def _layer_fields(self) -> "AddLayerOperation":
+        has_dimensions = self.width is not None or self.height is not None
+        if self.layer_type == "footage":
+            if self.asset_id is None:
+                raise ValueError("footage layers require asset_id")
+            if has_dimensions or self.color is not None:
+                raise ValueError("footage layers forbid solid fields")
+        elif self.layer_type == "solid":
+            if self.asset_id is not None:
+                raise ValueError("solid layers forbid asset_id")
+            if self.width is None or self.height is None or self.color is None:
+                raise ValueError("solid layers require width, height, and color")
+        else:
+            if self.asset_id is not None or has_dimensions or self.color is not None:
+                raise ValueError("text and null layers forbid footage/solid fields")
+        return self
 
 
 class RemoveLayerOperation(_StrictRecord):
@@ -613,6 +731,8 @@ def _catalog(value: ApprovedCapabilities | Mapping[str, Any] | Any) -> ApprovedC
 
 _TRANSFORM_PROPERTIES = {
     "position": "ADBE Position",
+    "position_x": "ADBE Position X",
+    "position_y": "ADBE Position Y",
     "scale": "ADBE Scale",
     "scale_x": "ADBE Scale X",
     "scale_y": "ADBE Scale Y",
@@ -620,6 +740,7 @@ _TRANSFORM_PROPERTIES = {
     "skew": "ADBE Skew",
     "skew_x": "ADBE Skew",
     "skew_y": "ADBE Skew Axis",
+    "anchor": "ADBE Anchor Point",
 }
 
 
@@ -675,14 +796,10 @@ def _validate_property_value(schema: str, value: Any, *, label: str) -> None:
         _string(value, label=label, nonempty=False)
         return
     if normalized in {"color", "rgba"}:
-        if isinstance(value, str):
-            if not re.fullmatch(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?", value):
-                raise OperationValidationError(f"{label} is not a valid color")
-            return
-        if not isinstance(value, list) or len(value) not in (3, 4):
-            raise OperationValidationError(f"{label} must contain three or four channels")
-        for channel in value:
-            _number(channel, label=f"{label} channel", minimum=0, maximum=1)
+        try:
+            _color_value(value, label=label)
+        except ValueError as error:
+            raise OperationValidationError(str(error)) from error
         return
     dimensions = {"vec2": 2, "vector2": 2, "vec3": 3, "vector3": 3, "vec4": 4, "vector4": 4}
     size = dimensions.get(normalized)
@@ -693,6 +810,24 @@ def _validate_property_value(schema: str, value: Any, *, label: str) -> None:
             _number(item, label=f"{label} component")
         return
     raise OperationValidationError(f"property schema is unavailable: {schema}")
+
+
+def _validate_ease_dimensions(schema: str, keyframe: Keyframe) -> None:
+    normalized = schema.lower()
+    dimensions = {
+        "vec2": 2,
+        "vector2": 2,
+        "vec3": 3,
+        "vector3": 3,
+        "vec4": 4,
+        "vector4": 4,
+    }.get(normalized, 1)
+    for ease_name in ("ease_in", "ease_out"):
+        ease = getattr(keyframe, ease_name)
+        if isinstance(ease, list) and ease and isinstance(ease[0], list) and len(ease) != dimensions:
+            raise OperationValidationError(
+                f"{ease_name} must contain exactly {dimensions} temporal ease pairs"
+            )
 
 
 def _check_catalog(batch: "OperationBatch", capabilities: ApprovedCapabilities) -> None:
@@ -744,6 +879,7 @@ def _check_catalog(batch: "OperationBatch", capabilities: ApprovedCapabilities) 
             elif isinstance(operation, SetKeyframesOperation):
                 for keyframe in operation.keyframes:
                     _validate_property_value(schema, keyframe.value, label=property_name)
+                    _validate_ease_dimensions(schema, keyframe)
             elif isinstance(operation, SetColorOperation):
                 _validate_property_value(schema, operation.color, label=property_name)
             elif isinstance(operation, SetOpacityOperation):
@@ -763,7 +899,7 @@ def _check_scene_bounds(
     if scene_frame_count is not None:
         _integer(scene_frame_count, label="scene frame count", minimum=1)
     if duration is not None:
-        _number(duration, label="scene duration", minimum=0)
+        _duration(duration, label="scene duration")
     if layer_count is not None:
         _integer(layer_count, label="layer count", minimum=0, maximum=MAX_LAYERS)
     frame_limit = scene_frame_count if scene_frame_count is not None else batch.scene_frame_count
@@ -800,11 +936,108 @@ def _check_scene_bounds(
         for label, value in values:
             if value is None:
                 continue
-            if label.endswith("frame") or label in {"frame", "frame_start", "frame_end"}:
+            if label == "frame_end":
+                if frame_limit is not None and value > frame_limit:
+                    raise OperationValidationError(f"{label} is outside the scene frame count")
+            elif label.endswith("frame") or label in {"frame", "frame_start", "frame_end"}:
                 if frame_limit is not None and value >= frame_limit:
                     raise OperationValidationError(f"{label} is outside the scene frame count")
             elif time_limit is not None and float(value) > float(time_limit):
                 raise OperationValidationError(f"{label} is outside the comp duration")
+_AGENT_LAYER_ID_RE = re.compile(r"^agent[-_:][A-Za-z0-9_.:-]{1,255}$")
+
+
+def canonicalize_operation_context(
+    *,
+    baseline: bool,
+    locked_source_ids: Sequence[str],
+    layer_sources: Mapping[str, str | None],
+) -> tuple[bool, list[str], dict[str, str | None]]:
+    if type(baseline) is not bool:
+        raise OperationValidationError("baseline must be a boolean")
+    if not isinstance(locked_source_ids, Sequence) or isinstance(
+        locked_source_ids, (str, bytes, bytearray)
+    ):
+        raise OperationValidationError("locked_source_ids must be a list")
+    locked: list[str] = []
+    for source_id in locked_source_ids:
+        normalized = _identifier(source_id, label="locked source id")
+        if normalized in locked:
+            raise OperationValidationError("locked_source_ids contains duplicate ids")
+        locked.append(normalized)
+    if not isinstance(layer_sources, Mapping):
+        raise OperationValidationError("layer_sources must be an object")
+    if len(layer_sources) > MAX_LAYERS:
+        raise OperationValidationError("layer_sources exceeds 1000 layers")
+    inventory: dict[str, str | None] = {}
+    for instance_id, source_id in layer_sources.items():
+        instance = _identifier(instance_id, label="layer instance id")
+        if source_id is not None:
+            source_id = _identifier(source_id, label="layer source id")
+        inventory[instance] = source_id
+    return baseline, sorted(locked), dict(sorted(inventory.items()))
+
+
+def authorize_operation_batch(
+    batch: "OperationBatch | Mapping[str, Any]",
+    *,
+    baseline: bool,
+    locked_source_ids: Sequence[str],
+    layer_sources: Mapping[str, str | None],
+) -> "OperationBatch":
+    """Authorize operations against the mapped layer inventory.
+
+    The inventory is updated in operation order so a newly added agent layer can
+    be edited or removed later in the same batch, while removed IDs cannot be
+    reused.  Baseline commands are server-authored and bypass source locks but
+    retain inventory and duplicate-ID checks.
+    Cross-batch tombstones are owned by session orchestration and are not available
+    through this API.
+    """
+    parsed = batch if isinstance(batch, OperationBatch) else OperationBatch.model_validate(batch)
+    baseline, locked_ids, inventory = canonicalize_operation_context(
+        baseline=baseline,
+        locked_source_ids=locked_source_ids,
+        layer_sources=layer_sources,
+    )
+    locked = set(locked_ids)
+    removed: set[str] = set()
+    added: set[str] = set()
+
+    def require_target(instance_id: str) -> str | None:
+        if instance_id not in inventory:
+            raise OperationValidationError(f"layer instance is not in the inventory: {instance_id}")
+        source_id = inventory[instance_id]
+        if not baseline and source_id is not None and source_id in locked:
+            raise OperationValidationError(f"layer source is locked: {source_id}")
+        return source_id
+
+    for operation in parsed.operations:
+        if isinstance(operation, AddLayerOperation):
+            instance_id = operation.layer_instance_id
+            if instance_id in inventory or instance_id in added or instance_id in removed:
+                raise OperationValidationError(f"add_layer reuses layer instance id: {instance_id}")
+            if operation.parent_instance_id is not None:
+                require_target(operation.parent_instance_id)
+            if not baseline:
+                if operation.source_element_id is not None:
+                    raise OperationValidationError("non-baseline add_layer must be source-less")
+                if not _AGENT_LAYER_ID_RE.fullmatch(instance_id):
+                    raise OperationValidationError("non-baseline add_layer requires an agent layer id")
+            inventory[instance_id] = operation.source_element_id
+            if len(inventory) > MAX_LAYERS:
+                raise OperationValidationError("final layer inventory exceeds 1000 layers")
+            added.add(instance_id)
+            continue
+        require_target(operation.layer_instance_id)
+        if isinstance(operation, RemoveLayerOperation):
+            del inventory[operation.layer_instance_id]
+            removed.add(operation.layer_instance_id)
+    if len(inventory) > MAX_LAYERS:
+        raise OperationValidationError("final layer inventory exceeds 1000 layers")
+    return parsed
+
+
 
 
 class OperationBatch(_StrictRecord):
@@ -831,7 +1064,7 @@ class OperationBatch(_StrictRecord):
         lambda value: None if value is None else _integer(value, label="scene frame count", minimum=1)
     )
     _duration = field_validator("duration")(
-        lambda value: None if value is None else _number(value, label="duration", minimum=0)
+        lambda value: None if value is None else _duration(value, label="duration")
     )
 
     _layers = field_validator("layer_count")(
@@ -871,6 +1104,9 @@ def validate_operation_batch(
     scene_frame_count: int | None = None,
     duration: float | None = None,
     layer_count: int | None = None,
+    baseline: bool | None = None,
+    locked_source_ids: Sequence[str] | None = None,
+    layer_sources: Mapping[str, str | None] | None = None,
 ) -> OperationBatch:
     """Parse and validate a batch against the exact approved catalog and bounds."""
     try:
@@ -885,6 +1121,17 @@ def validate_operation_batch(
         _digest(capability_digest, label="capability digest")
         if batch.capability_digest != capability_digest:
             raise OperationValidationError("operation batch capability digest does not match the approved digest")
+    if baseline is not None or locked_source_ids is not None or layer_sources is not None:
+        if baseline is None or locked_source_ids is None or layer_sources is None:
+            raise OperationValidationError(
+                "baseline, locked_source_ids, and layer_sources are required together"
+            )
+        authorize_operation_batch(
+            batch,
+            baseline=baseline,
+            locked_source_ids=locked_source_ids,
+            layer_sources=layer_sources,
+        )
     return batch
 
 
@@ -919,7 +1166,8 @@ __all__ = [
     "SetVisibilityOperation",
     "AddLayerOperation",
     "RemoveLayerOperation",
-    "canonical_json",
+    "canonicalize_operation_context",
+    "authorize_operation_batch",
     "canonical_operation_digest",
     "parse_operation_batch",
     "validate_batch",

@@ -46,6 +46,7 @@ from keepframe.after_effects.auth import (
 )
 from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
+from keepframe.after_effects.planning import prepare_ae_render_plan
 from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
 
 log = get("keepframe.web")
@@ -1564,6 +1565,7 @@ def make_server(
                 resolved_project_id = project_id
                 resolved_scene_id = scene_id
                 resolved_version = version
+                client = agent_llm()
 
                 def prepare_agent_render(mode: str, backend: str, direction: str | None):
                     if (
@@ -1573,18 +1575,21 @@ def make_server(
                         raise AEControllerAuthorizationError(
                             "controller authorization failed"
                         )
-                    capability_hash = None
-                    capability_manifest = None
                     if backend == "after_effects":
                         snapshot = agent_auth.read_capabilities()
                         if snapshot is None:
                             raise PlanConflict(
                                 "active published AE capabilities are required"
                             )
-                        capability_hash = snapshot.capability_hash
-                        capability_manifest = snapshot.model_dump(
-                            mode="json",
-                            exclude={"capability_hash", "project_open", "timestamp"},
+                        return prepare_ae_render_plan(
+                            root,
+                            project_id=resolved_project_id,
+                            scene_id=resolved_scene_id,
+                            version_id=resolved_version,
+                            mode=mode,
+                            direction=direction,
+                            capabilities=snapshot,
+                            client=client,
                         )
                     return create_render_plan(
                         root,
@@ -1594,8 +1599,8 @@ def make_server(
                         backend=backend,
                         mode=mode,
                         direction=direction,
-                        capability_hash=capability_hash,
-                        capability_manifest=capability_manifest,
+                        capability_hash=None,
+                        capability_manifest=None,
                     )
 
                 def submit_agent_job(kind: str, args: dict, stage: str) -> dict:
@@ -1652,7 +1657,7 @@ def make_server(
                     prepare_render=prepare_agent_render,
                 )
                 try:
-                    turn = SessionAgent(agent_llm()).turn(ctx, message, history)
+                    turn = SessionAgent(client).turn(ctx, message, history)
                 except AEControllerAuthorizationError:
                     return self._json(
                         401,

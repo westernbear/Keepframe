@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from keepframe.after_effects.operations import (
     ApprovedCapabilities,
     OperationBatch,
+    authorize_operation_batch,
     canonical_operation_digest,
     validate_operation_batch,
 )
@@ -76,6 +77,28 @@ def test_operation_batch_is_strict_closed_and_capability_bound():
         )
 
 
+def test_operation_batch_requires_positive_duration():
+    with pytest.raises((ValidationError, ValueError), match="duration"):
+        OperationBatch.model_validate({"operations": [], "duration": 0})
+
+    accepted = OperationBatch.model_validate({"operations": [], "duration": 0.001})
+    assert accepted.duration == 0.001
+
+
+def test_authoritative_duration_requires_positive_value():
+    payload = {
+        "operations": [
+            {"kind": "set_opacity", "layer_instance_id": "layer-1", "opacity": 0.5}
+        ]
+    }
+    with pytest.raises((ValidationError, ValueError), match="duration"):
+        validate_operation_batch(payload, duration=0)
+
+    accepted = validate_operation_batch(payload, duration=0.001)
+    assert accepted.operations[0].opacity == 0.5
+
+
+
 def test_operation_batch_rejects_nan_huge_values_and_untrusted_payload_fields():
     with pytest.raises((ValidationError, ValueError)):
         OperationBatch.model_validate(
@@ -141,6 +164,69 @@ def test_operation_batch_enforces_count_size_time_and_color_domains():
             approved_capabilities=_capabilities(),
             scene_frame_count=24,
         )
+
+@pytest.mark.parametrize("color", ["#11223344", [0.0, 0.0, 0.0, 1.0]])
+def test_operation_colors_reject_alpha_channels_everywhere(color):
+    typed_operations = [
+        {
+            "kind": "set_color",
+            "layer_instance_id": "layer-1",
+            "color": color,
+        },
+        {
+            "kind": "set_text",
+            "layer_instance_id": "layer-1",
+            "text": "title",
+            "color": color,
+        },
+        {
+            "kind": "add_layer",
+            "layer_instance_id": "agent-solid",
+            "layer_type": "solid",
+            "name": "solid",
+            "width": 4,
+            "height": 4,
+            "color": color,
+        },
+    ]
+    for operation in typed_operations:
+        with pytest.raises((ValidationError, ValueError), match="RGB"):
+            OperationBatch.model_validate({"operations": [operation]})
+
+    capabilities = ApprovedCapabilities(
+        digest=CAP_DIGEST,
+        effects=("ADBE Fill",),
+        properties={"ADBE Fill Color": "color", "ADBE Fill-0002": "color"},
+    )
+    for operation in (
+        {
+            "kind": "set_property",
+            "layer_instance_id": "layer-1",
+            "property": "ADBE Fill Color",
+            "value": color,
+        },
+        {
+            "kind": "set_keyframes",
+            "layer_instance_id": "layer-1",
+            "property": "ADBE Fill Color",
+            "keyframes": [{"frame": 0, "value": color}],
+        },
+        {
+            "kind": "set_effect",
+            "layer_instance_id": "layer-1",
+            "effect_name": "ADBE Fill",
+            "properties": {"ADBE Fill-0002": color},
+        },
+    ):
+        with pytest.raises((ValidationError, ValueError), match="RGB"):
+            validate_operation_batch(
+                {
+                    "capability_digest": CAP_DIGEST,
+                    "operations": [operation],
+                },
+                approved_capabilities=capabilities,
+            )
+
 
 
 def test_keyframe_count_is_bounded_by_scene_frames_not_128():
@@ -370,3 +456,200 @@ def test_generic_json_integers_can_be_negative_but_remain_bounded():
         }
     )
     assert batch.operations[0].value == -3
+
+
+def test_baseline_layer_shapes_and_exclusive_visibility_end():
+    batch = OperationBatch.model_validate(
+        {
+            "capability_digest": CAP_DIGEST,
+            "operations": [
+                {
+                    "kind": "add_layer",
+                    "layer_instance_id": "agent-footage",
+                    "layer_type": "footage",
+                    "name": "sprite",
+                    "asset_id": "asset-1",
+                },
+                {
+                    "kind": "add_layer",
+                    "layer_instance_id": "agent-solid",
+                    "layer_type": "solid",
+                    "name": "background",
+                    "width": 100,
+                    "height": 50,
+                    "color": "#112233",
+                },
+                {
+                    "kind": "set_visibility",
+                    "layer_instance_id": "agent-solid",
+                    "visible": True,
+                    "frame_start": 0,
+                    "frame_end": 10,
+                },
+            ]
+        }
+    )
+    assert batch.operations[0].asset_id == "asset-1"
+    assert batch.operations[1].width == 100
+    assert batch.operations[2].frame_end == 10
+
+    validate_operation_batch(
+        batch.model_dump(mode="json"),
+        approved_capabilities=_capabilities(),
+        scene_frame_count=10,
+    )
+    with pytest.raises((ValidationError, ValueError)):
+        validate_operation_batch(
+            {
+                "operations": [
+                    {
+                        "kind": "set_visibility",
+                        "layer_instance_id": "agent-solid",
+                        "frame": 10,
+                    }
+                ]
+            },
+            approved_capabilities=_capabilities(),
+            scene_frame_count=10,
+        )
+
+
+def test_nonbaseline_authorization_enforces_inventory_and_source_locks():
+    payload = {
+        "operations": [
+            {
+                "kind": "set_opacity",
+                "layer_instance_id": "layer-1",
+                "opacity": 0.5,
+            }
+        ]
+    }
+    with pytest.raises(ValueError, match="locked"):
+        authorize_operation_batch(
+            payload,
+            baseline=False,
+            locked_source_ids=["source-1"],
+            layer_sources={"layer-1": "source-1"},
+        )
+    assert authorize_operation_batch(
+        payload,
+        baseline=False,
+        locked_source_ids=[],
+        layer_sources={"layer-1": None},
+    ).operations[0].opacity == 0.5
+
+@pytest.mark.parametrize("influence", [0.0, 100.0001])
+def test_keyframe_ease_influence_matches_ae_keyframe_ease_domain(influence):
+    with pytest.raises((ValidationError, ValueError)):
+        OperationBatch.model_validate(
+            {
+                "operations": [
+                    {
+                        "kind": "set_keyframes",
+                        "layer_instance_id": "layer-1",
+                        "property_name": "ADBE Position",
+                        "keyframes": [
+                            {
+                                "frame": 0,
+                                "value": [0.0, 0.0],
+                                "ease_in": [0.0, influence],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+    accepted = OperationBatch.model_validate(
+        {
+            "operations": [
+                {
+                    "kind": "set_keyframes",
+                    "layer_instance_id": "layer-1",
+                    "property_name": "ADBE Position",
+                    "keyframes": [
+                        {
+                            "frame": 0,
+                            "value": [0.0, 0.0],
+                            "ease_in": [0.0, 0.1],
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    assert accepted.operations[0].keyframes[0].ease_in == [0.0, 0.1]
+
+
+@pytest.mark.parametrize("width,height", [(3, 4), (4, 30001)])
+def test_solid_dimensions_match_ae_solid_bounds(width, height):
+    with pytest.raises((ValidationError, ValueError)):
+        OperationBatch.model_validate(
+            {
+                "operations": [
+                    {
+                        "kind": "add_layer",
+                        "layer_instance_id": "agent-solid",
+                        "layer_type": "solid",
+                        "name": "solid",
+                        "width": width,
+                        "height": height,
+                        "color": "#112233",
+                    }
+                ]
+            }
+        )
+    accepted = OperationBatch.model_validate(
+        {
+            "operations": [
+                {
+                    "kind": "add_layer",
+                    "layer_instance_id": "agent-solid",
+                    "layer_type": "solid",
+                    "name": "solid",
+                    "width": 4,
+                    "height": 30000,
+                    "color": "#112233",
+                }
+            ]
+        }
+    )
+    assert accepted.operations[0].width == 4
+    assert accepted.operations[0].height == 30000
+
+
+def test_operation_authorization_rejects_reuse_after_removal_and_caps_final_inventory():
+    reused = {
+        "operations": [
+            {"kind": "remove_layer", "layer_instance_id": "layer-1"},
+            {
+                "kind": "add_layer",
+                "layer_instance_id": "layer-1",
+                "layer_type": "null",
+                "name": "replacement",
+            },
+        ]
+    }
+    with pytest.raises(ValueError, match="reuses"):
+        authorize_operation_batch(
+            reused,
+            baseline=True,
+            locked_source_ids=[],
+            layer_sources={"layer-1": None},
+        )
+
+    with pytest.raises(ValueError, match="1000"):
+        authorize_operation_batch(
+            {
+                "operations": [
+                    {
+                        "kind": "add_layer",
+                        "layer_instance_id": "agent-new",
+                        "layer_type": "null",
+                        "name": "new",
+                    }
+                ]
+            },
+            baseline=False,
+            locked_source_ids=[],
+            layer_sources={f"agent-{index}": None for index in range(1000)},
+        )

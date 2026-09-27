@@ -218,6 +218,9 @@ def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
             "scene_frame_count": 10,
             "duration": 5.0,
             "layer_count": 1,
+            "baseline": False,
+            "locked_source_ids": [],
+            "layer_sources": {"layer-1": None},
             "project_id": "project-1",
             "plan_id": "plan-1",
             "session_id": "session-1",
@@ -235,6 +238,50 @@ def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
     assert payload["project_id"] == "project-1"
     assert payload["plan_id"] == "plan-1"
     assert payload["session_id"] == "session-1"
+
+
+def test_mcp_apply_rejects_zero_authoritative_duration():
+    from keepframe.after_effects import mcp_server
+    from keepframe.after_effects.operations import ApprovedCapabilities
+
+    capability_digest = "d" * 64
+    capabilities = ApprovedCapabilities(
+        digest=capability_digest,
+        properties={"ADBE Opacity": "number"},
+    )
+    envelope = {
+        "command_id": "command-zero-duration",
+        "nonce": "nonce-zero-duration",
+        "payload": {
+            "batch": {
+                "capability_digest": capability_digest,
+                "operations": [
+                    {
+                        "kind": "set_opacity",
+                        "layer_instance_id": "layer-1",
+                        "opacity": 0.5,
+                    }
+                ],
+            },
+            "approved_capabilities": capabilities.model_dump(mode="json"),
+            "scene_frame_count": 10,
+            "duration": 0,
+            "layer_count": 1,
+            "baseline": False,
+            "locked_source_ids": [],
+            "layer_sources": {"layer-1": None},
+            "project_id": "project-1",
+            "plan_id": "plan-1",
+            "session_id": "session-1",
+        },
+    }
+    class FakeBridge:
+        def dispatch(self, kind, payload, *, command_id, nonce):
+            return {"kind": kind, "command_id": command_id, "nonce": nonce}
+
+    with pytest.raises(ValueError, match="duration"):
+        mcp_server.fixed_tool_registry(FakeBridge())["apply_operation_batch"](envelope)
+
 
 
 def test_mcp_rejects_fill_color_without_fill_effect_capability():
@@ -264,6 +311,9 @@ def test_mcp_rejects_fill_color_without_fill_effect_capability():
             "scene_frame_count": 10,
             "duration": 5.0,
             "layer_count": 1,
+            "baseline": False,
+            "locked_source_ids": [],
+            "layer_sources": {"layer-1": None},
             "project_id": "project-1",
             "plan_id": "plan-1",
             "session_id": "session-1",
@@ -297,6 +347,9 @@ def test_mcp_apply_requires_bounds_and_scope_fields():
         "scene_frame_count": 10,
         "duration": 5.0,
         "layer_count": 1,
+        "baseline": False,
+        "locked_source_ids": [],
+        "layer_sources": {"layer-1": None},
         "project_id": "project-1",
         "plan_id": "plan-1",
         "session_id": "session-1",
@@ -459,3 +512,129 @@ def test_panel_binds_scope_before_dispatch_and_rejects_stale_comp_bounds():
     assert "includeLocalPath === true" in font_source
     assert "fontLocalPath(font)" in font_source
     assert "sha256" not in font_source.lower()
+
+
+def test_panel_matches_ae_operation_bounds_digest_binding_and_text_anchor_boundary():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    assert "var SHA256_PATTERN = /^[0-9a-f]{64}$/;" in panel
+    assert "batch.capability_digest === approved_capabilities.digest" in panel
+    assert "influence < 0.1" in panel
+    assert "value < 4 || value > 30000" in panel
+    assert "hasOwn(removed, instanceId)" in panel
+    assert "inventorySize(inventory) > 1000" in panel
+    assert "instanceof TextLayer" in panel
+    assert "sourceRectAtTime(0, false)" in panel
+    assert "rect.left" in panel
+    assert "rect.top" in panel
+    assert "setTimedProperty(property, value, frame, time, keyframe)" in panel
+
+def test_panel_rejects_alpha_colors_and_enforces_project_settings_limits():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    color_source = panel.split("function assertColor", 1)[1].split(
+        "function assertSafeValue", 1
+    )[0]
+    assert "/^#[0-9a-fA-F]{6}$/" in color_source
+    assert "value.length !== 3" in color_source
+    property_color_source = panel.split("function capabilityProperty", 1)[1].split(
+        "function catalogName", 1
+    )[0]
+    assert 'assertColor(value, "property color")' in property_color_source
+    normalized_source = panel.split("function normalizedColor", 1)[1].split(
+        "function setColor", 1
+    )[0]
+    assert "channels.push(1)" not in normalized_source
+    settings_source = panel.split("function projectSettings", 1)[1].split(
+        "function projectSettingsMatch", 1
+    )[0]
+    assert 'assertSolidDimension(payload.width, "width")' in settings_source
+    assert 'assertSolidDimension(payload.height, "height")' in settings_source
+    assert "payload.frame_rate < 1" in settings_source
+    assert "payload.frame_rate > 99" in settings_source
+    assert "payload.duration > 10800" in settings_source
+    create_source = panel.split("function createOrOpenProject", 1)[1].split(
+        "function importServerAsset", 1
+    )[0]
+    assert create_source.index("projectSettings(payload)") < create_source.index(
+        "app.newProject()"
+    )
+
+
+def test_panel_preflights_target_kinds_and_footage_before_opening_undo_group():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    preflight = panel.split("function preflightBatch", 1)[1].split(
+        "function captureBatchSnapshot", 1
+    )[0]
+    batch = panel.split("function applyBatch(payload)", 1)[1].split(
+        "function createOrOpenProject", 1
+    )[0]
+    assert "instanceof TextLayer" in preflight
+    assert "findAssetItem(operation.asset_id)" in preflight
+    assert "preflightBatch(operations)" in batch
+    assert batch.index("preflightBatch(operations)") < batch.index(
+        "app.beginUndoGroup"
+    )
+
+
+def test_panel_rolls_back_failed_batch_and_verifies_inventory_before_throwing():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    batch = panel.split("function applyBatch(payload)", 1)[1].split(
+        "function createOrOpenProject", 1
+    )[0]
+    assert "captureBatchSnapshot()" in batch
+    assert "app.endUndoGroup()" in batch
+    assert 'app.executeCommand(app.findMenuCommandId("Undo"))' in batch
+    assert "verifyBatchSnapshot(snapshot)" in batch
+    assert "apply failed" in batch
+    assert "rollback failed" in batch
+    assert batch.index("app.endUndoGroup()") < batch.index(
+        'app.executeCommand(app.findMenuCommandId("Undo"))'
+    )
+    assert batch.index('app.executeCommand(app.findMenuCommandId("Undo"))') < batch.index(
+        "verifyBatchSnapshot(snapshot)"
+    )
+    assert batch.index("verifyBatchSnapshot(snapshot)") < batch.index(
+        'throw new Error("apply failed: " + batchErrorText(applyError) + "; rollback succeeded")'
+    )
+
+
+def test_panel_text_operations_require_text_layers_and_add_fields_stay_typed():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    assert "function requireTextLayer" in panel
+    assert "requireTextLayer(layer)" in panel
+    add_source = panel.split("function addMappedLayer", 1)[1].split(
+        "function hasOwn", 1
+    )[0]
+    assert 'case "text":' in add_source
+    assert "comp.layers.addText(operation.name)" in add_source
+    assert 'case "footage":' in add_source
+    assert "findAssetItem(operation.asset_id)" in add_source

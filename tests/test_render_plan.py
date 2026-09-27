@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import keepframe.after_effects.operations as operations_module
 import keepframe.render.plan as render_plan_module
 
 from keepframe.ir.store import init_project, save_scene
@@ -12,10 +13,12 @@ from keepframe.ir.synth import make_synthetic_scene
 from keepframe.render.plan import (
     PlanConflict,
     RenderPlan,
+    _plan_digest,
     approve_render_plan,
     create_render_plan,
     load_render_plan,
 )
+from keepframe.after_effects.planning import current_operation_manifest
 
 
 def _project(tmp_path: Path, *, approved: bool = False):
@@ -168,6 +171,60 @@ def test_ae_plan_pins_capability_manifest_and_hash(tmp_path):
             capability_hash="a" * 64,
             capability_manifest=manifest,
         )
+def test_full_operation_manifest_is_pinned_by_plan_digest(tmp_path):
+    root, _ = _project(tmp_path)
+    manifest = current_operation_manifest()
+    plan = create_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="native",
+        mode="preview",
+        permitted_operations=manifest,
+    )
+
+    assert plan.permitted_operations == manifest
+    assert _plan_digest(plan) == plan.digest
+
+    changed_manifest = json.loads(json.dumps(manifest))
+    changed_manifest[0]["schema"]["title"] = "Changed operation contract"
+    changed = plan.model_copy(update={"permitted_operations": tuple(changed_manifest)})
+    assert _plan_digest(changed) != plan.digest
+
+    plan_path = root / "renders" / plan.id / "plan.json"
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    payload["permitted_operations"][0]["schema"]["title"] = "Changed operation contract"
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(PlanConflict, match="digest"):
+        load_render_plan(root, plan.id)
+
+
+
+
+def test_operation_manifest_pins_installed_runtime_source_and_digest(tmp_path):
+    manifest = current_operation_manifest()
+    runtime_sha256 = hashlib.sha256(Path(operations_module.__file__).read_bytes()).hexdigest()
+    assert len(runtime_sha256) == 64
+    assert all(item["runtime_contract_sha256"] == runtime_sha256 for item in manifest)
+    assert manifest == current_operation_manifest()
+
+    root, _ = _project(tmp_path)
+    plan = create_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="native",
+        mode="preview",
+        permitted_operations=manifest,
+    )
+
+    changed_manifest = json.loads(json.dumps(manifest))
+    changed_manifest[0]["runtime_contract_sha256"] = "0" * 64
+    assert _plan_digest(
+        plan.model_copy(update={"permitted_operations": tuple(changed_manifest)})
+    ) != plan.digest
 
 
 def test_substitution_assets_and_duplicate_aliases_remain_in_manifest(tmp_path):

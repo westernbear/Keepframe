@@ -16,6 +16,7 @@ from .models import (
     canonical_json,
     json_digest,
 )
+from .planning import AERenderDraft, prepare_ae_render_plan
 
 __all__ = [
     "AEArtifactReservation",
@@ -31,6 +32,8 @@ __all__ = [
     "AEPublishedArtifact",
     "AESession",
     "AESubstitution",
+    "AERenderDraft",
+    "prepare_ae_render_plan",
     "CoordinatorConflict",
     "make_relay_server",
     "canonical_json",

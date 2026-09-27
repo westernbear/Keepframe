@@ -65,6 +65,12 @@ one-use pairing code without echoing it. Later starts use
 current-user DPAPI-protected device record. The MCP child receives neither
 relay credential.
 
+After Effects plans pin the active capability manifest, operation schemas, scene
+assets, source locks, and any acknowledged compatibility substitutions.
+Unsupported fonts or converter semantics produce a non-approvable draft until
+the proposed lost semantics are acknowledged; capability changes require a new
+successor plan.
+
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash

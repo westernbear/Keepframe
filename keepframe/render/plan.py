@@ -402,17 +402,31 @@ def _copy_immutable(source: Path, destination: Path, expected_sha: str, expected
         temp.unlink(missing_ok=True)
 
 
-def _substitution_asset_paths(substitutions: Sequence[Mapping[str, Any]]) -> Iterable[str]:
+def _substitution_asset_paths(
+    substitutions: Sequence[Mapping[str, Any]],
+    *,
+    include_nested_footage: bool,
+) -> Iterable[tuple[str, Literal["texture", "substitution"]]]:
     for substitution in substitutions:
         for key in ("asset", "asset_path", "project_path", "texture", "raw"):
             value = substitution.get(key)
             if isinstance(value, str):
-                yield value
+                yield value, "substitution"
         values = substitution.get("assets")
         if isinstance(values, (list, tuple)):
             for value in values:
                 if isinstance(value, str):
-                    yield value
+                    yield value, "substitution"
+        if not include_nested_footage:
+            continue
+        layers = substitution.get("proposed_layers")
+        if isinstance(layers, (list, tuple)):
+            for layer in layers:
+                if not isinstance(layer, Mapping) or layer.get("layer_type") != "footage":
+                    continue
+                texture = layer.get("texture")
+                if isinstance(texture, str):
+                    yield texture, "texture"
 
 
 def _validate_authoritative_file(root: Path, path: Path, label: str) -> None:
@@ -500,6 +514,74 @@ def _final_gate(meta: dict[str, Any] | None, version_id: str) -> None:
         raise PlanConflict("final render requires the approved version")
 
 
+def _normalize_locked_targets(
+    locked_targets: Sequence[str],
+    *,
+    backend: RenderBackend,
+    scene,
+) -> tuple[str, ...]:
+    if isinstance(locked_targets, (str, bytes, bytearray)):
+        raise PlanConflict("locked targets must be a sequence of identifiers")
+    try:
+        values = tuple(locked_targets)
+    except TypeError as exc:
+        raise PlanConflict("locked targets must be a sequence of identifiers") from exc
+    if any(not isinstance(value, str) or not value for value in values):
+        raise PlanConflict("locked target identifiers must be non-empty strings")
+    normalized = tuple(sorted(set(values)))
+    if backend == "after_effects":
+        valid = {element.id for element in scene.elements}
+        valid.update(group.id for group in scene.groups)
+        unknown = set(normalized) - valid
+        if unknown:
+            raise PlanConflict(
+                f"AE locked target is not a scene element or group: {sorted(unknown)!r}"
+            )
+    return normalized
+
+
+def _normalize_substitutions(
+    substitutions: Sequence[Any],
+    *,
+    backend: RenderBackend,
+    substitutions_acknowledged: bool,
+) -> tuple[dict[str, Any], ...]:
+    normalized: list[dict[str, Any]] = []
+    for item in substitutions:
+        if backend == "after_effects":
+            from ..after_effects.models import AESubstitution
+
+            try:
+                if isinstance(item, AESubstitution):
+                    parsed = item
+                else:
+                    raw = dict(item) if isinstance(item, Mapping) else item
+                    if isinstance(raw, dict):
+                        for field in ("proposed_layers", "proposed_effects", "lost_semantics"):
+                            if isinstance(raw.get(field), list):
+                                raw[field] = tuple(raw[field])
+                    parsed = AESubstitution.model_validate(raw)
+            except (TypeError, ValueError) as exc:
+                raise PlanConflict("AE substitution has an invalid shape") from exc
+            if not parsed.acknowledged:
+                raise PlanConflict("AE substitution acknowledgement is required")
+            normalized.append(parsed.model_dump(mode="json"))
+            continue
+        try:
+            raw = dict(item)
+            normalized.append(
+                json.loads(_canonical_payload(raw).decode("utf-8"))
+            )
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PlanConflict("substitution is not finite canonical JSON") from exc
+    if normalized and (
+        substitutions_acknowledged is not True
+        if backend == "after_effects"
+        else not substitutions_acknowledged
+    ):
+        raise PlanConflict("substitution acknowledgement is required")
+    return tuple(normalized)
+
 def create_render_plan(
     root: Path,
     *,
@@ -552,9 +634,11 @@ def create_render_plan(
             ).hexdigest()
             if manifest_hash != capability_hash:
                 raise PlanConflict("capability manifest does not match capability hash")
-    substitutions = tuple(dict(item) for item in substitutions)
-    if substitutions and not substitutions_acknowledged:
-        raise PlanConflict("substitution acknowledgement is required")
+    substitutions = _normalize_substitutions(
+        substitutions,
+        backend=backend,
+        substitutions_acknowledged=substitutions_acknowledged,
+    )
 
     root = Path(root)
     if not root.is_dir() or root.is_symlink():
@@ -570,6 +654,12 @@ def create_render_plan(
     if scene.id != scene_id:
         raise PlanConflict("scene id does not match the authoritative version")
 
+    locked_targets = _normalize_locked_targets(
+        locked_targets,
+        backend=backend,
+        scene=scene,
+    )
+
     scene_sha256, _ = _hash_file(scene_path)
     scene_dir = scene_path.parent
     refs: list[tuple[str, Literal["texture", "raw", "substitution"]]] = []
@@ -580,7 +670,12 @@ def create_render_plan(
             refs.append((element.raw, "raw"))
     if scene.background.kind == "image":
         refs.append((scene.background.value, "texture"))
-    refs.extend((raw, "substitution") for raw in _substitution_asset_paths(substitutions))
+    refs.extend(
+        _substitution_asset_paths(
+            substitutions,
+            include_nested_footage=backend == "after_effects",
+        )
+    )
 
     assets: list[PlanAsset] = []
     seen_manifest: set[tuple[str, str]] = set()

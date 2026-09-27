@@ -18,7 +18,11 @@ from typing import Any, cast
 from pydantic import BaseModel, ConfigDict
 
 from .bridge import Bridge, BridgeResult, FIXED_KINDS
-from .operations import ApprovedCapabilities, validate_operation_batch
+from .operations import (
+    ApprovedCapabilities,
+    canonicalize_operation_context,
+    validate_operation_batch,
+)
 
 
 class _DirectPayloadArguments(BaseModel):
@@ -52,6 +56,9 @@ _APPLY_FIELDS = frozenset(
         "scene_frame_count",
         "duration",
         "layer_count",
+        "baseline",
+        "locked_source_ids",
+        "layer_sources",
         "project_id",
         "plan_id",
         "session_id",
@@ -81,6 +88,17 @@ def _canonical_apply_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         value = payload[field]
         if not isinstance(value, str) or not _SCOPE_ID_RE.fullmatch(value):
             raise ValueError(f"{field} is not a safe identifier")
+    if type(payload["baseline"]) is not bool:
+        raise ValueError("baseline must be a boolean")
+    if not isinstance(payload["locked_source_ids"], list):
+        raise ValueError("locked_source_ids must be a list")
+    if not isinstance(payload["layer_sources"], Mapping):
+        raise ValueError("layer_sources must be an object")
+    baseline, locked_source_ids, layer_sources = canonicalize_operation_context(
+        baseline=payload["baseline"],
+        locked_source_ids=payload["locked_source_ids"],
+        layer_sources=payload["layer_sources"],
+    )
     bounds = {
         name: payload[name]
         for name in ("scene_frame_count", "duration", "layer_count")
@@ -91,11 +109,17 @@ def _canonical_apply_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     batch = validate_operation_batch(
         payload["batch"],
         approved_capabilities=capabilities,
+        baseline=baseline,
+        locked_source_ids=locked_source_ids,
+        layer_sources=layer_sources,
         **bounds,
     )
     canonical: dict[str, Any] = {
         "batch": batch.model_dump(mode="json", by_alias=True, exclude_none=True),
         "approved_capabilities": capabilities.model_dump(mode="json", by_alias=True),
+        "baseline": baseline,
+        "locked_source_ids": locked_source_ids,
+        "layer_sources": layer_sources,
     }
     canonical.update(bounds)
     canonical.update({field: payload[field] for field in _SCOPE_FIELDS})

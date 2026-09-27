@@ -19,6 +19,8 @@
     var MAX_KEYFRAMES = 1000000;
     var SESSION_COMP_MARKER_PREFIX = "keepframe:session:v1:";
     var SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
+    var SHA256_PATTERN = /^[0-9a-f]{64}$/;
+    var ASSET_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/;
     var SESSION_COMP = null;
     var SESSION_MARKER = null;
     var panelWindow = null;
@@ -113,12 +115,15 @@
     function fixedPropertySchemas() {
         return {
             "ADBE Position": "vec2",
+            "ADBE Position X": "number",
+            "ADBE Position Y": "number",
             "ADBE Scale": "vec2",
             "ADBE Scale X": "number",
             "ADBE Scale Y": "number",
             "ADBE Rotate Z": "number",
             "ADBE Skew": "number",
             "ADBE Skew Axis": "number",
+            "ADBE Anchor Point": "vec2",
             "ADBE Opacity": "number",
         };
     }
@@ -458,21 +463,54 @@
         return frameTime(frame);
     }
 
-    function temporalEase(value, label) {
+    function propertyDimensionCount(property) {
+        var current;
+        try {
+            current = property.value;
+        } catch (ignored) {
+            current = null;
+        }
+        if (current instanceof Array && current.length > 0) { return current.length; }
+        return 1;
+    }
+
+    function temporalEase(value, label, dimensions) {
+        var pairs = [];
+        var pair;
         var speed;
         var influence;
-        if (!(value instanceof Array) || value.length !== 2) {
+        var index;
+        if (!(value instanceof Array) || value.length === 0) {
             throw new Error(label + " is invalid");
         }
-        speed = Number(value[0]);
-        influence = Number(value[1]);
-        if (!isFinite(speed) || Math.abs(speed) > 1000000 || !isFinite(influence) || influence < 0 || influence > 100) {
-            throw new Error(label + " is invalid");
+        if (value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number") {
+            pairs.push(value);
+        } else {
+            if (value.length !== dimensions) { throw new Error(label + " dimension count is invalid"); }
+            for (index = 0; index < value.length; index += 1) {
+                pair = value[index];
+                if (!(pair instanceof Array) || pair.length !== 2 || typeof pair[0] !== "number" || typeof pair[1] !== "number") {
+                    throw new Error(label + " is invalid");
+                }
+                pairs.push(pair);
+            }
         }
         if (typeof KeyframeEase === "undefined") {
             throw new Error("temporal easing is unavailable");
         }
-        return new KeyframeEase(speed, influence);
+        var eases = [];
+        for (index = 0; index < pairs.length; index += 1) {
+            speed = pairs[index][0];
+            influence = pairs[index][1];
+            if (!isFinite(speed) || Math.abs(speed) > 1000000 || !isFinite(influence) || influence < 0.1 || influence > 100) {
+                throw new Error(label + " is invalid");
+            }
+            eases.push(new KeyframeEase(speed, influence));
+        }
+        if (eases.length === 1 && dimensions > 1) {
+            for (index = 1; index < dimensions; index += 1) { eases.push(eases[0]); }
+        }
+        return eases;
     }
 
     function applyTemporalEase(property, keyIndex, keyframe) {
@@ -480,7 +518,7 @@
         var fallbackOut;
         var inEase;
         var outEase;
-        var dimensions = 1;
+        var dimensions = propertyDimensionCount(property);
         var inEases = [];
         var outEases = [];
         var index;
@@ -494,28 +532,28 @@
         }
         fallbackIn = property.keyInTemporalEase(keyIndex);
         fallbackOut = property.keyOutTemporalEase(keyIndex);
-        if (fallbackIn instanceof Array && fallbackIn.length > 0) {
-            dimensions = fallbackIn.length;
-        } else if (fallbackOut instanceof Array && fallbackOut.length > 0) {
-            dimensions = fallbackOut.length;
-        }
-        inEase = keyframe.ease_in === undefined ? null : temporalEase(keyframe.ease_in, "ease_in");
-        outEase = keyframe.ease_out === undefined ? null : temporalEase(keyframe.ease_out, "ease_out");
+        if (fallbackIn instanceof Array && fallbackIn.length > 0 && fallbackIn.length !== dimensions) { throw new Error("temporal easing dimension count is invalid"); }
+        if (fallbackOut instanceof Array && fallbackOut.length > 0 && fallbackOut.length !== dimensions) { throw new Error("temporal easing dimension count is invalid"); }
+        inEase = keyframe.ease_in === undefined ? null : temporalEase(keyframe.ease_in, "ease_in", dimensions);
+        outEase = keyframe.ease_out === undefined ? null : temporalEase(keyframe.ease_out, "ease_out", dimensions);
         for (index = 0; index < dimensions; index += 1) {
             if (inEase) {
-                inEases.push(inEase);
+                inEases.push(inEase[index]);
             } else if (fallbackIn instanceof Array && fallbackIn[index]) {
                 inEases.push(fallbackIn[index]);
             } else {
                 throw new Error("temporal easing is unavailable");
             }
             if (outEase) {
-                outEases.push(outEase);
+                outEases.push(outEase[index]);
             } else if (fallbackOut instanceof Array && fallbackOut[index]) {
                 outEases.push(fallbackOut[index]);
             } else {
                 throw new Error("temporal easing is unavailable");
             }
+        }
+        if (inEases.length !== dimensions || outEases.length !== dimensions) {
+            throw new Error("temporal easing dimension count is invalid");
         }
         property.setTemporalEaseAtKey(keyIndex, inEases, outEases);
     }
@@ -546,6 +584,27 @@
         }
     }
 
+    function setSeparatedPositionAtFrame(layer, axis, value, frame, time, keyframe) {
+        var position = layer.transform.position;
+        var property;
+        position.dimensionsSeparated = true;
+        property = axis === "x" ? layer.transform.xPosition : layer.transform.yPosition;
+        if (!property) { throw new Error("separated position is unavailable"); }
+        setTimedProperty(property, value, frame, time, keyframe);
+    }
+
+    function mappedTextAnchor(layer, value) {
+        var rect;
+        if (typeof TextLayer === "undefined" || !(layer instanceof TextLayer)) {
+            return value;
+        }
+        rect = layer.sourceRectAtTime(0, false);
+        return [
+            Number(value[0]) + Number(rect.left),
+            Number(value[1]) + Number(rect.top)
+        ];
+    }
+
     function setPropertyAtFrame(layer, propertyName, value, frame, time, keyframe) {
         var property;
         switch (propertyName) {
@@ -554,6 +613,9 @@
                 break;
             case "ADBE Scale":
                 property = layer.transform.scale;
+                break;
+            case "ADBE Anchor Point":
+                property = layer.transform.anchorPoint;
                 break;
             case "ADBE Rotate Z":
                 property = layer.transform.zRotation;
@@ -570,6 +632,9 @@
             default:
                 throw new Error("property is not in the fixed catalog");
         }
+        if (propertyName === "ADBE Anchor Point") {
+            value = mappedTextAnchor(layer, value);
+        }
         setTimedProperty(property, value, frame, time, keyframe);
     }
 
@@ -580,36 +645,37 @@
         setTimedProperty(property, current, frame, time, keyframe);
     }
 
-    function setText(layer, text) {
+    function requireTextLayer(layer) {
+        if (typeof TextLayer === "undefined" || !(layer instanceof TextLayer)) {
+            throw new Error("text operation requires TextLayer");
+        }
+        return layer;
+    }
+
+    function setText(layer, text, fontName, fontSize, color) {
+        layer = requireTextLayer(layer);
         var textProperty = layer.property("ADBE Text Properties").property("ADBE Text Document");
         var document = textProperty.value;
         document.text = String(text);
+        if (fontName !== undefined && fontName !== null) { document.font = String(fontName); }
+        if (fontSize !== undefined && fontSize !== null) { document.fontSize = Number(fontSize); }
+        if (color !== undefined && color !== null) { document.fillColor = normalizedColor(color).slice(0, 3); }
         textProperty.setValue(document);
     }
 
     function normalizedColor(value) {
         var channels = [];
         var index;
+        assertColor(value, "color");
         if (typeof value === "string") {
-            if (!/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) {
-                throw new Error("color is invalid");
-            }
             channels.push(parseInt(value.substring(1, 3), 16) / 255);
             channels.push(parseInt(value.substring(3, 5), 16) / 255);
             channels.push(parseInt(value.substring(5, 7), 16) / 255);
-            channels.push(value.length === 9 ? parseInt(value.substring(7, 9), 16) / 255 : 1);
             return channels;
         }
-        if (!value || value.length !== 3 && value.length !== 4) {
-            throw new Error("color is invalid");
-        }
         for (index = 0; index < value.length; index += 1) {
-            if (!isFinite(Number(value[index])) || Number(value[index]) < 0 || Number(value[index]) > 1) {
-                throw new Error("color channel is invalid");
-            }
-            channels.push(Number(value[index]));
+            channels.push(value[index]);
         }
-        if (channels.length === 3) { channels.push(1); }
         return channels;
     }
 
@@ -623,6 +689,7 @@
     }
 
     function setFont(layer, fontName) {
+        layer = requireTextLayer(layer);
         var textProperty = layer.property("ADBE Text Properties").property("ADBE Text Document");
         var document = textProperty.value;
         document.font = String(fontName);
@@ -660,6 +727,10 @@
             var keyframe = keyframes[index];
             if (propertyName === "ADBE Fill Color") {
                 setColor(layer, keyframe.value, keyframe.frame, keyframe.time, keyframe);
+            } else if (propertyName === "ADBE Position X") {
+                setSeparatedPositionAtFrame(layer, "x", keyframe.value, keyframe.frame, keyframe.time, keyframe);
+            } else if (propertyName === "ADBE Position Y") {
+                setSeparatedPositionAtFrame(layer, "y", keyframe.value, keyframe.frame, keyframe.time, keyframe);
             } else if (propertyName === "ADBE Scale X") {
                 setScaleComponentAtFrame(layer, 0, keyframe.value, keyframe.frame, keyframe.time, keyframe);
             } else if (propertyName === "ADBE Scale Y") {
@@ -680,6 +751,10 @@
                 layer = requireLayer(operation.layer_instance_id);
                 if (operation.property_name === "ADBE Fill Color") {
                     setColor(layer, operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "ADBE Position X") {
+                    setSeparatedPositionAtFrame(layer, "x", operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "ADBE Position Y") {
+                    setSeparatedPositionAtFrame(layer, "y", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "ADBE Scale X") {
                     setScaleComponentAtFrame(layer, 0, operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "ADBE Scale Y") {
@@ -695,12 +770,18 @@
                 layer = requireLayer(operation.layer_instance_id);
                 if (operation.property_name === "position") {
                     setPropertyAtFrame(layer, "ADBE Position", operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "position_x") {
+                    setSeparatedPositionAtFrame(layer, "x", operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "position_y") {
+                    setSeparatedPositionAtFrame(layer, "y", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "scale") {
                     setPropertyAtFrame(layer, "ADBE Scale", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "scale_x") {
                     setScaleComponentAtFrame(layer, 0, operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "scale_y") {
                     setScaleComponentAtFrame(layer, 1, operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "anchor") {
+                    setPropertyAtFrame(layer, "ADBE Anchor Point", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "rotation") {
                     setPropertyAtFrame(layer, "ADBE Rotate Z", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "skew" || operation.property_name === "skew_x") {
@@ -728,8 +809,7 @@
             case "set_text":
             case "set_layer_text":
                 layer = requireLayer(operation.layer_instance_id);
-                setText(layer, operation.text);
-                if (operation.font_name !== undefined && operation.font_name !== null) { setFont(layer, operation.font_name); }
+                setText(layer, operation.text, operation.font_name, operation.font_size, operation.color);
                 break;
             case "set_font":
             case "set_layer_font":
@@ -764,9 +844,25 @@
         }
     }
 
+    function findAssetItem(assetId) {
+        var marker = "keepframe:asset=" + assetId;
+        var found = null;
+        var index;
+        var item;
+        if (!app.project) { return null; }
+        for (index = 1; index <= app.project.numItems; index += 1) {
+            item = app.project.item(index);
+            if (String(item.comment || "") !== marker) { continue; }
+            if (found) { throw new Error("duplicate ambiguous server asset"); }
+            found = item;
+        }
+        return found;
+    }
+
     function addMappedLayer(operation) {
         var comp = requireSessionComposition();
         var layer;
+        var footage;
         switch (operation.layer_type) {
             case "null":
                 layer = comp.layers.addNull();
@@ -775,7 +871,14 @@
                 layer = comp.layers.addText(operation.name);
                 break;
             case "solid":
-                layer = comp.layers.addSolid([0, 0, 0], operation.name, comp.width, comp.height, 1);
+                layer = comp.layers.addSolid(normalizedColor(operation.color).slice(0, 3), operation.name, operation.width, operation.height, 1);
+                break;
+            case "footage":
+                footage = findAssetItem(operation.asset_id);
+                if (!footage || footage instanceof CompItem || !footage.mainSource) {
+                    throw new Error("server asset is not imported");
+                }
+                layer = comp.layers.add(footage);
                 break;
             default:
                 throw new Error("layer type is not in the fixed catalog");
@@ -815,6 +918,48 @@
             throw new Error(label + " must not contain a path or URL");
         }
     }
+    function assertSha256(value, label) {
+        if (typeof value !== "string" || !SHA256_PATTERN.test(value)) {
+            throw new Error(label + " must be a lowercase SHA-256 digest");
+        }
+    }
+    function assertIdentifier(value, label) {
+        if (typeof value !== "string" || !SESSION_ID_PATTERN.test(value)) {
+            throw new Error(label + " must be a safe identifier");
+        }
+    }
+    function assertAssetIdentifier(value, label) {
+        if (typeof value !== "string" || !ASSET_ID_PATTERN.test(value)) {
+            throw new Error(label + " must be a safe asset identifier");
+        }
+    }
+
+
+    function assertSolidDimension(value, label) {
+        if (typeof value !== "number" || !isFinite(value) || value < 4 || value > 30000 || Math.floor(value) !== value) {
+            throw new Error(label + " is outside bounds");
+        }
+    }
+
+    function assertColor(value, label) {
+        var index;
+        if (typeof value === "string") {
+            if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
+                throw new Error(label + " must be an RGB color in #RRGGBB form");
+            }
+            return;
+        }
+        if (!(value instanceof Array) || value.length !== 3) {
+            throw new Error(label + " must contain exactly three RGB channels");
+        }
+        for (index = 0; index < value.length; index += 1) {
+            if (typeof value[index] !== "number" || !isFinite(value[index]) || value[index] < 0 || value[index] > 1) {
+                throw new Error(label + " channel is invalid");
+            }
+        }
+    }
+
+
 
     function assertSafeValue(value, depth) {
         var key;
@@ -846,19 +991,32 @@
     }
 
     function assertTemporalEase(value, label) {
-        if (!(value instanceof Array) || value.length !== 2) {
+        var pair;
+        var index;
+        if (!(value instanceof Array) || value.length === 0) {
             throw new Error(label + " is invalid");
         }
-        if (
-            typeof value[0] !== "number"
-            || !isFinite(value[0])
-            || Math.abs(value[0]) > 1000000
-            || typeof value[1] !== "number"
-            || !isFinite(value[1])
-            || value[1] < 0
-            || value[1] > 100
-        ) {
-            throw new Error(label + " is invalid");
+        if (value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number") {
+            pair = value;
+            if (!isFinite(pair[0]) || Math.abs(pair[0]) > 1000000 || !isFinite(pair[1]) || pair[1] < 0.1 || pair[1] > 100) {
+                throw new Error(label + " is invalid");
+            }
+            return;
+        }
+        for (index = 0; index < value.length; index += 1) {
+            pair = value[index];
+            if (!(pair instanceof Array) || pair.length !== 2 || typeof pair[0] !== "number" || typeof pair[1] !== "number") {
+                throw new Error(label + " is invalid");
+            }
+            if (!isFinite(pair[0]) || Math.abs(pair[0]) > 1000000 || !isFinite(pair[1]) || pair[1] < 0.1 || pair[1] > 100) {
+                throw new Error(label + " is invalid");
+            }
+        }
+    }
+
+    function assertTemporalEaseDimensions(value, label, dimensions) {
+        if (value instanceof Array && value.length > 0 && value[0] instanceof Array && value.length !== dimensions) {
+            throw new Error(label + " dimension count is invalid");
         }
     }
 
@@ -886,16 +1044,7 @@
         } else if (schema === "string" || schema === "str" || schema === "enum") {
             assertString(value, "property value");
         } else if (schema === "color" || schema === "rgba") {
-            if (typeof value === "string") {
-                if (!/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) { throw new Error("property color is invalid"); }
-            } else if (!(value instanceof Array) || (value.length !== 3 && value.length !== 4)) {
-                throw new Error("property color is invalid");
-            } else {
-                var channelIndex;
-                for (channelIndex = 0; channelIndex < value.length; channelIndex += 1) {
-                    if (typeof value[channelIndex] !== "number" || !isFinite(value[channelIndex]) || value[channelIndex] < 0 || value[channelIndex] > 1) { throw new Error("property color channel is invalid"); }
-                }
-            }
+            assertColor(value, "property color");
         } else {
             var dimensions = { vec2: 2, vector2: 2, vec3: 3, vector3: 3, vec4: 4, vector4: 4 };
             if (dimensions[schema] === undefined || !(value instanceof Array) || value.length !== dimensions[schema]) {
@@ -933,7 +1082,7 @@
     function validateOperation(payload, operation, frameLimit) {
         assertObject(operation, "operation");
         assertString(operation.kind, "operation kind");
-        assertString(operation.layer_instance_id, "layer_instance_id");
+        assertIdentifier(operation.layer_instance_id, "layer_instance_id");
         switch (operation.kind) {
             case "set_property":
                 assertKeys(operation, { kind: true, layer_instance_id: true, property_name: true, value: true, frame: true, time: true }, "set_property");
@@ -946,9 +1095,21 @@
             case "set_transform":
             case "set_layer_transform":
                 assertKeys(operation, { kind: true, layer_instance_id: true, property_name: true, value: true, frame: true, time: true }, "set_transform");
-                if (!/^(position|scale|scale_x|scale_y|rotation|skew|skew_x|skew_y)$/.test(operation.property_name)) { throw new Error("transform property is invalid"); }
+                if (!/^(position|position_x|position_y|scale|scale_x|scale_y|rotation|skew|skew_x|skew_y|anchor)$/.test(operation.property_name)) { throw new Error("transform property is invalid"); }
                 assertSafeValue(operation.value, 0);
-                capabilityProperty(payload, { position: "ADBE Position", scale: "ADBE Scale", scale_x: "ADBE Scale X", scale_y: "ADBE Scale Y", rotation: "ADBE Rotate Z", skew: "ADBE Skew", skew_x: "ADBE Skew", skew_y: "ADBE Skew Axis" }[operation.property_name], operation.value);
+                capabilityProperty(payload, {
+                    position: "ADBE Position",
+                    position_x: "ADBE Position X",
+                    position_y: "ADBE Position Y",
+                    scale: "ADBE Scale",
+                    scale_x: "ADBE Scale X",
+                    scale_y: "ADBE Scale Y",
+                    rotation: "ADBE Rotate Z",
+                    skew: "ADBE Skew",
+                    skew_x: "ADBE Skew",
+                    skew_y: "ADBE Skew Axis",
+                    anchor: "ADBE Anchor Point"
+                }[operation.property_name], operation.value);
                 break;
             case "set_opacity":
             case "set_layer_opacity":
@@ -969,6 +1130,7 @@
                 assertEffectPropertyOperation(operation.kind, operation.property_name);
                 assertDirectProperty(operation.property_name);
                 var keyframeLimit = frameLimit === null ? MAX_KEYFRAMES : frameLimit;
+                var keyframeDimensions = /^(ADBE Position|ADBE Scale|ADBE Anchor Point)$/.test(operation.property_name) ? 2 : 1;
                 if (!(operation.keyframes instanceof Array) || operation.keyframes.length === 0 || operation.keyframes.length > keyframeLimit) { throw new Error("keyframes are outside bounds"); }
                 var keyframeIndex;
                 for (keyframeIndex = 0; keyframeIndex < operation.keyframes.length; keyframeIndex += 1) {
@@ -979,14 +1141,18 @@
                     assertSafeValue(keyframe.value, 0);
                     if (keyframe.ease_in !== undefined) { assertTemporalEase(keyframe.ease_in, "ease_in"); }
                     if (keyframe.ease_out !== undefined) { assertTemporalEase(keyframe.ease_out, "ease_out"); }
+                    if (keyframe.ease_in !== undefined) { assertTemporalEaseDimensions(keyframe.ease_in, "ease_in", keyframeDimensions); }
+                    if (keyframe.ease_out !== undefined) { assertTemporalEaseDimensions(keyframe.ease_out, "ease_out", keyframeDimensions); }
                     capabilityProperty(payload, operation.property_name, keyframe.value);
                 }
                 break;
             case "set_text":
             case "set_layer_text":
-                assertKeys(operation, { kind: true, layer_instance_id: true, text: true, font_name: true }, "set_text");
+                assertKeys(operation, { kind: true, layer_instance_id: true, text: true, font_name: true, font_size: true, color: true }, "set_text");
                 assertString(operation.text, "text");
                 if (operation.font_name !== undefined && operation.font_name !== null && !catalogName(payload.approved_capabilities, "fonts", operation.font_name)) { throw new Error("font is not in the approved catalog"); }
+                if (operation.font_size !== undefined && operation.font_size !== null && (typeof operation.font_size !== "number" || !isFinite(operation.font_size) || operation.font_size <= 0 || operation.font_size > 1000000)) { throw new Error("font size is invalid"); }
+                if (operation.color !== undefined && operation.color !== null) { assertColor(operation.color, "text color"); }
                 break;
             case "set_font":
             case "set_layer_font":
@@ -1010,9 +1176,25 @@
                 }
                 break;
             case "add_layer":
-                assertKeys(operation, { kind: true, layer_instance_id: true, layer_type: true, name: true, source_element_id: true, parent_instance_id: true }, "add_layer");
-                if (!/^(text|solid|null)$/.test(operation.layer_type)) { throw new Error("layer type is invalid"); }
+                assertKeys(operation, { kind: true, layer_instance_id: true, layer_type: true, name: true, source_element_id: true, parent_instance_id: true, asset_id: true, width: true, height: true, color: true }, "add_layer");
+                if (!/^(text|solid|null|footage)$/.test(operation.layer_type)) { throw new Error("layer type is invalid"); }
                 assertString(operation.name, "layer name");
+                if (operation.name.length === 0) { throw new Error("layer name must not be empty"); }
+                if (operation.source_element_id !== undefined && operation.source_element_id !== null) { assertIdentifier(operation.source_element_id, "source_element_id"); }
+                if (operation.parent_instance_id !== undefined && operation.parent_instance_id !== null) { assertIdentifier(operation.parent_instance_id, "parent_instance_id"); }
+                if (operation.layer_type === "footage") {
+                    if (operation.asset_id === undefined || operation.asset_id === null) { throw new Error("footage layers require asset_id"); }
+                    assertAssetIdentifier(operation.asset_id, "asset_id");
+                    if (operation.width !== undefined && operation.width !== null || operation.height !== undefined && operation.height !== null || operation.color !== undefined && operation.color !== null) { throw new Error("footage layers forbid solid fields"); }
+                } else if (operation.layer_type === "solid") {
+                    if (operation.asset_id !== undefined && operation.asset_id !== null) { throw new Error("solid layers forbid asset_id"); }
+                    if (operation.width === undefined || operation.width === null || operation.height === undefined || operation.height === null || operation.color === undefined || operation.color === null) { throw new Error("solid layers require width, height, and color"); }
+                    assertSolidDimension(operation.width, "solid width");
+                    assertSolidDimension(operation.height, "solid height");
+                    assertColor(operation.color, "solid color");
+                } else if (operation.asset_id !== undefined && operation.asset_id !== null || operation.width !== undefined && operation.width !== null || operation.height !== undefined && operation.height !== null || operation.color !== undefined && operation.color !== null) {
+                    throw new Error("text and null layers forbid footage/solid fields");
+                }
                 break;
             case "remove_layer":
                 assertKeys(operation, { kind: true, layer_instance_id: true }, "remove_layer");
@@ -1056,10 +1238,10 @@
     function validateTiming(operation, frameLimit, duration) {
         var frame;
         var keyframeIndex;
-        function checkFrame(value) {
+        function checkFrame(value, allowEnd) {
             if (value === undefined || value === null) { return; }
             if (typeof value !== "number" || !isFinite(value) || value < 0 || Math.floor(value) !== value) { throw new Error("operation frame is invalid"); }
-            if (value >= frameLimit) { throw new Error("operation frame is outside the scene"); }
+            if (allowEnd ? value > frameLimit : value >= frameLimit) { throw new Error("operation frame is outside the scene"); }
         }
         function checkTime(value) {
             if (value === undefined || value === null) { return; }
@@ -1069,7 +1251,10 @@
         frame = operation.frame;
         checkFrame(frame);
         checkFrame(operation.frame_start);
-        checkFrame(operation.frame_end);
+        checkFrame(operation.frame_end, true);
+        if (operation.frame_start !== undefined && operation.frame_start !== null && operation.frame_end !== undefined && operation.frame_end !== null && operation.frame_end < operation.frame_start) {
+            throw new Error("visibility frame range is reversed");
+        }
         checkTime(operation.time);
         if (operation.keyframes instanceof Array) {
             for (keyframeIndex = 0; keyframeIndex < operation.keyframes.length; keyframeIndex += 1) {
@@ -1083,11 +1268,32 @@
         var batch;
         var operations;
         var index;
+        var approved_capabilities;
         assertObject(payload, "apply_operation_batch payload");
+        assertKeys(payload, {
+            batch: true,
+            approved_capabilities: true,
+            scene_frame_count: true,
+            duration: true,
+            layer_count: true,
+            baseline: true,
+            locked_source_ids: true,
+            layer_sources: true,
+            project_id: true,
+            plan_id: true,
+            session_id: true
+        }, "apply_operation_batch payload");
         assertObject(payload.batch, "batch");
+        assertKeys(payload.batch, { operations: true, capability_digest: true, scene_frame_count: true, layer_count: true, duration: true }, "batch");
         assertObject(payload.approved_capabilities, "approved_capabilities");
+        approved_capabilities = payload.approved_capabilities;
+        assertSha256(approved_capabilities.digest, "approved capability digest");
+        if (typeof payload.baseline !== "boolean") { throw new Error("baseline must be boolean"); }
         batch = payload.batch;
-        if (batch.capability_digest !== payload.approved_capabilities.digest) { throw new Error("capability digest does not match"); }
+        assertSha256(batch.capability_digest, "batch capability digest");
+        if (!(batch.capability_digest === approved_capabilities.digest)) {
+            throw new Error("operation batch capability digest does not match the approved catalog");
+        }
         operations = batch.operations;
         if (!(operations instanceof Array) || operations.length > 128) { throw new Error("operation batch is outside bounds"); }
         if (JSON.stringify(payload).length > MAX_JSON_BYTES) { throw new Error("operation batch exceeds 1 MiB"); }
@@ -1098,6 +1304,193 @@
         return batch;
     }
 
+    function mappedLayerInventory() {
+        var inventory = {};
+        var comp = requireSessionComposition();
+        var index;
+        var layer;
+        var metadata;
+        for (index = 1; index <= comp.numLayers; index += 1) {
+            layer = comp.layer(index);
+            metadata = layerMetadata(layer);
+            if (!metadata) { continue; }
+            if (hasOwn(inventory, metadata.layer_instance_id)) {
+                throw new Error("duplicate mapped layer instance id");
+            }
+            inventory[metadata.layer_instance_id] = metadata.source_element_id;
+        }
+        return inventory;
+    }
+    function inventorySize(inventory) {
+        var count = 0;
+        var key;
+        for (key in inventory) {
+            if (hasOwn(inventory, key)) { count += 1; }
+        }
+        return count;
+    }
+
+    function validateApplyContext(payload) {
+        var actual = mappedLayerInventory();
+        var inventory = {};
+        var locked = {};
+        var sourceIds = payload.locked_source_ids;
+        var key;
+        var source;
+        var index;
+        if (typeof payload.baseline !== "boolean") { throw new Error("baseline must be boolean"); }
+        if (!(sourceIds instanceof Array)) { throw new Error("locked_source_ids must be a list"); }
+        for (index = 0; index < sourceIds.length; index += 1) {
+            assertIdentifier(sourceIds[index], "locked source id");
+            if (hasOwn(locked, sourceIds[index])) { throw new Error("locked_source_ids contains duplicate ids"); }
+            locked[sourceIds[index]] = true;
+        }
+        assertObject(payload.layer_sources, "layer_sources");
+        for (key in payload.layer_sources) {
+            if (!hasOwn(payload.layer_sources, key)) { continue; }
+            assertIdentifier(key, "layer instance id");
+            source = payload.layer_sources[key];
+            if (source !== null) { assertIdentifier(source, "layer source id"); }
+            inventory[key] = source;
+        }
+        for (key in actual) {
+            if (!hasOwn(actual, key) || !hasOwn(inventory, key) || actual[key] !== inventory[key]) {
+                throw new Error("mapped layer inventory does not match the bound composition");
+            }
+        }
+        for (key in inventory) {
+            if (hasOwn(inventory, key) && !hasOwn(actual, key)) {
+                throw new Error("layer inventory contains an unknown mapped layer");
+            }
+        }
+        return { baseline: payload.baseline, locked: locked, inventory: inventory };
+    }
+
+    function authorizeOperations(payload, operations) {
+        var context = validateApplyContext(payload);
+        var inventory = context.inventory;
+        var locked = context.locked;
+        var added = {};
+        var removed = {};
+        var operation;
+        var instanceId;
+        var source;
+        var index;
+        function requireTarget(targetId) {
+            if (!hasOwn(inventory, targetId)) { throw new Error("layer instance is not in the inventory"); }
+            source = inventory[targetId];
+            if (!context.baseline && source !== null && hasOwn(locked, source)) {
+                throw new Error("layer source is locked");
+            }
+        }
+        for (index = 0; index < operations.length; index += 1) {
+            operation = operations[index];
+            instanceId = operation.layer_instance_id;
+            if (operation.kind === "add_layer") {
+                if (hasOwn(inventory, instanceId) || hasOwn(added, instanceId) || hasOwn(removed, instanceId)) {
+                    throw new Error("add_layer reuses layer instance id");
+                }
+                if (operation.parent_instance_id !== undefined && operation.parent_instance_id !== null) {
+                    requireTarget(operation.parent_instance_id);
+                }
+                if (!context.baseline) {
+                    if (operation.source_element_id !== undefined && operation.source_element_id !== null) {
+                        throw new Error("non-baseline add_layer must be source-less");
+                    }
+                    if (!/^agent[-_:][A-Za-z0-9_.:-]{1,255}$/.test(instanceId)) {
+                        throw new Error("non-baseline add_layer requires an agent layer id");
+                    }
+                }
+                inventory[instanceId] = operation.source_element_id === undefined ? null : operation.source_element_id;
+                if (inventorySize(inventory) > 1000) {
+                    throw new Error("final layer inventory exceeds 1000 layers");
+                }
+                added[instanceId] = true;
+            } else {
+                requireTarget(instanceId);
+                if (operation.kind === "remove_layer") {
+                    delete inventory[instanceId];
+                    removed[instanceId] = true;
+                }
+            }
+        }
+        if (inventorySize(inventory) > 1000) {
+            throw new Error("final layer inventory exceeds 1000 layers");
+        }
+        return context;
+    }
+
+    function preflightBatch(operations) {
+        var kinds = {};
+        var comp = requireSessionComposition();
+        var layer;
+        var metadata;
+        var footage;
+        var operation;
+        var index;
+        for (index = 1; index <= comp.numLayers; index += 1) {
+            layer = comp.layer(index);
+            metadata = layerMetadata(layer);
+            if (!metadata) { continue; }
+            kinds[metadata.layer_instance_id] = (
+                typeof TextLayer !== "undefined" && layer instanceof TextLayer
+            ) ? "text" : "other";
+        }
+        for (index = 0; index < operations.length; index += 1) {
+            operation = operations[index];
+            if (operation.kind === "add_layer") {
+                if (operation.layer_type === "footage") {
+                    footage = findAssetItem(operation.asset_id);
+                    if (!footage || footage instanceof CompItem || !footage.mainSource) {
+                        throw new Error("server asset is not imported");
+                    }
+                }
+                kinds[operation.layer_instance_id] = operation.layer_type;
+                continue;
+            }
+            if (!hasOwn(kinds, operation.layer_instance_id)) {
+                throw new Error("layer is not mapped");
+            }
+            if (operation.kind === "set_text" || operation.kind === "set_layer_text" || operation.kind === "set_font" || operation.kind === "set_layer_font") {
+                if (kinds[operation.layer_instance_id] !== "text") {
+                    throw new Error("text operation requires TextLayer");
+                }
+            }
+            if (operation.kind === "remove_layer") {
+                delete kinds[operation.layer_instance_id];
+            }
+        }
+    }
+
+    function captureBatchSnapshot() {
+        var comp = requireSessionComposition();
+        return { layer_count: comp.numLayers, inventory: mappedLayerInventory() };
+    }
+
+    function sameBatchInventory(expected, actual) {
+        var key;
+        if (inventorySize(expected) !== inventorySize(actual)) { return false; }
+        for (key in expected) {
+            if (hasOwn(expected, key) && (!hasOwn(actual, key) || expected[key] !== actual[key])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function verifyBatchSnapshot(snapshot) {
+        var comp = requireSessionComposition();
+        var actual = mappedLayerInventory();
+        if (comp.numLayers !== snapshot.layer_count || !sameBatchInventory(snapshot.inventory, actual)) {
+            throw new Error("layer inventory/source mapping does not match pre-batch snapshot");
+        }
+    }
+
+    function batchErrorText(error) {
+        if (error && error.message !== undefined) { return String(error.message); }
+        return String(error);
+    }
+
     function applyBatch(payload) {
         var comp;
         var sceneFrameCount;
@@ -1105,7 +1498,14 @@
         var layerCount;
         var batch;
         var operations;
+        var snapshot;
         var index;
+        var groupStarted = false;
+        var applyFailed = false;
+        var applyError = null;
+        var stopped = false;
+        var rollbackFailed;
+        var rollbackError;
         assertObject(payload, "apply_operation_batch payload");
         comp = requireSessionComposition();
         sceneFrameCount = payload.scene_frame_count;
@@ -1114,35 +1514,113 @@
         validateAuthoritativeBounds(comp, sceneFrameCount, duration, layerCount);
         batch = validatedBatch(payload, sceneFrameCount, duration);
         operations = batch.operations;
+        authorizeOperations(payload, operations);
+        preflightBatch(operations);
+        snapshot = captureBatchSnapshot();
         for (index = 0; index < operations.length; index += 1) {
             if (operations[index].kind === "add_layer") { layerCount += 1; }
             if (operations[index].kind === "remove_layer") { layerCount = Math.max(0, layerCount - 1); }
             if (layerCount > 1000) { throw new Error("layer count exceeds 1000"); }
         }
         activeBatch = true;
-        var stopped = false;
-        app.beginUndoGroup("Keepframe operation batch");
         try {
-            for (index = 0; index < operations.length; index += 1) {
-                applyOperation(operations[index]);
+            try {
+                app.beginUndoGroup("Keepframe operation batch");
+                groupStarted = true;
+                for (index = 0; index < operations.length; index += 1) {
+                    applyOperation(operations[index]);
+                }
+                stopped = STOP_FILE.exists;
+            } catch (error) {
+                applyFailed = true;
+                applyError = error;
+            } finally {
+                if (groupStarted) {
+                    try {
+                        app.endUndoGroup();
+                    } catch (endError) {
+                        if (!applyFailed) {
+                            applyFailed = true;
+                            applyError = endError;
+                        }
+                    }
+                }
             }
-            stopped = STOP_FILE.exists;
         } finally {
-            app.endUndoGroup();
             activeBatch = false;
         }
         removeStop();
+        if (applyFailed) {
+            if (!groupStarted) {
+                throw new Error("apply failed: " + batchErrorText(applyError) + "; rollback not required");
+            }
+            rollbackFailed = false;
+            rollbackError = null;
+            try {
+                app.executeCommand(app.findMenuCommandId("Undo"));
+                verifyBatchSnapshot(snapshot);
+            } catch (error) {
+                rollbackFailed = true;
+                rollbackError = error;
+            }
+            if (rollbackFailed) {
+                throw new Error("apply failed: " + batchErrorText(applyError) + "; rollback failed: " + batchErrorText(rollbackError));
+            }
+            throw new Error("apply failed: " + batchErrorText(applyError) + "; rollback succeeded");
+        }
         return { applied: operations.length, stop_requested: stopped };
+    }
+
+    function projectSettings(payload) {
+        var required = ["width", "height", "frame_rate", "duration", "background_color"];
+        var index;
+        var color;
+        for (index = 0; index < required.length; index += 1) {
+            if (!hasOwn(payload, required[index])) { throw new Error("project setting is required: " + required[index]); }
+        }
+        assertSolidDimension(payload.width, "width");
+        assertSolidDimension(payload.height, "height");
+        if (typeof payload.frame_rate !== "number" || !isFinite(payload.frame_rate) || payload.frame_rate < 1 || payload.frame_rate > 99) {
+            throw new Error("frame rate is invalid");
+        }
+        if (typeof payload.duration !== "number" || !isFinite(payload.duration) || payload.duration <= 0 || payload.duration > 10800) {
+            throw new Error("duration is invalid");
+        }
+        assertColor(payload.background_color, "background color");
+        color = normalizedColor(payload.background_color).slice(0, 3);
+        return {
+            width: payload.width,
+            height: payload.height,
+            frame_rate: payload.frame_rate,
+            duration: payload.duration,
+            background_color: color
+        };
+    }
+
+    function projectSettingsMatch(comp, settings) {
+        var color = comp.bgColor;
+        var index;
+        if (
+            comp.width !== settings.width
+            || comp.height !== settings.height
+            || !approximatelyEqual(comp.frameRate, settings.frame_rate)
+            || !approximatelyEqual(comp.duration, settings.duration)
+            || !(color instanceof Array)
+            || color.length < 3
+        ) {
+            return false;
+        }
+        for (index = 0; index < 3; index += 1) {
+            if (!approximatelyEqual(Number(color[index]), settings.background_color[index])) { return false; }
+        }
+        return true;
     }
 
     function createOrOpenProject(payload) {
         var marker = sessionMarker(payload.project_id, payload.plan_id, payload.session_id);
         var info = heartbeat(false);
+        var settings = projectSettings(payload);
         var comp = null;
-        var width;
-        var height;
-        var frameRate;
-        var duration;
         if (!info.ready) { throw new Error("After Effects 2022 or newer is required"); }
         if (SESSION_MARKER === marker && SESSION_COMP && compositionIsInProject(SESSION_COMP) && hasSessionMarker(SESSION_COMP, marker)) {
             comp = SESSION_COMP;
@@ -1150,6 +1628,9 @@
             comp = findSessionComposition(marker);
         }
         if (comp) {
+            if (!projectSettingsMatch(comp, settings)) {
+                throw new Error("bound composition settings do not match the requested project");
+            }
             SESSION_MARKER = marker;
             SESSION_COMP = comp;
             comp.openInViewer();
@@ -1159,18 +1640,14 @@
             throw new Error("refusing to reuse an unrelated After Effects project");
         }
         app.newProject();
-        width = Number(payload.width || 1920);
-        height = Number(payload.height || 1080);
-        frameRate = Number(payload.frame_rate || 30);
-        duration = Number(payload.duration || 5);
-        if (!isFinite(width) || width < 1 || !isFinite(height) || height < 1 || !isFinite(frameRate) || frameRate <= 0 || !isFinite(duration) || duration <= 0) {
-            throw new Error("session composition settings are invalid");
-        }
         app.beginUndoGroup("Keepframe create session composition");
         try {
-            comp = app.project.items.addComp("Keepframe", width, height, 1, duration, frameRate);
+            comp = app.project.items.addComp("Keepframe", settings.width, settings.height, 1, settings.duration, settings.frame_rate);
+            comp.bgColor = settings.background_color;
             comp.comment = marker;
-            if (!hasSessionMarker(comp, marker)) { throw new Error("cannot establish Keepframe session marker"); }
+            if (!hasSessionMarker(comp, marker) || !projectSettingsMatch(comp, settings)) {
+                throw new Error("cannot establish Keepframe session composition");
+            }
             SESSION_MARKER = marker;
             SESSION_COMP = comp;
         } finally {
@@ -1182,15 +1659,23 @@
 
     function importServerAsset(payload) {
         requireSessionComposition();
-        var assetId = String(payload.asset_id || "");
+        var assetId = payload.asset_id;
         var file;
         var footage;
-        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{7,255}$/.test(assetId)) { throw new Error("asset id is invalid"); }
+        if (typeof assetId !== "string" || !ASSET_ID_PATTERN.test(assetId)) { throw new Error("asset id is invalid"); }
+        footage = findAssetItem(assetId);
+        if (footage) {
+            if (footage instanceof CompItem || !footage.mainSource) { throw new Error("server asset is not footage"); }
+            return { imported: true, asset_id: assetId, item_name: footage.name };
+        }
         file = File(ASSET_DIR.fsName + "/" + assetId);
         if (!file.exists) { throw new Error("server-issued asset is unavailable"); }
         app.beginUndoGroup("Keepframe import server asset");
         try {
             footage = app.project.importFile(new ImportOptions(file));
+            if (!footage || footage instanceof CompItem || !footage.mainSource) { throw new Error("server asset is not footage"); }
+            footage.comment = "keepframe:asset=" + assetId;
+            if (!findAssetItem(assetId)) { throw new Error("cannot tag imported server asset"); }
         } finally {
             app.endUndoGroup();
         }
