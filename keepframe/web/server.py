@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import tempfile
@@ -27,7 +28,14 @@ from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
-from keepframe.render.plan import create_render_plan
+from keepframe.render.native import prepare_native_job
+from keepframe.render.plan import (
+    PlanConflict,
+    approve_render_plan,
+    create_render_plan,
+    load_render_plan,
+    load_render_plan_state,
+)
 from keepframe.session import SessionAgent, SessionContext, make_llm
 from keepframe.session.provider import load_llm_settings
 from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
@@ -37,6 +45,62 @@ log = get("keepframe.web")
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
 JOBS = JobStore()
+_PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_RENDER_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+
+
+def _safe_render_project(workspace: Path, project_id: str) -> Path:
+    if not isinstance(project_id, str) or not _PROJECT_ID_RE.fullmatch(project_id):
+        raise ValueError("project id is invalid")
+    workspace = Path(workspace)
+    root = project_dir(workspace, project_id)
+    try:
+        workspace_real = workspace.resolve(strict=True)
+        root_real = root.resolve(strict=True)
+    except OSError as exc:
+        raise FileNotFoundError(project_id) from exc
+    if root.is_symlink() or root_real.parent != workspace_real or not root_real.is_dir():
+        raise FileNotFoundError(project_id)
+    try:
+        meta = load_meta(workspace, project_id)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise FileNotFoundError(project_id) from exc
+    if not isinstance(meta, dict) or meta.get("id") is not None and meta.get("id") != project_id:
+        raise FileNotFoundError(project_id)
+    return root_real
+
+
+def _native_execution_job_id(plan_id: str, digest: str, execution_id: str) -> str:
+    material = f"{plan_id}\0{digest}\0{execution_id}".encode("utf-8")
+    return "j" + hashlib.sha256(material).hexdigest()
+
+
+def _render_status(state, job: Job | None) -> str:
+    if job is None:
+        return "awaiting" if state.status == "awaiting_approval" else "approved"
+    if job.status == "error" or job.error:
+        return "failed"
+    if job.status in {"queued", "running", "done"}:
+        return job.status
+    return "failed"
+
+
+def _render_state_payload(root: Path, plan_id: str) -> dict:
+    plan = load_render_plan(root, plan_id)
+    state = load_render_plan_state(root, plan.id)
+    job_id = (
+        _native_execution_job_id(plan.id, plan.digest, state.execution_id)
+        if plan.backend == "native" and state.execution_id
+        else None
+    )
+    job = JOBS.find(job_id) if job_id else None
+    return {
+        "plan": plan.model_dump(mode="json"),
+        "state": state.model_dump(mode="json"),
+        "job": job.to_json() if job is not None else None,
+        "status": _render_status(state, job),
+    }
+
 
 
 def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
@@ -487,6 +551,29 @@ def make_server(
             pid = q.get("project", [None])[0]
             sid = q.get("scene", ["s1"])[0]
             ver = q.get("v", [None])[0]
+            if u.path == "/api/render-state":
+                plan_id = q.get("plan", [None])[0]
+                if not pid or not plan_id:
+                    return self._json(400, {"error": "project and plan are required"})
+                if not _RENDER_PLAN_ID_RE.fullmatch(plan_id):
+                    return self._json(400, {"error": "plan id is invalid"})
+                try:
+                    root = _safe_render_project(workspace, pid)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                plan_path = root / "renders" / plan_id / "plan.json"
+                if not plan_path.exists() and not plan_path.is_symlink():
+                    return self._json(404, {"error": "not found"})
+                try:
+                    payload = _render_state_payload(root, plan_id)
+                    if payload["plan"]["project_id"] != pid:
+                        return self._json(404, {"error": "not found"})
+                    return self._json(200, payload)
+                except PlanConflict as exc:
+                    return self._json(409, {"error": str(exc)})
+
 
             if u.path == "/api/state":
                 if not pid:
@@ -579,6 +666,71 @@ def make_server(
             u = urlparse(self.path)
             if admin_routes and admin_routes.handle_post(self, u):
                 return
+            m = re.fullmatch(r"/api/render-plans/([^/]+)/approve", u.path)
+            if m:
+                plan_id = m.group(1)
+                if not _RENDER_PLAN_ID_RE.fullmatch(plan_id):
+                    return self._json(400, {"error": "plan id is invalid"})
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except json.JSONDecodeError:
+                    return self._json(400, {"error": "bad json"})
+                if not isinstance(data, dict):
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                if not isinstance(project_id, str) or not _PROJECT_ID_RE.fullmatch(project_id):
+                    return self._json(400, {"error": "project id is invalid"})
+                try:
+                    root = _safe_render_project(workspace, project_id)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                plan_path = root / "renders" / plan_id / "plan.json"
+                if not plan_path.exists() and not plan_path.is_symlink():
+                    return self._json(404, {"error": "not found"})
+                try:
+                    plan = load_render_plan(root, plan_id)
+                except PlanConflict as exc:
+                    return self._json(409, {"error": str(exc)})
+                if plan.project_id != project_id:
+                    return self._json(404, {"error": "not found"})
+                if plan.backend != "native":
+                    return self._json(409, {"error": "after_effects approval is not supported yet"})
+                digest = data.get("digest")
+                revision = data.get("revision")
+                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    return self._json(400, {"error": "digest is invalid"})
+                if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+                    return self._json(400, {"error": "revision is invalid"})
+                try:
+                    state = approve_render_plan(root, plan.id, digest=digest, revision=revision)
+                    if not state.execution_id:
+                        raise PlanConflict("approved render plan has no execution id")
+                    job_id = _native_execution_job_id(plan.id, plan.digest, state.execution_id)
+                    job = JOBS.find(job_id)
+                    if job is None:
+                        spec = prepare_native_job(root, plan.id)
+                        job = JOBS.submit(
+                            spec.kind,
+                            spec=spec,
+                            project_id=plan.project_id,
+                            scene_id=plan.scene_id,
+                            stage=plan.mode,
+                            job_id=job_id,
+                        )
+                    return self._json(
+                        202,
+                        {
+                            "plan": plan.model_dump(mode="json"),
+                            "state": state.model_dump(mode="json"),
+                            "job": job.to_json(),
+                            "status": _render_status(state, job),
+                        },
+                    )
+                except PlanConflict as exc:
+                    return self._json(409, {"error": str(exc)})
+
 
             if u.path == "/api/estimate":
                 body = self._read_body()
