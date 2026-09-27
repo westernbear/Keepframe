@@ -27,6 +27,7 @@ from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
+from keepframe.render.plan import create_render_plan
 from keepframe.session import SessionAgent, SessionContext, make_llm
 from keepframe.session.provider import load_llm_settings
 from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
@@ -802,18 +803,59 @@ def make_server(
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
+                if not isinstance(data, dict):
+                    return self._json(400, {"error": "bad json"})
                 project_id = data.get("project")
-                scene_id = data.get("scene", "s1")
-                message = (data.get("message") or "").strip()
-                if not project_id:
+                requested_scene_id = data.get("scene", "s1")
+                raw_message = data.get("message")
+                message = raw_message.strip() if isinstance(raw_message, str) else ""
+                if not isinstance(project_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project_id):
                     return self._json(400, {"error": "project required"})
+                if not isinstance(requested_scene_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", requested_scene_id):
+                    return self._json(400, {"error": "scene required"})
                 if not message:
                     return self._json(400, {"error": "message required"})
+                root = project_dir(workspace, project_id)
+                try:
+                    workspace_real = workspace.resolve()
+                    root_real = root.resolve(strict=True)
+                    if root.is_symlink() or root_real.parent != workspace_real or not root_real.is_dir():
+                        return self._json(404, {"error": "not found"})
+                except OSError:
+                    return self._json(404, {"error": "not found"})
+                root = root_real
                 meta = load_meta(workspace, project_id)
                 if meta is None:
                     return self._json(404, {"error": "not found"})
-                root = project_dir(workspace, project_id)
-                version = data.get("v")
+                if meta.get("id") is not None and meta.get("id") != project_id:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    project = load_project(root)
+                    scene_id = meta.get("scene") or requested_scene_id
+                    if not isinstance(scene_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", scene_id):
+                        raise ValueError("scene id is invalid")
+                    versions = [v for v in project.versions if v.scene_file.startswith(f"scenes/{scene_id}/")]
+                    if not versions:
+                        raise ValueError("scene version was not found")
+                    version = meta.get("version") or versions[-1].id
+                    if not any(v.id == version for v in versions):
+                        raise ValueError("version is not authoritative for this scene")
+                except Exception as e:  # noqa: BLE001 - malformed workspace input
+                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                resolved_project_id = project_id
+                resolved_scene_id = scene_id
+                resolved_version = version
+
+                def prepare_agent_render(mode: str, backend: str, direction: str | None):
+                    return create_render_plan(
+                        root,
+                        project_id=resolved_project_id,
+                        scene_id=resolved_scene_id,
+                        version_id=resolved_version,
+                        backend=backend,
+                        mode=mode,
+                        direction=direction,
+                    )
 
                 def submit_agent_job(kind: str, args: dict, stage: str) -> dict:
                     if kind == "analyze":
@@ -823,49 +865,50 @@ def make_server(
                         spec = JobSpec(
                             kind="analyze",
                             args={"video": str(video), "start": int(start), "end": int(end),
-                                  "out_root": str(root), "workspace": str(workspace), "project_id": project_id},
+                                  "out_root": str(root), "workspace": str(workspace), "project_id": resolved_project_id},
                         )
-                        job = JOBS.submit("analyze", spec=spec, project_id=project_id, scene_id="s1", stage="frames")
+                        job = JOBS.submit("analyze", spec=spec, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="frames")
                     elif kind in ("render", "export"):
-                        job = JOBS.submit(kind, spec=JobSpec(kind=kind, args=args), project_id=project_id, scene_id=scene_id, stage=stage)
+                        raise ValueError("render/export plans require browser approval")
                     elif kind == "correct":
                         op = (args or {}).get("op")
                         cargs = (args or {}).get("args", {})
 
                         def work():
                             if op == "reassign":
-                                v = corrections.reassign_id(root, scene_id, tuple(cargs["frames"]), cargs["from_id"], cargs["to_id"], note=cargs.get("note", "reassign id"))
+                                v = corrections.reassign_id(root, resolved_scene_id, tuple(cargs["frames"]), cargs["from_id"], cargs["to_id"], note=cargs.get("note", "reassign id"))
                             elif op == "mask":
                                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:
                                     t.write(base64.b64decode(cargs["mask_png_base64"]))
                                     tmp = Path(t.name)
                                 try:
-                                    v = corrections.set_region_mask(root, scene_id, int(cargs["frame"]), tmp, cargs["object_id"], note=cargs.get("note", "set region mask"))
+                                    v = corrections.set_region_mask(root, resolved_scene_id, int(cargs["frame"]), tmp, cargs["object_id"], note=cargs.get("note", "set region mask"))
                                 finally:
                                     tmp.unlink(missing_ok=True)
                             elif op == "bbox":
-                                v = corrections.add_bbox_prompt(root, scene_id, int(cargs["frame"]), tuple(int(x) for x in cargs["bbox"]), cargs["object_id"], note=cargs.get("note", "bbox prompt"))
+                                v = corrections.add_bbox_prompt(root, resolved_scene_id, int(cargs["frame"]), tuple(int(x) for x in cargs["bbox"]), cargs["object_id"], note=cargs.get("note", "bbox prompt"))
                             else:
-                                v = corrections.edit_text(root, scene_id, cargs["element_id"], text=cargs.get("text"),
+                                v = corrections.edit_text(root, resolved_scene_id, cargs["element_id"], text=cargs.get("text"),
                                                             font=FontGuess(**cargs["font"]) if cargs.get("font") else None,
                                                             note=cargs.get("note", "edit text"))
                             return {"version": v.model_dump()}
 
-                        job = JOBS.submit("correct", fn=work, project_id=project_id, scene_id=scene_id, stage="correct")
+                        job = JOBS.submit("correct", fn=work, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="correct")
                     else:
                         raise ValueError(f"unknown job kind {kind!r}")
                     return job.to_json()
 
-                key = (project_id, scene_id)
+                key = (resolved_project_id, resolved_scene_id)
                 history = agent_states.setdefault(key, [])
                 ctx = SessionContext(
                     root=root,
-                    scene_id=scene_id,
-                    version=version,
+                    scene_id=resolved_scene_id,
+                    version=resolved_version,
                     workspace=workspace,
-                    project_id=project_id,
+                    project_id=resolved_project_id,
                     jobs=JOBS,
                     submit_job=submit_agent_job,
+                    prepare_render=prepare_agent_render,
                 )
                 try:
                     turn = SessionAgent(agent_llm()).turn(ctx, message, history)

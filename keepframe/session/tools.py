@@ -20,6 +20,7 @@ class SessionContext:
     project_id: str | None = None
     jobs: Any = None
     submit_job: Callable[[str, dict, str], dict] | None = None
+    prepare_render: Callable[[str, str, str | None], Any] | None = None
 
 
 def _ok(message: str, **payload: Any) -> dict[str, Any]:
@@ -32,6 +33,12 @@ def _pending(message: str, *, confirm: bool = False, choice: bool = False, **pay
 
 def _fail(message: str) -> dict[str, Any]:
     return {"ok": False, "message": message, "needs_confirm": False, "needs_choice": False, "payload": {}}
+
+
+def _json_payload(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
 
 
 def _current(ctx: SessionContext):
@@ -102,25 +109,22 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _render(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
-    from ..compose.composer import compose
-
-    if ctx.submit_job is None:
-        return _fail("render는 작업 큐가 필요합니다.")
-    sd = scene_dir(ctx.root, ctx.scene_id)
-    scene, version = _current(ctx)
-    html = sd / "composition.agent.html"
-    compose(scene, sd, html)
-    job = ctx.submit_job(
-        "render",
-        {
-            "scene": str(ctx.root / version.scene_file),
-            "html": str(html),
-            "out": str(sd / "render-agent"),
-            "mp4": bool(args.get("mp4", True)),
-        },
-        "render",
+    backend = args.get("backend")
+    if backend not in ("native", "after_effects"):
+        return _fail("render에는 backend가 필요합니다(native 또는 after_effects).")
+    direction = args.get("direction")
+    if direction is not None and not isinstance(direction, str):
+        return _fail("direction은 문자열이어야 합니다.")
+    if ctx.prepare_render is None:
+        return _fail("render 계획을 준비할 수 없습니다.")
+    plan = ctx.prepare_render("preview", backend, direction)
+    if plan is None:
+        return _fail("render 계획을 준비할 수 없습니다.")
+    return _pending(
+        "렌더 계획을 준비했습니다. 브라우저에서 승인하면 실행됩니다.",
+        confirm=True,
+        render_plan=_json_payload(plan),
     )
-    return _ok("렌더 작업을 큐에 넣었습니다.", job=job)
 
 
 def _verify(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -143,16 +147,22 @@ def _verify(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _export(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
-    if ctx.submit_job is None:
-        return _fail("export는 작업 큐가 필요합니다.")
-    sd = scene_dir(ctx.root, ctx.scene_id)
-    _, version = _current(ctx)
-    job = ctx.submit_job(
-        "export",
-        {"scene": str(ctx.root / version.scene_file), "out": str(sd / "export-agent")},
-        "export",
+    backend = args.get("backend")
+    if backend not in ("native", "after_effects"):
+        return _fail("export에는 backend가 필요합니다(native 또는 after_effects).")
+    direction = args.get("direction")
+    if direction is not None and not isinstance(direction, str):
+        return _fail("direction은 문자열이어야 합니다.")
+    if ctx.prepare_render is None:
+        return _fail("내보내기 계획을 준비할 수 없습니다.")
+    plan = ctx.prepare_render("final", backend, direction)
+    if plan is None:
+        return _fail("내보내기 계획을 준비할 수 없습니다.")
+    return _pending(
+        "내보내기 계획을 준비했습니다. 브라우저에서 승인하면 실행됩니다.",
+        confirm=True,
+        render_plan=_json_payload(plan),
     )
-    return _ok("내보내기 작업을 큐에 넣었습니다.", job=job)
 
 
 def _report(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -216,9 +226,27 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         {"prompt": {"type": "string"}, "element": {"type": "string"}, "confirm": {"type": "boolean"}, "intent": {"type": "object"}, "choices": {"type": "object"}},
         ["prompt"],
     ),
-    _fn("render", "장면을 렌더(프레임/MP4)한다.", {"mp4": {"type": "boolean"}}, []),
+    _fn(
+        "render",
+        "backend를 지정해 렌더 계획만 준비한다. 실행은 브라우저의 명시적 승인으로만 이뤄진다.",
+        {
+            "backend": {"type": "string", "enum": ["native", "after_effects"]},
+            "direction": {"type": "string"},
+            "confirm": {"type": "boolean", "description": "권한이 아니며 무시된다."},
+        },
+        ["backend"],
+    ),
     _fn("verify", "현재 장면을 검증(스키마·keep 술어·프레임 비교)한다.", {}, []),
-    _fn("export", "MP4와 프로젝트 zip을 내보낸다.", {"target": {"type": "string"}}, []),
+    _fn(
+        "export",
+        "backend를 지정해 최종 내보내기 계획만 준비한다. 실행은 브라우저의 명시적 승인으로만 이뤄진다.",
+        {
+            "backend": {"type": "string", "enum": ["native", "after_effects"]},
+            "direction": {"type": "string"},
+            "confirm": {"type": "boolean", "description": "권한이 아니며 무시된다."},
+        },
+        ["backend"],
+    ),
     _fn("report", "재구성 오차·요소 신뢰도 리포트를 요약한다.", {}, []),
 ]
 
