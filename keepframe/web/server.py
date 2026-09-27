@@ -37,6 +37,7 @@ from keepframe.render.plan import (
     load_render_plan_state,
 )
 from keepframe.session import SessionAgent, SessionContext, make_llm
+from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
 from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
 
@@ -47,6 +48,7 @@ CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 JOBS = JobStore()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RENDER_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+_AE_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 
 
 def _safe_render_project(workspace: Path, project_id: str) -> Path:
@@ -88,6 +90,21 @@ def _render_status(state, job: Job | None) -> str:
 def _render_state_payload(root: Path, plan_id: str) -> dict:
     plan = load_render_plan(root, plan_id)
     state = load_render_plan_state(root, plan.id)
+    if plan.backend == "after_effects":
+        session = None
+        try:
+            session = AECoordinator.cached(root, plan.id).state()
+        except CoordinatorConflict as exc:
+            if "has not started" not in str(exc):
+                raise
+            session = None
+        return {
+            "plan": plan.model_dump(mode="json"),
+            "state": state.model_dump(mode="json"),
+            "session": session.model_dump(mode="json") if session is not None else None,
+            "job": None,
+            "status": session.status if session is not None else _render_status(state, None),
+        }
     job_id = (
         _native_execution_job_id(plan.id, plan.digest, state.execution_id)
         if plan.backend == "native" and state.execution_id
@@ -571,7 +588,7 @@ def make_server(
                     if payload["plan"]["project_id"] != pid:
                         return self._json(404, {"error": "not found"})
                     return self._json(200, payload)
-                except PlanConflict as exc:
+                except (PlanConflict, CoordinatorConflict) as exc:
                     return self._json(409, {"error": str(exc)})
 
 
@@ -695,8 +712,6 @@ def make_server(
                     return self._json(409, {"error": str(exc)})
                 if plan.project_id != project_id:
                     return self._json(404, {"error": "not found"})
-                if plan.backend != "native":
-                    return self._json(409, {"error": "after_effects approval is not supported yet"})
                 digest = data.get("digest")
                 revision = data.get("revision")
                 if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -707,6 +722,18 @@ def make_server(
                     state = approve_render_plan(root, plan.id, digest=digest, revision=revision)
                     if not state.execution_id:
                         raise PlanConflict("approved render plan has no execution id")
+                    if plan.backend == "after_effects":
+                        session = AECoordinator.cached(root, plan.id).start(state.execution_id)
+                        return self._json(
+                            202,
+                            {
+                                "plan": plan.model_dump(mode="json"),
+                                "state": state.model_dump(mode="json"),
+                                "session": session.model_dump(mode="json"),
+                                "job": None,
+                                "status": session.status,
+                            },
+                        )
                     job_id = _native_execution_job_id(plan.id, plan.digest, state.execution_id)
                     job = JOBS.find(job_id)
                     if job is None:
@@ -728,9 +755,124 @@ def make_server(
                             "status": _render_status(state, job),
                         },
                     )
-                except PlanConflict as exc:
+                except (PlanConflict, CoordinatorConflict) as exc:
                     return self._json(409, {"error": str(exc)})
 
+
+            m = re.fullmatch(
+                r"/api/ae/sessions/([A-Za-z0-9][A-Za-z0-9_.:-]{7,255})/"
+                r"(stop|continue|begin-manual|sync-manual|select-checkpoint|finalize)",
+                u.path,
+            )
+            if m:
+                session_id, action = m.groups()
+                try:
+                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    return self._json(400, {"error": "bad json"})
+                if not isinstance(data, dict):
+                    return self._json(400, {"error": "bad json"})
+                project_id = data.get("project")
+                plan_id = data.get("plan")
+                revision = data.get("revision")
+                if not isinstance(project_id, str) or not _PROJECT_ID_RE.fullmatch(project_id):
+                    return self._json(400, {"error": "project id is invalid"})
+                if not isinstance(plan_id, str) or not _RENDER_PLAN_ID_RE.fullmatch(plan_id):
+                    return self._json(400, {"error": "plan id is invalid"})
+                if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+                    return self._json(400, {"error": "revision is invalid"})
+                device_id = data.get("device_id")
+                if device_id is not None and (
+                    not isinstance(device_id, str) or not _AE_DEVICE_ID_RE.fullmatch(device_id)
+                ):
+                    return self._json(400, {"error": "device id is invalid"})
+                if any(
+                    key not in {"project", "plan", "revision", "checkpoint", "device_id"}
+                    for key in data
+                ):
+                    return self._json(400, {"error": "plan or control payload is invalid"})
+                try:
+                    root = _safe_render_project(workspace, project_id)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                plan_path = root / "renders" / plan_id / "plan.json"
+                if not plan_path.exists() and not plan_path.is_symlink():
+                    return self._json(404, {"error": "not found"})
+                try:
+                    plan = load_render_plan(root, plan_id)
+                    if plan.project_id != project_id or plan.backend != "after_effects":
+                        return self._json(404, {"error": "not found"})
+                    session_path = root / "renders" / plan_id / "ae" / "session.json"
+                    if not session_path.exists() and not session_path.is_symlink():
+                        return self._json(404, {"error": "not found"})
+                    coordinator = AECoordinator.cached(root, plan_id)
+                    current = coordinator.state()
+                    if current.id != session_id:
+                        return self._json(404, {"error": "not found"})
+                    queued_command = None
+                    if action == "select-checkpoint":
+                        checkpoint = data.get("checkpoint")
+                        if (
+                            not isinstance(checkpoint, int)
+                            or isinstance(checkpoint, bool)
+                            or checkpoint < 0
+                        ):
+                            return self._json(400, {"error": "checkpoint is invalid"})
+                        current = coordinator.select_checkpoint(checkpoint, revision)
+                    elif action == "sync-manual":
+                        if current.revision != revision:
+                            return self._json(409, {"error": "revision is stale"})
+                        expected_checkpoint = max(
+                            (item.index for item in current.checkpoints),
+                            default=None,
+                        )
+                        queued_command = coordinator.enqueue_command(
+                            "sync_manual",
+                            {},
+                            expected_state=current.status,
+                            expected_checkpoint=expected_checkpoint,
+                            device_id=current.device_id,
+                            revision=revision,
+                        )
+                        current = coordinator.state()
+                    else:
+                        if action == "stop":
+                            event = "stop"
+                        elif action == "continue":
+                            event = "continue"
+                        elif action == "begin-manual":
+                            event = "begin_manual"
+                        else:
+                            event = "finalize"
+                        transition_data = {}
+                        if action == "continue" and device_id is not None:
+                            transition_data["device_id"] = device_id
+                        if action == "finalize" and data.get("checkpoint") is not None:
+                            selected = data["checkpoint"]
+                            if (
+                                not isinstance(selected, int)
+                                or isinstance(selected, bool)
+                                or selected < 0
+                            ):
+                                return self._json(400, {"error": "checkpoint is invalid"})
+                            current = coordinator.select_checkpoint(selected, revision)
+                            revision = current.revision
+                        current = coordinator.transition(event, revision, **transition_data)
+                    render_state = load_render_plan_state(root, plan_id)
+                    response = {
+                        "plan": plan.model_dump(mode="json"),
+                        "state": render_state.model_dump(mode="json"),
+                        "session": current.model_dump(mode="json"),
+                        "job": None,
+                        "status": current.status,
+                    }
+                    if queued_command is not None:
+                        response["command"] = queued_command.model_dump(mode="json")
+                    return self._json(200, response)
+                except (PlanConflict, CoordinatorConflict) as exc:
+                    return self._json(409, {"error": str(exc)})
 
             if u.path == "/api/estimate":
                 body = self._read_body()

@@ -203,10 +203,11 @@ def _canonical_json(data: Mapping[str, Any]) -> bytes:
 
 
 def _fsync_directory(path: Path) -> None:
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:
+    if os.name == "nt":
+        if path.is_symlink() or not path.is_dir():
+            raise OSError(f"cannot synchronize directory: {path}")
         return
+    fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
     finally:
@@ -695,6 +696,38 @@ def load_render_plan_state(root: Path, plan_id: str) -> RenderPlanState:
     return state
 
 
+def validate_render_plan_execution(root: Path, plan_id: str, execution_id: str) -> RenderPlanState:
+    """Revalidate the approval and authoritative final inputs under the state lock."""
+    if not isinstance(execution_id, str) or not execution_id:
+        raise PlanConflict("render execution id is invalid")
+    plan = load_render_plan(root, plan_id)
+    if plan.mode != "final":
+        raise PlanConflict("finalization requires a final render plan")
+    state_path = _plan_dir(Path(root), plan.id) / "state.json"
+    with _state_lock(state_path):
+        locked_plan = load_render_plan(root, plan.id)
+        state = load_render_plan_state(root, locked_plan.id)
+        if locked_plan.mode != "final":
+            raise PlanConflict("finalization requires a final render plan")
+        if state.status != "approved":
+            raise PlanConflict("final render plan is not approved")
+        if state.digest != locked_plan.digest:
+            raise PlanConflict("approved render plan digest does not match")
+        if state.execution_id != execution_id:
+            raise PlanConflict("render execution does not match approved execution")
+        meta, authoritative_version, scene_path = _resolve_version(
+            Path(root),
+            locked_plan.project_id,
+            locked_plan.scene_id,
+            locked_plan.version_id,
+        )
+        _final_gate(meta, authoritative_version.id)
+        scene_sha256, _ = _hash_file(scene_path)
+        if scene_sha256 != locked_plan.scene_sha256:
+            raise PlanConflict("authoritative scene changed since approval")
+        return state
+
+
 # Short alias for callers that naturally ask for a plan's state.
 load_render_state = load_render_plan_state
 
@@ -818,4 +851,5 @@ __all__ = [
     "load_render_plan",
     "load_render_plan_state",
     "load_render_state",
+    "validate_render_plan_execution",
 ]
