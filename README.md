@@ -42,6 +42,18 @@ http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by def
 
 CLI-generated project directories placed under the workspace appear in the library even without `meta.json`; the first metadata change creates that file. Analysis creates `overrides.json` without overwriting existing overrides, and frame-stage reruns reuse the recorded source range.
 
+The optional After Effects relay is a second, connector-only listener. Set
+`KEEPFRAME_AE_RELAY_URL`, `KEEPFRAME_AE_RELAY_HOST`,
+`KEEPFRAME_AE_RELAY_PORT`, and `KEEPFRAME_AE_RELAY_TOKEN` together; partial
+configuration fails startup. Expose only that relay listener through an HTTPS
+reverse proxy. Plain HTTP relay URLs are accepted only for loopback hosts.
+
+The first same-origin pairing establishes a project-scoped, host-only controller
+cookie. Re-pairing and unpairing require that cookie. Replacement and unpair
+stop new connector leases, allow the active lease to settle, then rotate or
+revoke the hashed device credential. Browser artifact downloads require the
+same controller cookie and same-origin request.
+
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash

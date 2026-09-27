@@ -9,6 +9,7 @@ import threading
 from collections import OrderedDict
 from email import message_from_bytes
 from email.policy import default
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -37,6 +38,12 @@ from keepframe.render.plan import (
     load_render_plan_state,
 )
 from keepframe.session import SessionAgent, SessionContext, make_llm
+from keepframe.after_effects.auth import (
+    AEAuthError,
+    AEControllerAuthorizationError,
+    AEProjectAuth,
+    controller_cookie_name,
+)
 from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
 from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
@@ -48,7 +55,6 @@ CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 JOBS = JobStore()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RENDER_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
-_AE_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 
 
 def _safe_render_project(workspace: Path, project_id: str) -> Path:
@@ -404,6 +410,50 @@ def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
     ok, buf = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
     return buf.tobytes() if ok else None
 
+def _detach_project_device(root: Path, device_id: str, *, reason: str) -> bool:
+    renders = root / "renders"
+    if not renders.exists():
+        return True
+    if renders.is_symlink() or not renders.is_dir():
+        raise CoordinatorConflict("render workspace is unsafe")
+    settled = True
+    for plan_dir in renders.iterdir():
+        if (
+            plan_dir.is_symlink()
+            or not plan_dir.is_dir()
+            or not _RENDER_PLAN_ID_RE.fullmatch(plan_dir.name)
+            or not (plan_dir / "ae" / "session.json").exists()
+        ):
+            continue
+        coordinator = AECoordinator.cached(root, plan_dir.name)
+        session = coordinator.state()
+        if session.device_id != device_id:
+            continue
+        session = coordinator.detach_device(device_id, reason=reason)
+        if session.device_id == device_id and session.status not in {"done", "failed"}:
+            settled = False
+    return settled
+
+
+def _authority(value: str) -> tuple[str, int | None] | None:
+    try:
+        parsed = urlparse(f"//{value}")
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return parsed.hostname.lower(), port
+
+
+
 
 def make_server(
     workspace: Path,
@@ -412,12 +462,17 @@ def make_server(
     admin: bool = False,
     admin_svc=None,
     admin_auth=None,
+    ae_relay_url: str | None = None,
 ) -> ThreadingHTTPServer:
     configure()
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
     agent_states: dict[tuple[str, str], list[dict]] = {}
+    allowed_ae_hosts = {"127.0.0.1", "localhost", "::1"}
+    configured_host = host.strip("[]").lower()
+    if configured_host not in {"0.0.0.0", "::", ""}:
+        allowed_ae_hosts.add(configured_host)
 
     def agent_llm():
         if admin_svc is not None:
@@ -446,21 +501,174 @@ def make_server(
         def log_error(self, fmt, *args):
             log.error("%s %s", self.address_string(), fmt % args)
 
-        def _send(self, code: int, body: bytes, ctype: str, cache: str | None = None) -> None:
+        def _send(
+            self,
+            code: int,
+            body: bytes,
+            ctype: str,
+            cache: str | None = None,
+            headers: tuple[tuple[str, str], ...] = (),
+        ) -> None:
             self.send_response(code)
             self.send_header("content-type", ctype)
             self.send_header("content-length", str(len(body)))
             if cache:
                 self.send_header("cache-control", cache)
+            for name, value in headers:
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
-        def _json(self, code: int, obj) -> None:
-            self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+        def _json(
+            self,
+            code: int,
+            obj,
+            *,
+            headers: tuple[tuple[str, str], ...] = (),
+        ) -> None:
+            self._send(
+                code,
+                json.dumps(obj, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+                headers=headers,
+            )
 
         def _read_body(self) -> bytes:
             length = int(self.headers.get("content-length", 0))
             return self.rfile.read(length) if length else b""
+
+        def _bounded_json(self, limit: int = 64 * 1024) -> dict[str, object] | None:
+            if self.headers.get_content_type() != "application/json":
+                self._json(415, {"error": "application/json is required"})
+                return None
+            length_values = self.headers.get_all("Content-Length") or []
+            if len(length_values) > 1:
+                self._json(400, {"error": "bad json"})
+                return None
+            try:
+                length = int(length_values[0] if length_values else "0")
+            except ValueError:
+                self._json(400, {"error": "bad json"})
+                return None
+            if length < 0 or length > limit:
+                self._json(413, {"error": "request body is too large"})
+                return None
+            try:
+                value = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._json(400, {"error": "bad json"})
+                return None
+            if not isinstance(value, dict):
+                self._json(400, {"error": "bad json"})
+                return None
+            return value
+
+        def _same_origin(self) -> bool:
+            host_values = self.headers.get_all("Host") or []
+            if len(host_values) != 1:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            authority = _authority(host_values[0])
+            if authority is None or authority[0] not in allowed_ae_hosts:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            server_address = self.server.server_address
+            if not isinstance(server_address, tuple) or len(server_address) < 2:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            server_port = int(server_address[1])
+            if authority[1] is not None and authority[1] != server_port:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            origin_values = self.headers.get_all("Origin") or []
+            source: str | None = None
+            if len(origin_values) == 1:
+                source = origin_values[0]
+            elif not origin_values and self.command == "GET":
+                referer_values = self.headers.get_all("Referer") or []
+                if (
+                    len(referer_values) == 1
+                    and self.headers.get("Sec-Fetch-Site") == "same-origin"
+                ):
+                    source = referer_values[0]
+            if source is None:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            try:
+                parsed = urlparse(source)
+                source_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            except ValueError:
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            is_origin = bool(origin_values)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.hostname is None
+                or (
+                    is_origin
+                    and (parsed.path not in {"", "/"} or parsed.query or parsed.fragment)
+                )
+            ):
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            host_port = authority[1] or source_port
+            if (
+                parsed.hostname.lower() != authority[0]
+                or source_port != host_port
+                or host_port != server_port
+            ):
+                self._json(403, {"error": "browser origin is not allowed"})
+                return False
+            return True
+
+        def _controller_token(self, project_id: str) -> str | None:
+            values = self.headers.get_all("Cookie") or []
+            if len(values) != 1:
+                return None
+            try:
+                cookies = SimpleCookie()
+                cookies.load(values[0])
+                morsel = cookies.get(controller_cookie_name(project_id))
+                return morsel.value if morsel is not None else None
+            except (AEAuthError, AttributeError):
+                return None
+
+        def _authorize_ae_browser(
+            self,
+            project_id: str,
+            *,
+            origin_checked: bool = False,
+        ) -> bool:
+            if not origin_checked and not self._same_origin():
+                return False
+            try:
+                auth = AEProjectAuth(workspace / project_id, project_id)
+                authorized = auth.authenticate_controller(
+                    self._controller_token(project_id)
+                )
+            except AEAuthError:
+                authorized = False
+            if not authorized:
+                self._json(401, {"error": "controller authorization failed"})
+                return False
+            return True
+
+        def _controller_cookie(
+            self,
+            project_id: str,
+            token: str,
+            *,
+            clear: bool = False,
+        ) -> str:
+            value = f"{controller_cookie_name(project_id)}={token}; Path=/; HttpOnly; SameSite=Strict"
+            origin = self.headers.get("Origin") or ""
+            if urlparse(origin).scheme == "https":
+                value += "; Secure"
+            if clear:
+                value += "; Max-Age=0"
+            return value
 
         def do_GET(self):
             u = urlparse(self.path)
@@ -568,6 +776,64 @@ def make_server(
             pid = q.get("project", [None])[0]
             sid = q.get("scene", ["s1"])[0]
             ver = q.get("v", [None])[0]
+            artifact_match = re.fullmatch(
+                r"/api/ae/artifacts/([A-Za-z0-9_-]{8,128})",
+                u.path,
+            )
+            if artifact_match:
+                artifact_id = artifact_match.group(1)
+                plan_id = q.get("plan", [None])[0]
+                if (
+                    not isinstance(pid, str)
+                    or not _PROJECT_ID_RE.fullmatch(pid)
+                    or not isinstance(plan_id, str)
+                    or not _RENDER_PLAN_ID_RE.fullmatch(plan_id)
+                ):
+                    return self._json(
+                        400,
+                        {"error": "project and plan are required"},
+                    )
+                if not self._authorize_ae_browser(pid):
+                    return
+                try:
+                    root = _safe_render_project(workspace, pid)
+                    plan = load_render_plan(root, plan_id)
+                    if plan.project_id != pid or plan.backend != "after_effects":
+                        return self._json(404, {"error": "not found"})
+                    reservation, stream = AECoordinator.cached(
+                        root,
+                        plan.id,
+                    ).open_artifact(artifact_id)
+                except (FileNotFoundError, PlanConflict, CoordinatorConflict):
+                    return self._json(404, {"error": "not found"})
+                content_types = {
+                    "png": "image/png",
+                    "mp4": "video/mp4",
+                    "zip": "application/zip",
+                    "aep": "application/octet-stream",
+                }
+                try:
+                    self.send_response(200)
+                    self.send_header(
+                        "content-type",
+                        content_types[reservation.kind],
+                    )
+                    self.send_header("content-length", str(reservation.length))
+                    self.send_header("cache-control", "no-store")
+                    self.send_header("x-content-type-options", "nosniff")
+                    self.send_header(
+                        "content-disposition",
+                        f'attachment; filename="keepframe-{artifact_id}.{reservation.kind}"',
+                    )
+                    self.end_headers()
+                    while chunk := stream.read(1024 * 1024):
+                        self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                finally:
+                    stream.close()
+                return
+
             if u.path == "/api/render-state":
                 plan_id = q.get("plan", [None])[0]
                 if not pid or not plan_id:
@@ -584,9 +850,12 @@ def make_server(
                 if not plan_path.exists() and not plan_path.is_symlink():
                     return self._json(404, {"error": "not found"})
                 try:
-                    payload = _render_state_payload(root, plan_id)
-                    if payload["plan"]["project_id"] != pid:
+                    plan = load_render_plan(root, plan_id)
+                    if plan.project_id != pid:
                         return self._json(404, {"error": "not found"})
+                    if plan.backend == "after_effects" and not self._authorize_ae_browser(pid):
+                        return
+                    payload = _render_state_payload(root, plan_id)
                     return self._json(200, payload)
                 except (PlanConflict, CoordinatorConflict) as exc:
                     return self._json(409, {"error": str(exc)})
@@ -683,17 +952,91 @@ def make_server(
             u = urlparse(self.path)
             if admin_routes and admin_routes.handle_post(self, u):
                 return
+            if u.path == "/api/ae/pairings":
+                if not self._same_origin():
+                    return
+                if ae_relay_url is None:
+                    return self._json(503, {"error": "AE relay is not configured"})
+                data = self._bounded_json()
+                if data is None:
+                    return
+                if set(data) - {"project", "capability_request"}:
+                    return self._json(400, {"error": "pairing payload is invalid"})
+                project_id = data.get("project")
+                capability_request = data.get("capability_request", {})
+                if (
+                    not isinstance(project_id, str)
+                    or not _PROJECT_ID_RE.fullmatch(project_id)
+                    or not isinstance(capability_request, dict)
+                ):
+                    return self._json(400, {"error": "pairing payload is invalid"})
+                try:
+                    root = _safe_render_project(workspace, project_id)
+                    auth = AEProjectAuth(root, project_id)
+                    grant = auth.create_pairing(
+                        self._controller_token(project_id),
+                        capability_request,
+                    )
+                    active_device = auth.active_device_id()
+                    if active_device is not None and not _detach_project_device(
+                        root,
+                        active_device,
+                        reason="replacement",
+                    ):
+                        return self._json(
+                            409,
+                            {"error": "connector replacement is waiting for the active command"},
+                            headers=(
+                                ("Cache-Control", "no-store"),
+                                (
+                                    "Set-Cookie",
+                                    self._controller_cookie(
+                                        project_id,
+                                        grant.controller_token,
+                                    ),
+                                ),
+                            ),
+                        )
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                except AEControllerAuthorizationError:
+                    return self._json(
+                        401,
+                        {"error": "controller authorization failed"},
+                    )
+                except (AEAuthError, CoordinatorConflict) as exc:
+                    return self._json(409, {"error": str(exc)})
+                return self._json(
+                    201,
+                    {
+                        "code": grant.code,
+                        "expires_at": grant.expires_at,
+                        "relay_url": ae_relay_url,
+                    },
+                    headers=(
+                        ("Cache-Control", "no-store"),
+                        (
+                            "Set-Cookie",
+                            self._controller_cookie(
+                                project_id,
+                                grant.controller_token,
+                            ),
+                        ),
+                    ),
+                )
+
             m = re.fullmatch(r"/api/render-plans/([^/]+)/approve", u.path)
             if m:
+                if not self._same_origin():
+                    return
                 plan_id = m.group(1)
                 if not _RENDER_PLAN_ID_RE.fullmatch(plan_id):
                     return self._json(400, {"error": "plan id is invalid"})
-                try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                except json.JSONDecodeError:
-                    return self._json(400, {"error": "bad json"})
-                if not isinstance(data, dict):
-                    return self._json(400, {"error": "bad json"})
+                data = self._bounded_json()
+                if data is None:
+                    return
                 project_id = data.get("project")
                 if not isinstance(project_id, str) or not _PROJECT_ID_RE.fullmatch(project_id):
                     return self._json(400, {"error": "project id is invalid"})
@@ -712,6 +1055,11 @@ def make_server(
                     return self._json(409, {"error": str(exc)})
                 if plan.project_id != project_id:
                     return self._json(404, {"error": "not found"})
+                if plan.backend == "after_effects" and not self._authorize_ae_browser(
+                    project_id,
+                    origin_checked=True,
+                ):
+                    return
                 digest = data.get("digest")
                 revision = data.get("revision")
                 if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -766,12 +1114,11 @@ def make_server(
             )
             if m:
                 session_id, action = m.groups()
-                try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                except (UnicodeDecodeError, json.JSONDecodeError):
-                    return self._json(400, {"error": "bad json"})
-                if not isinstance(data, dict):
-                    return self._json(400, {"error": "bad json"})
+                if not self._same_origin():
+                    return
+                data = self._bounded_json()
+                if data is None:
+                    return
                 project_id = data.get("project")
                 plan_id = data.get("plan")
                 revision = data.get("revision")
@@ -781,16 +1128,16 @@ def make_server(
                     return self._json(400, {"error": "plan id is invalid"})
                 if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
                     return self._json(400, {"error": "revision is invalid"})
-                device_id = data.get("device_id")
-                if device_id is not None and (
-                    not isinstance(device_id, str) or not _AE_DEVICE_ID_RE.fullmatch(device_id)
-                ):
-                    return self._json(400, {"error": "device id is invalid"})
                 if any(
-                    key not in {"project", "plan", "revision", "checkpoint", "device_id"}
+                    key not in {"project", "plan", "revision", "checkpoint"}
                     for key in data
                 ):
                     return self._json(400, {"error": "plan or control payload is invalid"})
+                if not self._authorize_ae_browser(
+                    project_id,
+                    origin_checked=True,
+                ):
+                    return
                 try:
                     root = _safe_render_project(workspace, project_id)
                 except ValueError as exc:
@@ -846,9 +1193,6 @@ def make_server(
                             event = "begin_manual"
                         else:
                             event = "finalize"
-                        transition_data = {}
-                        if action == "continue" and device_id is not None:
-                            transition_data["device_id"] = device_id
                         if action == "finalize" and data.get("checkpoint") is not None:
                             selected = data["checkpoint"]
                             if (
@@ -859,7 +1203,7 @@ def make_server(
                                 return self._json(400, {"error": "checkpoint is invalid"})
                             current = coordinator.select_checkpoint(selected, revision)
                             revision = current.revision
-                        current = coordinator.transition(event, revision, **transition_data)
+                        current = coordinator.transition(event, revision)
                     render_state = load_render_plan_state(root, plan_id)
                     response = {
                         "plan": plan.model_dump(mode="json"),
@@ -1093,12 +1437,11 @@ def make_server(
                 return self._json(200, result.to_json())
 
             if u.path == "/api/agent":
-                try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
-                except json.JSONDecodeError:
-                    return self._json(400, {"error": "bad json"})
-                if not isinstance(data, dict):
-                    return self._json(400, {"error": "bad json"})
+                if not self._same_origin():
+                    return
+                data = self._bounded_json()
+                if data is None:
+                    return
                 project_id = data.get("project")
                 requested_scene_id = data.get("scene", "s1")
                 raw_message = data.get("message")
@@ -1123,6 +1466,21 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 if meta.get("id") is not None and meta.get("id") != project_id:
                     return self._json(404, {"error": "not found"})
+                agent_auth = AEProjectAuth(root, project_id)
+                agent_controller_token = self._controller_token(project_id)
+                try:
+                    controller_required = agent_auth.controller_configured()
+                    controller_authorized = agent_auth.authenticate_controller(
+                        agent_controller_token
+                    )
+                except AEAuthError:
+                    controller_required = True
+                    controller_authorized = False
+                if controller_required and not controller_authorized:
+                    return self._json(
+                        401,
+                        {"error": "controller authorization failed"},
+                    )
                 try:
                     project = load_project(root)
                     scene_id = meta.get("scene") or requested_scene_id
@@ -1141,6 +1499,15 @@ def make_server(
                 resolved_version = version
 
                 def prepare_agent_render(mode: str, backend: str, direction: str | None):
+                    if (
+                        backend == "after_effects"
+                        and not agent_auth.authenticate_controller(
+                            agent_controller_token
+                        )
+                    ):
+                        raise AEControllerAuthorizationError(
+                            "controller authorization failed"
+                        )
                     return create_render_plan(
                         root,
                         project_id=resolved_project_id,
@@ -1206,6 +1573,11 @@ def make_server(
                 )
                 try:
                     turn = SessionAgent(agent_llm()).turn(ctx, message, history)
+                except AEControllerAuthorizationError:
+                    return self._json(
+                        401,
+                        {"error": "controller authorization failed"},
+                    )
                 except Exception as e:
                     log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
                     return self._json(400, {"error": f"{type(e).__name__}: {e}"})
@@ -1244,8 +1616,43 @@ def make_server(
             u = urlparse(self.path)
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
+            match = re.fullmatch(r"/api/ae/pairings/([A-Za-z0-9_-]{1,128})", u.path)
+            if match:
+                project_id = match.group(1)
+                if not self._authorize_ae_browser(project_id):
+                    return
+                token = self._controller_token(project_id)
+                try:
+                    root = _safe_render_project(workspace, project_id)
+                    auth = AEProjectAuth(root, project_id)
+                    device_id = auth.begin_unpair(token)
+                    if device_id is not None and not _detach_project_device(
+                        root,
+                        device_id,
+                        reason="unpair",
+                    ):
+                        return self._json(
+                            409,
+                            {"error": "connector unpair is waiting for the active command"},
+                            headers=(("Cache-Control", "no-store"),),
+                        )
+                    auth.finish_unpair(token, device_id)
+                except FileNotFoundError:
+                    return self._json(401, {"error": "controller authorization failed"})
+                except (AEAuthError, CoordinatorConflict) as exc:
+                    return self._json(409, {"error": str(exc)})
+                return self._json(
+                    200,
+                    {"unpaired": True},
+                    headers=(
+                        ("Cache-Control", "no-store"),
+                        (
+                            "Set-Cookie",
+                            self._controller_cookie(project_id, "", clear=True),
+                        ),
+                    ),
+                )
             return self._json(404, {"error": "not found"})
-
         def do_PUT(self):
             return self._json(404, {"error": "not found"})
 

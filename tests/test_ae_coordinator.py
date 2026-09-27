@@ -67,7 +67,10 @@ def _artifact_payload(kind: str) -> bytes:
 def _publish(coordinator: AECoordinator, kind: str) -> str:
     payload = _artifact_payload(kind)
     reservation = coordinator.reserve_artifact(kind, max_length=len(payload))
+    device_id = coordinator.state().device_id
+    assert device_id is not None
     return coordinator.publish_artifact(
+        device_id,
         reservation.id,
         io.BytesIO(payload),
         content_length=len(payload),
@@ -425,11 +428,17 @@ def test_finalization_revalidates_authoritative_approval(tmp_path):
 
 
 def test_artifact_reservations_stream_validate_and_publish_once(tmp_path):
-    root, plan, coordinator, _ = _coordinator(tmp_path)
+    root, plan, coordinator, session = _coordinator(tmp_path)
+    coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     payload = _artifact_payload("png")
     reservation = coordinator.reserve_artifact("png", max_length=len(payload))
 
+    with pytest.raises(CoordinatorConflict, match="bound"):
+        coordinator.publish_artifact(
+            "device-2", reservation.id, io.BytesIO(payload), content_length=len(payload)
+        )
     artifact = coordinator.publish_artifact(
+        "device-1",
         reservation.id,
         io.BytesIO(payload),
         content_length=len(payload),
@@ -439,20 +448,127 @@ def test_artifact_reservations_stream_validate_and_publish_once(tmp_path):
     assert artifact.sha256
     assert path.read_bytes() == payload
     with pytest.raises(CoordinatorConflict, match="committed"):
-        coordinator.publish_artifact(reservation.id, io.BytesIO(payload), content_length=len(payload))
+        coordinator.publish_artifact(
+            "device-1", reservation.id, io.BytesIO(payload), content_length=len(payload)
+        )
 
     too_small = coordinator.reserve_artifact("png", max_length=4)
     with pytest.raises(CoordinatorConflict, match="length"):
-        coordinator.publish_artifact(too_small.id, io.BytesIO(payload), content_length=len(payload))
+        coordinator.publish_artifact(
+            "device-1", too_small.id, io.BytesIO(payload), content_length=len(payload)
+        )
 
     invalid = coordinator.reserve_artifact("png", max_length=32)
     fake_png = b"\x89PNG\r\n\x1a\nframe"
     with pytest.raises(CoordinatorConflict, match="container|PNG"):
-        coordinator.publish_artifact(invalid.id, io.BytesIO(fake_png), content_length=len(fake_png))
+        coordinator.publish_artifact(
+            "device-1", invalid.id, io.BytesIO(fake_png), content_length=len(fake_png)
+        )
 
     occupied = coordinator.reserve_artifact("png", max_length=len(payload))
     occupied_path = root / "renders" / plan.id / "ae" / "artifacts" / occupied.id
     occupied_path.write_bytes(b"sentinel")
     with pytest.raises(CoordinatorConflict):
-        coordinator.publish_artifact(occupied.id, io.BytesIO(payload), content_length=len(payload))
+        coordinator.publish_artifact(
+            "device-1", occupied.id, io.BytesIO(payload), content_length=len(payload)
+        )
     assert occupied_path.read_bytes() == b"sentinel"
+
+
+def test_connector_artifact_requires_live_command_reference(tmp_path):
+    _, _, coordinator, session = _coordinator(tmp_path)
+    coordinator.transition(
+        "device_ready",
+        revision=session.revision,
+        device_id="device-1",
+    )
+    payload = _artifact_payload("png")
+    allowed = coordinator.reserve_artifact("png", len(payload))
+    unrelated = coordinator.reserve_artifact("png", len(payload))
+    command = coordinator.enqueue_command(
+        "heartbeat",
+        {"artifact": {"reservation_id": allowed.id}},
+        expected_state="baseline",
+        expected_checkpoint=None,
+        lease_seconds=60,
+    )
+    leased = coordinator.next_command("device-1")
+    assert leased is not None and leased.id == command.id
+
+    with pytest.raises(CoordinatorConflict, match="active command"):
+        coordinator.publish_artifact(
+            "device-1",
+            unrelated.id,
+            io.BytesIO(payload),
+            content_length=len(payload),
+            require_live_command=True,
+        )
+    published = coordinator.publish_artifact(
+        "device-1",
+        allowed.id,
+        io.BytesIO(payload),
+        content_length=len(payload),
+        require_live_command=True,
+    )
+    assert published.reservation_id == allowed.id
+
+
+def test_connector_artifact_lease_must_survive_final_validation(
+    tmp_path,
+    monkeypatch,
+):
+    root, plan, coordinator, session = _coordinator(tmp_path)
+    coordinator.transition(
+        "device_ready",
+        revision=session.revision,
+        device_id="device-1",
+    )
+    payload = _artifact_payload("png")
+    reservation = coordinator.reserve_artifact("png", len(payload))
+    clock = [100.0]
+    monkeypatch.setattr(
+        "keepframe.after_effects.coordinator._now",
+        lambda: clock[0],
+    )
+    coordinator.enqueue_command(
+        "heartbeat",
+        {"artifact_id": reservation.id},
+        expected_state="baseline",
+        expected_checkpoint=None,
+        lease_seconds=10,
+    )
+    assert coordinator.next_command("device-1") is not None
+
+    from keepframe.after_effects import coordinator as coordinator_module
+
+    validate = coordinator_module._validate_artifact_file
+    validations = 0
+
+    def expire_during_final_validation(kind, path, length):
+        nonlocal validations
+        validate(kind, path, length)
+        validations += 1
+        if validations == 2:
+            clock[0] = 111.0
+
+    monkeypatch.setattr(
+        coordinator_module,
+        "_validate_artifact_file",
+        expire_during_final_validation,
+    )
+    with pytest.raises(CoordinatorConflict, match="active command"):
+        coordinator.publish_artifact(
+            "device-1",
+            reservation.id,
+            io.BytesIO(payload),
+            content_length=len(payload),
+            require_live_command=True,
+        )
+    assert not (
+        root
+        / "renders"
+        / plan.id
+        / "ae"
+        / "artifacts"
+        / reservation.id
+    ).exists()

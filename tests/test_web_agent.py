@@ -1,17 +1,30 @@
 import json
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
+import pytest
+
+from keepframe.after_effects.auth import AEProjectAuth, controller_cookie_name
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import init_project
 from keepframe.session.llm import NullClient
 from tests.test_web_server import start, get
 
 
-def _post(srv, path, payload):
-    url = f"http://127.0.0.1:{srv.server_address[1]}{path}"
-    req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
-    req.add_header("Content-Type", "application/json")
+def _post(srv, path, payload, *, cookie=None, origin=None):
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    headers = {
+        "Content-Type": "application/json",
+        "Origin": origin or base,
+    }
+    if cookie is not None:
+        headers["Cookie"] = cookie
+    req = Request(
+        f"{base}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
     try:
         with urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -101,3 +114,81 @@ def test_agent_uses_workspace_llm_settings(tmp_path, monkeypatch):
     assert code == 200
     assert body["reply"] == "saved-settings"
     assert captured["config"].api_key == "sk-from-admin"
+
+
+def test_agent_api_requires_existing_controller_cookie(tmp_path, monkeypatch):
+    monkeypatch.setattr("keepframe.session.agent.make_llm", lambda: NullClient())
+    root, _ = _project(tmp_path)
+    pairing = AEProjectAuth(root, "p1").create_pairing(None, {})
+    srv = start(tmp_path / "ws")
+    payload = {"project": "p1", "scene": "synth11", "message": "안녕"}
+    try:
+        denied, _ = _post(srv, "/api/agent", payload)
+        allowed, _ = _post(
+            srv,
+            "/api/agent",
+            payload,
+            cookie=f"{controller_cookie_name('p1')}={pairing.controller_token}",
+        )
+    finally:
+        srv.shutdown()
+    assert denied == 401
+    assert allowed == 200
+
+
+def test_agent_cannot_prepare_ae_plan_before_pairing(tmp_path, monkeypatch):
+    _project(tmp_path)
+
+    def request_ae_plan(_self, ctx, _message, _history):
+        assert ctx.prepare_render is not None
+        ctx.prepare_render("preview", "after_effects", None)
+        raise AssertionError("AE plan preparation should require pairing")
+
+    monkeypatch.setattr(
+        "keepframe.web.server.SessionAgent.turn",
+        request_ae_plan,
+    )
+    srv = start(tmp_path / "ws")
+    try:
+        code, body = _post(
+            srv,
+            "/api/agent",
+            {"project": "p1", "scene": "synth11", "message": "render"},
+        )
+    finally:
+        srv.shutdown()
+    assert code == 401
+    assert body == {"error": "controller authorization failed"}
+
+
+def test_agent_rejects_cross_origin_and_oversized_bodies_before_work(tmp_path):
+    _project(tmp_path)
+    srv = start(tmp_path / "ws")
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        cross_origin = Request(
+            f"{base}/api/agent",
+            data=b"{}",
+            headers={
+                "Content-Type": "application/json",
+                "Origin": "http://attacker.example",
+            },
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as forbidden:
+            urlopen(cross_origin)
+        oversized = Request(
+            f"{base}/api/agent",
+            data=b"x" * (64 * 1024 + 1),
+            headers={
+                "Content-Type": "application/json",
+                "Origin": base,
+            },
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as too_large:
+            urlopen(oversized)
+    finally:
+        srv.shutdown()
+    assert forbidden.value.code == 403
+    assert too_large.value.code == 413

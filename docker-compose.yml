@@ -7,6 +7,14 @@ name: keepframe
 # Admin too: docker compose --profile admin up -d
 # GPU (torch + NVIDIA device): docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
+x-keepframe-environment: &keepframe-environment
+  KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
+  KEEPFRAME_LOG_LEVEL: ${KEEPFRAME_LOG_LEVEL:-INFO}
+  KEEPFRAME_ADMIN_EMAIL: ${KEEPFRAME_ADMIN_EMAIL:-}
+  KEEPFRAME_ADMIN_PASSWORD: ${KEEPFRAME_ADMIN_PASSWORD:-}
+  KEEPFRAME_ADMIN_USERS: ${KEEPFRAME_ADMIN_USERS:-}
+  CHATGPT_CALLBACK_BIND: "0.0.0.0"
+
 x-keepframe: &keepframe
   image: ${KEEPFRAME_IMAGE:-westernbear/keepframe}:${KEEPFRAME_TAG:-0.1.0}
   build:
@@ -22,20 +30,21 @@ x-keepframe: &keepframe
   volumes:
     - ${KEEPFRAME_WORKSPACE:-./data/workspace}:/data/workspace
   # OSS default: thread. Cloud sets a module:Class runner; workers only call run_job().
-  environment:
-    KEEPFRAME_JOB_RUNNER: ${KEEPFRAME_JOB_RUNNER:-thread}
-    KEEPFRAME_LOG_LEVEL: ${KEEPFRAME_LOG_LEVEL:-INFO}
-    KEEPFRAME_ADMIN_EMAIL: ${KEEPFRAME_ADMIN_EMAIL:-}
-    KEEPFRAME_ADMIN_PASSWORD: ${KEEPFRAME_ADMIN_PASSWORD:-}
-    KEEPFRAME_ADMIN_USERS: ${KEEPFRAME_ADMIN_USERS:-}
-    CHATGPT_CALLBACK_BIND: "0.0.0.0"
+  environment: *keepframe-environment
 
 services:
   web:
     <<: *keepframe
+    environment:
+      <<: *keepframe-environment
+      KEEPFRAME_AE_RELAY_URL: ${KEEPFRAME_AE_RELAY_URL:-}
+      KEEPFRAME_AE_RELAY_HOST: ${KEEPFRAME_AE_RELAY_HOST:-}
+      KEEPFRAME_AE_RELAY_PORT: ${KEEPFRAME_AE_RELAY_PORT:-}
+      KEEPFRAME_AE_RELAY_TOKEN: ${KEEPFRAME_AE_RELAY_TOKEN:-}
     ports:
       - "${KEEPFRAME_PORT:-8765}:8765"
       - "1455:1455"
+      - "${KEEPFRAME_AE_RELAY_PORT:-8767}:${KEEPFRAME_AE_RELAY_PORT:-8767}"
     command: ["serve", "--workspace", "/data/workspace", "--host", "0.0.0.0", "--port", "8765"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/')"]

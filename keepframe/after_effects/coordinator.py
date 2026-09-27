@@ -6,6 +6,7 @@ import math
 import os
 import re
 import secrets
+import stat
 import struct
 import tempfile
 import threading
@@ -13,10 +14,10 @@ import time
 import zlib
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Mapping, Protocol, cast
+from typing import Any, BinaryIO, Iterator, Literal, Mapping, Protocol, cast
 from pydantic import ValidationError
 
-from keepframe.render.plan import (
+from ..render.plan import (
     PlanConflict,
     _atomic_write,
     _canonical_json as _canonical_mapping_json,
@@ -398,6 +399,19 @@ def _validate_artifact_file(kind: ArtifactKind, path: Path, length: int) -> None
         _validate_aep(path, length)
     else:
         raise CoordinatorConflict("artifact kind is not supported")
+
+def _contains_identifier(value: object, identifier: str) -> bool:
+    if isinstance(value, str):
+        return value == identifier
+    if isinstance(value, Mapping):
+        return any(
+            _contains_identifier(item, identifier)
+            for item in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_identifier(item, identifier) for item in value)
+    return False
+
 
 
 def _checkpoint_index(session: AESession) -> int | None:
@@ -1040,6 +1054,22 @@ class AECoordinator:
         if revoked:
             self._write_commands_unlocked(commands)
 
+    def _revoke_device_commands_unlocked(
+        self,
+        commands: list[AECommand],
+        device_id: str,
+        *,
+        include_leased: bool,
+    ) -> None:
+        revoked = False
+        statuses = {"queued", "leased"} if include_leased else {"queued"}
+        for index, command in enumerate(commands):
+            if command.device_id == device_id and command.status in statuses:
+                commands[index] = command.model_copy(update={"status": "revoked"})
+                revoked = True
+        if revoked:
+            self._write_commands_unlocked(commands)
+
     def _settle_pause_requested_unlocked(
         self,
         session: AESession,
@@ -1212,12 +1242,7 @@ class AECoordinator:
         elif event == "continue":
             if not _paused(status):
                 raise CoordinatorConflict("continue requires a paused session")
-            device_id = data.get("device_id", session.device_id)
-            if not isinstance(device_id, str):
-                raise CoordinatorConflict("a bound device is required to continue")
-            device_id = _safe_component(device_id, "device id")
-            if session.device_id is not None and device_id != session.device_id:
-                raise CoordinatorConflict("device is not bound to this session")
+            device_id = session.device_id
             updated = session.model_copy(
                 update={
                     "status": "waiting_for_connector",
@@ -1425,6 +1450,83 @@ class AECoordinator:
             self._write_session_unlocked(updated_session)
             return command
 
+    def detach_device(
+        self,
+        device_id: str,
+        *,
+        reason: Literal["unpair", "replacement"],
+        now: float | None = None,
+    ) -> AESession:
+        device_id = _safe_component(device_id, "device id")
+        if reason not in {"unpair", "replacement"}:
+            raise CoordinatorConflict("device detach reason is invalid")
+        current_time = _now() if now is None else _finite_time(now, "time")
+        with self._locked():
+            session = self._load_session_unlocked()
+            commands = self._load_commands_unlocked()
+            session = self._reconcile_completed_unlocked(session, commands)
+            if session.device_id != device_id:
+                return session
+            leased = any(
+                command.device_id == device_id
+                and command.status == "leased"
+                and command.lease_expires_at is not None
+                and command.lease_expires_at > current_time
+                for command in commands
+            )
+            if leased:
+                self._revoke_device_commands_unlocked(
+                    commands,
+                    device_id,
+                    include_leased=False,
+                )
+                if session.status == "pause_requested" and session.reason == reason:
+                    return session
+                updated = session.model_copy(
+                    update={
+                        "status": "pause_requested",
+                        "reason": reason,
+                        "revision": session.revision + 1,
+                        "updated_at": current_time,
+                    }
+                )
+                self._commit_transition_unlocked(
+                    session,
+                    updated,
+                    "device_detach_requested",
+                    {"reason": reason},
+                )
+                return updated
+            self._revoke_device_commands_unlocked(
+                commands,
+                device_id,
+                include_leased=True,
+            )
+            if session.status in _TERMINAL_STATES:
+                return session
+            if session.status == "waiting_for_connector":
+                status = "waiting_for_connector"
+                session_reason = None
+            else:
+                status = f"paused:{reason}"
+                session_reason = reason
+            updated = session.model_copy(
+                update={
+                    "status": status,
+                    "reason": session_reason,
+                    "device_id": None,
+                    "revision": session.revision + 1,
+                    "updated_at": current_time,
+                }
+            )
+            self._commit_transition_unlocked(
+                session,
+                updated,
+                "device_detached",
+                {"reason": reason},
+            )
+            return updated
+
     def next_command(self, device_id: str, now: float | None = None) -> AECommand | None:
         device_id = _safe_component(device_id, "device id")
         current_time = _now() if now is None else _finite_time(now, "time")
@@ -1480,6 +1582,8 @@ class AECoordinator:
             session = self._load_session_unlocked()
             commands = self._load_commands_unlocked()
             session = self._reconcile_completed_unlocked(session, commands)
+            if session.device_id != device_id:
+                raise CoordinatorConflict("device is not bound to this session")
             index = next((i for i, item in enumerate(commands) if item.id == command_id), None)
             if index is None:
                 raise CoordinatorConflict("command was not found")
@@ -1497,8 +1601,6 @@ class AECoordinator:
                     result_digest=command.result_digest or result_digest,
                     accepted_at=command.delivered_at or command.created_at,
                 )
-            if session.device_id != device_id:
-                raise CoordinatorConflict("device is not bound to this session")
             if not self._command_state_matches(session, command):
                 raise CoordinatorConflict("command state or checkpoint does not match the session")
             if command.status != "leased":
@@ -1555,27 +1657,69 @@ class AECoordinator:
             reservations.append(reservation)
             self._write_reservations_unlocked(reservations)
             return reservation
+    def _require_live_artifact_command_unlocked(
+        self,
+        device_id: str,
+        reservation_id: str,
+    ) -> None:
+        now = _now()
+        if not any(
+            command.status == "leased"
+            and command.device_id == device_id
+            and command.lease_expires_at is not None
+            and command.lease_expires_at > now
+            and _contains_identifier(command.payload, reservation_id)
+            for command in self._load_commands_unlocked()
+        ):
+            raise CoordinatorConflict(
+                "artifact reservation is not bound to an active command"
+            )
+
+
 
     def publish_artifact(
         self,
+        device_id: str,
         reservation_id: str,
         stream: ReadableStream,
         *,
         content_length: int,
+        require_live_command: bool = False,
     ) -> AEPublishedArtifact:
+        device_id = _safe_component(device_id, "device id")
         reservation_id = _safe_command_id(reservation_id)
         if not isinstance(content_length, int) or isinstance(content_length, bool) or content_length < 0:
             raise CoordinatorConflict("artifact content length is invalid")
 
         with self._locked():
             session = self._load_session_unlocked()
+            if session.status in _TERMINAL_STATES:
+                raise CoordinatorConflict(
+                    "terminal AE session cannot publish artifacts"
+                )
+            if session.device_id != device_id:
+                raise CoordinatorConflict("device is not bound to this session")
             reservations = self._load_reservations_unlocked()
-            index = next((i for i, item in enumerate(reservations) if item.id == reservation_id), None)
+            index = next(
+                (
+                    i
+                    for i, item in enumerate(reservations)
+                    if item.id == reservation_id
+                ),
+                None,
+            )
             if index is None:
                 raise CoordinatorConflict("artifact reservation was not found")
             reservation = reservations[index]
             if reservation.session_id != session.id:
-                raise CoordinatorConflict("artifact reservation belongs to another session")
+                raise CoordinatorConflict(
+                    "artifact reservation belongs to another session"
+                )
+            if require_live_command:
+                self._require_live_artifact_command_unlocked(
+                    device_id,
+                    reservation_id,
+                )
             if reservation.status == "committed":
                 raise CoordinatorConflict("artifact is already committed")
             if content_length > reservation.max_length:
@@ -1630,13 +1774,33 @@ class AECoordinator:
 
             with self._locked():
                 session = self._load_session_unlocked()
+                if session.status in _TERMINAL_STATES:
+                    raise CoordinatorConflict(
+                        "terminal AE session cannot publish artifacts"
+                    )
+                if session.device_id != device_id:
+                    raise CoordinatorConflict("device is not bound to this session")
                 reservations = self._load_reservations_unlocked()
-                index = next((i for i, item in enumerate(reservations) if item.id == reservation_id), None)
+                index = next(
+                    (
+                        i
+                        for i, item in enumerate(reservations)
+                        if item.id == reservation_id
+                    ),
+                    None,
+                )
                 if index is None:
                     raise CoordinatorConflict("artifact reservation was not found")
                 reservation = reservations[index]
                 if reservation.session_id != session.id:
-                    raise CoordinatorConflict("artifact reservation belongs to another session")
+                    raise CoordinatorConflict(
+                        "artifact reservation belongs to another session"
+                    )
+                if require_live_command:
+                    self._require_live_artifact_command_unlocked(
+                        device_id,
+                        reservation_id,
+                    )
                 if reservation.status == "committed":
                     raise CoordinatorConflict("artifact is already committed")
                 if reservation.status != "reserved":
@@ -1649,6 +1813,11 @@ class AECoordinator:
                 if final_path.exists() or final_path.is_symlink() or _is_reparse(final_path):
                     raise CoordinatorConflict("artifact destination already exists")
                 _validate_artifact_file(reservation.kind, temporary, total)
+                if require_live_command:
+                    self._require_live_artifact_command_unlocked(
+                        device_id,
+                        reservation_id,
+                    )
                 try:
                     os.link(temporary, final_path, follow_symlinks=False)
                     _fsync_directory(self.artifacts_dir)
@@ -1707,37 +1876,102 @@ class AECoordinator:
             _validate_artifact_file(reservation.kind, path, reservation.length)
             return reservation, path
 
+    def open_artifact(
+        self,
+        artifact_id: str,
+    ) -> tuple[AEArtifactReservation, BinaryIO]:
+        artifact_id = _safe_command_id(artifact_id)
+        with self._locked():
+            session = self._load_session_unlocked()
+            _ensure_no_symlink(self.artifacts_dir, kind="directory")
+            reservations = self._load_reservations_unlocked()
+            reservation = next(
+                (item for item in reservations if item.id == artifact_id),
+                None,
+            )
+            if (
+                reservation is None
+                or reservation.status != "committed"
+                or reservation.session_id != session.id
+                or reservation.length is None
+                or reservation.sha256 is None
+            ):
+                raise CoordinatorConflict("artifact was not found")
+            path = self.artifacts_dir / reservation.id
+            _ensure_no_symlink(path, kind="file")
+            flags = os.O_RDONLY
+            if os.name != "nt":
+                flags |= os.O_NOFOLLOW
+            try:
+                fd = os.open(path, flags)
+                file_stat = os.fstat(fd)
+                if (
+                    not stat.S_ISREG(file_stat.st_mode)
+                    or file_stat.st_size != reservation.length
+                ):
+                    os.close(fd)
+                    raise CoordinatorConflict("artifact was not found")
+                stream = os.fdopen(fd, "rb")
+            except CoordinatorConflict:
+                raise
+            except OSError as exc:
+                raise CoordinatorConflict("artifact was not found") from exc
+            try:
+                digest = hashlib.sha256()
+                length = 0
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+                    length += len(chunk)
+                if (
+                    length != reservation.length
+                    or digest.hexdigest() != reservation.sha256
+                ):
+                    raise CoordinatorConflict(
+                        "artifact digest does not match reservation"
+                    )
+                stream.seek(0)
+                return reservation, stream
+            except Exception:
+                stream.close()
+                raise
 
-    def open_asset(self, asset_id: str) -> tuple[Any, BinaryIO]:
+
+
+    def open_asset(self, device_id: str, asset_id: str) -> tuple[Any, BinaryIO]:
+        device_id = _safe_component(device_id, "device id")
         asset_id = _safe_command_id(asset_id)
-        asset = next((item for item in self.plan.assets if item.id == asset_id), None)
-        if asset is None:
-            raise CoordinatorConflict("asset was not found")
-        assets_dir = self.plan_dir / "assets"
-        _ensure_no_symlink(assets_dir, kind="directory")
-        path = assets_dir / asset.id
-        _ensure_no_symlink(path, kind="file")
-        flags = os.O_RDONLY
-        if os.name != "nt":
-            flags |= os.O_NOFOLLOW
-        try:
-            fd = os.open(path, flags)
-            stream = os.fdopen(fd, "rb")
-        except OSError as exc:
-            raise CoordinatorConflict("asset was not found") from exc
-        try:
-            digest = hashlib.sha256()
-            length = 0
-            while chunk := stream.read(1024 * 1024):
-                digest.update(chunk)
-                length += len(chunk)
-            if length != asset.length or digest.hexdigest() != asset.sha256:
-                raise CoordinatorConflict("asset digest does not match plan")
-            stream.seek(0)
-            return asset, stream
-        except Exception:
-            stream.close()
-            raise
+        with self._locked():
+            session = self._load_session_unlocked()
+            if session.device_id != device_id:
+                raise CoordinatorConflict("device is not bound to this session")
+            asset = next((item for item in self.plan.assets if item.id == asset_id), None)
+            if asset is None:
+                raise CoordinatorConflict("asset was not found")
+            assets_dir = self.plan_dir / "assets"
+            _ensure_no_symlink(assets_dir, kind="directory")
+            path = assets_dir / asset.id
+            _ensure_no_symlink(path, kind="file")
+            flags = os.O_RDONLY
+            if os.name != "nt":
+                flags |= os.O_NOFOLLOW
+            try:
+                fd = os.open(path, flags)
+                stream = os.fdopen(fd, "rb")
+            except OSError as exc:
+                raise CoordinatorConflict("asset was not found") from exc
+            try:
+                digest = hashlib.sha256()
+                length = 0
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+                    length += len(chunk)
+                if length != asset.length or digest.hexdigest() != asset.sha256:
+                    raise CoordinatorConflict("asset digest does not match plan")
+                stream.seek(0)
+                return asset, stream
+            except Exception:
+                stream.close()
+                raise
 
 
 __all__ = ["AECoordinator", "CoordinatorConflict"]

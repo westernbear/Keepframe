@@ -3,9 +3,9 @@ from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
-def start(tmp_path):
+def start(tmp_path, **kwargs):
     from keepframe.web.server import make_server
-    srv = make_server(tmp_path, port=0)
+    srv = make_server(tmp_path, port=0, **kwargs)
     import threading
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
