@@ -1,12 +1,60 @@
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, os, sys, threading
 from pathlib import Path
+from urllib.parse import urlparse
 from .compose.composer import compose
 from .ir.store import load_scene, save_scene
 from .ir.synth import make_synthetic_scene
 from .log import configure, get
 from .render.renderer import render, render_result_from_json
 from .verify.verifier import verify
+
+
+def _ae_relay_config() -> tuple[str, str, int, str] | None:
+    names = (
+        "KEEPFRAME_AE_RELAY_URL",
+        "KEEPFRAME_AE_RELAY_HOST",
+        "KEEPFRAME_AE_RELAY_PORT",
+        "KEEPFRAME_AE_RELAY_TOKEN",
+    )
+    values = {name: (os.getenv(name) or "").strip() for name in names}
+    if not any(values.values()):
+        return None
+    if not all(values.values()):
+        raise ValueError("all KEEPFRAME_AE_RELAY_* settings are required")
+    try:
+        parsed = urlparse(values["KEEPFRAME_AE_RELAY_URL"])
+        public_port = parsed.port
+    except ValueError as exc:
+        raise ValueError("KEEPFRAME_AE_RELAY_URL has an invalid port") from exc
+    loopback = (parsed.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or public_port is not None
+        and not 1 <= public_port <= 65535
+        or parsed.scheme == "http"
+        and not loopback
+    ):
+        raise ValueError("KEEPFRAME_AE_RELAY_URL must be HTTPS or loopback HTTP without credentials")
+    try:
+        port = int(values["KEEPFRAME_AE_RELAY_PORT"])
+    except ValueError as exc:
+        raise ValueError("KEEPFRAME_AE_RELAY_PORT must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("KEEPFRAME_AE_RELAY_PORT must be between 1 and 65535")
+    return (
+        values["KEEPFRAME_AE_RELAY_URL"].rstrip("/"),
+        values["KEEPFRAME_AE_RELAY_HOST"],
+        port,
+        values["KEEPFRAME_AE_RELAY_TOKEN"],
+    )
+
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,6 +87,13 @@ def main(argv: list[str] | None = None) -> int:
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
+    ae_install = sub.add_parser("ae-install")
+    ae_install.add_argument("--ae-path")
+    ae_connect = sub.add_parser("ae-connect")
+    ae_connect.add_argument("--url", required=True)
+    ae_target = ae_connect.add_mutually_exclusive_group()
+    ae_target.add_argument("--code")
+    ae_target.add_argument("--project")
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -117,47 +172,154 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "gate-m2-real":
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
+    if a.cmd == "ae-install":
+        from .after_effects.installer import install_panel, manual_instructions
+
+        panel = install_panel(Path(a.ae_path) if a.ae_path else None)
+        print(panel)
+        print(manual_instructions())
+        return 0
+    if a.cmd == "ae-connect":
+        from getpass import getpass
+
+        from .after_effects.connector import run_connector
+
+        code = a.code
+        if code is None and a.project is None:
+            code = getpass("Pairing code: ")
+        return run_connector(a.url, code=code, project=a.project)
     if a.cmd == "serve":
         from .web.server import JOBS, make_server
         configure()
         log = get("keepframe.cli")
         host = a.host
-        kwargs: dict = {"admin": a.admin}
+        workspace = Path(a.workspace)
+        relay_config = _ae_relay_config()
+        kwargs: dict = {
+            "admin": a.admin,
+            "ae_relay_url": relay_config[0] if relay_config is not None else None,
+        }
         if a.admin:
             from .admin.memory import MemoryAdmin
             from .admin.auth import MemoryAuth, load_admin_users
             users = load_admin_users()
-            kwargs["admin_svc"] = MemoryAdmin(workspace=Path(a.workspace), job_store=JOBS)
+            kwargs["admin_svc"] = MemoryAdmin(workspace=workspace, job_store=JOBS)
             kwargs["admin_auth"] = MemoryAuth(users)
-        srv = make_server(Path(a.workspace), port=a.port, host=host, **kwargs)
-        from .analyze.device import gpu_status
-        st = gpu_status()
-        if not st["torch"]:
-            log.info("torch not installed; refine stays on CPU skip")
-        else:
-            log.info(
-                "torch %s cuda=%s device=%s name=%s required=%s",
-                st["torch_version"], st["cuda"], st["device"], st["name"], st["required"],
-            )
-            if st["required"] and not st["cuda"]:
-                log.error("KEEPFRAME_DEVICE=cuda but CUDA is not available; sprite refine will fail")
-        log.info("listening http://%s:%s/ workspace=%s admin=%s", host, a.port, a.workspace, a.admin)
-        if a.admin:
-            log.info("admin http://%s:%s/admin/", host, a.port)
-            from .session.chatgpt_oauth import CHATGPT_CALLBACK_PORT, FLOW, callback_bind_host
-
-            FLOW.workspace = Path(a.workspace)
-            FLOW.bind_host = callback_bind_host(host)
-            try:
-                FLOW.ensure_listener()
-                log.info("chatgpt oauth callback http://localhost:%s/auth/callback", CHATGPT_CALLBACK_PORT)
-            except RuntimeError as e:
-                log.warning("%s", e)
+        srv = make_server(workspace, port=a.port, host=host, **kwargs)
+        workflow = getattr(srv, "ae_workflow", None)
+        relay = None
+        relay_thread = None
+        relay_started = False
+        relay_failures: list[Exception] = []
+        stopping = threading.Event()
+        private_serving = threading.Event()
         try:
+            if relay_config is not None:
+                relay_url, relay_host, relay_port, relay_token = relay_config
+                from .after_effects.relay import make_relay_server
+
+                relay = make_relay_server(
+                    workspace,
+                    host=relay_host,
+                    port=relay_port,
+                    deployment_token=relay_token,
+                    workflow=workflow,
+                )
+
+                def serve_relay() -> None:
+                    try:
+                        relay.serve_forever()
+                    except Exception as exc:
+                        relay_failures.append(exc)
+                    else:
+                        if not stopping.is_set():
+                            relay_failures.append(
+                                RuntimeError("AE relay stopped unexpectedly")
+                            )
+                    finally:
+                        while not stopping.is_set():
+                            if private_serving.wait(0.05):
+                                if not stopping.is_set():
+                                    srv.shutdown()
+                                break
+
+                relay_thread = threading.Thread(
+                    target=serve_relay,
+                    daemon=True,
+                    name="keepframe-ae-relay",
+                )
+                relay_thread.start()
+                relay_started = True
+                log.info(
+                    "AE relay listening %s bind=%s:%s",
+                    relay_url,
+                    relay_host,
+                    relay_port,
+                )
+            from .analyze.device import gpu_status
+
+            st = gpu_status()
+            if not st["torch"]:
+                log.info("torch not installed; refine stays on CPU skip")
+            else:
+                log.info(
+                    "torch %s cuda=%s device=%s name=%s required=%s",
+                    st["torch_version"],
+                    st["cuda"],
+                    st["device"],
+                    st["name"],
+                    st["required"],
+                )
+                if st["required"] and not st["cuda"]:
+                    log.error(
+                        "KEEPFRAME_DEVICE=cuda but CUDA is not available; "
+                        "sprite refine will fail"
+                    )
+            log.info(
+                "listening http://%s:%s/ workspace=%s admin=%s",
+                host,
+                a.port,
+                a.workspace,
+                a.admin,
+            )
+            if a.admin:
+                log.info("admin http://%s:%s/admin/", host, a.port)
+                from .session.chatgpt_oauth import (
+                    CHATGPT_CALLBACK_PORT,
+                    FLOW,
+                    callback_bind_host,
+                )
+
+                FLOW.workspace = workspace
+                FLOW.bind_host = callback_bind_host(host)
+                try:
+                    FLOW.ensure_listener()
+                    log.info(
+                        "chatgpt oauth callback http://localhost:%s/auth/callback",
+                        CHATGPT_CALLBACK_PORT,
+                    )
+                except RuntimeError as e:
+                    log.warning("%s", e)
+            private_serving.set()
             srv.serve_forever()
+            if relay_failures:
+                raise relay_failures[0]
         except Exception:
             log.exception("serve stopped")
             raise
+        finally:
+            stopping.set()
+            srv.server_close()
+            if relay is not None:
+                if relay_started:
+                    relay.shutdown()
+                relay.server_close()
+                if relay_started and relay_thread is not None:
+                    relay_thread.join()
+            if workflow is not None:
+                close = getattr(workflow, "close", None)
+                if callable(close):
+                    close()
         return 0
     return 2
 

@@ -81,3 +81,52 @@ def test_verify_and_report_tools(tmp_path):
     rep = run_tool("report", _ctx(root), {})
     assert rep["ok"] is True
     assert rep["payload"]["elements"] == [e.id for e in scene.elements]
+
+
+def test_render_prepares_immutable_plan_without_submitting_job(tmp_path):
+    root = tmp_path / "proj"
+    scene = make_synthetic_scene(root / "scenes" / "s1", seed=4, with_text=False, frames=12)
+    init_project(
+        root,
+        {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]},
+        scene.model_copy(update={"id": "s1"}),
+    )
+    prepared = []
+    submitted = []
+    ctx = SessionContext(
+        root=root,
+        scene_id="s1",
+        prepare_render=lambda mode, backend, direction: prepared.append((mode, backend, direction))
+        or {"id": "rp1", "backend": backend, "mode": mode},
+        submit_job=lambda *args: submitted.append(args),
+    )
+
+    res = run_tool(
+        "render",
+        ctx,
+        {"backend": "after_effects", "direction": "polish typography", "confirm": True},
+    )
+
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"]["render_plan"] == {"id": "rp1", "backend": "after_effects", "mode": "preview"}
+    assert prepared == [("preview", "after_effects", "polish typography")]
+    assert submitted == []
+
+
+def test_export_prepares_final_plan_and_requires_explicit_backend(tmp_path):
+    prepared = []
+    ctx = SessionContext(
+        root=tmp_path,
+        scene_id="s1",
+        prepare_render=lambda mode, backend, direction: prepared.append((mode, backend, direction))
+        or {"id": "rp2", "backend": backend, "mode": mode},
+    )
+
+    missing = run_tool("export", ctx, {})
+    final = run_tool("export", ctx, {"backend": "native"})
+
+    assert missing["ok"] is False
+    assert final["needs_confirm"] is True
+    assert final["payload"]["render_plan"]["mode"] == "final"
+    assert prepared == [("final", "native", None)]

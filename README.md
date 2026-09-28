@@ -9,7 +9,7 @@ Keepframe measures a flat 2D motion-graphics clip or UI screen recording into an
 ## Requirements
 
 - Python 3.11+ (3.12 for `[ocr]`; RapidOCR stops at 3.12)
-- [ffmpeg](https://ffmpeg.org/) on `PATH`
+- [ffmpeg and ffprobe](https://ffmpeg.org/) on `PATH` (both are required by final render verification)
 - Chromium via Playwright, for compose and render
 
 ## Install
@@ -42,6 +42,54 @@ http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by def
 
 CLI-generated project directories placed under the workspace appear in the library even without `meta.json`; the first metadata change creates that file. Analysis creates `overrides.json` without overwriting existing overrides, and frame-stage reruns reuse the recorded source range.
 
+The optional After Effects relay is a second, connector-only listener. Set
+`KEEPFRAME_AE_RELAY_URL`, `KEEPFRAME_AE_RELAY_HOST`,
+`KEEPFRAME_AE_RELAY_PORT`, and `KEEPFRAME_AE_RELAY_TOKEN` together; partial
+configuration fails startup. Expose only that relay listener through an HTTPS
+reverse proxy. Plain HTTP relay URLs are accepted only for loopback hosts.
+
+The first same-origin pairing establishes a project-scoped, host-only controller
+cookie. Re-pairing and unpairing require that cookie. Replacement and unpair
+stop new connector leases, allow the active lease to settle, then rotate or
+revoke the hashed device credential. Browser artifact downloads require the
+same controller cookie and same-origin request.
+
+Install the optional Windows connector with `pip install 'keepframe[ae]'`.
+`keepframe ae-install [--ae-path ...]` installs the ScriptUI panel for After
+Effects 2022 or newer; restart After Effects, enable **Allow Scripts to Write
+Files and Access Network**, then open **Window > Keepframe Panel**. With
+`KEEPFRAME_AE_RELAY_TOKEN` set only in the connector environment, run
+`keepframe ae-connect --url https://relay.example`; the command prompts for the
+one-use pairing code without echoing it. `--code CODE` is available for
+non-interactive pairing. Later starts use
+`keepframe ae-connect --url https://relay.example --project PROJECT_ID` and the
+current-user DPAPI-protected device record. The MCP child receives neither
+relay credential.
+
+After Effects plans pin the active capability manifest, operation schemas, scene
+assets, source locks, and any acknowledged compatibility substitutions.
+Unsupported fonts or converter semantics produce a non-approvable draft until
+the proposed lost semantics are acknowledged; capability changes require a new
+successor plan.
+
+Approved After Effects sessions first build and verify deterministic checkpoint
+0, then send at most 12 bounded preview frames to the configured LLM for typed
+polish operations. Every baseline, agent, and manual candidate retains its AEP,
+preview, frames, inspection, operations, model response, manifests, and verifier
+report. Failed candidates remain inspectable and roll back to the last passing
+checkpoint. The loop has no iteration cap; one no-op or two identical model
+plans pauses it as `no_progress`. Manual AE edits sync as new checkpoints and
+never modify Keepframe IR.
+
+Finalization is a separate approval-bound step for the selected passing
+checkpoint. The connector rematerializes and re-verifies that immutable AEP,
+renders a full-resolution PNG sequence through the After Effects Render Queue,
+and encodes `final.mp4` with fixed H.264/yuv420p settings. It retains
+`project.aep`, collected content-addressed media, and `dependencies.json`
+locally, uploads only to coordinator-reserved artifact slots, and publishes a
+ZIP containing exactly those package files. Font and plugin binaries are never
+collected.
+
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash
@@ -64,6 +112,8 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 | `render` | Chromium frames, optional MP4 |
 | `verify` | Schema, keep predicates, frame compare |
 | `correct` | Review ops on a scene |
+| `ae-install` | Windows-only After Effects ScriptUI panel installer |
+| `ae-connect` | Pair or resume the Windows connector and local MCP bridge |
 | `synth` | Synthetic scene |
 | `gate-m1` / `gate-m2` | Synthetic gates |
 

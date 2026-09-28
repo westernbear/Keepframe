@@ -50,9 +50,12 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_render(args: dict[str, Any]) -> dict[str, Any]:
+    if args.get("stage_manifest"):
+        from keepframe.render.native import verify_native_stage
+
+        verify_native_stage(args)
     from keepframe.ir.store import load_scene
     from keepframe.render.renderer import render
-
     scene_path = Path(args["scene"])
     log.info("render start scene=%s out=%s mp4=%s", scene_path, args["out"], bool(args.get("mp4")))
     scene = load_scene(scene_path)
@@ -67,6 +70,13 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     import shutil
 
+    if args.get("stage_manifest"):
+        from keepframe.render.native import verify_native_stage
+        from keepframe.render.plan import PlanConflict
+
+        verify_native_stage(args)
+        if not args.get("package_root"):
+            raise PlanConflict("native final stage package root is missing")
     from keepframe.compose.composer import compose
     from keepframe.ir.store import load_scene
     from keepframe.render.renderer import render
@@ -76,10 +86,13 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     log.info("export start scene=%s out=%s", scene_path, out)
     scene = load_scene(scene_path)
     sd = scene_path.parent
-    html = sd / "composition.export.html"
-    compose(scene, sd, html)
+    html_arg = args.get("html")
+    html = Path(html_arg) if html_arg else sd / "composition.export.html"
+    if not html_arg:
+        compose(scene, sd, html)
     res = render(html, scene, out, mp4=True)
-    root = sd.parent.parent
+    package_root_arg = args.get("package_root")
+    root = Path(package_root_arg) if package_root_arg else sd.parent.parent
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / "project.zip"
     shutil.make_archive(str(zip_path.with_suffix("")), "zip", root)
