@@ -38,6 +38,7 @@ from keepframe.render.plan import (
     load_render_plan_state,
 )
 from keepframe.session import SessionAgent, SessionContext, make_llm
+from keepframe.after_effects.workflow import AEWorkflowService
 from keepframe.after_effects.auth import (
     AEAuthError,
     AEControllerAuthorizationError,
@@ -47,7 +48,14 @@ from keepframe.after_effects.auth import (
 from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
 from keepframe.after_effects.planning import prepare_ae_render_plan
-from keepframe.web.workspace import create_project, create_rejected_project, list_projects, load_meta, project_dir, write_meta
+from keepframe.web.workspace import (
+    create_project,
+    create_rejected_project,
+    list_projects,
+    load_meta,
+    project_dir,
+    write_meta,
+)
 
 log = get("keepframe.web")
 
@@ -464,6 +472,7 @@ def make_server(
     admin_svc=None,
     admin_auth=None,
     ae_relay_url: str | None = None,
+    workflow: AEWorkflowService | None = None,
 ) -> ThreadingHTTPServer:
     configure()
     workspace = Path(workspace)
@@ -480,6 +489,10 @@ def make_server(
             return make_llm(admin_svc.get_llm_settings())
         saved = load_llm_settings(workspace)
         return make_llm(saved) if saved is not None else make_llm()
+    ae_workflow = workflow if workflow is not None else AEWorkflowService(
+        workspace,
+        agent_llm,
+    )
 
     admin_routes = None
     if admin and admin_svc is not None and admin_auth is not None:
@@ -1239,18 +1252,7 @@ def make_server(
                     elif action == "sync-manual":
                         if current.revision != revision:
                             return self._json(409, {"error": "revision is stale"})
-                        expected_checkpoint = max(
-                            (item.index for item in current.checkpoints),
-                            default=None,
-                        )
-                        queued_command = coordinator.enqueue_command(
-                            "sync_manual",
-                            {},
-                            expected_state=current.status,
-                            expected_checkpoint=expected_checkpoint,
-                            device_id=current.device_id,
-                            revision=revision,
-                        )
+                        queued_command = ae_workflow.manual_sync(coordinator)
                         current = coordinator.state()
                     else:
                         if action == "stop":
@@ -1744,4 +1746,6 @@ def make_server(
         def do_PATCH(self):
             return self._json(404, {"error": "not found"})
 
-    return ThreadingHTTPServer((host, port), H)
+    server = ThreadingHTTPServer((host, port), H)
+    server.ae_workflow = ae_workflow
+    return server

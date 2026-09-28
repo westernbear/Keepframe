@@ -330,9 +330,13 @@ class AECheckpoint(_FrozenRecord):
     index: int
     provenance: Literal["baseline", "agent", "manual"]
     passed: bool
+    lineage_valid: bool = True
     aep_artifact_id: str
     preview_artifact_id: str
     frame_artifact_ids: tuple[str, ...] = ()
+    # The digest is a server-side pointer used in compact session summaries.
+    # It is deliberately excluded from the context bytes it identifies.
+    context_digest: str | None = Field(default=None, exclude=True)
     inspection: dict[str, Any] = Field(default_factory=dict)
     operations: tuple[dict[str, Any], ...] = ()
     verifier_report: dict[str, Any] = Field(default_factory=dict)
@@ -348,6 +352,7 @@ class AECheckpoint(_FrozenRecord):
     _frame_artifacts = field_validator("frame_artifact_ids")(
         lambda values: tuple(_identifier(item) for item in values)
     )
+    _context_digest = field_validator("context_digest")(_digest)
     _json_fields = field_validator(
         "inspection",
         "operations",
@@ -357,6 +362,25 @@ class AECheckpoint(_FrozenRecord):
         "dependency_manifest",
     )(_finite_json)
     _failure = field_validator("failure")(_nonempty)
+
+
+class AECheckpointContext(_FrozenRecord):
+    """Server-owned checkpoint metadata bound to one save command."""
+
+    digest: str
+    command_id: str
+    plan_digest: str
+    session_id: str
+    checkpoint: AECheckpoint
+
+    _digest_field = field_validator("digest", "plan_digest")(_digest)
+    _ids = field_validator("command_id", "session_id")(_identifier)
+
+    @model_validator(mode="after")
+    def _digest_matches_checkpoint(self) -> AECheckpointContext:
+        if self.digest != json_digest(self.checkpoint.model_dump(mode="json")):
+            raise ValueError("checkpoint context digest does not match checkpoint")
+        return self
 
 
 
@@ -393,6 +417,22 @@ class AESession(_FrozenRecord):
     device_id: str | None = None
     checkpoints: tuple[AECheckpoint, ...] = ()
     selected_checkpoint: int | None = None
+    checkpoint_required: bool = False
+    # Baseline progress is persisted separately from checkpoint pass/fail so a
+    # partial checkpoint cannot make a later Continue skip deterministic work.
+    baseline_mapping_digest: str | None = None
+    baseline_batch_count: int | None = None
+    baseline_completed_batches: tuple[int, ...] = ()
+    baseline_complete: bool = False
+    manual_epoch: int = 0
+    # Set only by the browser's explicit Sync Manual mutation.  Polling may
+    # reopen a checkpoint but must not create a sync attempt on its own.
+    manual_sync_requested: bool = False
+    manual_attempt_id: str | None = None
+    open_checkpoint: int | None = None
+    # Source-less AE layer IDs are never recycled after a removal.  Keeping the
+    # tombstones in the durable session makes the rule survive process restart.
+    issued_instance_id_tombstones: tuple[str, ...] = ()
     command_sequence: int = 0
     applied_command_sequence: int = 0
     last_command_id: str | None = None
@@ -408,6 +448,54 @@ class AESession(_FrozenRecord):
     )
     _device = field_validator("device_id", "last_command_id")(_identifier)
     _reason = field_validator("reason")(_nonempty)
+    _baseline_digest = field_validator("baseline_mapping_digest")(_digest)
+    _baseline_count = field_validator("baseline_batch_count")(
+        lambda value: value if value is None else _bounded_int(value, minimum=0)
+    )
+
+    @field_validator("baseline_completed_batches")
+    @classmethod
+    def _baseline_batch_indexes(cls, values: tuple[int, ...]) -> tuple[int, ...]:
+        normalized = tuple(_bounded_int(value, minimum=0) for value in values)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("baseline batch indexes contain duplicates")
+        return tuple(sorted(normalized))
+
+    _manual_epoch = field_validator("manual_epoch")(
+        lambda value: _bounded_int(value, minimum=0)
+    )
+    _manual_attempt = field_validator("manual_attempt_id")(_identifier)
+    _open_checkpoint = field_validator("open_checkpoint")(
+        lambda value: value if value is None else _bounded_int(value, minimum=0)
+    )
+
+    @model_validator(mode="after")
+    def _baseline_progress_is_consistent(self) -> AESession:
+        if self.baseline_batch_count is not None and any(
+            index >= self.baseline_batch_count
+            for index in self.baseline_completed_batches
+        ):
+            raise ValueError("baseline batch index exceeds batch count")
+        if self.baseline_complete and self.baseline_batch_count is not None:
+            if set(self.baseline_completed_batches) != set(
+                range(self.baseline_batch_count)
+            ):
+                raise ValueError("baseline completeness is inconsistent")
+        return self
+
+
+    @field_validator("issued_instance_id_tombstones")
+    @classmethod
+    def _instance_tombstones(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(_identifier(value) for value in values)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("instance id tombstones contain duplicates")
+        return normalized
+
+    @property
+    def instance_id_tombstones(self) -> tuple[str, ...]:
+        return self.issued_instance_id_tombstones
+
     _timestamps = field_validator("created_at", "updated_at")(
         lambda value: value if math.isfinite(value) and value >= 0 else (_ for _ in ()).throw(ValueError("timestamp is invalid"))
     )
@@ -548,7 +636,7 @@ class AEPublishedArtifact(_FrozenRecord):
 
 __all__ = [
     "AEArtifactReservation",
-    "AECheckpoint",
+    "AECheckpointContext",
     "AECommand",
     "AECommandResult",
     "AECapabilities",

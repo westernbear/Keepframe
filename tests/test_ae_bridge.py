@@ -158,8 +158,8 @@ def test_mcp_registry_contains_only_fixed_forwarders_without_importing_mcp():
     calls = []
 
     class FakeBridge:
-        def dispatch(self, kind, payload, *, command_id, nonce):
-            calls.append((kind, payload, command_id, nonce))
+        def dispatch(self, kind, payload, *, command_id, nonce, timeout=None):
+            calls.append((kind, payload, command_id, nonce, timeout))
             return {"kind": kind, "payload": payload, "command_id": command_id, "nonce": nonce}
 
     registry = mcp_server.fixed_tool_registry(FakeBridge())
@@ -177,7 +177,7 @@ def test_mcp_registry_contains_only_fixed_forwarders_without_importing_mcp():
     assert registry["render_preview"](
         {"command_id": "command-1", "nonce": "nonce-1", "payload": {"frame": 0}}
     )["kind"] == "render_preview"
-    assert calls == [("render_preview", {"frame": 0}, "command-1", "nonce-1")]
+    assert calls == [("render_preview", {"frame": 0}, "command-1", "nonce-1", 1800.0)]
 
 
 def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
@@ -192,7 +192,7 @@ def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
     calls = []
 
     class FakeBridge:
-        def dispatch(self, kind, payload, *, command_id, nonce):
+        def dispatch(self, kind, payload, *, command_id, nonce, timeout=None):
             calls.append((kind, payload, command_id, nonce))
             return BridgeResult(
                 command_id=command_id,
@@ -220,6 +220,7 @@ def test_mcp_apply_tool_validates_and_forwards_canonical_envelope():
             "layer_count": 1,
             "baseline": False,
             "locked_source_ids": [],
+            "layer_native_ids": {"layer-1": 1},
             "layer_sources": {"layer-1": None},
             "project_id": "project-1",
             "plan_id": "plan-1",
@@ -269,6 +270,7 @@ def test_mcp_apply_rejects_zero_authoritative_duration():
             "layer_count": 1,
             "baseline": False,
             "locked_source_ids": [],
+            "layer_native_ids": {"layer-1": 1},
             "layer_sources": {"layer-1": None},
             "project_id": "project-1",
             "plan_id": "plan-1",
@@ -313,6 +315,7 @@ def test_mcp_rejects_fill_color_without_fill_effect_capability():
             "layer_count": 1,
             "baseline": False,
             "locked_source_ids": [],
+            "layer_native_ids": {"layer-1": 1},
             "layer_sources": {"layer-1": None},
             "project_id": "project-1",
             "plan_id": "plan-1",
@@ -349,6 +352,7 @@ def test_mcp_apply_requires_bounds_and_scope_fields():
         "layer_count": 1,
         "baseline": False,
         "locked_source_ids": [],
+        "layer_native_ids": {"layer-1": 1},
         "layer_sources": {"layer-1": None},
         "project_id": "project-1",
         "plan_id": "plan-1",
@@ -419,7 +423,7 @@ def test_panel_capabilities_use_runtime_catalogs_and_fixed_metadata():
     assert "Number(operation.value) * 100" in panel
     assert "Number(keyframe.value) * 100" in panel
     assert "temporal easing is unavailable" in panel
-    assert "source_element_id: layerSourceId(layer)" in panel
+    assert "source_element_id: sourceId || null" in panel
     assert "keepframe:layer=" in panel and ";source_element_id=" in panel
     assert "--([A-Za-z0-9]" in panel
     assert "assertEffectPropertyOperation" in panel
@@ -464,6 +468,9 @@ def test_panel_binds_scope_before_dispatch_and_rejects_stale_comp_bounds():
         "function saveCheckpoint", 1
     )[0]
     assert "heartbeat(false)" in inspect_source
+    assert "capability_hash: liveHeartbeat.capability_hash" in inspect_source
+    assert "capabilities: liveHeartbeat.capabilities" in inspect_source
+    assert "ready: liveHeartbeat.ready" in inspect_source
     scope_source = panel.split("function validateCommandScope", 1)[1].split(
         "function requireSessionComposition", 1
     )[0]
@@ -638,3 +645,163 @@ def test_panel_text_operations_require_text_layers_and_add_fields_stay_typed():
     assert "comp.layers.addText(operation.name)" in add_source
     assert 'case "footage":' in add_source
     assert "findAssetItem(operation.asset_id)" in add_source
+
+def test_panel_inspection_request_and_samples_are_strict_and_authoritative():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    inspect_source = panel.split("function inspectLayers", 1)[1].split(
+        "function saveCheckpoint", 1
+    )[0]
+    validation_source = panel.split("function validateInspectRequest", 1)[1].split(
+        "function hasOwnValue", 1
+    )[0]
+    assert "function validateInspectRequest" in panel
+    assert 'assertKeys(payload, {' in validation_source
+    assert "frame_count: true" in validation_source
+    assert "fps: true" in validation_source
+    assert "requested: true" in validation_source
+    assert "layer_sources: true" in validation_source
+    assert "allow_new_agent_ids: true" in validation_source
+    assert "requested.length > 4096" in validation_source
+    assert "frameCount > MAX_KEYFRAMES" in validation_source
+    assert "frame >= frameCount" in validation_source
+    assert "payload.allow_new_agent_ids.length > 1000" in validation_source
+    inventory_source = panel.split("function inspectLayerInventory", 1)[1].split(
+        "function finiteCompPoint", 1
+    )[0]
+    sample_source = panel.split("function inspectLayerSample", 1)[1].split(
+        "function inspectLayers", 1
+    )[0]
+    dispatch_source = panel.split("function inspectLayers", 1)[1].split(
+        "function saveCheckpoint", 1
+    )[0]
+    assert "keepframe.ae-inspection/1" in inspect_source
+    assert "source drift" in inventory_source
+    assert "duplicate manual agent id" in inventory_source
+    assert "allow_new_agent_ids pool is exhausted" in inventory_source
+    assert "instanceId = request.manual_ids[manualIndex]" in inventory_source
+    assert "manualAssignments.push" in inventory_source
+    assert "toComp" in sample_source
+    assert "sourceRectAtTime" in sample_source
+    assert "Math.atan2" in sample_source
+    assert "unwrapWorldRotation" in panel
+    assert "rotationStates[metadata.layer_instance_id]" in inspect_source
+    assert "requestOrder.sort" in inspect_source
+    assert "frame_start" in inventory_source and "frame_end" in inventory_source
+    assert "in_point" not in inventory_source and "out_point" not in inventory_source
+    assert "sample === null ? null : sample" in dispatch_source
+    assert "requested: request.requested" in dispatch_source
+    assert "layerSources[rows[rowIndex].layer_instance_id]" in dispatch_source
+    assert "missing_pairs: missingPairs" in dispatch_source
+    assert "source_aggregated: false" in dispatch_source
+
+
+def test_panel_preview_is_full_sequence_resolution_bounded_and_restores_comp():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    render_source = panel.split("function renderPreview", 1)[1].split(
+        "function packageProject", 1
+    )[0]
+    assert "checkpoint_index: true" in render_source
+    assert "frame_count: true" in render_source
+    assert "fps: true" in render_source
+    assert "representative_frames: true" in render_source
+    assert "resolutionFactor" in render_source
+    assert "try {" in render_source and "finally" in render_source
+    assert "saveFrameToPng" in render_source
+    assert "checkpoint-" in render_source
+    assert "%06d" in render_source
+    assert "for (frame = 0; frame < frameCount; frame += 1)" in render_source
+    assert "representative.length < 1" in render_source
+    assert "representative.length > 12" in render_source
+    assert "Math.ceil(comp.width / factor)" in render_source
+    assert "comp.resolutionFactor = restoreResolution" in render_source
+
+
+def test_panel_opens_only_private_deterministic_checkpoint_and_rebinds_session():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    create_source = panel.split("function createOrOpenProject", 1)[1].split(
+        "function importServerAsset", 1
+    )[0]
+    assert "checkpoint_index" in create_source
+    assert 'assertKeys(payload, {' in create_source
+    assert "background_color: true" in create_source
+    assert "checkpoint_index: true" in create_source
+    assert 'CHECKPOINT_DIR.fsName + "/checkpoint-"' in create_source
+    assert "app.open(file)" in create_source
+    assert "findSessionComposition(marker)" in create_source
+    assert "projectSettingsMatch(comp, settings)" in create_source
+    assert "checkpoint index is invalid" in create_source
+
+
+def test_panel_scopes_files_and_distinguishes_inactive_from_unsampled_layers():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    assert 'BRIDGE_ROOT.fsName + "/projects"' in panel
+    assert "function bindSessionDirectories" in panel
+    assert "SESSION_ID_PATTERN.test(projectId)" in panel
+    assert 'plansRoot = Folder(projectRoot.fsName + "/plans")' in panel
+    assert 'sessionsRoot = Folder(planRoot.fsName + "/sessions")' in panel
+    assert "originalComments" in panel
+    assert "throw inspectError" in panel
+    assert "layer.enabled !== false" in panel
+    inventory_source = panel.split("function inspectLayerInventory", 1)[1].split(
+        "function finiteCompPoint", 1
+    )[0]
+    assert "request.layer_sources[instanceId] !== null" in inventory_source
+    sample_source = panel.split("function inspectLayerSample", 1)[1].split(
+        "function inspectLayers", 1
+    )[0]
+    assert "transform.anchorPoint.valueAtTime(time, false)" in sample_source
+    assert "determinant < 0" in sample_source
+    assert "transform.opacity.valueAtTime(time, false)" in sample_source
+    dispatch_source = panel.split("function inspectLayers", 1)[1].split(
+        "function saveCheckpoint", 1
+    )[0]
+    assert "active: active" in dispatch_source
+    assert "if (active)" in dispatch_source
+
+def test_panel_binds_apply_and_inspection_to_native_layer_ids():
+    panel = (
+        Path(__file__).parents[1]
+        / "keepframe"
+        / "after_effects"
+        / "assets"
+        / "keepframe_panel.jsx"
+    ).read_text(encoding="utf-8")
+    inventory_source = panel.split("function inspectLayerInventory", 1)[1].split(
+        "function finiteCompPoint", 1
+    )[0]
+    inspect_validation = panel.split("function validateInspectRequest", 1)[1].split(
+        "function hasOwnValue", 1
+    )[0]
+    apply_validation = panel.split("function validateApplyContext", 1)[1].split(
+        "function authorizeOperations", 1
+    )[0]
+    assert "nativeLayerId(layer)" in inventory_source
+    assert "native_layer_id" in inventory_source
+    assert "layer_native_ids: layerNativeIds" in panel
+    assert "layer_native_ids: true" in inspect_validation
+    assert "mappedLayerNativeInventory" in apply_validation
+    assert "native layer id does not match" in apply_validation

@@ -285,6 +285,7 @@ def test_mapped_batch_payload_crosses_mcp_canonical_boundary():
             "baseline": True,
             "locked_source_ids": [],
             "layer_sources": batch.start_layer_sources,
+            "layer_native_ids": {},
             "project_id": "project",
             "plan_id": "plan",
             "session_id": "session",

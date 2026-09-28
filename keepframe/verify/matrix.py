@@ -56,12 +56,53 @@ def _runs(moving: np.ndarray) -> list[tuple[int, int]]:
     return [(a, b) for a, b in runs if b - a + 1 >= 2]
 
 
-def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
+def _validated_matrices(scene: Scene, matrices: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    """Validate source animation matrices before deriving motion signals."""
+    expected = {element.id for element in scene.elements}
+    if set(matrices) != expected:
+        missing = sorted(expected - set(matrices), key=str)
+        extra = sorted(set(matrices) - expected, key=str)
+        detail = []
+        if missing:
+            detail.append(f"missing sources {missing}")
+        if extra:
+            detail.append(f"unknown sources {extra}")
+        raise ValueError("motion matrices do not match scene elements: " + ", ".join(detail))
+    out: dict[str, np.ndarray] = {}
+    expected_shape = (scene.frames, len(COLS))
+    for source_id in sorted(expected):
+        matrix = matrices[source_id]
+        if not isinstance(matrix, np.ndarray):
+            raise ValueError(f"motion matrix for {source_id} must be a float array")
+        if matrix.shape != expected_shape:
+            raise ValueError(
+                f"motion matrix for {source_id} has shape {matrix.shape}, expected {expected_shape}"
+            )
+        if not np.issubdtype(matrix.dtype, np.floating):
+            raise ValueError(f"motion matrix for {source_id} must have a floating dtype")
+        rows = np.isfinite(matrix).all(axis=1) | np.isnan(matrix).all(axis=1)
+        if not bool(rows.all()):
+            raise ValueError(f"motion matrix for {source_id} has partial NaN or non-finite rows")
+        out[source_id] = matrix
+    return out
+
+
+def extract_motions_from_matrices(
+    scene: Scene,
+    matrices: dict[str, np.ndarray],
+    eps: dict[str, float] | None = None,
+) -> list[Motion]:
+    """Extract motions using the same signals as :func:`extract_motions`.
+
+    Inactive source frames are represented by rows containing only NaNs.  This
+    function intentionally does not infer visibility from the scene: callers
+    providing observed matrices own the active-frame mask.
+    """
+    matrices = _validated_matrices(scene, matrices)
     eps = {**EPS, **(eps or {})}
-    mat = animation_matrix(scene)
     motions: list[Motion] = []
     for el in scene.elements:
-        m = mat[el.id]
+        m = matrices[el.id]
         d = np.diff(m, axis=0)  # d[f] = m[f+1]-m[f]
         found: list[tuple[int, str, int, tuple | None, float]] = []
         signals = {
@@ -89,6 +130,20 @@ def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[M
                 found.append((start, typ, end, direction, mag))
         found.sort(key=lambda r: (r[0], TYPE_ORDER.index(r[1])))
         for n, (start, typ, end, direction, mag) in enumerate(found, 1):
-            motions.append(Motion(id=f"m_{el.id}_{n}", element=el.id, type=typ, start=start, end=end,
-                                  dir=direction, mag=mag, dur=end - start))
+            motions.append(
+                Motion(
+                    id=f"m_{el.id}_{n}",
+                    element=el.id,
+                    type=typ,
+                    start=start,
+                    end=end,
+                    dir=direction,
+                    mag=mag,
+                    dur=end - start,
+                )
+            )
     return motions
+
+
+def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
+    return extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps)

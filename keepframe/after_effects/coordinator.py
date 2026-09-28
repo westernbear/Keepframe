@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import math
@@ -14,7 +15,7 @@ import time
 import zlib
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator, Literal, Mapping, Protocol, cast
+from typing import Any, BinaryIO, Iterator, Literal, Mapping, Protocol, Sequence, cast
 from pydantic import ValidationError
 
 from ..render.plan import (
@@ -27,10 +28,12 @@ from ..render.plan import (
     load_render_plan_state,
     validate_render_plan_execution,
 )
+from .planning import current_operation_manifest
 
 from .models import (
     AEArtifactReservation,
     AECheckpoint,
+    AECheckpointContext,
     AECommand,
     AECommandResult,
     AEPublishedArtifact,
@@ -39,7 +42,6 @@ from .models import (
     CommandKind,
     canonical_json,
 )
-
 
 class CoordinatorConflict(RuntimeError):
     """A stale, illegal, or contradictory coordinator operation."""
@@ -56,12 +58,12 @@ _COMMAND_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,255}$")
 _COMMAND_STATES: dict[CommandKind, frozenset[str]] = {
     "heartbeat": frozenset({"baseline", "iterating"}),
     "create_project": frozenset({"baseline"}),
-    "open_project": frozenset({"baseline"}),
+    "open_project": frozenset({"baseline", "iterating", "manual_edit"}),
     "import_asset": frozenset({"baseline"}),
-    "apply_batch": frozenset({"iterating"}),
-    "inspect_layers": frozenset({"baseline", "iterating"}),
-    "save_checkpoint": frozenset({"baseline", "iterating"}),
-    "render_preview": frozenset({"baseline", "iterating"}),
+    "apply_batch": frozenset({"baseline", "iterating"}),
+    "inspect_layers": frozenset({"baseline", "iterating", "pause_requested", "manual_edit"}),
+    "save_checkpoint": frozenset({"baseline", "iterating", "pause_requested"}),
+    "render_preview": frozenset({"baseline", "iterating", "pause_requested", "manual_edit"}),
     "render_final": frozenset({"finalizing"}),
     "package_project": frozenset({"finalizing"}),
     "sync_manual": frozenset({"manual_edit"}),
@@ -77,13 +79,35 @@ _NO_STATE_RESULT_KINDS: frozenset[CommandKind] = frozenset(
     }
 )
 _ARTIFACT_KINDS: frozenset[ArtifactKind] = frozenset({"png", "mp4", "aep", "zip"})
+_COMMAND_FAILURE_REASONS: dict[CommandKind, str] = {
+    "heartbeat": "connector_failed",
+    "create_project": "project_failed",
+    "open_project": "project_failed",
+    "import_asset": "asset_failed",
+    "apply_batch": "apply_failed",
+    "inspect_layers": "inspection_failed",
+    "save_checkpoint": "upload_failed",
+    "render_preview": "render_failed",
+    "render_final": "render_failed",
+    "package_project": "package_failed",
+    "sync_manual": "upload_failed",
+}
 _MIME = {
     "png": "image/png",
     "mp4": "video/mp4",
     "aep": "application/vnd.adobe.after-effects",
     "zip": "application/zip",
 }
-
+_MAX_PROTOCOL_BYTES = 1024 * 1024
+_MAX_COMMAND_ENVELOPE_BYTES = 64 * 1024
+_MAX_COMMAND_PAYLOAD_BYTES = _MAX_PROTOCOL_BYTES - _MAX_COMMAND_ENVELOPE_BYTES
+# Checkpoint contexts stay server-side in one compressed, content-addressed
+# sidecar per digest. They are not connector protocol data and therefore do
+# not inherit the 1 MiB wire ceiling.
+# Keep a full hour for the longest MCP operation plus result validation and
+# streaming all reserved artifacts before the lease can settle a disconnect.
+_MAX_COMMAND_LIFETIME_SECONDS = 24 * 60 * 60.0
+_LONG_COMMAND_LEASE_SECONDS = 60 * 60.0
 
 def _now() -> float:
     return time.time()
@@ -111,12 +135,37 @@ def _finite_time(value: float, label: str) -> float:
     return result
 
 
-def _payload_digest(value: Any) -> str:
+def _protocol_bytes(
+    value: Any,
+    label: str,
+    *,
+    limit: int = _MAX_PROTOCOL_BYTES,
+) -> bytes:
     try:
-        return hashlib.sha256(canonical_json(value)).hexdigest()
+        encoded = canonical_json(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise CoordinatorConflict("payload must be finite canonical JSON") from exc
+        raise CoordinatorConflict(f"{label} must be finite canonical JSON") from exc
+    if len(encoded) > limit:
+        raise CoordinatorConflict(f"{label} exceeds its bounded size")
+    return encoded
 
+
+def _payload_digest(value: Any) -> str:
+    return hashlib.sha256(_protocol_bytes(value, "payload")).hexdigest()
+
+
+def _command_payload_digest(value: Any) -> str:
+    return hashlib.sha256(
+        _protocol_bytes(value, "command payload", limit=_MAX_COMMAND_PAYLOAD_BYTES)
+    ).hexdigest()
+
+
+def _checkpoint_context_digest(value: Any) -> str:
+    try:
+        encoded = canonical_json(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise CoordinatorConflict("checkpoint context must be finite canonical JSON") from exc
+    return hashlib.sha256(encoded).hexdigest()
 _FORBIDDEN_PAYLOAD_KEYS = {
     "path",
     "url",
@@ -128,11 +177,44 @@ _FORBIDDEN_PAYLOAD_KEYS = {
     "filepath",
     "address",
 }
+_ARTIFACT_PAYLOAD_FIELDS = frozenset(
+    {"reservation_id", "kind", "filename", "directory", "length"}
+)
 
 
-def _validate_command_payload(value: Any) -> None:
+def _validate_command_artifacts(value: Any) -> None:
+    if not isinstance(value, (list, tuple)) or len(value) > 32:
+        raise CoordinatorConflict("command artifacts are invalid")
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != _ARTIFACT_PAYLOAD_FIELDS - {"length"} and set(
+            item
+        ) != _ARTIFACT_PAYLOAD_FIELDS:
+            raise CoordinatorConflict("command artifact fields are invalid")
+        reservation_id = item["reservation_id"]
+        if not isinstance(reservation_id, str) or not _SAFE_COMPONENT.fullmatch(reservation_id):
+            raise CoordinatorConflict("command artifact reservation is invalid")
+        if item["kind"] not in _ARTIFACT_KINDS:
+            raise CoordinatorConflict("command artifact kind is invalid")
+        filename = item["filename"]
+        if not isinstance(filename, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", filename
+        ):
+            raise CoordinatorConflict("command artifact filename is invalid")
+        if item["directory"] not in {"checkpoints", "renders"}:
+            raise CoordinatorConflict("command artifact directory is invalid")
+        length = item.get("length")
+        if length is not None and (
+            not isinstance(length, int) or isinstance(length, bool) or length < 0
+        ):
+            raise CoordinatorConflict("command artifact length is invalid")
+
+
+def _validate_command_payload(value: Any, *, allow_artifacts: bool = False) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
+            if allow_artifacts and key == "artifacts":
+                _validate_command_artifacts(item)
+                continue
             if not isinstance(key, str) or key.lower() in _FORBIDDEN_PAYLOAD_KEYS or any(
                 token in key.lower() for token in ("path", "url", "uri", "code", "script", "expression")
             ):
@@ -152,6 +234,9 @@ def _validate_command_payload(value: Any) -> None:
             or any(part == ".." for part in re.split(r"[/\\\\]", value))
         ):
             raise CoordinatorConflict("command payload contains an arbitrary path")
+
+
+
 
 
 def _read_json(path: Path, default: Any = None) -> Any:
@@ -198,6 +283,9 @@ _MAX_ZIP_ENTRIES = 4096
 _MAX_ZIP_CENTRAL_SIZE = 16 * 1024 * 1024
 _MAX_ZIP_METADATA = 1 * 1024 * 1024
 _MAX_PNG_CHUNKS = 1_000_000
+_MAX_PNG_WIDTH = 1280
+_MAX_PNG_HEIGHT = 720
+_MAX_PNG_PIXELS = _MAX_PNG_WIDTH * _MAX_PNG_HEIGHT
 _MAX_BOXES = 1_000_000
 
 
@@ -274,7 +362,13 @@ def _validate_png(path: Path, length: int) -> None:
                 if seen_ihdr or chunk_length != 13:
                     raise CoordinatorConflict("artifact PNG IHDR is invalid")
                 width, height = struct.unpack(">II", ihdr[:8])
-                if width == 0 or height == 0:
+                if (
+                    width == 0
+                    or height == 0
+                    or width > _MAX_PNG_WIDTH
+                    or height > _MAX_PNG_HEIGHT
+                    or width * height > _MAX_PNG_PIXELS
+                ):
                     raise CoordinatorConflict("artifact PNG dimensions are invalid")
                 seen_ihdr = True
             elif not seen_ihdr:
@@ -415,9 +509,44 @@ def _contains_identifier(value: object, identifier: str) -> bool:
 
 
 def _checkpoint_index(session: AESession) -> int | None:
-    if not session.checkpoints:
-        return None
-    return max(item.index for item in session.checkpoints)
+    if session.open_checkpoint is not None and any(
+        item.index == session.open_checkpoint and item.lineage_valid
+        for item in session.checkpoints
+    ):
+        return session.open_checkpoint
+    if session.selected_checkpoint is not None and any(
+        item.index == session.selected_checkpoint
+        and item.lineage_valid
+        for item in session.checkpoints
+    ):
+        return session.selected_checkpoint
+    return max(
+        (item.index for item in session.checkpoints if item.lineage_valid),
+        default=None,
+    )
+
+
+def _manual_reopen_checkpoint(session: AESession) -> int | None:
+    """Choose the immutable AE checkpoint manual editing must reopen."""
+    if not session.baseline_complete:
+        partial = next((item for item in session.checkpoints if item.index == 0), None)
+        if partial is not None:
+            return 0
+    if session.selected_checkpoint is not None and any(
+        item.index == session.selected_checkpoint
+        and item.passed
+        and item.lineage_valid
+        for item in session.checkpoints
+    ):
+        return session.selected_checkpoint
+    return max(
+        (
+            item.index
+            for item in session.checkpoints
+            if item.passed and item.lineage_valid
+        ),
+        default=None,
+    )
 
 
 def _paused(status: str) -> bool:
@@ -462,6 +591,88 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _operation_records(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, Mapping):
+        return ()
+    raw = value.get("operations")
+    if raw is None and isinstance(value.get("batch"), Mapping):
+        raw = value["batch"].get("operations")
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    return tuple(item for item in raw if isinstance(item, Mapping))
+
+
+def _inspection_inventory(value: Any) -> set[str] | None:
+    """Extract the source-less IDs from an exact layer inventory."""
+    records: set[str] = set()
+    saw_inventory = False
+
+    def walk(item: Any) -> None:
+        nonlocal saw_inventory
+        if isinstance(item, Mapping):
+            for key in ("layers", "layer_inventory", "inventory"):
+                if key in item:
+                    saw_inventory = True
+            layer_sources = item.get("layer_sources")
+            if isinstance(layer_sources, Mapping):
+                saw_inventory = True
+                for identifier, source in layer_sources.items():
+                    if isinstance(identifier, str) and source is None:
+                        records.add(identifier)
+            identifier = item.get("layer_instance_id", item.get("instance_id"))
+            if isinstance(identifier, str):
+                source = item.get("source_element_id", item.get("source_id"))
+                if source is None:
+                    records.add(identifier)
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                walk(child)
+
+    walk(value)
+    if not saw_inventory and not records:
+        return None
+    return records
+
+
+def _operation_instance_ids(value: Any) -> set[str]:
+    identifiers: set[str] = set()
+    for operation in _operation_records(value):
+        for key in ("layer_instance_id", "parent_instance_id"):
+            identifier = operation.get(key)
+            if isinstance(identifier, str):
+                identifiers.add(identifier)
+    return identifiers
+
+
+def _validate_apply_payload(payload: Mapping[str, Any], expected_state: str) -> None:
+    baseline = payload.get("baseline")
+    if type(baseline) is not bool or baseline is not (expected_state == "baseline"):
+        raise CoordinatorConflict("apply_batch baseline does not match expected state")
+
+
+def _command_checkpoint(session: AESession, kind: CommandKind, expected_state: str) -> int | None:
+    if kind in {"render_final", "package_project"} or expected_state == "finalizing":
+        return session.selected_checkpoint
+    if (
+        kind not in {"open_project", "save_checkpoint"}
+        and expected_state in {"iterating", "manual_edit"}
+        and session.selected_checkpoint is not None
+        and session.selected_checkpoint != session.open_checkpoint
+    ):
+        return session.selected_checkpoint
+    return _checkpoint_index(session)
+
+
+def _validate_sync_payload(payload: Mapping[str, Any]) -> None:
+    prepare = payload.get("prepare_manual")
+    if prepare is not None and type(prepare) is not bool:
+        raise CoordinatorConflict("prepare_manual must be a boolean")
+
+
+
+
 class AECoordinator:
     _RECOVERY_GUARD = threading.RLock()
     _LIVE_INSTANCES: dict[str, "AECoordinator"] = {}
@@ -492,6 +703,7 @@ class AECoordinator:
         self._state_path = self.ae_dir / "session.json"
         self._commands_path = self.ae_dir / "commands.json"
         self._reservations_path = self.ae_dir / "reservations.json"
+        self._checkpoint_context_dir = self.ae_dir / "checkpoint-contexts"
         self._events_path = self.ae_dir / "events.jsonl"
         try:
             _ensure_project_path(self.root, self.plan_dir, "render plan directory", kind="directory")
@@ -504,7 +716,7 @@ class AECoordinator:
             )
         except PlanConflict as exc:
             raise CoordinatorConflict(str(exc)) from exc
-        for path in (self.ae_dir, self.artifacts_dir):
+        for path in (self.ae_dir, self.artifacts_dir, self._checkpoint_context_dir):
             _ensure_no_symlink(path, kind="directory")
             path.mkdir(parents=True, exist_ok=True)
         _ensure_no_symlink(self._events_path, kind="file")
@@ -520,7 +732,28 @@ class AECoordinator:
         except PlanConflict as exc:
             raise CoordinatorConflict(str(exc)) from exc
 
-    def _load_session_unlocked(self) -> AESession:
+    def _hydrate_checkpoint_summary_unlocked(self, summary: AECheckpoint) -> AECheckpoint:
+        digest = summary.context_digest
+        if digest is None:
+            return summary
+        checkpoint = self._load_checkpoint_context_unlocked(digest)
+        if checkpoint is None:
+            raise CoordinatorConflict("checkpoint context is unavailable")
+        if (
+            checkpoint.index != summary.index
+            or checkpoint.provenance != summary.provenance
+            or checkpoint.passed != summary.passed
+            or checkpoint.lineage_valid != summary.lineage_valid
+            or checkpoint.aep_artifact_id != summary.aep_artifact_id
+            or checkpoint.preview_artifact_id != summary.preview_artifact_id
+            or checkpoint.frame_artifact_ids != summary.frame_artifact_ids
+            or checkpoint.failure != summary.failure
+        ):
+            raise CoordinatorConflict("checkpoint summary does not match context")
+        return checkpoint.model_copy(update={"context_digest": None})
+
+    def _load_session_unlocked(self, *, hydrate_checkpoints: bool = True) -> AESession:
+        _ensure_no_symlink(self._state_path, kind="file")
         raw = _read_json(self._state_path)
         try:
             session = AESession.model_validate_json(canonical_json(raw))
@@ -530,12 +763,53 @@ class AECoordinator:
             raise CoordinatorConflict("persisted AE session ownership mismatch")
         if session.plan_digest != self.plan.digest:
             raise CoordinatorConflict("persisted AE session plan digest mismatch")
-        return session
+        if not hydrate_checkpoints:
+            return session
+        hydrated = tuple(
+            self._hydrate_checkpoint_summary_unlocked(summary)
+            for summary in session.checkpoints
+        )
+        return session.model_copy(update={"checkpoints": hydrated})
+
+    def checkpoint(self, index: int) -> AECheckpoint:
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            raise CoordinatorConflict("checkpoint index is invalid")
+        with self._locked():
+            session = self._load_session_unlocked(hydrate_checkpoints=False)
+            summary = next(
+                (item for item in session.checkpoints if item.index == index),
+                None,
+            )
+            if summary is None:
+                raise CoordinatorConflict("checkpoint does not exist")
+            return self._hydrate_checkpoint_summary_unlocked(summary)
 
     def _write_session_unlocked(self, session: AESession) -> None:
-        _atomic_write(self._state_path, _canonical_mapping_json(session.model_dump(mode="json")))
+        compact_checkpoints: list[dict[str, Any]] = []
+        for checkpoint in session.checkpoints:
+            digest = checkpoint.context_digest
+            if digest is None:
+                digest = self._write_checkpoint_context_unlocked(checkpoint)
+            summary = checkpoint.model_dump(mode="json")
+            summary.update(
+                {
+                    "context_digest": digest,
+                    "inspection": {},
+                    "operations": [],
+                    "verifier_report": {},
+                    "model_response": {},
+                    "capability_manifest": {},
+                    "dependency_manifest": {},
+                }
+            )
+            compact_checkpoints.append(summary)
+        payload = session.model_dump(mode="json", exclude={"checkpoints"})
+        payload["checkpoints"] = compact_checkpoints
+        _atomic_write(self._state_path, _canonical_mapping_json(payload))
+
 
     def _load_commands_unlocked(self) -> list[AECommand]:
+        _ensure_no_symlink(self._commands_path, kind="file")
         raw = _read_json(self._commands_path, default=[])
         if not isinstance(raw, list):
             raise CoordinatorConflict("persisted command journal is invalid")
@@ -564,6 +838,339 @@ class AECoordinator:
     def _write_commands_unlocked(self, commands: list[AECommand]) -> None:
         payload = [item.model_dump(mode="json") for item in sorted(commands, key=lambda item: item.sequence)]
         _atomic_write(self._commands_path, canonical_json(payload) + b"\n")
+
+    def command_history(self) -> tuple[AECommand, ...]:
+        """Return the durable command journal without mutating coordinator state."""
+        with self._locked():
+            return tuple(sorted(self._load_commands_unlocked(), key=lambda item: item.sequence))
+
+    def get_command(self, command_id: str) -> AECommand:
+        command_id = _safe_command_id(command_id)
+        with self._locked():
+            command = next(
+                (item for item in self._load_commands_unlocked() if item.id == command_id),
+                None,
+            )
+            if command is None:
+                raise CoordinatorConflict("command was not found")
+            return command
+
+    def command(self, command_id: str) -> AECommand:
+        return self.get_command(command_id)
+
+    def _assert_current_operation_manifest(self) -> None:
+        try:
+            current = current_operation_manifest()
+        except Exception as exc:
+            raise CoordinatorConflict("current operation manifest is unavailable") from exc
+        if self.plan.permitted_operations != current:
+            raise CoordinatorConflict("plan operation manifest does not match current operation manifest")
+
+    @staticmethod
+    def _append_tombstones(
+        issued: set[str],
+        active: set[str],
+        tombstones: set[str],
+        operations: tuple[Mapping[str, Any], ...],
+    ) -> None:
+        for operation in operations:
+            identifier = operation.get("layer_instance_id")
+            if not isinstance(identifier, str):
+                continue
+            kind = operation.get("kind")
+            if kind == "add_layer" and operation.get("source_element_id") is None:
+                issued.add(identifier)
+                active.add(identifier)
+            elif kind == "remove_layer":
+                if identifier in issued or identifier in active:
+                    tombstones.add(identifier)
+                active.discard(identifier)
+
+    def _instance_id_tombstones_unlocked(
+        self,
+        session: AESession,
+        commands: list[AECommand],
+        *,
+        extra_checkpoints: tuple[AECheckpoint, ...] = (),
+    ) -> tuple[str, ...]:
+        """Rebuild source-less ID tombstones from one checkpoint lineage.
+
+        A checkpoint may be present in both the completed command result and
+        the session record.  Indexing first makes the inspection snapshot
+        unique, while the selected passing checkpoint remains authoritative
+        over failed candidates that were later rolled back.
+        """
+        issued = set(session.issued_instance_id_tombstones)
+        tombstones = set(session.issued_instance_id_tombstones)
+        active: set[str] = set()
+
+        lineage: dict[int, AECheckpoint] = {}
+
+        def add_checkpoint(checkpoint: AECheckpoint) -> None:
+            existing = lineage.get(checkpoint.index)
+            if existing is not None and existing != checkpoint:
+                if (
+                    checkpoint.index == 0
+                    and existing.provenance == "baseline"
+                    and checkpoint.provenance == "baseline"
+                    and not existing.passed
+                    and checkpoint.passed
+                ):
+                    lineage[checkpoint.index] = checkpoint
+                    return
+                raise CoordinatorConflict("checkpoint lineage contains conflicting records")
+            lineage[checkpoint.index] = checkpoint
+
+        for checkpoint in session.checkpoints:
+            add_checkpoint(checkpoint)
+        for command in sorted(commands, key=lambda item: item.sequence):
+            result = command.result
+            if result is None or not isinstance(result.get("checkpoint"), Mapping):
+                continue
+            try:
+                checkpoint = _checkpoint_from(result["checkpoint"])
+            except CoordinatorConflict:
+                # Result validation owns malformed checkpoint errors; this
+                # helper only reconstructs durable tombstones.
+                continue
+            add_checkpoint(checkpoint)
+        for checkpoint in extra_checkpoints:
+            add_checkpoint(checkpoint)
+
+        operation_events: list[tuple[int, int, tuple[Mapping[str, Any], ...]]] = []
+        for command in sorted(commands, key=lambda item: item.sequence):
+            if (
+                command.kind != "apply_batch"
+                or command.status != "completed"
+                or command.result is None
+                or command.result.get("ok") is False
+            ):
+                continue
+            checkpoint = command.expected_checkpoint
+            operation_events.append(
+                (
+                    -1 if checkpoint is None else checkpoint,
+                    command.sequence,
+                    _operation_records(command.payload),
+                )
+            )
+        operation_events.sort(key=lambda item: (item[0], item[1]))
+        event_index = 0
+        checkpoint_active: dict[int, set[str]] = {}
+        checkpoint_branch_ids: dict[int, set[str]] = {}
+        durable_tombstones: set[str] = set()
+        rollback_tombstones: set[str] = set()
+
+        def added_instance_ids(operations: tuple[Mapping[str, Any], ...]) -> set[str]:
+            identifiers: set[str] = set()
+            for operation in operations:
+                if operation.get("kind") != "add_layer":
+                    continue
+                if operation.get("source_element_id") is not None:
+                    continue
+                identifier = operation.get("layer_instance_id")
+                if isinstance(identifier, str):
+                    identifiers.add(identifier)
+            return identifiers
+
+        def apply_operations(
+            operations: tuple[Mapping[str, Any], ...],
+            *,
+            rollback: bool,
+        ) -> None:
+            before = set(tombstones)
+            self._append_tombstones(issued, active, tombstones, operations)
+            added = tombstones - before
+            durable_tombstones.update(added)
+            if rollback:
+                rollback_tombstones.update(added)
+
+        def inspect(checkpoint: AECheckpoint) -> set[str] | None:
+            nonlocal active
+            inventory = _inspection_inventory(checkpoint.inspection)
+            if inventory is None:
+                return None
+            removed = active - inventory
+            tombstones.update(removed)
+            if checkpoint.passed:
+                durable_tombstones.update(removed)
+            issued.update(inventory)
+            active = set(inventory)
+            return inventory
+        for checkpoint in sorted(lineage.values(), key=lambda item: item.index):
+            branch_ids = checkpoint_branch_ids.setdefault(checkpoint.index, set())
+            while (
+                event_index < len(operation_events)
+                and operation_events[event_index][0] < checkpoint.index
+            ):
+                operations = operation_events[event_index][2]
+                branch_ids.update(added_instance_ids(operations))
+                apply_operations(operations, rollback=not checkpoint.passed)
+                event_index += 1
+            branch_ids.update(added_instance_ids(checkpoint.operations))
+            apply_operations(checkpoint.operations, rollback=not checkpoint.passed)
+            inventory = inspect(checkpoint)
+            if inventory is not None:
+                branch_ids.update(inventory)
+            checkpoint_active[checkpoint.index] = set(active)
+        while event_index < len(operation_events):
+            apply_operations(operation_events[event_index][2], rollback=False)
+            event_index += 1
+
+        # ``selected_checkpoint`` is a UI/finalization choice; the active
+        # iteration lineage is the latest passing checkpoint.
+        passing = [
+            item.index
+            for item in lineage.values()
+            if item.passed and item.lineage_valid
+        ]
+        selected_index = max(passing) if passing else None
+        authoritative = checkpoint_active.get(selected_index) if selected_index is not None else None
+        discarded_branch_ids = {
+            identifier
+            for index, identifiers in checkpoint_branch_ids.items()
+            if index != selected_index
+            for identifier in identifiers
+        }
+        if authoritative is None:
+            tombstones.update(discarded_branch_ids)
+        else:
+            authoritative = set(authoritative)
+            issued.update(authoritative)
+            # IDs observed only on a discarded branch were still issued by
+            # the server and must never be recycled.
+            tombstones.update(discarded_branch_ids - authoritative)
+            clearable = (
+                (tombstones - durable_tombstones) | rollback_tombstones
+            ) & authoritative
+            tombstones.difference_update(clearable)
+        return tuple(sorted(tombstones))
+
+    def _checkpoint_context_path(self, digest: str) -> Path:
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise CoordinatorConflict("checkpoint context digest is invalid")
+        _ensure_no_symlink(self._checkpoint_context_dir, kind="directory")
+        return self._checkpoint_context_dir / f"{digest}.json.gz"
+
+    def _load_checkpoint_context_unlocked(self, digest: str) -> AECheckpoint | None:
+        path = self._checkpoint_context_path(digest)
+        _ensure_no_symlink(path, kind="file")
+        if not path.exists():
+            return None
+        try:
+            with gzip.open(path, "rb") as stream:
+                encoded = stream.read()
+            checkpoint = AECheckpoint.model_validate_json(encoded)
+        except (OSError, EOFError, gzip.BadGzipFile, ValidationError, TypeError, ValueError) as exc:
+            raise CoordinatorConflict("persisted checkpoint context is invalid") from exc
+        if _checkpoint_context_digest(checkpoint.model_dump(mode="json")) != digest:
+            raise CoordinatorConflict("checkpoint context digest mismatch")
+        return checkpoint.model_copy(update={"context_digest": digest})
+
+    def _write_checkpoint_context_unlocked(self, checkpoint: AECheckpoint) -> str:
+        context = checkpoint.model_copy(update={"context_digest": None})
+        encoded = canonical_json(context.model_dump(mode="json"))
+        digest = hashlib.sha256(encoded).hexdigest()
+        path = self._checkpoint_context_path(digest)
+        existing = self._load_checkpoint_context_unlocked(digest)
+        if existing is not None:
+            if existing.model_copy(update={"context_digest": None}) != context:
+                raise CoordinatorConflict("checkpoint context digest is already bound")
+            return digest
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{digest}.",
+            suffix=".tmp",
+            dir=str(self._checkpoint_context_dir),
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "wb") as raw:
+                with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed:
+                    for offset in range(0, len(encoded), 1024 * 1024):
+                        compressed.write(encoded[offset : offset + 1024 * 1024])
+                raw.flush()
+                os.fsync(raw.fileno())
+            _ensure_no_symlink(path, kind="file")
+            os.replace(temporary, path)
+            temporary = None
+            try:
+                directory_fd = os.open(self._checkpoint_context_dir, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
+        except OSError as exc:
+            raise CoordinatorConflict("could not persist checkpoint context") from exc
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
+        return digest
+
+    def _store_checkpoint_context_unlocked(
+        self,
+        checkpoint: AECheckpoint,
+        *,
+        command_id: str,
+        session_id: str,
+    ) -> str:
+        del command_id, session_id
+        return self._write_checkpoint_context_unlocked(checkpoint)
+
+    def _checkpoint_context_for_command_unlocked(
+        self,
+        command: AECommand,
+    ) -> AECheckpoint:
+        payload = command.payload
+        digest = payload.get("checkpoint_context_digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise CoordinatorConflict("checkpoint context digest is missing")
+        checkpoint = self._load_checkpoint_context_unlocked(digest)
+        if checkpoint is None:
+            raise CoordinatorConflict("checkpoint context is unavailable")
+        return checkpoint
+
+    @staticmethod
+    def _result_artifact_ids(result: Mapping[str, Any]) -> set[str]:
+        identifiers: set[str] = set()
+        raw = result.get("artifacts", result.get("artifact_ids"))
+        values: list[Any] = []
+        if isinstance(raw, Mapping):
+            values.extend(raw.values())
+        elif isinstance(raw, (list, tuple)):
+            values.extend(raw)
+        for key, value in result.items():
+            if key.endswith("_artifact_id"):
+                values.append(value)
+        for value in values:
+            if isinstance(value, str):
+                identifiers.add(value)
+            elif isinstance(value, Mapping):
+                for key in ("id", "artifact_id", "reservation_id"):
+                    item = value.get(key)
+                    if isinstance(item, str):
+                        identifiers.add(item)
+        return identifiers
+
+    def _validate_checkpoint_result_unlocked(
+        self,
+        command: AECommand,
+        result: Mapping[str, Any],
+        checkpoint: AECheckpoint,
+    ) -> None:
+        expected = {
+            item.get("reservation_id")
+            for item in command.payload.get("artifacts", ())
+            if isinstance(item, Mapping)
+            and isinstance(item.get("reservation_id"), str)
+        }
+        returned = self._result_artifact_ids(result)
+        if expected and not expected.issubset(returned):
+            raise CoordinatorConflict("checkpoint result is missing committed artifacts")
 
     def _load_reservations_unlocked(self) -> list[AEArtifactReservation]:
         raw = _read_json(self._reservations_path, default=[])
@@ -628,13 +1235,24 @@ class AECoordinator:
         after: AESession,
         data: Mapping[str, Any],
     ) -> bytes:
+        safe_data = _json_safe(data)
+        if isinstance(safe_data, Mapping) and isinstance(safe_data.get("checkpoint"), Mapping):
+            checkpoint = _checkpoint_from(safe_data["checkpoint"])
+            digest = _checkpoint_context_digest(checkpoint.model_dump(mode="json"))
+            safe_data = dict(safe_data)
+            safe_data["checkpoint"] = {
+                "index": checkpoint.index,
+                "provenance": checkpoint.provenance,
+                "passed": checkpoint.passed,
+                "context_digest": digest,
+            }
         record = {
             "event": event,
             "before_revision": before.revision,
             "after_revision": after.revision,
             "before_status": before.status,
             "after_status": after.status,
-            "data": _json_safe(data),
+            "data": safe_data,
         }
         try:
             return canonical_json(record) + b"\n"
@@ -683,8 +1301,9 @@ class AECoordinator:
                 session = self._load_session_unlocked()
                 commands = self._load_commands_unlocked()
                 session = self._reconcile_completed_unlocked(session, commands)
+                needs_restart_pause = session.status in _ACTIVE_STATES or session.status == "pause_requested"
                 self._revoke_queued_commands_unlocked(commands)
-                if session.status not in _ACTIVE_STATES:
+                if not needs_restart_pause:
                     return
                 recovered = session.model_copy(
                     update={
@@ -708,12 +1327,39 @@ class AECoordinator:
         )
         state_matches = state_matches or (
             _paused(session.status)
-            and session.reason in {"user", "disconnect", "timeout", "unpair", "server_restart"}
+            and session.reason in {
+                "user",
+                "disconnect",
+                "timeout",
+                "unpair",
+                "server_restart",
+                "vision_unsupported",
+                "model_paused",
+                "capabilities_changed",
+            }
             and command.expected_state in allowed_states
         )
         if not state_matches:
             return False
-        return command.expected_checkpoint == _checkpoint_index(session)
+        if command.expected_state == "manual_edit" and command.kind in {
+            "inspect_layers",
+            "render_preview",
+            "sync_manual",
+        }:
+            workflow = command.payload.get("workflow")
+            if not isinstance(workflow, Mapping):
+                return session.manual_attempt_id is None
+            attempt = workflow.get("manual_attempt_id")
+            epoch = workflow.get("manual_epoch")
+            if session.manual_attempt_id is not None and (
+                attempt != session.manual_attempt_id or epoch != session.manual_epoch
+            ):
+                return False
+        return command.expected_checkpoint == _command_checkpoint(
+            session,
+            command.kind,
+            command.expected_state,
+        )
 
     def _validate_committed_artifact_unlocked(
         self,
@@ -768,6 +1414,27 @@ class AECoordinator:
         )
         for artifact_id in checkpoint.frame_artifact_ids:
             self._validate_committed_artifact_unlocked(session, reservations, artifact_id, "png")
+
+    def _validate_manual_preparation_artifacts_unlocked(
+        self,
+        session: AESession,
+        command: AECommand,
+    ) -> None:
+        records = command.payload.get("artifacts")
+        if not isinstance(records, list) or len(records) != 1:
+            raise CoordinatorConflict("manual preparation requires one AEP artifact")
+        record = records[0]
+        if not isinstance(record, Mapping) or record.get("kind") != "aep":
+            raise CoordinatorConflict("manual preparation artifact must be an AEP")
+        artifact_id = record.get("reservation_id", record.get("id"))
+        if not isinstance(artifact_id, str):
+            raise CoordinatorConflict("manual preparation artifact id is invalid")
+        self._validate_committed_artifact_unlocked(
+            session,
+            self._load_reservations_unlocked(),
+            artifact_id,
+            "aep",
+        )
 
 
     @staticmethod
@@ -880,7 +1547,7 @@ class AECoordinator:
                 or not self._command_state_matches(current, command)
             ):
                 continue
-            updated = self._result_state_unlocked(current, command)
+            updated = self._result_state_unlocked(current, command, commands)
             if updated != current:
                 self._commit_transition_unlocked(
                     current,
@@ -894,6 +1561,8 @@ class AECoordinator:
     @staticmethod
     def _late_pause_updates(session: AESession) -> dict[str, Any] | None:
         if session.status == "pause_requested":
+            if session.checkpoint_required:
+                return None
             reason = session.reason or "user"
             return {"status": f"paused:{reason}", "reason": reason}
         if _paused(session.status) and session.reason in {
@@ -902,17 +1571,81 @@ class AECoordinator:
             "timeout",
             "unpair",
             "server_restart",
+            "vision_unsupported",
+            "model_paused",
         }:
             return {}
         return None
+    def _inspection_capabilities_match_unlocked(self, result: Mapping[str, Any]) -> bool:
+        inspection: Mapping[str, Any] | None = None
+        if isinstance(result.get("inspection"), Mapping):
+            inspection = result["inspection"]
+        elif isinstance(result.get("result"), Mapping) and isinstance(
+            result["result"].get("inspection"), Mapping
+        ):
+            inspection = result["result"]["inspection"]
+        elif isinstance(result.get("schema_version"), str):
+            inspection = result
+        if inspection is None:
+            return False
+        heartbeat = inspection.get("heartbeat")
+        if not isinstance(heartbeat, Mapping):
+            return False
+        if isinstance(heartbeat.get("capabilities"), Mapping):
+            return False
+        if heartbeat.get("capability_hash") != self.plan.capability_hash:
+            return False
+        manifest = self.plan.capability_manifest or {}
+        for key in ("version", "major", "host"):
+            expected = manifest.get(key)
+            if expected is not None and heartbeat.get(key) != expected:
+                return False
+        return True
 
-    def _result_state_unlocked(self, session: AESession, command: AECommand) -> AESession:
+
+    def _result_state_unlocked(
+        self,
+        session: AESession,
+        command: AECommand,
+        commands: list[AECommand] | None = None,
+    ) -> AESession:
         result = command.result or {}
+        history = commands or []
         if command.sequence <= session.applied_command_sequence:
             return session
         if not _command_kind_state_matches(command):
             raise CoordinatorConflict("command kind/state matrix is invalid")
-        if result.get("ok") is False:
+
+        def failed_result() -> AESession:
+            workflow = command.payload.get("workflow")
+            manual_failure = command.kind == "sync_manual" or (
+                isinstance(workflow, Mapping)
+                and workflow.get("stage") in {
+                    "manual_inspect",
+                    "manual_render",
+                    "manual_sync",
+                    "manual_prepare",
+                }
+            )
+            common: dict[str, Any] = (
+                {"manual_attempt_id": None, "manual_sync_requested": False}
+                if manual_failure
+                else {}
+            )
+            if session.checkpoint_required and command.kind in {
+                "inspect_layers",
+                "render_preview",
+                "save_checkpoint",
+            }:
+                reason = _COMMAND_FAILURE_REASONS[command.kind]
+                return self._mark_result_applied(
+                    session,
+                    command,
+                    status=f"paused:{reason}",
+                    reason=reason,
+                    checkpoint_required=False,
+                    **common,
+                )
             if session.status == "pause_requested":
                 reason = session.reason or "command_failed"
                 return self._mark_result_applied(
@@ -920,100 +1653,353 @@ class AECoordinator:
                     command,
                     status=f"paused:{reason}",
                     reason=reason,
+                    **common,
                 )
             if session.status in _ACTIVE_STATES:
+                reason = _COMMAND_FAILURE_REASONS[command.kind]
                 return self._mark_result_applied(
                     session,
                     command,
-                    status="paused:command_failed",
-                    reason="command_failed",
+                    status=f"paused:{reason}",
+                    reason=reason,
+                    **common,
                 )
-            return self._mark_result_applied(session, command)
-
-        if command.kind in _NO_STATE_RESULT_KINDS:
-            return self._mark_result_applied(session, command)
+            return self._mark_result_applied(session, command, **common)
 
         if command.kind == "apply_batch":
-            checkpoint = _checkpoint_from(result.get("checkpoint"))
-            if not checkpoint.passed or not checkpoint.frame_artifact_ids:
-                raise CoordinatorConflict("apply_batch requires a passing checkpoint with PNG frames")
-            self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
-            current_checkpoint = _checkpoint_index(session)
-            if current_checkpoint is None or checkpoint.index <= current_checkpoint:
-                raise CoordinatorConflict("apply_batch requires a new checkpoint")
+            _validate_apply_payload(command.payload, command.expected_state)
+            # Applying a batch is deliberately a mutation-only command.  A
+            # checkpoint must come from a separate inspect/render/save sequence.
+            if "checkpoint" in result:
+                raise CoordinatorConflict("apply_batch must not return a checkpoint")
+            if result.get("ok") is False:
+                return failed_result()
             late_updates = self._late_pause_updates(session)
-            if session.status == "iterating":
-                return self._mark_result_applied(
-                    session,
-                    command,
-                    checkpoints=self._append_checkpoint(session, checkpoint),
+            user_pause = (
+                (session.status == "pause_requested" or _paused(session.status))
+                and (session.reason or "user") == "user"
+            )
+            if (
+                session.status not in {"baseline", "iterating", "pause_requested"}
+                and not user_pause
+                and late_updates is None
+            ):
+                raise CoordinatorConflict("apply_batch is illegal in the current state")
+            updates = dict(late_updates or {})
+            if user_pause:
+                updates.update(
+                    {
+                        "status": "pause_requested",
+                        "reason": "user",
+                        "checkpoint_required": True,
+                    }
                 )
-            if late_updates is not None:
-                return self._mark_result_applied(
-                    session,
-                    command,
-                    **late_updates,
-                    checkpoints=self._append_checkpoint(session, checkpoint),
+            workflow = self._baseline_workflow(command.payload)
+            if command.expected_state == "baseline" and workflow is not None:
+                mapping_digest = workflow.get("mapping_digest")
+                batch_index = workflow.get("batch_index")
+                batch_count = workflow.get("batch_count")
+                if (
+                    not isinstance(mapping_digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", mapping_digest)
+                    or not isinstance(batch_index, int)
+                    or isinstance(batch_index, bool)
+                    or batch_index < 0
+                    or not isinstance(batch_count, int)
+                    or isinstance(batch_count, bool)
+                    or batch_count < 0
+                    or batch_index >= max(batch_count, 1)
+                ):
+                    raise CoordinatorConflict("baseline progress metadata is invalid")
+                if (
+                    session.baseline_mapping_digest is not None
+                    and session.baseline_mapping_digest != mapping_digest
+                ):
+                    raise CoordinatorConflict("baseline mapping digest changed")
+                if (
+                    session.baseline_batch_count is not None
+                    and session.baseline_batch_count != batch_count
+                ):
+                    raise CoordinatorConflict("baseline batch count changed")
+                completed = set(session.baseline_completed_batches)
+                completed.add(batch_index)
+                updates.update(
+                    {
+                        "baseline_mapping_digest": mapping_digest,
+                        "baseline_batch_count": batch_count,
+                        "baseline_completed_batches": tuple(sorted(completed)),
+                    }
                 )
-            raise CoordinatorConflict("apply_batch is illegal in the current state")
-
-        if command.kind == "save_checkpoint":
-            checkpoint = _checkpoint_from(result.get("checkpoint"))
-            if not checkpoint.passed:
-                raise CoordinatorConflict("save_checkpoint requires a passing checkpoint")
-            self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
-            current_checkpoint = _checkpoint_index(session)
-            if session.status == "baseline":
-                if checkpoint.index != 0:
-                    raise CoordinatorConflict("baseline requires a checkpoint 0")
-                return self._mark_result_applied(
-                    session,
-                    command,
-                    status="iterating",
-                    checkpoints=self._append_checkpoint(session, checkpoint),
-                    reason=None,
-                )
-            if session.status == "iterating":
-                if current_checkpoint is None or checkpoint.index <= current_checkpoint:
-                    raise CoordinatorConflict("iterating requires a new passing checkpoint")
-                return self._mark_result_applied(
-                    session,
-                    command,
-                    checkpoints=self._append_checkpoint(session, checkpoint),
-                )
-            late_updates = self._late_pause_updates(session)
-            if late_updates is not None:
-                if command.expected_state == "baseline" and checkpoint.index != 0:
-                    raise CoordinatorConflict("baseline requires a checkpoint 0")
-                if current_checkpoint is not None and checkpoint.index <= current_checkpoint:
-                    raise CoordinatorConflict("save_checkpoint requires a new checkpoint")
-                return self._mark_result_applied(
-                    session,
-                    command,
-                    **late_updates,
-                    checkpoints=self._append_checkpoint(session, checkpoint),
-                )
-            raise CoordinatorConflict("save_checkpoint is illegal in the current state")
+            tombstones = self._instance_id_tombstones_unlocked(session, history)
+            if tombstones != session.issued_instance_id_tombstones:
+                updates["issued_instance_id_tombstones"] = tombstones
+            return self._mark_result_applied(session, command, **updates)
 
         if command.kind == "sync_manual":
+            _validate_sync_payload(command.payload)
+            if not self._manual_attempt_matches(session, command):
+                raise CoordinatorConflict("manual command attempt is stale")
+            if command.payload.get("prepare_manual") is True:
+                if "checkpoint" in result:
+                    raise CoordinatorConflict("manual preparation must not return a checkpoint")
+                if result.get("ok") is False:
+                    return failed_result()
+                if session.status != "manual_edit":
+                    raise CoordinatorConflict("manual preparation requires manual_edit")
+                self._validate_manual_preparation_artifacts_unlocked(session, command)
+                return self._mark_result_applied(session, command)
+
+        checkpoint_command = command.kind in {"save_checkpoint", "sync_manual"}
+        if checkpoint_command and "checkpoint" in result:
+            raise CoordinatorConflict("server checkpoint context is not accepted")
+        checkpoint: AECheckpoint | None = None
+        if checkpoint_command and result.get("ok") is not False:
+            checkpoint = self._checkpoint_context_for_command_unlocked(command)
+            self._validate_checkpoint_result_unlocked(command, result, checkpoint)
+            self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
+            if command.kind == "sync_manual" and not session.baseline_complete:
+                checkpoint = checkpoint.model_copy(
+                    update={"lineage_valid": False}
+                )
+                checkpoint = checkpoint.model_copy(
+                    update={
+                        "context_digest": self._write_checkpoint_context_unlocked(checkpoint)
+                    }
+                )
+            existing_baseline = next(
+                (item for item in session.checkpoints if item.index == 0),
+                None,
+            )
+            baseline_incomplete = (
+                not session.baseline_complete
+                or (existing_baseline is not None and not existing_baseline.passed)
+            )
+            current_checkpoint = _checkpoint_index(session)
             late_updates = self._late_pause_updates(session)
+
+            capture_pause = (
+                session.checkpoint_required
+                and session.status in {"pause_requested", "paused:user"}
+                and (session.reason or "user") == "user"
+            )
+            if capture_pause:
+                replace_incomplete_baseline = (
+                    checkpoint.index == 0
+                    and checkpoint.provenance == "baseline"
+                    and baseline_incomplete
+                )
+                if current_checkpoint is None:
+                    if checkpoint.index != 0:
+                        raise CoordinatorConflict("baseline requires a checkpoint 0")
+                elif checkpoint.index <= current_checkpoint and not replace_incomplete_baseline:
+                    raise CoordinatorConflict("save_checkpoint requires a new checkpoint")
+                checkpoints = self._append_checkpoint(
+                    session,
+                    checkpoint,
+                    replace_incomplete_baseline=replace_incomplete_baseline,
+                )
+                reason = session.reason or "user"
+                updates: dict[str, Any] = {
+                    "checkpoints": checkpoints,
+                    "open_checkpoint": checkpoint.index,
+                    "status": f"paused:{reason}",
+                    "reason": reason,
+                    "checkpoint_required": False,
+                }
+                if replace_incomplete_baseline and not checkpoint.passed:
+                    updates["selected_checkpoint"] = None
+                if checkpoint.index == 0:
+                    baseline_complete = command.payload.get("baseline_complete")
+                    updates["baseline_complete"] = (
+                        baseline_complete
+                        if isinstance(baseline_complete, bool)
+                        else True
+                    )
+                if checkpoint.passed:
+                    updates["selected_checkpoint"] = checkpoint.index
+                tombstones = self._instance_id_tombstones_unlocked(
+                    session,
+                    history,
+                    extra_checkpoints=(checkpoint,),
+                )
+                if tombstones != session.issued_instance_id_tombstones:
+                    updates["issued_instance_id_tombstones"] = tombstones
+                return self._mark_result_applied(session, command, **updates)
+
+            if command.kind == "save_checkpoint":
+                if late_updates is not None:
+                    if command.expected_state == "baseline" and checkpoint.index != 0:
+                        raise CoordinatorConflict("baseline requires a checkpoint 0")
+                    replace_incomplete_baseline = (
+                        command.expected_state == "baseline"
+                        and checkpoint.index == 0
+                        and checkpoint.provenance == "baseline"
+                        and baseline_incomplete
+                    )
+                    if (
+                        current_checkpoint is not None
+                        and checkpoint.index <= current_checkpoint
+                        and not replace_incomplete_baseline
+                    ):
+                        raise CoordinatorConflict("save_checkpoint requires a new checkpoint")
+                    checkpoints = self._append_checkpoint(
+                        session,
+                        checkpoint,
+                        replace_incomplete_baseline=replace_incomplete_baseline,
+                    )
+                    updates = dict(late_updates)
+                    updates["open_checkpoint"] = checkpoint.index
+                    if replace_incomplete_baseline and not checkpoint.passed:
+                        updates["selected_checkpoint"] = None
+                    if checkpoint.index == 0:
+                        baseline_complete = command.payload.get("baseline_complete")
+                        updates["baseline_complete"] = (
+                            baseline_complete
+                            if isinstance(baseline_complete, bool)
+                            else True
+                        )
+                    if checkpoint.passed:
+                        updates["selected_checkpoint"] = checkpoint.index
+                    tombstones = self._instance_id_tombstones_unlocked(
+                        session,
+                        history,
+                        extra_checkpoints=(checkpoint,),
+                    )
+                    if tombstones != session.issued_instance_id_tombstones:
+                        updates["issued_instance_id_tombstones"] = tombstones
+                    return self._mark_result_applied(
+                        session,
+                        command,
+                        checkpoints=checkpoints,
+                        **updates,
+                    )
+                if session.status == "baseline":
+                    if checkpoint.index != 0:
+                        raise CoordinatorConflict("baseline requires a checkpoint 0")
+                    replace_incomplete_baseline = (
+                        checkpoint.provenance == "baseline"
+                        and baseline_incomplete
+                    )
+                    checkpoints = self._append_checkpoint(
+                        session,
+                        checkpoint,
+                        replace_incomplete_baseline=replace_incomplete_baseline,
+                    )
+                    baseline_complete = command.payload.get("baseline_complete")
+                    baseline_complete = (
+                        baseline_complete
+                        if isinstance(baseline_complete, bool)
+                        else True
+                    )
+                    updates: dict[str, Any] = {
+                        "checkpoints": checkpoints,
+                        "open_checkpoint": checkpoint.index,
+                        "baseline_complete": baseline_complete,
+                        "status": (
+                            "iterating"
+                            if checkpoint.passed
+                            else "paused:verification_failed"
+                        ),
+                        "reason": None if checkpoint.passed else "verification_failed",
+                    }
+                    if replace_incomplete_baseline and not checkpoint.passed:
+                        updates["selected_checkpoint"] = None
+                    elif checkpoint.passed:
+                        updates["selected_checkpoint"] = checkpoint.index
+                elif session.status == "iterating":
+                    if current_checkpoint is None or checkpoint.index <= current_checkpoint:
+                        raise CoordinatorConflict("save_checkpoint requires a new checkpoint")
+                    checkpoints = self._append_checkpoint(session, checkpoint)
+                    updates = {
+                        "checkpoints": checkpoints,
+                        "open_checkpoint": checkpoint.index,
+                    }
+                    if checkpoint.passed:
+                        updates["selected_checkpoint"] = checkpoint.index
+                else:
+                    raise CoordinatorConflict("save_checkpoint is illegal in the current state")
+                tombstones = self._instance_id_tombstones_unlocked(
+                    session,
+                    history,
+                    extra_checkpoints=(checkpoint,),
+                )
+                if tombstones != session.issued_instance_id_tombstones:
+                    updates["issued_instance_id_tombstones"] = tombstones
+                return self._mark_result_applied(session, command, **updates)
+
+            # A regular sync_manual result is the final manual checkpoint.
             if session.status != "manual_edit" and late_updates is None:
                 raise CoordinatorConflict("sync_manual requires manual_edit")
-            checkpoint = _checkpoint_from(result.get("checkpoint"))
-            if checkpoint.provenance != "manual" or not checkpoint.passed:
-                raise CoordinatorConflict("manual sync requires a passing manual checkpoint")
-            current_checkpoint = _checkpoint_index(session)
+            if checkpoint.provenance != "manual":
+                raise CoordinatorConflict("manual sync requires a manual checkpoint")
             if current_checkpoint is not None and checkpoint.index <= current_checkpoint:
                 raise CoordinatorConflict("manual sync requires a new checkpoint")
-            self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
-            if late_updates is None:
-                late_updates = {"status": "paused:manual_synced", "reason": "manual_synced"}
+            checkpoints = self._append_checkpoint(session, checkpoint)
+            updates = {
+                "checkpoints": checkpoints,
+                "open_checkpoint": checkpoint.index,
+                "manual_sync_requested": False,
+                "manual_attempt_id": None,
+            }
+            if late_updates is not None:
+                updates.update(late_updates)
+            else:
+                updates.update(
+                    {
+                        "status": (
+                            "paused:manual_synced"
+                            if checkpoint.passed
+                            else "paused:verification_failed"
+                        ),
+                        "reason": (
+                            "manual_synced" if checkpoint.passed else "verification_failed"
+                        ),
+                    }
+                )
+            if checkpoint.passed:
+                updates["selected_checkpoint"] = checkpoint.index
+            tombstones = self._instance_id_tombstones_unlocked(
+                session,
+                history,
+                extra_checkpoints=(checkpoint,),
+            )
+            if tombstones != session.issued_instance_id_tombstones:
+                updates["issued_instance_id_tombstones"] = tombstones
+            return self._mark_result_applied(session, command, **updates)
+
+        if result.get("ok") is False:
+            return failed_result()
+
+        if command.kind == "open_project":
+            workflow = command.payload.get("workflow")
+            raw_checkpoint = (
+                workflow.get("checkpoint_index")
+                if isinstance(workflow, Mapping)
+                else command.payload.get("checkpoint_index")
+            )
+            updates = {
+                "open_checkpoint": (
+                    raw_checkpoint
+                    if isinstance(raw_checkpoint, int) and not isinstance(raw_checkpoint, bool)
+                    else None
+                )
+            }
+            return self._mark_result_applied(session, command, **updates)
+
+        if (
+            command.kind == "inspect_layers"
+            and result.get("ok") is not False
+            and not self._inspection_capabilities_match_unlocked(result)
+        ):
             return self._mark_result_applied(
                 session,
                 command,
-                **late_updates,
-                checkpoints=self._append_checkpoint(session, checkpoint),
+                status="paused:capabilities_changed",
+                reason="capabilities_changed",
+                checkpoint_required=False,
             )
+        if command.kind in _NO_STATE_RESULT_KINDS:
+            return self._mark_result_applied(session, command)
 
         if command.kind == "render_final":
             late_updates = self._late_pause_updates(session)
@@ -1037,13 +2023,50 @@ class AECoordinator:
 
         raise CoordinatorConflict("command result kind has no state effect")
     @staticmethod
-    def _append_checkpoint(session: AESession, checkpoint: AECheckpoint) -> tuple[AECheckpoint, ...]:
-        if any(item.index == checkpoint.index for item in session.checkpoints):
-            existing = next(item for item in session.checkpoints if item.index == checkpoint.index)
-            if existing != checkpoint:
-                raise CoordinatorConflict("checkpoint index already contains a different record")
-            return session.checkpoints
+    def _append_checkpoint(
+        session: AESession,
+        checkpoint: AECheckpoint,
+        *,
+        replace_incomplete_baseline: bool = False,
+    ) -> tuple[AECheckpoint, ...]:
+        for index, existing in enumerate(session.checkpoints):
+            if existing.index != checkpoint.index:
+                continue
+            if existing == checkpoint:
+                return session.checkpoints
+            if (
+                replace_incomplete_baseline
+                and checkpoint.index == 0
+                and existing.provenance == "baseline"
+                and checkpoint.provenance == "baseline"
+            ):
+                descendants = tuple(
+                    item.model_copy(update={"lineage_valid": False})
+                    for item in session.checkpoints[index + 1 :]
+                )
+                return (
+                    *session.checkpoints[:index],
+                    checkpoint,
+                    *descendants,
+                )
+            raise CoordinatorConflict("checkpoint index already contains a different record")
         return (*session.checkpoints, checkpoint)
+
+    @staticmethod
+    def _revoke_expired_leases(
+        commands: list[AECommand],
+        now: float,
+    ) -> bool:
+        revoked = False
+        for index, command in enumerate(commands):
+            if (
+                command.status == "leased"
+                and command.lease_expires_at is not None
+                and command.lease_expires_at <= now
+            ):
+                commands[index] = command.model_copy(update={"status": "revoked"})
+                revoked = True
+        return revoked
 
     def _revoke_queued_commands_unlocked(self, commands: list[AECommand]) -> None:
         revoked = False
@@ -1078,7 +2101,11 @@ class AECoordinator:
     ) -> AESession:
         if session.status != "pause_requested":
             return session
+        if session.checkpoint_required:
+            return session
         current_time = _now() if now is None else _finite_time(now, "time")
+        # An expired lease is no longer active, but its result remains
+        # admissible until a new manual/replacement branch explicitly revokes it.
         leased = any(
             command.status == "leased"
             and command.lease_expires_at is not None
@@ -1133,10 +2160,97 @@ class AECoordinator:
         with self._locked():
             if not self._state_path.exists():
                 raise CoordinatorConflict("AE session has not started")
-            session = self._load_session_unlocked()
+            session = self._load_session_unlocked(hydrate_checkpoints=False)
             commands = self._load_commands_unlocked()
             session = self._reconcile_completed_unlocked(session, commands)
-            return self._settle_pause_requested_unlocked(session, commands)
+            session = self._settle_pause_requested_unlocked(session, commands)
+            compact = []
+            for checkpoint in session.checkpoints:
+                digest = checkpoint.context_digest
+                if digest is None:
+                    digest = self._write_checkpoint_context_unlocked(checkpoint)
+                compact.append(
+                    checkpoint.model_copy(
+                        update={
+                            "context_digest": digest,
+                            "inspection": {},
+                            "operations": (),
+                            "verifier_report": {},
+                            "model_response": {},
+                            "capability_manifest": {},
+                            "dependency_manifest": {},
+                        }
+                    )
+                )
+            return session.model_copy(update={"checkpoints": tuple(compact)})
+
+    @staticmethod
+    def _unsaved_apply_requires_checkpoint(
+        session: AESession,
+        commands: Sequence[AECommand],
+    ) -> bool:
+        del session
+        saved_sequence: dict[int, int] = {}
+        for command in commands:
+            if command.kind != "save_checkpoint" or command.status != "completed":
+                continue
+            if not isinstance(command.result, Mapping) or command.result.get("ok") is False:
+                continue
+            workflow = command.payload.get("workflow")
+            index = workflow.get("checkpoint_index") if isinstance(workflow, Mapping) else None
+            if index is None:
+                index = command.payload.get("index")
+            if isinstance(index, int) and not isinstance(index, bool):
+                saved_sequence[index] = max(saved_sequence.get(index, 0), command.sequence)
+        for command in commands:
+            if command.kind != "apply_batch" or command.status != "completed":
+                continue
+            if not isinstance(command.result, Mapping) or command.result.get("ok") is False:
+                continue
+            workflow = command.payload.get("workflow")
+            if not isinstance(workflow, Mapping):
+                return True
+            stage = workflow.get("stage")
+            if stage == "baseline_apply":
+                capture_sequence = saved_sequence.get(0)
+            elif stage == "candidate_apply":
+                index = workflow.get("checkpoint_index")
+                capture_sequence = (
+                    saved_sequence.get(index)
+                    if isinstance(index, int) and not isinstance(index, bool)
+                    else None
+                )
+            else:
+                continue
+            if capture_sequence is None or command.sequence > capture_sequence:
+                return True
+        return False
+
+    @staticmethod
+    def _manual_workflow(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        workflow = payload.get("workflow")
+        return workflow if isinstance(workflow, Mapping) else None
+
+    @staticmethod
+    def _manual_attempt_matches(
+        session: AESession,
+        command: AECommand,
+    ) -> bool:
+        workflow = AECoordinator._manual_workflow(command.payload)
+        attempt_id = workflow.get("manual_attempt_id") if isinstance(workflow, Mapping) else None
+        return (
+            session.manual_attempt_id is not None
+            and isinstance(workflow, Mapping)
+            and attempt_id == session.manual_attempt_id
+            and workflow.get("manual_epoch") == session.manual_epoch
+        )
+
+    @staticmethod
+    def _baseline_workflow(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        workflow = payload.get("workflow")
+        if isinstance(workflow, Mapping) and workflow.get("stage") == "baseline_apply":
+            return workflow
+        return None
 
     def _transition_unlocked(self, session: AESession, event: str, data: Mapping[str, Any]) -> AESession:
         if not isinstance(event, str) or not event:
@@ -1156,9 +2270,7 @@ class AECoordinator:
                 raise CoordinatorConflict("device is already bound to this session")
             updated = session.model_copy(
                 update={
-                    "status": "baseline"
-                    if not any(item.index == 0 and item.passed for item in session.checkpoints)
-                    else "iterating",
+                    "status": "iterating" if session.baseline_complete else "baseline",
                     "device_id": device_id,
                     "revision": session.revision + 1,
                     "reason": None,
@@ -1169,50 +2281,114 @@ class AECoordinator:
             if status != "baseline":
                 raise CoordinatorConflict("baseline completion is illegal in the current state")
             checkpoint = _checkpoint_from(data.get("checkpoint"))
-            if checkpoint.index != 0 or not checkpoint.passed:
-                raise CoordinatorConflict("baseline requires a passing checkpoint 0")
+            if checkpoint.index != 0:
+                raise CoordinatorConflict("baseline requires a checkpoint 0")
             self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
+            tombstones = self._instance_id_tombstones_unlocked(
+                session,
+                self._load_commands_unlocked(),
+                extra_checkpoints=(checkpoint,),
+            )
+            existing_baseline = next(
+                (item for item in session.checkpoints if item.index == 0),
+                None,
+            )
+            replace_incomplete_baseline = (
+                existing_baseline is not None
+                and existing_baseline.provenance == "baseline"
+                and not session.baseline_complete
+            )
+            checkpoints = self._append_checkpoint(
+                session,
+                checkpoint,
+                replace_incomplete_baseline=replace_incomplete_baseline,
+            )
             updated = session.model_copy(
                 update={
-                    "status": "iterating",
-                    "checkpoints": self._append_checkpoint(session, checkpoint),
+                    "status": "iterating" if checkpoint.passed else "paused:verification_failed",
+                    "checkpoints": checkpoints,
+                    "selected_checkpoint": (
+                        checkpoint.index
+                        if checkpoint.passed
+                        else (None if replace_incomplete_baseline else session.selected_checkpoint)
+                    ),
+                    "open_checkpoint": (
+                        checkpoint.index
+                        if checkpoint.passed or replace_incomplete_baseline
+                        else session.open_checkpoint
+                    ),
+                    "issued_instance_id_tombstones": tombstones,
+                    "baseline_complete": checkpoint.passed,
+                    "reason": None if checkpoint.passed else "verification_failed",
                     "revision": session.revision + 1,
-                    "reason": None,
                     "updated_at": _now(),
                 }
             )
         elif event == "stop":
             if status not in {"baseline", "iterating"}:
                 raise CoordinatorConflict("stop is illegal in the current state")
+            commands = self._load_commands_unlocked()
             updated = session.model_copy(
-                update={"status": "pause_requested", "revision": session.revision + 1, "updated_at": _now()}
+                update={
+                    "status": "pause_requested",
+                    "reason": "user",
+                    "checkpoint_required": self._unsaved_apply_requires_checkpoint(
+                        session,
+                        commands,
+                    ),
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
             )
         elif event in {"batch_complete", "active_result", "checkpoint_saved", "command_success", "command_result"}:
             if status not in {"baseline", "iterating", "pause_requested"}:
                 raise CoordinatorConflict("active result is illegal in the current state")
             checkpoint_raw = data.get("checkpoint")
             checkpoints = session.checkpoints
+            checkpoint: AECheckpoint | None = None
             if status == "baseline":
                 if checkpoint_raw is None:
-                    raise CoordinatorConflict("baseline requires a passing checkpoint 0")
+                    raise CoordinatorConflict("baseline requires a checkpoint 0")
                 checkpoint = _checkpoint_from(checkpoint_raw)
-                if checkpoint.index != 0 or not checkpoint.passed:
-                    raise CoordinatorConflict("baseline requires a passing checkpoint 0")
+                if checkpoint.index != 0:
+                    raise CoordinatorConflict("baseline requires a checkpoint 0")
                 self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
                 checkpoints = self._append_checkpoint(session, checkpoint)
             elif checkpoint_raw is not None:
                 checkpoint = _checkpoint_from(checkpoint_raw)
-                if not checkpoint.passed:
-                    raise CoordinatorConflict("candidate checkpoint did not pass verification")
+                current_checkpoint = _checkpoint_index(session)
+                if current_checkpoint is not None and checkpoint.index <= current_checkpoint:
+                    raise CoordinatorConflict("candidate checkpoint must be new")
                 self._validate_checkpoint_artifacts_unlocked(session, checkpoint)
                 checkpoints = self._append_checkpoint(session, checkpoint)
-            next_status = "paused:user" if status == "pause_requested" else "iterating"
+            if status == "pause_requested":
+                next_status = "paused:user"
+                next_reason = "user"
+            elif status == "baseline" and checkpoint is not None and not checkpoint.passed:
+                next_status = "paused:verification_failed"
+                next_reason = "verification_failed"
+            else:
+                next_status = "iterating"
+                next_reason = None
+            tombstones = session.issued_instance_id_tombstones
+            if checkpoint is not None:
+                tombstones = self._instance_id_tombstones_unlocked(
+                    session,
+                    self._load_commands_unlocked(),
+                    extra_checkpoints=(checkpoint,),
+                )
             updated = session.model_copy(
                 update={
                     "status": next_status,
                     "checkpoints": checkpoints,
+                    "selected_checkpoint": (
+                        checkpoint.index
+                        if checkpoint is not None and checkpoint.passed
+                        else session.selected_checkpoint
+                    ),
+                    "issued_instance_id_tombstones": tombstones,
                     "revision": session.revision + 1,
-                    "reason": "user" if next_status == "paused:user" else None,
+                    "reason": next_reason,
                     "updated_at": _now(),
                 }
             )
@@ -1237,6 +2413,11 @@ class AECoordinator:
                 update={
                     "status": f"paused:{reason}",
                     "reason": reason,
+                    "checkpoint_required": (
+                        False
+                        if event in {"disconnect", "timeout", "unpair"}
+                        else session.checkpoint_required
+                    ),
                     "revision": session.revision + 1,
                     "updated_at": _now(),
                 }
@@ -1257,14 +2438,64 @@ class AECoordinator:
         elif event == "begin_manual":
             if not _paused(status):
                 raise CoordinatorConflict("manual edit requires a paused session")
+            resume_prepared_manual = False
+            if status == "paused:server_restart" and session.manual_attempt_id is not None:
+                for command in self._load_commands_unlocked():
+                    workflow = self._manual_workflow(command.payload)
+                    if (
+                        command.kind != "sync_manual"
+                        or command.status != "completed"
+                        or (command.result or {}).get("ok") is False
+                        or not isinstance(workflow, Mapping)
+                        or workflow.get("manual_attempt_id") != session.manual_attempt_id
+                        or workflow.get("manual_epoch") != session.manual_epoch
+                        or command.payload.get("prepare_manual") is not True
+                    ):
+                        continue
+                    try:
+                        self._validate_manual_preparation_artifacts_unlocked(session, command)
+                    except CoordinatorConflict:
+                        continue
+                    resume_prepared_manual = True
+                    break
             updated = session.model_copy(
-                update={"status": "manual_edit", "reason": None, "revision": session.revision + 1, "updated_at": _now()}
+                update={
+                    "status": "manual_edit",
+                    "reason": None,
+                    "manual_epoch": (
+                        session.manual_epoch
+                        if resume_prepared_manual
+                        else session.manual_epoch + 1
+                    ),
+                    "manual_sync_requested": False,
+                    "manual_attempt_id": (
+                        session.manual_attempt_id
+                        if resume_prepared_manual
+                        else None
+                    ),
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
+            )
+        elif event == "request_manual_sync":
+            if status != "manual_edit":
+                raise CoordinatorConflict("manual sync requires manual_edit")
+            if session.manual_sync_requested or session.manual_attempt_id is not None:
+                raise CoordinatorConflict("manual sync attempt is already active")
+            updated = session.model_copy(
+                update={
+                    "manual_sync_requested": True,
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
             )
         elif event in {"manual_synced", "sync_manual"}:
             raise CoordinatorConflict("manual sync requires a connector result")
         elif event == "finalize":
             if not _paused(status) or self.plan.mode != "final":
                 raise CoordinatorConflict("finalization requires a paused final session")
+            if not session.baseline_complete:
+                raise CoordinatorConflict("finalization requires a complete baseline lineage")
             selected = session.selected_checkpoint
             if selected is None or not any(item.index == selected and item.passed for item in session.checkpoints):
                 raise CoordinatorConflict("a passing checkpoint must be selected before finalization")
@@ -1295,10 +2526,16 @@ class AECoordinator:
             if session.revision != revision:
                 raise CoordinatorConflict("revision is stale")
             commands = self._load_commands_unlocked()
-            session = self._reconcile_completed_unlocked(session, commands)
             session = self._settle_pause_requested_unlocked(session, commands)
+            if event == "begin_manual" and self._revoke_expired_leases(commands, _now()):
+                self._write_commands_unlocked(commands)
             if session.revision != revision:
                 raise CoordinatorConflict("revision is stale")
+            if event == "begin_manual":
+                if session.device_id is None:
+                    raise CoordinatorConflict("manual edit requires a bound connector")
+                if any(item.status in {"queued", "leased"} for item in commands):
+                    raise CoordinatorConflict("manual edit requires a quiescent connector")
             if event in {"disconnect", "timeout", "unpair"} and session.status in _ACTIVE_STATES:
                 now = _now()
                 leased = any(
@@ -1313,6 +2550,7 @@ class AECoordinator:
                         update={
                             "status": "pause_requested",
                             "reason": reason,
+                            "checkpoint_required": False,
                             "revision": session.revision + 1,
                             "updated_at": now,
                         }
@@ -1344,10 +2582,20 @@ class AECoordinator:
             selected = next((item for item in session.checkpoints if item.index == checkpoint), None)
             if selected is None:
                 raise CoordinatorConflict("checkpoint does not exist")
-            if not selected.passed:
-                raise CoordinatorConflict("checkpoint did not pass verification")
-            updated = session.model_copy(
-                update={"selected_checkpoint": checkpoint, "revision": session.revision + 1, "updated_at": _now()}
+            if not session.baseline_complete and checkpoint != 0:
+                raise CoordinatorConflict("checkpoint lineage is incomplete until baseline completion")
+            if not selected.passed or not selected.lineage_valid:
+                raise CoordinatorConflict("checkpoint did not pass current lineage verification")
+            selected_session = session.model_copy(
+                update={"selected_checkpoint": checkpoint}
+            )
+            tombstones = self._instance_id_tombstones_unlocked(selected_session, commands)
+            updated = selected_session.model_copy(
+                update={
+                    "issued_instance_id_tombstones": tombstones,
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
             )
             self._commit_transition_unlocked(
                 session,
@@ -1387,13 +2635,43 @@ class AECoordinator:
             payload = {}
         if not isinstance(payload, Mapping):
             raise CoordinatorConflict("command payload must be an object")
+        payload_dict = dict(payload)
+        checkpoint_context: AECheckpoint | None = None
+        raw_context = payload_dict.pop("checkpoint_context", None)
+        if raw_context is not None:
+            if kind not in {"save_checkpoint", "sync_manual"}:
+                raise CoordinatorConflict("checkpoint context is invalid for this command")
+            checkpoint_context = _checkpoint_from(raw_context)
+            supplied_digest = payload_dict.get("checkpoint_context_digest")
+            context_digest = _checkpoint_context_digest(
+                checkpoint_context.model_dump(mode="json")
+            )
+            if supplied_digest is not None and supplied_digest != context_digest:
+                raise CoordinatorConflict("checkpoint context digest does not match")
+            payload_dict["checkpoint_context_digest"] = context_digest
+        elif "checkpoint_context_digest" in payload_dict:
+            raise CoordinatorConflict("checkpoint context must be provided server-side")
         try:
-            payload_dict = dict(payload)
-            _validate_command_payload(payload_dict)
-            digest = _payload_digest(payload_dict)
+            if kind == "apply_batch":
+                _validate_apply_payload(payload_dict, expected_state)
+            elif kind == "sync_manual":
+                _validate_sync_payload(payload_dict)
+            _validate_command_payload(payload_dict, allow_artifacts=True)
+        except CoordinatorConflict:
+            raise
         except (TypeError, ValueError, OverflowError) as exc:
             raise CoordinatorConflict("command payload must be finite canonical JSON") from exc
-        _finite_time(lease_seconds, "lease")
+        requested_lease = _finite_time(lease_seconds, "lease")
+        if kind in {
+            "save_checkpoint",
+            "sync_manual",
+            "render_preview",
+            "render_final",
+            "package_project",
+        } and requested_lease == 30.0:
+            requested_lease = _LONG_COMMAND_LEASE_SECONDS
+        if requested_lease <= 0:
+            raise CoordinatorConflict("lease is invalid")
         with self._locked():
             session = self._load_session_unlocked()
             commands = self._load_commands_unlocked()
@@ -1407,25 +2685,80 @@ class AECoordinator:
                 raise CoordinatorConflict("terminal AE session cannot enqueue commands")
             if session.status != expected_state:
                 raise CoordinatorConflict("expected state is stale")
+            if expected_state == "pause_requested" and (
+                kind not in {"inspect_layers", "render_preview", "save_checkpoint"}
+                or not session.checkpoint_required
+                or (session.reason or "user") != "user"
+            ):
+                raise CoordinatorConflict("checkpoint capture is not required")
             if expected_checkpoint is not None and (
-                not isinstance(expected_checkpoint, int) or isinstance(expected_checkpoint, bool) or expected_checkpoint < 0
+                not isinstance(expected_checkpoint, int)
+                or isinstance(expected_checkpoint, bool)
+                or expected_checkpoint < 0
             ):
                 raise CoordinatorConflict("expected checkpoint is invalid")
-            if expected_checkpoint != _checkpoint_index(session):
+            if expected_checkpoint != _command_checkpoint(session, kind, expected_state):
                 raise CoordinatorConflict("expected checkpoint is stale")
+            if kind == "apply_batch":
+                self._assert_current_operation_manifest()
+                tombstones = self._instance_id_tombstones_unlocked(session, commands)
+                reused = _operation_instance_ids(payload_dict).intersection(tombstones)
+                if reused:
+                    raise CoordinatorConflict(
+                        "apply_batch references a tombstoned layer instance id"
+                    )
             if kind == "sync_manual" and expected_state != "manual_edit":
                 raise CoordinatorConflict("sync_manual requires manual_edit")
+            if any(item.status in {"queued", "leased"} for item in commands):
+                raise CoordinatorConflict("a command is already pending")
+            command_id = "cmd-" + secrets.token_urlsafe(16)
+            manual_prepare = (
+                kind == "sync_manual"
+                and payload_dict.get("prepare_manual") is True
+            )
+            manual_sync = kind == "sync_manual"
+            manual_attempt_started = False
+            manual_workflow = payload_dict.get("workflow")
+            if manual_sync:
+                if session.status != "manual_edit":
+                    raise CoordinatorConflict("manual preparation requires manual_edit")
+                if manual_prepare and session.manual_attempt_id is not None:
+                    raise CoordinatorConflict("manual sync attempt is already active")
+                if session.manual_attempt_id is None:
+                    workflow = dict(manual_workflow) if isinstance(manual_workflow, Mapping) else {}
+                    workflow.update(
+                        {
+                            "stage": "manual_prepare" if manual_prepare else "manual_sync",
+                            "manual_epoch": session.manual_epoch,
+                            "manual_attempt_id": command_id,
+                        }
+                    )
+                    payload_dict["workflow"] = workflow
+                    manual_attempt_started = True
+                else:
+                    if not isinstance(manual_workflow, Mapping):
+                        raise CoordinatorConflict("manual command attempt is missing")
+                    if (
+                        manual_workflow.get("manual_epoch") != session.manual_epoch
+                        or manual_workflow.get("manual_attempt_id") != session.manual_attempt_id
+                    ):
+                        raise CoordinatorConflict("manual command attempt is stale")
+            try:
+                _validate_command_payload(payload_dict, allow_artifacts=True)
+                digest = _command_payload_digest(payload_dict)
+            except CoordinatorConflict:
+                raise
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise CoordinatorConflict("command payload must be finite canonical JSON") from exc
             bound_device = session.device_id
             if bound_device is None:
                 raise CoordinatorConflict("a connector device is not bound")
             if device_id is not None and device_id != bound_device:
                 raise CoordinatorConflict("device is not bound to this session")
-            if any(item.status in {"queued", "leased"} for item in commands):
-                raise CoordinatorConflict("a command is already pending")
             sequence = max((item.sequence for item in commands), default=0) + 1
             now = _now()
             command = AECommand(
-                id="cmd-" + secrets.token_urlsafe(16),
+                id=command_id,
                 nonce="nonce-" + secrets.token_urlsafe(24),
                 project_id=self.project_id,
                 plan_id=self.plan_id,
@@ -1438,15 +2771,24 @@ class AECoordinator:
                 expected_checkpoint=expected_checkpoint,
                 payload=payload_dict,
                 payload_digest=digest,
-                lease_seconds=float(lease_seconds),
+                lease_seconds=float(requested_lease),
                 created_at=now,
             )
+            if checkpoint_context is not None:
+                self._store_checkpoint_context_unlocked(
+                    checkpoint_context,
+                    command_id=command.id,
+                    session_id=session.id,
+                )
             commands.append(command)
             self._write_commands_unlocked(commands)
             updated_session = session.model_copy(
                 update={
                     "command_sequence": sequence,
                     "last_command_id": command.id,
+                    "manual_attempt_id": (
+                        command.id if manual_attempt_started else session.manual_attempt_id
+                    ),
                     "updated_at": now,
                 }
             )
@@ -1483,12 +2825,17 @@ class AECoordinator:
                     device_id,
                     include_leased=False,
                 )
-                if session.status == "pause_requested" and session.reason == reason:
+                if (
+                    session.status == "pause_requested"
+                    and session.reason == reason
+                    and not session.checkpoint_required
+                ):
                     return session
                 updated = session.model_copy(
                     update={
                         "status": "pause_requested",
                         "reason": reason,
+                        "checkpoint_required": False,
                         "revision": session.revision + 1,
                         "updated_at": current_time,
                     }
@@ -1517,7 +2864,9 @@ class AECoordinator:
                 update={
                     "status": status,
                     "reason": session_reason,
+                    "checkpoint_required": False,
                     "device_id": None,
+                    "open_checkpoint": None,
                     "revision": session.revision + 1,
                     "updated_at": current_time,
                 }
@@ -1540,30 +2889,112 @@ class AECoordinator:
             commands = self._load_commands_unlocked()
             session = self._reconcile_completed_unlocked(session, commands)
             session = self._settle_pause_requested_unlocked(session, commands, current_time)
-            if session.status == "pause_requested" or _paused(session.status):
+            if (
+                (session.status == "pause_requested" or _paused(session.status))
+                and not session.checkpoint_required
+            ):
                 return None
+            stale_revoked = False
             for index, command in enumerate(commands):
                 if command.device_id != device_id or command.status in {"completed", "revoked"}:
                     continue
                 if not self._command_state_matches(session, command):
+                    commands[index] = command.model_copy(update={"status": "revoked"})
+                    stale_revoked = True
                     continue
+                if command.kind == "apply_batch":
+                    self._assert_current_operation_manifest()
+                    _validate_apply_payload(command.payload, command.expected_state)
+                    tombstones = self._instance_id_tombstones_unlocked(session, commands)
+                    if _operation_instance_ids(command.payload).intersection(tombstones):
+                        raise CoordinatorConflict(
+                            "apply_batch references a tombstoned layer instance id"
+                        )
                 if (
                     command.status == "leased"
                     and command.lease_expires_at is not None
                     and command.lease_expires_at > current_time
                 ):
+                    if stale_revoked:
+                        self._write_commands_unlocked(commands)
                     return None
+                absolute_deadline = command.created_at + _MAX_COMMAND_LIFETIME_SECONDS
+                lease_expires_at = min(
+                    current_time + command.lease_seconds,
+                    absolute_deadline,
+                )
+                if lease_expires_at <= current_time:
+                    commands[index] = command.model_copy(update={"status": "revoked"})
+                    stale_revoked = True
+                    continue
                 leased = command.model_copy(
                     update={
                         "status": "leased",
-                        "lease_expires_at": current_time + command.lease_seconds,
+                        "lease_expires_at": lease_expires_at,
                         "delivered_at": current_time,
                     }
                 )
                 commands[index] = leased
                 self._write_commands_unlocked(commands)
                 return leased
+            if stale_revoked:
+                self._write_commands_unlocked(commands)
             return None
+
+    def renew_command(
+        self,
+        device_id: str,
+        command_id: str,
+        *,
+        sequence: int,
+        nonce: str,
+        now: float | None = None,
+    ) -> AECommand:
+        device_id = _safe_component(device_id, "device id")
+        command_id = _safe_command_id(command_id)
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
+            raise CoordinatorConflict("command sequence is invalid")
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 512:
+            raise CoordinatorConflict("command nonce is invalid")
+        current_time = _now() if now is None else _finite_time(now, "time")
+        with self._locked():
+            session = self._load_session_unlocked()
+            commands = self._load_commands_unlocked()
+            session = self._reconcile_completed_unlocked(session, commands)
+            if session.device_id != device_id:
+                raise CoordinatorConflict("device is not bound to this session")
+            index = next((i for i, item in enumerate(commands) if item.id == command_id), None)
+            if index is None:
+                raise CoordinatorConflict("command was not found")
+            command = commands[index]
+            if command.device_id != device_id or command.sequence != sequence:
+                raise CoordinatorConflict("command device or sequence does not match")
+            if not secrets.compare_digest(command.nonce, nonce):
+                raise CoordinatorConflict("command nonce does not match")
+            if command.status != "leased":
+                raise CoordinatorConflict("command is not leased")
+            if command.lease_expires_at is None or command.lease_expires_at <= current_time:
+                raise CoordinatorConflict("command lease has expired")
+            if session.status == "pause_requested" and session.reason in {"replacement", "unpair"}:
+                raise CoordinatorConflict("command lease is draining")
+            if not self._command_state_matches(session, command):
+                commands[index] = command.model_copy(update={"status": "revoked"})
+                self._write_commands_unlocked(commands)
+                raise CoordinatorConflict("command state or checkpoint does not match")
+            absolute_deadline = command.created_at + _MAX_COMMAND_LIFETIME_SECONDS
+            requested_until = max(
+                command.lease_expires_at,
+                current_time + command.lease_seconds,
+            )
+            renewed_until = min(requested_until, absolute_deadline)
+            if renewed_until <= current_time:
+                raise CoordinatorConflict("command lease renewal ceiling reached")
+            if renewed_until == command.lease_expires_at:
+                return command
+            renewed = command.model_copy(update={"lease_expires_at": renewed_until})
+            commands[index] = renewed
+            self._write_commands_unlocked(commands)
+            return renewed
 
     def accept_result(
         self,
@@ -1616,7 +3047,13 @@ class AECoordinator:
                 }
             )
             # Validate the complete command-specific effect before journaling it.
-            updated_session = self._result_state_unlocked(session, completed)
+            commands_for_result = list(commands)
+            commands_for_result[index] = completed
+            updated_session = self._result_state_unlocked(
+                session,
+                completed,
+                commands_for_result,
+            )
             commands[index] = completed
             # The completed result is durable before its state effect.
             self._write_commands_unlocked(commands)

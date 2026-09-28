@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import time
 import errno
+import struct
+import subprocess
+import zlib
 import hashlib
 import http.client
 import json
@@ -14,6 +19,22 @@ from pathlib import Path
 import pytest
 
 import keepframe.after_effects.connector as connector
+
+
+def _png(width: int = 1280, height: int = 720) -> bytes:
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I4s", len(ihdr), b"IHDR")
+        + ihdr
+        + struct.pack(">I", zlib.crc32(b"IHDR" + ihdr) & 0xFFFFFFFF)
+        + struct.pack(">I4s", 0, b"IEND")
+        + struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+    )
+
+
+def _scoped_renders(root: Path) -> Path:
+    return root / "projects" / "p1" / "plans" / "plan-1" / "sessions" / "session-1" / "renders"
 
 
 class _Response:
@@ -68,6 +89,85 @@ def _panel_heartbeat(*, timestamp: float = 100.0) -> dict[str, object]:
             "properties": {"ADBE Opacity": "number"},
             "plugin_versions": {"ADBE Fill": "1"},
         },
+    }
+
+
+def _preview_fixture(
+    *,
+    checkpoint: int = 2,
+    frame_count: int = 4,
+    fps: float = 24.0,
+    representatives: list[int] | None = None,
+) -> tuple[dict[str, object], dict[str, object], list[str]]:
+    selected = representatives or [0, 2, 3]
+    names = [f"checkpoint-{checkpoint}-{frame:06d}.png" for frame in range(frame_count)]
+    artifacts: list[dict[str, object]] = [
+        {
+            "reservation_id": f"mp4-{checkpoint}",
+            "kind": "mp4",
+            "filename": f"checkpoint-{checkpoint}.mp4",
+            "directory": "renders",
+        }
+    ]
+    artifacts.extend(
+        {
+            "reservation_id": f"png-{checkpoint}-{frame}",
+            "kind": "png",
+            "filename": names[frame],
+            "directory": "renders",
+        }
+        for frame in selected
+    )
+    payload: dict[str, object] = {
+        "checkpoint_index": checkpoint,
+        "frame_count": frame_count,
+        "fps": fps,
+        "representative_frames": selected,
+        "artifacts": artifacts,
+    }
+    result: dict[str, object] = {
+        "rendered": True,
+        "kind": "preview",
+        "checkpoint_index": checkpoint,
+        "frame_count": frame_count,
+        "fps": fps,
+        "width": 1280,
+        "height": 720,
+        "representative_frames": selected,
+        "sequence": {
+            "directory": "renders",
+            "pattern": "checkpoint-N-%06d.png",
+            "frame_count": frame_count,
+            "first_frame": names[0],
+            "last_frame": names[-1],
+        },
+        "representative_files": [names[frame] for frame in selected],
+    }
+    return payload, result, names
+
+
+def _command(
+    kind: str,
+    payload: dict[str, object],
+    *,
+    command_id: str,
+    sequence: int = 1,
+    expected_checkpoint: int | None = 0,
+) -> dict[str, object]:
+    return {
+        "id": command_id,
+        "nonce": f"nonce-{command_id}",
+        "project_id": "p1",
+        "device_id": "d1",
+        "plan_id": "plan-1",
+        "plan_digest": "a" * 64,
+        "session_id": "session-1",
+        "expected_state": "iterating",
+        "expected_checkpoint": expected_checkpoint,
+        "sequence": sequence,
+        "kind": kind,
+        "payload": payload,
+        "payload_digest": connector._canonical_digest(payload),
     }
 
 
@@ -758,6 +858,783 @@ def test_mcp_child_uses_trusted_cwd_and_same_isolated_argv(monkeypatch, tmp_path
     assert str(tmp_path) not in " ".join(argv)
 
 
+
+def test_render_preview_runs_fixed_ffmpeg_uploads_selected_frames_and_retains_sequence(
+    tmp_path,
+):
+    payload, panel_result, names = _preview_fixture()
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    for name in names:
+        (renders / name).write_bytes(_png())
+    process_calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def process(argv, **kwargs):
+        process_calls.append((argv, kwargs))
+        Path(argv[-1]).write_bytes(b"mp4")
+        return type("Completed", (), {"stdout": b"", "stderr": b""})()
+
+    class Relay:
+        def __init__(self):
+            self.uploads = []
+            self.results = []
+
+        def upload_artifact(self, reservation, source, **kwargs):
+            self.uploads.append((reservation, Path(source), kwargs))
+            return {"artifact": {"id": reservation}}
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        def call_tool(self, tool, envelope):
+            self.calls.append((tool, envelope))
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=process,
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-1",
+            expected_checkpoint=2,
+        )
+    )
+    assert [item[0] for item in relay.uploads] == [
+        "mp4-2",
+        "png-2-0",
+        "png-2-2",
+        "png-2-3",
+    ]
+    assert [item[1].name for item in relay.uploads] == [
+        "checkpoint-2.mp4",
+        "checkpoint-2-000000.png",
+        "checkpoint-2-000002.png",
+        "checkpoint-2-000003.png",
+    ]
+    assert (renders / "checkpoint-2.mp4").exists()
+    assert all((renders / name).exists() for name in names)
+    argv, kwargs = process_calls[0]
+    assert argv == [
+        "preflighted-ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-framerate",
+        "24.0",
+        "-i",
+        str(renders / "checkpoint-2-%06d.png"),
+        "-vf",
+        "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+        "-frames:v",
+        "4",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        "18",
+        str(renders / "checkpoint-2.mp4"),
+    ]
+    assert kwargs["stdout"] is not subprocess.PIPE
+    assert kwargs["stderr"] is not subprocess.PIPE
+    assert kwargs["shell"] is False
+    assert kwargs["timeout"] == connector._FFMPEG_TIMEOUT
+    assert result["artifacts"] == [
+        {"id": "mp4-2"},
+        {"id": "png-2-0"},
+        {"id": "png-2-2"},
+        {"id": "png-2-3"},
+    ]
+
+
+def test_render_preview_rejects_panel_metadata_and_unsafe_sequence(tmp_path):
+    payload, panel_result, names = _preview_fixture()
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    for name in names:
+        (renders / name).write_bytes(_png())
+    panel_result["sequence"]["directory"] = "../outside"
+
+    class Relay:
+        uploads = []
+        results = []
+
+        def upload_artifact(self, *args, **kwargs):
+            self.uploads.append((args, kwargs))
+            return {"artifact": {"id": "unexpected"}}
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid metadata must fail before ffmpeg")
+        ),
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-invalid",
+            expected_checkpoint=2,
+        )
+    )
+    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert relay.results[-1][0][2] == result
+    assert relay.uploads == []
+    assert all((renders / name).exists() for name in names)
+
+
+def test_render_preview_rejects_symlink_and_non_png_sequence_files(tmp_path):
+    payload, panel_result, names = _preview_fixture(frame_count=2, representatives=[0])
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    (renders / names[0]).write_bytes(_png())
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(_png())
+    (renders / names[1]).symlink_to(outside)
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=lambda *args, **kwargs: pytest.fail("ffmpeg must not run"),
+    )
+    first = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-symlink",
+            expected_checkpoint=2,
+        )
+    )
+    assert first == {"ok": False, "error": "connector preview processing failed"}
+    (renders / names[1]).unlink()
+    (renders / names[1]).write_bytes(b"not-png")
+    second = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-non-png",
+            sequence=2,
+            expected_checkpoint=2,
+        )
+    )
+    assert second == {"ok": False, "error": "connector preview processing failed"}
+    assert len(relay.results) == 2
+
+def test_render_preview_keeps_sequence_when_upload_fails(tmp_path):
+    payload, panel_result, names = _preview_fixture()
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    for name in names:
+        (renders / name).write_bytes(_png())
+
+    def process(argv, **kwargs):
+        Path(argv[-1]).write_bytes(b"mp4")
+        return type("Completed", (), {"stdout": b"", "stderr": b""})()
+
+    class Relay:
+        def __init__(self):
+            self.uploads = []
+            self.results = []
+
+        def upload_artifact(self, reservation, source, **kwargs):
+            self.uploads.append(reservation)
+            raise connector.RelayError("upload failed")
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=process,
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-upload-failure",
+            expected_checkpoint=2,
+        )
+    )
+    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert relay.results[-1][0][2] == result
+    assert (renders / "checkpoint-2.mp4").exists()
+    assert all((renders / name).exists() for name in names)
+    replay = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-upload-failure",
+            expected_checkpoint=2,
+        )
+    )
+    assert replay == result
+    assert len(relay.results) == 2
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        subprocess.TimeoutExpired(["ffmpeg"], 1),
+        RuntimeError("ffmpeg process failed"),
+    ],
+)
+def test_render_preview_bounds_ffmpeg_failures(tmp_path, failure):
+    payload, panel_result, names = _preview_fixture(frame_count=1, representatives=[0])
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    (renders / names[0]).write_bytes(_png())
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    def process(*args, **kwargs):
+        raise failure
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=process,
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-process-failure",
+            expected_checkpoint=2,
+        )
+    )
+    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert relay.results[-1][0][2] == result
+
+
+def test_render_preview_rejects_excessive_ffmpeg_output(tmp_path):
+    payload, panel_result, names = _preview_fixture(frame_count=1, representatives=[0])
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    (renders / names[0]).write_bytes(_png())
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    def process(argv, **kwargs):
+        Path(argv[-1]).write_bytes(b"mp4")
+        return type(
+            "Completed",
+            (),
+            {"stdout": b"x" * (connector._MAX_FFMPEG_OUTPUT_BYTES + 1), "stderr": b""},
+        )()
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=process,
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-output-limit",
+            expected_checkpoint=2,
+        )
+    )
+    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert relay.results[-1][0][2] == result
+
+
+def test_preview_png_validator_rejects_malformed_ihdr(tmp_path):
+    path = tmp_path / "bad.png"
+    valid = _png()
+    path.write_bytes(valid[:8] + struct.pack(">I4s", 12, b"IHDR") + valid[16:])
+    with pytest.raises(connector.ConnectorError, match="IHDR"):
+        connector.Connector._validate_png_sequence_file(path)
+
+
+def test_preview_dimension_failure_posts_generic_durable_result(tmp_path):
+    payload, panel_result, names = _preview_fixture(frame_count=1, representatives=[0])
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    (renders / names[0]).write_bytes(_png(1281, 720))
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=lambda *args, **kwargs: pytest.fail("invalid PNG must stop before ffmpeg"),
+    )
+    result = runner.execute_command(
+        _command(
+            "render_preview",
+            payload,
+            command_id="command-preview-dimension-failure",
+            expected_checkpoint=2,
+        )
+    )
+    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert len(result["error"]) <= connector._MAX_ERROR_BYTES
+    assert str(tmp_path) not in result["error"]
+    assert relay.results[-1][0][2] == result
+    assert (renders / names[0]).exists()
+
+
+def test_save_checkpoint_sends_only_compact_instructions_and_replays(tmp_path):
+    payload = {
+        "index": 4,
+        "checkpoint_context_digest": "a" * 64,
+        "workflow": {"state": "server-only"},
+    }
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        def call_tool(self, tool, envelope):
+            self.calls.append((tool, envelope))
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": {
+                    "saved": True,
+                    "checkpoint": {"forged": True},
+                    "checkpoint_context": {"forged": True},
+                    "workflow": {"forged": True},
+                },
+            }
+
+    relay = Relay()
+    mcp = MCP()
+    runner = connector.Connector(
+        relay,
+        mcp,
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+    )
+    command = _command(
+        "save_checkpoint",
+        payload,
+        command_id="command-save-context",
+        expected_checkpoint=4,
+    )
+    result = runner.execute_command(command)
+    assert mcp.calls[0][1]["payload"] == {
+        "index": 4,
+        "project_id": "p1",
+        "plan_id": "plan-1",
+        "session_id": "session-1",
+    }
+    assert result == {"saved": True}
+    replay = runner.execute_command(command)
+    assert replay == result
+    assert len(mcp.calls) == 1
+    assert relay.results[-1][0][2] == result
+
+
+def test_connector_recomputes_live_capabilities_before_mutation(tmp_path):
+    class Relay:
+        def post_result(self, *args, **kwargs):
+            return None
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        def call_tool(self, tool, envelope):
+            self.calls.append((tool, envelope))
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": _panel_heartbeat(),
+            }
+
+    runner = connector.Connector(
+        Relay(),
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        capability_hash="a" * 64,
+        private_root=tmp_path,
+    )
+    with pytest.raises(connector.ConnectorError, match="capabilities changed"):
+        runner._refresh_live_capabilities(
+            "command-capability",
+            "nonce-capability",
+            "plan-1",
+            "session-1",
+        )
+
+
+def test_live_capability_probe_uses_startup_font_enrichment(monkeypatch, tmp_path):
+    enriched = []
+
+    def enrich(heartbeat):
+        enriched.append(heartbeat)
+        return dict(heartbeat)
+
+    monkeypatch.setattr(connector, "enrich_heartbeat_fonts", enrich)
+    heartbeat = _panel_heartbeat()
+    approved_hash = connector.AECapabilities.from_heartbeat(heartbeat).capability_hash
+
+    class Relay:
+        def post_result(self, *args, **kwargs):
+            return None
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": heartbeat,
+            }
+
+    runner = connector.Connector(
+        Relay(),
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        capability_hash=approved_hash,
+        private_root=tmp_path,
+    )
+    assert runner._refresh_live_capabilities(
+        "command-capability",
+        "nonce-capability",
+        "plan-1",
+        "session-1",
+    ).capability_hash == approved_hash
+    assert enriched
+
+
+
+def test_compact_inspection_reuses_startup_font_enrichment(monkeypatch, tmp_path):
+    raw = _panel_heartbeat()
+    capabilities = dict(raw["capabilities"])
+    font = dict(capabilities["fonts"][0])
+    font["version"] = None
+    font["version_or_hash"] = None
+    capabilities["fonts"] = [font]
+    raw["capabilities"] = capabilities
+    enriched = []
+
+    def enrich(heartbeat):
+        enriched.append(heartbeat)
+        value = json.loads(json.dumps(heartbeat))
+        value["capabilities"]["fonts"][0]["version_or_hash"] = "font-file-sha"
+        return value
+
+    monkeypatch.setattr(connector, "enrich_heartbeat_fonts", enrich)
+    approved_hash = connector.AECapabilities.from_heartbeat(enrich(raw)).capability_hash
+    runner = connector.Connector(
+        object(),
+        object(),
+        project_id="p1",
+        device_id="d1",
+        capability_hash=approved_hash,
+        private_root=tmp_path,
+    )
+    compact = runner._compact_inspection_result(
+        {
+            "schema_version": "keepframe.ae-inspection/1",
+            "heartbeat": raw,
+            "layers": [],
+            "samples": [],
+        }
+    )
+    assert compact["heartbeat"]["capability_hash"] == approved_hash
+    assert len(enriched) == 2
+
+
+def test_connector_posts_capability_change_without_mutating_ae(tmp_path):
+    payload = {
+        "batch": {
+            "capability_digest": "a" * 64,
+            "operations": [],
+        },
+        "approved_capabilities": {
+            "digest": "a" * 64,
+            "fonts": [],
+            "effects": [],
+            "properties": {},
+        },
+        "scene_frame_count": 10,
+        "duration": 1.0,
+        "layer_count": 0,
+        "baseline": False,
+        "locked_source_ids": [],
+        "layer_sources": {},
+        "layer_native_ids": {},
+    }
+
+    class Relay:
+        def __init__(self):
+            self.results = []
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        def call_tool(self, tool, envelope):
+            self.calls.append((tool, envelope))
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": _panel_heartbeat(),
+            }
+
+    relay = Relay()
+    mcp = MCP()
+    runner = connector.Connector(
+        relay,
+        mcp,
+        project_id="p1",
+        device_id="d1",
+        capability_hash="a" * 64,
+        private_root=tmp_path,
+    )
+    result = runner.execute_command(
+        _command("apply_batch", payload, command_id="command-capability-change")
+    )
+    assert result == {"ok": False, "error": "capabilities_changed"}
+    assert [tool for tool, _envelope in mcp.calls] == ["capability_heartbeat"]
+    assert relay.results[-1][0][2] == result
+
+
+def test_connector_materializes_selected_checkpoint_before_open(tmp_path):
+    checkpoint = b"%PDF-1.4 checkpoint"
+    checkpoint_digest = hashlib.sha256(checkpoint).hexdigest()
+
+    class Relay:
+        def __init__(self):
+            self.downloads = []
+            self.results = []
+
+        def download_artifact(
+            self,
+            artifact_id,
+            destination,
+            *,
+            expected_sha256,
+            expected_length,
+            project,
+            plan,
+        ):
+            self.downloads.append(
+                (
+                    artifact_id,
+                    destination,
+                    expected_sha256,
+                    expected_length,
+                    project,
+                    plan,
+                )
+            )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(checkpoint)
+            return destination
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def __init__(self):
+            self.calls = []
+
+        def call_tool(self, tool, envelope):
+            self.calls.append((tool, envelope))
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": {"opened": True},
+            }
+
+    relay = Relay()
+    mcp = MCP()
+    runner = connector.Connector(
+        relay,
+        mcp,
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+    )
+    payload = {
+        "checkpoint_index": 7,
+        "checkpoint_artifact": {
+            "id": "art-checkpoint",
+            "sha256": checkpoint_digest,
+            "length": len(checkpoint),
+        },
+    }
+    result = runner.execute_command(
+        _command("open_project", payload, command_id="command-open-selected")
+    )
+    assert result == {"opened": True}
+    assert relay.downloads[0][0] == "art-checkpoint"
+    assert relay.downloads[0][2:] == (
+        checkpoint_digest,
+        len(checkpoint),
+        "p1",
+        "plan-1",
+    )
+    assert relay.downloads[0][1].name == "checkpoint-7.aep"
+    assert mcp.calls[0][1]["payload"] == {
+        "checkpoint_index": 7,
+        "project_id": "p1",
+        "plan_id": "plan-1",
+        "session_id": "session-1",
+    }
+
 def test_connector_scopes_every_coordinator_mcp_payload(tmp_path):
     kinds = [
         "heartbeat",
@@ -766,7 +1643,6 @@ def test_connector_scopes_every_coordinator_mcp_payload(tmp_path):
         "apply_batch",
         "inspect_layers",
         "save_checkpoint",
-        "render_preview",
         "render_final",
         "package_project",
     ]
@@ -781,12 +1657,25 @@ def test_connector_scopes_every_coordinator_mcp_payload(tmp_path):
 
         def call_tool(self, tool, envelope):
             self.calls.append((tool, envelope))
+            result = {"ok": True}
+            if tool == "inspect_mapped_layers":
+                result.update(
+                    {
+                        "schema_version": "keepframe.ae-inspection/1",
+                        "heartbeat": {
+                            "capability_hash": "a" * 64,
+                            "version": "24.1.0",
+                            "major": 24,
+                            "host": "after-effects",
+                        },
+                    }
+                )
             return {
                 "schema_version": 1,
                 "command_id": envelope["command_id"],
                 "nonce": envelope["nonce"],
                 "ok": True,
-                "result": {"ok": True},
+                "result": result,
             }
 
     mcp = MCP()
@@ -868,6 +1757,26 @@ def test_relay_5xx_statuses_are_retryable(status):
     )
     with pytest.raises(connector.TransientRelayError):
         relay.next(project="p1")
+
+
+
+def test_relay_http_error_preserves_bounded_draining_detail():
+    def opener(request, timeout=None):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            409,
+            "draining",
+            {},
+            io.BytesIO(b'{"error":"command lease is draining"}'),
+        )
+
+    relay = connector.RelayClient(
+        "https://relay.example",
+        device_token="device-secret",
+        opener=opener,
+    )
+    with pytest.raises(connector.RelayError, match="command lease is draining"):
+        relay.renew_command("command-1", 1, "nonce-1")
 
 
 @pytest.mark.parametrize("status", [400, 401, 408, 429, 499, 600])
@@ -1037,3 +1946,104 @@ def test_run_forever_continues_after_idle_poll(tmp_path):
         private_root=tmp_path,
     ).run_forever(stop_event=stop)
     assert stop.polls == 2
+
+def test_command_lease_renewal_retries_transient_failures_while_live():
+    class Relay:
+        def __init__(self):
+            self.calls = 0
+
+        def renew_command(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise connector.TransientRelayError("temporary")
+            return {"lease_expires_at": time.time() + 100.0}
+
+    relay = Relay()
+    lease = connector._CommandLeaseRenewal(
+        relay,
+        "command-renewal",
+        1,
+        "nonce-renewal",
+        30.0,
+        None,
+        project="p1",
+        plan="plan-1",
+    )
+    lease._renew_once()
+    lease.check()
+    lease._renew_once()
+    lease.check()
+    assert relay.calls == 2
+
+
+def test_command_lease_renewal_uses_monotonic_local_deadline(monkeypatch):
+    wall_clock = {"value": 1_000.0}
+    monotonic_clock = {"value": 50.0}
+
+    class Relay:
+        def renew_command(self, *args, **kwargs):
+            return {"lease_expires_at": 1.0}
+
+    monkeypatch.setattr(connector.time, "time", lambda: wall_clock["value"])
+    monkeypatch.setattr(connector.time, "monotonic", lambda: monotonic_clock["value"])
+    lease = connector._CommandLeaseRenewal(
+        Relay(),
+        "command-monotonic",
+        1,
+        "nonce-monotonic",
+        30.0,
+        900.0,
+        project="p1",
+        plan="plan-1",
+    )
+    lease._renew_once()
+    lease.check()
+    monotonic_clock["value"] = 79.9
+    lease.check()
+    monotonic_clock["value"] = 80.0
+    with pytest.raises(connector.ConnectorError, match="renewal failed"):
+        lease.check()
+
+
+def test_command_lease_renewal_treats_draining_as_graceful():
+    class Relay:
+        def renew_command(self, *args, **kwargs):
+            raise connector.RelayError(
+                "relay request failed (409): command lease is draining"
+            )
+
+    lease = connector._CommandLeaseRenewal(
+        Relay(),
+        "command-draining",
+        1,
+        "nonce-draining",
+        30.0,
+        None,
+        project="p1",
+        plan="plan-1",
+    )
+    lease._renew_once()
+    lease.check()
+    assert lease._stop.is_set()
+
+
+def test_command_lease_renewal_rejects_definitive_expiry():
+    class Relay:
+        def renew_command(self, *args, **kwargs):
+            raise connector.RelayError(
+                "relay request failed (409): command lease has expired"
+            )
+
+    lease = connector._CommandLeaseRenewal(
+        Relay(),
+        "command-expired",
+        1,
+        "nonce-expired",
+        30.0,
+        None,
+        project="p1",
+        plan="plan-1",
+    )
+    lease._renew_once()
+    with pytest.raises(connector.ConnectorError, match="renewal failed"):
+        lease.check()

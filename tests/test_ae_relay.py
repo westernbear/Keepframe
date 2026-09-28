@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import socket
 from threading import Thread
@@ -9,8 +10,13 @@ from urllib.request import Request, urlopen
 import pytest
 
 from keepframe.after_effects.auth import AEProjectAuth
-from keepframe.after_effects.models import AECapabilities
-from keepframe.after_effects.relay import _MAX_RESULT_BODY, make_relay_server
+from keepframe.after_effects.coordinator import _MAX_COMMAND_PAYLOAD_BYTES
+from keepframe.after_effects.models import AECapabilities, canonical_json
+from keepframe.after_effects.relay import (
+    _MAX_NEXT_RESPONSE_BYTES,
+    _MAX_RESULT_BODY,
+    make_relay_server,
+)
 from tests.test_ae_coordinator import (
     _AE_CAPABILITY_MANIFEST,
     _artifact_payload,
@@ -149,6 +155,45 @@ def test_relay_requires_deployment_and_device_credentials(tmp_path):
         thread.join()
 
 
+def test_relay_streams_committed_checkpoint_artifact_by_opaque_id(tmp_path):
+    workspace = tmp_path / "ws"
+    root, plan, coordinator, _ = _coordinator(workspace)
+    server, thread = _serve(workspace)
+    try:
+        paired = _pair(server, root)
+        auth = AEProjectAuth(root, "p1")
+        identity = auth.authenticate_device(paired["token"])
+        assert identity is not None
+        state = coordinator.state()
+        coordinator.transition(
+            "device_ready",
+            revision=state.revision,
+            device_id=identity.device_id,
+        )
+        payload = _artifact_payload("aep")
+        reservation = coordinator.reserve_artifact("aep", len(payload))
+        coordinator.publish_artifact(
+            identity.device_id,
+            reservation.id,
+            io.BytesIO(payload),
+            content_length=len(payload),
+        )
+        query = {"project": "p1", "plan": plan.id}
+        with _request(
+            server,
+            f"/artifacts/{reservation.id}",
+            query=query,
+            token=paired["token"],
+        ) as response:
+            assert response.headers["X-Keepframe-SHA256"]
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+            assert response.read() == payload
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 
 
 def test_relay_rejects_incomplete_json_body(tmp_path):
@@ -227,6 +272,151 @@ def test_relay_allows_large_results_but_bounds_result_body(tmp_path):
                 },
             )
         assert too_large.value.code == 413
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_relay_renews_live_command_only_with_nonce(tmp_path):
+    from keepframe.after_effects.coordinator import AECoordinator
+
+    workspace = tmp_path / "ws"
+    root, plan, _, _ = _coordinator(workspace)
+    server, thread = _serve(workspace)
+    query = {"project": "p1", "plan": plan.id}
+    try:
+        paired = _pair(server, root)
+        coordinator = AECoordinator.cached(root, plan.id)
+        state = coordinator.state()
+        if state.status.startswith("paused:"):
+            state = coordinator.transition("continue", revision=state.revision)
+        if state.status == "waiting_for_connector":
+            coordinator.transition(
+                "device_ready",
+                revision=state.revision,
+                device_id=paired["device"],
+            )
+        command = coordinator.enqueue_command(
+            "heartbeat",
+            expected_state="baseline",
+            expected_checkpoint=None,
+            lease_seconds=10,
+        )
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            leased = json.loads(response.read())["command"]
+        with _request(
+            server,
+            f"/renew/{command.id}",
+            query=query,
+            token=paired["token"],
+            method="POST",
+            payload={"sequence": leased["sequence"], "nonce": leased["nonce"]},
+        ) as response:
+            renewed = json.loads(response.read())["command"]
+        assert renewed["lease_expires_at"] > leased["lease_expires_at"]
+
+        with pytest.raises(HTTPError) as wrong_nonce:
+            _request(
+                server,
+                f"/renew/{command.id}",
+                query=query,
+                token=paired["token"],
+                method="POST",
+                payload={"sequence": leased["sequence"], "nonce": "nonce-invalid"},
+            )
+        assert wrong_nonce.value.code == 409
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_relay_returns_stable_draining_outcome_for_active_renewal(tmp_path):
+    from keepframe.after_effects.coordinator import AECoordinator
+
+    workspace = tmp_path / "ws"
+    root, plan, _, _ = _coordinator(workspace)
+    auth = AEProjectAuth(root, "p1")
+    pairing = auth.create_pairing(None, {"required": ["ae_version"]})
+    device = auth.redeem_pairing(pairing.code)
+    auth.publish_capabilities(
+        device.identity.device_id,
+        AECapabilities.model_validate(_capability_snapshot()),
+    )
+    coordinator = AECoordinator.cached(root, plan.id)
+    state = coordinator.state()
+    if state.status == "waiting_for_connector":
+        state = coordinator.transition(
+            "device_ready",
+            revision=state.revision,
+            device_id=device.identity.device_id,
+        )
+    command = coordinator.enqueue_command(
+        "heartbeat",
+        expected_state="baseline",
+        expected_checkpoint=None,
+        lease_seconds=10,
+    )
+    server, thread = _serve(workspace)
+    query = {"project": "p1", "plan": plan.id}
+    try:
+        with _request(server, "/next", query=query, token=device.token) as response:
+            leased = json.loads(response.read())["command"]
+        replacement = auth.create_pairing(pairing.controller_token, {})
+        coordinator.detach_device(
+            device.identity.device_id,
+            reason="replacement",
+        )
+        with pytest.raises(HTTPError) as draining:
+            _request(
+                server,
+                f"/renew/{command.id}",
+                query=query,
+                token=device.token,
+                method="POST",
+                payload={"sequence": leased["sequence"], "nonce": leased["nonce"]},
+            )
+        assert draining.value.code == 409
+        assert json.loads(draining.value.read()) == {
+            "code": "command_lease_draining",
+            "error": "command lease is draining",
+        }
+        assert replacement.code
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_next_bounds_complete_response_at_maximum_accepted_payload(tmp_path):
+    workspace = tmp_path / "ws"
+    root, plan, coordinator, _ = _coordinator(workspace)
+    server, thread = _serve(workspace)
+    query = {"project": "p1", "plan": plan.id}
+    try:
+        paired = _pair(server, root)
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 204
+        empty_payload_size = len(canonical_json({"blob": ""}))
+        payload = {
+            "blob": "x" * (_MAX_COMMAND_PAYLOAD_BYTES - empty_payload_size),
+        }
+        assert len(canonical_json(payload)) == _MAX_COMMAND_PAYLOAD_BYTES
+        command = coordinator.enqueue_command(
+            "heartbeat",
+            payload,
+            expected_state="baseline",
+            expected_checkpoint=None,
+        )
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 200
+            body = response.read()
+        assert len(body) <= _MAX_NEXT_RESPONSE_BYTES
+        assert len(body) <= 1024 * 1024
+        assert json.loads(body)["command"]["id"] == command.id
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 204
     finally:
         server.shutdown()
         server.server_close()
@@ -332,6 +522,44 @@ def test_next_does_not_lease_a_command_after_capability_change(tmp_path):
         thread.join()
 
 
+def test_relay_accepts_connector_capability_change_result_and_pauses(tmp_path):
+    workspace = tmp_path / "ws"
+    root, plan, coordinator, _ = _coordinator(workspace)
+    server, thread = _serve(workspace)
+    query = {"project": "p1", "plan": plan.id}
+    try:
+        paired = _pair(server, root)
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 204
+        command = coordinator.enqueue_command(
+            "heartbeat",
+            {},
+            expected_state=coordinator.state().status,
+            expected_checkpoint=None,
+        )
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            leased = json.loads(response.read())["command"]
+        assert leased["id"] == command.id
+        with _request(
+            server,
+            f"/results/{command.id}",
+            query=query,
+            token=paired["token"],
+            method="POST",
+            payload={
+                "sequence": command.sequence,
+                "result": {"ok": False, "error": "capabilities_changed"},
+            },
+        ) as response:
+            assert response.status == 200
+        assert coordinator.state().status == "paused:capabilities_changed"
+        assert coordinator.get_command(command.id).status == "completed"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 def test_next_leases_a_command_when_capabilities_match(tmp_path):
     workspace = tmp_path / "ws"
     root, plan, coordinator, _ = _coordinator(workspace)
@@ -349,6 +577,49 @@ def test_next_leases_a_command_when_capabilities_match(tmp_path):
         with _request(server, "/next", query=query, token=paired["token"]) as response:
             assert response.status == 200
             assert json.loads(response.read())["command"]["id"] == command.id
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_next_advances_workflow_before_leasing(tmp_path):
+    workspace = tmp_path / "ws"
+    root, plan, coordinator, _ = _coordinator(workspace)
+
+    class Workflow:
+        def __init__(self):
+            self.calls = 0
+
+        def advance(self, current):
+            self.calls += 1
+            if self.calls == 1:
+                state = current.state()
+                current.enqueue_command(
+                    "heartbeat",
+                    expected_state=state.status,
+                    expected_checkpoint=None,
+                    device_id=state.device_id,
+                    revision=state.revision,
+                )
+
+    workflow = Workflow()
+    server = make_relay_server(
+        workspace,
+        deployment_token=DEPLOYMENT_TOKEN,
+        workflow=workflow,
+    )
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        paired = _pair(server, root)
+        query = {"project": "p1", "plan": plan.id}
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 200
+            leased = json.loads(response.read())["command"]
+        assert workflow.calls == 1
+        assert leased["kind"] == "heartbeat"
+        assert coordinator.command_history()[-1].status == "leased"
     finally:
         server.shutdown()
         server.server_close()

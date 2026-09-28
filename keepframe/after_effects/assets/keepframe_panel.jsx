@@ -13,8 +13,9 @@
     var INFLIGHT_DIR = Folder(BRIDGE_ROOT.fsName + "/inflight");
     var STOP_FILE = File(BRIDGE_ROOT.fsName + "/stop.json");
     var ASSET_DIR = Folder(BRIDGE_ROOT.fsName + "/assets");
-    var CHECKPOINT_DIR = Folder(BRIDGE_ROOT.fsName + "/checkpoints");
-    var RENDER_DIR = Folder(BRIDGE_ROOT.fsName + "/renders");
+    var SCOPE_DIR = null;
+    var CHECKPOINT_DIR = null;
+    var RENDER_DIR = null;
     var MAX_JSON_BYTES = 1048576;
     var MAX_KEYFRAMES = 1000000;
     var SESSION_COMP_MARKER_PREFIX = "keepframe:session:v1:";
@@ -28,12 +29,54 @@
     var activeBatch = false;
 
     function ensureFolders() {
-        if (!BRIDGE_ROOT.exists) { BRIDGE_ROOT.create(); }
-        if (!COMPLETED_DIR.exists) { COMPLETED_DIR.create(); }
-        if (!INFLIGHT_DIR.exists) { INFLIGHT_DIR.create(); }
-        if (!ASSET_DIR.exists) { ASSET_DIR.create(); }
-        if (!CHECKPOINT_DIR.exists) { CHECKPOINT_DIR.create(); }
-        if (!RENDER_DIR.exists) { RENDER_DIR.create(); }
+        if (!BRIDGE_ROOT.exists && !BRIDGE_ROOT.create()) { throw new Error("Keepframe bridge root is unavailable"); }
+        if (!COMPLETED_DIR.exists && !COMPLETED_DIR.create()) { throw new Error("Keepframe completed directory is unavailable"); }
+        if (!INFLIGHT_DIR.exists && !INFLIGHT_DIR.create()) { throw new Error("Keepframe inflight directory is unavailable"); }
+        if (!ASSET_DIR.exists && !ASSET_DIR.create()) { throw new Error("Keepframe asset directory is unavailable"); }
+        if (CHECKPOINT_DIR !== null && !CHECKPOINT_DIR.exists && !CHECKPOINT_DIR.create()) { throw new Error("Keepframe checkpoint directory is unavailable"); }
+        if (RENDER_DIR !== null && !RENDER_DIR.exists && !RENDER_DIR.create()) { throw new Error("Keepframe render directory is unavailable"); }
+    }
+
+    function bindSessionDirectories(projectId, planId, sessionId) {
+        var marker = sessionMarker(projectId, planId, sessionId);
+        var scopeRoot;
+        var projectsRoot;
+        var projectRoot;
+        var planRoot;
+        var plansRoot;
+        var sessionsRoot;
+        var sessionRoot;
+        if (
+            typeof projectId !== "string"
+            || typeof planId !== "string"
+            || typeof sessionId !== "string"
+            || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(projectId)
+            || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(planId)
+            || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(sessionId)
+        ) {
+            throw new Error("Keepframe scope identity is not path-safe");
+        }
+        if (SESSION_MARKER !== null && SESSION_MARKER !== marker) {
+            throw new Error("Keepframe scope does not match the bound session");
+        }
+        ensureFolders();
+        projectsRoot = Folder(BRIDGE_ROOT.fsName + "/projects");
+        projectRoot = Folder(projectsRoot.fsName + "/" + projectId);
+        plansRoot = Folder(projectRoot.fsName + "/plans");
+        planRoot = Folder(plansRoot.fsName + "/" + planId);
+        sessionsRoot = Folder(planRoot.fsName + "/sessions");
+        sessionRoot = Folder(sessionsRoot.fsName + "/" + sessionId);
+        scopeRoot = sessionRoot;
+        if (!projectsRoot.exists && !projectsRoot.create()) { throw new Error("Keepframe project root is unavailable"); }
+        if (!projectRoot.exists && !projectRoot.create()) { throw new Error("Keepframe project scope is unavailable"); }
+        if (!plansRoot.exists && !plansRoot.create()) { throw new Error("Keepframe plans scope is unavailable"); }
+        if (!planRoot.exists && !planRoot.create()) { throw new Error("Keepframe plan scope is unavailable"); }
+        if (!sessionsRoot.exists && !sessionsRoot.create()) { throw new Error("Keepframe sessions scope is unavailable"); }
+        if (!sessionRoot.exists && !sessionRoot.create()) { throw new Error("Keepframe session scope is unavailable"); }
+        SCOPE_DIR = scopeRoot;
+        CHECKPOINT_DIR = Folder(scopeRoot.fsName + "/checkpoints");
+        RENDER_DIR = Folder(scopeRoot.fsName + "/renders");
+        ensureFolders();
     }
 
     function readText(file) {
@@ -343,6 +386,20 @@
         return metadata ? metadata.source_element_id : null;
     }
 
+    function nativeLayerId(layer) {
+        var value = layer && layer.id;
+        if (
+            typeof value !== "number"
+            || !isFinite(value)
+            || value < 1
+            || value > 1000000
+            || Math.floor(value) !== value
+        ) {
+            throw new Error("native layer id is invalid");
+        }
+        return value;
+    }
+
     function sessionMarker(projectId, planId, sessionId) {
         if (
             typeof projectId !== "string"
@@ -410,6 +467,7 @@
             throw new Error("Keepframe command scope is incomplete");
         }
         marker = sessionMarker(payload.project_id, payload.plan_id, payload.session_id);
+        bindSessionDirectories(payload.project_id, payload.plan_id, payload.session_id);
         if (kind === "create_or_open_project" && SESSION_MARKER === null && SESSION_COMP === null) {
             return false;
         }
@@ -928,6 +986,18 @@
             throw new Error(label + " must be a safe identifier");
         }
     }
+
+    function assertNativeLayerId(value, label) {
+        if (
+            typeof value !== "number"
+            || !isFinite(value)
+            || value < 1
+            || value > 1000000
+            || Math.floor(value) !== value
+        ) {
+            throw new Error(label + " must be a positive native layer id");
+        }
+    }
     function assertAssetIdentifier(value, label) {
         if (typeof value !== "string" || !ASSET_ID_PATTERN.test(value)) {
             throw new Error(label + " must be a safe asset identifier");
@@ -1279,6 +1349,7 @@
             baseline: true,
             locked_source_ids: true,
             layer_sources: true,
+            layer_native_ids: true,
             project_id: true,
             plan_id: true,
             session_id: true
@@ -1321,6 +1392,31 @@
         }
         return inventory;
     }
+
+    function mappedLayerNativeInventory() {
+        var inventory = {};
+        var nativeOwners = {};
+        var comp = requireSessionComposition();
+        var index;
+        var layer;
+        var metadata;
+        var nativeId;
+        for (index = 1; index <= comp.numLayers; index += 1) {
+            layer = comp.layer(index);
+            metadata = layerMetadata(layer);
+            if (!metadata) { continue; }
+            nativeId = nativeLayerId(layer);
+            if (hasOwn(inventory, metadata.layer_instance_id)) {
+                throw new Error("duplicate mapped layer instance id");
+            }
+            if (hasOwn(nativeOwners, String(nativeId))) {
+                throw new Error("duplicate native layer id");
+            }
+            inventory[metadata.layer_instance_id] = nativeId;
+            nativeOwners[String(nativeId)] = metadata.layer_instance_id;
+        }
+        return inventory;
+    }
     function inventorySize(inventory) {
         var count = 0;
         var key;
@@ -1332,11 +1428,15 @@
 
     function validateApplyContext(payload) {
         var actual = mappedLayerInventory();
+        var actualNative = mappedLayerNativeInventory();
         var inventory = {};
+        var nativeInventory = {};
+        var nativeOwners = {};
         var locked = {};
         var sourceIds = payload.locked_source_ids;
         var key;
         var source;
+        var nativeId;
         var index;
         if (typeof payload.baseline !== "boolean") { throw new Error("baseline must be boolean"); }
         if (!(sourceIds instanceof Array)) { throw new Error("locked_source_ids must be a list"); }
@@ -1353,9 +1453,30 @@
             if (source !== null) { assertIdentifier(source, "layer source id"); }
             inventory[key] = source;
         }
+        assertObject(payload.layer_native_ids, "layer_native_ids");
+        if (inventorySize(payload.layer_native_ids) > 1000) {
+            throw new Error("native layer inventory exceeds 1000 layers");
+        }
+        for (key in payload.layer_native_ids) {
+            if (!hasOwn(payload.layer_native_ids, key)) { continue; }
+            assertIdentifier(key, "native layer instance id");
+            nativeId = payload.layer_native_ids[key];
+            assertNativeLayerId(nativeId, "native layer id");
+            if (hasOwn(nativeOwners, String(nativeId))) {
+                throw new Error("duplicate native layer id");
+            }
+            nativeOwners[String(nativeId)] = key;
+            nativeInventory[key] = nativeId;
+        }
         for (key in actual) {
             if (!hasOwn(actual, key) || !hasOwn(inventory, key) || actual[key] !== inventory[key]) {
                 throw new Error("mapped layer inventory does not match the bound composition");
+            }
+            if (!hasOwn(actualNative, key) || !hasOwn(nativeInventory, key)) {
+                throw new Error("native layer inventory does not match the bound composition");
+            }
+            if (actualNative[key] !== nativeInventory[key]) {
+                throw new Error("native layer id does not match the bound composition");
             }
         }
         for (key in inventory) {
@@ -1363,7 +1484,17 @@
                 throw new Error("layer inventory contains an unknown mapped layer");
             }
         }
-        return { baseline: payload.baseline, locked: locked, inventory: inventory };
+        for (key in nativeInventory) {
+            if (hasOwn(nativeInventory, key) && !hasOwn(actualNative, key)) {
+                throw new Error("native layer inventory contains an unknown mapped layer");
+            }
+        }
+        return {
+            baseline: payload.baseline,
+            locked: locked,
+            inventory: inventory,
+            native_inventory: nativeInventory
+        };
     }
 
     function authorizeOperations(payload, operations) {
@@ -1464,7 +1595,11 @@
 
     function captureBatchSnapshot() {
         var comp = requireSessionComposition();
-        return { layer_count: comp.numLayers, inventory: mappedLayerInventory() };
+        return {
+            layer_count: comp.numLayers,
+            inventory: mappedLayerInventory(),
+            layer_native_ids: mappedLayerNativeInventory()
+        };
     }
 
     function sameBatchInventory(expected, actual) {
@@ -1481,8 +1616,13 @@
     function verifyBatchSnapshot(snapshot) {
         var comp = requireSessionComposition();
         var actual = mappedLayerInventory();
-        if (comp.numLayers !== snapshot.layer_count || !sameBatchInventory(snapshot.inventory, actual)) {
-            throw new Error("layer inventory/source mapping does not match pre-batch snapshot");
+        var actualNative = mappedLayerNativeInventory();
+        if (
+            comp.numLayers !== snapshot.layer_count
+            || !sameBatchInventory(snapshot.inventory, actual)
+            || !sameBatchInventory(snapshot.layer_native_ids, actualNative)
+        ) {
+            throw new Error("layer inventory/source/native mapping does not match pre-batch snapshot");
         }
     }
 
@@ -1568,7 +1708,12 @@
             }
             throw new Error("apply failed: " + batchErrorText(applyError) + "; rollback succeeded");
         }
-        return { applied: operations.length, stop_requested: stopped };
+        return {
+            applied: operations.length,
+            stop_requested: stopped,
+            layer_sources: mappedLayerInventory(),
+            layer_native_ids: mappedLayerNativeInventory()
+        };
     }
 
     function projectSettings(payload) {
@@ -1617,11 +1762,62 @@
     }
 
     function createOrOpenProject(payload) {
-        var marker = sessionMarker(payload.project_id, payload.plan_id, payload.session_id);
-        var info = heartbeat(false);
-        var settings = projectSettings(payload);
+        var marker;
+        var info;
+        var settings;
         var comp = null;
+        var checkpointIndex;
+        var file;
+        assertObject(payload, "create_or_open_project payload");
+        assertKeys(payload, {
+            project_id: true,
+            plan_id: true,
+            session_id: true,
+            width: true,
+            height: true,
+            frame_rate: true,
+            duration: true,
+            background_color: true,
+            checkpoint_index: true
+        }, "create_or_open_project payload");
+        marker = sessionMarker(payload.project_id, payload.plan_id, payload.session_id);
+        bindSessionDirectories(payload.project_id, payload.plan_id, payload.session_id);
+        info = heartbeat(false);
+        settings = projectSettings(payload);
         if (!info.ready) { throw new Error("After Effects 2022 or newer is required"); }
+        if (hasOwn(payload, "checkpoint_index")) {
+            checkpointIndex = payload.checkpoint_index;
+            if (
+                typeof checkpointIndex !== "number"
+                || !isFinite(checkpointIndex)
+                || checkpointIndex < 0
+                || checkpointIndex > 1000000
+                || Math.floor(checkpointIndex) !== checkpointIndex
+            ) {
+                throw new Error("checkpoint index is invalid");
+            }
+            file = File(CHECKPOINT_DIR.fsName + "/checkpoint-" + String(checkpointIndex) + ".aep");
+            if (!file.exists) { throw new Error("checkpoint file is unavailable"); }
+            // A replacement connector may reuse this panel process.  Never
+            // carry the prior device's in-memory composition into a selected
+            // server checkpoint.
+            SESSION_COMP = null;
+            SESSION_MARKER = null;
+            app.open(file);
+            comp = findSessionComposition(marker);
+            if (!comp || !projectSettingsMatch(comp, settings)) {
+                throw new Error("checkpoint session composition does not match the requested project");
+            }
+            SESSION_MARKER = marker;
+            SESSION_COMP = comp;
+            comp.openInViewer();
+            return {
+                opened: true,
+                project_open: true,
+                checkpoint_index: checkpointIndex,
+                heartbeat: heartbeat(false)
+            };
+        }
         if (SESSION_MARKER === marker && SESSION_COMP && compositionIsInProject(SESSION_COMP) && hasSessionMarker(SESSION_COMP, marker)) {
             comp = SESSION_COMP;
         } else if (app.project) {
@@ -1683,24 +1879,520 @@
     }
 
 
-    function inspectLayers() {
-        var rows = [];
-        var comp = requireSessionComposition();
-        var index = 1;
-        var layer;
-        while (index <= comp.numLayers) {
-            layer = comp.layer(index);
-            rows.push({
-                layer_instance_id: layerId(layer),
-                name: layer.name,
-                index: index,
-                in_point: layer.inPoint,
-                out_point: layer.outPoint,
-                source_element_id: layerSourceId(layer)
-            });
-            index += 1;
+    function validateInspectRequest(payload, comp) {
+        var frameCount;
+        var fps;
+        var expectedFrameCount;
+        var requested;
+        var layerSources;
+        var layerNativeIds;
+        var manualIds;
+        var seenPairs = {};
+        var seenSources = {};
+        var seenManual = {};
+        var seenNative = {};
+        var key;
+        var pair;
+        var source;
+        var frame;
+        var index;
+        assertObject(payload, "inspect_mapped_layers payload");
+        assertKeys(payload, {
+            project_id: true,
+            plan_id: true,
+            session_id: true,
+            frame_count: true,
+            fps: true,
+            capability_hash: true,
+            requested: true,
+            layer_sources: true,
+            layer_native_ids: true,
+            allow_new_agent_ids: true
+        }, "inspect_mapped_layers payload");
+        frameCount = payload.frame_count;
+        fps = payload.fps;
+        if (
+            typeof frameCount !== "number"
+            || !isFinite(frameCount)
+            || frameCount < 1
+            || frameCount > MAX_KEYFRAMES
+            || Math.floor(frameCount) !== frameCount
+        ) {
+            throw new Error("inspection frame count is invalid");
         }
-        return { layers: rows, heartbeat: heartbeat(false) };
+        if (typeof fps !== "number" || !isFinite(fps) || fps < 1 || fps > 99) {
+            throw new Error("inspection fps is invalid");
+        }
+        assertSha256(payload.capability_hash, "capability hash");
+        if (!approximatelyEqual(fps, comp.frameRate)) {
+            throw new Error("inspection fps does not match the bound composition");
+        }
+        expectedFrameCount = comp.duration * comp.frameRate;
+        if (!isFinite(expectedFrameCount) || !approximatelyEqual(frameCount, expectedFrameCount)) {
+            throw new Error("inspection frame count does not match the bound composition");
+        }
+        if (JSON.stringify(payload).length > MAX_JSON_BYTES) {
+            throw new Error("inspection request exceeds 1 MiB");
+        }
+        requested = payload.requested;
+        if (!(requested instanceof Array) || requested.length > 4096) {
+            throw new Error("inspection request pairs are outside bounds");
+        }
+        layerSources = payload.layer_sources;
+        assertObject(layerSources, "layer_sources");
+        if (inventorySize(layerSources) > 1000) {
+            throw new Error("layer source inventory exceeds 1000 layers");
+        }
+        for (key in layerSources) {
+            if (!hasOwn(layerSources, key)) { continue; }
+            assertIdentifier(key, "layer instance id");
+            source = layerSources[key];
+            if (source !== null) { assertIdentifier(source, "layer source id"); }
+        }
+        layerNativeIds = payload.layer_native_ids;
+        assertObject(layerNativeIds, "layer_native_ids");
+        if (inventorySize(layerNativeIds) > 1000) {
+            throw new Error("native layer inventory exceeds 1000 layers");
+        }
+        for (key in layerNativeIds) {
+            if (!hasOwn(layerNativeIds, key)) { continue; }
+            assertIdentifier(key, "native layer instance id");
+            assertNativeLayerId(layerNativeIds[key], "native layer id");
+            if (hasOwn(seenNative, String(layerNativeIds[key]))) {
+                throw new Error("duplicate native layer id");
+            }
+            seenNative[String(layerNativeIds[key])] = key;
+        }
+        manualIds = [];
+        if (hasOwn(payload, "allow_new_agent_ids")) {
+            if (!(payload.allow_new_agent_ids instanceof Array) || payload.allow_new_agent_ids.length > 1000) {
+                throw new Error("allow_new_agent_ids pool is outside bounds");
+            }
+            for (index = 0; index < payload.allow_new_agent_ids.length; index += 1) {
+                source = payload.allow_new_agent_ids[index];
+                assertIdentifier(source, "manual agent id");
+                if (!/^agent[-_:][A-Za-z0-9_.:-]{1,255}$/.test(source)) {
+                    throw new Error("manual agent id is invalid");
+                }
+                if (hasOwn(seenManual, source)) { throw new Error("duplicate manual agent id"); }
+                if (hasOwn(layerSources, source)) { throw new Error("manual agent id is already in the inventory"); }
+                seenManual[source] = true;
+                manualIds.push(source);
+            }
+        }
+        for (index = 0; index < requested.length; index += 1) {
+            pair = requested[index];
+            assertObject(pair, "inspection request pair");
+            assertKeys(pair, { source_element_id: true, frame: true }, "inspection request pair");
+            source = pair.source_element_id;
+            frame = pair.frame;
+            assertIdentifier(source, "requested source id");
+            if (!hasOwn(seenSources, source)) { seenSources[source] = true; }
+            if (!isFinite(frame) || typeof frame !== "number" || Math.floor(frame) !== frame || frame < 0 || frame >= frameCount) {
+                throw new Error("requested frame is outside bounds");
+            }
+            if (!hasOwn(seenPairs, source + "\u0000" + String(frame))) {
+                seenPairs[source + "\u0000" + String(frame)] = true;
+            } else {
+                throw new Error("inspection request contains duplicate source/frame pairs");
+            }
+        }
+        for (source in seenSources) {
+            if (hasOwn(seenSources, source) && !hasOwnValue(layerSources, source)) {
+                throw new Error("requested source is not in the authoritative inventory");
+            }
+        }
+        return {
+            frame_count: frameCount,
+            fps: fps,
+            requested: requested,
+            layer_sources: layerSources,
+            layer_native_ids: layerNativeIds,
+            manual_ids: manualIds
+        };
+    }
+
+    function hasOwnValue(inventory, sourceId) {
+        var key;
+        for (key in inventory) {
+            if (hasOwn(inventory, key) && inventory[key] === sourceId) { return true; }
+        }
+        return false;
+    }
+
+    function layerIsCameraOrLight(layer) {
+        if (typeof CameraLayer !== "undefined" && layer instanceof CameraLayer) { return true; }
+        if (typeof LightLayer !== "undefined" && layer instanceof LightLayer) { return true; }
+        return false;
+    }
+
+    function expectedLayerComment(instanceId, sourceId) {
+        return "keepframe:layer=" + instanceId + ";source_element_id=" + (sourceId || "");
+    }
+
+    function layerCommentLooksMapped(comment) {
+        return comment.indexOf("keepframe:layer=") === 0 || comment.indexOf(";source_element_id=") >= 0;
+    }
+
+    function inspectLayerInventory(request, comp) {
+        var rows = [];
+        var seen = {};
+        var seenNative = {};
+        var index;
+        var layer;
+        var metadata;
+        var comment;
+        var instanceId;
+        var sourceId;
+        var nativeId;
+        var manualIndex = 0;
+        var manualAssignments = [];
+        var expected;
+        var frameStart;
+        var frameEnd;
+        if (typeof comp.numLayers !== "number" || !isFinite(comp.numLayers) || comp.numLayers > 1000) {
+            throw new Error("layer inventory exceeds 1000 layers");
+        }
+        function frameBoundary(time) {
+            var value = Number(time) * request.fps;
+            if (!isFinite(value)) { throw new Error("layer frame interval is invalid"); }
+            return Math.max(0, Math.min(request.frame_count, Math.ceil(value - 0.000000001)));
+        }
+        for (index = 1; index <= comp.numLayers; index += 1) {
+            layer = comp.layer(index);
+            comment = String(layer.comment || "");
+            metadata = layerMetadata(layer);
+            nativeId = nativeLayerId(layer);
+            if (hasOwn(seenNative, String(nativeId))) {
+                throw new Error("duplicate native layer id");
+            }
+            seenNative[String(nativeId)] = true;
+            if (metadata) {
+                instanceId = metadata.layer_instance_id;
+                sourceId = metadata.source_element_id;
+                if (!hasOwn(request.layer_sources, instanceId)) {
+                    throw new Error("mapped layer source drift: unknown instance");
+                }
+                if (request.layer_sources[instanceId] !== sourceId) {
+                    throw new Error("mapped layer source drift");
+                }
+                if (hasOwn(request.layer_native_ids, instanceId)) {
+                    if (request.layer_native_ids[instanceId] !== nativeId) {
+                        throw new Error("native layer id does not match the authoritative inventory");
+                    }
+                } else if (
+                    inventorySize(request.layer_native_ids) > 0
+                    && request.layer_sources[instanceId] !== null
+                ) {
+                    throw new Error("authoritative native layer inventory is incomplete");
+                }
+                expected = expectedLayerComment(instanceId, sourceId);
+                if (comment !== expected) {
+                    throw new Error("mapped layer comment does not match the authoritative inventory");
+                }
+                if (hasOwn(seen, instanceId)) {
+                    throw new Error("duplicate mapped layer instance id");
+                }
+                seen[instanceId] = true;
+            } else {
+                if (layerIsCameraOrLight(layer)) { continue; }
+                if (layerCommentLooksMapped(comment)) {
+                    throw new Error("mapped layer comment is invalid or spoofed");
+                }
+                if (manualIndex >= request.manual_ids.length) {
+                    throw new Error("allow_new_agent_ids pool is exhausted");
+                }
+                instanceId = request.manual_ids[manualIndex];
+                manualIndex += 1;
+                if (hasOwn(seen, instanceId) || hasOwn(request.layer_sources, instanceId)) {
+                    throw new Error("duplicate manual agent id");
+                }
+                sourceId = null;
+                manualAssignments.push({ layer: layer, instance_id: instanceId });
+                seen[instanceId] = true;
+            }
+            frameStart = frameBoundary(layer.inPoint);
+            frameEnd = frameBoundary(layer.outPoint);
+            if (frameEnd <= frameStart) { throw new Error("layer frame interval is empty or reversed"); }
+            rows.push({
+                layer_instance_id: instanceId,
+                native_layer_id: nativeId,
+                index: index,
+                frame_start: frameStart,
+                frame_end: frameEnd,
+                source_element_id: sourceId
+            });
+        }
+        for (instanceId in request.layer_sources) {
+            if (
+                hasOwn(request.layer_sources, instanceId)
+                && !hasOwn(seen, instanceId)
+                && request.layer_sources[instanceId] !== null
+            ) {
+                throw new Error("authoritative layer inventory is incomplete");
+            }
+        }
+        for (index = 0; index < manualAssignments.length; index += 1) {
+            manualAssignments[index].layer.comment = expectedLayerComment(manualAssignments[index].instance_id, null);
+        }
+        return rows;
+    }
+
+    function finiteCompPoint(value) {
+        return (
+            value
+            && value.length >= 2
+            && isFinite(Number(value[0]))
+            && isFinite(Number(value[1]))
+            && Math.abs(Number(value[0])) <= 1000000
+            && Math.abs(Number(value[1])) <= 1000000
+        );
+    }
+
+    function unwrapWorldRotation(rawRotation, rotationState) {
+        var delta;
+        if (!rotationState) { return rawRotation; }
+        if (
+            typeof rotationState.raw !== "number"
+            || typeof rotationState.unwrapped !== "number"
+        ) {
+            rotationState.raw = rawRotation;
+            rotationState.unwrapped = rawRotation;
+            return rawRotation;
+        }
+        delta = rawRotation - rotationState.raw;
+        while (delta > 180) { delta -= 360; }
+        while (delta < -180) { delta += 360; }
+        rotationState.raw = rawRotation;
+        rotationState.unwrapped += delta;
+        return rotationState.unwrapped;
+    }
+
+
+    function inspectLayerSample(layer, time, rotationState) {
+        var transform;
+        var anchor;
+        var origin;
+        var basisX;
+        var basisY;
+        var anchorWorld;
+        var rect;
+        var corners = [];
+        var point;
+        var index;
+        var sx;
+        var sy;
+        var rotation;
+        var opacity;
+        var xmin = null;
+        var ymin = null;
+        var xmax = null;
+        var ymax = null;
+        try {
+            if (typeof layer.toComp !== "function" || typeof layer.sourceRectAtTime !== "function") {
+                return null;
+            }
+            transform = layer.transform;
+            anchor = transform.anchorPoint.valueAtTime(time, false);
+            if (!anchor || anchor.length < 2) { return null; }
+            origin = layer.toComp([0, 0], time);
+            basisX = layer.toComp([1, 0], time);
+            basisY = layer.toComp([0, 1], time);
+            anchorWorld = layer.toComp([Number(anchor[0]), Number(anchor[1])], time);
+            if (!finiteCompPoint(origin) || !finiteCompPoint(basisX) || !finiteCompPoint(basisY) || !finiteCompPoint(anchorWorld)) {
+                return null;
+            }
+            rect = layer.sourceRectAtTime(time, false);
+            if (!rect || !isFinite(Number(rect.left)) || !isFinite(Number(rect.top)) || !isFinite(Number(rect.width)) || !isFinite(Number(rect.height))) {
+                return null;
+            }
+            corners.push([Number(rect.left), Number(rect.top)]);
+            corners.push([Number(rect.left) + Number(rect.width), Number(rect.top)]);
+            corners.push([Number(rect.left), Number(rect.top) + Number(rect.height)]);
+            corners.push([Number(rect.left) + Number(rect.width), Number(rect.top) + Number(rect.height)]);
+            for (index = 0; index < corners.length; index += 1) {
+                point = layer.toComp(corners[index], time);
+                if (!finiteCompPoint(point)) { return null; }
+                xmin = xmin === null ? Number(point[0]) : Math.min(xmin, Number(point[0]));
+                ymin = ymin === null ? Number(point[1]) : Math.min(ymin, Number(point[1]));
+                xmax = xmax === null ? Number(point[0]) : Math.max(xmax, Number(point[0]));
+                ymax = ymax === null ? Number(point[1]) : Math.max(ymax, Number(point[1]));
+            }
+            sx = Math.sqrt(
+                Math.pow(Number(basisX[0]) - Number(origin[0]), 2)
+                + Math.pow(Number(basisX[1]) - Number(origin[1]), 2)
+            );
+            sy = Math.sqrt(
+                Math.pow(Number(basisY[0]) - Number(origin[0]), 2)
+                + Math.pow(Number(basisY[1]) - Number(origin[1]), 2)
+            );
+            var determinant = (
+                (Number(basisX[0]) - Number(origin[0])) * (Number(basisY[1]) - Number(origin[1]))
+                - (Number(basisX[1]) - Number(origin[1])) * (Number(basisY[0]) - Number(origin[0]))
+            );
+            if (!isFinite(determinant)) { return null; }
+            if (determinant < 0) { sy = -sy; }
+            rotation = Math.atan2(Number(basisX[1]) - Number(origin[1]), Number(basisX[0]) - Number(origin[0])) * 180 / Math.PI;
+            rotation = unwrapWorldRotation(rotation, rotationState);
+            opacity = Number(transform.opacity.valueAtTime(time, false)) / 100;
+            if (!isFinite(sx) || !isFinite(sy) || Math.abs(sx) > 1000000 || Math.abs(sy) > 1000000 || !isFinite(rotation) || Math.abs(rotation) > 1000000 || !isFinite(opacity) || opacity < 0 || opacity > 1) {
+                return null;
+            }
+            return {
+                x: Number(anchorWorld[0]),
+                y: Number(anchorWorld[1]),
+                sx: sx,
+                sy: sy,
+                rot: rotation,
+                opacity: opacity,
+                xmin: xmin,
+                ymin: ymin,
+                xmax: xmax,
+                ymax: ymax
+            };
+        } catch (ignored) {
+            return null;
+        }
+    }
+
+    function inspectLayers(payload) {
+        var comp = requireSessionComposition();
+        var originalComments = [];
+        var snapshotIndex;
+        for (snapshotIndex = 1; snapshotIndex <= comp.numLayers; snapshotIndex += 1) {
+            originalComments.push({
+                layer: comp.layer(snapshotIndex),
+                comment: String(comp.layer(snapshotIndex).comment || "")
+            });
+        }
+        try {
+            var request = validateInspectRequest(payload, comp);
+            var liveHeartbeat = heartbeat(false);
+            var rows = inspectLayerInventory(request, comp);
+        var layerSources = {};
+        var layerNativeIds = {};
+        var samples = [];
+        var sampleRows = [];
+        var missingPairs = [];
+        var missingByIndex = [];
+        var requestOrder = [];
+        var rotationStates = {};
+        var pairIndex;
+        var orderIndex;
+        var layerIndex;
+        var rowIndex;
+        var pair;
+        var layer;
+        var metadata;
+        var instances;
+        var sample;
+        var active;
+        var authoritativeLayer;
+        var activeLayer;
+        var pairMissing;
+        var response;
+        for (rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+            layerSources[rows[rowIndex].layer_instance_id] = rows[rowIndex].source_element_id;
+            layerNativeIds[rows[rowIndex].layer_instance_id] = rows[rowIndex].native_layer_id;
+        }
+        for (pairIndex = 0; pairIndex < request.requested.length; pairIndex += 1) {
+            requestOrder.push(pairIndex);
+        }
+        requestOrder.sort(function (leftIndex, rightIndex) {
+            var leftFrame = Number(request.requested[leftIndex].frame);
+            var rightFrame = Number(request.requested[rightIndex].frame);
+            if (leftFrame !== rightFrame) { return leftFrame - rightFrame; }
+            return leftIndex - rightIndex;
+        });
+        for (orderIndex = 0; orderIndex < requestOrder.length; orderIndex += 1) {
+            pairIndex = requestOrder[orderIndex];
+            pair = request.requested[pairIndex];
+            instances = [];
+            authoritativeLayer = false;
+            activeLayer = false;
+            pairMissing = false;
+            for (layerIndex = 1; layerIndex <= comp.numLayers; layerIndex += 1) {
+                layer = comp.layer(layerIndex);
+                metadata = layerMetadata(layer);
+                if (!metadata || metadata.source_element_id !== pair.source_element_id) {
+                    continue;
+                }
+                authoritativeLayer = true;
+                active = layer.enabled !== false
+                    && Number(pair.frame) / request.fps >= Number(layer.inPoint)
+                    && Number(pair.frame) / request.fps < Number(layer.outPoint);
+                if (!rotationStates[metadata.layer_instance_id]) {
+                    rotationStates[metadata.layer_instance_id] = {};
+                }
+                sample = active
+                    ? inspectLayerSample(
+                        layer,
+                        Number(pair.frame) / request.fps,
+                        rotationStates[metadata.layer_instance_id]
+                    )
+                    : null;
+                if (active) {
+                    activeLayer = true;
+                    if (sample === null) { pairMissing = true; }
+                }
+                instances.push({
+                    layer_instance_id: metadata.layer_instance_id,
+                    active: active,
+                    sample: sample === null ? null : sample
+                });
+            }
+            if (!authoritativeLayer || (activeLayer && pairMissing)) {
+                missingByIndex[pairIndex] = true;
+                pairMissing = true;
+            }
+            sampleRows[pairIndex] = {
+                source_element_id: pair.source_element_id,
+                frame: pair.frame,
+                instances: instances,
+                missing: pairMissing
+            };
+        }
+        for (pairIndex = 0; pairIndex < request.requested.length; pairIndex += 1) {
+            if (missingByIndex[pairIndex]) {
+                missingPairs.push({
+                    source_element_id: request.requested[pairIndex].source_element_id,
+                    frame: request.requested[pairIndex].frame
+                });
+            }
+        }
+        samples = sampleRows;
+        response = {
+            schema_version: "keepframe.ae-inspection/1",
+            frame_count: request.frame_count,
+            fps: request.fps,
+            requested: request.requested,
+            layers: rows,
+            layer_sources: layerSources,
+            layer_native_ids: layerNativeIds,
+            samples: samples,
+            missing_pairs: missingPairs,
+            source_aggregated: false,
+            heartbeat: {
+                capability_hash: liveHeartbeat.capability_hash,
+                capabilities: liveHeartbeat.capabilities,
+                version: liveHeartbeat.version,
+                major: liveHeartbeat.major,
+                host: liveHeartbeat.host,
+                ready: liveHeartbeat.ready,
+                project_open: liveHeartbeat.project_open,
+                timestamp: liveHeartbeat.timestamp
+            }
+        };
+        if (JSON.stringify(response).length > MAX_JSON_BYTES) {
+            throw new Error("inspection response exceeds 1 MiB");
+        }
+            return response;
+        } catch (inspectError) {
+            for (snapshotIndex = 0; snapshotIndex < originalComments.length; snapshotIndex += 1) {
+                originalComments[snapshotIndex].layer.comment = originalComments[snapshotIndex].comment;
+            }
+            throw inspectError;
+        }
     }
 
     function saveCheckpoint(payload) {
@@ -1712,6 +2404,130 @@
         var file = File(CHECKPOINT_DIR.fsName + "/checkpoint-" + String(index) + ".aep");
         app.project.save(file);
         return { saved: true, index: index, filename: file.name };
+    }
+
+    function previewFrameName(checkpointIndex, frame) {
+        var padded = String(frame);
+        while (padded.length < 6) { padded = "0" + padded; }
+        return "checkpoint-" + String(checkpointIndex) + "-" + padded + ".png";
+    }
+
+    function renderPreview(payload) {
+        var comp = requireSessionComposition();
+        var checkpointIndex;
+        var frameCount;
+        var fps;
+        var representative;
+        var seen = {};
+        var index;
+        var frame;
+        var expectedFrameCount;
+        var factor = 1;
+        var originalResolution;
+        var restoreResolution;
+        var file;
+        var representativeFiles = [];
+        var renderedWidth;
+        var renderedHeight;
+        assertObject(payload, "render_preview payload");
+        assertKeys(payload, {
+            project_id: true,
+            plan_id: true,
+            session_id: true,
+            checkpoint_index: true,
+            frame_count: true,
+            fps: true,
+            representative_frames: true
+        }, "render_preview payload");
+        checkpointIndex = payload.checkpoint_index;
+        frameCount = payload.frame_count;
+        fps = payload.fps;
+        representative = payload.representative_frames;
+        if (
+            typeof checkpointIndex !== "number"
+            || !isFinite(checkpointIndex)
+            || checkpointIndex < 0
+            || checkpointIndex > 1000000
+            || Math.floor(checkpointIndex) !== checkpointIndex
+        ) {
+            throw new Error("checkpoint index is invalid");
+        }
+        if (
+            typeof frameCount !== "number"
+            || !isFinite(frameCount)
+            || frameCount < 1
+            || frameCount > MAX_KEYFRAMES
+            || Math.floor(frameCount) !== frameCount
+        ) {
+            throw new Error("preview frame count is invalid");
+        }
+        if (typeof fps !== "number" || !isFinite(fps) || fps < 1 || fps > 99) {
+            throw new Error("preview fps is invalid");
+        }
+        expectedFrameCount = comp.duration * comp.frameRate;
+        if (!approximatelyEqual(fps, comp.frameRate) || !isFinite(expectedFrameCount) || !approximatelyEqual(frameCount, expectedFrameCount)) {
+            throw new Error("preview timing does not match the bound composition");
+        }
+        if (!(representative instanceof Array) || representative.length < 1 || representative.length > 12) {
+            throw new Error("representative frames are outside bounds");
+        }
+        for (index = 0; index < representative.length; index += 1) {
+            frame = representative[index];
+            if (typeof frame !== "number" || !isFinite(frame) || Math.floor(frame) !== frame || frame < 0 || frame >= frameCount) {
+                throw new Error("representative frame is outside bounds");
+            }
+            if (hasOwn(seen, String(frame))) { throw new Error("representative frames contain duplicates"); }
+            seen[String(frame)] = true;
+        }
+        if (!comp.resolutionFactor || comp.resolutionFactor.length < 2) {
+            throw new Error("composition resolution is unavailable");
+        }
+        while (
+            Math.ceil(comp.width / factor) > 1280
+            || Math.ceil(comp.height / factor) > 720
+        ) {
+            factor *= 2;
+            if (factor > 1000000) { throw new Error("preview resolution is outside bounds"); }
+        }
+        renderedWidth = Math.ceil(comp.width / factor);
+        renderedHeight = Math.ceil(comp.height / factor);
+        ensureFolders();
+        originalResolution = comp.resolutionFactor;
+        restoreResolution = [Number(originalResolution[0]), Number(originalResolution[1])];
+        try {
+            comp.resolutionFactor = [factor, factor];
+            for (frame = 0; frame < frameCount; frame += 1) {
+                file = File(RENDER_DIR.fsName + "/" + previewFrameName(checkpointIndex, frame));
+                if (typeof comp.saveFrameToPng !== "function") {
+                    throw new Error("After Effects frame export is unavailable");
+                }
+                comp.saveFrameToPng(frame / fps, file);
+            }
+            for (index = 0; index < representative.length; index += 1) {
+                representativeFiles.push(previewFrameName(checkpointIndex, representative[index]));
+            }
+        } finally {
+            comp.resolutionFactor = restoreResolution;
+        }
+        return {
+            rendered: true,
+            kind: "preview",
+            checkpoint_index: checkpointIndex,
+            frame_count: frameCount,
+            fps: fps,
+            width: renderedWidth,
+            height: renderedHeight,
+            resolution_factor: [factor, factor],
+            sequence: {
+                directory: "renders",
+                pattern: "checkpoint-N-%06d.png",
+                frame_count: frameCount,
+                first_frame: previewFrameName(checkpointIndex, 0),
+                last_frame: previewFrameName(checkpointIndex, frameCount - 1)
+            },
+            representative_frames: representative,
+            representative_files: representativeFiles
+        };
     }
 
     function render(kind, payload) {
@@ -1860,11 +2676,11 @@
             case "apply_operation_batch":
                 return applyBatch(command.payload || {});
             case "inspect_mapped_layers":
-                return inspectLayers();
+                return inspectLayers(command.payload || {});
             case "save_checkpoint":
                 return saveCheckpoint(command.payload || {});
             case "render_preview":
-                return render("preview", command.payload || {});
+                return renderPreview(command.payload || {});
             case "render_final":
                 return render("final", command.payload || {});
             case "package_project":

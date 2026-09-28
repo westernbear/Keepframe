@@ -77,7 +77,7 @@ def test_serve_starts_and_closes_authenticated_relay(tmp_path, monkeypatch):
     private = MagicMock()
     relay = MagicMock()
     relay_stopped = threading.Event()
-    relay.serve_forever.side_effect = lambda: relay_stopped.wait(1)
+    relay.serve_forever.side_effect = relay_stopped.wait
     relay.shutdown.side_effect = relay_stopped.set
     with (
         patch("keepframe.web.server.make_server", return_value=private) as make_private,
@@ -91,11 +91,13 @@ def test_serve_starts_and_closes_authenticated_relay(tmp_path, monkeypatch):
         host="127.0.0.1",
         port=8766,
         deployment_token="deployment-secret",
+        workflow=private.ae_workflow,
     )
     relay.serve_forever.assert_called_once()
     relay.shutdown.assert_called_once()
     relay.server_close.assert_called_once()
     private.server_close.assert_called_once()
+    private.ae_workflow.close.assert_called_once()
 
 
 def test_serve_closes_both_listeners_when_startup_check_fails(tmp_path, monkeypatch):

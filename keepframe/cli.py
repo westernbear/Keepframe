@@ -202,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
             kwargs["admin_svc"] = MemoryAdmin(workspace=workspace, job_store=JOBS)
             kwargs["admin_auth"] = MemoryAuth(users)
         srv = make_server(workspace, port=a.port, host=host, **kwargs)
+        workflow = getattr(srv, "ae_workflow", None)
         relay = None
         relay_thread = None
         relay_started = False
@@ -218,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                     host=relay_host,
                     port=relay_port,
                     deployment_token=relay_token,
+                    workflow=workflow,
                 )
 
                 def serve_relay() -> None:
@@ -310,6 +312,10 @@ def main(argv: list[str] | None = None) -> int:
                 relay.server_close()
                 if relay_started and relay_thread is not None:
                     relay_thread.join()
+            if workflow is not None:
+                close = getattr(workflow, "close", None)
+                if callable(close):
+                    close()
         return 0
     return 2
 

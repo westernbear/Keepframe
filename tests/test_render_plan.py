@@ -17,6 +17,7 @@ from keepframe.render.plan import (
     approve_render_plan,
     create_render_plan,
     load_render_plan,
+    load_render_plan_scene,
 )
 from keepframe.after_effects.planning import current_operation_manifest
 
@@ -64,6 +65,31 @@ def test_plan_is_canonical_immutable_and_pins_assets(tmp_path):
         RenderPlan.model_validate({**plan.model_dump(mode="json"), "backend": "unknown"})
     with pytest.raises(ValidationError):
         plan.backend = "after_effects"
+
+
+def test_plan_loads_immutable_scene_snapshot_after_source_changes(tmp_path):
+    root, scene = _project(tmp_path)
+    plan = create_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="native",
+        mode="preview",
+    )
+    source = root / plan.scene_project_path
+    save_scene(scene.model_copy(update={"frames": scene.frames + 1}), source)
+
+    pinned = load_render_plan_scene(root, plan.id)
+
+    assert pinned == scene
+    assert hashlib.sha256(
+        (root / "renders" / plan.id / "scene.json").read_bytes()
+    ).hexdigest() == plan.scene_sha256
+    snapshot = root / "renders" / plan.id / "scene.json"
+    snapshot.write_bytes(b"{}")
+    with pytest.raises(PlanConflict, match="digest"):
+        load_render_plan_scene(root, plan.id)
 
 
 def test_plan_rejects_asset_escape_and_symlink(tmp_path):

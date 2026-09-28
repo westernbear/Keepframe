@@ -14,21 +14,31 @@ from urllib.parse import parse_qs, urlparse
 
 from .auth import AEAuthError, AEDeviceIdentity, AEProjectAuth
 from .bridge import MAX_BRIDGE_JSON_BYTES
-from .coordinator import AECoordinator, CoordinatorConflict
+from .coordinator import (
+    AECoordinator,
+    CoordinatorConflict,
+    _MAX_COMMAND_ENVELOPE_BYTES,
+    _MAX_COMMAND_PAYLOAD_BYTES,
+)
 from .models import AECapabilities, canonical_json
 
 _PROJECT_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _PLAN_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 _COMMAND_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,255}$")
 _MAX_PAIR_BODY = 64 * 1024
+# The command payload reserves coordinator's fixed command/envelope allowance.
+# This is the complete serialized `/next` response ceiling consumed by the
+# connector, not merely the nested command payload.
+_MAX_NEXT_RESPONSE_BYTES = _MAX_COMMAND_PAYLOAD_BYTES + _MAX_COMMAND_ENVELOPE_BYTES
 # /results carries one bridge-sized object plus a fixed sequence/result wrapper.
 _MAX_RESULT_ENVELOPE_BYTES = len(b'{"sequence":1000000000,"result":}')
 _MAX_RESULT_BODY = MAX_BRIDGE_JSON_BYTES + _MAX_RESULT_ENVELOPE_BYTES
+_MAX_RENEW_BODY = 8 * 1024
 _MAX_CAPABILITY_BODY = MAX_BRIDGE_JSON_BYTES
+_REJECT_DRAIN_CHUNK = 64 * 1024
 _UPLOAD_READ_TIMEOUT = 60.0
 _REQUEST_TIMEOUT = 15.0
 _MAX_HANDLERS = 64
-
 
 def _is_reparse(path: Path) -> bool:
     if path.is_symlink():
@@ -179,6 +189,7 @@ def _next_command(
     query: dict[str, list[str]],
     identity: AEDeviceIdentity,
     snapshot: AECapabilities | None,
+    workflow: Any | None = None,
 ):
     requested_plan = "plan" in query
     plan_ids = (
@@ -217,6 +228,8 @@ def _next_command(
             # State races are intentionally invisible to the connector.  A
             # later poll rechecks capabilities and the current session state.
             continue
+        if workflow is not None:
+            workflow.advance(coordinator)
         command = coordinator.next_command(identity.device_id)
         if command is not None:
             return command
@@ -231,6 +244,7 @@ def make_relay_server(
     deployment_token: str,
     port: int = 0,
     host: str = "127.0.0.1",
+    workflow: Any | None = None,
 ) -> ThreadingHTTPServer:
     """Build the authenticated connector-only listener."""
 
@@ -301,7 +315,27 @@ def make_relay_server(
             except ValueError:
                 self._json(400, {"error": "request is invalid"})
                 return None
-            if length < 0 or length > limit:
+            if length < 0:
+                self._json(400, {"error": "request is invalid"})
+                return None
+            if length > limit:
+                # Drain a bounded excess before replying so HTTP clients that
+                # already streamed the body receive the 413 response rather
+                # than a peer-reset/broken-pipe error.  Never retain it.
+                remaining = min(length, limit + _REJECT_DRAIN_CHUNK)
+                try:
+                    while remaining:
+                        chunk = self.rfile.read(min(remaining, _REJECT_DRAIN_CHUNK))
+                        if not chunk:
+                            self.close_connection = True
+                            self._json(413, {"error": "request body is too large"})
+                            return None
+                        remaining -= len(chunk)
+                except OSError:
+                    self.close_connection = True
+                    return None
+                if length > limit + _REJECT_DRAIN_CHUNK:
+                    self.close_connection = True
                 self._json(413, {"error": "request body is too large"})
                 return None
             body = self.rfile.read(length)
@@ -355,7 +389,15 @@ def make_relay_server(
             return None
 
         def _error(self, exc: Exception) -> None:
-            if isinstance(exc, (AEAuthError, CoordinatorConflict)):
+            if str(exc).lower() == "command lease is draining":
+                self._json(
+                    409,
+                    {
+                        "code": "command_lease_draining",
+                        "error": "command lease is draining",
+                    },
+                )
+            elif isinstance(exc, (AEAuthError, CoordinatorConflict)):
                 self._json(409, {"error": "relay request conflicted"})
             else:
                 self._json(400, {"error": "request is invalid"})
@@ -364,8 +406,12 @@ def make_relay_server(
             parsed = urlparse(self.path)
             if parsed.path in {"/health", "/healthz", "/api/health"}:
                 return self._json(200, {"ok": True, "relay": "after_effects"})
-            if parsed.path != "/next" and not (
-                parsed.path.startswith("/assets/") and parsed.path.count("/") == 2
+            if parsed.path not in {"/next"} and not (
+                (
+                    parsed.path.startswith("/assets/")
+                    or parsed.path.startswith("/artifacts/")
+                )
+                and parsed.path.count("/") == 2
             ):
                 return self._json(404, {"error": "not found"})
             query = self._query(parsed)
@@ -394,17 +440,26 @@ def make_relay_server(
                                 query,
                                 identity,
                                 snapshot,
+                                workflow,
                             )
                         if command is not None or time.monotonic() >= deadline:
                             break
                         time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
                     if command is None:
                         return self._send(204, b"")
-                    return self._json(200, {"command": command.model_dump(mode="json")})
+                    body = json.dumps(
+                        {"command": command.model_dump(mode="json")},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    if len(body) > _MAX_NEXT_RESPONSE_BYTES:
+                        raise CoordinatorConflict("command response is too large")
+                    return self._send(200, body)
                 except Exception as exc:  # noqa: BLE001 - public protocol errors are generic
                     return self._error(exc)
-            asset_id = parsed.path.rsplit("/", 1)[1]
-            if not _COMMAND_RE.fullmatch(asset_id):
+            route = parsed.path.split("/", 2)[1]
+            artifact_id = parsed.path.rsplit("/", 1)[1]
+            if not _COMMAND_RE.fullmatch(artifact_id):
                 return self._json(400, {"error": "request is invalid"})
             try:
                 identity = auth.authenticate_device(
@@ -419,11 +474,26 @@ def make_relay_server(
                     identity,
                     bind=False,
                 )
-                asset, stream = coordinator.open_asset(identity.device_id, asset_id)
+                if route == "artifacts":
+                    artifact, stream = coordinator.open_artifact(artifact_id)
+                    content_type = {
+                        "aep": "application/octet-stream",
+                        "mp4": "video/mp4",
+                        "png": "image/png",
+                        "zip": "application/zip",
+                    }[artifact.kind]
+                    length = artifact.length
+                    digest = artifact.sha256
+                else:
+                    asset, stream = coordinator.open_asset(identity.device_id, artifact_id)
+                    content_type = asset.media_kind
+                    length = asset.length
+                    digest = asset.sha256
                 try:
                     self.send_response(200)
-                    self.send_header("content-type", asset.media_kind)
-                    self.send_header("content-length", str(asset.length))
+                    self.send_header("content-type", content_type)
+                    self.send_header("content-length", str(length))
+                    self.send_header("x-keepframe-sha256", digest)
                     self.send_header("cache-control", "no-store")
                     self.send_header("x-content-type-options", "nosniff")
                     self.end_headers()
@@ -443,7 +513,11 @@ def make_relay_server(
                 parsed.path != "/pair"
                 and parsed.path != "/capabilities"
                 and not (
-                    parsed.path.startswith("/results/") and parsed.path.count("/") == 2
+                    (
+                        parsed.path.startswith("/results/")
+                        or parsed.path.startswith("/renew/")
+                    )
+                    and parsed.path.count("/") == 2
                 )
             ):
                 return self._json(404, {"error": "not found"})
@@ -505,6 +579,46 @@ def make_relay_server(
                     )
                 except Exception as exc:  # noqa: BLE001
                     return self._error(exc)
+            if parsed.path.startswith("/renew/"):
+                query = self._query(parsed)
+                target = self._auth_target(query)
+                if target is None:
+                    return self._unauthorized()
+                auth, token = target
+                command_id = parsed.path.rsplit("/", 1)[1]
+                if not _COMMAND_RE.fullmatch(command_id):
+                    return self._json(400, {"error": "request is invalid"})
+                try:
+                    identity = auth.authenticate_device(token, allow_draining=True)
+                    if identity is None:
+                        return self._unauthorized()
+                    body = self._body(_MAX_RENEW_BODY)
+                    if body is None:
+                        return
+                    payload = json.loads(body.decode("utf-8") or "{}")
+                    if (
+                        not isinstance(payload, dict)
+                        or set(payload) != {"sequence", "nonce"}
+                        or not isinstance(payload.get("sequence"), int)
+                        or isinstance(payload.get("sequence"), bool)
+                        or not isinstance(payload.get("nonce"), str)
+                    ):
+                        raise CoordinatorConflict("relay request is invalid")
+                    coordinator = _context(
+                        workspace,
+                        query,
+                        identity,
+                        bind=False,
+                    )
+                    renewed = coordinator.renew_command(
+                        identity.device_id,
+                        command_id,
+                        sequence=payload["sequence"],
+                        nonce=payload["nonce"],
+                    )
+                    return self._json(200, {"command": renewed.model_dump(mode="json")})
+                except Exception as exc:  # noqa: BLE001
+                    return self._error(exc)
             query = self._query(parsed)
             target = self._auth_target(query)
             if target is None:
@@ -547,6 +661,19 @@ def make_relay_server(
                         authorized,
                         bind=False,
                     )
+                    command = coordinator.get_command(command_id)
+                    if result.get("error") == "capabilities_changed":
+                        _pause_for_capabilities(coordinator, coordinator.state())
+                    elif (
+                        command.kind == "inspect_layers"
+                        and result.get("ok") is not False
+                        and not _capabilities_match(
+                            coordinator,
+                            auth.read_capabilities(authorized.device_id),
+                        )
+                    ):
+                        _pause_for_capabilities(coordinator, coordinator.state())
+                        raise CoordinatorConflict("capabilities_changed")
                     accepted = coordinator.accept_result(
                         authorized.device_id,
                         command_id,
@@ -610,6 +737,7 @@ def make_relay_server(
             return self._json(404, {"error": "not found"})
 
     server = RelayServer((host, port), RelayHandler)
+    server.ae_workflow = workflow
     server.daemon_threads = True
     return server
 

@@ -12,16 +12,17 @@ import math
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import socket
+import zlib
 import ssl
 import secrets
 import time
-import urllib.error
-import urllib.parse
 import urllib.request
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,7 +51,20 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_RELAY_WAIT = 25.0
 _DEFAULT_RELAY_TIMEOUT = 35.0
 _RELAY_RETRY_DELAY = 1.0
-
+_MAX_FFMPEG_OUTPUT_BYTES = 64 * 1024
+_FFMPEG_TIMEOUT = 5 * 60
+_MAX_PNG_SCAN_BYTES = 64 * 1024 * 1024
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_SERVER_ONLY_PAYLOAD_FIELDS = frozenset(
+    {
+        "checkpoint_context",
+        "checkpoint_context_digest",
+        "checkpoint_artifact",
+        "workflow",
+        "prepare_manual",
+    }
+)
+_SERVER_ONLY_RESULT_FIELDS = _SERVER_ONLY_PAYLOAD_FIELDS | {"checkpoint"}
 
 COMMAND_TO_TOOL: dict[str, str] = {
     "heartbeat": "capability_heartbeat",
@@ -872,8 +886,19 @@ def _response_json(response: Any) -> dict[str, Any] | None:
         return None
     if status < 200 or status >= 300:
         error = f"relay request failed ({status})"
+        detail: str | None = None
         try:
-            _read_bounded(response, _MAX_ERROR_BYTES)
+            body = _read_bounded(response, _MAX_ERROR_BYTES)
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                parsed = None
+            candidate = parsed.get("error") if isinstance(parsed, dict) else None
+            if candidate in {
+                "command lease is draining",
+                "command lease has expired",
+            }:
+                detail = candidate
         except ConnectorError as exc:
             if _is_transient_relay_status(status):
                 raise TransientRelayError(error) from exc
@@ -882,6 +907,8 @@ def _response_json(response: Any) -> dict[str, Any] | None:
             if _is_transient_relay_status(status):
                 raise TransientRelayError(error) from exc
             raise RelayError(error) from exc
+        if detail is not None:
+            error = f"{error}: {detail}"
         if _is_transient_relay_status(status):
             raise TransientRelayError(error)
         raise RelayError(error)
@@ -980,7 +1007,11 @@ class RelayClient:
                 return _response_json(opened)
         except urllib.error.HTTPError as exc:
             try:
-                _read_bounded(exc, _MAX_ERROR_BYTES)
+                _response_json(exc)
+            except TransientRelayError:
+                raise
+            except RelayError:
+                raise
             except (ConnectorError, OSError):
                 pass
             error = f"relay request failed ({exc.code})"
@@ -1115,22 +1146,29 @@ class RelayClient:
         expected_length: int,
         project: str | None = None,
         plan: str | None = None,
+        _route: str = "assets",
+        _max_length: int = _MAX_ASSET_BYTES,
+        _label: str = "asset",
     ) -> Path:
-        asset_id = _safe_id(asset_id, "asset id")
+        if _route not in {"assets", "artifacts"}:
+            raise RelayError("download route is invalid")
+        if _label not in {"asset", "artifact"}:
+            raise RelayError("download label is invalid")
+        asset_id = _safe_id(asset_id, f"{_label} id")
         if not isinstance(expected_sha256, str) or not _SHA256.fullmatch(expected_sha256):
-            raise RelayError("asset hash is invalid")
-        if not isinstance(expected_length, int) or isinstance(expected_length, bool) or not 0 <= expected_length <= _MAX_ASSET_BYTES:
-            raise RelayError("asset length is invalid")
+            raise RelayError(f"{_label} hash is invalid")
+        if not isinstance(expected_length, int) or isinstance(expected_length, bool) or not 0 <= expected_length <= _max_length:
+            raise RelayError(f"{_label} length is invalid")
         destination = Path(destination)
-        _reject_reparse(destination, label="asset destination")
+        _reject_reparse(destination, label=f"{_label} destination")
         if not destination.parent.is_dir() or _is_reparse(destination.parent):
-            raise RelayError("asset destination is unsafe")
+            raise RelayError(f"{_label} destination is unsafe")
         headers: dict[str, str] = {}
         if project is not None:
             headers["X-Keepframe-Project"] = _safe_id(project, "project")
         query = {"plan": _safe_id(plan, "plan")} if plan is not None else None
         request = urllib.request.Request(
-            self._url(f"/assets/{asset_id}", query),
+            self._url(f"/{_route}/{asset_id}", query),
             headers=self._headers(self.device_token or "", headers),
             method="GET",
         )
@@ -1140,20 +1178,20 @@ class RelayClient:
             with _HTTPResponse(response) as opened:
                 if _response_status(opened) < 200 or _response_status(opened) >= 300:
                     _response_json(opened)
-                    raise RelayError("asset download failed")
+                    raise RelayError(f"{_label} download failed")
                 server_length = _header(opened, "Content-Length")
                 if server_length is None:
-                    raise RelayError("asset length is unavailable")
+                    raise RelayError(f"{_label} length is unavailable")
                 try:
                     if int(server_length) != expected_length:
-                        raise RelayError("asset length mismatch")
+                        raise RelayError(f"{_label} length mismatch")
                 except ValueError as exc:
-                    raise RelayError("asset length is invalid") from exc
+                    raise RelayError(f"{_label} length is invalid") from exc
                 server_hash = _header(opened, "X-Keepframe-SHA256") or _header(
                     opened, "X-Asset-SHA256"
                 )
                 if server_hash is not None and server_hash.lower() != expected_sha256:
-                    raise RelayError("asset hash mismatch")
+                    raise RelayError(f"{_label} hash mismatch")
                 fd, name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=str(destination.parent))
                 os.close(fd)
                 temporary = Path(name)
@@ -1165,18 +1203,18 @@ class RelayClient:
                         if not chunk:
                             break
                         if not isinstance(chunk, (bytes, bytearray, memoryview)):
-                            raise RelayError("asset response is invalid")
+                            raise RelayError(f"{_label} response is invalid")
                         chunk = bytes(chunk)
                         received += len(chunk)
                         if received > expected_length:
-                            raise RelayError("asset length mismatch")
+                            raise RelayError(f"{_label} length mismatch")
                         digest.update(chunk)
                         stream.write(chunk)
                     if received != expected_length or digest.hexdigest() != expected_sha256:
-                        raise RelayError("asset verification failed")
+                        raise RelayError(f"{_label} verification failed")
                     stream.flush()
                     os.fsync(stream.fileno())
-            _reject_reparse(destination, label="asset destination")
+            _reject_reparse(destination, label=f"{_label} destination")
             os.replace(temporary, destination)
             temporary = None
             if os.name != "nt":
@@ -1187,7 +1225,7 @@ class RelayClient:
                     os.close(directory_fd)
             return destination
         except urllib.error.HTTPError as exc:
-            error = f"asset download failed ({exc.code})"
+            error = f"{_label} download failed ({exc.code})"
             if _is_transient_relay_status(exc.code):
                 raise TransientRelayError(error) from None
             raise RelayError(error) from None
@@ -1195,16 +1233,38 @@ class RelayClient:
             raise
         except OSError as exc:
             if _is_transient_network_error(exc):
-                raise TransientRelayError("asset download failed") from exc
-            raise RelayError("asset download failed") from exc
+                raise TransientRelayError(f"{_label} download failed") from exc
+            raise RelayError(f"{_label} download failed") from exc
         except http.client.HTTPException as exc:
-            raise RelayError("asset download failed") from exc
+            raise RelayError(f"{_label} download failed") from exc
         finally:
             if temporary is not None:
                 try:
                     temporary.unlink()
                 except OSError:
                     pass
+
+    def download_artifact(
+        self,
+        artifact_id: str,
+        destination: Path | str,
+        *,
+        expected_sha256: str,
+        expected_length: int,
+        project: str | None = None,
+        plan: str | None = None,
+    ) -> Path:
+        return self.download_asset(
+            artifact_id,
+            destination,
+            expected_sha256=expected_sha256,
+            expected_length=expected_length,
+            project=project,
+            plan=plan,
+            _route="artifacts",
+            _max_length=_MAX_ARTIFACT_BYTES,
+            _label="artifact",
+        )
 
     def post_result(
         self,
@@ -1232,6 +1292,36 @@ class RelayClient:
             query=query,
             headers=headers,
         )
+
+    def renew_command(
+        self,
+        command_id: str,
+        sequence: int,
+        nonce: str,
+        *,
+        project: str | None = None,
+        plan: str | None = None,
+    ) -> dict[str, Any]:
+        command_id = _safe_id(command_id, "command id")
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or not 1 <= sequence <= 1_000_000_000:
+            raise RelayError("command sequence is invalid")
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 512:
+            raise RelayError("command nonce is invalid")
+        headers: dict[str, str] = {}
+        if project is not None:
+            headers["X-Keepframe-Project"] = _safe_id(project, "project")
+        query = {"plan": _safe_id(plan, "plan")} if plan is not None else None
+        response = self._request(
+            "POST",
+            f"/renew/{command_id}",
+            token=self.device_token or "",
+            payload={"sequence": sequence, "nonce": nonce},
+            query=query,
+            headers=headers,
+        )
+        if not isinstance(response, Mapping) or not isinstance(response.get("command"), dict):
+            raise RelayError("lease renewal response is invalid")
+        return dict(response["command"])
 
     def upload_artifact(
         self,
@@ -1597,6 +1687,118 @@ class CommandJournal:
             raise
 
 
+class _CommandLeaseRenewal:
+    def __init__(
+        self,
+        relay: Any,
+        command_id: str,
+        sequence: int,
+        nonce: str,
+        lease_seconds: float,
+        lease_expires_at: float | None,
+        *,
+        project: str,
+        plan: str,
+    ) -> None:
+        self._relay = relay
+        self._command_id = command_id
+        self._sequence = sequence
+        self._nonce = nonce
+        self._lease_seconds = lease_seconds
+        self._lease_expires_at = lease_expires_at
+        self._local_deadline = time.monotonic() + lease_seconds
+        self._project = project
+        self._plan = plan
+        self._stop = threading.Event()
+        self._failure: Exception | None = None
+        self._draining = False
+        self._thread: threading.Thread | None = None
+        self._enabled = callable(getattr(relay, "renew_command", None))
+
+    def _renew_once(self) -> None:
+        if not self._enabled:
+            return
+        renew = self._relay.renew_command
+        try:
+            response = renew(
+                self._command_id,
+                self._sequence,
+                self._nonce,
+                project=self._project,
+                plan=self._plan,
+            )
+            if not isinstance(response, Mapping):
+                raise ConnectorError("lease renewal response is invalid")
+            expiry = response.get("lease_expires_at")
+            if (
+                not isinstance(expiry, (int, float))
+                or isinstance(expiry, bool)
+                or not math.isfinite(float(expiry))
+            ):
+                raise ConnectorError("lease renewal response is invalid")
+            lease_seconds = response.get("lease_seconds", self._lease_seconds)
+            if (
+                not isinstance(lease_seconds, (int, float))
+                or isinstance(lease_seconds, bool)
+                or not math.isfinite(float(lease_seconds))
+                or not 0 < float(lease_seconds) <= 86_400
+            ):
+                raise ConnectorError("lease renewal response is invalid")
+            self._lease_expires_at = float(expiry)
+            self._lease_seconds = float(lease_seconds)
+            self._local_deadline = time.monotonic() + self._lease_seconds
+        except TransientRelayError:
+            # A transport failure is safe to retry while the server-side
+            # lease remains live; only a definitive relay rejection settles
+            # the command as failed.
+            return
+        except RelayError as exc:
+            if "command lease is draining" in str(exc).lower():
+                self._draining = True
+                self._stop.set()
+                return
+            self._failure = exc
+            self._stop.set()
+        except Exception as exc:  # noqa: BLE001 - lease loss stops the command
+            self._failure = exc
+            self._stop.set()
+
+    def start(self) -> None:
+        if not self._enabled:
+            return
+        self._renew_once()
+        self.check()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="keepframe-ae-lease",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        interval = max(1.0, min(30.0, self._lease_seconds / 3.0))
+        while not self._stop.is_set():
+            remaining = self._local_deadline - time.monotonic()
+            if remaining <= 0:
+                self._failure = ConnectorError("command lease expired")
+                self._stop.set()
+                return
+            if self._stop.wait(min(interval, max(1.0, remaining / 3.0))):
+                return
+            self._renew_once()
+
+    def check(self) -> None:
+        if self._enabled and self._failure is None and time.monotonic() >= self._local_deadline:
+            self._failure = ConnectorError("command lease expired")
+        if self._failure is not None:
+            raise ConnectorError("command lease renewal failed") from self._failure
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self._thread = None
+
 class Connector:
     def __init__(
         self,
@@ -1606,8 +1808,11 @@ class Connector:
         project_id: str,
         device_id: str,
         plan_digest: str | None = None,
+        capability_hash: str | None = None,
         private_root: Path | str,
         journal: CommandJournal | None = None,
+        ffmpeg: str | None = None,
+        process_runner: Callable[..., Any] | None = None,
     ) -> None:
         self.relay = relay
         self.mcp = mcp
@@ -1617,7 +1822,16 @@ class Connector:
         self.device_id = _safe_id(device_id, "device")
         if plan_digest is not None and (not isinstance(plan_digest, str) or not _SHA256.fullmatch(plan_digest)):
             raise ConnectorError("plan digest is invalid")
+        if capability_hash is not None and (
+            not isinstance(capability_hash, str) or not _SHA256.fullmatch(capability_hash)
+        ):
+            raise ConnectorError("capability hash is invalid")
+        if ffmpeg is not None and (not isinstance(ffmpeg, str) or not ffmpeg or "\x00" in ffmpeg):
+            raise ConnectorError("ffmpeg is invalid")
         self.plan_digest = plan_digest
+        self.capability_hash = capability_hash
+        self.ffmpeg = ffmpeg
+        self._process_runner = process_runner or subprocess.run
         self.private_root = Path(private_root)
         if not self.private_root.is_dir() or _is_reparse(self.private_root):
             raise ConnectorError("connector root is unsafe")
@@ -1716,6 +1930,121 @@ class Connector:
         if error is not None:
             raise MCPError("MCP result error is unexpected")
         return result_dict
+    @staticmethod
+    def _strip_server_only_result_fields(result: Mapping[str, Any]) -> dict[str, Any]:
+        output = dict(result)
+        for key in _SERVER_ONLY_RESULT_FIELDS:
+            output.pop(key, None)
+        _json_bytes(output)
+        return output
+    def _compact_inspection_result(self, result: Mapping[str, Any]) -> dict[str, Any]:
+        output = dict(result)
+        inspection: Mapping[str, Any] | None = None
+        shape = "direct"
+        if isinstance(output.get("inspection"), Mapping):
+            inspection = output["inspection"]
+            shape = "inspection"
+        elif isinstance(output.get("result"), Mapping) and isinstance(
+            output["result"].get("inspection"), Mapping
+        ):
+            inspection = output["result"]["inspection"]
+            shape = "nested"
+        elif isinstance(output.get("schema_version"), str):
+            inspection = output
+        if inspection is None:
+            raise ConnectorError("inspection result is missing inspection")
+        heartbeat = inspection.get("heartbeat")
+        if not isinstance(heartbeat, Mapping):
+            raise ConnectorError("inspection heartbeat is missing")
+        published_hash = heartbeat.get("capability_hash")
+        if isinstance(heartbeat.get("capabilities"), Mapping):
+            try:
+                heartbeat = enrich_heartbeat_fonts(heartbeat)
+                capabilities = AECapabilities.from_heartbeat(heartbeat)
+            except (TypeError, ValueError, OSError) as exc:
+                raise ConnectorError("inspection heartbeat is invalid") from exc
+            published_hash = capabilities.capability_hash
+            identity = {
+                "capability_hash": capabilities.capability_hash,
+                "version": capabilities.version,
+                "major": capabilities.major,
+                "host": capabilities.host,
+            }
+        else:
+            if not isinstance(published_hash, str) or not _SHA256.fullmatch(published_hash):
+                raise ConnectorError("inspection heartbeat is invalid")
+            identity = {
+                "capability_hash": published_hash,
+                "version": heartbeat.get("version"),
+                "major": heartbeat.get("major"),
+                "host": heartbeat.get("host"),
+            }
+        if self.capability_hash is not None and published_hash != self.capability_hash:
+            raise ConnectorError("inspection capabilities changed")
+        compact = dict(inspection)
+        compact["heartbeat"] = identity
+        if shape == "inspection":
+            output["inspection"] = compact
+        elif shape == "nested":
+            nested = dict(output["result"])
+            nested["inspection"] = compact
+            output["result"] = nested
+        else:
+            output = compact
+        _json_bytes(output)
+        return output
+
+    def _refresh_live_capabilities(
+        self,
+        command_id: str,
+        nonce: str,
+        plan_id: str,
+        session_id: str,
+    ) -> AECapabilities:
+        if self.capability_hash is None:
+            raise ConnectorError("approved capabilities are unavailable")
+        payload = {
+            "project_id": self.project_id,
+            "plan_id": plan_id,
+            "session_id": session_id,
+        }
+        probe_command_id = "command-capability-" + secrets.token_hex(8)
+        probe_nonce = "nonce-capability-" + secrets.token_hex(8)
+        raw_result = self.mcp.call_tool(
+            "capability_heartbeat",
+            {
+                "command_id": probe_command_id,
+                "nonce": probe_nonce,
+                "payload": payload,
+            },
+        )
+        result = self._normalize_mcp_result(
+            raw_result,
+            probe_command_id,
+            probe_nonce,
+            tool="capability_heartbeat",
+            payload_digest=_canonical_digest(payload),
+        )
+        heartbeat = result.get("heartbeat", result)
+        if not isinstance(heartbeat, Mapping):
+            raise ConnectorError("live capability heartbeat is invalid")
+        heartbeat = enrich_heartbeat_fonts(heartbeat)
+        try:
+            capabilities = AECapabilities.from_heartbeat(heartbeat)
+        except (TypeError, ValueError) as exc:
+            raise ConnectorError("live capability heartbeat is invalid") from exc
+        if capabilities.capability_hash != self.capability_hash:
+            raise ConnectorError("capabilities changed")
+        return capabilities
+
+    @staticmethod
+    def _local_failure_result(kind: str) -> dict[str, Any]:
+        error = (
+            "connector preview processing failed"
+            if kind == "render_preview"
+            else "connector artifact processing failed"
+        )
+        return {"ok": False, "error": error}
 
     @staticmethod
     def _local_filename(value: object, label: str) -> str:
@@ -1761,7 +2090,504 @@ class Connector:
                 plan=plan_id,
             )
 
-    def _artifact_source(self, item: Mapping[str, Any]) -> tuple[str, Path, int | None]:
+
+    def _prepare_checkpoint(
+        self,
+        payload: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+    ) -> None:
+        record = payload.get("checkpoint_artifact")
+        if record is None:
+            return
+        if not isinstance(record, Mapping):
+            raise ConnectorError("checkpoint artifact is invalid")
+        if set(record) - {"id", "reservation_id", "sha256", "length"}:
+            raise ConnectorError("checkpoint artifact is invalid")
+        artifact_id_value = record.get("id")
+        reservation_id_value = record.get("reservation_id")
+        if (
+            artifact_id_value is not None
+            and reservation_id_value is not None
+            and artifact_id_value != reservation_id_value
+        ):
+            raise ConnectorError("checkpoint artifact identity is ambiguous")
+        artifact_id = artifact_id_value or reservation_id_value
+        artifact_id = _safe_id(artifact_id, "checkpoint artifact")
+        digest = record.get("sha256")
+        length = record.get("length")
+        if (
+            not isinstance(length, int)
+            or isinstance(length, bool)
+            or not 0 <= length <= _MAX_ARTIFACT_BYTES
+        ):
+            raise ConnectorError("checkpoint artifact length is invalid")
+        checkpoint_index = self._preview_int(
+            payload.get("checkpoint_index"),
+            "checkpoint index",
+        )
+        scope = self._scope_root(plan_id, session_id)
+        checkpoints = scope / "checkpoints"
+        _reject_reparse_components(checkpoints)
+        checkpoints.mkdir(parents=True, exist_ok=True)
+        _reject_reparse_components(checkpoints)
+        destination = checkpoints / f"checkpoint-{checkpoint_index}.aep"
+        _reject_reparse(destination, label="checkpoint destination")
+        if destination.is_file() and destination.stat().st_size == length:
+            local_digest = hashlib.sha256()
+            with destination.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    local_digest.update(chunk)
+            if local_digest.hexdigest() == digest:
+                return
+        self.relay.download_artifact(
+            artifact_id,
+            destination,
+            expected_sha256=digest,
+            expected_length=length,
+            project=self.project_id,
+            plan=plan_id,
+        )
+        _reject_reparse(destination, label="checkpoint destination")
+        if not destination.is_file() or destination.stat().st_size != length:
+            raise ConnectorError("checkpoint artifact materialization failed")
+        local_digest = hashlib.sha256()
+        with destination.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                local_digest.update(chunk)
+        if local_digest.hexdigest() != digest:
+            raise ConnectorError("checkpoint artifact digest mismatch")
+
+    @staticmethod
+    def _preview_int(value: object, label: str, *, maximum: int = 1_000_000) -> int:
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= maximum:
+            raise ConnectorError(f"{label} is invalid")
+        return value
+
+    @staticmethod
+    def _preview_fps(value: object, label: str = "preview fps") -> float:
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+            or not 0 < float(value) <= 99
+        ):
+            raise ConnectorError(f"{label} is invalid")
+        return float(value)
+
+    @classmethod
+    def _preview_spec(
+        cls,
+        payload: Mapping[str, Any],
+    ) -> tuple[int, int, float, list[int], list[str]]:
+        checkpoint = cls._preview_int(payload.get("checkpoint_index"), "preview checkpoint")
+        frame_count = cls._preview_int(payload.get("frame_count"), "preview frame count")
+        if frame_count < 1:
+            raise ConnectorError("preview frame count is invalid")
+        fps = cls._preview_fps(payload.get("fps"))
+        raw_representatives = payload.get("representative_frames")
+        if raw_representatives is None:
+            raw_representatives = payload.get("selected_frames")
+        if (
+            not isinstance(raw_representatives, list)
+            or not raw_representatives
+            or len(raw_representatives) > 12
+        ):
+            raise ConnectorError("preview representative frames are invalid")
+        representatives = [
+            cls._preview_int(item, "preview representative frame", maximum=frame_count - 1)
+            for item in raw_representatives
+        ]
+        if len(set(representatives)) != len(representatives):
+            raise ConnectorError("preview representative frames are invalid")
+        names = [
+            f"checkpoint-{checkpoint}-{frame:06d}.png"
+            for frame in range(frame_count)
+        ]
+        return checkpoint, frame_count, fps, representatives, names
+
+    @staticmethod
+    def _same_preview_fps(value: object, expected: float) -> bool:
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) == expected
+        )
+
+    def _validate_preview_result(
+        self,
+        result: Mapping[str, Any],
+        *,
+        checkpoint: int,
+        frame_count: int,
+        fps: float,
+        representatives: list[int],
+        sequence_names: list[str],
+    ) -> None:
+        if result.get("rendered") is not True or result.get("kind") != "preview":
+            raise ConnectorError("preview result is not successful")
+        for key in ("path", "filepath", "sequence_path", "directory_path"):
+            if key in result:
+                raise ConnectorError("preview result contains an unsafe path")
+        if result.get("checkpoint_index") != checkpoint:
+            raise ConnectorError("preview checkpoint metadata does not match")
+        if result.get("frame_count") != frame_count:
+            raise ConnectorError("preview frame count metadata does not match")
+        if not self._same_preview_fps(result.get("fps"), fps):
+            raise ConnectorError("preview fps metadata does not match")
+        for name, maximum in (("width", 1280), ("height", 720)):
+            value = result.get(name)
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or not 0 < value <= maximum
+            ):
+                raise ConnectorError("preview dimensions are invalid")
+        if result.get("representative_frames") != representatives:
+            raise ConnectorError("preview representative frames do not match")
+        sequence = result.get("sequence")
+        if not isinstance(sequence, Mapping):
+            raise ConnectorError("preview sequence metadata is missing")
+        allowed = {
+            "directory",
+            "pattern",
+            "files",
+            "frame_count",
+            "first_frame",
+            "last_frame",
+        }
+        if set(sequence) - allowed:
+            raise ConnectorError("preview sequence metadata contains unsupported fields")
+        if sequence.get("directory") != "renders":
+            raise ConnectorError("preview sequence directory is invalid")
+        if sequence.get("pattern") not in {
+            "checkpoint-N-%06d.png",
+            f"checkpoint-{checkpoint}-%06d.png",
+        }:
+            raise ConnectorError("preview sequence pattern does not match")
+        if sequence.get("frame_count") != frame_count:
+            raise ConnectorError("preview sequence frame count does not match")
+        if "files" in sequence:
+            if sequence.get("first_frame") != 0 or sequence.get("last_frame") != frame_count - 1:
+                raise ConnectorError("preview sequence frame bounds do not match")
+            if sequence.get("files") != sequence_names:
+                raise ConnectorError("preview sequence filenames do not match")
+        elif (
+            sequence.get("first_frame") != sequence_names[0]
+            or sequence.get("last_frame") != sequence_names[-1]
+        ):
+            raise ConnectorError("preview sequence frame bounds do not match")
+        representative_files = result.get("representative_files")
+        expected_representative_files = [sequence_names[frame] for frame in representatives]
+        if representative_files != expected_representative_files:
+            raise ConnectorError("preview representative filenames do not match")
+
+    def _preview_artifacts(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        checkpoint: int,
+        representatives: list[int],
+    ) -> list[dict[str, Any]]:
+        records = payload.get("artifacts")
+        if not isinstance(records, list) or len(records) != len(representatives) + 1:
+            raise ConnectorError("preview artifact records are invalid")
+        expected_mp4 = f"checkpoint-{checkpoint}.mp4"
+        expected_png = {
+            frame: f"checkpoint-{checkpoint}-{frame:06d}.png"
+            for frame in representatives
+        }
+        mp4: dict[str, Any] | None = None
+        png_by_frame: dict[int, dict[str, Any]] = {}
+        for value in records:
+            if not isinstance(value, Mapping):
+                raise ConnectorError("preview artifact record is invalid")
+            item = dict(value)
+            if item.get("directory", "renders") != "renders":
+                raise ConnectorError("preview artifact directory is invalid")
+            kind = item.get("kind")
+            filename = self._local_filename(item.get("filename"), "artifact filename")
+            if kind == "mp4":
+                if mp4 is not None or filename != expected_mp4:
+                    raise ConnectorError("preview MP4 artifact is invalid")
+                mp4 = item
+                continue
+            if kind != "png":
+                raise ConnectorError("preview artifact kind is invalid")
+            matches = [frame for frame, name in expected_png.items() if name == filename]
+            if len(matches) != 1 or matches[0] in png_by_frame:
+                raise ConnectorError("preview representative artifact is invalid")
+            png_by_frame[matches[0]] = item
+        if mp4 is None or len(png_by_frame) != len(representatives):
+            raise ConnectorError("preview artifact records are incomplete")
+        return [mp4, *(png_by_frame[frame] for frame in representatives)]
+
+    def _scope_root(self, plan_id: str, session_id: str) -> Path:
+        plan_id = self._local_filename(plan_id, "plan")
+        session_id = self._local_filename(session_id, "session")
+        scope = self.project_root / "plans" / plan_id / "sessions" / session_id
+        _reject_reparse_components(scope)
+        try:
+            scope.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConnectorError("connector session directory is unavailable") from exc
+        _reject_reparse_components(scope)
+        if not scope.is_dir() or _is_reparse(scope):
+            raise ConnectorError("connector session directory is unsafe")
+        return scope
+
+    def _renders_directory(self, plan_id: str, session_id: str) -> Path:
+        renders = self._scope_root(plan_id, session_id) / "renders"
+        _reject_reparse_components(renders)
+        try:
+            renders.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConnectorError("render directory is unavailable") from exc
+        if not renders.is_dir() or _is_reparse(renders):
+            raise ConnectorError("render directory is unsafe")
+        return renders
+
+    @staticmethod
+    def _validate_png_sequence_file(path: Path) -> tuple[int, int]:
+        _reject_reparse(path, label="preview sequence file")
+        try:
+            if not path.is_file() or path.stat().st_size < len(_PNG_SIGNATURE):
+                raise ConnectorError("preview sequence file is invalid")
+            with path.open("rb") as stream:
+                if stream.read(len(_PNG_SIGNATURE)) != _PNG_SIGNATURE:
+                    raise ConnectorError("preview sequence file is not PNG")
+                scanned = len(_PNG_SIGNATURE)
+                seen_ihdr = False
+                seen_iend = False
+                width = 0
+                height = 0
+
+                def read_exact(length: int) -> bytes:
+                    chunks: list[bytes] = []
+                    remaining = length
+                    while remaining:
+                        chunk = stream.read(min(64 * 1024, remaining))
+                        if not chunk:
+                            raise ConnectorError("preview PNG is truncated")
+                        chunks.append(chunk)
+                        remaining -= len(chunk)
+                    return b"".join(chunks)
+
+                def skip_exact(length: int) -> None:
+                    remaining = length
+                    while remaining:
+                        chunk = stream.read(min(64 * 1024, remaining))
+                        if not chunk:
+                            raise ConnectorError("preview PNG is truncated")
+                        remaining -= len(chunk)
+
+                while not seen_iend:
+                    if scanned + 12 > _MAX_PNG_SCAN_BYTES:
+                        raise ConnectorError("preview PNG is too large to validate")
+                    header = read_exact(8)
+                    scanned += 8
+                    length = struct.unpack(">I", header[:4])[0]
+                    chunk_type = header[4:]
+                    if any(byte < 65 or byte > 122 or 90 < byte < 97 for byte in chunk_type):
+                        raise ConnectorError("preview PNG chunk type is invalid")
+                    if length > _MAX_PNG_SCAN_BYTES or scanned + length + 4 > _MAX_PNG_SCAN_BYTES:
+                        raise ConnectorError("preview PNG chunk is too large")
+                    if not seen_ihdr:
+                        if chunk_type != b"IHDR" or length != 13:
+                            raise ConnectorError("preview PNG IHDR is invalid")
+                        ihdr = read_exact(length)
+                        scanned += length
+                        crc = struct.unpack(">I", read_exact(4))[0]
+                        scanned += 4
+                        if crc != zlib.crc32(chunk_type + ihdr) & 0xFFFFFFFF:
+                            raise ConnectorError("preview PNG IHDR checksum is invalid")
+                        width, height = struct.unpack(">II", ihdr[:8])
+                        bit_depth, color_type, compression, filter_method, interlace = ihdr[8:]
+                        valid_depths = {
+                            0: {1, 2, 4, 8, 16},
+                            2: {8, 16},
+                            3: {1, 2, 4, 8},
+                            4: {8, 16},
+                            6: {8, 16},
+                        }
+                        if (
+                            not 0 < width <= 1280
+                            or not 0 < height <= 720
+                            or color_type not in valid_depths
+                            or bit_depth not in valid_depths[color_type]
+                            or compression != 0
+                            or filter_method != 0
+                            or interlace not in {0, 1}
+                        ):
+                            raise ConnectorError("preview PNG IHDR structure is invalid")
+                        seen_ihdr = True
+                        continue
+                    if chunk_type == b"IHDR":
+                        raise ConnectorError("preview PNG has duplicate IHDR")
+                    if chunk_type == b"IEND":
+                        if length != 0:
+                            raise ConnectorError("preview PNG IEND is invalid")
+                        crc = read_exact(4)
+                        scanned += 4
+                        if len(crc) != 4 or struct.unpack(">I", crc)[0] != zlib.crc32(chunk_type) & 0xFFFFFFFF:
+                            raise ConnectorError("preview PNG IEND checksum is invalid")
+                        if stream.read(1):
+                            raise ConnectorError("preview PNG has trailing data")
+                        seen_iend = True
+                        continue
+                    skip_exact(length)
+                    read_exact(4)
+                    scanned += length + 4
+                if not seen_ihdr:
+                    raise ConnectorError("preview PNG is missing IHDR")
+                return width, height
+        except OSError as exc:
+            raise ConnectorError("preview sequence file is unavailable") from exc
+
+    def _run_preview_ffmpeg(
+        self,
+        *,
+        renders: Path,
+        checkpoint: int,
+        frame_count: int,
+        fps: float,
+        sequence_names: list[str],
+    ) -> Path:
+        if self.ffmpeg is None:
+            raise ConnectorError("preflighted ffmpeg is unavailable")
+        dimensions: tuple[int, int] | None = None
+        for filename in sequence_names:
+            current = self._validate_png_sequence_file(renders / filename)
+            if dimensions is None:
+                dimensions = current
+            elif current != dimensions:
+                raise ConnectorError("preview PNG dimensions do not match")
+        output = renders / f"checkpoint-{checkpoint}.mp4"
+        _reject_reparse(output, label="preview MP4")
+        argv = [
+            self.ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(renders / f"checkpoint-{checkpoint}-%06d.png"),
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-frames:v",
+            str(frame_count),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
+            str(output),
+        ]
+
+        def check_output(stream: Any) -> None:
+            total = 0
+            while True:
+                chunk = stream.read(min(64 * 1024, _MAX_FFMPEG_OUTPUT_BYTES - total + 1))
+                if not chunk:
+                    return
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise ConnectorError("preview ffmpeg output is invalid")
+                total += len(chunk)
+                if total > _MAX_FFMPEG_OUTPUT_BYTES:
+                    raise ConnectorError("preview ffmpeg output is too large")
+
+        try:
+            with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(
+                mode="w+b"
+            ) as stderr_file:
+                completed = self._process_runner(
+                    argv,
+                    check=True,
+                    shell=False,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    timeout=_FFMPEG_TIMEOUT,
+                    cwd=str(self.private_root),
+                    env=build_child_env(),
+                )
+                stdout_file.flush()
+                stderr_file.flush()
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                check_output(stdout_file)
+                check_output(stderr_file)
+        except subprocess.TimeoutExpired as exc:
+            raise ConnectorError("preview ffmpeg timed out") from exc
+        except ConnectorError:
+            raise
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ConnectorError("preview ffmpeg failed") from exc
+        except Exception as exc:  # noqa: BLE001 - process failures fail closed
+            raise ConnectorError("preview ffmpeg failed") from exc
+        for stream in ("stdout", "stderr"):
+            output_bytes = getattr(completed, stream, None)
+            if output_bytes is None:
+                continue
+            if isinstance(output_bytes, str):
+                output_bytes = output_bytes.encode("utf-8", "replace")
+            if not isinstance(output_bytes, (bytes, bytearray, memoryview)):
+                raise ConnectorError("preview ffmpeg output is invalid")
+            if len(output_bytes) > _MAX_FFMPEG_OUTPUT_BYTES:
+                raise ConnectorError("preview ffmpeg output is too large")
+        _reject_reparse(output, label="preview MP4")
+        try:
+            if not output.is_file() or output.stat().st_size <= 0:
+                raise ConnectorError("preview MP4 was not created")
+        except OSError as exc:
+            raise ConnectorError("preview MP4 is unavailable") from exc
+        return output
+
+
+    def _render_preview(
+        self,
+        payload: Mapping[str, Any],
+        result: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        checkpoint, frame_count, fps, representatives, sequence_names = self._preview_spec(payload)
+        self._validate_preview_result(
+            result,
+            checkpoint=checkpoint,
+            frame_count=frame_count,
+            fps=fps,
+            representatives=representatives,
+            sequence_names=sequence_names,
+        )
+        artifacts = self._preview_artifacts(
+            payload,
+            checkpoint=checkpoint,
+            representatives=representatives,
+        )
+        renders = self._renders_directory(plan_id, session_id)
+        self._run_preview_ffmpeg(
+            renders=renders,
+            checkpoint=checkpoint,
+            frame_count=frame_count,
+            fps=fps,
+            sequence_names=sequence_names,
+        )
+        upload_payload = dict(payload)
+        upload_payload["artifacts"] = artifacts
+        return self._upload_artifacts(upload_payload, result, plan_id, session_id)
+
+    def _artifact_source(
+        self,
+        item: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+    ) -> tuple[str, Path, int | None]:
+        kind = item.get("kind")
+        if kind not in {"png", "mp4", "aep", "zip"}:
+            raise ConnectorError("artifact kind is invalid")
         reservation = _safe_id(
             item.get("reservation_id", item.get("id")),
             "artifact reservation",
@@ -1773,7 +2599,7 @@ class Connector:
             "renders",
         }:
             raise ConnectorError("artifact directory is invalid")
-        directory = self.private_root / directory_name
+        directory = self._scope_root(plan_id, session_id) / directory_name
         _reject_reparse_components(directory)
         if not directory.is_dir() or _is_reparse(directory):
             raise ConnectorError("artifact directory is unavailable")
@@ -1793,6 +2619,7 @@ class Connector:
         payload: Mapping[str, Any],
         result: Mapping[str, Any],
         plan_id: str,
+        session_id: str,
     ) -> dict[str, Any]:
         records = payload.get("artifacts")
         if records is None:
@@ -1803,7 +2630,9 @@ class Connector:
         for item in records:
             if not isinstance(item, Mapping):
                 raise ConnectorError("command artifact is invalid")
-            reservation, source, expected_length = self._artifact_source(item)
+            reservation, source, expected_length = self._artifact_source(
+                item, plan_id, session_id
+            )
             response = self.relay.upload_artifact(
                 reservation,
                 source,
@@ -1917,6 +2746,17 @@ class Connector:
         ):
             raise ConnectorError("command lease is invalid")
         lease_seconds = float(lease_seconds)
+        lease_expires_at = command.get("lease_expires_at")
+        if lease_expires_at is not None and (
+            not isinstance(lease_expires_at, (int, float))
+            or isinstance(lease_expires_at, bool)
+            or not math.isfinite(float(lease_expires_at))
+            or float(lease_expires_at) <= 0
+        ):
+            raise ConnectorError("command lease expiry is invalid")
+        lease_expires_at = (
+            None if lease_expires_at is None else float(lease_expires_at)
+        )
         scope = (project_id, plan_id, session_id)
         fingerprint = _canonical_digest(
             {
@@ -1955,66 +2795,124 @@ class Connector:
             self.journal.acknowledge(command_id)
             return result
         self.journal.check_scope(scope, command_digest, sequence)
-        self._prepare_assets(payload, plan_id)
-        mcp_payload = {
-            key: item
-            for key, item in payload.items()
-            if key not in {"assets", "artifacts"}
-        }
-        if tool == "import_server_asset" and "asset_id" not in mcp_payload:
-            assets = payload.get("assets")
-            if isinstance(assets, list) and len(assets) == 1 and isinstance(assets[0], Mapping):
-                asset_id = self._local_filename(
-                    assets[0].get("id", assets[0].get("asset_id")),
-                    "asset id",
-                )
-                mcp_payload["asset_id"] = asset_id
-        mcp_payload.update(
-            {
-                "project_id": self.project_id,
-                "plan_id": plan_id,
-                "session_id": session_id,
-            }
-        )
-        _json_bytes(mcp_payload)
-        envelope = {
-            "command_id": command_id,
-            "nonce": nonce,
-            "payload": mcp_payload,
-        }
-        try:
-            raw_result = self.mcp.call_tool(tool, envelope)
-        except ConnectorError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - no untrusted MCP error escapes
-            raise MCPError("MCP command failed") from exc
-        result_dict = self._normalize_mcp_result(
-            raw_result,
+
+        lease = _CommandLeaseRenewal(
+            self.relay,
             command_id,
+            sequence,
             nonce,
-            tool=tool,
-            payload_digest=_canonical_digest(mcp_payload),
-        )
-        result_dict = self._upload_artifacts(payload, result_dict, plan_id)
-        # Journal before posting. A lost relay response therefore causes a
-        # result retry, never a second mutation in After Effects.
-        self.journal.record(
-            command_id,
-            sequence,
-            scope,
-            command_digest,
-            fingerprint,
-            result_dict,
-        )
-        self.relay.post_result(
-            command_id,
-            sequence,
-            result_dict,
+            lease_seconds,
+            lease_expires_at,
             project=self.project_id,
             plan=plan_id,
         )
-        self.journal.acknowledge(command_id)
-        return result_dict
+
+        def finish(result: dict[str, Any]) -> dict[str, Any]:
+            # Journal before posting. A lost relay response therefore causes a
+            # result retry, never a second mutation in After Effects.
+            lease.close()
+            lease.check()
+            self.journal.record(
+                command_id,
+                sequence,
+                scope,
+                command_digest,
+                fingerprint,
+                result,
+            )
+            self.relay.post_result(
+                command_id,
+                sequence,
+                result,
+                project=self.project_id,
+                plan=plan_id,
+            )
+            self.journal.acknowledge(command_id)
+            return result
+        lease.start()
+        try:
+            self._prepare_assets(payload, plan_id)
+            if kind == "open_project":
+                self._prepare_checkpoint(payload, plan_id, session_id)
+        except ConnectorError:
+            if kind == "render_preview" or payload.get("artifacts") is not None:
+                return finish(self._local_failure_result(kind))
+            lease.close()
+            raise
+        except Exception:
+            lease.close()
+            raise
+        try:
+            server_only = {"assets", "artifacts"} | _SERVER_ONLY_PAYLOAD_FIELDS
+            mcp_payload = {
+                key: item
+                for key, item in payload.items()
+                if key not in server_only
+            }
+            if tool == "import_server_asset" and "asset_id" not in mcp_payload:
+                assets = payload.get("assets")
+                if isinstance(assets, list) and len(assets) == 1 and isinstance(assets[0], Mapping):
+                    asset_id = self._local_filename(
+                        assets[0].get("id", assets[0].get("asset_id")),
+                        "asset id",
+                    )
+                    mcp_payload["asset_id"] = asset_id
+            mcp_payload.update(
+                {
+                    "project_id": self.project_id,
+                    "plan_id": plan_id,
+                    "session_id": session_id,
+                }
+            )
+            if kind in {"apply_batch", "inspect_layers"} and self.capability_hash is not None:
+                try:
+                    self._refresh_live_capabilities(
+                        command_id,
+                        nonce,
+                        plan_id,
+                        session_id,
+                    )
+                except ConnectorError:
+                    return finish({"ok": False, "error": "capabilities_changed"})
+            _json_bytes(mcp_payload)
+            envelope = {
+                "command_id": command_id,
+                "nonce": nonce,
+                "payload": mcp_payload,
+            }
+            try:
+                raw_result = self.mcp.call_tool(tool, envelope)
+                result_dict = self._normalize_mcp_result(
+                    raw_result,
+                    command_id,
+                    nonce,
+                    tool=tool,
+                    payload_digest=_canonical_digest(mcp_payload),
+                )
+                if kind == "inspect_layers" and result_dict.get("ok") is not False:
+                    result_dict = self._compact_inspection_result(result_dict)
+                result_dict = self._strip_server_only_result_fields(result_dict)
+            except ConnectorError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - no untrusted MCP error escapes
+                raise MCPError("MCP command failed") from exc
+            try:
+                if kind == "render_preview" and result_dict.get("ok") is not False:
+                    result_dict = self._render_preview(
+                        payload, result_dict, plan_id, session_id
+                    )
+                elif result_dict.get("ok") is not False:
+                    result_dict = self._upload_artifacts(
+                        payload, result_dict, plan_id, session_id
+                    )
+            except ConnectorError:
+                if kind == "render_preview" or payload.get("artifacts") is not None:
+                    result_dict = self._local_failure_result(kind)
+                else:
+                    raise
+            return finish(result_dict)
+        finally:
+            lease.close()
 
     def run_once(self, *, wait: float = _MAX_RELAY_WAIT) -> bool:
         command = self.relay.next(project=self.project_id, wait=wait)
@@ -2305,7 +3203,13 @@ def run_connector(
             client,
             project_id=project,
             device_id=device_id,
+            capability_hash=getattr(
+                checked,
+                "capability_hash",
+                getattr(checked.capabilities, "capability_hash", None),
+            ),
             private_root=checked.private_root,
+            ffmpeg=getattr(checked, "ffmpeg", None),
         ).run_forever()
         return 0
     except ConnectorError:

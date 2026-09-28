@@ -203,10 +203,28 @@ def test_ae_approval_rechecks_capabilities_only_before_consumption(tmp_path):
     assert first["session"]["id"] == retry["session"]["id"]
 
 
+class _ManualWorkflow:
+    def advance(self, coordinator):
+        state = coordinator.state()
+        return coordinator.enqueue_command(
+            "inspect_layers",
+            {"workflow": {"stage": "manual_inspect"}},
+            expected_state="manual_edit",
+            expected_checkpoint=state.selected_checkpoint,
+            device_id=state.device_id,
+            revision=state.revision,
+        )
+    manual_sync = advance
+
+
 def test_ae_private_controls_enforce_revision_and_transition_table(tmp_path):
     workspace = tmp_path / "ws"
     plan = _plan(workspace, backend="after_effects", mode="final")
-    server = start(workspace, ae_relay_url="https://relay.example")
+    server = start(
+        workspace,
+        ae_relay_url="https://relay.example",
+        workflow=_ManualWorkflow(),
+    )
     try:
         cookie, _, _ = _pair(server, workspace)
         _, approved = _ae_post(
@@ -266,43 +284,12 @@ def test_ae_private_controls_enforce_revision_and_transition_table(tmp_path):
             },
         )
         assert syncing["session"]["status"] == "manual_edit"
-        assert syncing["command"]["kind"] == "sync_manual"
-        checkpoint = _committed_checkpoint(coordinator, 1, provenance="manual")
-        leased = coordinator.next_command("device-1")
-        assert leased is not None and leased.id == syncing["command"]["id"]
-        coordinator.accept_result(
-            "device-1",
-            leased.id,
-            sequence=leased.sequence,
-            result={"ok": True, "checkpoint": checkpoint.model_dump(mode="json")},
-        )
-        synced = coordinator.state()
-        _, selected = _ae_post(
-            server,
-            cookie,
-            f"/api/ae/sessions/{session.id}/select-checkpoint",
-            {
-                "project": "p1",
-                "plan": plan.id,
-                "revision": synced.revision,
-                "checkpoint": 1,
-            },
-        )
-        _, finalizing = _ae_post(
-            server,
-            cookie,
-            f"/api/ae/sessions/{session.id}/finalize",
-            {
-                "project": "p1",
-                "plan": plan.id,
-                "revision": selected["session"]["revision"],
-            },
-        )
+        assert syncing["command"]["kind"] == "inspect_layers"
+        assert syncing["command"]["payload"]["workflow"]["stage"] == "manual_inspect"
     finally:
         server.shutdown()
 
-    assert synced.status == "paused:manual_synced"
-    assert finalizing["session"]["status"] == "finalizing"
+    assert syncing["session"]["status"] == "manual_edit"
 
 
 def test_ae_private_control_missing_project_is_not_an_oracle(tmp_path):

@@ -71,6 +71,15 @@ Unsupported fonts or converter semantics produce a non-approvable draft until
 the proposed lost semantics are acknowledged; capability changes require a new
 successor plan.
 
+Approved After Effects sessions first build and verify deterministic checkpoint
+0, then send at most 12 bounded preview frames to the configured LLM for typed
+polish operations. Every baseline, agent, and manual candidate retains its AEP,
+preview, frames, inspection, operations, model response, manifests, and verifier
+report. Failed candidates remain inspectable and roll back to the last passing
+checkpoint. The loop has no iteration cap; one no-op or two identical model
+plans pauses it as `no_progress`. Manual AE edits sync as new checkpoints and
+never modify Keepframe IR.
+
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash

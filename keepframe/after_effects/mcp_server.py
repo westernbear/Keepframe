@@ -59,13 +59,47 @@ _APPLY_FIELDS = frozenset(
         "baseline",
         "locked_source_ids",
         "layer_sources",
+        "layer_native_ids",
         "project_id",
         "plan_id",
         "session_id",
     }
 )
 _SCOPE_FIELDS = ("project_id", "plan_id", "session_id")
+_COMMAND_TIMEOUTS = {
+    "apply_operation_batch": 30 * 60.0,
+    "inspect_mapped_layers": 30 * 60.0,
+    "render_preview": 30 * 60.0,
+    "render_final": 30 * 60.0,
+    "save_checkpoint": 30 * 60.0,
+    "package_project": 15 * 60.0,
+}
 _SCOPE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
+
+def _canonical_native_layer_ids(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise ValueError("layer_native_ids must be an object")
+    if len(value) > 1_000:
+        raise ValueError("layer_native_ids exceeds 1000 layers")
+    result: dict[str, int] = {}
+    seen_native_ids: set[int] = set()
+    for instance_id, native_id in value.items():
+        if not isinstance(instance_id, str) or not _SCOPE_ID_RE.fullmatch(instance_id):
+            raise ValueError("layer_native_ids contains an invalid instance id")
+        if (
+            not isinstance(native_id, int)
+            or isinstance(native_id, bool)
+            or native_id < 1
+            or native_id > 1_000_000
+        ):
+            raise ValueError("native layer id must be a positive integer")
+        if native_id in seen_native_ids:
+            raise ValueError("duplicate native layer id")
+        seen_native_ids.add(native_id)
+        result[instance_id] = native_id
+    return dict(sorted(result.items()))
+
+
 
 
 def _result_value(value: Any) -> Any:
@@ -94,6 +128,7 @@ def _canonical_apply_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("locked_source_ids must be a list")
     if not isinstance(payload["layer_sources"], Mapping):
         raise ValueError("layer_sources must be an object")
+    layer_native_ids = _canonical_native_layer_ids(payload["layer_native_ids"])
     baseline, locked_source_ids, layer_sources = canonicalize_operation_context(
         baseline=payload["baseline"],
         locked_source_ids=payload["locked_source_ids"],
@@ -120,6 +155,7 @@ def _canonical_apply_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "baseline": baseline,
         "locked_source_ids": locked_source_ids,
         "layer_sources": layer_sources,
+        "layer_native_ids": layer_native_ids,
     }
     canonical.update(bounds)
     canonical.update({field: payload[field] for field in _SCOPE_FIELDS})
@@ -146,12 +182,15 @@ def _forwarder(bridge: Bridge, kind: str) -> ToolForwarder:
         if not isinstance(payload, Mapping):
             raise TypeError("MCP command payload must be an object")
         normalized = _canonical_apply_payload(payload) if kind == "apply_operation_batch" else dict(payload)
+        dispatch_kwargs: dict[str, Any] = {"command_id": command_id, "nonce": nonce}
+        timeout = _COMMAND_TIMEOUTS.get(kind)
+        if timeout is not None:
+            dispatch_kwargs["timeout"] = timeout
         return _result_value(
             bridge.dispatch(
                 kind,
                 normalized,
-                command_id=command_id,
-                nonce=nonce,
+                **dispatch_kwargs,
             )
         )
 

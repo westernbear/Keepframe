@@ -15,6 +15,7 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..ir.schema import Scene, load_scene_json
 from ..ir.store import load_project, load_scene
 
 RenderBackend = Literal["native", "after_effects"]
@@ -99,6 +100,7 @@ class RenderPlan(BaseModel):
     mode: RenderMode
     direction: str | None = None
     scene_sha256: str
+    scene_project_path: str
     assets: tuple[PlanAsset, ...] = ()
     locked_targets: tuple[str, ...] = ()
     permitted_operations: tuple[dict[str, Any], ...] = ()
@@ -118,6 +120,14 @@ class RenderPlan(BaseModel):
         if not value:
             raise ValueError("plan identifiers must not be empty")
         return value
+
+    @field_validator("scene_project_path")
+    @classmethod
+    def _scene_project_path(cls, value: str) -> str:
+        try:
+            return _relative_asset(value)
+        except ValueError as exc:
+            raise ValueError("scene path must be project-relative") from exc
 
     @field_validator("direction")
     @classmethod
@@ -660,7 +670,8 @@ def create_render_plan(
         scene=scene,
     )
 
-    scene_sha256, _ = _hash_file(scene_path)
+    scene_sha256, scene_length = _hash_file(scene_path)
+    scene_project_path = scene_path.relative_to(root).as_posix()
     scene_dir = scene_path.parent
     refs: list[tuple[str, Literal["texture", "raw", "substitution"]]] = []
     for element in scene.elements:
@@ -734,6 +745,7 @@ def create_render_plan(
                 "mode": mode,
                 "direction": direction,
                 "scene_sha256": scene_sha256,
+                "scene_project_path": scene_project_path,
                 "assets": [
                     {
                         "id": asset.id,
@@ -759,6 +771,12 @@ def create_render_plan(
             digest = hashlib.sha256(_canonical_payload(plan_without_digest)).hexdigest()
             plan = RenderPlan.model_validate_json(
                 json.dumps({**plan_without_digest, "digest": digest}, ensure_ascii=False, allow_nan=False)
+            )
+            _copy_immutable(
+                scene_path,
+                staging / "scene.json",
+                scene_sha256,
+                scene_length,
             )
             for asset in assets:
                 source, sha256, _ = sources[asset.id]
@@ -816,6 +834,25 @@ def load_render_plan(root: Path, plan_id: str) -> RenderPlan:
     for asset in plan.assets:
         _validate_pinned_asset(Path(root), plan, asset)
     return plan
+
+
+def load_render_plan_scene(root: Path, plan_id: str) -> Scene:
+    plan = load_render_plan(root, plan_id)
+    path = _plan_dir(Path(root), plan.id) / "scene.json"
+    _ensure_project_path(Path(root), path, "pinned scene", kind="file")
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise PlanConflict("pinned scene is unavailable") from exc
+    if hashlib.sha256(data).hexdigest() != plan.scene_sha256:
+        raise PlanConflict("pinned scene digest mismatch")
+    try:
+        scene = load_scene_json(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+        raise PlanConflict("pinned scene is invalid") from exc
+    if scene.id != plan.scene_id:
+        raise PlanConflict("pinned scene id does not match the render plan")
+    return scene
 
 
 def load_render_plan_state(root: Path, plan_id: str) -> RenderPlanState:
