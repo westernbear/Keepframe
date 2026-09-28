@@ -13,7 +13,12 @@ from keepframe.after_effects.models import AECapabilities
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.jobs import JobStore
-from keepframe.render.plan import PlanConflict, approve_render_plan, create_render_plan
+from keepframe.render.plan import (
+    PlanConflict,
+    approve_render_plan,
+    create_render_plan,
+    load_render_plan,
+)
 from keepframe.web import server as web_server
 from tests.test_native_plan import RecordingRunner
 from tests.test_ae_coordinator import (
@@ -201,7 +206,10 @@ def test_final_ae_successor_uses_server_checkpoint_context_and_is_idempotent(tmp
 
     assert final == retry
     assert final.predecessor_checkpoint_digest == paused.checkpoints[0].context_digest
-    final_state = web_server._render_state_payload(workspace / "p1", final.id)
+    final_state = web_server._render_state_payload(
+        workspace / "p1",
+        load_render_plan(workspace / "p1", final.id),
+    )
     assert final_state["plan"]["id"] == final.id
     assert final_state["session"]["plan_id"] == preview.id
     assert len(

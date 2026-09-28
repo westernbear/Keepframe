@@ -2,6 +2,7 @@ import json
 import io
 import os
 import socket
+import time
 from threading import Thread
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -32,8 +33,12 @@ def _capability_snapshot() -> dict[str, object]:
 DEPLOYMENT_TOKEN = "deployment-" + "a" * 32
 
 
-def _serve(workspace):
-    server = make_relay_server(workspace, deployment_token=DEPLOYMENT_TOKEN)
+def _serve(workspace, **kwargs):
+    server = make_relay_server(
+        workspace,
+        deployment_token=DEPLOYMENT_TOKEN,
+        **kwargs,
+    )
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
@@ -84,6 +89,12 @@ def test_relay_requires_deployment_and_device_credentials(tmp_path):
     root, plan, _, _ = _coordinator(workspace)
     with pytest.raises(ValueError, match="token"):
         make_relay_server(workspace, deployment_token="")
+    with pytest.raises(ValueError, match="timeout"):
+        make_relay_server(
+            workspace,
+            deployment_token=DEPLOYMENT_TOKEN,
+            device_timeout=0,
+        )
 
     server, thread = _serve(workspace)
     try:
@@ -150,6 +161,30 @@ def test_relay_requires_deployment_and_device_credentials(tmp_path):
                 payload={"project": "p1", "code": pairing.code},
             )
         assert replayed_pair.value.code == 401
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_relay_pauses_session_after_connector_stops_polling(tmp_path):
+    workspace = tmp_path / "ws"
+    root, plan, coordinator, _ = _coordinator(workspace)
+    server, thread = _serve(workspace, device_timeout=0.05)
+    try:
+        paired = _pair(server, root)
+        query = {"project": "p1", "plan": plan.id}
+        with _request(server, "/next", query=query, token=paired["token"]) as response:
+            assert response.status == 204
+
+        deadline = time.monotonic() + 2
+        while coordinator.state().status != "paused:timeout" and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        state = coordinator.state()
+        assert state.status == "paused:timeout"
+        assert state.reason == "timeout"
+        assert state.device_id is None
     finally:
         server.shutdown()
         server.server_close()

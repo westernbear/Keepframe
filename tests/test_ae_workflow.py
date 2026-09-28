@@ -483,6 +483,23 @@ class UnsupportedClient:
         raise RuntimeError("multimodal image input is unsupported")
 
 
+class PauseClient:
+    def complete(self, messages, tools):
+        return {
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-pause",
+                    "type": "function",
+                    "function": {
+                        "name": "pause_ae",
+                        "arguments": '{"reason":"The title needs a human decision."}',
+                    },
+                }
+            ],
+        }
+
+
 def test_noop_and_unsupported_vision_pause_with_baseline_preserved(tmp_path):
     root, coordinator = _valid_coordinator(tmp_path)
     noop = AEWorkflowService(root.parent, lambda: NoopClient(), executor=ImmediateExecutor())
@@ -506,6 +523,23 @@ def test_noop_and_unsupported_vision_pause_with_baseline_preserved(tmp_path):
     state = second.state()
     assert state.status == "paused:vision_unsupported"
     assert state.selected_checkpoint == 0
+
+
+def test_model_pause_preserves_user_readable_reason(tmp_path):
+    root, coordinator = _valid_coordinator(tmp_path)
+    service = AEWorkflowService(
+        root.parent,
+        lambda: PauseClient(),
+        executor=ImmediateExecutor(),
+    )
+    _drive_checkpoint(service, coordinator, 1)
+    service.advance(coordinator)
+    service.advance(coordinator)
+
+    state = coordinator.state()
+    assert state.status == "paused:model_paused"
+    assert state.reason == "model_paused"
+    assert state.pause_detail == "The title needs a human decision."
 
 
 def test_manual_sync_runs_inspect_render_save_and_stays_one_way(tmp_path):

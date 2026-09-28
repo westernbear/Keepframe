@@ -145,7 +145,6 @@ def _native_artifacts(root: Path, plan, job: Job | None) -> list[dict[str, str]]
     return artifacts
 
 
-
 def _ae_execution_plan(root: Path, plan):
     if plan.mode != "final":
         return plan
@@ -162,8 +161,7 @@ def _ae_execution_plan(root: Path, plan):
     return predecessor
 
 
-def _render_state_payload(root: Path, plan_id: str) -> dict:
-    plan = load_render_plan(root, plan_id)
+def _render_state_payload(root: Path, plan) -> dict:
     state = load_render_plan_state(root, plan.id)
     if plan.backend == "after_effects":
         execution_plan = _ae_execution_plan(root, plan)
@@ -1106,7 +1104,7 @@ def make_server(
                                 or (plan.backend == "after_effects" and not ae_authorized)
                             ):
                                 continue
-                            payload = _render_state_payload(root, plan.id)
+                            payload = _render_state_payload(root, plan)
                             modified = (plan_dir / "plan.json").stat().st_mtime_ns
                         except (
                             FileNotFoundError,
@@ -1250,7 +1248,7 @@ def make_server(
                         return self._json(404, {"error": "not found"})
                     if plan.backend == "after_effects" and not self._authorize_ae_browser(pid):
                         return
-                    payload = _render_state_payload(root, plan_id)
+                    payload = _render_state_payload(root, plan)
                     return self._json(200, payload)
                 except (PlanConflict, CoordinatorConflict) as exc:
                     return self._json(409, {"error": str(exc)})
@@ -1620,14 +1618,7 @@ def make_server(
                 try:
                     if plan.backend == "after_effects":
                         pending_state = load_render_plan_state(root, plan.id)
-                        if pending_state.status == "approved":
-                            state = approve_render_plan(
-                                root,
-                                plan.id,
-                                digest=digest,
-                                revision=revision,
-                            )
-                        else:
+                        if pending_state.status != "approved":
                             auth = AEProjectAuth(root, project_id)
                             with auth.authorize_controller_with_capabilities(
                                 self._controller_token(project_id)
@@ -1669,19 +1660,12 @@ def make_server(
                                                 )
                                             },
                                         )
-                                state = approve_render_plan(
-                                    root,
-                                    plan.id,
-                                    digest=digest,
-                                    revision=revision,
-                                )
-                    else:
-                        state = approve_render_plan(
-                            root,
-                            plan.id,
-                            digest=digest,
-                            revision=revision,
-                        )
+                    state = approve_render_plan(
+                        root,
+                        plan.id,
+                        digest=digest,
+                        revision=revision,
+                    )
                     if not state.execution_id:
                         raise PlanConflict("approved render plan has no execution id")
                     if plan.backend == "after_effects":

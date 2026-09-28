@@ -60,7 +60,8 @@ Effects 2022 or newer; restart After Effects, enable **Allow Scripts to Write
 Files and Access Network**, then open **Window > Keepframe Panel**. With
 `KEEPFRAME_AE_RELAY_TOKEN` set only in the connector environment, run
 `keepframe ae-connect --url https://relay.example`; the command prompts for the
-one-use pairing code without echoing it. Later starts use
+one-use pairing code without echoing it. `--code CODE` is available for
+non-interactive pairing. Later starts use
 `keepframe ae-connect --url https://relay.example --project PROJECT_ID` and the
 current-user DPAPI-protected device record. The MCP child receives neither
 relay credential.

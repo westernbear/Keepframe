@@ -1183,7 +1183,8 @@ def test_command_renewal_is_wall_clock_bounded_and_idempotent(tmp_path, monkeypa
         )
 
 
-def test_replacement_draining_command_cannot_extend_lease(tmp_path):
+@pytest.mark.parametrize("reason", ["replacement", "timeout"])
+def test_detach_draining_command_cannot_extend_lease(tmp_path, reason):
     _, _, coordinator, session = _coordinator(tmp_path)
     session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     command = coordinator.enqueue_command(
@@ -1195,7 +1196,7 @@ def test_replacement_draining_command_cannot_extend_lease(tmp_path):
     )
     leased = coordinator.next_command("device-1", now=100)
     assert leased is not None
-    draining = coordinator.detach_device("device-1", reason="replacement", now=105)
+    draining = coordinator.detach_device("device-1", reason=reason, now=105)
     assert draining.status == "pause_requested"
     with pytest.raises(CoordinatorConflict, match="draining"):
         coordinator.renew_command(
@@ -1205,7 +1206,7 @@ def test_replacement_draining_command_cannot_extend_lease(tmp_path):
             nonce=command.nonce,
             now=106,
         )
-    settled = coordinator.detach_device("device-1", reason="replacement", now=131)
+    settled = coordinator.detach_device("device-1", reason=reason, now=131)
     assert settled.device_id is None
 
 

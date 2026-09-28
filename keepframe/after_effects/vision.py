@@ -353,11 +353,6 @@ def select_representative_frames(
     return tuple(selected[:limit])
 
 
-# Short aliases keep this seam discoverable for connector/coordinator callers.
-representative_frames = select_representative_frames
-select_frames = select_representative_frames
-
-
 def _decode_png(frame: bytes | bytearray | memoryview | str | Path | np.ndarray) -> np.ndarray:
     if isinstance(frame, np.ndarray):
         image = frame
@@ -392,10 +387,6 @@ def frame_to_png_bytes(frame: bytes | bytearray | memoryview | str | Path | np.n
 
 def frame_to_data_url(frame: bytes | bytearray | memoryview | str | Path | np.ndarray) -> str:
     return "data:image/png;base64," + base64.b64encode(frame_to_png_bytes(frame)).decode("ascii")
-
-
-png_data_url = frame_to_data_url
-encode_png_data_url = frame_to_data_url
 
 
 def _frame_items(frames: Sequence[Any] | Mapping[Any, Any]) -> list[tuple[Any, Any]]:
@@ -493,8 +484,6 @@ VISION_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
-AE_VISION_TOOLS = VISION_TOOLS
-VISION_TOOL_SCHEMAS = VISION_TOOLS
 
 
 def _approved_capabilities(value: Any) -> ApprovedCapabilities:
@@ -768,7 +757,6 @@ def run_vision_step(
 
 
 __all__ = [
-    "AE_VISION_TOOLS",
     "MAX_IMAGE_HEIGHT",
     "MAX_IMAGE_WIDTH",
     "MAX_VISION_FRAMES",
@@ -779,14 +767,9 @@ __all__ = [
     "VisionStepResult",
     "VisionUnsupported",
     "VISION_TOOLS",
-    "VISION_TOOL_SCHEMAS",
     "build_vision_messages",
-    "encode_png_data_url",
     "frame_to_data_url",
     "frame_to_png_bytes",
-    "png_data_url",
-    "representative_frames",
     "run_vision_step",
-    "select_frames",
     "select_representative_frames",
 ]

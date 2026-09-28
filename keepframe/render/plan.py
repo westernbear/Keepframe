@@ -690,7 +690,6 @@ def create_render_plan(
     permitted_operations: Sequence[Mapping[str, Any]] = (),
     effect_schemas: Sequence[Mapping[str, Any]] = (),
     capability_hash: str | None = None,
-    connector_capability_hash: str | None = None,
     capability_manifest: Mapping[str, Any] | None = None,
     substitutions: Sequence[Mapping[str, Any]] = (),
     substitutions_acknowledged: bool = False,
@@ -737,9 +736,6 @@ def create_render_plan(
         raise PlanConflict("final AE plans require a preview predecessor")
     if backend == "after_effects" and mode == "final" and not checkpoint_bound:
         raise PlanConflict("final AE plans require a predecessor checkpoint")
-    if capability_hash is not None and connector_capability_hash is not None and capability_hash != connector_capability_hash:
-        raise PlanConflict("conflicting capability hashes")
-    capability_hash = capability_hash if capability_hash is not None else connector_capability_hash
     if backend == "after_effects" and (
         not capability_hash or capability_manifest is None
     ):

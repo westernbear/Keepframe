@@ -91,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     ae_install.add_argument("--ae-path")
     ae_connect = sub.add_parser("ae-connect")
     ae_connect.add_argument("--url", required=True)
-    ae_connect.add_argument("--project")
+    ae_target = ae_connect.add_mutually_exclusive_group()
+    ae_target.add_argument("--code")
+    ae_target.add_argument("--project")
     a = ap.parse_args(argv)
 
     if a.cmd == "synth":
@@ -182,7 +184,9 @@ def main(argv: list[str] | None = None) -> int:
 
         from .after_effects.connector import run_connector
 
-        code = None if a.project else getpass("Pairing code: ")
+        code = a.code
+        if code is None and a.project is None:
+            code = getpass("Pairing code: ")
         return run_connector(a.url, code=code, project=a.project)
     if a.cmd == "serve":
         from .web.server import JOBS, make_server

@@ -1316,16 +1316,6 @@ class AECoordinator:
                     pass
         return digest
 
-    def _store_checkpoint_context_unlocked(
-        self,
-        checkpoint: AECheckpoint,
-        *,
-        command_id: str,
-        session_id: str,
-    ) -> str:
-        del command_id, session_id
-        return self._write_checkpoint_context_unlocked(checkpoint)
-
     def _checkpoint_context_for_command_unlocked(
         self,
         command: AECommand,
@@ -2990,6 +2980,7 @@ class AECoordinator:
                     "device_id": device_id,
                     "revision": session.revision + 1,
                     "reason": None,
+                    "pause_detail": None,
                     "updated_at": _now(),
                 }
             )
@@ -3125,10 +3116,19 @@ class AECoordinator:
             ):
                 raise CoordinatorConflict("pause error is illegal in the current state")
             reason = _status_reason(event, data)
+            pause_detail = data.get("pause_detail")
+            if pause_detail is not None and (
+                not isinstance(pause_detail, str)
+                or not pause_detail.strip()
+                or len(pause_detail) > 4096
+                or "\x00" in pause_detail
+            ):
+                raise CoordinatorConflict("pause detail is invalid")
             updated = session.model_copy(
                 update={
                     "status": f"paused:{reason}",
                     "reason": reason,
+                    "pause_detail": pause_detail,
                     "checkpoint_required": (
                         False
                         if event in {"disconnect", "timeout", "unpair"}
@@ -3147,6 +3147,7 @@ class AECoordinator:
                     "status": "waiting_for_connector",
                     "device_id": device_id,
                     "reason": None,
+                    "pause_detail": None,
                     "revision": session.revision + 1,
                     "updated_at": _now(),
                 }
@@ -3178,6 +3179,7 @@ class AECoordinator:
                 update={
                     "status": "manual_edit",
                     "reason": None,
+                    "pause_detail": None,
                     "manual_epoch": (
                         session.manual_epoch
                         if resume_prepared_manual
@@ -3240,6 +3242,7 @@ class AECoordinator:
                 update={
                     "status": "finalizing",
                     "reason": None,
+                    "pause_detail": None,
                     "final_plan_id": final_plan.id,
                     "final_plan_digest": final_plan.digest,
                     "final_execution_id": (
@@ -3280,7 +3283,13 @@ class AECoordinator:
             if status in _TERMINAL_STATES:
                 raise CoordinatorConflict("terminal AE session cannot transition")
             updated = session.model_copy(
-                update={"status": "failed", "reason": _status_reason(event, data), "revision": session.revision + 1, "updated_at": _now()}
+                update={
+                    "status": "failed",
+                    "reason": _status_reason(event, data),
+                    "pause_detail": None,
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
             )
         else:
             raise CoordinatorConflict("unknown AE transition")
@@ -3668,11 +3677,7 @@ class AECoordinator:
                 created_at=now,
             )
             if checkpoint_context is not None:
-                self._store_checkpoint_context_unlocked(
-                    checkpoint_context,
-                    command_id=command.id,
-                    session_id=session.id,
-                )
+                self._write_checkpoint_context_unlocked(checkpoint_context)
             commands.append(command)
             self._write_commands_unlocked(commands)
             updated_session = session.model_copy(
@@ -3692,11 +3697,11 @@ class AECoordinator:
         self,
         device_id: str,
         *,
-        reason: Literal["unpair", "replacement"],
+        reason: Literal["disconnect", "replacement", "timeout", "unpair"],
         now: float | None = None,
     ) -> AESession:
         device_id = _safe_component(device_id, "device id")
-        if reason not in {"unpair", "replacement"}:
+        if reason not in {"disconnect", "replacement", "timeout", "unpair"}:
             raise CoordinatorConflict("device detach reason is invalid")
         current_time = _now() if now is None else _finite_time(now, "time")
         with self._locked():
@@ -3728,6 +3733,7 @@ class AECoordinator:
                     update={
                         "status": "pause_requested",
                         "reason": reason,
+                        "pause_detail": None,
                         "checkpoint_required": False,
                         "revision": session.revision + 1,
                         "updated_at": current_time,
@@ -3757,6 +3763,7 @@ class AECoordinator:
                 update={
                     "status": status,
                     "reason": session_reason,
+                    "pause_detail": None,
                     "checkpoint_required": False,
                     "device_id": None,
                     "open_checkpoint": None,
@@ -3894,7 +3901,10 @@ class AECoordinator:
                 raise CoordinatorConflict("command is not leased")
             if command.lease_expires_at is None or command.lease_expires_at <= current_time:
                 raise CoordinatorConflict("command lease has expired")
-            if session.status == "pause_requested" and session.reason in {"replacement", "unpair"}:
+            if (
+                session.status == "pause_requested"
+                and session.reason in {"disconnect", "replacement", "timeout", "unpair"}
+            ):
                 raise CoordinatorConflict("command lease is draining")
             if not self._command_state_matches(session, command):
                 commands[index] = command.model_copy(update={"status": "revoked"})

@@ -13,7 +13,7 @@ import re
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -254,16 +254,9 @@ def _register(server: Any, name: str, function: ToolForwarder) -> None:
     decorator = getattr(server, "tool", None)
     if callable(decorator):
         try:
-            wrapped = cast(Callable[..., Any], decorator)(name=name)(function)
+            decorator(name=name)(function)
         except TypeError:
-            # A small compatibility seam for MCP v2's alternate decorator
-            # spelling; both paths still register the fixed name.
-            wrapped = cast(Callable[..., Any], decorator)()(function)
-        if wrapped is not None and wrapped is not function:
-            # Some test/future SDK implementations return a replacement
-            # callable but retain the name in their internal registry.
-            _patch_direct_payload(server, name)
-            return
+            decorator()(function)
         _patch_direct_payload(server, name)
         return
     raise RuntimeError("installed MCP server does not expose tool registration")

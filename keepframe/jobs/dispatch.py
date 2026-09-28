@@ -50,7 +50,7 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_render(args: dict[str, Any]) -> dict[str, Any]:
-    if args.get("stage_manifest") or args.get("manifest"):
+    if args.get("stage_manifest"):
         from keepframe.render.native import verify_native_stage
 
         verify_native_stage(args)
@@ -70,7 +70,7 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     import shutil
 
-    if args.get("stage_manifest") or args.get("manifest"):
+    if args.get("stage_manifest"):
         from keepframe.render.native import verify_native_stage
         from keepframe.render.plan import PlanConflict
 

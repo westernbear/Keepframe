@@ -185,7 +185,35 @@ def test_ae_install_dispatches_and_prints_manual_step(tmp_path, capsys):
     assert "Window > Keepframe" in output
 
 
-def test_ae_connect_prompts_without_putting_pairing_code_in_argv():
+def test_ae_connect_accepts_explicit_pairing_code():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+                "--code",
+                "p1.pairing-code",
+            ]
+        ) == 0
+    prompt.assert_not_called()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code="p1.pairing-code",
+        project=None,
+    )
+    help_result = run("ae-connect", "--help")
+    assert help_result.returncode == 0
+    assert "--code" in help_result.stdout
+
+
+def test_ae_connect_prompts_when_pairing_code_is_omitted():
     with (
         patch(
             "keepframe.after_effects.connector.run_connector",
@@ -206,9 +234,6 @@ def test_ae_connect_prompts_without_putting_pairing_code_in_argv():
         code="p1.pairing-code",
         project=None,
     )
-    help_result = run("ae-connect", "--help")
-    assert help_result.returncode == 0
-    assert "--code" not in help_result.stdout
 
 
 def test_ae_connect_resumes_a_project_without_prompting():

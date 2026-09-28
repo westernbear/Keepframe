@@ -449,6 +449,7 @@ class AESession(_FrozenRecord):
     applied_command_sequence: int = 0
     last_command_id: str | None = None
     reason: str | None = None
+    pause_detail: str | None = None
     created_at: float = 0.0
     updated_at: float = 0.0
     # Finalization is an immutable successor-plan binding.  These fields are
@@ -487,6 +488,7 @@ class AESession(_FrozenRecord):
     )
     _device = field_validator("device_id", "last_command_id")(_identifier)
     _reason = field_validator("reason")(_nonempty)
+    _pause_detail = field_validator("pause_detail")(_optional_bounded_text)
     _baseline_digest = field_validator("baseline_mapping_digest")(_digest)
     _baseline_count = field_validator("baseline_batch_count")(
         lambda value: value if value is None else _bounded_int(value, minimum=0)

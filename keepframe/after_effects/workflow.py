@@ -1103,12 +1103,23 @@ class AEWorkflowService:
         )
         return checkpoint.model_dump(mode="json")
 
-    def _pause(self, coordinator: AECoordinator, reason: str) -> None:
+    def _pause(
+        self,
+        coordinator: AECoordinator,
+        reason: str,
+        *,
+        detail: str | None = None,
+    ) -> None:
         try:
             state = coordinator.state()
             if state.status.startswith("paused:") or state.status in {"done", "failed"}:
                 return
-            coordinator.transition("pause_error", revision=state.revision, reason=reason)
+            coordinator.transition(
+                "pause_error",
+                revision=state.revision,
+                reason=reason,
+                pause_detail=detail,
+            )
         except CoordinatorConflict:
             return
 
@@ -1878,7 +1889,7 @@ class AEWorkflowService:
         if state.status != "iterating" or self._has_pending(history):
             return
         if step.status == "pause":
-            self._pause(coordinator, "model_paused")
+            self._pause(coordinator, "model_paused", detail=step.reason)
             return
         if step.status == "no_progress" or step.batch is None or not step.batch.operations:
             try:
@@ -2390,7 +2401,7 @@ class AEWorkflowService:
         if checkpoint_artifact is None:
             self._pause(coordinator, "verification_failed")
             return None
-        scene, _mapping, manifest, _approved = self._authoritative(coordinator)
+        scene, mapping, manifest, _approved = self._authoritative(coordinator)
         device_id = getattr(state, "device_id", None)
         if not isinstance(device_id, str):
             self._pause(coordinator, "connector_failed")
@@ -2420,7 +2431,6 @@ class AEWorkflowService:
             if previous is not None:
                 payload = dict(previous.payload)
             else:
-                _scene, mapping, _manifest, _approved = self._authoritative(coordinator)
                 payload = self._composition_payload(mapping)
                 payload["checkpoint_index"] = selected
                 payload["checkpoint_artifact"] = checkpoint_artifact

@@ -377,13 +377,6 @@ def _verify_stage_files(
         entry = entries[relative]
         if digest != entry["sha256"] or length != entry["length"]:
             raise PlanConflict(f"native stage member digest mismatch: {relative}")
-    compatibility = native / "composition.html"
-    if compatibility.exists() or compatibility.is_symlink() or _reparse_point(compatibility):
-        _safe_path(native, compatibility, "composition compatibility copy", kind="file")
-        compatibility_digest, compatibility_length = _hash_file(compatibility)
-        composition_entry = entries["composition.html"]
-        if (compatibility_digest, compatibility_length) != (composition_entry["sha256"], composition_entry["length"]):
-            raise PlanConflict("native composition compatibility copy digest mismatch")
 
     scene_entry = entries[relative_scene]
     if scene_entry["sha256"] != plan.scene_sha256:
@@ -462,12 +455,6 @@ def _stage_native(root: Path, plan):
         compose(load_scene(staged_scene), staged_scene.parent, composition)
         _safe_path(staged_snapshot, composition, "staged composition", kind="file")
         manifest = _write_stage_manifest(staging, staged_snapshot, plan, relative_scene, source_present=source_present)
-        compatibility = staging / "composition.html"
-        _safe_path(staging, compatibility, "composition compatibility copy", kind="file", allow_missing=True)
-        try:
-            os.link(composition, compatibility)
-        except OSError:
-            _copy_file(composition, compatibility, "composition compatibility copy", source_root=staging, destination_root=staging)
         _verify_stage_files(root, plan, staging, staged_snapshot, manifest, staged_output, relative_scene, scene=staged_scene, html=composition)
         os.replace(staging, native)
     except Exception:
@@ -476,25 +463,15 @@ def _stage_native(root: Path, plan):
     return native, native / "snapshot", relative_scene, native / "snapshot" / "composition.html", native / "output", native / _MANIFEST_NAME
 
 
-def _manifest_arg(args: Mapping[str, Any]) -> Any:
-    stage_manifest = args.get("stage_manifest")
-    manifest = args.get("manifest")
-    if stage_manifest is not None and manifest is not None and stage_manifest != manifest:
-        raise PlanConflict("native stage manifest paths conflict")
-    return stage_manifest if stage_manifest is not None else manifest
-
-
 def verify_native_stage(args: Mapping[str, Any]) -> None:
     """Verify a plan-scoped native stage before a worker reads any artifact."""
-    required = ("project_root", "plan_id", "plan_digest", "scene_relative", "snapshot", "scene", "html", "out")
+    required = ("project_root", "plan_id", "plan_digest", "scene_relative", "snapshot", "scene", "html", "out", "stage_manifest")
     values = {key: args.get(key) for key in required}
-    manifest_value = _manifest_arg(args)
-    values["stage_manifest"] = manifest_value
     if any(not isinstance(value, str) or not value for value in values.values()):
         raise PlanConflict("native stage arguments are incomplete")
     if not isinstance(args.get("stage_manifest_sha256"), str) or not _SHA256_RE.fullmatch(args["stage_manifest_sha256"]):
         raise PlanConflict("native stage manifest digest is invalid")
-    path_values = [manifest_value, values["snapshot"], values["scene"], values["html"], values["out"]]
+    path_values = [values["stage_manifest"], values["snapshot"], values["scene"], values["html"], values["out"]]
     package_value = args.get("package_root")
     if package_value is not None:
         if not isinstance(package_value, str) or not package_value:
@@ -516,7 +493,7 @@ def verify_native_stage(args: Mapping[str, Any]) -> None:
     relative_scene = _project_relative(values["scene_relative"], "native scene path")
     if not relative_scene.startswith(f"scenes/{plan.scene_id}/"):
         raise PlanConflict("native scene path does not belong to the approved scene")
-    manifest = Path(manifest_value)
+    manifest = Path(values["stage_manifest"])
     native = manifest.parent
     snapshot = Path(values["snapshot"])
     output = Path(values["out"])
@@ -569,7 +546,6 @@ def prepare_native_job(root: Path, plan_id: str) -> JobSpec:
             "scene_relative": relative_scene,
             "snapshot": str(snapshot),
             "stage_manifest": str(manifest),
-            "manifest": str(manifest),
             "stage_manifest_sha256": manifest_digest,
             "scene": str(scene),
             "html": str(html),

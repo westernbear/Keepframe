@@ -12,7 +12,6 @@
     var COMPLETED_DIR = Folder(BRIDGE_ROOT.fsName + "/completed");
     var INFLIGHT_DIR = Folder(BRIDGE_ROOT.fsName + "/inflight");
     var STOP_FILE = File(BRIDGE_ROOT.fsName + "/stop.json");
-    var SCOPE_DIR = null;
     var CHECKPOINT_DIR = null;
     var RENDER_DIR = null;
     var MEDIA_DIR = null;
@@ -77,7 +76,6 @@
         if (!planRoot.exists && !planRoot.create()) { throw new Error("Keepframe plan scope is unavailable"); }
         if (!sessionsRoot.exists && !sessionsRoot.create()) { throw new Error("Keepframe sessions scope is unavailable"); }
         if (!sessionRoot.exists && !sessionRoot.create()) { throw new Error("Keepframe session scope is unavailable"); }
-        SCOPE_DIR = scopeRoot;
         CHECKPOINT_DIR = Folder(scopeRoot.fsName + "/checkpoints");
         RENDER_DIR = Folder(scopeRoot.fsName + "/renders");
         PACKAGE_DIR = Folder(scopeRoot.fsName + "/package");
@@ -387,11 +385,6 @@
         return metadata ? metadata.layer_instance_id : "";
     }
 
-    function layerSourceId(layer) {
-        var metadata = layerMetadata(layer);
-        return metadata ? metadata.source_element_id : null;
-    }
-
     function nativeLayerId(layer) {
         var value = layer && layer.id;
         if (
@@ -538,12 +531,13 @@
         return 1;
     }
 
-    function temporalEase(value, label, dimensions) {
+    function temporalEase(value, label, dimensions, speedScale) {
         var pairs = [];
         var pair;
         var speed;
         var influence;
         var index;
+        speedScale = speedScale === undefined ? 1 : Number(speedScale);
         if (!(value instanceof Array) || value.length === 0) {
             throw new Error(label + " is invalid");
         }
@@ -564,7 +558,7 @@
         }
         var eases = [];
         for (index = 0; index < pairs.length; index += 1) {
-            speed = pairs[index][0];
+            speed = pairs[index][0] * speedScale;
             influence = pairs[index][1];
             if (!isFinite(speed) || Math.abs(speed) > 1000000 || !isFinite(influence) || influence < 0.1 || influence > 100) {
                 throw new Error(label + " is invalid");
@@ -577,7 +571,7 @@
         return eases;
     }
 
-    function applyTemporalEase(property, keyIndex, keyframe) {
+    function applyTemporalEase(property, keyIndex, keyframe, speedScale) {
         var fallbackIn;
         var fallbackOut;
         var inEase;
@@ -598,8 +592,8 @@
         fallbackOut = property.keyOutTemporalEase(keyIndex);
         if (fallbackIn instanceof Array && fallbackIn.length > 0 && fallbackIn.length !== dimensions) { throw new Error("temporal easing dimension count is invalid"); }
         if (fallbackOut instanceof Array && fallbackOut.length > 0 && fallbackOut.length !== dimensions) { throw new Error("temporal easing dimension count is invalid"); }
-        inEase = keyframe.ease_in === undefined ? null : temporalEase(keyframe.ease_in, "ease_in", dimensions);
-        outEase = keyframe.ease_out === undefined ? null : temporalEase(keyframe.ease_out, "ease_out", dimensions);
+        inEase = keyframe.ease_in === undefined ? null : temporalEase(keyframe.ease_in, "ease_in", dimensions, speedScale);
+        outEase = keyframe.ease_out === undefined ? null : temporalEase(keyframe.ease_out, "ease_out", dimensions, speedScale);
         for (index = 0; index < dimensions; index += 1) {
             if (inEase) {
                 inEases.push(inEase[index]);
@@ -622,7 +616,7 @@
         property.setTemporalEaseAtKey(keyIndex, inEases, outEases);
     }
 
-    function setTimedProperty(property, value, frame, time, keyframe) {
+    function setTimedProperty(property, value, frame, time, keyframe, speedScale) {
         var atTime = propertyTime(frame, time);
         var keyIndex;
         if (
@@ -644,7 +638,7 @@
         property.setValueAtTime(atTime, value);
         if (keyframe && (keyframe.ease_in !== undefined || keyframe.ease_out !== undefined)) {
             keyIndex = property.nearestKeyIndex(atTime);
-            applyTemporalEase(property, keyIndex, keyframe);
+            applyTemporalEase(property, keyIndex, keyframe, speedScale);
         }
     }
 
@@ -669,7 +663,7 @@
         ];
     }
 
-    function setPropertyAtFrame(layer, propertyName, value, frame, time, keyframe) {
+    function setPropertyAtFrame(layer, propertyName, value, frame, time, keyframe, speedScale) {
         var property;
         switch (propertyName) {
             case "ADBE Position":
@@ -699,12 +693,13 @@
         if (propertyName === "ADBE Anchor Point") {
             value = mappedTextAnchor(layer, value);
         }
-        setTimedProperty(property, value, frame, time, keyframe);
+        setTimedProperty(property, value, frame, time, keyframe, speedScale);
     }
 
     function setScaleComponentAtFrame(layer, component, value, frame, time, keyframe) {
         var property = layer.transform.scale;
-        var current = property.value;
+        var atTime = propertyTime(frame, time);
+        var current = atTime === null ? property.value : property.valueAtTime(atTime, false);
         current[component] = Number(value);
         setTimedProperty(property, current, frame, time, keyframe);
     }
@@ -800,7 +795,7 @@
             } else if (propertyName === "ADBE Scale Y") {
                 setScaleComponentAtFrame(layer, 1, keyframe.value, keyframe.frame, keyframe.time, keyframe);
             } else if (propertyName === "ADBE Opacity") {
-                setPropertyAtFrame(layer, propertyName, Number(keyframe.value) * 100, keyframe.frame, keyframe.time, keyframe);
+                setPropertyAtFrame(layer, propertyName, Number(keyframe.value) * 100, keyframe.frame, keyframe.time, keyframe, 100);
             } else {
                 setPropertyAtFrame(layer, propertyName, keyframe.value, keyframe.frame, keyframe.time, keyframe);
             }
@@ -2795,12 +2790,6 @@
         };
     }
 
-    function render(kind, payload) {
-        requireSessionComposition();
-        var file = File(RENDER_DIR.fsName + "/" + kind + ".aep");
-        app.project.save(file);
-        return { saved: true, kind: kind, filename: file.name, frame: payload.frame || 0 };
-    }
 
     function packageProject(payload) {
         var checkpointIndex;

@@ -1481,25 +1481,8 @@ def map_baseline(
     capabilities: AECapabilities | ApprovedCapabilities | Mapping[str, Any] | None = None,
     substitutions: Sequence[AESubstitution] | None = None,
     locked_source_ids: Sequence[str] = (),
-    *,
-    scene_dir: str | os.PathLike[str] | None = None,
-    scene_prefix: str | os.PathLike[str] | None = None,
 ) -> BaselineMapping:
-    """Build and strictly validate a deterministic baseline AE mapping.
-
-    ``scene_directory`` is a normalized project-relative prefix.  ``scene_dir``
-    and ``scene_prefix`` are keyword aliases for integrations that use those
-    names; providing conflicting values is rejected rather than guessed.
-    """
-
-    if scene_dir is not None:
-        if scene_directory not in ("", None) and _normalize_prefix(scene_directory) != _normalize_prefix(scene_dir):
-            raise AEMappingError("scene directory aliases disagree")
-        scene_directory = scene_dir
-    if scene_prefix is not None:
-        if scene_directory not in ("", None) and _normalize_prefix(scene_directory) != _normalize_prefix(scene_prefix):
-            raise AEMappingError("scene directory aliases disagree")
-        scene_directory = scene_prefix
+    """Build and strictly validate a deterministic baseline AE mapping."""
     domains = _prepare_mapping_domains(scene, capabilities, substitutions)
     width = domains.width
     height = domains.height
@@ -1806,14 +1789,6 @@ def map_baseline(
     )
 
 
-build_baseline = map_baseline
-build_baseline_mapping = map_baseline
-map_scene = map_baseline
-map_scene_to_ae = map_baseline
-map_scene_to_baseline = map_baseline
-create_baseline_mapping = map_baseline
-
-
 __all__ = [
     "AEMappingError",
     "MappingError",
@@ -1827,10 +1802,4 @@ __all__ = [
     "AEBaselineMapping",
     "validate_mapping_domains",
     "map_baseline",
-    "build_baseline",
-    "build_baseline_mapping",
-    "map_scene",
-    "map_scene_to_ae",
-    "map_scene_to_baseline",
-    "create_baseline_mapping",
 ]

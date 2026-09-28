@@ -122,7 +122,6 @@ _COMMAND_FIELDS = frozenset(
         "delivered_at",
     }
 )
-MCP_TOOL_MAP = COMMAND_TO_TOOL
 
 # Keep the subprocess environment intentionally small.  In particular, no
 # token/provider/proxy variable can reach the optional MCP child.
@@ -421,7 +420,6 @@ def current_user_sid() -> str:
     return _default_sid_provider()
 
 
-get_current_user_sid = current_user_sid
 
 
 def _default_acl_runner(argv: list[str], **kwargs: Any) -> Any:
@@ -673,7 +671,6 @@ class DPAPITokenStore:
             raise TokenStoreError("device token could not be removed") from exc
 
 
-TokenStore = DPAPITokenStore
 
 
 def read_panel_heartbeat(root: Path | str, *, filename: str = "heartbeat.json") -> dict[str, Any]:
@@ -3923,28 +3920,8 @@ class MCPStdioClient:
         except RuntimeError as exc:
             raise MCPError("MCP event loop is unavailable") from exc
 
-    close = lambda self: None
 
 
-def protect_token(token: str) -> bytes:
-    if not isinstance(token, str) or not token:
-        raise TokenStoreError("device token is invalid")
-    return _dpapi_protect(token.encode("utf-8"))
-
-
-def unprotect_token(ciphertext: bytes) -> str:
-    if not isinstance(ciphertext, (bytes, bytearray)) or not ciphertext:
-        raise TokenStoreError("device token ciphertext is invalid")
-    try:
-        return DPAPITokenStore._token(_dpapi_unprotect(bytes(ciphertext)).decode("utf-8"))
-    except (UnicodeError, TokenStoreError) as exc:
-        raise TokenStoreError("device token decryption failed") from exc
-
-
-WindowsConnector = Connector
-Relay = RelayClient
-MCPClient = MCPStdioClient
-preflight_windows = preflight
 
 
 def _probe_panel_with_mcp(root: Path) -> dict[str, Any]:
@@ -4048,32 +4025,23 @@ __all__ = [
     "Connector",
     "ConnectorError",
     "TransientRelayError",
-    "MCPClient",
     "MCPError",
     "MCPStdioClient",
     "MCP_TOOL_NAMES",
-    "MCP_TOOL_MAP",
     "Pairing",
     "PreflightError",
     "PreflightResult",
-    "Relay",
     "RelayClient",
     "RelayError",
     "TOKEN_FILENAME",
-    "TokenStore",
     "TokenStoreError",
-    "WindowsConnector",
     "build_child_env",
     "current_user_sid",
-    "get_current_user_sid",
     "ensure_private_root",
     "normalize_relay_url",
     "parse_pairing_code",
     "preflight",
-    "preflight_windows",
-    "protect_token",
     "read_panel_heartbeat",
     "run_connector",
-    "unprotect_token",
     "validate_ae_version",
 ]

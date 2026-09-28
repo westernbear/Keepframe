@@ -434,7 +434,13 @@ function paintRenderCard() {
     ? `${session ? session.status : status} / r${session ? session.revision : planState.revision}`
     : status;
   renderIterationEl.textContent = `iteration ${session ? Math.max(0, session.checkpoints.length - 1) : "—"}`;
-  renderReasonEl.textContent = jobError || (session && session.reason) || (renderPayload && renderPayload.error) || "—";
+  renderReasonEl.textContent = (
+    jobError
+    || (session && session.pause_detail)
+    || (session && session.reason)
+    || (renderPayload && renderPayload.error)
+    || "—"
+  );
   if (plan) {
     renderBackendEl.value = plan.backend;
     renderModeEl.value = plan.mode;

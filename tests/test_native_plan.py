@@ -74,8 +74,6 @@ def test_preview_job_uses_only_plan_scoped_snapshot_paths(tmp_path):
     assert Path(first_spec.args["out"]).is_relative_to(first_dir)
     assert Path(second_spec.args["html"]).is_relative_to(second_dir)
     assert first_spec.args["html"] != second_spec.args["html"]
-    assert (first_dir / "composition.html").is_file()
-    assert not (root / "scenes" / "s1" / "composition.agent.html").exists()
 
 
 def test_native_job_requires_an_approved_native_plan(tmp_path):

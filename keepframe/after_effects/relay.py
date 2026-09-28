@@ -39,6 +39,10 @@ _REJECT_DRAIN_CHUNK = 64 * 1024
 _UPLOAD_READ_TIMEOUT = 60.0
 _REQUEST_TIMEOUT = 15.0
 _MAX_HANDLERS = 64
+_DEVICE_TIMEOUT = 60.0
+_DEVICE_OWNING_STATES = frozenset(
+    {"baseline", "iterating", "pause_requested", "manual_edit", "finalizing"}
+)
 
 def _is_reparse(path: Path) -> bool:
     if path.is_symlink():
@@ -245,11 +249,20 @@ def make_relay_server(
     port: int = 0,
     host: str = "127.0.0.1",
     workflow: Any | None = None,
+    device_timeout: float = _DEVICE_TIMEOUT,
 ) -> ThreadingHTTPServer:
     """Build the authenticated connector-only listener."""
 
     if not isinstance(deployment_token, str) or not deployment_token:
         raise ValueError("AE relay deployment token is required")
+    if isinstance(device_timeout, bool):
+        raise ValueError("AE relay device timeout is invalid")
+    try:
+        device_timeout = float(device_timeout)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("AE relay device timeout is invalid") from exc
+    if not math.isfinite(device_timeout) or device_timeout <= 0:
+        raise ValueError("AE relay device timeout is invalid")
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
 
@@ -258,7 +271,90 @@ def make_relay_server(
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self._handler_slots = threading.BoundedSemaphore(_MAX_HANDLERS)
+            self._activity_lock = threading.Lock()
+            self._device_activity: dict[
+                tuple[str, str],
+                tuple[AEDeviceIdentity, float, bool],
+            ] = {}
+            self._liveness_stop = threading.Event()
             super().__init__(*args, **kwargs)
+
+        def note_device(self, identity: AEDeviceIdentity) -> None:
+            if identity.status != "active":
+                return
+            key = (identity.project_id, identity.device_id)
+            with self._activity_lock:
+                current = self._device_activity.get(key)
+                if current is None or not current[2]:
+                    self._device_activity[key] = (
+                        identity,
+                        time.monotonic(),
+                        False,
+                    )
+
+        def _expire_device(self, identity: AEDeviceIdentity) -> bool:
+            try:
+                project_root = _project_root(workspace, identity.project_id)
+                plan_ids = _project_plan_ids(workspace, identity)
+            except CoordinatorConflict:
+                return True
+            pending = False
+            for plan_id in plan_ids:
+                try:
+                    coordinator = AECoordinator.cached(project_root, plan_id)
+                    state = coordinator.state()
+                    if state.device_id != identity.device_id:
+                        continue
+                    if (
+                        state.status == "paused:timeout"
+                        or state.status in _DEVICE_OWNING_STATES
+                    ):
+                        state = coordinator.detach_device(
+                            identity.device_id,
+                            reason="timeout",
+                        )
+                    if (
+                        state.device_id == identity.device_id
+                        and state.status == "pause_requested"
+                        and state.reason == "timeout"
+                    ):
+                        pending = True
+                except CoordinatorConflict:
+                    pending = True
+            return not pending
+
+        def _reconcile_device_liveness(self) -> None:
+            now = time.monotonic()
+            expired = []
+            with self._activity_lock:
+                for key, (identity, last_seen, timed_out) in self._device_activity.items():
+                    if timed_out or now - last_seen >= device_timeout:
+                        self._device_activity[key] = (identity, last_seen, True)
+                        expired.append((key, identity))
+            for key, identity in expired:
+                if not self._expire_device(identity):
+                    continue
+                with self._activity_lock:
+                    current = self._device_activity.get(key)
+                    if current is not None and current[2]:
+                        self._device_activity.pop(key, None)
+
+        def _monitor_device_liveness(self) -> None:
+            interval = min(1.0, max(0.01, device_timeout / 2))
+            while not self._liveness_stop.wait(interval):
+                self._reconcile_device_liveness()
+
+        def serve_forever(self, poll_interval: float = 0.5) -> None:
+            monitor = threading.Thread(
+                target=self._monitor_device_liveness,
+                daemon=True,
+            )
+            monitor.start()
+            try:
+                super().serve_forever(poll_interval)
+            finally:
+                self._liveness_stop.set()
+                monitor.join()
 
         def process_request(self, request: Any, client_address: Any) -> None:
             if not self._handler_slots.acquire(blocking=False):
@@ -435,6 +531,7 @@ def make_relay_server(
                             identity, snapshot = authorized
                             if identity is None:
                                 return self._unauthorized()
+                            self.server.note_device(identity)
                             command = _next_command(
                                 workspace,
                                 query,
@@ -468,6 +565,7 @@ def make_relay_server(
                 )
                 if identity is None:
                     return self._unauthorized()
+                self.server.note_device(identity)
                 coordinator = _context(
                     workspace,
                     query,
@@ -563,6 +661,7 @@ def make_relay_server(
                 identity = auth.authenticate_device(token, allow_draining=False)
                 if identity is None:
                     return self._unauthorized()
+                self.server.note_device(identity)
                 body = self._body(_MAX_CAPABILITY_BODY)
                 if body is None:
                     return
@@ -592,6 +691,7 @@ def make_relay_server(
                     identity = auth.authenticate_device(token, allow_draining=True)
                     if identity is None:
                         return self._unauthorized()
+                    self.server.note_device(identity)
                     body = self._body(_MAX_RENEW_BODY)
                     if body is None:
                         return
@@ -634,6 +734,7 @@ def make_relay_server(
                 )
                 if identity is None:
                     return self._unauthorized()
+                self.server.note_device(identity)
                 body = self._body(_MAX_RESULT_BODY)
                 if body is None:
                     return
@@ -713,6 +814,7 @@ def make_relay_server(
                 )
                 if identity is None:
                     return self._unauthorized()
+                self.server.note_device(identity)
                 coordinator = _context(
                     workspace,
                     query,

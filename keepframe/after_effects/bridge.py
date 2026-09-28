@@ -587,20 +587,12 @@ class Bridge:
 
     def write_command(
         self,
-        kind: str | BridgeCommand,
+        kind: str,
         payload: Mapping[str, Any] | None = None,
         *,
         command_id: str | None = None,
         nonce: str | None = None,
     ) -> BridgeCommand | BridgeResult:
-        if isinstance(kind, BridgeCommand):
-            if payload is not None or command_id is not None or nonce is not None:
-                raise BridgeConflict("a BridgeCommand cannot be combined with command fields")
-            command = kind
-            kind = command.kind
-            payload = command.payload
-            command_id = command.command_id
-            nonce = command.nonce
         if kind not in FIXED_KINDS:
             raise BridgeConflict("bridge command kind is not fixed")
         normalized_payload = dict(payload or {})
@@ -658,24 +650,14 @@ class Bridge:
 
     def write_result(
         self,
-        command_id: str | BridgeResult,
+        command_id: str,
         nonce: str | None = None,
-        result: Mapping[str, Any] | BridgeResult | None = None,
+        result: Mapping[str, Any] | None = None,
         *,
         ok: bool = True,
         error: str | None = None,
         result_digest: str | None = None,
     ) -> BridgeResult:
-        if isinstance(command_id, BridgeResult):
-            if nonce is not None or result is not None:
-                raise BridgeConflict("a BridgeResult cannot be combined with result fields")
-            candidate_input = command_id
-            command_id = candidate_input.command_id
-            nonce = candidate_input.nonce
-            result = candidate_input
-            ok = candidate_input.ok
-            error = candidate_input.error
-            result_digest = candidate_input.result_digest
         if nonce is None or result is None:
             raise BridgeConflict("result identity and payload are required")
         with self._lock:
@@ -687,74 +669,38 @@ class Bridge:
                     raise BridgeConflict("result identity is invalid") from exc
                 replay = self._journal_result(command_id, nonce)
                 if replay is not None:
-                    if isinstance(result, BridgeResult):
-                        candidate = result
-                    else:
-                        candidate = BridgeResult(
-                            command_id=command_id,
-                            nonce=nonce,
-                            ok=ok,
-                            result=dict(result),
-                            result_digest=result_digest,
-                            error=error,
-                        )
+                    candidate = BridgeResult(
+                        command_id=command_id,
+                        nonce=nonce,
+                        ok=ok,
+                        result=dict(result),
+                        result_digest=result_digest,
+                        error=error,
+                    )
                     if (
                         replay.result_digest != candidate.result_digest
                         or replay.ok != candidate.ok
                         or replay.error != candidate.error
                         or replay.result != candidate.result
-                        or (
-                            candidate.kind is not None
-                            and replay.kind != candidate.kind
-                        )
-                        or (
-                            candidate.payload_digest is not None
-                            and replay.payload_digest != candidate.payload_digest
-                        )
                     ):
                         raise BridgeConflict("conflicting replay result")
                     return replay
                 command = self._command_from_file()
                 if command is None or command.command_id != command_id or command.nonce != nonce:
                     raise BridgeConflict("result does not match the in-flight command")
-                if isinstance(result, BridgeResult):
-                    if result.command_id != command_id or result.nonce != nonce:
-                        raise BridgeConflict("result identity does not match command")
-                    if (
-                        result.kind is not None
-                        and result.kind != command.kind
-                    ) or (
-                        result.payload_digest is not None
-                        and result.payload_digest != command.payload_digest
-                    ):
-                        raise BridgeConflict("result command metadata does not match")
-                    try:
-                        candidate = BridgeResult(
-                            command_id=command_id,
-                            nonce=nonce,
-                            kind=command.kind,
-                            payload_digest=command.payload_digest,
-                            ok=result.ok,
-                            result=result.result,
-                            result_digest=result.result_digest,
-                            error=result.error,
-                        )
-                    except (TypeError, ValueError) as exc:
-                        raise BridgeConflict("bridge result is invalid") from exc
-                else:
-                    try:
-                        candidate = BridgeResult(
-                            command_id=command_id,
-                            nonce=nonce,
-                            kind=command.kind,
-                            payload_digest=command.payload_digest,
-                            ok=ok,
-                            result=dict(result),
-                            result_digest=result_digest,
-                            error=error,
-                        )
-                    except (TypeError, ValueError) as exc:
-                        raise BridgeConflict("bridge result is invalid") from exc
+                try:
+                    candidate = BridgeResult(
+                        command_id=command_id,
+                        nonce=nonce,
+                        kind=command.kind,
+                        payload_digest=command.payload_digest,
+                        ok=ok,
+                        result=dict(result),
+                        result_digest=result_digest,
+                        error=error,
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise BridgeConflict("bridge result is invalid") from exc
                 # Publish the immutable replay record before the consumable
                 # result file so a crash cannot leave a mutation unjournaled.
                 self._write_completed(candidate)
