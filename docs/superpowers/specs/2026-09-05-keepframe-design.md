@@ -1,7 +1,7 @@
 # Keepframe 설계 스펙 (v1)
 
 - 날짜: 2026-09-05
-- 상태: 사용자 승인 (2026-09-05). 에이전트 통솔 범위 A안 반영. 구현 계획은 M1+M2를 한 계획으로 작성. 관리자 패널 §13은 2026-09-06 추가(기존 v1에는 없었음).
+- 상태: 사용자 승인 (2026-09-05). 에이전트 통솔 범위 A안 반영. 구현 계획은 M1+M2를 한 계획으로 작성. 관리자 패널 §13은 2026-09-06 추가(기존 v1에는 없었음). 렌더 계획·After Effects 정책은 2026-09-28 보완.
 - 근거 자료: `docs/research/2026-09-05-keepframe-tech-research.md` (논문 전문 조사), `사업.txt`
 
 ## 1. 목표와 비목표
@@ -16,7 +16,7 @@
 | --- | --- |
 | 레퍼런스 범위 | 평면 2D 모션그래픽 + UI 화면 녹화. 실사 푸티지는 비지원(명시적으로 거부) |
 | 구간 | "구간 지정"(기본) 과 "전체 영상"(샷 분할 후 장면별 분석) 두 모드 |
-| IR·렌더 | 자체 JSON IR + HTML/GSAP 컴포지션(HyperFrames 호환 속성). Adobe MCP(After Effects·Premiere) 익스포트는 M6, Lottie는 그 뒤 |
+| IR·렌더 | 자체 JSON IR + HTML/GSAP 컴포지션(HyperFrames 호환 속성). Adobe MCP After Effects 익스포트는 M6, Lottie는 그 뒤. Premiere는 이번 범위에서 제외 |
 | 분석 지연 | 장면당 수 분, GPU 사용 허용. 실행 전 예상 시간·비용 표시 |
 | 3D | 2D 장면 속 3D 에셋(이미지→3D→glTF→Three.js). 카메라 연출 복원은 비목표 |
 | 코드베이스 | greenfield |
@@ -52,7 +52,7 @@
 | Verifier | 스키마·keep 술어·레이어별 프레임 비교·외형/시간 유사도 | Renderer, CoTracker3, DreamSim |
 | Export | MP4, 프로젝트 zip, (M6) Adobe MCP, (M6+) Lottie | Composer |
 
-배포: 로컬판은 전부 한 프로세스(CLI + 로컬 웹 UI). 클라우드판은 Analyzer worker와 Renderer만 큐 뒤로 분리한다. 코드 경로는 동일하고 실행기만 다르다.
+배포: 로컬판은 전부 한 프로세스(CLI + 로컬 웹 UI). 클라우드판은 Analyzer worker와 Renderer만 큐 뒤로 분리한다. 코드 경로는 동일하고 실행기만 다르다. After Effects 커넥터 릴레이는 브라우저와 포트·인증 경계를 공유하지 않는 별도 공개 리스너로 둔다.
 
 ## 4. IR 스키마
 
@@ -172,12 +172,12 @@ prompt + attachments + IR(v_n) + keep set
 - 컴포지션: 요소 = `<div data-start data-duration data-track-index>`(HyperFrames 호환), 애니메이션 = GSAP 타임라인, 3D = Three.js 캔버스 레이어, 텍스트 = 실제 `<span>`(캡처 이미지 아님).
 - 결정성: 프레임 시킹 렌더. 동일 IR → 동일 프레임 해시. 해시는 회귀 테스트와 재렌더 생략 판단에 쓴다.
 - 출력: MP4(H.264), 프로젝트 zip(IR + assets + composition).
-- M6: Adobe MCP로 After Effects 컴포지션 생성(요소→레이어, tracks→키프레임, bezier 이징→AE easing), Premiere는 렌더 MP4 + 마커. Lottie는 그 뒤.
+- M6: Adobe MCP로 After Effects 컴포지션을 생성한다(요소→레이어, tracks→키프레임, bezier 이징→AE easing). AE 결과는 IR에서 파생되는 단방향 분기이며 에이전트·수동 AE 편집은 IR을 변경하지 않는다. 미지원 항목의 대체안은 표로 제시하고 사용자 승인 전에는 실행 계획으로 만들지 않는다. Premiere는 이번 변경 범위에서 제외하고, Lottie는 그 뒤다.
 
 ## 9. 실패 정책·비용
 - 미지원 효과(비affine 변형, 파티클, 실사)는 "미지원"으로 표시하고 원본 픽셀 참조만 남긴다. 비슷하게 꾸미지 않는다.
 - 신뢰도 < 0.7 요소는 검수 UI에서 강조. keep 술어 실패는 렌더 결과에 프레임 번호와 함께 표시.
-- 재시도 상한: Verifier 되먹임 4회, 에셋 생성 2회. 초과 시 실패로 보고.
+- 재시도 상한 4회는 native 렌더·내보내기와 edit Verifier 되먹임에만 적용하고, 에셋 생성은 2회로 제한한다. After Effects 반복에는 숫자 상한을 두지 않고 사용자가 Stop/Continue로 제어하며, 한 번의 no-op 또는 같은 계획 두 번 연속이면 `no_progress`로 일시정지한다.
 - 전체 영상 모드는 장면 수·예상 분석 시간·예상 비용을 실행 전에 보여주고 확인을 받는다.
 
 ## 10. 평가·테스트
@@ -205,7 +205,7 @@ prompt + attachments + IR(v_n) + keep set
 | M3 | Edit agent(문구·이미지·색 교체) + 되먹임 루프 + 충돌 선택지 | §10 M3 게이트, 대표 데모 흐름 완성 |
 | M4 | 전체 영상 모드(샷 분할, 전환, 장면 간 링크) + UI 녹화 경로(5.7, ui asset agent) | 전체 영상 5개 분할 정확도 ≥ 0.9, UI 10개 keep 통과율 ≥ 0.9 |
 | M5 | 3D 에셋 에이전트 + Three.js 레이어 | 3D 에셋 포함 장면 5개 렌더·검증 통과 |
-| M6 | Adobe MCP 익스포트(AE·Premiere), 이후 Lottie | AE에서 열어 키프레임 일치 확인 |
+| M6 | Adobe MCP After Effects 익스포트, 이후 Lottie. Premiere는 별도 범위 | 승인된 대체안과 keep 검증을 거친 체크포인트를 AE에서 열어 키프레임 일치 확인 |
 
 ## 12. 보류한 결정(기본값 명시)
 - 폰트 매칭 정확도: v1은 후보 3개 제시, 사용자가 선택. 자동 확정 안 함.

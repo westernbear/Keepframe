@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -22,6 +23,7 @@ from tests.test_ae_coordinator import (
     _committed_checkpoint,
 )
 from tests.test_ae_auth import _capability_snapshot
+from tests.test_ae_planning import _project as _planning_project, _proposal
 from tests.test_web_server import get, start
 
 
@@ -332,6 +334,97 @@ def test_final_ae_successor_rejects_incomplete_predecessor_baseline(tmp_path):
 
 
 
+def test_render_card_reads_current_plans_and_connector_status(tmp_path):
+    workspace = tmp_path / "ws"
+    native = _plan(workspace, backend="native")
+    ae = create_render_plan(
+        workspace / "p1",
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="after_effects",
+        mode="preview",
+        capability_hash=_AE_CAPABILITY_HASH,
+        capability_manifest=_AE_CAPABILITY_MANIFEST,
+    )
+    server = start(workspace, ae_relay_url="https://relay.example")
+    try:
+        cookie, _, grant = _pair(server, workspace)
+        plans_code, plans = _get_ae(
+            server,
+            "/api/render-plans?project=p1&scene=s1&version=v1",
+            cookie,
+        )
+        status_code, status = _get_ae(
+            server,
+            "/api/ae/status?project=p1",
+            cookie,
+        )
+    finally:
+        server.shutdown()
+
+    assert plans_code == status_code == 200
+    assert [item["plan"]["id"] for item in plans["plans"]] == [native.id, ae.id]
+    assert all(item["state"]["status"] == "awaiting_approval" for item in plans["plans"])
+    assert status == {
+        "relay_configured": True,
+        "paired": True,
+        "device_id": grant.identity.device_id,
+        "capability_hash": _AE_CAPABILITY_HASH,
+        "ae_version": "24.1.0",
+        "ae_ready": True,
+        "project_open": True,
+    }
+
+
+def test_render_card_acknowledges_ae_substitution_draft(tmp_path, monkeypatch):
+    workspace = tmp_path / "ws"
+    _planning_project(workspace, unsupported=True)
+
+    class Client:
+        def complete(self, messages, tools):
+            return SimpleNamespace(content=json.dumps([_proposal()]))
+
+    monkeypatch.setattr(web_server, "make_llm", lambda *args, **kwargs: Client())
+    server = start(workspace, ae_relay_url="https://relay.example")
+    try:
+        cookie, _, _ = _pair(server, workspace)
+        request = {
+            "project": "p1",
+            "scene": "s1",
+            "version": "v1",
+            "backend": "after_effects",
+            "mode": "preview",
+            "direction": "Preserve the title motion",
+        }
+        draft_code, draft_response = _ae_post(
+            server,
+            cookie,
+            "/api/render-plans",
+            request,
+        )
+        draft = draft_response["draft"]
+        plan_code, plan_response = _ae_post(
+            server,
+            cookie,
+            "/api/render-plans",
+            {
+                **request,
+                "compatibility_issues": draft["compatibility_issues"],
+                "substitutions": draft["substitutions"],
+                "substitutions_acknowledged": True,
+            },
+        )
+    finally:
+        server.shutdown()
+
+    assert draft_code == 200
+    assert draft_response["status"] == "awaiting_substitution_acknowledgement"
+    assert draft["substitutions_acknowledged"] is False
+    assert plan_code == 201
+    assert plan_response["plan"]["substitutions_acknowledged"] is True
+
+
 def test_native_plan_approval_is_the_only_idempotent_execution_gate(tmp_path, monkeypatch):
     workspace = tmp_path / "ws"
     plan = _plan(workspace)
@@ -357,6 +450,94 @@ def test_native_plan_approval_is_the_only_idempotent_execution_gate(tmp_path, mo
     assert state["state"]["execution_id"] == first["state"]["execution_id"]
     assert state["job"]["id"] == first["job"]["id"]
     assert state["status"] == "queued"
+
+def test_completed_native_outputs_are_downloadable_from_render_state(tmp_path, monkeypatch):
+    workspace = tmp_path / "ws"
+    plan = _plan(workspace, mode="final")
+    runner = RecordingRunner()
+    store = JobStore(runner=runner)
+    monkeypatch.setattr(web_server, "JOBS", store)
+    server = start(workspace)
+    try:
+        _, approved = _post(
+            server,
+            f"/api/render-plans/{plan.id}/approve",
+            {"project": "p1", "digest": plan.digest, "revision": 0},
+        )
+        job = store.find(approved["job"]["id"])
+        assert job is not None
+        output = workspace / "p1" / "renders" / plan.id / "native" / "output"
+        (output / "render.mp4").write_bytes(b"native mp4")
+        (output / "project.zip").write_bytes(b"native zip")
+        job.status = "done"
+        job.result = {
+            "mp4": str(output / "render.mp4"),
+            "zip": str(output / "project.zip"),
+            "frames": 12,
+        }
+
+        state_code, _, state_body = get(
+            server,
+            f"/api/render-state?project=p1&plan={plan.id}",
+        )
+        request = Request(
+            (
+                f"{_origin(server)}/api/native/artifacts/{plan.id}/mp4"
+                "?project=p1"
+            )
+        )
+        with urlopen(request) as response:
+            downloaded = response.read()
+            content_type = response.headers["Content-Type"]
+            disposition = response.headers["Content-Disposition"]
+            nosniff = response.headers["X-Content-Type-Options"]
+    finally:
+        server.shutdown()
+
+    assert state_code == 200
+    state = json.loads(state_body)
+    assert state["artifacts"] == [
+        {"kind": "mp4", "label": "MP4"},
+        {"kind": "zip", "label": "Project ZIP"},
+    ]
+    assert downloaded == b"native mp4"
+    assert content_type == "video/mp4"
+    assert disposition == 'attachment; filename="keepframe-native.mp4"'
+    assert nosniff == "nosniff"
+
+def test_native_approval_includes_outputs_when_runner_finishes_inline(tmp_path, monkeypatch):
+    workspace = tmp_path / "ws"
+    plan = _plan(workspace, mode="final")
+
+    class CompleteRunner:
+        def enqueue(self, job, *, spec=None, fn=None):
+            output = Path(spec.args["out"])
+            (output / "render.mp4").write_bytes(b"native mp4")
+            (output / "project.zip").write_bytes(b"native zip")
+            job.result = {
+                "mp4": str(output / "render.mp4"),
+                "zip": str(output / "project.zip"),
+                "frames": 12,
+            }
+            job.status = "done"
+
+    monkeypatch.setattr(web_server, "JOBS", JobStore(runner=CompleteRunner()))
+    server = start(workspace)
+    try:
+        code, approved = _post(
+            server,
+            f"/api/render-plans/{plan.id}/approve",
+            {"project": "p1", "digest": plan.digest, "revision": 0},
+        )
+    finally:
+        server.shutdown()
+
+    assert code == 202
+    assert approved["status"] == "done"
+    assert approved["artifacts"] == [
+        {"kind": "mp4", "label": "MP4"},
+        {"kind": "zip", "label": "Project ZIP"},
+    ]
 
 
 def test_ae_plan_approval_creates_durable_waiting_session(tmp_path):

@@ -47,7 +47,7 @@ from keepframe.after_effects.auth import (
 )
 from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
-from keepframe.after_effects.planning import prepare_ae_render_plan
+from keepframe.after_effects.planning import AERenderDraft, prepare_ae_render_plan
 from keepframe.web.workspace import (
     create_project,
     create_rejected_project,
@@ -102,6 +102,49 @@ def _render_status(state, job: Job | None) -> str:
         return job.status
     return "failed"
 
+_NATIVE_ARTIFACTS = {
+    "mp4": ("render.mp4", "MP4", "video/mp4"),
+    "zip": ("project.zip", "Project ZIP", "application/zip"),
+}
+
+
+def _native_artifact_path(root: Path, plan, job: Job | None, kind: str) -> Path:
+    if (
+        job is None
+        or job.status != "done"
+        or not isinstance(job.result, dict)
+        or kind not in _NATIVE_ARTIFACTS
+        or kind == "zip" and plan.mode != "final"
+    ):
+        raise FileNotFoundError(kind)
+    filename = _NATIVE_ARTIFACTS[kind][0]
+    output = root / "renders" / plan.id / "native" / "output"
+    artifact = output / filename
+    reported = job.result.get(kind)
+    try:
+        if (
+            not isinstance(reported, str)
+            or Path(reported).resolve(strict=True) != artifact
+            or artifact.resolve(strict=True) != artifact
+            or not artifact.is_file()
+        ):
+            raise FileNotFoundError(kind)
+    except OSError as exc:
+        raise FileNotFoundError(kind) from exc
+    return artifact
+
+
+def _native_artifacts(root: Path, plan, job: Job | None) -> list[dict[str, str]]:
+    artifacts = []
+    for kind, (_, label, _) in _NATIVE_ARTIFACTS.items():
+        try:
+            _native_artifact_path(root, plan, job, kind)
+        except FileNotFoundError:
+            continue
+        artifacts.append({"kind": kind, "label": label})
+    return artifacts
+
+
 
 def _ae_execution_plan(root: Path, plan):
     if plan.mode != "final":
@@ -149,6 +192,7 @@ def _render_state_payload(root: Path, plan_id: str) -> dict:
         "state": state.model_dump(mode="json"),
         "job": job.to_json() if job is not None else None,
         "status": _render_status(state, job),
+        "artifacts": _native_artifacts(root, plan, job),
     }
 
 
@@ -971,6 +1015,161 @@ def make_server(
             pid = q.get("project", [None])[0]
             sid = q.get("scene", ["s1"])[0]
             ver = q.get("v", [None])[0]
+            if u.path == "/api/ae/status":
+                if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
+                    return self._json(400, {"error": "project is required"})
+                try:
+                    root = _safe_render_project(workspace, pid)
+                    auth = AEProjectAuth(root, pid)
+                    device_id = auth.active_device_id()
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                if device_id is None:
+                    return self._json(
+                        200,
+                        {
+                            "relay_configured": ae_relay_url is not None,
+                            "paired": False,
+                            "device_id": None,
+                            "capability_hash": None,
+                            "ae_version": None,
+                            "ae_ready": False,
+                            "project_open": False,
+                        },
+                    )
+                if not self._authorize_ae_browser(pid):
+                    return
+                snapshot = auth.read_capabilities(device_id)
+                return self._json(
+                    200,
+                    {
+                        "relay_configured": ae_relay_url is not None,
+                        "paired": True,
+                        "device_id": device_id,
+                        "capability_hash": (
+                            snapshot.capability_hash if snapshot is not None else None
+                        ),
+                        "ae_version": snapshot.version if snapshot is not None else None,
+                        "ae_ready": snapshot.ready if snapshot is not None else False,
+                        "project_open": (
+                            snapshot.project_open if snapshot is not None else False
+                        ),
+                    },
+                )
+
+            if u.path == "/api/render-plans":
+                version_id = q.get("version", [ver])[0]
+                if (
+                    not isinstance(pid, str)
+                    or not _PROJECT_ID_RE.fullmatch(pid)
+                    or not isinstance(sid, str)
+                    or not _PROJECT_ID_RE.fullmatch(sid)
+                    or not isinstance(version_id, str)
+                    or not _PROJECT_ID_RE.fullmatch(version_id)
+                ):
+                    return self._json(
+                        400,
+                        {"error": "project, scene, and version are required"},
+                    )
+                try:
+                    root = _safe_render_project(workspace, pid)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                ae_authorized = False
+                try:
+                    with AEProjectAuth(root, pid).authorize_controller_with_capabilities(
+                        self._controller_token(pid)
+                    ):
+                        ae_authorized = True
+                except (AEAuthError, FileNotFoundError):
+                    ae_authorized = False
+                records: list[tuple[int, dict]] = []
+                renders = root / "renders"
+                if renders.is_dir() and not renders.is_symlink():
+                    for index, plan_dir in enumerate(renders.iterdir()):
+                        if index >= 1024:
+                            break
+                        if (
+                            plan_dir.is_symlink()
+                            or not plan_dir.is_dir()
+                            or not _RENDER_PLAN_ID_RE.fullmatch(plan_dir.name)
+                        ):
+                            continue
+                        try:
+                            plan = load_render_plan(root, plan_dir.name)
+                            if (
+                                plan.project_id != pid
+                                or plan.scene_id != sid
+                                or plan.version_id != version_id
+                                or (plan.backend == "after_effects" and not ae_authorized)
+                            ):
+                                continue
+                            payload = _render_state_payload(root, plan.id)
+                            modified = (plan_dir / "plan.json").stat().st_mtime_ns
+                        except (
+                            FileNotFoundError,
+                            OSError,
+                            PlanConflict,
+                            CoordinatorConflict,
+                        ):
+                            continue
+                        records.append((modified, payload))
+                records.sort(key=lambda item: (item[0], item[1]["plan"]["id"]))
+                return self._json(200, {"plans": [item[1] for item in records]})
+
+            native_artifact_match = re.fullmatch(
+                r"/api/native/artifacts/([A-Za-z0-9_-]{8,128})/(mp4|zip)",
+                u.path,
+            )
+            if native_artifact_match:
+                plan_id, kind = native_artifact_match.groups()
+                if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
+                    return self._json(400, {"error": "project is required"})
+                try:
+                    root = _safe_render_project(workspace, pid)
+                    plan = load_render_plan(root, plan_id)
+                    state = load_render_plan_state(root, plan_id)
+                    if (
+                        plan.project_id != pid
+                        or plan.backend != "native"
+                        or state.execution_id is None
+                    ):
+                        raise FileNotFoundError(kind)
+                    job = JOBS.find(
+                        _native_execution_job_id(
+                            plan.id,
+                            plan.digest,
+                            state.execution_id,
+                        )
+                    )
+                    artifact = _native_artifact_path(root, plan, job, kind)
+                    stream = artifact.open("rb")
+                    stream.seek(0, 2)
+                    length = stream.tell()
+                    stream.seek(0)
+                except (FileNotFoundError, OSError, PlanConflict):
+                    return self._json(404, {"error": "not found"})
+                try:
+                    self.send_response(200)
+                    self.send_header("content-type", _NATIVE_ARTIFACTS[kind][2])
+                    self.send_header("content-length", str(length))
+                    self.send_header("cache-control", "no-store")
+                    self.send_header("x-content-type-options", "nosniff")
+                    self.send_header(
+                        "content-disposition",
+                        f'attachment; filename="keepframe-native.{kind}"',
+                    )
+                    self.end_headers()
+                    while chunk := stream.read(1024 * 1024):
+                        self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                finally:
+                    stream.close()
+                return
+
             artifact_match = re.fullmatch(
                 r"/api/ae/artifacts/([A-Za-z0-9_-]{8,128})",
                 u.path,
@@ -1240,6 +1439,9 @@ def make_server(
                     "predecessor_digest",
                     "predecessor_checkpoint",
                     "predecessor_checkpoint_digest",
+                    "substitutions",
+                    "substitutions_acknowledged",
+                    "compatibility_issues",
                 }
                 if set(data) - allowed:
                     return self._json(400, {"error": "render plan payload is invalid"})
@@ -1319,7 +1521,7 @@ def make_server(
                                     capabilities=snapshot,
                                 )
                         else:
-                            plan = prepare_ae_render_plan(
+                            candidate = prepare_ae_render_plan(
                                 root,
                                 project_id=project_id,
                                 scene_id=scene_id,
@@ -1327,11 +1529,27 @@ def make_server(
                                 mode=mode,
                                 direction=direction,
                                 capabilities=snapshot,
+                                client=agent_llm(),
+                                substitutions=data.get("substitutions"),
+                                substitutions_acknowledged=data.get(
+                                    "substitutions_acknowledged",
+                                    False,
+                                ),
+                                compatibility_issues=data.get("compatibility_issues"),
                                 predecessor_id=predecessor_id,
                                 predecessor_digest=predecessor_digest,
                                 predecessor_checkpoint=predecessor_checkpoint,
                                 predecessor_checkpoint_digest=predecessor_checkpoint_digest,
                             )
+                            if isinstance(candidate, AERenderDraft):
+                                return self._json(
+                                    200,
+                                    {
+                                        "draft": candidate.model_dump(mode="json"),
+                                        "status": "awaiting_substitution_acknowledgement",
+                                    },
+                                )
+                            plan = candidate
                     else:
                         plan = create_render_plan(
                             root,
@@ -1507,6 +1725,7 @@ def make_server(
                             "state": state.model_dump(mode="json"),
                             "job": job.to_json(),
                             "status": _render_status(state, job),
+                            "artifacts": _native_artifacts(root, plan, job),
                         },
                     )
                 except AEControllerAuthorizationError as exc:
