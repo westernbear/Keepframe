@@ -20,6 +20,7 @@ from keepframe.after_effects.relay import (
 from tests.test_ae_coordinator import (
     _AE_CAPABILITY_MANIFEST,
     _artifact_payload,
+    _committed_checkpoint,
     _coordinator,
 )
 
@@ -165,29 +166,31 @@ def test_relay_streams_committed_checkpoint_artifact_by_opaque_id(tmp_path):
         identity = auth.authenticate_device(paired["token"])
         assert identity is not None
         state = coordinator.state()
-        coordinator.transition(
+        state = coordinator.transition(
             "device_ready",
             revision=state.revision,
             device_id=identity.device_id,
         )
-        payload = _artifact_payload("aep")
-        reservation = coordinator.reserve_artifact("aep", len(payload))
-        coordinator.publish_artifact(
-            identity.device_id,
-            reservation.id,
-            io.BytesIO(payload),
-            content_length=len(payload),
+        checkpoint = _committed_checkpoint(
+            coordinator,
+            0,
+            provenance="baseline",
+        )
+        coordinator.transition(
+            "baseline_complete",
+            revision=state.revision,
+            checkpoint=checkpoint.model_dump(mode="json"),
         )
         query = {"project": "p1", "plan": plan.id}
         with _request(
             server,
-            f"/artifacts/{reservation.id}",
+            f"/artifacts/{checkpoint.aep_artifact_id}",
             query=query,
             token=paired["token"],
         ) as response:
             assert response.headers["X-Keepframe-SHA256"]
             assert response.headers["X-Content-Type-Options"] == "nosniff"
-            assert response.read() == payload
+            assert response.read() == _artifact_payload("aep")
     finally:
         server.shutdown()
         server.server_close()

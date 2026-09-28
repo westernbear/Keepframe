@@ -9,7 +9,7 @@ Keepframe measures a flat 2D motion-graphics clip or UI screen recording into an
 ## Requirements
 
 - Python 3.11+ (3.12 for `[ocr]`; RapidOCR stops at 3.12)
-- [ffmpeg](https://ffmpeg.org/) on `PATH`
+- [ffmpeg and ffprobe](https://ffmpeg.org/) on `PATH` (both are required by final render verification)
 - Chromium via Playwright, for compose and render
 
 ## Install
@@ -79,6 +79,15 @@ report. Failed candidates remain inspectable and roll back to the last passing
 checkpoint. The loop has no iteration cap; one no-op or two identical model
 plans pauses it as `no_progress`. Manual AE edits sync as new checkpoints and
 never modify Keepframe IR.
+
+Finalization is a separate approval-bound step for the selected passing
+checkpoint. The connector rematerializes and re-verifies that immutable AEP,
+renders a full-resolution PNG sequence through the After Effects Render Queue,
+and encodes `final.mp4` with fixed H.264/yuv420p settings. It retains
+`project.aep`, collected content-addressed media, and `dependencies.json`
+locally, uploads only to coordinator-reserved artifact slots, and publishes a
+ZIP containing exactly those package files. Font and plugin binaries are never
+collected.
 
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 

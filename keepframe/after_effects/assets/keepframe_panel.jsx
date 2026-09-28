@@ -12,12 +12,15 @@
     var COMPLETED_DIR = Folder(BRIDGE_ROOT.fsName + "/completed");
     var INFLIGHT_DIR = Folder(BRIDGE_ROOT.fsName + "/inflight");
     var STOP_FILE = File(BRIDGE_ROOT.fsName + "/stop.json");
-    var ASSET_DIR = Folder(BRIDGE_ROOT.fsName + "/assets");
     var SCOPE_DIR = null;
     var CHECKPOINT_DIR = null;
     var RENDER_DIR = null;
+    var MEDIA_DIR = null;
+    var PACKAGE_DIR = null;
     var MAX_JSON_BYTES = 1048576;
     var MAX_KEYFRAMES = 1000000;
+    var MAX_FINAL_FRAMES = 100000;
+    var MAX_FINAL_TOTAL_PIXELS = 10000000000;
     var SESSION_COMP_MARKER_PREFIX = "keepframe:session:v1:";
     var SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
     var SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -32,9 +35,10 @@
         if (!BRIDGE_ROOT.exists && !BRIDGE_ROOT.create()) { throw new Error("Keepframe bridge root is unavailable"); }
         if (!COMPLETED_DIR.exists && !COMPLETED_DIR.create()) { throw new Error("Keepframe completed directory is unavailable"); }
         if (!INFLIGHT_DIR.exists && !INFLIGHT_DIR.create()) { throw new Error("Keepframe inflight directory is unavailable"); }
-        if (!ASSET_DIR.exists && !ASSET_DIR.create()) { throw new Error("Keepframe asset directory is unavailable"); }
         if (CHECKPOINT_DIR !== null && !CHECKPOINT_DIR.exists && !CHECKPOINT_DIR.create()) { throw new Error("Keepframe checkpoint directory is unavailable"); }
         if (RENDER_DIR !== null && !RENDER_DIR.exists && !RENDER_DIR.create()) { throw new Error("Keepframe render directory is unavailable"); }
+        if (PACKAGE_DIR !== null && !PACKAGE_DIR.exists && !PACKAGE_DIR.create()) { throw new Error("Keepframe package directory is unavailable"); }
+        if (MEDIA_DIR !== null && !MEDIA_DIR.exists && !MEDIA_DIR.create()) { throw new Error("Keepframe media directory is unavailable"); }
     }
 
     function bindSessionDirectories(projectId, planId, sessionId) {
@@ -76,6 +80,8 @@
         SCOPE_DIR = scopeRoot;
         CHECKPOINT_DIR = Folder(scopeRoot.fsName + "/checkpoints");
         RENDER_DIR = Folder(scopeRoot.fsName + "/renders");
+        PACKAGE_DIR = Folder(scopeRoot.fsName + "/package");
+        MEDIA_DIR = Folder(PACKAGE_DIR.fsName + "/collected_media");
         ensureFolders();
     }
 
@@ -915,6 +921,41 @@
             found = item;
         }
         return found;
+    }
+
+    function relinkSessionAssets() {
+        var prefix = "keepframe:asset=";
+        var index;
+        var item;
+        var assetId;
+        var file;
+        if (!app.project || MEDIA_DIR === null) {
+            throw new Error("session media directory is unavailable");
+        }
+        for (index = 1; index <= app.project.numItems; index += 1) {
+            item = app.project.item(index);
+            if (item instanceof CompItem || !item.mainSource) {
+                continue;
+            }
+            if (String(item.comment || "").indexOf(prefix) !== 0) {
+                if (item.file && item.usedIn && item.usedIn.length > 0) {
+                    throw new Error("used project footage is outside the approved asset contract");
+                }
+                continue;
+            }
+            assetId = String(item.comment).substring(prefix.length);
+            if (!ASSET_ID_PATTERN.test(assetId)) {
+                throw new Error("tagged server asset id is invalid");
+            }
+            file = File(MEDIA_DIR.fsName + "/" + assetId);
+            if (!file.exists || file.length <= 0 || typeof item.replace !== "function") {
+                throw new Error("session media is unavailable");
+            }
+            item.replace(file);
+            if (String(item.comment || "") !== prefix + assetId) {
+                item.comment = prefix + assetId;
+            }
+        }
     }
 
     function addMappedLayer(operation) {
@@ -1804,6 +1845,7 @@
             SESSION_COMP = null;
             SESSION_MARKER = null;
             app.open(file);
+            relinkSessionAssets();
             comp = findSessionComposition(marker);
             if (!comp || !projectSettingsMatch(comp, settings)) {
                 throw new Error("checkpoint session composition does not match the requested project");
@@ -1853,6 +1895,42 @@
         return { opened: true, project_open: true, heartbeat: heartbeat(false) };
     }
 
+    function reopenImmutableCheckpoint(checkpointIndex) {
+        var marker = SESSION_MARKER;
+        var file;
+        var comp;
+        if (
+            typeof checkpointIndex !== "number"
+            || !isFinite(checkpointIndex)
+            || checkpointIndex < 0
+            || checkpointIndex > 1000000
+            || Math.floor(checkpointIndex) !== checkpointIndex
+        ) {
+            throw new Error("checkpoint index is invalid");
+        }
+        if (typeof marker !== "string" || marker.length === 0) {
+            throw new Error("session marker is unavailable");
+        }
+        file = File(CHECKPOINT_DIR.fsName + "/checkpoint-" + String(checkpointIndex) + ".aep");
+        if (!file.exists || file.length <= 0) {
+            throw new Error("checkpoint file is unavailable");
+        }
+        SESSION_COMP = null;
+        SESSION_MARKER = null;
+        if (app.project && typeof app.project.close === "function") {
+            app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
+        }
+        app.open(file);
+        relinkSessionAssets();
+        comp = findSessionComposition(marker);
+        if (!comp) {
+            throw new Error("checkpoint session composition is unavailable");
+        }
+        SESSION_MARKER = marker;
+        SESSION_COMP = comp;
+        return comp;
+    }
+
     function importServerAsset(payload) {
         requireSessionComposition();
         var assetId = payload.asset_id;
@@ -1864,7 +1942,7 @@
             if (footage instanceof CompItem || !footage.mainSource) { throw new Error("server asset is not footage"); }
             return { imported: true, asset_id: assetId, item_name: footage.name };
         }
-        file = File(ASSET_DIR.fsName + "/" + assetId);
+        file = File(MEDIA_DIR.fsName + "/" + assetId);
         if (!file.exists) { throw new Error("server-issued asset is unavailable"); }
         app.beginUndoGroup("Keepframe import server asset");
         try {
@@ -1907,7 +1985,8 @@
             requested: true,
             layer_sources: true,
             layer_native_ids: true,
-            allow_new_agent_ids: true
+            allow_new_agent_ids: true,
+            checkpoint_index: true
         }, "inspect_mapped_layers payload");
         frameCount = payload.frame_count;
         fps = payload.fps;
@@ -2256,7 +2335,9 @@
     }
 
     function inspectLayers(payload) {
-        var comp = requireSessionComposition();
+        var comp = hasOwn(payload, "checkpoint_index")
+            ? reopenImmutableCheckpoint(payload.checkpoint_index)
+            : requireSessionComposition();
         var originalComments = [];
         var snapshotIndex;
         for (snapshotIndex = 1; snapshotIndex <= comp.numLayers; snapshotIndex += 1) {
@@ -2530,6 +2611,190 @@
         };
     }
 
+    function finalFrameName(frame) {
+        var padded = String(frame);
+        while (padded.length < 6) { padded = "0" + padded; }
+        return "final-" + padded + ".png";
+    }
+
+    function clearFinalSequence() {
+        var files = RENDER_DIR.getFiles();
+        var index;
+        var file;
+        for (index = 0; index < files.length; index += 1) {
+            file = files[index];
+            if (
+                file instanceof File
+                && /^final-[0-9]{6}\.png$/.test(String(file.name || ""))
+                && !file.remove()
+            ) {
+                throw new Error("cannot clear the final render sequence");
+            }
+        }
+    }
+
+    function renderFinal(payload) {
+        var comp = null;
+        var checkpointIndex;
+        var frameCount;
+        var fps;
+        var expectedFrameCount;
+        var width;
+        var height;
+        var originalResolution;
+        var restoreResolution;
+        var queueItem = null;
+        var outputModule;
+        var outputFile;
+        var frame;
+        var file;
+        var queueStates = [];
+        var queueIndex;
+        var existingQueueItem;
+        assertObject(payload, "render_final payload");
+        assertKeys(payload, {
+            project_id: true,
+            plan_id: true,
+            session_id: true,
+            checkpoint_index: true,
+            frame_count: true,
+            fps: true,
+            width: true,
+            height: true
+        }, "render_final payload");
+        checkpointIndex = payload.checkpoint_index;
+        frameCount = payload.frame_count;
+        fps = payload.fps;
+        width = payload.width;
+        height = payload.height;
+        if (
+            typeof checkpointIndex !== "number"
+            || !isFinite(checkpointIndex)
+            || checkpointIndex < 0
+            || checkpointIndex > 1000000
+            || Math.floor(checkpointIndex) !== checkpointIndex
+        ) {
+            throw new Error("checkpoint index is invalid");
+        }
+        comp = reopenImmutableCheckpoint(checkpointIndex);
+        if (
+            typeof frameCount !== "number"
+            || !isFinite(frameCount)
+            || frameCount < 1
+            || frameCount > MAX_FINAL_FRAMES
+            || Math.floor(frameCount) !== frameCount
+        ) {
+            throw new Error("final frame count is invalid");
+        }
+        if (typeof fps !== "number" || !isFinite(fps) || fps < 1 || fps > 99) {
+            throw new Error("final fps is invalid");
+        }
+        if (
+            typeof width !== "number"
+            || typeof height !== "number"
+            || !isFinite(width)
+            || !isFinite(height)
+            || width < 1
+            || height < 1
+            || Math.floor(width) !== width
+            || Math.floor(height) !== height
+            || width > 16384
+            || height > 16384
+            || width * height > 268435456
+            || width !== comp.width
+            || height !== comp.height
+        ) {
+            throw new Error("final dimensions do not match the bound composition");
+        }
+        if (frameCount * width * height > MAX_FINAL_TOTAL_PIXELS) {
+            throw new Error("final render exceeds the resource budget");
+        }
+        expectedFrameCount = comp.duration * comp.frameRate;
+        if (
+            !approximatelyEqual(fps, comp.frameRate)
+            || !isFinite(expectedFrameCount)
+            || !approximatelyEqual(frameCount, expectedFrameCount)
+        ) {
+            throw new Error("final timing does not match the bound composition");
+        }
+        if (!comp.resolutionFactor || comp.resolutionFactor.length < 2) {
+            throw new Error("composition resolution is unavailable");
+        }
+        ensureFolders();
+        clearFinalSequence();
+        originalResolution = comp.resolutionFactor;
+        restoreResolution = [Number(originalResolution[0]), Number(originalResolution[1])];
+        try {
+            comp.resolutionFactor = [1, 1];
+            if (
+                !app.project.renderQueue
+                || !app.project.renderQueue.items
+                || typeof app.project.renderQueue.items.add !== "function"
+            ) {
+                throw new Error("After Effects Render Queue is unavailable");
+            }
+            for (
+                queueIndex = 1;
+                queueIndex <= app.project.renderQueue.numItems;
+                queueIndex += 1
+            ) {
+                existingQueueItem = app.project.renderQueue.item(queueIndex);
+                queueStates.push({
+                    item: existingQueueItem,
+                    render: Boolean(existingQueueItem.render)
+                });
+                if (existingQueueItem.render) {
+                    existingQueueItem.render = false;
+                }
+            }
+            queueItem = app.project.renderQueue.items.add(comp);
+            queueItem.timeSpanStart = 0;
+            queueItem.timeSpanDuration = comp.duration;
+            if (typeof queueItem.outputModule !== "function") {
+                throw new Error("After Effects output module is unavailable");
+            }
+            outputModule = queueItem.outputModule(1);
+            if (!outputModule || typeof outputModule.applyTemplate !== "function") {
+                throw new Error("PNG output module is unavailable");
+            }
+            outputModule.applyTemplate("PNG Sequence");
+            outputFile = File(RENDER_DIR.fsName + "/final-[######].png");
+            outputModule.file = outputFile;
+            queueItem.render = true;
+            app.project.renderQueue.render();
+        } finally {
+            comp.resolutionFactor = restoreResolution;
+            for (queueIndex = 0; queueIndex < queueStates.length; queueIndex += 1) {
+                queueStates[queueIndex].item.render = queueStates[queueIndex].render;
+            }
+            if (queueItem && typeof queueItem.remove === "function") {
+                queueItem.remove();
+            }
+        }
+        for (frame = 0; frame < frameCount; frame += 1) {
+            file = File(RENDER_DIR.fsName + "/" + finalFrameName(frame));
+            if (!file.exists || file.length <= 0) {
+                throw new Error("final Render Queue sequence is incomplete");
+            }
+        }
+        return {
+            rendered: true,
+            kind: "final",
+            checkpoint_index: checkpointIndex,
+            frame_count: frameCount,
+            fps: fps,
+            width: width,
+            height: height,
+            sequence: {
+                directory: "renders",
+                pattern: "final-%06d.png",
+                frame_count: frameCount,
+                first_frame: finalFrameName(0),
+                last_frame: finalFrameName(frameCount - 1)
+            }
+        };
+    }
+
     function render(kind, payload) {
         requireSessionComposition();
         var file = File(RENDER_DIR.fsName + "/" + kind + ".aep");
@@ -2537,11 +2802,45 @@
         return { saved: true, kind: kind, filename: file.name, frame: payload.frame || 0 };
     }
 
-    function packageProject() {
-        requireSessionComposition();
-        var file = File(RENDER_DIR.fsName + "/project.aep");
+    function packageProject(payload) {
+        var checkpointIndex;
+        var file;
+        var comp;
+        assertObject(payload, "package_project payload");
+        assertKeys(payload, {
+            selected_checkpoint: true,
+            checkpoint_index: true
+        }, "package_project payload");
+        checkpointIndex = payload.selected_checkpoint;
+        if (
+            typeof checkpointIndex !== "number"
+            || !isFinite(checkpointIndex)
+            || checkpointIndex < 0
+            || checkpointIndex > 1000000
+            || Math.floor(checkpointIndex) !== checkpointIndex
+        ) {
+            throw new Error("selected checkpoint is invalid");
+        }
+        if (payload.checkpoint_index !== checkpointIndex) {
+            throw new Error("package checkpoint binding does not match");
+        }
+        comp = reopenImmutableCheckpoint(checkpointIndex);
+        if (!comp) {
+            throw new Error("checkpoint session composition is unavailable");
+        }
+        ensureFolders();
+        file = File(PACKAGE_DIR.fsName + "/project.aep");
         app.project.save(file);
-        return { saved: true, filename: file.name };
+        if (!file.exists || file.length <= 0) {
+            throw new Error("scoped project AEP was not saved");
+        }
+        return {
+            saved: true,
+            kind: "package",
+            filename: file.name,
+            directory: "package",
+            selected_checkpoint: checkpointIndex
+        };
     }
 
     function completedResult(command) {
@@ -2682,9 +2981,9 @@
             case "render_preview":
                 return renderPreview(command.payload || {});
             case "render_final":
-                return render("final", command.payload || {});
+                return renderFinal(command.payload || {});
             case "package_project":
-                return packageProject();
+                return packageProject(command.payload || {});
             default:
                 throw new Error("command kind is not in the fixed catalog");
         }

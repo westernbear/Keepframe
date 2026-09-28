@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import json
@@ -9,12 +10,16 @@ from pathlib import Path
 import pytest
 
 from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
-from keepframe.after_effects.models import AECheckpoint
+from keepframe.after_effects.models import (
+    AECheckpoint,
+    canonical_json,
+    compute_finalization_key,
+    json_digest,
+)
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.after_effects.planning import current_operation_manifest
 from keepframe.render.plan import RenderMode, approve_render_plan, create_render_plan
-
 
 _AE_CAPABILITY_MANIFEST = {
     "version": "24.1.0",
@@ -57,6 +62,12 @@ _AE_CAPABILITY_HASH = hashlib.sha256(
         allow_nan=False,
     ).encode("utf-8")
 ).hexdigest()
+_FINAL_RENDER_FIELDS = {
+    "width": 640,
+    "height": 360,
+    "fps": 30.0,
+    "frame_count": 12,
+}
 
 
 def _coordinator(tmp_path: Path, *, mode: RenderMode = "preview"):
@@ -74,7 +85,7 @@ def _coordinator(tmp_path: Path, *, mode: RenderMode = "preview"):
         scene_id="s1",
         version_id="v1",
         backend="after_effects",
-        mode=mode,
+        mode="preview" if mode == "final" else mode,
         permitted_operations=current_operation_manifest(),
         capability_hash=_AE_CAPABILITY_HASH,
         capability_manifest=_AE_CAPABILITY_MANIFEST,
@@ -83,6 +94,48 @@ def _coordinator(tmp_path: Path, *, mode: RenderMode = "preview"):
     coordinator = AECoordinator(root, plan.id)
     session = coordinator.start(approval.execution_id)
     return root, plan, coordinator, session
+
+def _final_successor(
+    root: Path,
+    preview_plan,
+    coordinator: AECoordinator,
+    checkpoint: int = 0,
+):
+    record = coordinator.checkpoint(checkpoint)
+    checkpoint_digest = json_digest(record.model_dump(mode="json"))
+    final = create_render_plan(
+        root,
+        project_id=preview_plan.project_id,
+        scene_id=preview_plan.scene_id,
+        version_id=preview_plan.version_id,
+        backend="after_effects",
+        mode="final",
+        direction=preview_plan.direction,
+        locked_targets=preview_plan.locked_targets,
+        permitted_operations=preview_plan.permitted_operations,
+        effect_schemas=preview_plan.effect_schemas,
+        capability_hash=preview_plan.capability_hash,
+        capability_manifest=preview_plan.capability_manifest,
+        substitutions=preview_plan.substitutions,
+        substitutions_acknowledged=preview_plan.substitutions_acknowledged,
+        predecessor_id=preview_plan.id,
+        predecessor_digest=preview_plan.digest,
+        predecessor_checkpoint=checkpoint,
+        predecessor_checkpoint_digest=checkpoint_digest,
+        _predecessor_plan=preview_plan,
+    )
+    approval = approve_render_plan(root, final.id, digest=final.digest, revision=0)
+    return final, approval.execution_id
+
+def _finalize(root: Path, preview_plan, coordinator: AECoordinator, session):
+    final, execution_id = _final_successor(root, preview_plan, coordinator)
+    updated = coordinator.transition(
+        "finalize",
+        revision=session.revision,
+        final_plan_id=final.id,
+        execution_id=execution_id,
+    )
+    return updated, final, execution_id
 
 
 
@@ -99,9 +152,19 @@ def _artifact_payload(kind: str) -> bytes:
             + chunk(b"IEND", b"")
         )
     if kind == "mp4":
-        return struct.pack(">I4s", 16, b"ftyp") + b"isom\x00\x00\x00\x00" + struct.pack(">I4s", 8, b"mdat")
+        return base64.b64decode(
+            "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"
+        )
     if kind == "aep":
-        return b"RIFX" + struct.pack(">I", 4) + b"Egg!"
+        return (
+            b"RIFX"
+            + struct.pack(">I", 28)
+            + b"Egg!LIST"
+            + struct.pack(">I", 16)
+            + b"Foldtdsn"
+            + struct.pack(">I", 4)
+            + b"\x00\x00\x00\x01"
+        )
     if kind == "zip":
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as archive:
@@ -121,6 +184,157 @@ def _publish(coordinator: AECoordinator, kind: str) -> str:
         io.BytesIO(payload),
         content_length=len(payload),
     ).id
+
+def _publish_reserved(coordinator: AECoordinator, reservation_id: str, payload: bytes) -> str:
+    device_id = coordinator.state().device_id
+    assert device_id is not None
+    return coordinator.publish_artifact(
+        device_id,
+        reservation_id,
+        io.BytesIO(payload),
+        content_length=len(payload),
+    ).id
+
+
+def _final_package(
+    coordinator: AECoordinator,
+    final,
+    finalization_key: str,
+    checkpoint: int = 0,
+) -> tuple[dict[str, object], dict[str, object]]:
+    aep_bytes = _artifact_payload("aep")
+    aep = coordinator.reserve_artifact("aep", max_length=len(aep_bytes))
+    _publish_reserved(coordinator, aep.id, aep_bytes)
+    assets = [
+        {
+            "asset_id": asset.id,
+            "id": asset.id,
+            "sha256": asset.sha256,
+            "length": asset.length,
+            "media_kind": asset.media_kind,
+            "role": asset.role,
+            "content_filename": asset.id,
+        }
+        for asset in final.assets
+    ]
+    package_media = [
+        {
+            "asset_id": asset.id,
+            "filename": asset.id,
+            "sha256": asset.sha256,
+            "length": asset.length,
+            "media_kind": asset.media_kind,
+        }
+        for asset in final.assets
+    ]
+    approved = dict(final.capability_manifest or {})
+    catalog = approved["capabilities"]
+    fonts = list(catalog["fonts"])
+    effects = list(catalog["effects"])
+    plugins = dict(catalog["plugin_versions"])
+    ae = {
+        "version": approved["version"],
+        "major": approved["major"],
+        "host": approved["host"],
+        "capability_hash": final.capability_hash,
+    }
+    dependencies = {
+        "capability_manifest": approved,
+        "substitutions": list(final.substitutions),
+        "missing_nonportable_dependencies": [],
+    }
+    media_manifest = sorted(
+        (
+            {
+                **record,
+                "role": next(
+                    asset.role
+                    for asset in final.assets
+                    if asset.id == record["asset_id"]
+                ),
+            }
+            for record in package_media
+        ),
+        key=lambda item: (str(item["filename"]), str(item["asset_id"])),
+    )
+    manifest = {
+        "schema_version": "keepframe.dependencies/1",
+        "after_effects": ae,
+        "ae": ae,
+        "os": {
+            "system": "Windows",
+            "release": "11",
+            "version": "test",
+            "machine": "AMD64",
+        },
+        "capability_manifest": {
+            "approved": approved,
+            "live": {
+                "capability_hash": final.capability_hash,
+                "fonts": fonts,
+                "effects": effects,
+                "plugins": plugins,
+            },
+        },
+        "fonts": fonts,
+        "effects": effects,
+        "plugins": plugins,
+        "media": media_manifest,
+        "substitutions": list(final.substitutions),
+        "selected_checkpoint": checkpoint,
+        "plan_digest": final.digest,
+        "final_plan_digest": final.digest,
+        "finalization_key": finalization_key,
+        "missing_dependencies": [],
+        "nonportable_dependencies": [],
+        "missing_nonportable_dependencies": [],
+    }
+    archive_stream = io.BytesIO()
+    with zipfile.ZipFile(
+        archive_stream,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        archive.writestr("project.aep", aep_bytes)
+        archive.writestr("dependencies.json", canonical_json(manifest))
+        for asset in final.assets:
+            archive.writestr(
+                f"collected_media/{asset.id}",
+                coordinator.root.joinpath(*asset.project_path.split("/")).read_bytes(),
+            )
+    archive_bytes = archive_stream.getvalue()
+    package_zip = coordinator.reserve_artifact("zip", max_length=len(archive_bytes))
+    _publish_reserved(coordinator, package_zip.id, archive_bytes)
+    payload: dict[str, object] = {
+        "selected_checkpoint": checkpoint,
+        "final_plan_digest": final.digest,
+        "finalization_key": finalization_key,
+        "assets": assets,
+        "package_media": package_media,
+        "dependencies": dependencies,
+        "artifacts": [
+            {
+                "reservation_id": aep.id,
+                "kind": "aep",
+                "filename": "project.aep",
+                "directory": "package",
+            },
+            {
+                "reservation_id": package_zip.id,
+                "kind": "zip",
+                "filename": "project.zip",
+                "directory": "checkpoints",
+            },
+        ],
+    }
+    result: dict[str, object] = {
+        "ok": True,
+        "artifacts": [
+            {"id": aep.id, "kind": "aep"},
+            {"id": package_zip.id, "kind": "zip"},
+        ],
+    }
+    return payload, result
 
 
 def _committed_checkpoint(
@@ -330,11 +544,11 @@ def test_incomplete_baseline_blocks_manual_selection_and_finalization(tmp_path):
     assert state.checkpoints[-1].lineage_valid is False
     with pytest.raises(CoordinatorConflict, match="lineage"):
         coordinator.select_checkpoint(1, revision=state.revision)
-    with pytest.raises(CoordinatorConflict, match="complete baseline"):
-        coordinator.transition("finalize", revision=state.revision)
+    with pytest.raises(CoordinatorConflict):
+        coordinator.transition("finalize", revision=state.revision, final_plan_id="missing-final", execution_id="missing-execution")
 def test_restart_recovers_every_active_state_to_paused(tmp_path):
     for offset, target in enumerate(("baseline", "iterating", "pause_requested", "manual_edit", "finalizing")):
-        _, _, coordinator, session = _coordinator(tmp_path / str(offset), mode="final")
+        _, plan, coordinator, session = _coordinator(tmp_path / str(offset), mode="final")
         session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
         if target != "baseline":
             session = coordinator.transition(
@@ -350,7 +564,12 @@ def test_restart_recovers_every_active_state_to_paused(tmp_path):
                 session = coordinator.transition("begin_manual", revision=session.revision)
             else:
                 session = coordinator.select_checkpoint(0, revision=session.revision)
-                session = coordinator.transition("finalize", revision=session.revision)
+                session, _final, _execution = _finalize(
+                    coordinator.root,
+                    plan,
+                    coordinator,
+                    session,
+                )
         assert session.status == target
         recovered = AECoordinator(coordinator.root, coordinator.plan_id).state()
         assert recovered.status == "paused:server_restart"
@@ -367,34 +586,40 @@ def test_restart_reconciles_completed_final_result_before_server_pause(tmp_path,
     )
     session = coordinator.transition("no_progress", revision=session.revision)
     session = coordinator.select_checkpoint(0, revision=session.revision)
-    session = coordinator.transition("finalize", revision=session.revision)
+    session, final, _execution = _finalize(root, plan, coordinator, session)
 
     render = coordinator.enqueue_command(
         "render_final",
+        {
+            "checkpoint_index": 0,
+            "final_plan_digest": final.digest,
+            "finalization_key": session.finalization_key,
+            **_FINAL_RENDER_FIELDS,
+        },
         expected_state="finalizing",
         expected_checkpoint=0,
     )
     assert coordinator.next_command("device-1") is not None
+    mp4_id = _publish(coordinator, "mp4")
     coordinator.accept_result(
         "device-1",
         render.id,
         sequence=render.sequence,
-        result={"ok": True, "artifacts": [{"id": _publish(coordinator, "mp4"), "kind": "mp4"}]},
+        result={"ok": True, "artifacts": [{"id": mp4_id, "kind": "mp4"}]},
+    )
+    assert session.finalization_key
+    package_payload, package_result = _final_package(
+        coordinator,
+        final,
+        session.finalization_key,
     )
     package = coordinator.enqueue_command(
         "package_project",
+        package_payload,
         expected_state="finalizing",
         expected_checkpoint=0,
     )
     assert coordinator.next_command("device-1") is not None
-    package_result = {
-        "ok": True,
-        "artifacts": [
-            {"id": _publish(coordinator, "aep"), "kind": "aep"},
-            {"id": _publish(coordinator, "mp4"), "kind": "mp4"},
-            {"id": _publish(coordinator, "zip"), "kind": "zip"},
-        ],
-    }
     original_commit = coordinator._commit_transition_unlocked
 
     def crash_after_durable_result(before, after, event, data):
@@ -794,14 +1019,18 @@ def test_checkpoint_and_package_commands_use_long_leases(tmp_path, monkeypatch):
     assert_long_lease(manual, sync)
 
 
-    _, _, package, session = _coordinator(tmp_path / "package", mode="final")
+    root, preview_plan, package, session = _coordinator(tmp_path / "package", mode="final")
     session = _ready_iterating(package, session)
     session = package.transition("no_progress", revision=session.revision)
     session = package.select_checkpoint(0, revision=session.revision)
-    session = package.transition("finalize", revision=session.revision)
+    session, final, _execution = _finalize(root, preview_plan, package, session)
     command = package.enqueue_command(
         "package_project",
-        {},
+        {
+            "selected_checkpoint": session.selected_checkpoint,
+            "final_plan_digest": final.digest,
+            "finalization_key": session.finalization_key,
+        },
         expected_state="finalizing",
         expected_checkpoint=session.selected_checkpoint,
     )
@@ -1155,7 +1384,7 @@ def test_failed_render_command_surfaces_render_specific_pause(tmp_path):
 
 
 def test_no_progress_disconnect_and_finalization_edges(tmp_path):
-    _, _, coordinator, session = _coordinator(tmp_path, mode="final")
+    root, preview_plan, coordinator, session = _coordinator(tmp_path, mode="final")
     session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     session = coordinator.transition(
         "baseline_complete",
@@ -1165,7 +1394,7 @@ def test_no_progress_disconnect_and_finalization_edges(tmp_path):
     session = coordinator.transition("no_progress", revision=session.revision)
     assert session.status == "paused:no_progress"
     session = coordinator.select_checkpoint(0, revision=session.revision)
-    session = coordinator.transition("finalize", revision=session.revision)
+    session, final, _execution = _finalize(root, preview_plan, coordinator, session)
     assert session.status == "finalizing"
     with pytest.raises(CoordinatorConflict, match="package_project"):
         coordinator.transition("final_complete", revision=session.revision)
@@ -1173,6 +1402,12 @@ def test_no_progress_disconnect_and_finalization_edges(tmp_path):
     mp4_id = _publish(coordinator, "mp4")
     render = coordinator.enqueue_command(
         "render_final",
+        {
+            "checkpoint_index": 0,
+            "final_plan_digest": final.digest,
+            "finalization_key": session.finalization_key,
+            **_FINAL_RENDER_FIELDS,
+        },
         expected_state="finalizing",
         expected_checkpoint=0,
     )
@@ -1185,8 +1420,15 @@ def test_no_progress_disconnect_and_finalization_edges(tmp_path):
         result={"ok": True, "artifacts": [{"id": mp4_id, "kind": "mp4"}]},
     )
 
+    assert session.finalization_key
+    package_payload, package_result = _final_package(
+        coordinator,
+        final,
+        session.finalization_key,
+    )
     package = coordinator.enqueue_command(
         "package_project",
+        package_payload,
         expected_state="finalizing",
         expected_checkpoint=0,
     )
@@ -1196,14 +1438,7 @@ def test_no_progress_disconnect_and_finalization_edges(tmp_path):
         "device-1",
         package.id,
         sequence=package.sequence,
-        result={
-            "ok": True,
-            "artifacts": [
-                {"id": _publish(coordinator, "aep"), "kind": "aep"},
-                {"id": mp4_id, "kind": "mp4"},
-                {"id": _publish(coordinator, "zip"), "kind": "zip"},
-            ],
-        },
+        result=package_result,
     )
     session = coordinator.state()
     assert session.status == "done"
@@ -1212,7 +1447,7 @@ def test_no_progress_disconnect_and_finalization_edges(tmp_path):
 
 
 def test_finalization_revalidates_authoritative_approval(tmp_path):
-    root, _, coordinator, session = _coordinator(tmp_path, mode="final")
+    root, preview_plan, coordinator, session = _coordinator(tmp_path, mode="final")
     session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     session = coordinator.transition(
         "baseline_complete",
@@ -1221,13 +1456,19 @@ def test_finalization_revalidates_authoritative_approval(tmp_path):
     )
     session = coordinator.transition("no_progress", revision=session.revision)
     session = coordinator.select_checkpoint(0, revision=session.revision)
+    final, execution_id = _final_successor(root, preview_plan, coordinator)
     meta_path = root / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta["status"] = "review"
     meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
     with pytest.raises(CoordinatorConflict, match="approved"):
-        coordinator.transition("finalize", revision=session.revision)
+        coordinator.transition(
+            "finalize",
+            revision=session.revision,
+            final_plan_id=final.id,
+            execution_id=execution_id,
+        )
     assert coordinator.state().status == "paused:no_progress"
 
 
@@ -1293,6 +1534,35 @@ def test_artifact_reservations_stream_validate_and_publish_once(tmp_path):
     with pytest.raises(CoordinatorConflict, match="container|PNG"):
         coordinator.publish_artifact(
             "device-1", invalid.id, io.BytesIO(fake_png), content_length=len(fake_png)
+        )
+    fake_aep = b"RIFX" + struct.pack(">I", 4) + b"Egg!"
+    invalid_aep = coordinator.reserve_artifact("aep", max_length=len(fake_aep))
+    with pytest.raises(CoordinatorConflict, match="AEP"):
+        coordinator.publish_artifact(
+            "device-1",
+            invalid_aep.id,
+            io.BytesIO(fake_aep),
+            content_length=len(fake_aep),
+        )
+    malformed_nested_aep = (
+        b"RIFX"
+        + struct.pack(">I", 28)
+        + b"Egg!LIST"
+        + struct.pack(">I", 16)
+        + b"Foldtdsn"
+        + struct.pack(">I", 8)
+        + b"\x00\x00\x00\x01"
+    )
+    malformed_aep = coordinator.reserve_artifact(
+        "aep",
+        max_length=len(malformed_nested_aep),
+    )
+    with pytest.raises(CoordinatorConflict, match="truncated"):
+        coordinator.publish_artifact(
+            "device-1",
+            malformed_aep.id,
+            io.BytesIO(malformed_nested_aep),
+            content_length=len(malformed_nested_aep),
         )
     oversized = bytearray(payload)
     oversized[16:20] = struct.pack(">I", 0xFFFFFFFF)
@@ -2242,7 +2512,7 @@ def test_checkpoint_inspection_removal_tombstones_source_less_id(tmp_path):
 
 
 def test_finalization_binds_commands_to_selected_passing_checkpoint(tmp_path):
-    _, _, coordinator, session = _coordinator(tmp_path, mode="final")
+    root, preview_plan, coordinator, session = _coordinator(tmp_path, mode="final")
     session = _ready_iterating(coordinator, session)
     failed = _failed_checkpoint(coordinator, 1)
     save = _enqueue_checkpoint(
@@ -2261,13 +2531,88 @@ def test_finalization_binds_commands_to_selected_passing_checkpoint(tmp_path):
     )
     state = coordinator.transition("no_progress", revision=coordinator.state().revision)
     state = coordinator.select_checkpoint(0, revision=state.revision)
-    state = coordinator.transition("finalize", revision=state.revision)
+    state, final, _execution = _finalize(root, preview_plan, coordinator, state)
     command = coordinator.enqueue_command(
         "render_final",
+        {
+            "checkpoint_index": 0,
+            "final_plan_digest": final.digest,
+            "finalization_key": state.finalization_key,
+            **_FINAL_RENDER_FIELDS,
+        },
         expected_state="finalizing",
         expected_checkpoint=0,
     )
     assert coordinator.next_command("device-1").id == command.id
+    fake_mp4 = (
+        struct.pack(">I4s", 16, b"ftyp")
+        + b"isom\x00\x00\x00\x00"
+        + struct.pack(">I4s", 8, b"mdat")
+    )
+    reservation = coordinator.reserve_artifact("mp4", max_length=len(fake_mp4))
+    artifact_id = _publish_reserved(coordinator, reservation.id, fake_mp4)
+    with pytest.raises(CoordinatorConflict, match="probe failed"):
+        coordinator.accept_result(
+            "device-1",
+            command.id,
+            sequence=command.sequence,
+            result={
+                "ok": True,
+                "artifacts": [{"id": artifact_id, "kind": "mp4"}],
+            },
+        )
+
+
+def test_paused_finalization_can_retry_or_replace_its_successor(tmp_path):
+    root, preview, coordinator, session = _coordinator(tmp_path, mode="final")
+    session = _ready_iterating(coordinator, session)
+    session = coordinator.transition("no_progress", revision=session.revision)
+    session = coordinator.select_checkpoint(0, revision=session.revision)
+    session, final, execution = _finalize(root, preview, coordinator, session)
+    command = coordinator.enqueue_command(
+        "render_final",
+        {
+            "checkpoint_index": 0,
+            "final_plan_digest": final.digest,
+            "finalization_key": session.finalization_key,
+            **_FINAL_RENDER_FIELDS,
+        },
+        expected_state="finalizing",
+        expected_checkpoint=0,
+    )
+    assert coordinator.next_command("device-1").id == command.id
+    mp4_id = _publish(coordinator, "mp4")
+    coordinator.accept_result(
+        "device-1",
+        command.id,
+        sequence=command.sequence,
+        result={"ok": True, "artifacts": [{"id": mp4_id, "kind": "mp4"}]},
+    )
+    session = coordinator.state()
+    session = coordinator.transition("package_failed", revision=session.revision)
+    session = coordinator.transition(
+        "finalize",
+        revision=session.revision,
+        final_plan_id=final.id,
+        execution_id=execution,
+    )
+    assert session.final_mp4_artifact_id == mp4_id
+
+    session = coordinator.transition("package_failed", revision=session.revision)
+    replacement, replacement_execution = _final_successor(
+        root,
+        preview,
+        coordinator,
+    )
+    session = coordinator.transition(
+        "finalize",
+        revision=session.revision,
+        final_plan_id=replacement.id,
+        execution_id=replacement_execution,
+    )
+    assert session.final_plan_id == replacement.id
+    assert session.final_mp4_artifact_id is None
+    assert session.final_artifact_ids == {}
 
 
 def test_command_history_and_exact_lookup_are_immutable_reads(tmp_path):
@@ -2308,7 +2653,7 @@ def test_restart_recovers_pause_requested_to_server_restart(tmp_path):
 
 
 def test_restart_revokes_leased_command_before_continue_can_redeliver(tmp_path):
-    _, _, coordinator, session = _coordinator(tmp_path, mode="final")
+    root, preview_plan, coordinator, session = _coordinator(tmp_path, mode="final")
     session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
     session = coordinator.transition(
         "baseline_complete",
@@ -2317,10 +2662,15 @@ def test_restart_revokes_leased_command_before_continue_can_redeliver(tmp_path):
     )
     session = coordinator.transition("no_progress", revision=session.revision)
     session = coordinator.select_checkpoint(0, revision=session.revision)
-    session = coordinator.transition("finalize", revision=session.revision)
+    session, final, _execution = _finalize(root, preview_plan, coordinator, session)
     command = coordinator.enqueue_command(
         "render_final",
-        {},
+        {
+            "checkpoint_index": 0,
+            "final_plan_digest": final.digest,
+            "finalization_key": session.finalization_key,
+            **_FINAL_RENDER_FIELDS,
+        },
         expected_state="finalizing",
         expected_checkpoint=0,
     )
@@ -2344,3 +2694,20 @@ def test_pause_error_accepts_vision_loop_reasons(tmp_path, reason):
         reason=reason,
     )
     assert paused.status == f"paused:{reason}"
+
+def test_finalization_persists_approved_binding_and_idempotency_key(tmp_path):
+    root, preview_plan, coordinator, session = _coordinator(tmp_path, mode="final")
+    session = coordinator.transition("device_ready", revision=session.revision, device_id="device-1")
+    session = coordinator.transition(
+        "baseline_complete",
+        revision=session.revision,
+        checkpoint=_committed_checkpoint(coordinator, 0, provenance="baseline").model_dump(mode="json"),
+    )
+    session = coordinator.transition("no_progress", revision=session.revision)
+    session = coordinator.select_checkpoint(0, revision=session.revision)
+    session, final, execution_id = _finalize(root, preview_plan, coordinator, session)
+
+    assert session.final_plan_id == final.id
+    assert session.final_plan_digest == final.digest
+    assert session.final_execution_id == execution_id
+    assert session.finalization_key == compute_finalization_key(final.digest, 0)

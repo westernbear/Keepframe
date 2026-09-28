@@ -7,15 +7,20 @@ import math
 import os
 import re
 import secrets
+import shutil
 import stat
 import struct
+import subprocess
 import tempfile
 import threading
 import time
 import zlib
+import zipfile
 from contextlib import contextmanager
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator, Literal, Mapping, Protocol, Sequence, cast
+
 from pydantic import ValidationError
 
 from ..render.plan import (
@@ -25,6 +30,7 @@ from ..render.plan import (
     _ensure_project_path,
     _state_lock,
     load_render_plan,
+    load_render_plan_scene,
     load_render_plan_state,
     validate_render_plan_execution,
 )
@@ -41,6 +47,7 @@ from .models import (
     ArtifactKind,
     CommandKind,
     canonical_json,
+    compute_finalization_key,
 )
 
 class CoordinatorConflict(RuntimeError):
@@ -58,10 +65,10 @@ _COMMAND_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,255}$")
 _COMMAND_STATES: dict[CommandKind, frozenset[str]] = {
     "heartbeat": frozenset({"baseline", "iterating"}),
     "create_project": frozenset({"baseline"}),
-    "open_project": frozenset({"baseline", "iterating", "manual_edit"}),
+    "open_project": frozenset({"baseline", "iterating", "manual_edit", "finalizing"}),
     "import_asset": frozenset({"baseline"}),
     "apply_batch": frozenset({"baseline", "iterating"}),
-    "inspect_layers": frozenset({"baseline", "iterating", "pause_requested", "manual_edit"}),
+    "inspect_layers": frozenset({"baseline", "iterating", "pause_requested", "manual_edit", "finalizing"}),
     "save_checkpoint": frozenset({"baseline", "iterating", "pause_requested"}),
     "render_preview": frozenset({"baseline", "iterating", "pause_requested", "manual_edit"}),
     "render_final": frozenset({"finalizing"}),
@@ -108,6 +115,12 @@ _MAX_COMMAND_PAYLOAD_BYTES = _MAX_PROTOCOL_BYTES - _MAX_COMMAND_ENVELOPE_BYTES
 # streaming all reserved artifacts before the lease can settle a disconnect.
 _MAX_COMMAND_LIFETIME_SECONDS = 24 * 60 * 60.0
 _LONG_COMMAND_LEASE_SECONDS = 60 * 60.0
+
+_FINAL_COMMAND_KINDS = frozenset({"open_project", "inspect_layers", "render_final", "package_project"})
+_FINAL_ARTIFACT_KINDS = frozenset({"mp4", "aep", "zip"})
+_MAX_PACKAGE_ENTRIES = 1026
+_MAX_PACKAGE_UNCOMPRESSED = 4_294_967_296
+_MAX_PACKAGE_RATIO = 1000
 
 def _now() -> float:
     return time.time()
@@ -200,7 +213,7 @@ def _validate_command_artifacts(value: Any) -> None:
             r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", filename
         ):
             raise CoordinatorConflict("command artifact filename is invalid")
-        if item["directory"] not in {"checkpoints", "renders"}:
+        if item["directory"] not in {"checkpoints", "renders", "package"}:
             raise CoordinatorConflict("command artifact directory is invalid")
         length = item.get("length")
         if length is not None and (
@@ -209,11 +222,45 @@ def _validate_command_artifacts(value: Any) -> None:
             raise CoordinatorConflict("command artifact length is invalid")
 
 
+def _validate_package_media(value: Any) -> None:
+    if not isinstance(value, (list, tuple)) or len(value) > 4096:
+        raise CoordinatorConflict("package media records are invalid")
+    fields = frozenset({"asset_id", "filename", "sha256", "length", "media_kind"})
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != fields:
+            raise CoordinatorConflict("package media record fields are invalid")
+        if not isinstance(item["asset_id"], str) or not _SAFE_COMPONENT.fullmatch(item["asset_id"]):
+            raise CoordinatorConflict("package media asset id is invalid")
+        if not isinstance(item["filename"], str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", item["filename"]
+        ):
+            raise CoordinatorConflict("package media filename is invalid")
+        if not isinstance(item["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
+            raise CoordinatorConflict("package media digest is invalid")
+        if not isinstance(item["length"], int) or isinstance(item["length"], bool) or item["length"] < 0:
+            raise CoordinatorConflict("package media length is invalid")
+        if not isinstance(item["media_kind"], str) or not item["media_kind"]:
+            raise CoordinatorConflict("package media kind is invalid")
+
+
+def _validate_content_filename(value: Any) -> None:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", value
+    ):
+        raise CoordinatorConflict("content filename is invalid")
+
+
 def _validate_command_payload(value: Any, *, allow_artifacts: bool = False) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
             if allow_artifacts and key == "artifacts":
                 _validate_command_artifacts(item)
+                continue
+            if key == "package_media":
+                _validate_package_media(item)
+                continue
+            if key == "content_filename":
+                _validate_content_filename(item)
                 continue
             if not isinstance(key, str) or key.lower() in _FORBIDDEN_PAYLOAD_KEYS or any(
                 token in key.lower() for token in ("path", "url", "uri", "code", "script", "expression")
@@ -414,6 +461,101 @@ def _validate_mp4(path: Path, length: int) -> None:
         if offset != length or not seen_ftyp or not seen_media:
             raise CoordinatorConflict("artifact MP4 container is incomplete")
 
+def _validate_final_mp4(
+    path: Path,
+    *,
+    width: int,
+    height: int,
+    fps: float,
+    frame_count: int,
+) -> None:
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None:
+        raise CoordinatorConflict("server ffprobe is unavailable")
+    process: subprocess.Popen[bytes] | None = None
+    output = bytearray()
+    overflow = False
+
+    def drain_stdout() -> None:
+        nonlocal overflow
+        assert process is not None and process.stdout is not None
+        while chunk := process.stdout.read(8192):
+            remaining = 64 * 1024 - len(output)
+            if remaining > 0:
+                output.extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                overflow = True
+
+    try:
+        process = subprocess.Popen(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v",
+                "-show_entries",
+                (
+                    "stream=codec_type,codec_name,pix_fmt,width,height,"
+                    "avg_frame_rate,nb_frames,duration"
+                ),
+                "-of",
+                "json",
+                str(path),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        reader = threading.Thread(target=drain_stdout, daemon=True)
+        reader.start()
+        try:
+            return_code = process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise CoordinatorConflict("final MP4 probe timed out")
+        reader.join()
+    except CoordinatorConflict:
+        raise
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CoordinatorConflict("final MP4 could not be probed") from exc
+    if return_code != 0 or overflow:
+        raise CoordinatorConflict("final MP4 probe failed")
+    try:
+        probe = json.loads(output)
+        streams = probe["streams"]
+        stream = streams[0]
+        actual_fps = float(Fraction(stream["avg_frame_rate"]))
+        actual_frames = int(stream["nb_frames"])
+        duration = float(stream["duration"])
+    except (
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise CoordinatorConflict("final MP4 metadata is invalid") from exc
+    if (
+        not isinstance(streams, list)
+        or len(streams) != 1
+        or stream.get("codec_type") != "video"
+        or stream.get("codec_name") != "h264"
+        or stream.get("pix_fmt") != "yuv420p"
+        or stream.get("width") != width
+        or stream.get("height") != height
+        or not math.isclose(actual_fps, fps, rel_tol=0, abs_tol=1e-6)
+        or actual_frames != frame_count
+        or not math.isclose(
+            duration,
+            frame_count / fps,
+            rel_tol=0,
+            abs_tol=max(1e-3, 1 / fps),
+        )
+    ):
+        raise CoordinatorConflict("final MP4 does not match the approved scene")
+
 
 def _validate_zip(path: Path, length: int) -> None:
     if length < 22:
@@ -469,14 +611,77 @@ def _validate_zip(path: Path, length: int) -> None:
             raise CoordinatorConflict("artifact ZIP central directory has trailing data")
 
 
+def _validate_rifx_chunks(
+    stream: BinaryIO,
+    end: int,
+    *,
+    depth: int,
+    count: list[int],
+) -> tuple[bytes | None, int]:
+    if depth > 64:
+        raise CoordinatorConflict("artifact AEP nesting is invalid")
+    first: bytes | None = None
+    project_bytes = 0
+    while stream.tell() < end:
+        if end - stream.tell() < 8:
+            raise CoordinatorConflict("artifact AEP chunk table is invalid")
+        chunk_id, chunk_length = struct.unpack(">4sI", _read_exact(stream, 8))
+        count[0] += 1
+        if count[0] > 100_000 or not re.fullmatch(rb"[ -~]{4}", chunk_id):
+            raise CoordinatorConflict("artifact AEP chunk is invalid")
+        if first is None:
+            first = chunk_id
+        payload_end = stream.tell() + chunk_length
+        if payload_end > end:
+            raise CoordinatorConflict("artifact AEP chunk is truncated")
+        if chunk_id == b"LIST":
+            if chunk_length < 12:
+                raise CoordinatorConflict("artifact AEP LIST is empty")
+            list_type = _read_exact(stream, 4)
+            if not re.fullmatch(rb"[ -~]{4}", list_type):
+                raise CoordinatorConflict("artifact AEP LIST type is invalid")
+            _nested_first, nested_bytes = _validate_rifx_chunks(
+                stream,
+                payload_end,
+                depth=depth + 1,
+                count=count,
+            )
+            if nested_bytes == 0:
+                raise CoordinatorConflict("artifact AEP LIST is empty")
+            project_bytes += nested_bytes
+        else:
+            _discard(stream, chunk_length)
+            project_bytes += chunk_length
+        if stream.tell() != payload_end:
+            raise CoordinatorConflict("artifact AEP chunk bounds are invalid")
+        if chunk_length % 2:
+            if stream.tell() >= end or _read_exact(stream, 1) != b"\x00":
+                raise CoordinatorConflict("artifact AEP chunk padding is invalid")
+    if stream.tell() != end:
+        raise CoordinatorConflict("artifact AEP chunk bounds are invalid")
+    return first, project_bytes
+
+
 def _validate_aep(path: Path, length: int) -> None:
-    if length < 12:
+    if length < 36:
         raise CoordinatorConflict("artifact AEP container is invalid")
     with path.open("rb") as stream:
         header = _read_exact(stream, 12)
-    declared_size = struct.unpack(">I", header[4:8])[0]
-    if header[:4] != b"RIFX" or header[8:12] != b"Egg!" or declared_size != length - 8:
-        raise CoordinatorConflict("artifact AEP container is invalid")
+        declared_size = struct.unpack(">I", header[4:8])[0]
+        if (
+            header[:4] != b"RIFX"
+            or header[8:12] != b"Egg!"
+            or declared_size != length - 8
+        ):
+            raise CoordinatorConflict("artifact AEP container is invalid")
+        first, project_bytes = _validate_rifx_chunks(
+            stream,
+            length,
+            depth=0,
+            count=[0],
+        )
+        if first != b"LIST" or project_bytes == 0:
+            raise CoordinatorConflict("artifact AEP container is incomplete")
 
 
 def _validate_artifact_file(kind: ArtifactKind, path: Path, length: int) -> None:
@@ -1310,6 +1515,7 @@ class AECoordinator:
                         "status": "paused:server_restart",
                         "revision": session.revision + 1,
                         "reason": "server_restart",
+                        "open_checkpoint": None,
                         "updated_at": _now(),
                     }
                 )
@@ -1450,79 +1656,365 @@ class AECoordinator:
             return "zip"
         return None
 
-    def _validate_final_artifacts_unlocked(
-        self,
-        session: AESession,
-        result: Mapping[str, Any],
-        *,
-        required_override: set[ArtifactKind] | None = None,
-    ) -> None:
-        refs: list[tuple[str, ArtifactKind | None]] = []
+    @classmethod
+    def _result_artifact_map(cls, result: Mapping[str, Any]) -> dict[ArtifactKind, str]:
+        values: list[tuple[str | None, ArtifactKind | None]] = []
         raw = result.get("artifacts")
         if raw is None:
             raw = result.get("artifact_ids")
         if isinstance(raw, Mapping):
             for label, value in raw.items():
-                expected = self._artifact_kind(str(label))
+                expected = cls._artifact_kind(str(label))
                 if isinstance(value, Mapping):
-                    artifact_id = value.get("id", value.get("artifact_id"))
-                    declared_kind = value.get("kind")
-                    if isinstance(declared_kind, str) and declared_kind in _ARTIFACT_KINDS:
-                        expected = cast(ArtifactKind, declared_kind)
-                else:
-                    artifact_id = value
-                if isinstance(artifact_id, str):
-                    refs.append((artifact_id, expected))
+                    value_kind = value.get("kind")
+                    if isinstance(value_kind, str) and value_kind in _ARTIFACT_KINDS:
+                        expected = cast(ArtifactKind, value_kind)
+                    value = value.get("id", value.get("artifact_id", value.get("reservation_id")))
+                values.append((value if isinstance(value, str) else None, expected))
         elif isinstance(raw, (list, tuple)):
             for value in raw:
+                expected: ArtifactKind | None = None
                 if isinstance(value, Mapping):
-                    artifact_id = value.get("id", value.get("artifact_id"))
-                    declared_kind = value.get("kind")
-                    expected = (
-                        cast(ArtifactKind, declared_kind)
-                        if isinstance(declared_kind, str) and declared_kind in _ARTIFACT_KINDS
-                        else None
-                    )
-                else:
-                    artifact_id = value
-                    expected = None
-                if isinstance(artifact_id, str):
-                    refs.append((artifact_id, expected))
+                    kind = value.get("kind")
+                    expected = cast(ArtifactKind, kind) if isinstance(kind, str) and kind in _ARTIFACT_KINDS else None
+                    value = value.get("id", value.get("artifact_id", value.get("reservation_id")))
+                values.append((value if isinstance(value, str) else None, expected))
         for label, value in result.items():
             if label.endswith("_artifact_id") and isinstance(value, str):
-                refs.append((value, self._artifact_kind(label)))
+                values.append((value, cls._artifact_kind(label)))
         if isinstance(result.get("artifact_id"), str):
-            refs.append((result["artifact_id"], None))
-        if not refs:
+            values.append((result["artifact_id"], None))
+        mapping: dict[ArtifactKind, str] = {}
+        for artifact_id, kind in values:
+            if not isinstance(artifact_id, str):
+                continue
+            if kind is None:
+                continue
+            prior = mapping.get(kind)
+            if prior is not None and prior != artifact_id:
+                raise CoordinatorConflict("final result contains conflicting artifact ids")
+            mapping[kind] = artifact_id
+        return mapping
+
+    @staticmethod
+    def _stream_matches_digest(stream: BinaryIO, expected_digest: str, expected_length: int) -> None:
+        digest = hashlib.sha256()
+        length = 0
+        while chunk := stream.read(1024 * 1024):
+            if not isinstance(chunk, bytes):
+                raise CoordinatorConflict("package entry is not a byte stream")
+            digest.update(chunk)
+            length += len(chunk)
+            if length > expected_length:
+                raise CoordinatorConflict("package entry exceeds its declared length")
+        if length != expected_length or digest.hexdigest() != expected_digest:
+            raise CoordinatorConflict("package entry digest does not match its immutable record")
+
+    def _validate_package_archive_unlocked(
+        self,
+        session: AESession,
+        command: AECommand,
+        artifacts: Mapping[ArtifactKind, str],
+    ) -> None:
+        payload = command.payload
+        package_media = payload.get("package_media")
+        dependencies = payload.get("dependencies")
+        if not isinstance(package_media, list) or not isinstance(dependencies, Mapping):
+            raise CoordinatorConflict("package payload media and dependencies are incomplete")
+        if "zip" not in artifacts or "aep" not in artifacts:
+            raise CoordinatorConflict("package result requires AEP and ZIP artifacts")
+        plan_assets: dict[str, Any] = {}
+        for asset in self.plan.assets:
+            plan_assets.setdefault(asset.id, asset)
+        media_by_name: dict[str, Mapping[str, Any]] = {}
+        for record in package_media:
+            if not isinstance(record, Mapping):
+                raise CoordinatorConflict("package media record is invalid")
+            asset_id = record.get("asset_id")
+            filename = record.get("filename")
+            if not isinstance(asset_id, str) or asset_id not in plan_assets:
+                raise CoordinatorConflict("package media asset is not in the immutable plan")
+            if not isinstance(filename, str) or filename in media_by_name:
+                raise CoordinatorConflict("package media filename is invalid or duplicated")
+            media_by_name[filename] = record
+            asset = plan_assets[asset_id]
+            if record.get("sha256") != asset.sha256 or record.get("length") != asset.length:
+                raise CoordinatorConflict("package media record changed an immutable asset")
+        if {str(record["asset_id"]) for record in media_by_name.values()} != set(
+            plan_assets
+        ):
+            raise CoordinatorConflict("package media does not cover immutable plan assets")
+        zip_reservation = next(
+            item
+            for item in self._load_reservations_unlocked()
+            if item.id == artifacts["zip"]
+        )
+        aep_reservation = next(
+            item
+            for item in self._load_reservations_unlocked()
+            if item.id == artifacts["aep"]
+        )
+        zip_path = self.artifacts_dir / zip_reservation.id
+        aep_path = self.artifacts_dir / aep_reservation.id
+        try:
+            with zipfile.ZipFile(zip_path, "r") as archive:
+                infos = archive.infolist()
+                if len(infos) > _MAX_PACKAGE_ENTRIES:
+                    raise CoordinatorConflict("package ZIP contains too many entries")
+                if len(infos) != len(media_by_name) + 2:
+                    raise CoordinatorConflict("package ZIP contains unexpected entries")
+                names = [info.filename for info in infos]
+                if len(set(names)) != len(names):
+                    raise CoordinatorConflict("package ZIP contains duplicate entries")
+                expected_names = {"project.aep", "dependencies.json"} | {
+                    f"collected_media/{name}" for name in media_by_name
+                }
+                if set(names) != expected_names:
+                    raise CoordinatorConflict("package ZIP entries do not match the package contract")
+                total = 0
+                for info in infos:
+                    if info.is_dir() or info.flag_bits & 0x1:
+                        raise CoordinatorConflict("package ZIP contains a directory or encrypted entry")
+                    if info.filename.startswith("/") or any(
+                        part in {"", ".", ".."} for part in info.filename.split("/")
+                    ):
+                        raise CoordinatorConflict("package ZIP entry path is invalid")
+                    mode = (info.external_attr >> 16) & 0o170000
+                    if mode == 0o120000:
+                        raise CoordinatorConflict("package ZIP contains a symlink")
+                    if info.file_size < 0 or info.compress_size < 0:
+                        raise CoordinatorConflict("package ZIP entry size is invalid")
+                    total += info.file_size
+                    if total > _MAX_PACKAGE_UNCOMPRESSED:
+                        raise CoordinatorConflict("package ZIP is too large")
+                    if info.file_size and not info.compress_size:
+                        raise CoordinatorConflict("package ZIP compression ratio is unsafe")
+                    if info.compress_size and info.file_size > info.compress_size * _MAX_PACKAGE_RATIO:
+                        raise CoordinatorConflict("package ZIP compression ratio is unsafe")
+                manifest_info = archive.getinfo("dependencies.json")
+                if manifest_info.file_size > 1 * 1024 * 1024:
+                    raise CoordinatorConflict("package dependency manifest is too large")
+                manifest_bytes = archive.read(manifest_info)
+                try:
+                    manifest = json.loads(manifest_bytes.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise CoordinatorConflict("package dependency manifest is invalid") from exc
+                if not isinstance(manifest, Mapping):
+                    raise CoordinatorConflict("package dependency manifest is invalid")
+                if canonical_json(manifest) != manifest_bytes:
+                    raise CoordinatorConflict("package dependency manifest is not canonical")
+                expected_fields = {
+                    "schema_version",
+                    "after_effects",
+                    "ae",
+                    "os",
+                    "capability_manifest",
+                    "fonts",
+                    "effects",
+                    "plugins",
+                    "media",
+                    "substitutions",
+                    "selected_checkpoint",
+                    "plan_digest",
+                    "final_plan_digest",
+                    "finalization_key",
+                    "missing_dependencies",
+                    "nonportable_dependencies",
+                    "missing_nonportable_dependencies",
+                }
+                if set(manifest) != expected_fields:
+                    raise CoordinatorConflict(
+                        "package dependency manifest fields are invalid"
+                    )
+                final_digest = command.payload.get("final_plan_digest")
+                finalization_key = command.payload.get("finalization_key")
+                selected_checkpoint = command.payload.get("selected_checkpoint")
+                if (
+                    manifest.get("schema_version") != "keepframe.dependencies/1"
+                    or manifest.get("plan_digest") != final_digest
+                    or manifest.get("final_plan_digest") != final_digest
+                    or manifest.get("finalization_key") != finalization_key
+                    or manifest.get("selected_checkpoint") != selected_checkpoint
+                    or manifest.get("substitutions") != dependencies.get("substitutions", [])
+                    or manifest.get("missing_nonportable_dependencies")
+                    != dependencies.get("missing_nonportable_dependencies", [])
+                ):
+                    raise CoordinatorConflict(
+                        "package dependency manifest changed server inputs"
+                    )
+                raw_missing = dependencies.get(
+                    "missing_nonportable_dependencies",
+                    [],
+                )
+                if isinstance(raw_missing, Mapping):
+                    expected_missing = raw_missing.get("missing", [])
+                    expected_nonportable = raw_missing.get("nonportable", [])
+                else:
+                    expected_missing = dependencies.get(
+                        "missing_dependencies",
+                        raw_missing,
+                    )
+                    expected_nonportable = dependencies.get(
+                        "nonportable_dependencies",
+                        [],
+                    )
+                if (
+                    manifest.get("missing_dependencies") != expected_missing
+                    or manifest.get("nonportable_dependencies")
+                    != expected_nonportable
+                ):
+                    raise CoordinatorConflict(
+                        "package dependency manifest changed dependency status"
+                    )
+                capability_manifest = manifest.get("capability_manifest")
+                if (
+                    not isinstance(capability_manifest, Mapping)
+                    or set(capability_manifest) != {"approved", "live"}
+                    or capability_manifest.get("approved")
+                    != dependencies.get("capability_manifest", {})
+                ):
+                    raise CoordinatorConflict(
+                        "package capability manifest changed approved capabilities"
+                    )
+                ae_identity = manifest.get("after_effects")
+                live_capabilities = capability_manifest.get("live")
+                if (
+                    not isinstance(ae_identity, Mapping)
+                    or set(ae_identity)
+                    != {"version", "major", "host", "capability_hash"}
+                    or manifest.get("ae") != ae_identity
+                    or ae_identity.get("capability_hash") != self.plan.capability_hash
+                    or not isinstance(live_capabilities, Mapping)
+                    or set(live_capabilities)
+                    != {"capability_hash", "fonts", "effects", "plugins"}
+                    or live_capabilities.get("capability_hash")
+                    != ae_identity.get("capability_hash")
+                    or live_capabilities.get("fonts") != manifest.get("fonts")
+                    or live_capabilities.get("effects") != manifest.get("effects")
+                    or live_capabilities.get("plugins") != manifest.get("plugins")
+                ):
+                    raise CoordinatorConflict(
+                        "package dependency manifest has invalid live capabilities"
+                    )
+                os_identity = manifest.get("os")
+                if (
+                    not isinstance(os_identity, Mapping)
+                    or set(os_identity) != {"system", "release", "version", "machine"}
+                    or any(not isinstance(value, str) for value in os_identity.values())
+                ):
+                    raise CoordinatorConflict(
+                        "package dependency manifest has invalid OS identity"
+                    )
+                expected_media = sorted(
+                    (
+                        {
+                            "asset_id": record["asset_id"],
+                            "filename": filename,
+                            "sha256": record["sha256"],
+                            "length": record["length"],
+                            "media_kind": record.get("media_kind"),
+                            "role": plan_assets[str(record["asset_id"])].role,
+                        }
+                        for filename, record in media_by_name.items()
+                    ),
+                    key=lambda item: (str(item["filename"]), str(item["asset_id"])),
+                )
+                if manifest.get("media") != expected_media:
+                    raise CoordinatorConflict(
+                        "package dependency manifest changed immutable media"
+                    )
+                with archive.open("project.aep", "r") as packaged_aep, aep_path.open("rb") as committed_aep:
+                    while True:
+                        left = packaged_aep.read(1024 * 1024)
+                        right = committed_aep.read(1024 * 1024)
+                        if left != right:
+                            raise CoordinatorConflict("package AEP does not match committed AEP")
+                        if not left:
+                            break
+                for filename, record in media_by_name.items():
+                    with archive.open(f"collected_media/{filename}", "r") as entry:
+                        self._stream_matches_digest(
+                            entry,
+                            str(record["sha256"]),
+                            int(record["length"]),
+                        )
+        except CoordinatorConflict:
+            raise
+        except (OSError, zipfile.BadZipFile, KeyError, RuntimeError) as exc:
+            raise CoordinatorConflict("package ZIP could not be validated") from exc
+
+    def _validate_final_artifacts_unlocked(
+        self,
+        session: AESession,
+        result: Mapping[str, Any],
+        *,
+        command: AECommand | None = None,
+        required_override: set[ArtifactKind] | None = None,
+    ) -> dict[ArtifactKind, str]:
+        artifacts = self._result_artifact_map(result)
+        if not artifacts:
             raise CoordinatorConflict("final result must include committed artifacts")
         reservations = self._load_reservations_unlocked()
-        kinds: set[ArtifactKind] = set()
-        for artifact_id, expected_kind in refs:
+        for kind, artifact_id in artifacts.items():
             reservation = next((item for item in reservations if item.id == artifact_id), None)
             if reservation is None:
                 raise CoordinatorConflict("final result references an unknown artifact")
-            if expected_kind is not None and reservation.kind != expected_kind:
+            if reservation.kind != kind:
                 raise CoordinatorConflict("final result artifact kind is invalid")
             self._validate_committed_artifact_unlocked(
                 session,
                 reservations,
                 artifact_id,
-                reservation.kind,
+                kind,
             )
-            kinds.add(reservation.kind)
         required: set[ArtifactKind] = set(required_override or ())
         if required_override is None:
             outputs = self.plan.artifact_contract.get("outputs")
             if isinstance(outputs, (list, tuple)):
-                for output in outputs:
-                    if isinstance(output, str):
-                        kind = self._artifact_kind(output)
-                        if kind is not None:
-                            required.add(kind)
-            if self.plan.mode == "final":
+                required.update(
+                    kind
+                    for output in outputs
+                    if isinstance(output, str)
+                    for kind in (self._artifact_kind(output),)
+                    if kind is not None
+                )
+            if self.plan.mode == "final" or session.final_plan_id is not None:
                 required.update({"aep", "mp4", "zip"})
-        if not required.issubset(kinds):
+        if not required.issubset(artifacts):
             raise CoordinatorConflict("final result is missing required committed artifacts")
+        if command is not None and command.kind in {"render_final", "package_project"}:
+            declared = {
+                item.get("kind"): item.get("reservation_id")
+                for item in command.payload.get("artifacts", ())
+                if isinstance(item, Mapping)
+            }
+            declared = {
+                kind: artifact_id
+                for kind, artifact_id in declared.items()
+                if isinstance(kind, str) and kind in _ARTIFACT_KINDS and isinstance(artifact_id, str)
+            }
+            for kind, artifact_id in declared.items():
+                if artifacts.get(cast(ArtifactKind, kind)) != artifact_id:
+                    raise CoordinatorConflict("final result artifact does not match its reservation")
+            if command.kind == "render_final":
+                if session.final_plan_id is None:
+                    raise CoordinatorConflict("final render is missing its approved plan")
+                scene = load_render_plan_scene(self.root, session.final_plan_id)
+                expected = {
+                    "width": scene.size[0],
+                    "height": scene.size[1],
+                    "fps": scene.fps,
+                    "frame_count": scene.frames,
+                }
+                if any(command.payload.get(key) != value for key, value in expected.items()):
+                    raise CoordinatorConflict("final render command does not match the approved scene")
+                _validate_final_mp4(
+                    self.artifacts_dir / artifacts["mp4"],
+                    **expected,
+                )
+            if command.kind == "package_project":
+                self._validate_package_archive_unlocked(session, command, artifacts)
+        return artifacts
 
     def _mark_result_applied(self, session: AESession, command: AECommand, **updates: Any) -> AESession:
         if command.sequence <= session.applied_command_sequence:
@@ -1602,6 +2094,159 @@ class AECoordinator:
                 return False
         return True
 
+    @staticmethod
+    def _immutable_contract(plan: Any) -> bytes:
+        fields = (
+            "project_id",
+            "scene_id",
+            "version_id",
+            "backend",
+            "direction",
+            "scene_sha256",
+            "assets",
+            "locked_targets",
+            "permitted_operations",
+            "effect_schemas",
+            "capability_hash",
+            "capability_manifest",
+            "substitutions",
+            "substitutions_acknowledged",
+        )
+        dump = plan.model_dump(mode="json")
+        return canonical_json({field: dump.get(field) for field in fields})
+
+    def _selected_final_checkpoint_unlocked(
+        self,
+        session: AESession,
+        *,
+        requested_index: int | None = None,
+        requested_digest: str | None = None,
+    ) -> tuple[AECheckpoint, str]:
+        if not session.baseline_complete:
+            raise CoordinatorConflict("finalization requires a complete baseline lineage")
+        selected_index = session.selected_checkpoint
+        if requested_index is not None and requested_index != selected_index:
+            raise CoordinatorConflict("finalization checkpoint selection is stale")
+        if selected_index is None:
+            raise CoordinatorConflict("a passing checkpoint must be selected before finalization")
+        checkpoint = next(
+            (item for item in session.checkpoints if item.index == selected_index),
+            None,
+        )
+        if checkpoint is None or not checkpoint.passed or not checkpoint.lineage_valid:
+            raise CoordinatorConflict("selected checkpoint is not in the passing lineage")
+        digest = checkpoint.context_digest or _checkpoint_context_digest(
+            checkpoint.model_dump(mode="json")
+        )
+        if requested_digest is not None and requested_digest != digest:
+            raise CoordinatorConflict("checkpoint context digest does not match")
+        stored = self._load_checkpoint_context_unlocked(digest)
+        if stored is None:
+            raise CoordinatorConflict("selected checkpoint context is unavailable")
+        if stored.index != checkpoint.index or not stored.passed or not stored.lineage_valid:
+            raise CoordinatorConflict("selected checkpoint context is not passing")
+        return stored, digest
+
+    def _final_plan_binding_unlocked(
+        self,
+        session: AESession,
+        *,
+        final_plan_id: str | None = None,
+        execution_id: str | None = None,
+        requested_checkpoint: int | None = None,
+        requested_digest: str | None = None,
+    ) -> tuple[Any, AECheckpoint, str, str]:
+        """Revalidate the immutable final successor and selected checkpoint."""
+        bound_plan_id = final_plan_id or session.final_plan_id
+        bound_execution = execution_id or session.final_execution_id
+        if not isinstance(bound_plan_id, str):
+            raise CoordinatorConflict("final plan id is required")
+        bound_plan_id = _safe_component(bound_plan_id, "final plan id")
+        if not isinstance(bound_execution, str):
+            raise CoordinatorConflict("final execution id is required")
+        bound_execution = _safe_component(bound_execution, "final execution id")
+        rebinding = (
+            _paused(session.status)
+            and final_plan_id is not None
+            and session.final_plan_id is not None
+            and final_plan_id != session.final_plan_id
+        )
+        if (
+            not rebinding
+            and session.final_plan_id is not None
+            and session.final_plan_id != bound_plan_id
+        ):
+            raise CoordinatorConflict("finalization binding conflicts with the session")
+        if (
+            not rebinding
+            and session.final_execution_id is not None
+            and session.final_execution_id != bound_execution
+        ):
+            raise CoordinatorConflict("finalization execution conflicts with the session")
+        if shutil.which("ffprobe") is None:
+            raise CoordinatorConflict("server ffprobe is unavailable")
+        try:
+            final_plan = load_render_plan(self.root, bound_plan_id)
+            validate_render_plan_execution(self.root, bound_plan_id, bound_execution)
+        except PlanConflict as exc:
+            raise CoordinatorConflict(str(exc)) from exc
+        if final_plan.backend != "after_effects" or final_plan.mode != "final":
+            raise CoordinatorConflict("finalization requires an approved final After Effects plan")
+        if (
+            not rebinding
+            and session.final_plan_digest is not None
+            and session.final_plan_digest != final_plan.digest
+        ):
+            raise CoordinatorConflict("finalization plan digest conflicts with the session")
+        predecessor_checkpoint = getattr(final_plan, "predecessor_checkpoint", None)
+        predecessor_checkpoint_digest = getattr(
+            final_plan,
+            "predecessor_checkpoint_digest",
+            None,
+        )
+        if getattr(final_plan, "predecessor_id", None) != self.plan_id:
+            raise CoordinatorConflict("final plan predecessor does not match the preview plan")
+        if getattr(final_plan, "predecessor_digest", None) != self.plan.digest:
+            raise CoordinatorConflict("final plan predecessor digest does not match")
+        checkpoint, context_digest = self._selected_final_checkpoint_unlocked(
+            session,
+            requested_index=requested_checkpoint,
+            requested_digest=requested_digest,
+        )
+        if (
+            predecessor_checkpoint != checkpoint.index
+            or predecessor_checkpoint_digest != context_digest
+        ):
+            raise CoordinatorConflict("final plan predecessor checkpoint does not match")
+        if self._immutable_contract(final_plan) != self._immutable_contract(self.plan):
+            raise CoordinatorConflict("final plan immutable contract does not match the preview")
+        key = compute_finalization_key(final_plan.digest, checkpoint.index)
+        if (
+            not rebinding
+            and session.finalization_key is not None
+            and session.finalization_key != key
+        ):
+            raise CoordinatorConflict("finalization idempotency key conflicts with the session")
+        if (
+            not rebinding
+            and session.final_checkpoint_index is not None
+            and session.final_checkpoint_index != checkpoint.index
+        ):
+            raise CoordinatorConflict("finalization checkpoint conflicts with the session")
+        if (
+            not rebinding
+            and session.final_checkpoint_context_digest is not None
+            and session.final_checkpoint_context_digest != context_digest
+        ):
+            raise CoordinatorConflict("finalization checkpoint context conflicts with the session")
+        return final_plan, checkpoint, context_digest, key
+
+    def validate_finalization(self) -> tuple[Any, AECheckpoint, str, str]:
+        """Revalidate and return the bound final plan/checkpoint for workflow use."""
+        with self._locked():
+            session = self._load_session_unlocked()
+            return self._final_plan_binding_unlocked(session)
+
 
     def _result_state_unlocked(
         self,
@@ -1616,6 +2261,26 @@ class AECoordinator:
         if not _command_kind_state_matches(command):
             raise CoordinatorConflict("command kind/state matrix is invalid")
 
+        if command.kind in _FINAL_COMMAND_KINDS and command.expected_state == "finalizing":
+            workflow = command.payload.get("workflow")
+            raw_checkpoint = (
+                workflow.get("checkpoint_index")
+                if isinstance(workflow, Mapping)
+                else command.payload.get("checkpoint_index", command.payload.get("selected_checkpoint"))
+            )
+            final_plan, _checkpoint, _context_digest, final_key = self._final_plan_binding_unlocked(
+                session,
+                requested_checkpoint=(
+                    raw_checkpoint
+                    if isinstance(raw_checkpoint, int) and not isinstance(raw_checkpoint, bool)
+                    else None
+                ),
+            )
+            if command.payload.get("final_plan_digest") != final_plan.digest:
+                raise CoordinatorConflict("final command plan digest does not match its binding")
+            if command.payload.get("finalization_key") != final_key:
+                raise CoordinatorConflict("final command idempotency key does not match its binding")
+
         def failed_result() -> AESession:
             workflow = command.payload.get("workflow")
             manual_failure = command.kind == "sync_manual" or (
@@ -1627,6 +2292,25 @@ class AECoordinator:
                     "manual_prepare",
                 }
             )
+            requested_reason = (
+                result.get("reason")
+                if isinstance(result.get("reason"), str)
+                else result.get("failure_reason")
+            )
+            allowed_reasons = {
+                _COMMAND_FAILURE_REASONS.get(command.kind, "command_failed"),
+                "upload_failed",
+                "capabilities_changed",
+                "render_failed",
+                "package_failed",
+                "protocol_too_large",
+                "unavailable_dependency",
+            }
+            failure_reason = (
+                requested_reason
+                if isinstance(requested_reason, str) and requested_reason in allowed_reasons
+                else _COMMAND_FAILURE_REASONS[command.kind]
+            )
             common: dict[str, Any] = (
                 {"manual_attempt_id": None, "manual_sync_requested": False}
                 if manual_failure
@@ -1637,7 +2321,7 @@ class AECoordinator:
                 "render_preview",
                 "save_checkpoint",
             }:
-                reason = _COMMAND_FAILURE_REASONS[command.kind]
+                reason = failure_reason
                 return self._mark_result_applied(
                     session,
                     command,
@@ -1656,7 +2340,7 @@ class AECoordinator:
                     **common,
                 )
             if session.status in _ACTIVE_STATES:
-                reason = _COMMAND_FAILURE_REASONS[command.kind]
+                reason = failure_reason
                 return self._mark_result_applied(
                     session,
                     command,
@@ -2005,21 +2689,53 @@ class AECoordinator:
             late_updates = self._late_pause_updates(session)
             if session.status != "finalizing" and late_updates is None:
                 raise CoordinatorConflict("render_final requires finalizing")
-            self._validate_final_artifacts_unlocked(session, result, required_override={"mp4"})
-            return self._mark_result_applied(session, command, **(late_updates or {}))
+            artifacts = self._validate_final_artifacts_unlocked(
+                session,
+                result,
+                command=command,
+                required_override={"mp4"},
+            )
+            updates = dict(late_updates or {})
+            updates["final_mp4_artifact_id"] = artifacts["mp4"]
+            final_artifacts = dict(session.final_artifact_ids)
+            final_artifacts["mp4"] = artifacts["mp4"]
+            updates["final_artifact_ids"] = final_artifacts
+            return self._mark_result_applied(session, command, **updates)
 
         if command.kind == "package_project":
             late_updates = self._late_pause_updates(session)
             if session.status != "finalizing" and late_updates is None:
                 raise CoordinatorConflict("package_project requires finalizing")
-            self._validate_final_artifacts_unlocked(session, result)
+            artifacts = self._validate_final_artifacts_unlocked(
+                session,
+                result,
+                command=command,
+                required_override={"aep", "zip"},
+            )
+            mp4_id = session.final_mp4_artifact_id or session.final_artifact_ids.get("mp4")
+            if mp4_id is None:
+                raise CoordinatorConflict("package result arrived before a committed final MP4")
+            if "mp4" in artifacts and artifacts["mp4"] != mp4_id:
+                raise CoordinatorConflict("package result references a different final MP4")
             try:
-                validate_render_plan_execution(self.root, self.plan_id, session.execution_id)
-            except PlanConflict as exc:
-                raise CoordinatorConflict(str(exc)) from exc
+                self._final_plan_binding_unlocked(session)
+            except CoordinatorConflict:
+                raise
             if late_updates is None:
                 late_updates = {"status": "done", "reason": None}
-            return self._mark_result_applied(session, command, **late_updates)
+            final_artifacts = dict(session.final_artifact_ids)
+            final_artifacts.update(artifacts)
+            final_artifacts["mp4"] = mp4_id
+            updates = dict(late_updates)
+            updates.update(
+                {
+                    "final_mp4_artifact_id": mp4_id,
+                    "final_aep_artifact_id": artifacts["aep"],
+                    "final_zip_artifact_id": artifacts["zip"],
+                    "final_artifact_ids": final_artifacts,
+                }
+            )
+            return self._mark_result_applied(session, command, **updates)
 
         raise CoordinatorConflict("command result kind has no state effect")
     @staticmethod
@@ -2403,7 +3119,7 @@ class AECoordinator:
                     "updated_at": _now(),
                 }
             )
-        elif event in {"disconnect", "timeout", "unpair", "capabilities_changed", "verification_failed", "upload_failed", "render_failed", "package_failed", "command_failed", "pause_error"}:
+        elif event in {"disconnect", "timeout", "unpair", "capabilities_changed", "verification_failed", "upload_failed", "render_failed", "package_failed", "protocol_too_large", "unavailable_dependency", "command_failed", "pause_error"}:
             if status not in _ACTIVE_STATES and not _paused(status) and not (
                 event == "capabilities_changed" and status == "waiting_for_connector"
             ):
@@ -2492,19 +3208,71 @@ class AECoordinator:
         elif event in {"manual_synced", "sync_manual"}:
             raise CoordinatorConflict("manual sync requires a connector result")
         elif event == "finalize":
-            if not _paused(status) or self.plan.mode != "final":
-                raise CoordinatorConflict("finalization requires a paused final session")
-            if not session.baseline_complete:
-                raise CoordinatorConflict("finalization requires a complete baseline lineage")
-            selected = session.selected_checkpoint
-            if selected is None or not any(item.index == selected and item.passed for item in session.checkpoints):
-                raise CoordinatorConflict("a passing checkpoint must be selected before finalization")
-            try:
-                validate_render_plan_execution(self.root, self.plan_id, session.execution_id)
-            except PlanConflict as exc:
-                raise CoordinatorConflict(str(exc)) from exc
+            if not _paused(status):
+                raise CoordinatorConflict("finalization requires a paused session")
+            final_plan, checkpoint, context_digest, finalization_key = (
+                self._final_plan_binding_unlocked(
+                    session,
+                    final_plan_id=(
+                        data.get("final_plan_id")
+                        if isinstance(data.get("final_plan_id"), str)
+                        else None
+                    ),
+                    execution_id=(
+                        data.get("execution_id", data.get("final_execution_id"))
+                        if isinstance(data.get("execution_id", data.get("final_execution_id")), str)
+                        else None
+                    ),
+                    requested_checkpoint=(
+                        data.get("selected_checkpoint")
+                        if isinstance(data.get("selected_checkpoint"), int)
+                        and not isinstance(data.get("selected_checkpoint"), bool)
+                        else None
+                    ),
+                    requested_digest=(
+                        data.get("checkpoint_context_digest")
+                        if isinstance(data.get("checkpoint_context_digest"), str)
+                        else None
+                    ),
+                )
+            )
             updated = session.model_copy(
-                update={"status": "finalizing", "reason": None, "revision": session.revision + 1, "updated_at": _now()}
+                update={
+                    "status": "finalizing",
+                    "reason": None,
+                    "final_plan_id": final_plan.id,
+                    "final_plan_digest": final_plan.digest,
+                    "final_execution_id": (
+                        data.get("execution_id", data.get("final_execution_id"))
+                        if isinstance(data.get("execution_id", data.get("final_execution_id")), str)
+                        else session.final_execution_id or session.execution_id
+                    ),
+                    "finalization_key": finalization_key,
+                    "final_checkpoint_index": checkpoint.index,
+                    "final_checkpoint_context_digest": context_digest,
+                    "final_mp4_artifact_id": (
+                        None
+                        if session.final_plan_id != final_plan.id
+                        else session.final_mp4_artifact_id
+                    ),
+                    "final_aep_artifact_id": (
+                        None
+                        if session.final_plan_id != final_plan.id
+                        else session.final_aep_artifact_id
+                    ),
+                    "final_zip_artifact_id": (
+                        None
+                        if session.final_plan_id != final_plan.id
+                        else session.final_zip_artifact_id
+                    ),
+                    "final_artifact_ids": (
+                        {}
+                        if session.final_plan_id != final_plan.id
+                        else session.final_artifact_ids
+                    ),
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
             )
         elif event in {"final_complete", "final_success"}:
             raise CoordinatorConflict("final completion requires a package_project result")
@@ -2523,14 +3291,74 @@ class AECoordinator:
             raise CoordinatorConflict("revision is invalid")
         with self._locked():
             session = self._load_session_unlocked()
+            final_id_hint = data.get("final_plan_id")
+            final_execution_hint = data.get("execution_id", data.get("final_execution_id"))
+            if event == "finalize":
+                if "final_plan_id" in data and not isinstance(final_id_hint, str):
+                    raise CoordinatorConflict("final plan id is invalid")
+                if (
+                    ("execution_id" in data or "final_execution_id" in data)
+                    and not isinstance(final_execution_hint, str)
+                ):
+                    raise CoordinatorConflict("final execution id is invalid")
+                requested_checkpoint = data.get("selected_checkpoint")
+                if (
+                    "selected_checkpoint" in data
+                    and (
+                        not isinstance(requested_checkpoint, int)
+                        or isinstance(requested_checkpoint, bool)
+                        or requested_checkpoint < 0
+                    )
+                ):
+                    raise CoordinatorConflict("final checkpoint is invalid")
+            else:
+                requested_checkpoint = None
+            same_binding = (
+                event == "finalize"
+                and session.final_plan_id is not None
+                and (final_id_hint is None or final_id_hint == session.final_plan_id)
+                and (
+                    final_execution_hint is None
+                    or final_execution_hint == session.final_execution_id
+                )
+            )
             if session.revision != revision:
+                if same_binding and session.status in {"finalizing", "done"}:
+                    self._final_plan_binding_unlocked(
+                        session,
+                        final_plan_id=final_id_hint,
+                        execution_id=final_execution_hint,
+                        requested_checkpoint=requested_checkpoint,
+                    )
+                    return session
                 raise CoordinatorConflict("revision is stale")
             commands = self._load_commands_unlocked()
             session = self._settle_pause_requested_unlocked(session, commands)
             if event == "begin_manual" and self._revoke_expired_leases(commands, _now()):
                 self._write_commands_unlocked(commands)
             if session.revision != revision:
+                if same_binding and session.status in {"finalizing", "done"}:
+                    self._final_plan_binding_unlocked(
+                        session,
+                        final_plan_id=final_id_hint,
+                        execution_id=final_execution_hint,
+                        requested_checkpoint=requested_checkpoint,
+                    )
+                    return session
                 raise CoordinatorConflict("revision is stale")
+            if event == "finalize" and session.status in {"finalizing", "done"}:
+                self._final_plan_binding_unlocked(
+                    session,
+                    final_plan_id=final_id_hint,
+                    execution_id=final_execution_hint,
+                    requested_checkpoint=requested_checkpoint,
+                    requested_digest=(
+                        data.get("checkpoint_context_digest")
+                        if isinstance(data.get("checkpoint_context_digest"), str)
+                        else None
+                    ),
+                )
+                return session
             if event == "begin_manual":
                 if session.device_id is None:
                     raise CoordinatorConflict("manual edit requires a bound connector")
@@ -2561,6 +3389,51 @@ class AECoordinator:
             else:
                 updated = self._transition_unlocked(session, event, data)
             self._commit_transition_unlocked(session, updated, event, data)
+            return updated
+
+
+    def complete_finalization(self, revision: int) -> AESession:
+        """Promote an already accepted final package after fresh verification."""
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+            raise CoordinatorConflict("revision is invalid")
+        with self._locked():
+            session = self._load_session_unlocked()
+            if session.revision != revision:
+                raise CoordinatorConflict("revision is stale")
+            if session.status == "done":
+                return session
+            if session.status != "finalizing":
+                raise CoordinatorConflict("final completion requires finalizing")
+            self._final_plan_binding_unlocked(session)
+            artifacts = {
+                "mp4": session.final_mp4_artifact_id,
+                "aep": session.final_aep_artifact_id,
+                "zip": session.final_zip_artifact_id,
+            }
+            if any(not isinstance(value, str) for value in artifacts.values()):
+                raise CoordinatorConflict("final completion requires accepted artifacts")
+            reservations = self._load_reservations_unlocked()
+            for kind, artifact_id in artifacts.items():
+                self._validate_committed_artifact_unlocked(
+                    session,
+                    reservations,
+                    cast(str, artifact_id),
+                    cast(ArtifactKind, kind),
+                )
+            updated = session.model_copy(
+                update={
+                    "status": "done",
+                    "reason": None,
+                    "revision": session.revision + 1,
+                    "updated_at": _now(),
+                }
+            )
+            self._commit_transition_unlocked(
+                session,
+                updated,
+                "final_complete",
+                {"reconciled": True},
+            )
             return updated
 
     def select_checkpoint(self, checkpoint: int, revision: int) -> AESession:
@@ -2685,6 +3558,26 @@ class AECoordinator:
                 raise CoordinatorConflict("terminal AE session cannot enqueue commands")
             if session.status != expected_state:
                 raise CoordinatorConflict("expected state is stale")
+            if kind in _FINAL_COMMAND_KINDS and expected_state == "finalizing":
+                raw_checkpoint = payload_dict.get(
+                    "checkpoint_index",
+                    payload_dict.get("selected_checkpoint"),
+                )
+                requested_checkpoint = (
+                    raw_checkpoint
+                    if isinstance(raw_checkpoint, int) and not isinstance(raw_checkpoint, bool)
+                    else None
+                )
+                final_plan, _checkpoint, _context_digest, final_key = (
+                    self._final_plan_binding_unlocked(
+                        session,
+                        requested_checkpoint=requested_checkpoint,
+                    )
+                )
+                if payload_dict.get("final_plan_digest") != final_plan.digest:
+                    raise CoordinatorConflict("final command plan digest does not match its binding")
+                if payload_dict.get("finalization_key") != final_key:
+                    raise CoordinatorConflict("final command idempotency key does not match its binding")
             if expected_state == "pause_requested" and (
                 kind not in {"inspect_layers", "render_preview", "save_checkpoint"}
                 or not session.checkpoint_required
@@ -2902,6 +3795,32 @@ class AECoordinator:
                     commands[index] = command.model_copy(update={"status": "revoked"})
                     stale_revoked = True
                     continue
+                if command.kind in _FINAL_COMMAND_KINDS and command.expected_state == "finalizing":
+                    workflow = command.payload.get("workflow")
+                    raw_checkpoint = (
+                        workflow.get("checkpoint_index")
+                        if isinstance(workflow, Mapping)
+                        else command.payload.get(
+                            "checkpoint_index",
+                            command.payload.get("selected_checkpoint"),
+                        )
+                    )
+                    final_plan, _checkpoint, _context_digest, final_key = (
+                        self._final_plan_binding_unlocked(
+                            session,
+                            requested_checkpoint=(
+                                raw_checkpoint
+                                if isinstance(raw_checkpoint, int)
+                                and not isinstance(raw_checkpoint, bool)
+                                else None
+                            ),
+                        )
+                    )
+                    if (
+                        command.payload.get("final_plan_digest") != final_plan.digest
+                        or command.payload.get("finalization_key") != final_key
+                    ):
+                        raise CoordinatorConflict("final command binding is stale")
                 if command.kind == "apply_batch":
                     self._assert_current_operation_manifest()
                     _validate_apply_payload(command.payload, command.expected_state)
@@ -3375,6 +4294,15 @@ class AECoordinator:
         artifact_id = _safe_command_id(artifact_id)
         with self._locked():
             session = self._load_session_unlocked()
+            accepted_artifacts = set(session.final_artifact_ids.values())
+            for checkpoint in session.checkpoints:
+                accepted_artifacts.update(
+                    {
+                        checkpoint.aep_artifact_id,
+                        checkpoint.preview_artifact_id,
+                        *checkpoint.frame_artifact_ids,
+                    }
+                )
             _ensure_no_symlink(self.artifacts_dir, kind="directory")
             reservations = self._load_reservations_unlocked()
             reservation = next(
@@ -3387,6 +4315,7 @@ class AECoordinator:
                 or reservation.session_id != session.id
                 or reservation.length is None
                 or reservation.sha256 is None
+                or artifact_id not in accepted_artifacts
             ):
                 raise CoordinatorConflict("artifact was not found")
             path = self.artifacts_dir / reservation.id

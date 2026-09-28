@@ -11,6 +11,9 @@ import json
 import math
 import os
 import re
+import platform
+import stat
+import zipfile
 import shutil
 import struct
 import subprocess
@@ -54,6 +57,15 @@ _RELAY_RETRY_DELAY = 1.0
 _MAX_FFMPEG_OUTPUT_BYTES = 64 * 1024
 _FFMPEG_TIMEOUT = 5 * 60
 _MAX_PNG_SCAN_BYTES = 64 * 1024 * 1024
+_MAX_FINAL_DIMENSION = 16_384
+_MAX_FINAL_PIXELS = 16_384 * 16_384
+_MAX_FINAL_FRAMES = 100_000
+_MAX_FINAL_TOTAL_PIXELS = 10_000_000_000
+_MIN_FINAL_DISK_MARGIN = 512 * 1024 * 1024
+_MAX_PACKAGE_MEDIA = 1024
+_MAX_PACKAGE_FILENAME = 256
+_MAX_PACKAGE_UNCOMPRESSED = 4 * 1024 * 1024 * 1024
+_FINAL_SEQUENCE_PATTERN = "final-%06d.png"
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _SERVER_ONLY_PAYLOAD_FIELDS = frozenset(
     {
@@ -62,6 +74,10 @@ _SERVER_ONLY_PAYLOAD_FIELDS = frozenset(
         "checkpoint_artifact",
         "workflow",
         "prepare_manual",
+        "final_plan_digest",
+        "finalization_key",
+        "package_media",
+        "dependencies",
     }
 )
 _SERVER_ONLY_RESULT_FIELDS = _SERVER_ONLY_PAYLOAD_FIELDS | {"checkpoint"}
@@ -2052,12 +2068,23 @@ class Connector:
             raise ConnectorError(f"{label} is invalid")
         return value
 
-    def _prepare_assets(self, payload: Mapping[str, Any], plan_id: str) -> None:
+    def _prepare_assets(
+        self,
+        payload: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+    ) -> None:
         records = payload.get("assets")
         if records is None:
             return
         if not isinstance(records, list) or len(records) > 1024:
             raise ConnectorError("command assets are invalid")
+        session_media = (
+            self._scope_root(plan_id, session_id) / "package" / "collected_media"
+        )
+        _reject_reparse_components(session_media)
+        session_media.mkdir(parents=True, exist_ok=True)
+        _reject_reparse_components(session_media)
         for item in records:
             if not isinstance(item, Mapping):
                 raise ConnectorError("command asset is invalid")
@@ -2069,26 +2096,40 @@ class Connector:
                 raise ConnectorError("command asset hash is invalid")
             if not isinstance(length, int) or isinstance(length, bool) or not 0 <= length <= _MAX_ASSET_BYTES:
                 raise ConnectorError("command asset length is invalid")
-            destination = self.assets_root / asset_name
-            _reject_reparse(destination, label="asset destination")
+            cached = self.assets_root / asset_name
+            _reject_reparse(cached, label="asset destination")
+            if cached.exists():
+                cached_digest, cached_length = self._hash_file(cached)
+                if cached_digest != digest or cached_length != length:
+                    raise ConnectorError("immutable command asset does not match")
+            else:
+                self.relay.download_asset(
+                    asset_id,
+                    cached,
+                    expected_sha256=digest,
+                    expected_length=length,
+                    project=self.project_id,
+                    plan=plan_id,
+                )
+            destination = session_media / asset_name
+            _reject_reparse(destination, label="session media")
             if destination.exists():
-                if not destination.is_file() or destination.stat().st_size != length:
-                    raise ConnectorError("immutable command asset does not match")
-                digest_local = hashlib.sha256()
-                with destination.open("rb") as stream:
-                    while chunk := stream.read(1024 * 1024):
-                        digest_local.update(chunk)
-                if digest_local.hexdigest() != digest:
-                    raise ConnectorError("immutable command asset does not match")
+                local_digest, local_length = self._hash_file(destination)
+                if local_digest != digest or local_length != length:
+                    raise ConnectorError("session media does not match immutable asset")
                 continue
-            self.relay.download_asset(
-                asset_id,
-                destination,
-                expected_sha256=digest,
-                expected_length=length,
-                project=self.project_id,
-                plan=plan_id,
-            )
+            temporary = session_media / f".{asset_name}.{secrets.token_hex(8)}.tmp"
+            try:
+                with cached.open("rb") as source, temporary.open("xb") as target:
+                    shutil.copyfileobj(source, target, length=1024 * 1024)
+                    target.flush()
+                    os.fsync(target.fileno())
+                os.replace(temporary, destination)
+                _reject_reparse(destination, label="session media")
+            except OSError as exc:
+                raise ConnectorError("session media materialization failed") from exc
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
     def _prepare_checkpoint(
@@ -2349,8 +2390,15 @@ class Connector:
         return renders
 
     @staticmethod
-    def _validate_png_sequence_file(path: Path) -> tuple[int, int]:
-        _reject_reparse(path, label="preview sequence file")
+    def _validate_png_sequence_file(
+        path: Path,
+        *,
+        max_width: int = 1280,
+        max_height: int = 720,
+        label: str = "preview",
+        max_scan_bytes: int = _MAX_PNG_SCAN_BYTES,
+    ) -> tuple[int, int]:
+        _reject_reparse(path, label=f"{label} sequence file")
         try:
             if not path.is_file() or path.stat().st_size < len(_PNG_SIGNATURE):
                 raise ConnectorError("preview sequence file is invalid")
@@ -2383,16 +2431,16 @@ class Connector:
                         remaining -= len(chunk)
 
                 while not seen_iend:
-                    if scanned + 12 > _MAX_PNG_SCAN_BYTES:
-                        raise ConnectorError("preview PNG is too large to validate")
+                    if scanned + 12 > max_scan_bytes:
+                        raise ConnectorError(f"{label} PNG is too large to validate")
                     header = read_exact(8)
                     scanned += 8
                     length = struct.unpack(">I", header[:4])[0]
                     chunk_type = header[4:]
                     if any(byte < 65 or byte > 122 or 90 < byte < 97 for byte in chunk_type):
                         raise ConnectorError("preview PNG chunk type is invalid")
-                    if length > _MAX_PNG_SCAN_BYTES or scanned + length + 4 > _MAX_PNG_SCAN_BYTES:
-                        raise ConnectorError("preview PNG chunk is too large")
+                    if length > max_scan_bytes or scanned + length + 4 > max_scan_bytes:
+                        raise ConnectorError(f"{label} PNG chunk is too large")
                     if not seen_ihdr:
                         if chunk_type != b"IHDR" or length != 13:
                             raise ConnectorError("preview PNG IHDR is invalid")
@@ -2412,15 +2460,16 @@ class Connector:
                             6: {8, 16},
                         }
                         if (
-                            not 0 < width <= 1280
-                            or not 0 < height <= 720
+                            not 0 < width <= max_width
+                            or not 0 < height <= max_height
+                            or width * height > _MAX_FINAL_PIXELS
                             or color_type not in valid_depths
                             or bit_depth not in valid_depths[color_type]
                             or compression != 0
                             or filter_method != 0
                             or interlace not in {0, 1}
                         ):
-                            raise ConnectorError("preview PNG IHDR structure is invalid")
+                            raise ConnectorError(f"{label} PNG IHDR structure is invalid")
                         seen_ihdr = True
                         continue
                     if chunk_type == b"IHDR":
@@ -2579,6 +2628,691 @@ class Connector:
         upload_payload["artifacts"] = artifacts
         return self._upload_artifacts(upload_payload, result, plan_id, session_id)
 
+    @classmethod
+    def _final_spec(
+        cls,
+        payload: Mapping[str, Any],
+    ) -> tuple[int, int, float, int, int, list[str]]:
+        checkpoint = cls._preview_int(payload.get("checkpoint_index"), "final checkpoint")
+        frame_count = cls._preview_int(
+            payload.get("frame_count"),
+            "final frame count",
+            maximum=_MAX_FINAL_FRAMES,
+        )
+        if frame_count < 1:
+            raise ConnectorError("final frame count is invalid")
+        fps = cls._preview_fps(payload.get("fps"), "final fps")
+        width = cls._preview_int(
+            payload.get("width"),
+            "final width",
+            maximum=_MAX_FINAL_DIMENSION,
+        )
+        height = cls._preview_int(
+            payload.get("height"),
+            "final height",
+            maximum=_MAX_FINAL_DIMENSION,
+        )
+        if width < 1 or height < 1 or width * height > _MAX_FINAL_PIXELS:
+            raise ConnectorError("final dimensions are invalid")
+        if frame_count * width * height > _MAX_FINAL_TOTAL_PIXELS:
+            raise ConnectorError("final render exceeds the resource budget")
+        final_plan_digest = payload.get("final_plan_digest")
+        if not isinstance(final_plan_digest, str) or not _SHA256.fullmatch(
+            final_plan_digest
+        ):
+            raise ConnectorError("final plan digest is invalid")
+        _credential(payload.get("finalization_key"), "finalization key")
+        names = [f"final-{frame:06d}.png" for frame in range(frame_count)]
+        return checkpoint, frame_count, fps, width, height, names
+
+    @staticmethod
+    def _validate_final_result(
+        result: Mapping[str, Any],
+        *,
+        checkpoint: int,
+        frame_count: int,
+        fps: float,
+        width: int,
+        height: int,
+        sequence_names: list[str],
+    ) -> None:
+        if result.get("rendered") is not True or result.get("kind") != "final":
+            raise ConnectorError("final result is not successful")
+        for key in ("path", "filepath", "sequence_path", "directory_path"):
+            if key in result:
+                raise ConnectorError("final result contains an unsafe path")
+        if result.get("checkpoint_index") != checkpoint:
+            raise ConnectorError("final checkpoint metadata does not match")
+        if result.get("frame_count") != frame_count:
+            raise ConnectorError("final frame count metadata does not match")
+        if not Connector._same_preview_fps(result.get("fps"), fps):
+            raise ConnectorError("final fps metadata does not match")
+        if result.get("width") != width or result.get("height") != height:
+            raise ConnectorError("final dimensions metadata does not match")
+        sequence = result.get("sequence")
+        if not isinstance(sequence, Mapping):
+            raise ConnectorError("final sequence metadata is missing")
+        if set(sequence) != {
+            "directory",
+            "pattern",
+            "frame_count",
+            "first_frame",
+            "last_frame",
+        }:
+            raise ConnectorError("final sequence metadata is invalid")
+        if (
+            sequence.get("directory") != "renders"
+            or sequence.get("pattern") != _FINAL_SEQUENCE_PATTERN
+            or sequence.get("frame_count") != frame_count
+            or sequence.get("first_frame") != sequence_names[0]
+            or sequence.get("last_frame") != sequence_names[-1]
+        ):
+            raise ConnectorError("final sequence metadata does not match")
+        duration = result.get("duration")
+        if duration is not None and (
+            not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or not math.isfinite(float(duration))
+            or float(duration) != frame_count / fps
+        ):
+            raise ConnectorError("final duration metadata does not match")
+        frame_rate = result.get("frame_rate")
+        if frame_rate is not None and not Connector._same_preview_fps(frame_rate, fps):
+            raise ConnectorError("final frame rate metadata does not match")
+
+    @staticmethod
+    def _final_artifacts(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+        records = payload.get("artifacts")
+        if not isinstance(records, list) or len(records) != 1:
+            raise ConnectorError("final artifact records are invalid")
+        item = records[0]
+        if not isinstance(item, Mapping):
+            raise ConnectorError("final artifact record is invalid")
+        allowed = {"reservation_id", "kind", "filename", "directory", "length"}
+        if set(item) - allowed:
+            raise ConnectorError("final artifact record is invalid")
+        if (
+            item.get("kind") != "mp4"
+            or item.get("filename") != "final.mp4"
+            or item.get("directory") != "renders"
+        ):
+            raise ConnectorError("final MP4 artifact is invalid")
+        return [dict(item)]
+
+    def _run_final_ffmpeg(
+        self,
+        *,
+        renders: Path,
+        frame_count: int,
+        fps: float,
+        sequence_names: list[str],
+        width: int,
+        height: int,
+    ) -> Path:
+        if self.ffmpeg is None:
+            raise ConnectorError("preflighted ffmpeg is unavailable")
+        dimensions: tuple[int, int] | None = None
+        for filename in sequence_names:
+            current = self._validate_png_sequence_file(
+                renders / filename,
+                max_width=_MAX_FINAL_DIMENSION,
+                max_height=_MAX_FINAL_DIMENSION,
+                label="final",
+                max_scan_bytes=width * height * 8 + height + 1024 * 1024,
+            )
+            if current != (width, height):
+                raise ConnectorError("final PNG dimensions do not match")
+            if dimensions is None:
+                dimensions = current
+            elif current != dimensions:
+                raise ConnectorError("final PNG dimensions do not match")
+        expected = set(sequence_names)
+        try:
+            for entry in renders.iterdir():
+                if entry.name.startswith("final-") and entry.name.endswith(".png"):
+                    _reject_reparse(entry, label="final sequence file")
+                    if entry.name not in expected:
+                        raise ConnectorError("final PNG sequence contains an extra frame")
+        except OSError as exc:
+            raise ConnectorError("final sequence directory is unavailable") from exc
+        output = renders / "final.mp4"
+        _reject_reparse(output, label="final MP4")
+        argv = [
+            self.ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(renders / _FINAL_SEQUENCE_PATTERN),
+            "-frames:v",
+            str(frame_count),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
+            str(output),
+        ]
+
+        def check_output(stream: Any) -> None:
+            total = 0
+            while True:
+                chunk = stream.read(min(64 * 1024, _MAX_FFMPEG_OUTPUT_BYTES - total + 1))
+                if not chunk:
+                    return
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise ConnectorError("final ffmpeg output is invalid")
+                total += len(chunk)
+                if total > _MAX_FFMPEG_OUTPUT_BYTES:
+                    raise ConnectorError("final ffmpeg output is too large")
+
+        try:
+            with tempfile.TemporaryFile(mode="w+b") as stdout_file, tempfile.TemporaryFile(
+                mode="w+b"
+            ) as stderr_file:
+                completed = self._process_runner(
+                    argv,
+                    check=True,
+                    shell=False,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    timeout=_FFMPEG_TIMEOUT,
+                    cwd=str(self.private_root),
+                    env=build_child_env(),
+                )
+                stdout_file.flush()
+                stderr_file.flush()
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                check_output(stdout_file)
+                check_output(stderr_file)
+        except subprocess.TimeoutExpired as exc:
+            raise ConnectorError("final ffmpeg timed out") from exc
+        except ConnectorError:
+            raise
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ConnectorError("final ffmpeg failed") from exc
+        except Exception as exc:  # noqa: BLE001 - process failures fail closed
+            raise ConnectorError("final ffmpeg failed") from exc
+        for stream in ("stdout", "stderr"):
+            output_bytes = getattr(completed, stream, None)
+            if output_bytes is None:
+                continue
+            if isinstance(output_bytes, str):
+                output_bytes = output_bytes.encode("utf-8", "replace")
+            if not isinstance(output_bytes, (bytes, bytearray, memoryview)):
+                raise ConnectorError("final ffmpeg output is invalid")
+            if len(output_bytes) > _MAX_FFMPEG_OUTPUT_BYTES:
+                raise ConnectorError("final ffmpeg output is too large")
+        _reject_reparse(output, label="final MP4")
+        try:
+            if not output.is_file() or output.stat().st_size <= 0:
+                raise ConnectorError("final MP4 was not created")
+        except OSError as exc:
+            raise ConnectorError("final MP4 is unavailable") from exc
+        return output
+
+    def _render_final(
+        self,
+        payload: Mapping[str, Any],
+        result: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        checkpoint, frame_count, fps, width, height, sequence_names = self._final_spec(
+            payload
+        )
+        self._validate_final_result(
+            result,
+            checkpoint=checkpoint,
+            frame_count=frame_count,
+            fps=fps,
+            width=width,
+            height=height,
+            sequence_names=sequence_names,
+        )
+        artifacts = self._final_artifacts(payload)
+        renders = self._renders_directory(plan_id, session_id)
+        self._run_final_ffmpeg(
+            renders=renders,
+            frame_count=frame_count,
+            fps=fps,
+            sequence_names=sequence_names,
+            width=width,
+            height=height,
+        )
+        upload_payload = dict(payload)
+        upload_payload["artifacts"] = artifacts
+        return self._upload_artifacts(upload_payload, result, plan_id, session_id)
+
+    @staticmethod
+    def _safe_package_filename(value: object) -> str | None:
+        if not isinstance(value, str) or not re.fullmatch(
+            rf"[A-Za-z0-9][A-Za-z0-9_.-]{{0,{_MAX_PACKAGE_FILENAME - 1}}}",
+            value,
+        ):
+            return None
+        return value
+
+    @staticmethod
+    def _hash_file(path: Path, *, maximum: int = _MAX_ARTIFACT_BYTES) -> tuple[str, int]:
+        _reject_reparse(path, label="media file")
+        try:
+            if not path.is_file():
+                raise ConnectorError("media file is unavailable")
+            size = path.stat().st_size
+            if size < 0 or size > maximum:
+                raise ConnectorError("media file is too large")
+            digest = hashlib.sha256()
+            length = 0
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    length += len(chunk)
+                    if length > maximum:
+                        raise ConnectorError("media file is too large")
+                    digest.update(chunk)
+            return digest.hexdigest(), length
+        except OSError as exc:
+            raise ConnectorError("media file is unavailable") from exc
+
+    @classmethod
+    def _package_artifacts(
+        cls,
+        payload: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        records = payload.get("artifacts")
+        if not isinstance(records, list) or len(records) != 2:
+            raise ConnectorError("package artifact records are invalid")
+        aep: dict[str, Any] | None = None
+        archive: dict[str, Any] | None = None
+        for raw in records:
+            if not isinstance(raw, Mapping):
+                raise ConnectorError("package artifact record is invalid")
+            item = dict(raw)
+            if set(item) - {"reservation_id", "kind", "filename", "directory", "length"}:
+                raise ConnectorError("package artifact record is invalid")
+            kind = item.get("kind")
+            filename = item.get("filename")
+            directory = item.get("directory")
+            if kind == "aep" and filename == "project.aep":
+                if aep is not None:
+                    raise ConnectorError("package AEP artifact is duplicated")
+                aep = item
+            elif kind == "zip" and filename == "project.zip":
+                if archive is not None:
+                    raise ConnectorError("package ZIP artifact is duplicated")
+                archive = item
+            else:
+                raise ConnectorError("package artifact is invalid")
+            if directory not in {"checkpoints", "renders", "package"}:
+                raise ConnectorError("package artifact directory is invalid")
+        if aep is None or archive is None:
+            raise ConnectorError("package artifacts are incomplete")
+        return aep, archive
+
+    @classmethod
+    def _package_media(
+        cls,
+        payload: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        assets = payload.get("assets")
+        media = payload.get("package_media")
+        if not isinstance(assets, list) or len(assets) > _MAX_PACKAGE_MEDIA:
+            raise ConnectorError("package assets are invalid")
+        if not isinstance(media, list) or len(media) > _MAX_PACKAGE_MEDIA:
+            raise ConnectorError("package media is invalid")
+        by_id: dict[str, dict[str, Any]] = {}
+        for raw in assets:
+            if not isinstance(raw, Mapping):
+                raise ConnectorError("package asset is invalid")
+            asset_id = cls._local_filename(raw.get("id", raw.get("asset_id")), "asset id")
+            digest = raw.get("sha256")
+            length = raw.get("length")
+            if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+                raise ConnectorError("package asset hash is invalid")
+            if not isinstance(length, int) or isinstance(length, bool) or not 0 <= length <= _MAX_ASSET_BYTES:
+                raise ConnectorError("package asset length is invalid")
+            if asset_id in by_id:
+                raise ConnectorError("package assets contain duplicates")
+            by_id[asset_id] = {
+                "id": asset_id,
+                "sha256": digest,
+                "length": length,
+                "media_kind": raw.get("media_kind"),
+                "role": raw.get("role"),
+            }
+        normalized: list[dict[str, Any]] = []
+        names: set[str] = {"project.aep", "dependencies.json"}
+        for raw in media:
+            if not isinstance(raw, Mapping):
+                raise ConnectorError("package media record is invalid")
+            asset_id = cls._local_filename(raw.get("asset_id", raw.get("id")), "package media asset")
+            source = by_id.get(asset_id)
+            if source is None:
+                raise ConnectorError("package media references an unlisted asset")
+            digest = raw.get("sha256")
+            length = raw.get("length")
+            if digest != source["sha256"] or length != source["length"]:
+                raise ConnectorError("package media metadata does not match asset")
+            filename = cls._safe_package_filename(raw.get("filename"))
+            if filename != asset_id or filename in names:
+                raise ConnectorError("package media filename is invalid")
+            names.add(filename)
+            item = {
+                "asset_id": asset_id,
+                "filename": filename,
+                "sha256": source["sha256"],
+                "length": source["length"],
+                "media_kind": raw.get("media_kind", source.get("media_kind")),
+                "role": raw.get("role", source.get("role")),
+            }
+            _json_bytes(item)
+            normalized.append(item)
+        normalized.sort(key=lambda item: (item["filename"], item["asset_id"]))
+        return normalized
+
+    def _copy_package_media(
+        self,
+        scope: Path,
+        records: list[dict[str, Any]],
+    ) -> Path:
+        collected = scope / "package" / "collected_media"
+        _reject_reparse_components(collected)
+        if not collected.is_dir() or _is_reparse(collected):
+            raise ConnectorError("collected media directory is unavailable")
+        expected = {str(record["filename"]) for record in records}
+        try:
+            actual = {
+                entry.name
+                for entry in collected.iterdir()
+                if entry.is_file() and not _is_reparse(entry)
+            }
+        except OSError as exc:
+            raise ConnectorError("collected media directory is unavailable") from exc
+        if actual != expected:
+            raise ConnectorError("collected media does not match immutable assets")
+        for record in records:
+            source = collected / record["filename"]
+            _reject_reparse(source, label="collected media")
+            digest, length = self._hash_file(source)
+            if digest != record["sha256"] or length != record["length"]:
+                raise ConnectorError("collected media is tampered")
+        return collected
+
+    @staticmethod
+    def _identity_records(value: Any, fields: set[str]) -> Any:
+        if isinstance(value, list):
+            result: list[Any] = []
+            for item in value:
+                if isinstance(item, Mapping):
+                    result.append(
+                        {
+                            key: item[key]
+                            for key in sorted(fields)
+                            if key in item
+                        }
+                    )
+                elif isinstance(item, str):
+                    result.append(item)
+                else:
+                    raise ConnectorError("dependency identity is invalid")
+            return result
+        if isinstance(value, Mapping):
+            if all(isinstance(item, (str, int, float, bool)) or item is None for item in value.values()):
+                return dict(value)
+            return {
+                str(key): Connector._identity_records(item, fields)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        if value is None:
+            return []
+        raise ConnectorError("dependency identity is invalid")
+
+    @staticmethod
+    def _approved_capability_manifest(value: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            approved = json.loads(canonical_json(value))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ConnectorError("approved capability manifest is invalid") from exc
+        if not isinstance(approved, dict):
+            raise ConnectorError("approved capability manifest is invalid")
+        return approved
+
+    @staticmethod
+    def _dependency_identity(
+        dependencies: Mapping[str, Any],
+        capabilities: AECapabilities | None,
+    ) -> tuple[Any, Any, Any, Any]:
+        requested = dependencies.get("capability_manifest", {})
+        if not isinstance(requested, Mapping):
+            raise ConnectorError("dependency capability manifest is invalid")
+        if capabilities is not None:
+            snapshot = capabilities.model_dump(mode="json")
+            catalog = snapshot.get("capabilities", {})
+            fonts = catalog.get("fonts", catalog.get("font_names", []))
+            effects = catalog.get("effects", catalog.get("effect_names", []))
+            plugins = catalog.get("plugin_versions", {})
+            ae = {
+                "version": snapshot.get("version"),
+                "major": snapshot.get("major"),
+                "host": snapshot.get("host"),
+                "capability_hash": snapshot.get("capability_hash"),
+            }
+        else:
+            fonts = requested.get("fonts", requested.get("font_names", []))
+            effects = requested.get("effects", requested.get("effect_names", []))
+            plugins = requested.get("plugins", requested.get("plugin_versions", {}))
+            ae = {}
+        fonts = Connector._identity_records(
+            fonts,
+            {"match_name", "family", "style", "version", "version_or_hash", "sha256"},
+        )
+        effects = Connector._identity_records(
+            effects,
+            {"match_name", "display_name", "version", "version_or_hash", "properties"},
+        )
+        plugins = Connector._identity_records(
+            plugins,
+            {"match_name", "name", "version", "version_or_hash", "sha256"},
+        )
+        for value in (fonts, effects, plugins):
+            _json_bytes(value)
+        return ae, fonts, effects, plugins
+
+    def _package_manifest(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        media: list[dict[str, Any]],
+        capabilities: AECapabilities | None,
+    ) -> dict[str, Any]:
+        dependencies = payload.get("dependencies")
+        if not isinstance(dependencies, Mapping):
+            raise ConnectorError("package dependencies are invalid")
+        ae, fonts, effects, plugins = self._dependency_identity(dependencies, capabilities)
+        missing = dependencies.get("missing_nonportable_dependencies", [])
+        missing_nonportable = missing
+        if isinstance(missing, Mapping):
+            missing_dependencies = missing.get("missing", [])
+            nonportable = missing.get("nonportable", [])
+        else:
+            missing_dependencies = dependencies.get("missing_dependencies", missing)
+            nonportable = dependencies.get("nonportable_dependencies", [])
+        substitutions = dependencies.get("substitutions", [])
+        for value in (missing_dependencies, nonportable, substitutions):
+            _json_bytes(value)
+        live_capability_manifest = {
+            "capability_hash": ae.get("capability_hash") if isinstance(ae, Mapping) else None,
+            "fonts": fonts,
+            "effects": effects,
+            "plugins": plugins,
+        }
+        manifest = {
+            "schema_version": "keepframe.dependencies/1",
+            "after_effects": ae,
+            "ae": ae,
+            "os": {
+                "system": platform.system(),
+                "release": platform.release(),
+                "version": platform.version(),
+                "machine": platform.machine(),
+            },
+            "capability_manifest": {
+                "approved": self._approved_capability_manifest(
+                    dependencies.get("capability_manifest", {})
+                ),
+                "live": live_capability_manifest,
+            },
+            "fonts": fonts,
+            "effects": effects,
+            "plugins": plugins,
+            "media": media,
+            "substitutions": substitutions,
+            "selected_checkpoint": payload.get("selected_checkpoint"),
+            "plan_digest": payload.get("final_plan_digest"),
+            "final_plan_digest": payload.get("final_plan_digest"),
+            "finalization_key": payload.get("finalization_key"),
+            "missing_dependencies": missing_dependencies,
+            "nonportable_dependencies": nonportable,
+            "missing_nonportable_dependencies": missing_nonportable,
+        }
+        _json_bytes(manifest)
+        return manifest
+
+    def _build_package_zip(
+        self,
+        archive: Path,
+        *,
+        aep: Path,
+        manifest: Path,
+        collected: Path,
+    ) -> None:
+        _reject_reparse(archive, label="package ZIP")
+        _reject_reparse(aep, label="project AEP")
+        _reject_reparse(manifest, label="dependency manifest")
+        files: list[tuple[str, Path]] = [("project.aep", aep), ("dependencies.json", manifest)]
+        total = 0
+        for filename in sorted(item.name for item in collected.iterdir()):
+            if self._safe_package_filename(filename) is None:
+                raise ConnectorError("collected media filename is invalid")
+            source = collected / filename
+            _reject_reparse(source, label="collected media")
+            files.append((f"collected_media/{filename}", source))
+        for name, source in files:
+            digest, length = self._hash_file(source)
+            del digest
+            total += length
+            if total > _MAX_PACKAGE_UNCOMPRESSED:
+                raise ConnectorError("package is too large")
+            if name.startswith("/") or ".." in name.split("/") or name in {"", "project.zip"}:
+                raise ConnectorError("package entry name is invalid")
+        _reject_reparse_components(archive.parent)
+        temporary = archive.with_name(f".{archive.name}.{secrets.token_hex(8)}.tmp")
+        try:
+            with zipfile.ZipFile(
+                temporary,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=6,
+                allowZip64=True,
+            ) as output:
+                for name, source in files:
+                    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = (stat.S_IFREG | 0o600) << 16
+                    with output.open(info, "w") as destination, source.open("rb") as stream:
+                        while chunk := stream.read(1024 * 1024):
+                            destination.write(chunk)
+            with temporary.open("rb") as stream:
+                os.fsync(stream.fileno())
+            if archive.exists():
+                existing_digest, existing_length = self._hash_file(archive)
+                retry_digest, retry_length = self._hash_file(temporary)
+                if (
+                    existing_digest != retry_digest
+                    or existing_length != retry_length
+                ):
+                    raise ConnectorError("package ZIP conflicts with retained package")
+            else:
+                os.replace(temporary, archive)
+            _reject_reparse(archive, label="package ZIP")
+        except OSError as exc:
+            raise ConnectorError("package ZIP creation failed") from exc
+        finally:
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+
+    def _package_project(
+        self,
+        payload: Mapping[str, Any],
+        result: Mapping[str, Any],
+        plan_id: str,
+        session_id: str,
+        *,
+        capabilities: AECapabilities | None,
+    ) -> dict[str, Any]:
+        selected_checkpoint = self._preview_int(
+            payload.get("selected_checkpoint"),
+            "selected checkpoint",
+        )
+        final_plan_digest = payload.get("final_plan_digest")
+        if not isinstance(final_plan_digest, str) or not _SHA256.fullmatch(
+            final_plan_digest
+        ):
+            raise ConnectorError("final plan digest is invalid")
+        _credential(payload.get("finalization_key"), "finalization key")
+        if result.get("saved") is not True or result.get("kind") != "package":
+            raise ConnectorError("package result is not successful")
+        for key in ("path", "filepath", "directory_path"):
+            if key in result:
+                raise ConnectorError("package result contains an unsafe path")
+        aep_record, zip_record = self._package_artifacts(payload)
+        media = self._package_media(payload)
+        scope = self._scope_root(plan_id, session_id)
+        aep = scope / aep_record["directory"] / "project.aep"
+        archive = scope / zip_record["directory"] / "project.zip"
+        _reject_reparse_components(aep)
+        _reject_reparse_components(archive)
+        _reject_reparse(archive, label="package ZIP")
+        if not aep.is_file() or _is_reparse(aep):
+            raise ConnectorError("project AEP is unavailable")
+        collected = self._copy_package_media(scope, media)
+        manifest_value = self._package_manifest(
+            payload,
+            media=media,
+            capabilities=capabilities,
+        )
+        manifest_path = scope / "package" / "dependencies.json"
+        _reject_reparse(manifest_path, label="dependency manifest")
+        manifest_bytes = canonical_json(manifest_value)
+        if manifest_path.exists():
+            try:
+                if manifest_path.read_bytes() != manifest_bytes:
+                    raise ConnectorError("dependency manifest is already committed")
+            except OSError as exc:
+                raise ConnectorError("dependency manifest is unavailable") from exc
+        else:
+            _atomic_write(manifest_path, manifest_bytes)
+        self._build_package_zip(
+            archive,
+            aep=aep,
+            manifest=manifest_path,
+            collected=collected,
+        )
+        upload_payload = dict(payload)
+        upload_payload["artifacts"] = [aep_record, zip_record]
+        output = self._upload_artifacts(upload_payload, result, plan_id, session_id)
+        output["dependencies"] = manifest_value
+        output["selected_checkpoint"] = selected_checkpoint
+        _json_bytes(output)
+        return output
+
     def _artifact_source(
         self,
         item: Mapping[str, Any],
@@ -2597,6 +3331,7 @@ class Connector:
         if not isinstance(directory_name, str) or directory_name not in {
             "checkpoints",
             "renders",
+            "package",
         }:
             raise ConnectorError("artifact directory is invalid")
         directory = self._scope_root(plan_id, session_id) / directory_name
@@ -2831,9 +3566,31 @@ class Connector:
             return result
         lease.start()
         try:
-            self._prepare_assets(payload, plan_id)
-            if kind == "open_project":
+            self._prepare_assets(payload, plan_id, session_id)
+            if kind == "open_project" or payload.get("checkpoint_artifact") is not None:
                 self._prepare_checkpoint(payload, plan_id, session_id)
+            if kind == "render_final" and (
+                payload.get("artifacts") is not None
+                or "final_plan_digest" in payload
+            ):
+                (
+                    _checkpoint,
+                    frame_count,
+                    _fps,
+                    width,
+                    height,
+                    _names,
+                ) = self._final_spec(payload)
+                renders = self._renders_directory(plan_id, session_id)
+                required = frame_count * width * height * 4
+                if shutil.disk_usage(renders).free < required + _MIN_FINAL_DISK_MARGIN:
+                    return finish(
+                        {
+                            "ok": False,
+                            "error": "render_failed",
+                            "reason": "render_failed",
+                        }
+                    )
         except ConnectorError:
             if kind == "render_preview" or payload.get("artifacts") is not None:
                 return finish(self._local_failure_result(kind))
@@ -2864,7 +3621,7 @@ class Connector:
                     "session_id": session_id,
                 }
             )
-            if kind in {"apply_batch", "inspect_layers"} and self.capability_hash is not None:
+            if kind in {"apply_batch", "inspect_layers", "render_final"} and self.capability_hash is not None:
                 try:
                     self._refresh_live_capabilities(
                         command_id,
@@ -2873,7 +3630,13 @@ class Connector:
                         session_id,
                     )
                 except ConnectorError:
-                    return finish({"ok": False, "error": "capabilities_changed"})
+                    return finish(
+                        {
+                            "ok": False,
+                            "error": "capabilities_changed",
+                            "reason": "capabilities_changed",
+                        }
+                    )
             _json_bytes(mcp_payload)
             envelope = {
                 "command_id": command_id,
@@ -2892,6 +3655,13 @@ class Connector:
                 if kind == "inspect_layers" and result_dict.get("ok") is not False:
                     result_dict = self._compact_inspection_result(result_dict)
                 result_dict = self._strip_server_only_result_fields(result_dict)
+                if (
+                    kind == "package_project"
+                    and result_dict.get("ok") is False
+                    and result_dict.get("error")
+                    == "used project footage is outside the approved asset contract"
+                ):
+                    result_dict["reason"] = "unavailable_dependency"
             except ConnectorError:
                 raise
             except Exception as exc:  # noqa: BLE001 - no untrusted MCP error escapes
@@ -2901,10 +3671,64 @@ class Connector:
                     result_dict = self._render_preview(
                         payload, result_dict, plan_id, session_id
                     )
+                elif (
+                    kind == "render_final"
+                    and result_dict.get("ok") is not False
+                    and (
+                        payload.get("artifacts") is not None
+                        or "final_plan_digest" in payload
+                    )
+                ):
+                    result_dict = self._render_final(
+                        payload,
+                        result_dict,
+                        plan_id,
+                        session_id,
+                    )
+                elif (
+                    kind == "package_project"
+                    and result_dict.get("ok") is not False
+                    and (
+                        payload.get("artifacts") is not None
+                        or "package_media" in payload
+                    )
+                ):
+                    capabilities = None
+                    if self.capability_hash is not None and "package_media" in payload:
+                        try:
+                            capabilities = self._refresh_live_capabilities(
+                                command_id,
+                                nonce,
+                                plan_id,
+                                session_id,
+                            )
+                        except ConnectorError:
+                            result_dict = {
+                                "ok": False,
+                                "error": "capabilities_changed",
+                                "reason": "capabilities_changed",
+                            }
+                    if result_dict.get("ok") is not False:
+                        result_dict = self._package_project(
+                            payload,
+                            result_dict,
+                            plan_id,
+                            session_id,
+                            capabilities=capabilities,
+                        )
                 elif result_dict.get("ok") is not False:
                     result_dict = self._upload_artifacts(
                         payload, result_dict, plan_id, session_id
                     )
+            except RelayError:
+                if payload.get("artifacts") is not None:
+                    result_dict = {
+                        "ok": False,
+                        "error": "connector artifact upload failed",
+                        "reason": "upload_failed",
+                    }
+                else:
+                    raise
             except ConnectorError:
                 if kind == "render_preview" or payload.get("artifacts") is not None:
                     result_dict = self._local_failure_result(kind)

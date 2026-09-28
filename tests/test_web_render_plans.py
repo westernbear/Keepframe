@@ -12,7 +12,7 @@ from keepframe.after_effects.models import AECapabilities
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.jobs import JobStore
-from keepframe.render.plan import create_render_plan
+from keepframe.render.plan import PlanConflict, approve_render_plan, create_render_plan
 from keepframe.web import server as web_server
 from tests.test_native_plan import RecordingRunner
 from tests.test_ae_coordinator import (
@@ -98,6 +98,46 @@ def _plan(workspace: Path, backend="native", mode="preview"):
         if backend == "after_effects"
         else {}
     )
+    predecessor = None
+    checkpoint_digest = None
+    if backend == "after_effects" and mode == "final":
+        predecessor = create_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            backend="after_effects",
+            mode="preview",
+            **kwargs,
+        )
+        approval = approve_render_plan(
+            root,
+            predecessor.id,
+            digest=predecessor.digest,
+            revision=0,
+        )
+        coordinator = AECoordinator(root, predecessor.id)
+        session = coordinator.start(approval.execution_id)
+        session = coordinator.transition(
+            "device_ready",
+            revision=session.revision,
+            device_id="device-1",
+        )
+        checkpoint = _committed_checkpoint(coordinator, 0, provenance="baseline")
+        session = coordinator.transition(
+            "baseline_complete",
+            revision=session.revision,
+            checkpoint=checkpoint.model_dump(mode="json"),
+        )
+        coordinator.transition("stop", revision=session.revision)
+        checkpoint_digest = coordinator.state().checkpoints[0].context_digest
+    if predecessor is not None:
+        kwargs.update(
+            predecessor_id=predecessor.id,
+            predecessor_digest=predecessor.digest,
+            predecessor_checkpoint=0,
+            predecessor_checkpoint_digest=checkpoint_digest,
+        )
     return create_render_plan(
         root,
         project_id="p1",
@@ -107,6 +147,189 @@ def _plan(workspace: Path, backend="native", mode="preview"):
         mode=mode,
         **kwargs,
     )
+
+
+def test_final_ae_successor_uses_server_checkpoint_context_and_is_idempotent(tmp_path):
+    workspace = tmp_path / "ws"
+    preview = _plan(workspace, backend="after_effects")
+    approval = approve_render_plan(
+        workspace / "p1",
+        preview.id,
+        digest=preview.digest,
+        revision=0,
+    )
+    coordinator = AECoordinator(workspace / "p1", preview.id)
+    session = coordinator.start(approval.execution_id)
+    session = coordinator.transition(
+        "device_ready",
+        revision=session.revision,
+        device_id="device-1",
+    )
+    checkpoint = _committed_checkpoint(coordinator, 0, provenance="baseline")
+    session = coordinator.transition(
+        "baseline_complete",
+        revision=session.revision,
+        checkpoint=checkpoint.model_dump(mode="json"),
+    )
+    coordinator.transition("stop", revision=session.revision)
+    paused = coordinator.state()
+    assert paused.selected_checkpoint == 0
+    assert paused.checkpoints[0].context_digest
+
+    final = web_server.prepare_ae_final_successor(
+        workspace / "p1",
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        predecessor_id=preview.id,
+        predecessor_digest=preview.digest,
+        predecessor_checkpoint=0,
+        capabilities=_capability_snapshot(),
+    )
+    retry = web_server.prepare_ae_final_successor(
+        workspace / "p1",
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        predecessor_id=preview.id,
+        predecessor_digest=preview.digest,
+        predecessor_checkpoint=0,
+        capabilities=_capability_snapshot(),
+    )
+
+    assert final == retry
+    assert final.predecessor_checkpoint_digest == paused.checkpoints[0].context_digest
+    final_state = web_server._render_state_payload(workspace / "p1", final.id)
+    assert final_state["plan"]["id"] == final.id
+    assert final_state["session"]["plan_id"] == preview.id
+    assert len(
+        [
+            path
+            for path in (workspace / "p1" / "renders").iterdir()
+            if path.is_dir() and not path.is_symlink()
+        ]
+    ) == 2
+
+    server = start(workspace, ae_relay_url="https://relay.example")
+    try:
+        cookie, _, _ = _pair(server, workspace)
+        route_code, route_body = _ae_post(
+            server,
+            cookie,
+            "/api/render-plans",
+            {
+                "project": "p1",
+                "scene": "s1",
+                "version": "v1",
+                "backend": "after_effects",
+                "mode": "final",
+                "predecessor_id": preview.id,
+                "predecessor_digest": preview.digest,
+                "predecessor_checkpoint": 0,
+            },
+        )
+    finally:
+        server.shutdown()
+    assert route_code == 200
+    assert route_body["plan"]["id"] == final.id
+
+    with pytest.raises(PlanConflict, match="selected"):
+        web_server.prepare_ae_final_successor(
+            workspace / "p1",
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            predecessor_id=preview.id,
+            predecessor_digest=preview.digest,
+            predecessor_checkpoint=1,
+            capabilities=_capability_snapshot(),
+        )
+    with pytest.raises(PlanConflict, match="context digest"):
+        web_server.prepare_ae_final_successor(
+            workspace / "p1",
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            predecessor_id=preview.id,
+            predecessor_digest=preview.digest,
+            predecessor_checkpoint=0,
+            predecessor_checkpoint_digest="b" * 64,
+            capabilities=_capability_snapshot(),
+        )
+
+
+
+def test_final_ae_approval_binds_predecessor_session_and_finalize_control(tmp_path):
+    workspace = tmp_path / "ws"
+    final = _plan(workspace, backend="after_effects", mode="final")
+    assert final.predecessor_id
+    coordinator = AECoordinator.cached(workspace / "p1", final.predecessor_id)
+    paused = coordinator.state()
+    server = start(workspace, ae_relay_url="https://relay.example")
+    try:
+        cookie, _, _ = _pair(server, workspace)
+        code, approved = _ae_post(
+            server,
+            cookie,
+            f"/api/render-plans/{final.id}/approve",
+            {"project": "p1", "digest": final.digest, "revision": 0},
+        )
+        assert code == 202
+        assert approved["session"]["id"] == paused.id
+        assert approved["status"] == "paused:user"
+        assert not (
+            workspace / "p1" / "renders" / final.id / "ae" / "session.json"
+        ).exists()
+
+        finalize_payload = {
+            "project": "p1",
+            "plan": final.predecessor_id,
+            "revision": paused.revision,
+            "checkpoint": 0,
+            "final_plan_id": final.id,
+            "execution_id": approved["state"]["execution_id"],
+        }
+        code, started = _ae_post(
+            server,
+            cookie,
+            f"/api/ae/sessions/{paused.id}/finalize",
+            finalize_payload,
+        )
+        retry_code, retried = _ae_post(
+            server,
+            cookie,
+            f"/api/ae/sessions/{paused.id}/finalize",
+            finalize_payload,
+        )
+    finally:
+        server.shutdown()
+
+    assert code == 200
+    assert started["session"]["status"] == "finalizing"
+    assert started["session"]["final_plan_id"] == final.id
+    assert (
+        started["session"]["final_execution_id"]
+        == approved["state"]["execution_id"]
+    )
+    assert retry_code == 200
+    assert retried["session"] == started["session"]
+
+
+def test_final_ae_successor_rejects_incomplete_predecessor_baseline(tmp_path):
+    workspace = tmp_path / "ws"
+    preview = _plan(workspace, backend="after_effects")
+    with pytest.raises(PlanConflict, match="coordinator"):
+        web_server.prepare_ae_final_successor(
+            workspace / "p1",
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            predecessor_id=preview.id,
+            predecessor_digest=preview.digest,
+            predecessor_checkpoint=0,
+            capabilities=_capability_snapshot(),
+        )
+
 
 
 def test_native_plan_approval_is_the_only_idempotent_execution_gate(tmp_path, monkeypatch):
@@ -219,7 +442,7 @@ class _ManualWorkflow:
 
 def test_ae_private_controls_enforce_revision_and_transition_table(tmp_path):
     workspace = tmp_path / "ws"
-    plan = _plan(workspace, backend="after_effects", mode="final")
+    plan = _plan(workspace, backend="after_effects", mode="preview")
     server = start(
         workspace,
         ae_relay_url="https://relay.example",
@@ -430,21 +653,46 @@ def test_ae_artifact_download_requires_controller_and_streams_verified_bytes(tmp
             {"project": "p1", "digest": plan.digest, "revision": 0},
         )
         coordinator = AECoordinator.cached(workspace / "p1", plan.id)
-        coordinator.transition(
+        session = coordinator.transition(
             "device_ready",
             revision=approved["session"]["revision"],
             device_id=device.identity.device_id,
         )
-        payload = _artifact_payload("png")
-        reservation = coordinator.reserve_artifact("png", len(payload))
-        artifact = coordinator.publish_artifact(
-            device.identity.device_id,
-            reservation.id,
-            io.BytesIO(payload),
-            content_length=len(payload),
+        quarantined_payload = _artifact_payload("png")
+        quarantined = coordinator.reserve_artifact(
+            "png",
+            len(quarantined_payload),
         )
+        coordinator.publish_artifact(
+            device.identity.device_id,
+            quarantined.id,
+            io.BytesIO(quarantined_payload),
+            content_length=len(quarantined_payload),
+        )
+        quarantined_request = Request(
+            (
+                f"{_origin(server)}/api/ae/artifacts/{quarantined.id}"
+                f"?project=p1&plan={plan.id}"
+            ),
+            headers={"Origin": _origin(server), "Cookie": cookie},
+        )
+        with pytest.raises(HTTPError) as unavailable:
+            urlopen(quarantined_request)
+        assert unavailable.value.code == 404
+        checkpoint = _committed_checkpoint(
+            coordinator,
+            0,
+            provenance="baseline",
+        )
+        coordinator.transition(
+            "baseline_complete",
+            revision=session.revision,
+            checkpoint=checkpoint.model_dump(mode="json"),
+        )
+        payload = _artifact_payload("png")
+        artifact_id = checkpoint.frame_artifact_ids[0]
         path = (
-            f"/api/ae/artifacts/{artifact.id}"
+            f"/api/ae/artifacts/{artifact_id}"
             f"?project=p1&plan={plan.id}"
         )
 
@@ -473,7 +721,7 @@ def test_ae_artifact_download_requires_controller_and_streams_verified_bytes(tmp
             assert response.headers["Cache-Control"] == "no-store"
             assert response.headers["X-Content-Type-Options"] == "nosniff"
             assert response.headers["Content-Disposition"] == (
-                f'attachment; filename="keepframe-{artifact.id}.png"'
+                f'attachment; filename="keepframe-{artifact_id}.png"'
             )
         (
             workspace
@@ -482,7 +730,7 @@ def test_ae_artifact_download_requires_controller_and_streams_verified_bytes(tmp
             / plan.id
             / "ae"
             / "artifacts"
-            / artifact.id
+            / artifact_id
         ).write_bytes(payload + b"tampered")
         with pytest.raises(HTTPError) as tampered:
             urlopen(request)

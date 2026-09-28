@@ -14,6 +14,7 @@ import socket
 import ssl
 import sys
 import urllib.error
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -1131,7 +1132,11 @@ def test_render_preview_keeps_sequence_when_upload_fails(tmp_path):
             expected_checkpoint=2,
         )
     )
-    assert result == {"ok": False, "error": "connector preview processing failed"}
+    assert result == {
+        "ok": False,
+        "error": "connector artifact upload failed",
+        "reason": "upload_failed",
+    }
     assert relay.results[-1][0][2] == result
     assert (renders / "checkpoint-2.mp4").exists()
     assert all((renders / name).exists() for name in names)
@@ -1544,7 +1549,11 @@ def test_connector_posts_capability_change_without_mutating_ae(tmp_path):
     result = runner.execute_command(
         _command("apply_batch", payload, command_id="command-capability-change")
     )
-    assert result == {"ok": False, "error": "capabilities_changed"}
+    assert result == {
+        "ok": False,
+        "error": "capabilities_changed",
+        "reason": "capabilities_changed",
+    }
     assert [tool for tool, _envelope in mcp.calls] == ["capability_heartbeat"]
     assert relay.results[-1][0][2] == result
 
@@ -2047,3 +2056,304 @@ def test_command_lease_renewal_rejects_definitive_expiry():
     lease._renew_once()
     with pytest.raises(connector.ConnectorError, match="renewal failed"):
         lease.check()
+
+def _final_fixture(
+    *,
+    frame_count: int = 3,
+    fps: float = 30.0,
+    width: int = 1920,
+    height: int = 1080,
+) -> tuple[dict[str, object], dict[str, object], list[str]]:
+    names = [f"final-{frame:06d}.png" for frame in range(frame_count)]
+    payload: dict[str, object] = {
+        "checkpoint_index": 4,
+        "frame_count": frame_count,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "final_plan_digest": "b" * 64,
+        "finalization_key": "final-key",
+        "artifacts": [
+            {
+                "reservation_id": "mp4-final",
+                "kind": "mp4",
+                "filename": "final.mp4",
+                "directory": "renders",
+            }
+        ],
+    }
+    result: dict[str, object] = {
+        "rendered": True,
+        "kind": "final",
+        "checkpoint_index": 4,
+        "frame_count": frame_count,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "sequence": {
+            "directory": "renders",
+            "pattern": "final-%06d.png",
+            "frame_count": frame_count,
+            "first_frame": names[0],
+            "last_frame": names[-1],
+        },
+    }
+    return payload, result, names
+
+
+def test_render_final_runs_unscaled_ffmpeg_and_uploads_reserved_mp4(tmp_path):
+    payload, panel_result, names = _final_fixture()
+    renders = _scoped_renders(tmp_path)
+    renders.mkdir(parents=True)
+    for name in names:
+        (renders / name).write_bytes(_png(1920, 1080))
+    process_calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def process(argv, **kwargs):
+        process_calls.append((argv, kwargs))
+        Path(argv[-1]).write_bytes(b"final-mp4")
+        return type("Completed", (), {"stdout": b"", "stderr": b""})()
+
+    class Relay:
+        def __init__(self):
+            self.uploads = []
+            self.results = []
+
+        def upload_artifact(self, reservation, source, **kwargs):
+            self.uploads.append((reservation, Path(source), kwargs))
+            return {"artifact": {"id": reservation}}
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": panel_result,
+            }
+
+    relay = Relay()
+    result = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+        ffmpeg="preflighted-ffmpeg",
+        process_runner=process,
+    ).execute_command(
+        _command(
+            "render_final",
+            payload,
+            command_id="command-final-1",
+            expected_checkpoint=4,
+        )
+    )
+
+    assert [item[0] for item in relay.uploads] == ["mp4-final"]
+    assert relay.uploads[0][1].name == "final.mp4"
+    assert process_calls[0][0] == [
+        "preflighted-ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-framerate",
+        "30.0",
+        "-i",
+        str(renders / "final-%06d.png"),
+        "-frames:v",
+        "3",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        "18",
+        str(renders / "final.mp4"),
+    ]
+    assert "-vf" not in process_calls[0][0]
+    assert result["artifacts"] == [{"id": "mp4-final"}]
+
+
+def test_package_project_writes_allowlisted_zip_and_dependency_manifest(tmp_path):
+    media = b"immutable media"
+    media_digest = hashlib.sha256(media).hexdigest()
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "asset-1").write_bytes(media)
+    package_dir = _scoped_renders(tmp_path).parent / "package"
+    package_dir.mkdir(parents=True)
+    (package_dir / "project.aep").write_bytes(b"aep")
+    (_scoped_renders(tmp_path).parent / "checkpoints").mkdir(exist_ok=True)
+    payload: dict[str, object] = {
+        "selected_checkpoint": 4,
+        "checkpoint_index": 4,
+        "final_plan_digest": "b" * 64,
+        "finalization_key": "final-key",
+        "assets": [
+            {
+                "id": "asset-1",
+                "sha256": media_digest,
+                "length": len(media),
+                "media_kind": "image/png",
+                "role": "sprite",
+            }
+        ],
+        "package_media": [
+            {
+                "asset_id": "asset-1",
+                "filename": "asset-1",
+                "sha256": media_digest,
+                "length": len(media),
+                "media_kind": "image/png",
+            }
+        ],
+        "dependencies": {
+            "capability_manifest": {
+                "fonts": [{"match_name": "Inter", "version_or_hash": "1"}],
+                "effects": [{"match_name": "ADBE Fill", "version_or_hash": "1"}],
+                "plugins": [{"match_name": "ADBE Fill", "version_or_hash": "1"}],
+            },
+            "substitutions": [],
+            "missing_nonportable_dependencies": [],
+        },
+        "artifacts": [
+            {
+                "reservation_id": "aep-final",
+                "kind": "aep",
+                "filename": "project.aep",
+                "directory": "package",
+            },
+            {
+                "reservation_id": "zip-final",
+                "kind": "zip",
+                "filename": "project.zip",
+                "directory": "checkpoints",
+            },
+        ],
+    }
+
+    class Relay:
+        def __init__(self):
+            self.uploads = []
+            self.results = []
+
+        def upload_artifact(self, reservation, source, **kwargs):
+            self.uploads.append((reservation, Path(source), kwargs))
+            return {"artifact": {"id": reservation}}
+
+        def post_result(self, *args, **kwargs):
+            self.results.append((args, kwargs))
+
+    class MCP:
+        def call_tool(self, tool, envelope):
+            return {
+                "schema_version": 1,
+                "command_id": envelope["command_id"],
+                "nonce": envelope["nonce"],
+                "ok": True,
+                "result": {"saved": True, "kind": "package", "filename": "project.aep"},
+            }
+
+    relay = Relay()
+    runner = connector.Connector(
+        relay,
+        MCP(),
+        project_id="p1",
+        device_id="d1",
+        private_root=tmp_path,
+    )
+    result = runner.execute_command(
+        _command(
+            "package_project",
+            payload,
+            command_id="command-package-1",
+            expected_checkpoint=4,
+        )
+    )
+
+    assert [item[0] for item in relay.uploads] == ["aep-final", "zip-final"]
+    zip_path = next(path for reservation, path, _ in relay.uploads if reservation == "zip-final")
+    with zipfile.ZipFile(zip_path) as archive:
+        assert archive.namelist() == [
+            "project.aep",
+            "dependencies.json",
+            "collected_media/asset-1",
+        ]
+        manifest = json.loads(archive.read("dependencies.json"))
+    assert manifest["plan_digest"] == "b" * 64
+    assert manifest["final_plan_digest"] == "b" * 64
+    assert manifest["finalization_key"] == "final-key"
+    assert manifest["selected_checkpoint"] == 4
+    assert manifest["media"] == [
+        {
+            "asset_id": "asset-1",
+            "filename": "asset-1",
+            "length": len(media),
+            "media_kind": "image/png",
+            "role": "sprite",
+            "sha256": media_digest,
+        }
+    ]
+    assert all(
+        not name.lower().endswith((".ttf", ".otf", ".plugin", ".aex"))
+        for name in zipfile.ZipFile(zip_path).namelist()
+        if name != "project.aep"
+    )
+    assert result["artifacts"] == [{"id": "aep-final"}, {"id": "zip-final"}]
+    retried = runner.execute_command(
+        _command(
+            "package_project",
+            payload,
+            command_id="command-package-2",
+            sequence=2,
+            expected_checkpoint=4,
+        )
+    )
+    assert retried["artifacts"] == [
+        {"id": "aep-final"},
+        {"id": "zip-final"},
+    ]
+    assert [item[0] for item in relay.uploads] == [
+        "aep-final",
+        "zip-final",
+        "aep-final",
+        "zip-final",
+    ]
+
+
+def test_package_media_rejects_unlisted_or_tampered_records():
+    digest = "a" * 64
+    assets = [{"id": "asset-1", "sha256": digest, "length": 1}]
+    with pytest.raises(connector.ConnectorError, match="unlisted"):
+        connector.Connector._package_media(
+            {
+                "assets": assets,
+                "package_media": [
+                    {
+                        "asset_id": "asset-2",
+                        "filename": "media.png",
+                        "sha256": digest,
+                        "length": 1,
+                    }
+                ],
+            }
+        )
+    with pytest.raises(connector.ConnectorError, match="metadata"):
+        connector.Connector._package_media(
+            {
+                "assets": assets,
+                "package_media": [
+                    {
+                        "asset_id": "asset-1",
+                        "filename": "media.png",
+                        "sha256": "b" * 64,
+                        "length": 1,
+                    }
+                ],
+            }
+        )

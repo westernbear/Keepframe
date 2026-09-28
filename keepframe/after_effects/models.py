@@ -45,6 +45,18 @@ def canonical_json(value: Any) -> bytes:
 def json_digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
+def compute_finalization_key(plan_digest: str, checkpoint_index: int) -> str:
+    """Return the stable idempotency key for one approved final checkpoint."""
+    if _digest(plan_digest) is None:
+        raise ValueError("final plan digest is required")
+    checkpoint_index = _bounded_int(checkpoint_index, minimum=0)
+    return json_digest(
+        {
+            "final_plan_digest": plan_digest,
+            "checkpoint_index": checkpoint_index,
+        }
+    )
+
 
 def _nonempty(value: str) -> str:
     if value is None:
@@ -285,8 +297,8 @@ class AECapabilities(_FrozenRecord):
             exclude={"capability_hash", "project_open", "timestamp"},
         )
         encoded = canonical_json(payload)
-        if len(encoded) > 1 * 1024 * 1024:
-            raise ValueError("capability snapshot exceeds 1 MiB")
+        if len(encoded) > 128 * 1024:
+            raise ValueError("capability snapshot exceeds 128 KiB")
         digest = hashlib.sha256(encoded).hexdigest()
         if self.capability_hash is not None and self.capability_hash != digest:
             raise ValueError("capability hash does not match snapshot")
@@ -439,10 +451,37 @@ class AESession(_FrozenRecord):
     reason: str | None = None
     created_at: float = 0.0
     updated_at: float = 0.0
+    # Finalization is an immutable successor-plan binding.  These fields are
+    # written before any final command is queued and survive coordinator
+    # restart/retry.
+    final_plan_id: str | None = None
+    final_plan_digest: str | None = None
+    final_execution_id: str | None = None
+    finalization_key: str | None = None
+    final_checkpoint_index: int | None = None
+    final_checkpoint_context_digest: str | None = None
+    final_mp4_artifact_id: str | None = None
+    final_aep_artifact_id: str | None = None
+    final_zip_artifact_id: str | None = None
+    final_artifact_ids: dict[str, str] = Field(default_factory=dict)
 
     _ids = field_validator("id", "project_id", "plan_id", "execution_id")(_identifier)
-    _plan_digest = field_validator("plan_digest")(_digest)
-    _status = field_validator("status")(_session_status)
+    _final_ids = field_validator(
+        "final_plan_id",
+        "final_execution_id",
+        "final_mp4_artifact_id",
+        "final_aep_artifact_id",
+        "final_zip_artifact_id",
+    )(_identifier)
+    _final_digests = field_validator(
+        "final_plan_digest",
+        "finalization_key",
+        "final_checkpoint_context_digest",
+    )(_digest)
+    _final_checkpoint = field_validator("final_checkpoint_index")(
+        lambda value: value if value is None else _bounded_int(value, minimum=0)
+    )
+    _final_artifacts = field_validator("final_artifact_ids")(_finite_json)
     _revisions = field_validator("revision", "command_sequence", "applied_command_sequence")(
         lambda value: _bounded_int(value, minimum=0)
     )
@@ -481,6 +520,26 @@ class AESession(_FrozenRecord):
                 range(self.baseline_batch_count)
             ):
                 raise ValueError("baseline completeness is inconsistent")
+        return self
+
+    @model_validator(mode="after")
+    def _final_binding_is_consistent(self) -> AESession:
+        bound = self.final_plan_id is not None
+        fields = (
+            self.final_plan_digest,
+            self.final_execution_id,
+            self.finalization_key,
+            self.final_checkpoint_index,
+            self.final_checkpoint_context_digest,
+        )
+        if bound and any(value is None for value in fields):
+            raise ValueError("finalization binding is incomplete")
+        if not bound and any(value is not None for value in fields):
+            raise ValueError("finalization fields require a final plan")
+        for kind, artifact_id in self.final_artifact_ids.items():
+            if not isinstance(kind, str) or not kind or not isinstance(artifact_id, str):
+                raise ValueError("final artifact ids are invalid")
+            _identifier(artifact_id)
         return self
 
 
@@ -650,5 +709,6 @@ __all__ = [
     "ArtifactKind",
     "CommandKind",
     "canonical_json",
+    "compute_finalization_key",
     "json_digest",
 ]

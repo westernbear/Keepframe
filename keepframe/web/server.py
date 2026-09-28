@@ -62,6 +62,7 @@ log = get("keepframe.web")
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
 JOBS = JobStore()
+_FINAL_PLAN_LOCK = threading.RLock()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RENDER_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 
@@ -102,13 +103,30 @@ def _render_status(state, job: Job | None) -> str:
     return "failed"
 
 
+def _ae_execution_plan(root: Path, plan):
+    if plan.mode != "final":
+        return plan
+    if plan.predecessor_id is None or plan.predecessor_digest is None:
+        raise PlanConflict("final AE plan is missing its preview predecessor")
+    predecessor = load_render_plan(root, plan.predecessor_id)
+    if (
+        predecessor.digest != plan.predecessor_digest
+        or predecessor.project_id != plan.project_id
+        or predecessor.backend != "after_effects"
+        or predecessor.mode != "preview"
+    ):
+        raise PlanConflict("final AE plan predecessor is invalid")
+    return predecessor
+
+
 def _render_state_payload(root: Path, plan_id: str) -> dict:
     plan = load_render_plan(root, plan_id)
     state = load_render_plan_state(root, plan.id)
     if plan.backend == "after_effects":
+        execution_plan = _ae_execution_plan(root, plan)
         session = None
         try:
-            session = AECoordinator.cached(root, plan.id).state()
+            session = AECoordinator.cached(root, execution_plan.id).state()
         except CoordinatorConflict as exc:
             if "has not started" not in str(exc):
                 raise
@@ -132,6 +150,169 @@ def _render_state_payload(root: Path, plan_id: str) -> dict:
         "job": job.to_json() if job is not None else None,
         "status": _render_status(state, job),
     }
+
+
+def _equivalent_ae_successor(
+    candidate,
+    predecessor,
+    *,
+    checkpoint: int,
+    checkpoint_digest: str,
+) -> bool:
+    return (
+        candidate.backend == "after_effects"
+        and candidate.mode == "final"
+        and candidate.project_id == predecessor.project_id
+        and candidate.scene_id == predecessor.scene_id
+        and candidate.version_id == predecessor.version_id
+        and candidate.direction == predecessor.direction
+        and candidate.scene_sha256 == predecessor.scene_sha256
+        and candidate.assets == predecessor.assets
+        and candidate.locked_targets == predecessor.locked_targets
+        and candidate.permitted_operations == predecessor.permitted_operations
+        and candidate.effect_schemas == predecessor.effect_schemas
+        and candidate.capability_hash == predecessor.capability_hash
+        and candidate.capability_manifest == predecessor.capability_manifest
+        and candidate.substitutions == predecessor.substitutions
+        and candidate.substitutions_acknowledged
+        == predecessor.substitutions_acknowledged
+        and candidate.predecessor_id == predecessor.id
+        and candidate.predecessor_digest == predecessor.digest
+        and candidate.predecessor_checkpoint == checkpoint
+        and candidate.predecessor_checkpoint_digest == checkpoint_digest
+    )
+
+
+def prepare_ae_final_successor(
+    root: Path,
+    *,
+    project_id: str,
+    scene_id: str,
+    version_id: str,
+    predecessor_id: str,
+    predecessor_digest: str,
+    predecessor_checkpoint: int,
+    predecessor_checkpoint_digest: str | None = None,
+    direction: str | None = None,
+    capabilities,
+):
+    """Create or reuse one final AE plan for a selected preview checkpoint."""
+    if (
+        not isinstance(predecessor_checkpoint, int)
+        or isinstance(predecessor_checkpoint, bool)
+        or predecessor_checkpoint < 0
+    ):
+        raise PlanConflict("predecessor checkpoint is invalid")
+    root = Path(root)
+    with _FINAL_PLAN_LOCK:
+        predecessor = load_render_plan(root, predecessor_id)
+        if (
+            predecessor.project_id != project_id
+            or predecessor.scene_id != scene_id
+            or predecessor.version_id != version_id
+            or predecessor.backend != "after_effects"
+            or predecessor.mode != "preview"
+            or predecessor.digest != predecessor_digest
+        ):
+            raise PlanConflict("predecessor does not match the authoritative AE preview")
+        if direction is not None and direction != predecessor.direction:
+            raise PlanConflict("predecessor direction changed")
+        meta = load_meta(root.parent, project_id)
+        if (
+            not isinstance(meta, dict)
+            or meta.get("status") != "approved"
+            or meta.get("version") != version_id
+        ):
+            raise PlanConflict("final render requires the approved version")
+        try:
+            predecessor_coordinator = AECoordinator.cached(root, predecessor.id)
+            predecessor_session = predecessor_coordinator.state()
+        except CoordinatorConflict as exc:
+            raise PlanConflict("predecessor coordinator is unavailable") from exc
+        if not predecessor_session.baseline_complete:
+            raise PlanConflict("predecessor baseline is incomplete")
+        if predecessor_session.selected_checkpoint != predecessor_checkpoint:
+            raise PlanConflict("predecessor checkpoint is not selected")
+        checkpoint = next(
+            (
+                item
+                for item in predecessor_session.checkpoints
+                if item.index == predecessor_checkpoint
+            ),
+            None,
+        )
+        if checkpoint is None or not checkpoint.passed or not checkpoint.lineage_valid:
+            raise PlanConflict("predecessor checkpoint did not pass current lineage verification")
+        context_digest = checkpoint.context_digest
+        if not isinstance(context_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", context_digest):
+            raise PlanConflict("predecessor checkpoint context is unavailable")
+        if (
+            predecessor_checkpoint_digest is not None
+            and predecessor_checkpoint_digest != context_digest
+        ):
+            raise PlanConflict("predecessor checkpoint context digest does not match")
+        if capabilities is None:
+            raise PlanConflict("active published AE capabilities are required")
+        try:
+            from keepframe.after_effects.models import AECapabilities
+
+            if not isinstance(capabilities, AECapabilities):
+                capabilities = AECapabilities.model_validate(capabilities)
+        except (TypeError, ValueError) as exc:
+            raise PlanConflict("AE capabilities are invalid") from exc
+        if (
+            capabilities.capability_hash != predecessor.capability_hash
+            or capabilities.model_dump(
+                mode="json",
+                exclude={"capability_hash", "project_open", "timestamp"},
+            )
+            != predecessor.capability_manifest
+        ):
+            raise PlanConflict("AE capabilities changed since predecessor preview")
+
+        renders = root / "renders"
+        if renders.is_dir() and not renders.is_symlink():
+            for candidate_dir in renders.iterdir():
+                if (
+                    candidate_dir.is_symlink()
+                    or not candidate_dir.is_dir()
+                    or not _RENDER_PLAN_ID_RE.fullmatch(candidate_dir.name)
+                ):
+                    continue
+                try:
+                    candidate = load_render_plan(root, candidate_dir.name)
+                except PlanConflict:
+                    continue
+                if _equivalent_ae_successor(
+                    candidate,
+                    predecessor,
+                    checkpoint=predecessor_checkpoint,
+                    checkpoint_digest=context_digest,
+                ):
+                    return candidate
+
+        return create_render_plan(
+            root,
+            project_id=project_id,
+            scene_id=scene_id,
+            version_id=version_id,
+            backend="after_effects",
+            mode="final",
+            direction=predecessor.direction,
+            locked_targets=predecessor.locked_targets,
+            permitted_operations=predecessor.permitted_operations,
+            effect_schemas=predecessor.effect_schemas,
+            capability_hash=predecessor.capability_hash,
+            capability_manifest=predecessor.capability_manifest,
+            substitutions=predecessor.substitutions,
+            substitutions_acknowledged=predecessor.substitutions_acknowledged,
+            predecessor_id=predecessor.id,
+            predecessor_digest=predecessor.digest,
+            predecessor_checkpoint=predecessor_checkpoint,
+            predecessor_checkpoint_digest=context_digest,
+            _predecessor_plan=predecessor,
+        )
+
 
 
 
@@ -814,9 +995,10 @@ def make_server(
                     plan = load_render_plan(root, plan_id)
                     if plan.project_id != pid or plan.backend != "after_effects":
                         return self._json(404, {"error": "not found"})
+                    execution_plan = _ae_execution_plan(root, plan)
                     reservation, stream = AECoordinator.cached(
                         root,
-                        plan.id,
+                        execution_plan.id,
                     ).open_artifact(artifact_id)
                 except (FileNotFoundError, PlanConflict, CoordinatorConflict):
                     return self._json(404, {"error": "not found"})
@@ -1041,6 +1223,143 @@ def make_server(
                     ),
                 )
 
+            if u.path == "/api/render-plans":
+                if not self._same_origin():
+                    return
+                data = self._bounded_json()
+                if data is None:
+                    return
+                allowed = {
+                    "project",
+                    "scene",
+                    "version",
+                    "backend",
+                    "mode",
+                    "direction",
+                    "predecessor_id",
+                    "predecessor_digest",
+                    "predecessor_checkpoint",
+                    "predecessor_checkpoint_digest",
+                }
+                if set(data) - allowed:
+                    return self._json(400, {"error": "render plan payload is invalid"})
+                project_id = data.get("project")
+                backend = data.get("backend")
+                mode = data.get("mode")
+                if (
+                    not isinstance(project_id, str)
+                    or not _PROJECT_ID_RE.fullmatch(project_id)
+                    or backend not in {"native", "after_effects"}
+                    or mode not in {"preview", "final"}
+                ):
+                    return self._json(400, {"error": "render plan payload is invalid"})
+                try:
+                    root = _safe_render_project(workspace, project_id)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                meta = load_meta(workspace, project_id) or {}
+                scene_id = data.get("scene", meta.get("scene"))
+                version_id = data.get("version", meta.get("version"))
+                if (
+                    not isinstance(scene_id, str)
+                    or not _PROJECT_ID_RE.fullmatch(scene_id)
+                    or not isinstance(version_id, str)
+                    or not _PROJECT_ID_RE.fullmatch(version_id)
+                ):
+                    return self._json(400, {"error": "scene and version are required"})
+                direction = data.get("direction")
+                if direction is not None and not isinstance(direction, str):
+                    return self._json(400, {"error": "direction must be a string or None"})
+                predecessor_id = data.get("predecessor_id")
+                predecessor_digest = data.get("predecessor_digest")
+                predecessor_checkpoint = data.get("predecessor_checkpoint")
+                predecessor_checkpoint_digest = data.get("predecessor_checkpoint_digest")
+                if backend == "after_effects" and not self._authorize_ae_browser(
+                    project_id,
+                    origin_checked=True,
+                ):
+                    return
+                try:
+                    before = {
+                        item.name
+                        for item in (root / "renders").iterdir()
+                        if item.is_dir() and not item.is_symlink()
+                    } if (root / "renders").is_dir() and not (root / "renders").is_symlink() else set()
+                    if backend == "after_effects":
+                        auth = AEProjectAuth(root, project_id)
+                        snapshot = auth.read_capabilities()
+                        if mode == "final":
+                            if (
+                                not isinstance(predecessor_id, str)
+                                or not isinstance(predecessor_digest, str)
+                                or not isinstance(predecessor_checkpoint, int)
+                                or isinstance(predecessor_checkpoint, bool)
+                            ):
+                                raise PlanConflict(
+                                    "final AE plans require a preview predecessor checkpoint"
+                                )
+                            with _FINAL_PLAN_LOCK:
+                                before = {
+                                    item.name
+                                    for item in (root / "renders").iterdir()
+                                    if item.is_dir() and not item.is_symlink()
+                                } if (root / "renders").is_dir() and not (root / "renders").is_symlink() else set()
+                                plan = prepare_ae_final_successor(
+                                    root,
+                                    project_id=project_id,
+                                    scene_id=scene_id,
+                                    version_id=version_id,
+                                    predecessor_id=predecessor_id,
+                                    predecessor_digest=predecessor_digest,
+                                    predecessor_checkpoint=predecessor_checkpoint,
+                                    predecessor_checkpoint_digest=predecessor_checkpoint_digest,
+                                    direction=direction,
+                                    capabilities=snapshot,
+                                )
+                        else:
+                            plan = prepare_ae_render_plan(
+                                root,
+                                project_id=project_id,
+                                scene_id=scene_id,
+                                version_id=version_id,
+                                mode=mode,
+                                direction=direction,
+                                capabilities=snapshot,
+                                predecessor_id=predecessor_id,
+                                predecessor_digest=predecessor_digest,
+                                predecessor_checkpoint=predecessor_checkpoint,
+                                predecessor_checkpoint_digest=predecessor_checkpoint_digest,
+                            )
+                    else:
+                        plan = create_render_plan(
+                            root,
+                            project_id=project_id,
+                            scene_id=scene_id,
+                            version_id=version_id,
+                            backend=backend,
+                            mode=mode,
+                            direction=direction,
+                            predecessor_id=predecessor_id,
+                            predecessor_digest=predecessor_digest,
+                            predecessor_checkpoint=predecessor_checkpoint,
+                            predecessor_checkpoint_digest=predecessor_checkpoint_digest,
+                        )
+                    state = load_render_plan_state(root, plan.id)
+                    return self._json(
+                        200 if plan.id in before else 201,
+                        {
+                            "plan": plan.model_dump(mode="json"),
+                            "state": state.model_dump(mode="json"),
+                        },
+                    )
+                except (PlanConflict, CoordinatorConflict) as exc:
+                    return self._json(409, {"error": str(exc)})
+                except (TypeError, ValueError) as exc:
+                    return self._json(400, {"error": str(exc)})
+
+
             m = re.fullmatch(r"/api/render-plans/([^/]+)/approve", u.path)
             if m:
                 if not self._same_origin():
@@ -1148,7 +1467,17 @@ def make_server(
                     if not state.execution_id:
                         raise PlanConflict("approved render plan has no execution id")
                     if plan.backend == "after_effects":
-                        session = AECoordinator.cached(root, plan.id).start(state.execution_id)
+                        if plan.mode == "final":
+                            if not plan.predecessor_id:
+                                raise PlanConflict("final AE plan has no preview predecessor")
+                            session = AECoordinator.cached(
+                                root,
+                                plan.predecessor_id,
+                            ).state()
+                        else:
+                            session = AECoordinator.cached(root, plan.id).start(
+                                state.execution_id
+                            )
                         return self._json(
                             202,
                             {
@@ -1209,10 +1538,10 @@ def make_server(
                     return self._json(400, {"error": "plan id is invalid"})
                 if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
                     return self._json(400, {"error": "revision is invalid"})
-                if any(
-                    key not in {"project", "plan", "revision", "checkpoint"}
-                    for key in data
-                ):
+                allowed_keys = {"project", "plan", "revision", "checkpoint"}
+                if action == "finalize":
+                    allowed_keys.update({"final_plan_id", "execution_id"})
+                if any(key not in allowed_keys for key in data):
                     return self._json(400, {"error": "plan or control payload is invalid"})
                 if not self._authorize_ae_browser(
                     project_id,
@@ -1263,6 +1592,7 @@ def make_server(
                             event = "begin_manual"
                         else:
                             event = "finalize"
+                        selected = None
                         if action == "finalize" and data.get("checkpoint") is not None:
                             selected = data["checkpoint"]
                             if (
@@ -1271,9 +1601,32 @@ def make_server(
                                 or selected < 0
                             ):
                                 return self._json(400, {"error": "checkpoint is invalid"})
-                            current = coordinator.select_checkpoint(selected, revision)
-                            revision = current.revision
-                        current = coordinator.transition(event, revision)
+                        if action == "finalize":
+                            final_plan_id = data.get("final_plan_id")
+                            execution_id = data.get("execution_id")
+                            if (
+                                not isinstance(final_plan_id, str)
+                                or not _RENDER_PLAN_ID_RE.fullmatch(final_plan_id)
+                            ):
+                                return self._json(400, {"error": "final plan id is invalid"})
+                            if (
+                                not isinstance(execution_id, str)
+                                or not re.fullmatch(r"ex-[0-9a-f]{32}", execution_id)
+                            ):
+                                return self._json(400, {"error": "execution id is invalid"})
+                            transition_data = {
+                                "final_plan_id": final_plan_id,
+                                "execution_id": execution_id,
+                            }
+                            if selected is not None:
+                                transition_data["selected_checkpoint"] = selected
+                            current = coordinator.transition(
+                                event,
+                                revision,
+                                **transition_data,
+                            )
+                        else:
+                            current = coordinator.transition(event, revision)
                     render_state = load_render_plan_state(root, plan_id)
                     response = {
                         "plan": plan.model_dump(mode="json"),
@@ -1569,6 +1922,50 @@ def make_server(
                 resolved_version = version
                 client = agent_llm()
 
+                def _latest_ae_preview(capability_hash: str, direction: str | None):
+                    renders = root / "renders"
+                    candidates = []
+                    if not renders.is_dir() or renders.is_symlink():
+                        return None
+                    for plan_dir in renders.iterdir():
+                        if (
+                            plan_dir.is_symlink()
+                            or not plan_dir.is_dir()
+                            or not _RENDER_PLAN_ID_RE.fullmatch(plan_dir.name)
+                        ):
+                            continue
+                        try:
+                            candidate = load_render_plan(root, plan_dir.name)
+                            if (
+                                candidate.backend != "after_effects"
+                                or candidate.mode != "preview"
+                                or candidate.scene_id != resolved_scene_id
+                                or candidate.version_id != resolved_version
+                                or candidate.capability_hash != capability_hash
+                                or (direction is not None and candidate.direction != direction)
+                            ):
+                                continue
+                            session = AECoordinator.cached(root, candidate.id).state()
+                        except (PlanConflict, CoordinatorConflict):
+                            continue
+                        checkpoint = next(
+                            (
+                                item
+                                for item in session.checkpoints
+                                if item.index == session.selected_checkpoint
+                            ),
+                            None,
+                        )
+                        if (
+                            session.baseline_complete
+                            and checkpoint is not None
+                            and checkpoint.passed
+                            and checkpoint.lineage_valid
+                            and checkpoint.context_digest is not None
+                        ):
+                            candidates.append((session.updated_at, candidate, session))
+                    return max(candidates, key=lambda item: item[0]) if candidates else None
+
                 def prepare_agent_render(mode: str, backend: str, direction: str | None):
                     if (
                         backend == "after_effects"
@@ -1582,6 +1979,24 @@ def make_server(
                         if snapshot is None:
                             raise PlanConflict(
                                 "active published AE capabilities are required"
+                            )
+                        if mode == "final":
+                            preview = _latest_ae_preview(snapshot.capability_hash, direction)
+                            if preview is None:
+                                raise PlanConflict(
+                                    "final AE plans require a selected preview checkpoint"
+                                )
+                            _, predecessor, session = preview
+                            return prepare_ae_final_successor(
+                                root,
+                                project_id=resolved_project_id,
+                                scene_id=resolved_scene_id,
+                                version_id=resolved_version,
+                                predecessor_id=predecessor.id,
+                                predecessor_digest=predecessor.digest,
+                                predecessor_checkpoint=session.selected_checkpoint,
+                                direction=direction,
+                                capabilities=snapshot,
                             )
                         return prepare_ae_render_plan(
                             root,

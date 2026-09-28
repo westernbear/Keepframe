@@ -1030,19 +1030,35 @@ class AEWorkflowService:
 
     @staticmethod
     def _dependency_manifest(plan: Any) -> dict[str, Any]:
+        capability_manifest = dict(plan.capability_manifest or {})
+        catalog = capability_manifest.get("capabilities", {})
+        nonportable: list[dict[str, str]] = []
+        if isinstance(catalog, Mapping):
+            for kind in ("fonts", "effects"):
+                records = catalog.get(kind, [])
+                if not isinstance(records, list):
+                    continue
+                for record in records:
+                    if not isinstance(record, Mapping) or any(
+                        record.get(field)
+                        for field in ("version_or_hash", "version", "sha256")
+                    ):
+                        continue
+                    identity = record.get("match_name", record.get("family"))
+                    if isinstance(identity, str):
+                        nonportable.append({"kind": kind[:-1], "identity": identity})
+            plugins = catalog.get("plugin_versions", {})
+            if isinstance(plugins, Mapping):
+                for identity, version in plugins.items():
+                    if isinstance(identity, str) and not version:
+                        nonportable.append({"kind": "plugin", "identity": identity})
         return {
-            "assets": [
-                {
-                    "id": asset.id,
-                    "sha256": asset.sha256,
-                    "length": asset.length,
-                    "media_kind": asset.media_kind,
-                    "role": asset.role,
-                }
-                for asset in plan.assets
-            ],
-            "capability_hash": plan.capability_hash,
+            "capability_manifest": capability_manifest,
             "substitutions": list(plan.substitutions),
+            "missing_nonportable_dependencies": {
+                "missing": [],
+                "nonportable": nonportable,
+            },
         }
 
     @classmethod
@@ -2282,19 +2298,291 @@ class AEWorkflowService:
             expected_checkpoint=self._checkpoint_index(state),
         )
 
-    def _advance_finalizing(self, coordinator: AECoordinator, state: Any, history: Sequence[Any]) -> Any:
-        selected = state.selected_checkpoint
-        if selected is None:
+    @classmethod
+    def _final_command(
+        cls,
+        history: Sequence[Any],
+        kind: str,
+        stage: str,
+        checkpoint: int,
+        finalization_key: str,
+        *,
+        device_id: str | None = None,
+        successful: bool | None = None,
+    ) -> Any | None:
+        candidates = []
+        for command in history:
+            if command.kind != kind:
+                continue
+            if successful is not None and cls._successful(command) != successful:
+                continue
+            workflow = cls._workflow(command)
+            if (
+                workflow.get("stage") != stage
+                or workflow.get("checkpoint_index", workflow.get("selected_checkpoint")) != checkpoint
+                or workflow.get("finalization_key") != finalization_key
+            ):
+                continue
+            if device_id is not None and workflow.get("device_id") != device_id:
+                continue
+            candidates.append(command)
+        return max(candidates, key=lambda command: command.sequence, default=None)
+
+    @staticmethod
+    def _final_asset_records(plan: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        unique: dict[str, Any] = {}
+        for asset in plan.assets:
+            prior = unique.get(asset.id)
+            if prior is not None:
+                if (
+                    prior.sha256 != asset.sha256
+                    or prior.length != asset.length
+                    or prior.media_kind != asset.media_kind
+                ):
+                    raise AEWorkflowError("duplicate package asset metadata conflicts")
+                continue
+            unique[asset.id] = asset
+        assets: list[dict[str, Any]] = []
+        package_media: list[dict[str, Any]] = []
+        for asset in unique.values():
+            assets.append(
+                {
+                    "asset_id": asset.id,
+                    "id": asset.id,
+                    "sha256": asset.sha256,
+                    "length": asset.length,
+                    "media_kind": asset.media_kind,
+                    "role": asset.role,
+                    "content_filename": asset.id,
+                }
+            )
+            package_media.append(
+                {
+                    "asset_id": asset.id,
+                    "filename": asset.id,
+                    "sha256": asset.sha256,
+                    "length": asset.length,
+                    "media_kind": asset.media_kind,
+                }
+            )
+        return assets, package_media
+
+    def _advance_finalizing(
+        self,
+        coordinator: AECoordinator,
+        state: Any,
+        history: Sequence[Any],
+    ) -> Any:
+        """Reverify the selected checkpoint, then run exactly one final stage."""
+        try:
+            final_plan, checkpoint, _context_digest, finalization_key = (
+                coordinator.validate_finalization()
+            )
+        except CoordinatorConflict:
             self._pause(coordinator, "verification_failed")
             return None
-        if not self._completed(history, "render_final"):
-            reservation = coordinator.reserve_artifact("mp4", _MAX_MP4_BYTES).id
-            payload = {
+        selected = checkpoint.index
+        checkpoint_artifact = self._checkpoint_artifact(
+            coordinator,
+            state,
+            selected,
+        )
+        if checkpoint_artifact is None:
+            self._pause(coordinator, "verification_failed")
+            return None
+        scene, _mapping, manifest, _approved = self._authoritative(coordinator)
+        device_id = getattr(state, "device_id", None)
+        if not isinstance(device_id, str):
+            self._pause(coordinator, "connector_failed")
+            return None
+
+        reopen = self._final_command(
+            history,
+            "open_project",
+            "final_reopen",
+            selected,
+            finalization_key,
+            device_id=device_id,
+            successful=True,
+        )
+        if reopen is not None and getattr(state, "open_checkpoint", None) != selected:
+            reopen = None
+        if reopen is None:
+            previous = self._final_command(
+                history,
+                "open_project",
+                "final_reopen",
+                selected,
+                finalization_key,
+                device_id=device_id,
+                successful=False,
+            )
+            if previous is not None:
+                payload = dict(previous.payload)
+            else:
+                _scene, mapping, _manifest, _approved = self._authoritative(coordinator)
+                payload = self._composition_payload(mapping)
+                payload["checkpoint_index"] = selected
+                payload["checkpoint_artifact"] = checkpoint_artifact
+            payload["checkpoint_index"] = selected
+            payload["final_plan_digest"] = final_plan.digest
+            payload["finalization_key"] = finalization_key
+            payload["workflow"] = {
+                "stage": "final_reopen",
                 "checkpoint_index": selected,
-                "artifacts": [
-                    self._artifact_record(reservation, "mp4", "final.mp4", "renders")
+                "finalization_key": finalization_key,
+                "device_id": device_id,
+            }
+            return self._enqueue(
+                coordinator,
+                state,
+                "open_project",
+                payload,
+                expected_checkpoint=selected,
+            )
+
+        layer_sources = self._inventory_from_checkpoint(checkpoint)
+        layer_native_ids = self._native_ids_from_checkpoint(checkpoint)
+        if not layer_sources or set(layer_sources) != set(layer_native_ids):
+            self._pause(coordinator, "verification_failed")
+            return None
+        chunks = self._bound_observation_chunks(
+            self._observation_chunks(scene),
+            layer_sources=layer_sources,
+            capability_manifest=manifest,
+        )
+        inspections = self._inspection_commands(
+            history,
+            "final_inspect",
+            after_sequence=reopen.sequence,
+        )
+        if len(inspections) < len(chunks):
+            index = len(inspections)
+            if index:
+                try:
+                    prior_rows = self._inspection_rows(
+                        history,
+                        "final_inspect",
+                        after_sequence=reopen.sequence,
+                    )
+                    self._validate_inspection_rows(
+                        prior_rows,
+                        expected_sources=layer_sources,
+                        expected_native_ids=layer_native_ids,
+                    )
+                except Exception:
+                    self._pause(coordinator, "verification_failed")
+                    return None
+            payload = {
+                "frame_count": int(scene.frames),
+                "fps": float(scene.fps),
+                "capability_hash": final_plan.capability_hash,
+                "requested": [
+                    {"source_element_id": source_id, "frame": frame}
+                    for source_id, frame in chunks[index]
                 ],
-                "workflow": {"stage": "final_render", "checkpoint_index": selected},
+                "layer_sources": layer_sources,
+                "layer_native_ids": layer_native_ids,
+                "checkpoint_index": selected,
+                "checkpoint_artifact": checkpoint_artifact,
+                "final_plan_digest": final_plan.digest,
+                "finalization_key": finalization_key,
+                "workflow": {
+                    "stage": "final_inspect",
+                    "chunk_index": index,
+                    "checkpoint_index": selected,
+                    "finalization_key": finalization_key,
+                },
+            }
+            return self._enqueue(
+                coordinator,
+                state,
+                "inspect_layers",
+                payload,
+                expected_checkpoint=selected,
+            )
+        rows = self._inspection_rows(
+            history,
+            "final_inspect",
+            after_sequence=reopen.sequence,
+        )
+        try:
+            authoritative, native_ids = self._validate_inspection_rows(
+                rows,
+                expected_sources=layer_sources,
+                expected_native_ids=layer_native_ids,
+            )
+            report = verify_inspection(
+                scene,
+                rows,
+                authoritative_instance_sources=authoritative,
+                authoritative_instance_native_ids=native_ids,
+            )
+            if not report.passed:
+                self._pause(coordinator, "verification_failed")
+                return None
+        except Exception:
+            self._pause(coordinator, "verification_failed")
+            return None
+
+        render = self._final_command(
+            history,
+            "render_final",
+            "final_render",
+            selected,
+            finalization_key,
+            successful=True,
+        )
+        if render is None:
+            previous = self._final_command(
+                history,
+                "render_final",
+                "final_render",
+                selected,
+                finalization_key,
+                successful=False,
+            )
+            if previous is not None:
+                payload = dict(previous.payload)
+            else:
+                reservation = coordinator.reserve_artifact("mp4", _MAX_MP4_BYTES)
+                width, height = (int(scene.size[0]), int(scene.size[1]))
+                frame_count = int(scene.frames)
+                payload = {
+                    "checkpoint_index": selected,
+                    "frame_count": frame_count,
+                    "fps": float(scene.fps),
+                    "width": width,
+                    "height": height,
+                    "final_plan_digest": final_plan.digest,
+                    "finalization_key": finalization_key,
+                    "checkpoint_artifact": checkpoint_artifact,
+                    "sequence": {
+                        "directory": "renders",
+                        "pattern": "final-%06d.png",
+                        "frame_count": frame_count,
+                        "first_frame": 0,
+                        "last_frame": max(0, frame_count - 1),
+                        "width": width,
+                        "height": height,
+                        "fps": float(scene.fps),
+                    },
+                    "artifacts": [
+                        self._artifact_record(
+                            reservation.id,
+                            "mp4",
+                            "final.mp4",
+                            "renders",
+                        )
+                    ],
+                }
+            payload["checkpoint_index"] = selected
+            payload["final_plan_digest"] = final_plan.digest
+            payload["finalization_key"] = finalization_key
+            payload["workflow"] = {
+                "stage": "final_render",
+                "checkpoint_index": selected,
+                "finalization_key": finalization_key,
             }
             return self._enqueue(
                 coordinator,
@@ -2303,25 +2591,88 @@ class AEWorkflowService:
                 payload,
                 expected_checkpoint=selected,
             )
-        if not self._completed(history, "package_project"):
-            aep = coordinator.reserve_artifact("aep", _MAX_AEP_BYTES).id
-            package = coordinator.reserve_artifact("zip", _MAX_MP4_BYTES).id
+
+        mp4_id = state.final_mp4_artifact_id
+        if not isinstance(mp4_id, str):
+            result = render.result if isinstance(render.result, Mapping) else {}
+            artifacts = result.get("artifacts")
+            if isinstance(artifacts, list):
+                mp4_id = next(
+                    (
+                        item.get("id", item.get("artifact_id"))
+                        for item in artifacts
+                        if isinstance(item, Mapping) and item.get("kind") == "mp4"
+                    ),
+                    None,
+                )
+        if not isinstance(mp4_id, str):
+            self._pause(coordinator, "upload_failed")
+            return None
+        try:
+            coordinator.artifact_path(mp4_id)
+        except CoordinatorConflict:
+            self._pause(coordinator, "upload_failed")
+            return None
+
+        package = self._final_command(
+            history,
+            "package_project",
+            "final_package",
+            selected,
+            finalization_key,
+            successful=True,
+        )
+        if package is not None:
+            try:
+                coordinator.complete_finalization(state.revision)
+            except CoordinatorConflict:
+                self._pause(coordinator, "package_failed")
+            return None
+        previous = self._final_command(
+            history,
+            "package_project",
+            "final_package",
+            selected,
+            finalization_key,
+            successful=False,
+        )
+        if previous is not None:
+            payload = dict(previous.payload)
+        else:
+            assets, package_media = self._final_asset_records(final_plan)
+            aep = coordinator.reserve_artifact("aep", _MAX_AEP_BYTES)
+            package_zip = coordinator.reserve_artifact("zip", _MAX_MP4_BYTES)
             payload = {
                 "selected_checkpoint": selected,
+                "final_plan_digest": final_plan.digest,
+                "finalization_key": finalization_key,
+                "checkpoint_index": selected,
+                "checkpoint_artifact": checkpoint_artifact,
+                "assets": assets,
+                "package_media": package_media,
+                "dependencies": self._dependency_manifest(final_plan),
                 "artifacts": [
-                    self._artifact_record(aep, "aep", "project.aep", "checkpoints"),
-                    self._artifact_record(package, "zip", "project.zip", "checkpoints"),
+                    self._artifact_record(aep.id, "aep", "project.aep", "package"),
+                    self._artifact_record(package_zip.id, "zip", "project.zip", "checkpoints"),
                 ],
-                "workflow": {"stage": "final_package", "checkpoint_index": selected},
             }
-            return self._enqueue(
-                coordinator,
-                state,
-                "package_project",
-                payload,
-                expected_checkpoint=selected,
-            )
-        return None
+        payload["selected_checkpoint"] = selected
+        payload["final_plan_digest"] = final_plan.digest
+        payload["checkpoint_index"] = selected
+        payload["checkpoint_artifact"] = checkpoint_artifact
+        payload["finalization_key"] = finalization_key
+        payload["workflow"] = {
+            "stage": "final_package",
+            "checkpoint_index": selected,
+            "finalization_key": finalization_key,
+        }
+        return self._enqueue(
+            coordinator,
+            state,
+            "package_project",
+            payload,
+            expected_checkpoint=selected,
+        )
 
 
 __all__ = ["AEWorkflowError", "AEWorkflowService"]

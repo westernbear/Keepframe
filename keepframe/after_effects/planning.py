@@ -322,17 +322,52 @@ def _validate_predecessor(
     *,
     predecessor_id: str | None,
     predecessor_digest: str | None,
+    predecessor_checkpoint: int | None,
+    predecessor_checkpoint_digest: str | None,
     project_id: str,
     scene_id: str,
     version_id: str,
-) -> None:
+    mode: RenderMode,
+) -> RenderPlan | None:
     if (predecessor_id is None) != (predecessor_digest is None):
         raise PlanConflict("predecessor id and digest must be supplied together")
+    checkpoint_bound = (
+        predecessor_checkpoint is not None
+        or predecessor_checkpoint_digest is not None
+    )
+    if checkpoint_bound and (
+        predecessor_checkpoint is None
+        or predecessor_checkpoint_digest is None
+    ):
+        raise PlanConflict("predecessor checkpoint index and digest must be supplied together")
+    if mode == "preview" and checkpoint_bound:
+        raise PlanConflict("preview plans cannot bind a predecessor checkpoint")
+    if mode == "final" and predecessor_id is None:
+        raise PlanConflict("final AE plans require a preview predecessor")
+    if mode == "final" and not checkpoint_bound:
+        raise PlanConflict("final AE plans require a predecessor checkpoint")
     if predecessor_id is None:
-        return
+        return None
     if not isinstance(predecessor_digest, str) or not _SHA256_RE.fullmatch(predecessor_digest):
         raise PlanConflict("predecessor digest is invalid")
-    prior = load_render_plan(root, predecessor_id)
+    if (
+        predecessor_checkpoint is not None
+        and (
+            isinstance(predecessor_checkpoint, bool)
+            or not isinstance(predecessor_checkpoint, int)
+            or predecessor_checkpoint < 0
+        )
+    ):
+        raise PlanConflict("predecessor checkpoint is invalid")
+    if checkpoint_bound and (
+        not isinstance(predecessor_checkpoint_digest, str)
+        or not _SHA256_RE.fullmatch(predecessor_checkpoint_digest)
+    ):
+        raise PlanConflict("predecessor checkpoint digest is invalid")
+    try:
+        prior = load_render_plan(root, predecessor_id)
+    except PlanConflict as exc:
+        raise PlanConflict("predecessor render plan is unavailable") from exc
     if (
         prior.id != predecessor_id
         or prior.digest != predecessor_digest
@@ -340,9 +375,36 @@ def _validate_predecessor(
         or prior.scene_id != scene_id
         or prior.version_id != version_id
         or prior.backend != "after_effects"
+        or (mode == "final" and prior.mode != "preview")
     ):
-        raise PlanConflict("predecessor does not match the authoritative AE render")
+        raise PlanConflict("predecessor does not match the authoritative AE preview")
+    if mode == "final":
+        from .coordinator import AECoordinator, CoordinatorConflict
 
+        try:
+            session = AECoordinator.cached(root, prior.id).state()
+        except CoordinatorConflict as exc:
+            raise PlanConflict("predecessor coordinator state is unavailable") from exc
+        checkpoint = next(
+            (
+                item
+                for item in session.checkpoints
+                if item.index == predecessor_checkpoint
+            ),
+            None,
+        )
+        if (
+            not session.baseline_complete
+            or session.selected_checkpoint != predecessor_checkpoint
+            or checkpoint is None
+            or not checkpoint.passed
+            or not checkpoint.lineage_valid
+            or checkpoint.context_digest != predecessor_checkpoint_digest
+        ):
+            raise PlanConflict(
+                "predecessor checkpoint is not the selected passing checkpoint"
+            )
+    return prior
 
 def prepare_ae_render_plan(
     root: Path,
@@ -360,6 +422,8 @@ def prepare_ae_render_plan(
     artifact_contract: Mapping[str, Any] | None = None,
     predecessor_id: str | None = None,
     predecessor_digest: str | None = None,
+    predecessor_checkpoint: int | None = None,
+    predecessor_checkpoint_digest: str | None = None,
 ) -> RenderPlan | AERenderDraft:
     """Prepare an immutable AE plan or return a frozen compatibility draft.
 
@@ -393,13 +457,16 @@ def prepare_ae_render_plan(
         raise PlanConflict("scene id does not match the authoritative version")
     if mode == "final":
         _final_gate(meta, version.id)
-    _validate_predecessor(
+    predecessor = _validate_predecessor(
         root,
         predecessor_id=predecessor_id,
         predecessor_digest=predecessor_digest,
+        predecessor_checkpoint=predecessor_checkpoint,
+        predecessor_checkpoint_digest=predecessor_checkpoint_digest,
         project_id=project_id,
         scene_id=scene_id,
         version_id=version.id,
+        mode=mode,
     )
 
     current_issues = analyze_ae_compatibility(scene, capabilities)
@@ -475,6 +542,9 @@ def prepare_ae_render_plan(
         artifact_contract=artifact_contract,
         predecessor_id=predecessor_id,
         predecessor_digest=predecessor_digest,
+        predecessor_checkpoint=predecessor_checkpoint,
+        predecessor_checkpoint_digest=predecessor_checkpoint_digest,
+        _predecessor_plan=predecessor if mode == "final" else None,
     )
 
 

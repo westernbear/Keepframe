@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from keepframe.after_effects.coordinator import AECoordinator
 from keepframe.after_effects.models import (
     AEEffect,
     AECapabilities,
@@ -28,8 +29,14 @@ from keepframe.ir.schema import (
     Track,
 )
 from keepframe.ir.store import init_project, load_scene, save_scene
-from keepframe.render.plan import PlanConflict, load_render_plan, load_render_plan_state
+from keepframe.render.plan import (
+    PlanConflict,
+    approve_render_plan,
+    load_render_plan,
+    load_render_plan_state,
+)
 from keepframe.session.llm import AssistantReply
+from tests.test_ae_coordinator import _committed_checkpoint
 
 
 def _capabilities(*, fonts=("Arial",)) -> AECapabilities:
@@ -409,6 +416,114 @@ def test_successor_requires_and_binds_an_immutable_predecessor(tmp_path):
             capabilities=capabilities,
             predecessor_id=first.id,
             predecessor_digest="0" * 64,
+        )
+
+
+
+def _passing_preview_checkpoint(root: Path, preview) -> str:
+    approval = approve_render_plan(
+        root,
+        preview.id,
+        digest=preview.digest,
+        revision=0,
+    )
+    coordinator = AECoordinator(root, preview.id)
+    session = coordinator.start(approval.execution_id)
+    session = coordinator.transition(
+        "device_ready",
+        revision=session.revision,
+        device_id="device-1",
+    )
+    checkpoint = _committed_checkpoint(
+        coordinator,
+        0,
+        provenance="baseline",
+    )
+    coordinator.transition(
+        "baseline_complete",
+        revision=session.revision,
+        checkpoint=checkpoint.model_dump(mode="json"),
+    )
+    digest = coordinator.state().checkpoints[0].context_digest
+    assert digest
+    return digest
+
+
+def test_final_ae_successor_requires_exact_preview_checkpoint_binding(tmp_path):
+    root = _project(tmp_path)
+    capabilities = _capabilities()
+    preview = prepare_ae_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        mode="preview",
+        capabilities=capabilities,
+    )
+    checkpoint_digest = _passing_preview_checkpoint(root, preview)
+
+    with pytest.raises(PlanConflict, match="predecessor"):
+        prepare_ae_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            mode="final",
+            capabilities=capabilities,
+        )
+    with pytest.raises(PlanConflict, match="checkpoint"):
+        prepare_ae_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            mode="final",
+            capabilities=capabilities,
+            predecessor_id=preview.id,
+            predecessor_digest=preview.digest,
+        )
+
+    final = prepare_ae_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        mode="final",
+        capabilities=capabilities,
+        predecessor_id=preview.id,
+        predecessor_digest=preview.digest,
+        predecessor_checkpoint=0,
+        predecessor_checkpoint_digest=checkpoint_digest,
+    )
+    assert final.predecessor_id == preview.id
+    assert final.predecessor_digest == preview.digest
+    assert final.predecessor_checkpoint == 0
+    assert final.predecessor_checkpoint_digest == checkpoint_digest
+
+
+def test_final_ae_successor_rejects_capability_drift(tmp_path):
+    root = _project(tmp_path)
+    preview = prepare_ae_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        mode="preview",
+        capabilities=_capabilities(),
+    )
+    checkpoint_digest = _passing_preview_checkpoint(root, preview)
+    with pytest.raises(PlanConflict, match="capabil"):
+        prepare_ae_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            mode="final",
+            capabilities=_capabilities(fonts=("Arial", "Helvetica")),
+            predecessor_id=preview.id,
+            predecessor_digest=preview.digest,
+            predecessor_checkpoint=0,
+            predecessor_checkpoint_digest=checkpoint_digest,
         )
 
 

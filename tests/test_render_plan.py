@@ -336,3 +336,39 @@ def test_approval_fails_closed_without_platform_file_lock(tmp_path, monkeypatch)
     monkeypatch.setattr("builtins.__import__", without_lock)
     with pytest.raises(PlanConflict, match="lock"):
         approve_render_plan(root, plan.id, digest=plan.digest, revision=0)
+
+
+def test_preview_plan_forbids_predecessor_checkpoint_binding(tmp_path):
+    root, _ = _project(tmp_path)
+    with pytest.raises(PlanConflict, match="checkpoint"):
+        create_render_plan(
+            root,
+            project_id="p1",
+            scene_id="s1",
+            version_id="v1",
+            backend="after_effects",
+            mode="preview",
+            capability_hash="0" * 64,
+            capability_manifest={},
+            predecessor_checkpoint=0,
+            predecessor_checkpoint_digest="1" * 64,
+        )
+
+
+def test_predecessor_checkpoint_binding_is_digest_material(tmp_path):
+    root, _ = _project(tmp_path, approved=True)
+    plan = create_render_plan(
+        root,
+        project_id="p1",
+        scene_id="s1",
+        version_id="v1",
+        backend="native",
+        mode="final",
+    )
+    changed = plan.model_copy(
+        update={
+            "predecessor_checkpoint": 0,
+            "predecessor_checkpoint_digest": "a" * 64,
+        }
+    )
+    assert _plan_digest(changed) != plan.digest
