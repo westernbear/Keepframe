@@ -3,9 +3,9 @@ from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
-def start(tmp_path):
+def start(tmp_path, **kwargs):
     from keepframe.web.server import make_server
-    srv = make_server(tmp_path, port=0)
+    srv = make_server(tmp_path, port=0, **kwargs)
     import threading
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -109,3 +109,38 @@ def test_logo_is_served(tmp_path):
     assert code == 200
     assert ctype == "image/png"
     assert body[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_mask_correction_decodes_payload_before_dispatch(tmp_path, monkeypatch):
+    import base64
+    import threading
+    from types import SimpleNamespace
+
+    from keepframe.ir.store import init_project
+    from keepframe.ir.synth import make_synthetic_scene
+    from keepframe.web.server import ReviewState
+
+    root = tmp_path / "p1"
+    scene = make_synthetic_scene(root / "scenes" / "s1", seed=3, with_text=False, frames=4)
+    init_project(root, {"file": "source.mp4"}, scene.model_copy(update={"id": "s1"}))
+    dispatched = threading.Event()
+    captured = {}
+
+    def fake_set_region_mask(root_, scene_id, frame, mask, object_id, note):
+        captured["mask"] = Path(mask).read_bytes()
+        dispatched.set()
+        return SimpleNamespace(id="v2")
+
+    monkeypatch.setattr("keepframe.web.server.corrections.set_region_mask", fake_set_region_mask)
+    state = ReviewState(root, "s1")
+    state.run_correction(
+        "mask",
+        {
+            "frame": 0,
+            "object_id": "e1",
+            "mask_png_base64": base64.b64encode(b"mask-bytes").decode("ascii"),
+        },
+    )
+
+    assert dispatched.wait(1)
+    assert captured["mask"] == b"mask-bytes"

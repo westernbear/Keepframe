@@ -1,4 +1,5 @@
 import { T } from "/static/js/i18n.js?v=20260921v";
+import { fetchProjects } from "/static/js/api.js?v=20260921v";
 import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20260926v";
 import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20260921v";
 import { attachPlayback } from "/static/js/review/playback-ui.js?v=20260921v";
@@ -28,6 +29,7 @@ function bindAccordions() {
 }
 
 function showEmptyReview() {
+  setWorkflowStage({ stage: null, projectName: "", projectStatus: "" });
   ws.clearLoading();
   ws.dom.reviewRoot.classList.add("is-empty");
   document.body.classList.add("review-empty");
@@ -48,6 +50,7 @@ async function bootReviewWorkspace() {
     }).catch(() => {});
     ws.pollJob();
   } catch (err) {
+    setWorkflowStage({ stage: null, projectName: "", projectStatus: "" });
     ws.clearLoading();
     ws.setJobBanner(err.message || T("review.loadFailed"), true);
   }

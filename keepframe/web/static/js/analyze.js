@@ -14,6 +14,11 @@ const analyzeStart = params.get("start");
 const analyzeEnd = params.get("end");
 const explicitStart = sessionStorage.getItem("keepframe.analyze-start") === location.search;
 if (explicitStart) sessionStorage.removeItem("keepframe.analyze-start");
+const estimateSnapshot = (() => {
+  try { return JSON.parse(sessionStorage.getItem("keepframe.analyze-estimate") || "null"); }
+  catch { return null; }
+})();
+if (explicitStart) sessionStorage.removeItem("keepframe.analyze-estimate");
 const statusEl = document.querySelector("[data-status]");
 const stageEl = document.querySelector("[data-stage]");
 const etaEl = document.querySelector("[data-eta]");
@@ -95,7 +100,10 @@ function updateJob(job) {
   updateSteps(job.stage);
   stageEl.textContent = stageLabel(job);
   etaEl.textContent = formatEta(job.eta_s);
-  setWorkflowStage({ stage: "analyze" });
+  setWorkflowStage({
+    stage: job.status === "done" ? "review" : "analyze",
+    projectStatus: job.status,
+  });
   if (job.status === "done") {
     updateSteps("report");
     goToReview(job.project_id);
@@ -161,6 +169,12 @@ function analyzePayload() {
   if (analyzeMode) payload.mode = analyzeMode;
   if (analyzeStart != null && analyzeStart !== "") payload.start = Number(analyzeStart);
   if (analyzeEnd != null && analyzeEnd !== "") payload.end = Number(analyzeEnd);
+  if (estimateSnapshot) {
+    payload.scenes = estimateSnapshot.scenes || [];
+    payload.transitions = estimateSnapshot.transitions || [];
+    payload.boundary_digest = estimateSnapshot.boundary_digest || null;
+    payload.acknowledge_short_scenes = Boolean(estimateSnapshot.acknowledge_short_scenes);
+  }
   return payload;
 }
 

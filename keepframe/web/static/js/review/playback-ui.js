@@ -262,7 +262,7 @@ export function attachPlayback(ws) {
 
   ws.previews = createPreviewCache({
     project: ws.projectId,
-    scene: ws.sceneId,
+    scene: () => ws.sceneId,
     version: () => ws.versionId,
   });
   ws.transport = createFrameTransport({

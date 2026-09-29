@@ -132,8 +132,12 @@ function createPreviewCache({
     return typeof version === "function" ? version() : version;
   }
 
+  function current(value) {
+    return typeof value === "function" ? value() : value;
+  }
+
   function src(kind, index) {
-    return reviewFrameUrl(kind, index, project, scene, currentVersion());
+    return reviewFrameUrl(kind, index, current(project), current(scene), currentVersion());
   }
 
   function touch(url) {

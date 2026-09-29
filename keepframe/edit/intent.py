@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from ..ir.schema import Element, Scene
 
-Prop = Literal["text", "color", "texture"]
+Prop = Literal["text", "color", "texture", "model"]
 
 
 class Target(BaseModel):
@@ -42,6 +42,7 @@ _TEXT_KO_BARE = re.compile(r"(?:문구|텍스트|글|카피)(?:를|을)\s+(\S+?)
 _TEXT_SWAP = re.compile(r"[「\"']([^\"'」]+)[」\"']\s*(?:를|을)\s*[「\"']([^\"'」]+)[」\"']\s*(?:으로|로)")
 _TEXT_EN = re.compile(r"(?:change|set|replace)\s+(?:the\s+)?text\s+(?:to|with)\s+[\"']?(.+?)[\"']?\s*$", re.I)
 _IMAGE = re.compile(r"(이미지|사진|텍스처|교체|replace(?:\s+the)?\s+image|swap(?:\s+image)?|texture)", re.I)
+_MODEL = re.compile(r"(3d|3차원|모델|glb)", re.I)
 
 
 def _norm_hex(h: str) -> str:
@@ -99,9 +100,14 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
         if eid is None:
             return Intent(targets=targets, summary=f"색을 {hexes[-1]}로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 
-    if has_attachment and (_IMAGE.search(prompt) or not targets):
+    if _MODEL.search(prompt):
+        eid, cands = _pick(scene.elements, hinted, element)
+        targets.append(Target(element=eid, property="model", value=prompt))
+        if eid is None:
+            return Intent(targets=targets, summary="3D 모델로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
+    elif (has_attachment and not targets) or _IMAGE.search(prompt):
         eid, cands = _pick(_sprites(scene) or scene.elements, hinted, element)
-        targets.append(Target(element=eid, property="texture", value="attachment"))
+        targets.append(Target(element=eid, property="texture", value="attachment" if has_attachment else prompt))
         if eid is None:
             return Intent(targets=targets, summary="첨부 이미지로 텍스처를 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 
@@ -115,8 +121,10 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
             bits.append(f"{who} 문구를 {t.value}(으)로")
         elif t.property == "color":
             bits.append(f"{who} 색을 {t.value}로")
+        elif t.property == "model":
+            bits.append(f"{who} 3D 모델을 생성해")
         else:
-            bits.append(f"{who} 이미지를 첨부로")
+            bits.append(f"{who} 이미지를 {'첨부로' if has_attachment else '생성해'}")
     return Intent(targets=targets, summary=" ".join(bits) + " 바꿉니다. 트랙은 유지합니다.")
 
 

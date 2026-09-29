@@ -1,5 +1,11 @@
-import json, subprocess, sys, pytest
+import json
+import subprocess
+import sys
+import threading
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from keepframe.cli import main
 from keepframe.gates import m1_gate
 
@@ -32,6 +38,227 @@ def test_serve_no_admin_skips_svc(tmp_path):
     assert kwargs["admin"] is False
     assert "admin_svc" not in kwargs
     assert "admin_auth" not in kwargs
+
+
+def test_serve_relay_configuration_is_all_or_nothing(tmp_path, monkeypatch):
+    names = (
+        "KEEPFRAME_AE_RELAY_URL",
+        "KEEPFRAME_AE_RELAY_HOST",
+        "KEEPFRAME_AE_RELAY_PORT",
+        "KEEPFRAME_AE_RELAY_TOKEN",
+    )
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_TOKEN", "secret")
+    with pytest.raises(ValueError, match="all KEEPFRAME_AE_RELAY"):
+        main(["serve", "--workspace", str(tmp_path), "--no-admin"])
+
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_URL", "http://relay.example")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_HOST", "127.0.0.1")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_PORT", "8766")
+    with pytest.raises(ValueError, match="HTTPS"):
+        main(["serve", "--workspace", str(tmp_path), "--no-admin"])
+
+    for invalid_url in (
+        "https://relay.example:abc",
+        "https://relay.example:99999",
+        "https://relay.example:0",
+    ):
+        monkeypatch.setenv("KEEPFRAME_AE_RELAY_URL", invalid_url)
+        with pytest.raises(ValueError, match="URL"):
+            main(["serve", "--workspace", str(tmp_path), "--no-admin"])
+
+
+def test_serve_starts_and_closes_authenticated_relay(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_URL", "https://relay.example")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_HOST", "127.0.0.1")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_PORT", "8766")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_TOKEN", "deployment-secret")
+    private = MagicMock()
+    relay = MagicMock()
+    relay_stopped = threading.Event()
+    relay.serve_forever.side_effect = relay_stopped.wait
+    relay.shutdown.side_effect = relay_stopped.set
+    with (
+        patch("keepframe.web.server.make_server", return_value=private) as make_private,
+        patch("keepframe.after_effects.relay.make_relay_server", return_value=relay) as make_relay,
+    ):
+        assert main(["serve", "--workspace", str(tmp_path), "--no-admin"]) == 0
+
+    assert make_private.call_args.kwargs["ae_relay_url"] == "https://relay.example"
+    make_relay.assert_called_once_with(
+        tmp_path,
+        host="127.0.0.1",
+        port=8766,
+        deployment_token="deployment-secret",
+        workflow=private.ae_workflow,
+    )
+    relay.serve_forever.assert_called_once()
+    relay.shutdown.assert_called_once()
+    relay.server_close.assert_called_once()
+    private.server_close.assert_called_once()
+    private.ae_workflow.close.assert_called_once()
+
+
+def test_serve_closes_both_listeners_when_startup_check_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_URL", "https://relay.example")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_HOST", "127.0.0.1")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_PORT", "8766")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_TOKEN", "deployment-secret")
+    private = MagicMock()
+    relay = MagicMock()
+    relay.serve_forever.side_effect = RuntimeError(
+        "relay failed before private start"
+    )
+    with (
+        patch("keepframe.web.server.make_server", return_value=private),
+        patch(
+            "keepframe.after_effects.relay.make_relay_server",
+            return_value=relay,
+        ),
+        patch(
+            "keepframe.analyze.device.gpu_status",
+            side_effect=RuntimeError("GPU probe failed"),
+        ),
+        pytest.raises(RuntimeError, match="GPU probe failed"),
+    ):
+        main(["serve", "--workspace", str(tmp_path), "--no-admin"])
+
+    private.server_close.assert_called_once()
+    private.shutdown.assert_not_called()
+    relay.shutdown.assert_called_once()
+    relay.server_close.assert_called_once()
+    assert not any(
+        thread.name == "keepframe-ae-relay" and thread.is_alive()
+        for thread in threading.enumerate()
+    )
+
+
+def test_serve_propagates_relay_thread_failure_and_stops_private_listener(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_URL", "https://relay.example")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_HOST", "127.0.0.1")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_PORT", "8766")
+    monkeypatch.setenv("KEEPFRAME_AE_RELAY_TOKEN", "deployment-secret")
+    private = MagicMock()
+    relay = MagicMock()
+    private_stopped = threading.Event()
+    private.serve_forever.side_effect = lambda: private_stopped.wait(1)
+    private.shutdown.side_effect = private_stopped.set
+    relay.serve_forever.side_effect = RuntimeError("relay failed")
+
+    with (
+        patch("keepframe.web.server.make_server", return_value=private),
+        patch(
+            "keepframe.after_effects.relay.make_relay_server",
+            return_value=relay,
+        ),
+        pytest.raises(RuntimeError, match="relay failed"),
+    ):
+        main(["serve", "--workspace", str(tmp_path), "--no-admin"])
+
+    private.shutdown.assert_called_once()
+    private.server_close.assert_called_once()
+    relay.shutdown.assert_called_once()
+    relay.server_close.assert_called_once()
+
+
+def test_ae_install_dispatches_and_prints_manual_step(tmp_path, capsys):
+    ae_path = tmp_path / "Adobe After Effects 2025"
+    panel_path = ae_path / "Support Files" / "Scripts" / "ScriptUI Panels" / "keepframe_panel.jsx"
+    with (
+        patch(
+            "keepframe.after_effects.installer.install_panel",
+            return_value=panel_path,
+        ) as install,
+        patch(
+            "keepframe.after_effects.installer.manual_instructions",
+            return_value="Enable scripting, then open Window > Keepframe.",
+        ),
+    ):
+        assert main(["ae-install", "--ae-path", str(ae_path)]) == 0
+    install.assert_called_once_with(ae_path)
+    output = capsys.readouterr().out
+    assert str(panel_path) in output
+    assert "Window > Keepframe" in output
+
+
+def test_ae_connect_accepts_explicit_pairing_code():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+                "--code",
+                "p1.pairing-code",
+            ]
+        ) == 0
+    prompt.assert_not_called()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code="p1.pairing-code",
+        project=None,
+    )
+    help_result = run("ae-connect", "--help")
+    assert help_result.returncode == 0
+    assert "--code" in help_result.stdout
+
+
+def test_ae_connect_prompts_when_pairing_code_is_omitted():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass", return_value="p1.pairing-code") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+            ]
+        ) == 0
+    prompt.assert_called_once()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code="p1.pairing-code",
+        project=None,
+    )
+
+
+def test_ae_connect_resumes_a_project_without_prompting():
+    with (
+        patch(
+            "keepframe.after_effects.connector.run_connector",
+            return_value=0,
+        ) as connect,
+        patch("getpass.getpass") as prompt,
+    ):
+        assert main(
+            [
+                "ae-connect",
+                "--url",
+                "https://relay.example",
+                "--project",
+                "p1",
+            ]
+        ) == 0
+    prompt.assert_not_called()
+    connect.assert_called_once_with(
+        "https://relay.example",
+        code=None,
+        project="p1",
+    )
 
 
 def test_synth_compose_verify_cli(tmp_scene_dir):

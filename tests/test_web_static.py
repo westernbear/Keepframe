@@ -72,6 +72,13 @@ def test_ingest_sends_selected_range_to_analyze():
     assert "payload.end" in analyze
 
 
+def test_ingest_reestimates_edited_boundaries_and_requires_short_scene_ack():
+    ingest = static_src("ingest.html", "js/ingest.js", "js/analyze.js")
+    assert "data-scene-boundary-list" in ingest
+    assert "payload.scenes = scenes" in ingest
+    assert "acknowledge_short_scenes = Boolean(estimateSnapshot.acknowledge_short_scenes)" in ingest
+
+
 def test_ingest_gpu_status_is_not_hardcoded():
     text = static_src("ingest.html", "js/ingest.js", "js/api.js")
     assert "data-gpu" in text

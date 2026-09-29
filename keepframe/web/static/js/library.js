@@ -84,8 +84,10 @@ function appendThumb(thumb, p) {
 }
 
 function renderProject(p, index) {
-  const row = document.createElement("div");
+  const href = hrefForProject(p);
+  const row = document.createElement(href ? "a" : "div");
   row.className = "row";
+  if (href) row.href = href;
   if (index > 0) row.style.marginTop = `${ROW_GAP_PX}px`;
 
   const thumb = document.createElement("div");
@@ -120,12 +122,6 @@ function renderProject(p, index) {
 
   body.append(title, meta, badge);
   row.append(thumb, body);
-
-  const href = hrefForProject(p);
-  if (href) {
-    row.style.cursor = "pointer";
-    row.addEventListener("click", () => { location.href = href; });
-  }
 
   return row;
 }

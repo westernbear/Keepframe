@@ -124,6 +124,72 @@ async function postAgent(body) {
   return api("/api/agent", { method: "POST", body: JSON.stringify(body) });
 }
 
+async function fetchAgentHistory(project, scene, before, limit = 50) {
+  return api(withQuery("/api/agent", { project, scene, before, limit }));
+}
+
+async function fetchRenderPlans(project, scene, version) {
+  return api(withQuery("/api/render-plans", { project, scene, version }));
+}
+
+async function fetchRenderState(project, plan) {
+  return api(withQuery("/api/render-state", { project, plan }));
+}
+
+async function fetchAeStatus(project) {
+  return api(withQuery("/api/ae/status", { project }));
+}
+
+async function postAePairing(project, capabilityRequest = {}) {
+  return api("/api/ae/pairings", {
+    method: "POST",
+    body: JSON.stringify({
+      project,
+      capability_request: capabilityRequest,
+    }),
+  });
+}
+
+async function postRenderPlan(body) {
+  return api("/api/render-plans", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+async function approveRenderPlan(planId, body) {
+  return api(`/api/render-plans/${encodeURIComponent(planId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+async function postAeControl(sessionId, action, body) {
+  return api(
+    `/api/ae/sessions/${encodeURIComponent(sessionId)}/${encodeURIComponent(action)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+function aeArtifactUrl(artifactId, project, plan) {
+  return withQuery(`/api/ae/artifacts/${encodeURIComponent(artifactId)}`, {
+    project,
+    plan,
+  });
+}
+function nativeArtifactUrl(planId, kind, project) {
+  return withQuery(
+    `/api/native/artifacts/${encodeURIComponent(planId)}/${encodeURIComponent(kind)}`,
+    { project },
+  );
+}
+function lottieArtifactUrl(planId, project) {
+  return withQuery(`/api/lottie/artifacts/${encodeURIComponent(planId)}/animation`, { project });
+}
+
 async function postCorrect(project, scene, op, args) {
   return api("/api/correct", {
     method: "POST",
@@ -159,7 +225,18 @@ export {
   postKeep,
   postEdit,
   postAgent,
+  fetchAgentHistory,
   postCorrect,
+  fetchRenderPlans,
+  fetchRenderState,
+  fetchAeStatus,
+  postAePairing,
+  postRenderPlan,
+  approveRenderPlan,
+  postAeControl,
+  aeArtifactUrl,
+  nativeArtifactUrl,
+  lottieArtifactUrl,
   reviewFrameUrl,
   reviewAssetUrl,
   DEFAULT_FILMSTRIP_COUNT,
