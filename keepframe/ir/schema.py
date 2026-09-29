@@ -1,5 +1,7 @@
 from __future__ import annotations
 import json
+import math
+import re
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -42,6 +44,7 @@ class Canonical(BaseModel):
     text: Optional[str] = None
     font: Optional[FontGuess] = None
     color: Optional[str] = None
+    model: Optional[str] = None
 
 
 class FitError(BaseModel):
@@ -99,6 +102,48 @@ class Background(BaseModel):
     confidence: float = 1.0
 
 
+class UIStateRange(BaseModel):
+    frames: tuple[int, int]
+    state: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _ordered_frames(self):
+        if self.frames[0] > self.frames[1]:
+            raise ValueError("UI state frame range must be ordered")
+        return self
+
+
+class UIComponent(BaseModel):
+    id: str
+    kind: Literal["nav", "card", "button", "list", "table", "chart", "generic"]
+    bbox: tuple[float, float, float, float]
+    text: Optional[str] = None
+    props: dict = Field(default_factory=dict)
+    children: list["UIComponent"] = Field(default_factory=list)
+    states: list[UIStateRange] = Field(default_factory=list)
+
+    @field_validator("id")
+    @classmethod
+    def _safe_id(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            raise ValueError("UI component id is invalid")
+        return value
+
+    @field_validator("bbox")
+    @classmethod
+    def _valid_bbox(cls, bbox: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        x0, y0, x1, y1 = bbox
+        if not all(math.isfinite(value) for value in bbox) or x0 > x1 or y0 > y1:
+            raise ValueError("UI bbox must be ordered")
+        return bbox
+
+
+class UIModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    schema_version: str = Field("keepframe.ui/1", alias="schema")
+    components: list[UIComponent] = Field(default_factory=list)
+
+
 class Scene(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     schema_version: str = Field("keepframe.scene/1", alias="schema")
@@ -110,6 +155,7 @@ class Scene(BaseModel):
     elements: list[Element]
     groups: list[Group] = Field(default_factory=list)
     constraints: list[Constraint] = Field(default_factory=list)
+    ui: Optional[UIModel] = None
 
     def element(self, eid: str) -> Element:
         for e in self.elements:
@@ -139,6 +185,7 @@ class Project(BaseModel):
     scenes: list[SceneRef]
     links: list[dict] = Field(default_factory=list)
     versions: list[Version] = Field(default_factory=list)
+    approved_scenes: dict[str, str] = Field(default_factory=dict)
 
 
 def dump(model: BaseModel) -> str:
