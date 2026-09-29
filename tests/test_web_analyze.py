@@ -91,6 +91,7 @@ def test_full_analyze_rejects_token_for_another_project(tmp_path, monkeypatch):
         code, body = _post(srv, "/api/analyze", {
             "project_id": second["id"], "mode": "full", "start": 0, "end": 9,
             "confirm_token": estimate_body["confirm_token"],
+            "boundary_digest": estimate_body["boundary_digest"],
         })
     finally:
         srv.shutdown()
@@ -111,13 +112,14 @@ def test_full_analyze_rejects_range_estimate_token(tmp_path, monkeypatch):
         code, body = _post(srv, "/api/analyze", {
             "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
             "confirm_token": estimate_body["confirm_token"],
+            "boundary_digest": estimate_body["boundary_digest"],
         })
     finally:
         srv.shutdown()
         srv.server_close()
 
     assert code == 400
-    assert body["error"] == "confirm required"
+    assert body["error"] == "boundary digest mismatch"
 
 def test_full_analyze_rejects_token_for_different_frame_window(tmp_path, monkeypatch):
     from keepframe.web import server as web_server
@@ -140,13 +142,14 @@ def test_full_analyze_rejects_token_for_different_frame_window(tmp_path, monkeyp
         code, body = _post(srv, "/api/analyze", {
             "project_id": project["id"], "mode": "full",
             "confirm_token": estimate_body["confirm_token"],
+            "boundary_digest": estimate_body["boundary_digest"],
         })
     finally:
         srv.shutdown()
         srv.server_close()
 
     assert code == 400
-    assert body["error"] == "confirm required"
+    assert body["error"] == "boundary digest mismatch"
 
 
 def test_full_analyze_accepts_matching_estimate_token(tmp_path, monkeypatch):
@@ -160,6 +163,7 @@ def test_full_analyze_accepts_matching_estimate_token(tmp_path, monkeypatch):
         code, body = _post(srv, "/api/analyze", {
             "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
             "confirm_token": estimate_body["confirm_token"],
+            "boundary_digest": estimate_body["boundary_digest"],
         })
     finally:
         srv.shutdown()
@@ -167,6 +171,34 @@ def test_full_analyze_accepts_matching_estimate_token(tmp_path, monkeypatch):
 
     assert code == 202
     assert body["job"]["status"] == "queued"
+
+
+def test_custom_scene_analysis_requires_digest_and_short_scene_ack(tmp_path, monkeypatch):
+    project = _setup_token_test(tmp_path, monkeypatch)
+    scenes = [{"id": "s1", "frames": [0, 3]}, {"id": "s2", "frames": [4, 9]}]
+    srv = start(tmp_path / "ws")
+    try:
+        code, estimate_body = _post(srv, "/api/estimate", {
+            "project_id": project["id"], "mode": "full", "start": 0, "end": 9, "scenes": scenes,
+        })
+        assert code == 200 and estimate_body["warnings"]
+        base = {
+            "project_id": project["id"], "mode": "full", "start": 0, "end": 9,
+            "confirm_token": estimate_body["confirm_token"], "scenes": scenes,
+        }
+        code, body = _post(srv, "/api/analyze", base)
+        assert code == 400 and body["error"] == "boundary digest required"
+        code, body = _post(srv, "/api/analyze", {**base, "boundary_digest": estimate_body["boundary_digest"]})
+        assert code == 400 and body["error"] == "short_scene_ack_required"
+        code, body = _post(srv, "/api/analyze", {
+            **base,
+            "boundary_digest": estimate_body["boundary_digest"],
+            "acknowledge_short_scenes": True,
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert code == 202 and body["job"]["status"] == "queued"
 
 
 def test_analyze_refresh_resumes_running_job_without_token(tmp_path):

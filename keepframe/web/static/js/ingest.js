@@ -4,7 +4,7 @@ import { setWorkflowStage } from "/static/js/workflow.js?v=20260926v";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;
-const state = { project: null, mode: "range", estimateSnapshot: null, fullConfirmed: false, totalFrames: 0, fps: DEFAULT_FPS };
+const state = { project: null, mode: "range", estimateSnapshot: null, fullConfirmed: false, shortAcknowledged: false, totalFrames: 0, fps: DEFAULT_FPS };
 let estimateRequest = 0;
 const qs = (sel) => document.querySelector(sel);
 const dropzone = qs("[data-dropzone]");
@@ -17,6 +17,10 @@ const startBtn = qs("[data-start-btn]");
 const fullConfirm = qs("[data-full-confirm]");
 const confirmCopy = qs("[data-confirm-copy]");
 const confirmBtn = qs("[data-confirm-btn]");
+const boundaryPanel = qs("[data-scene-boundaries]");
+const boundaryList = qs("[data-scene-boundary-list]");
+const shortConfirm = qs("[data-short-confirm]");
+const shortAck = qs("[data-short-ack]");
 
 function showError(msg) {
   errorEl.hidden = !msg;
@@ -38,6 +42,7 @@ function estimatePayload(win) {
 function setMode(mode) {
   state.mode = mode;
   state.fullConfirmed = false;
+  state.shortAcknowledged = false;
   state.estimateSnapshot = null;
   startBtn.disabled = true;
   fullConfirm.hidden = true;
@@ -63,21 +68,71 @@ async function loadFilmstrip(projectId, result = null) {
 
 function updateStartButton(est) {
   const needsConfirm = state.mode === "full" && !state.fullConfirmed;
-  startBtn.disabled = needsConfirm;
+  const needsShortAck = Boolean((est.warnings || []).length) && !state.shortAcknowledged;
+  startBtn.disabled = needsConfirm || needsShortAck;
   fullConfirm.hidden = !needsConfirm;
   if (needsConfirm) confirmCopy.textContent = Tf("ingest.fullConfirm", {
     m: Math.round(est.seconds / SECONDS_PER_MINUTE), n: est.scene_count,
   });
 }
 
-async function refreshEstimate() {
+function renderSceneBoundaries(est) {
+  const scenes = est.scenes || [];
+  const transitions = est.transitions || [];
+  boundaryPanel.hidden = scenes.length < 2;
+  boundaryList.replaceChildren();
+  scenes.forEach((scene, index) => {
+    const row = document.createElement("div");
+    row.className = "scene-boundaries__row";
+    const range = document.createElement("span");
+    range.textContent = `${scene.id} · ${scene.frames[0]}–${scene.frames[1]}`;
+    row.appendChild(range);
+    if (index < scenes.length - 1) {
+      const transition = transitions[index]?.transition || "unknown";
+      const label = document.createElement("label");
+      label.textContent = `${transition} · ${T("ingest.boundaryFrame")} `;
+      const input = document.createElement("input");
+      input.className = "input";
+      input.type = "number";
+      input.min = String(scene.frames[0] + 1);
+      input.max = String(scenes[index + 1].frames[1]);
+      input.value = String(scenes[index + 1].frames[0]);
+      input.dataset.boundaryIndex = String(index);
+      input.setAttribute("aria-label", `${scene.id}–${scenes[index + 1].id} ${T("ingest.boundaryFrame")}`);
+      label.appendChild(input);
+      row.appendChild(label);
+    }
+    boundaryList.appendChild(row);
+  });
+  const hasWarnings = Boolean((est.warnings || []).length);
+  shortConfirm.hidden = !hasWarnings;
+  shortAck.checked = hasWarnings && state.shortAcknowledged;
+}
+
+function editedScenes() {
+  const snapshot = state.estimateSnapshot;
+  if (!snapshot?.scenes?.length) return null;
+  const boundaries = [...boundaryList.querySelectorAll("[data-boundary-index]")].map((input) => Number(input.value));
+  const win = selectedWindow();
+  let first = win.start;
+  return snapshot.scenes.map((scene, index) => {
+    const last = index < boundaries.length ? boundaries[index] - 1 : win.end;
+    const edited = { id: scene.id, frames: [first, last] };
+    first = last + 1;
+    return edited;
+  });
+}
+
+async function refreshEstimate(scenes = null) {
   if (!state.project) return;
   const request = ++estimateRequest;
   const win = selectedWindow();
   const payload = estimatePayload(win);
+  if (scenes) payload.scenes = scenes;
   const est = await fetchEstimate(payload);
   if (request !== estimateRequest) return;
-  state.estimateSnapshot = { ...payload, confirm_token: est.confirm_token };
+  state.estimateSnapshot = { ...payload, ...est };
+  state.estimateSnapshot.acknowledge_short_scenes = state.shortAcknowledged;
   const frames = windowFrameCount(win);
   const isRange = win.mode === "range";
   qs("[data-est-seconds]").textContent = Tf("ingest.aboutMin", { m: Math.round(est.seconds / SECONDS_PER_MINUTE) });
@@ -89,6 +144,7 @@ async function refreshEstimate() {
     frames: isRange ? frames : state.totalFrames,
     n: est.scene_count,
   });
+  renderSceneBoundaries(state.estimateSnapshot);
   updateStartButton(est);
 }
 
@@ -112,6 +168,7 @@ async function showProject(project, filmstripData = null) {
   qs("[data-start]").value = String(range[0]);
   qs("[data-end]").value = String(range[1]);
   state.mode = project.mode || "range";
+  state.shortAcknowledged = false;
   uploadCard.hidden = false;
   editor.hidden = false;
   dropzone.hidden = true;
@@ -155,6 +212,7 @@ function bindWindowControls() {
   document.querySelectorAll("[data-mode]").forEach((btn) => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
   [qs("[data-start]"), qs("[data-end]")].forEach((input) => input.addEventListener("change", () => {
     state.fullConfirmed = false;
+    state.shortAcknowledged = false;
     state.estimateSnapshot = null;
     startBtn.disabled = true;
     refreshEstimate();
@@ -163,7 +221,24 @@ function bindWindowControls() {
     if (!state.estimateSnapshot || state.estimateSnapshot.mode !== "full") return;
     state.fullConfirmed = true;
     fullConfirm.hidden = true;
-    startBtn.disabled = false;
+    updateStartButton(state.estimateSnapshot);
+  });
+  boundaryList.addEventListener("change", async (event) => {
+    if (!event.target.matches("[data-boundary-index]")) return;
+    const scenes = editedScenes();
+    state.fullConfirmed = false;
+    state.shortAcknowledged = false;
+    state.estimateSnapshot = null;
+    startBtn.disabled = true;
+    try { await refreshEstimate(scenes); }
+    catch (err) { showError(err.message || T("ingest.uploadFailed")); }
+  });
+  shortAck.addEventListener("change", () => {
+    state.shortAcknowledged = shortAck.checked;
+    if (state.estimateSnapshot) {
+      state.estimateSnapshot.acknowledge_short_scenes = state.shortAcknowledged;
+      updateStartButton(state.estimateSnapshot);
+    }
   });
 }
 
@@ -187,13 +262,14 @@ async function refreshGpu() {
 function startAnalysis() {
   const win = selectedWindow();
   const snapshot = state.estimateSnapshot;
-  if (!state.project || !snapshot || snapshot.mode !== win.mode || snapshot.start !== win.start || snapshot.end !== win.end || (state.mode === "full" && !state.fullConfirmed)) return;
+  if (!state.project || !snapshot || snapshot.mode !== win.mode || snapshot.start !== win.start || snapshot.end !== win.end || (state.mode === "full" && !state.fullConfirmed) || ((snapshot.warnings || []).length && !state.shortAcknowledged)) return;
   const params = new URLSearchParams({
     job: state.project.id, token: snapshot.confirm_token, mode: snapshot.mode,
     start: String(snapshot.start), end: String(snapshot.end),
   });
   const query = params.toString();
   sessionStorage.setItem("keepframe.analyze-start", `?${query}`);
+  sessionStorage.setItem("keepframe.analyze-estimate", JSON.stringify(snapshot));
   location.href = `/analyze?${query}`;
 }
 

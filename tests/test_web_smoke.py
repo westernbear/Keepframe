@@ -122,6 +122,56 @@ def test_library_routes_all_project_statuses(tmp_path):
         srv.shutdown()
         srv.server_close()
 
+
+@pytest.mark.browser
+def test_workflow_stepper_tracks_page_and_review_failure_state(tmp_path):
+    import threading
+    from playwright.sync_api import sync_playwright
+    from keepframe.web.server import make_server
+
+    srv = make_server(tmp_path, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(args=["--no-sandbox"], chromium_sandbox=False)
+            page = browser.new_page()
+            page.add_init_script("localStorage.removeItem('keepframe.lang')")
+            analyze_posts = []
+            page.route("**/api/analyze", lambda route: (analyze_posts.append(route.request.url), route.fulfill(status=404, content_type="application/json", body=json.dumps({"error": "not found"}))))
+            page.route("**/api/state**", lambda route: route.fulfill(status=404, content_type="application/json", body=json.dumps({"error": "not found"})))
+
+            page.goto(f"{base}/new")
+            steps = page.locator("[data-workflow-step]")
+            assert steps.count() == 3
+            assert [steps.nth(i).get_attribute("data-workflow-step") for i in range(3)] == ["ingest", "analyze", "review"]
+            assert page.locator('[data-workflow-step="ingest"][aria-current="step"]').count() == 1
+            assert page.locator("[data-workflow-step][aria-current=step]").count() == 1
+            assert page.locator('[data-workflow-step][data-complete="true"]').count() == 0
+
+            page.goto(f"{base}/analyze?job=missing-project&token=already-confirmed")
+            page.wait_for_function("() => document.querySelector('[data-status]').hidden === false")
+            assert page.locator('[data-workflow-step="analyze"][aria-current="step"]').count() == 1
+            assert page.locator('[data-workflow-step][data-complete="true"]').count() == 0
+            assert analyze_posts == []
+
+            page.goto(f"{base}/review?project=missing-project&scene=s1")
+            page.wait_for_function("() => !document.getElementById('review-root').classList.contains('is-loading')")
+            assert page.locator("#job-banner").is_visible()
+            assert page.locator('[data-workflow-step][aria-current="step"]').count() == 0
+            assert page.locator('[data-workflow-step][data-complete="true"]').count() == 0
+            assert page.locator('#review-missing a[href="/library"]').count() == 1
+
+            page.goto(f"{base}/review")
+            assert page.locator("#review-root.is-empty").count() == 1
+            assert page.locator('#review-missing a[href="/library"]').is_visible()
+            assert page.locator('[data-workflow-step][aria-current="step"]').count() == 0
+            assert page.locator('[data-workflow-step][data-complete="true"]').count() == 0
+            browser.close()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
 @pytest.mark.browser
 def test_ingest_submits_the_latest_displayed_estimate_snapshot(tmp_path):
     import json

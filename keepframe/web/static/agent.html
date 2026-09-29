@@ -17,6 +17,7 @@
 <div class="header__divider"></div>
 <h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="agent.title">에이전트</h1>
 <span id="agent-scene" class="mono" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
+<select id="agent-scene-select" aria-label="장면 선택" hidden></select>
 </div>
 <nav class="header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
 <a href="/" data-i18n="nav.home">처음</a>
@@ -48,7 +49,9 @@
 <button class="tool" type="button" data-tool="report"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span data-i18n="agent.tool.report">보고서</span></button>
 </div>
 <div class="agent-compose">
+<label class="sr-only" for="agent-input">에이전트에게 보낼 메시지</label>
 <textarea id="agent-input" rows="2" data-i18n-placeholder="agent.placeholder" placeholder="수정이나 검증, 내보내기를 적어 보내세요."></textarea>
+<p class="agent-compose__context">현재 화면과 원본·재구성 preview가 AI에 전달됨</p>
 <div class="agent-compose__row">
 <span class="agent-compose__hint">Ctrl+Enter 전송</span>
 <button class="btn btn--primary" id="agent-send" type="button" data-i18n="agent.send">전송</button>
@@ -60,11 +63,11 @@
 <div class="compare-panes">
 <div class="compare-pane">
 <div class="compare-pane__head"><span data-i18n="agent.orig">원본</span></div>
-<div class="compare-pane__body"><img id="agent-orig" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
+<div class="compare-pane__body"><img id="agent-orig" alt="현재 장면의 원본 preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
 </div>
 <div class="compare-pane">
 <div class="compare-pane__head"><span style="color:var(--ink)" data-i18n="agent.recon">재구성</span></div>
-<div class="compare-pane__body"><img id="agent-recon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
+<div class="compare-pane__body"><img id="agent-recon" alt="현재 장면의 재구성 preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
 </div>
 </div>
 <section class="render-card" id="render-card" aria-labelledby="render-card-title">
@@ -81,7 +84,7 @@
 <div class="render-card__body">
 <div class="render-card__setup">
 <label>모드<select id="render-mode"><option value="preview">미리보기</option><option value="final">최종</option></select></label>
-<label>백엔드<select id="render-backend"><option value="native">Native</option><option value="after_effects">After Effects</option></select></label>
+<label>백엔드<select id="render-backend"><option value="native">Native</option><option value="after_effects">After Effects</option><option value="lottie">Lottie</option></select></label>
 <label class="render-card__direction">AE 방향<input id="render-direction" type="text" maxlength="4096" placeholder="선택 사항"/></label>
 <label>계획<select id="render-plan-selector"><option value="">계획 선택</option></select></label>
 <button class="btn btn--primary" id="render-create" type="button">계획 만들기</button>
@@ -92,7 +95,7 @@
 <div><span>Capability</span><strong id="render-capability" class="mono">—</strong></div>
 <div><span>출력</span><strong id="render-outputs">—</strong></div>
 </div>
-<div id="render-pairing" class="render-card__section render-pairing" hidden>
+<div id="render-pairing" class="render-card__section render-pairing" data-ai-private hidden>
 <h3>Connector pairing</h3>
 <div class="render-card__facts render-card__facts--pairing">
 <div><span>Code</span><strong id="render-pairing-code" class="mono">—</strong></div>

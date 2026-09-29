@@ -1,8 +1,10 @@
 import {
   aeArtifactUrl,
   nativeArtifactUrl,
+  lottieArtifactUrl,
   approveRenderPlan,
   fetchAeStatus,
+  fetchAgentHistory,
   postAePairing,
   fetchRenderPlans,
   fetchRenderState,
@@ -38,7 +40,7 @@ const TOOL_PROMPTS = {
 
 const params = new URLSearchParams(location.search);
 const projectId = params.get("project");
-const sceneId = params.get("scene") || DEFAULT_SCENE_ID;
+let sceneId = params.get("scene") || DEFAULT_SCENE_ID;
 let versionId = params.get("v") || null;
 let state = null;
 let frame = 0;
@@ -69,6 +71,7 @@ const playBtn = document.getElementById("agent-play");
 const playIcon = document.getElementById("agent-play-icon");
 const pauseIcon = document.getElementById("agent-pause-icon");
 const sceneBadge = document.getElementById("agent-scene");
+const sceneSelect = document.getElementById("agent-scene-select");
 const modelEl = document.getElementById("agent-model");
 const renderModeEl = document.getElementById("render-mode");
 const renderBackendEl = document.getElementById("render-backend");
@@ -159,7 +162,8 @@ function renderElements() {
   countEl.textContent = String(els.length);
   elementsList.innerHTML = "";
   els.forEach((el) => {
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "element-row" + (el.id === selectedId ? " element-row--selected" : "");
     row.dataset.id = el.id;
     const tex = el.canonical && el.canonical.texture;
@@ -178,6 +182,16 @@ function applySceneChrome() {
   sceneBadge.textContent = `${sceneId} · ${state.scene.frames}f`;
   frameTotal.textContent = String(state.scene.frames);
   modelEl.textContent = MODEL_LABEL;
+  const scenes = (state.project && state.project.scenes) || [];
+  sceneSelect.replaceChildren();
+  scenes.forEach((scene) => {
+    const option = document.createElement("option");
+    option.value = scene.id;
+    option.textContent = `${scene.id} · ${scene.frames[0]}–${scene.frames[1]}${scene.transition_out ? ` · ${scene.transition_out.transition || "unknown"}` : ""}`;
+    option.selected = scene.id === sceneId;
+    sceneSelect.appendChild(option);
+  });
+  sceneSelect.hidden = scenes.length < 2;
 }
 
 async function loadState() {
@@ -198,7 +212,7 @@ function isPaused(status) {
 
 function shouldPollRender(payload) {
   if (!payload || !payload.plan) return false;
-  if (payload.plan.backend === "native") {
+  if (payload.plan.backend !== "after_effects") {
     return ["queued", "running"].includes(payload.status);
   }
   return !isPaused(payload.status) && !["done", "failed", "awaiting_approval", "approved"].includes(payload.status);
@@ -230,7 +244,7 @@ function paintPlanSelector() {
   renderPlans.forEach((payload) => {
     const plan = payload.plan;
     const option = document.createElement("option");
-    const backend = plan.backend === "after_effects" ? "AE" : "Native";
+    const backend = plan.backend === "after_effects" ? "AE" : (plan.backend === "lottie" ? "Lottie" : "Native");
     option.value = plan.id;
     option.textContent = `${backend} · ${plan.mode} · ${renderPayloadStatus(payload)} · ${shortDigest(plan.id)}`;
     option.selected = plan.id === currentId;
@@ -335,11 +349,11 @@ function paintCheckpoints(session) {
 function paintArtifacts(plan, session, payload) {
   renderArtifactsEl.replaceChildren();
   if (!plan) return;
-  if (plan.backend === "native") {
+  if (plan.backend !== "after_effects") {
     (payload && payload.artifacts || []).forEach((artifact) => {
       if (!artifact || !artifact.kind) return;
       const link = document.createElement("a");
-      link.href = nativeArtifactUrl(plan.id, artifact.kind, projectId);
+      link.href = plan.backend === "lottie" ? lottieArtifactUrl(plan.id, projectId) : nativeArtifactUrl(plan.id, artifact.kind, projectId);
       link.textContent = artifact.label || `${artifact.kind.toUpperCase()} 다운로드`;
       link.rel = "noopener";
       renderArtifactsEl.appendChild(link);
@@ -400,6 +414,7 @@ function updateRenderControls() {
   renderPairBtn.disabled = renderBusy || !projectId || Boolean(aeStatus && !aeStatus.relay_configured);
   renderCreateBtn.disabled = renderBusy
     || finalDraftBlocked
+    || (renderBackendEl.value === "lottie" && renderModeEl.value !== "final")
     || (renderBackendEl.value === "after_effects" && !aeCreateReady)
     || (renderBackendEl.value === "after_effects" && Boolean(renderDraft) && !renderSubstitutionAckEl.checked);
   renderApproveBtn.disabled = renderBusy
@@ -948,14 +963,79 @@ function verifyFromTurn(turn) {
   return (turn.results || []).map((r) => r.payload && r.payload.verify).find(Boolean);
 }
 
-function paintTurn(turn) {
+function paintTurn(turn, actionable = true) {
   paintToolCalls(turn);
   if (turn.reply) appendAgent(turn.reply);
   appendVerify(verifyFromTurn(turn));
   const isPending = turn.status === "pending";
   const isError = turn.status === "error";
-  if (isPending) paintPending(turn);
+  if (isPending && actionable) paintPending(turn);
   if (isError) setBanner(turn.reply || T("agent.failed"), true);
+}
+
+async function loadHistory() {
+  const history = await fetchAgentHistory(projectId, sceneId, null, 50);
+  (history.turns || []).forEach((record) => {
+    appendUser(record.user || "");
+    if (record.actionable) pendingPrompt = record.user || "";
+    paintTurn(record.turn || {}, record.actionable !== false);
+  });
+}
+
+function visibleText() {
+  const values = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode() && values.join(" ").length < 12000) {
+    const parent = walker.currentNode.parentElement;
+    if (!parent || parent.closest("[data-ai-private],script,style,[hidden]") || getComputedStyle(parent).visibility === "hidden") continue;
+    const text = walker.currentNode.textContent.trim();
+    if (text) values.push(text);
+  }
+  return values.join(" ").slice(0, 12000);
+}
+
+function visibleInputs() {
+  return [...document.querySelectorAll("input,textarea,select")]
+    .filter((el) => !el.closest("[data-ai-private]") && !["password", "file"].includes(el.type) && el.offsetParent !== null)
+    .map((el) => ({ id: el.id || null, value: String(el.value || "").slice(0, 1000) }));
+}
+
+async function previewForAI(img, kind) {
+  const response = await fetch(img.currentSrc || img.src, { cache: "no-store" });
+  if (!response.ok) throw new Error(`preview ${kind} unavailable`);
+  const bitmap = await createImageBitmap(await response.blob());
+  const scale = Math.min(1, 768 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
+  const data = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  return { kind, mime: "image/jpeg", data };
+}
+
+async function buildUIContext() {
+  const summary = {
+    path: location.pathname,
+    language: document.documentElement.lang,
+    project: projectId,
+    scene: sceneId,
+    version: versionId,
+    frame,
+    selected_element: selectedId,
+    workflow: state && state.status,
+    inputs: visibleInputs(),
+    render: renderPayload ? { plan: renderPayload.plan, status: renderPayloadStatus(renderPayload) } : null,
+    visible_text: visibleText(),
+  };
+  const images = await Promise.all([previewForAI(orig, "original"), previewForAI(recon, "reconstruction")]);
+  return { schema: "keepframe.ui-context/1", summary, images };
 }
 
 async function send(message) {
@@ -964,10 +1044,12 @@ async function send(message) {
   inputEl.value = "";
   pendingPrompt = text;
   appendUser(text);
-  setBanner(T("agent.thinking"));
+  setBanner("화면 읽는 중");
   sendBtn.disabled = true;
   try {
-    const turn = await postAgent({ project: projectId, scene: sceneId, v: versionId, message: text });
+    const uiContext = await buildUIContext();
+    setBanner(T("agent.thinking"));
+    const turn = await postAgent({ project: projectId, scene: sceneId, v: versionId, message: text, ui_context: uiContext });
     setBanner("");
     paintTurn(turn);
   } catch (err) {
@@ -1007,6 +1089,9 @@ const transport = createFrameTransport({
 });
 
 document.getElementById("agent-back").href = `/review?project=${encodeURIComponent(projectId || "")}&scene=${encodeURIComponent(sceneId)}`;
+sceneSelect.addEventListener("change", () => {
+  location.href = `/agent?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneSelect.value)}`;
+});
 
 sendBtn.addEventListener("click", () => send());
 inputEl.addEventListener("keydown", (e) => {
@@ -1017,6 +1102,7 @@ document.querySelectorAll("#agent-tools .tool").forEach((btn) => {
   btn.addEventListener("click", () => fillToolPrompt(btn.dataset.tool));
 });
 renderBackendEl.addEventListener("change", () => {
+  if (renderBackendEl.value === "lottie") renderModeEl.value = "final";
   paintSubstitutions();
   updateRenderControls();
 });
@@ -1052,6 +1138,7 @@ window.addEventListener("keepframe:lang", () => {
 if (!projectId) showMissingProject();
 else {
   loadState()
+    .then(loadHistory)
     .then(loadRenderCard)
     .catch((err) => {
       setBanner(err.message || T("agent.failed"), true);

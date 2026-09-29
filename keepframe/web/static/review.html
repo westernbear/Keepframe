@@ -18,6 +18,8 @@
 <div class="header__divider"></div>
 <h1 style="margin:0;font-size:var(--fs-headline);font-weight:700" data-i18n="nav.review">검수</h1>
 <span id="scene-badge" style="font-size:var(--fs-body-sm);color:var(--muted);background:var(--surface-1);padding:4px 10px;border-radius:var(--r-sm)">—</span>
+<label class="sr-only" for="scene-select">장면</label><select id="scene-select" aria-label="장면"></select>
+<span id="scene-meta" class="muted" aria-live="polite"></span>
 <select id="version-select" data-i18n-aria="review.version" aria-label="버전" style="margin-left:8px;padding:4px 8px;border:1px solid var(--hairline);border-radius:var(--r-xs);background:var(--surface-1);color:var(--ink)"></select>
 </div>
 <nav class="header__nav maker-nav" data-i18n-aria="nav.primary" aria-label="주요 탐색">
@@ -49,7 +51,7 @@
 <div class="compare-pane">
 <div class="compare-pane__head"><span data-i18n="review.orig">원본</span></div>
 <div class="compare-pane__body" id="orig-pane">
-<img id="orig" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+<img id="orig" alt="현재 장면의 원본 프레임" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
 <svg class="compare-pane__overlay" id="orig-overlay"></svg>
 <div class="draw-layer" id="orig-draw" aria-label="박스 그리기"></div>
 </div>
@@ -64,7 +66,7 @@
 <p id="recon-error-msg" data-i18n="review.reconFailed">재구성 프레임을 불러오지 못했습니다.</p>
 <button class="btn btn--secondary" type="button" id="recon-retry" data-i18n="review.retryFrame">다시 시도</button>
 </div>
-<img id="recon" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
+<img id="recon" alt="현재 장면의 재구성 프레임" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>
 <svg class="compare-pane__overlay" id="recon-overlay"></svg>
 </div>
 </div>

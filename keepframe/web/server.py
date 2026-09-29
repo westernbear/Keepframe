@@ -6,6 +6,7 @@ import json
 import re
 import tempfile
 import threading
+import time
 from collections import OrderedDict
 from email import message_from_bytes
 from email.policy import default
@@ -19,8 +20,10 @@ import numpy as np
 
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.device import gpu_status
+from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
+from keepframe.analyze.video import read_frames
 from keepframe.ir.schema import FontGuess
-from keepframe.ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
 from keepframe.log import configure, get
@@ -30,6 +33,7 @@ from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
 from keepframe.render.native import prepare_native_job
+from keepframe.render.lottie import prepare_lottie_job
 from keepframe.render.plan import (
     PlanConflict,
     approve_render_plan,
@@ -37,7 +41,18 @@ from keepframe.render.plan import (
     load_render_plan,
     load_render_plan_state,
 )
-from keepframe.session import SessionAgent, SessionContext, make_llm
+from keepframe.session import (
+    SessionAgent,
+    SessionContext,
+    UIContextError,
+    append_turn,
+    llm_history,
+    make_llm,
+    scene_lock as agent_scene_lock,
+    session_page,
+    validate_ui_context,
+)
+from keepframe.session.store import MAX_HISTORY_BYTES
 from keepframe.after_effects.workflow import AEWorkflowService
 from keepframe.after_effects.auth import (
     AEAuthError,
@@ -145,6 +160,29 @@ def _native_artifacts(root: Path, plan, job: Job | None) -> list[dict[str, str]]
     return artifacts
 
 
+def _lottie_artifact_path(root: Path, plan, job: Job | None) -> Path:
+    if job is None or job.status != "done" or not isinstance(job.result, dict):
+        raise FileNotFoundError("animation")
+    artifact = root / "renders" / plan.id / "lottie" / "animation.json"
+    reported = job.result.get("animation")
+    try:
+        if not isinstance(reported, str) or Path(reported).resolve(strict=True) != artifact or not artifact.is_file():
+            raise FileNotFoundError("animation")
+    except OSError as exc:
+        raise FileNotFoundError("animation") from exc
+    return artifact
+
+
+def _local_artifacts(root: Path, plan, job: Job | None) -> list[dict[str, str]]:
+    if plan.backend == "lottie":
+        try:
+            _lottie_artifact_path(root, plan, job)
+        except FileNotFoundError:
+            return []
+        return [{"kind": "animation", "label": "Lottie JSON"}]
+    return _native_artifacts(root, plan, job)
+
+
 def _ae_execution_plan(root: Path, plan):
     if plan.mode != "final":
         return plan
@@ -181,7 +219,7 @@ def _render_state_payload(root: Path, plan) -> dict:
         }
     job_id = (
         _native_execution_job_id(plan.id, plan.digest, state.execution_id)
-        if plan.backend == "native" and state.execution_id
+        if state.execution_id
         else None
     )
     job = JOBS.find(job_id) if job_id else None
@@ -190,7 +228,7 @@ def _render_state_payload(root: Path, plan) -> dict:
         "state": state.model_dump(mode="json"),
         "job": job.to_json() if job is not None else None,
         "status": _render_status(state, job),
-        "artifacts": _native_artifacts(root, plan, job),
+        "artifacts": _local_artifacts(root, plan, job),
     }
 
 
@@ -455,6 +493,9 @@ def _slim_report(rep: dict | None, n_frames: int) -> dict | None:
 
 def _slim_project(project, scene_id: str) -> dict:
     return {
+        "scenes": [scene.model_dump(mode="json") for scene in project.scenes],
+        "links": project.links,
+        "approved_scenes": project.approved_scenes,
         "versions": [
             {"id": v.id, "note": v.note, "scene_file": v.scene_file}
             for v in project.versions
@@ -567,6 +608,16 @@ class ReviewState:
         if hit is not None:
             self._preview.move_to_end(key)
             return hit
+        if scene.ui is not None or any(element.kind == "3d" for element in scene.elements):
+            from keepframe.compose.composer import compose
+            from keepframe.render.renderer import render
+
+            with self.lock, tempfile.TemporaryDirectory(prefix="keepframe-preview-") as temp:
+                temp_path = Path(temp)
+                html_path = compose(scene, scene_dir(self.root, self.scene_id), temp_path / "composition.html")
+                result = render(html_path, scene, temp_path / "render", frames=[f], probe=False)
+                data = (result.frames_dir / "f_00000.png").read_bytes()
+            return self._remember(key, data)
         rgb = (composite_scene(scene, scene_dir(self.root, self.scene_id), f, self._tex) * 255).round().clip(0, 255).astype(np.uint8)
         return self._remember(key, _png(rgb))
 
@@ -701,7 +752,6 @@ def make_server(
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
-    agent_states: dict[tuple[str, str], list[dict]] = {}
     allowed_ae_hosts = {"127.0.0.1", "localhost", "::1"}
     configured_host = host.strip("[]").lower()
     if configured_host not in {"0.0.0.0", "::", ""}:
@@ -793,7 +843,7 @@ def make_server(
             try:
                 value = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
-                self._json(400, {"error": "bad json"})
+                self._json(413 if length > 64 * 1024 else 400, {"error": "request body is too large" if length > 64 * 1024 else "bad json"})
                 return None
             if not isinstance(value, dict):
                 self._json(400, {"error": "bad json"})
@@ -1013,6 +1063,34 @@ def make_server(
             pid = q.get("project", [None])[0]
             sid = q.get("scene", ["s1"])[0]
             ver = q.get("v", [None])[0]
+            if u.path == "/api/agent":
+                if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
+                    return self._json(400, {"error": "project is required"})
+                if not isinstance(sid, str) or not _PROJECT_ID_RE.fullmatch(sid):
+                    return self._json(400, {"error": "scene is required"})
+                try:
+                    root = _safe_render_project(workspace, pid)
+                    project = load_project(root)
+                    if ver:
+                        version = next(item for item in project.versions if item.id == ver and item.scene_file.startswith(f"scenes/{sid}/"))
+                        scene = load_scene(root / version.scene_file)
+                    else:
+                        scene, version = current_scene(root, sid)
+                    limit = min(100, max(1, int(q.get("limit", ["50"])[0])))
+                    transcript = session_page(root, sid, before=q.get("before", [None])[0], limit=limit)
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                except (ValueError, IndexError, StopIteration):
+                    return self._json(400, {"error": "invalid agent history request"})
+                return self._json(
+                    200,
+                    {
+                        **transcript,
+                        "project": _slim_project(project, sid),
+                        "scene": _slim_scene(scene),
+                        "version": version.model_dump(mode="json"),
+                    },
+                )
             if u.path == "/api/ae/status":
                 if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
                     return self._json(400, {"error": "project is required"})
@@ -1168,6 +1246,44 @@ def make_server(
                     stream.close()
                 return
 
+            lottie_artifact_match = re.fullmatch(
+                r"/api/lottie/artifacts/([A-Za-z0-9_-]{8,128})/animation",
+                u.path,
+            )
+            if lottie_artifact_match:
+                plan_id = lottie_artifact_match.group(1)
+                if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
+                    return self._json(400, {"error": "project is required"})
+                try:
+                    root = _safe_render_project(workspace, pid)
+                    plan = load_render_plan(root, plan_id)
+                    state = load_render_plan_state(root, plan_id)
+                    if plan.project_id != pid or plan.backend != "lottie" or state.execution_id is None:
+                        raise FileNotFoundError("animation")
+                    job = JOBS.find(_native_execution_job_id(plan.id, plan.digest, state.execution_id))
+                    artifact = _lottie_artifact_path(root, plan, job)
+                    stream = artifact.open("rb")
+                    stream.seek(0, 2)
+                    length = stream.tell()
+                    stream.seek(0)
+                except (FileNotFoundError, OSError, PlanConflict):
+                    return self._json(404, {"error": "not found"})
+                try:
+                    self.send_response(200)
+                    self.send_header("content-type", "application/json")
+                    self.send_header("content-length", str(length))
+                    self.send_header("cache-control", "no-store")
+                    self.send_header("x-content-type-options", "nosniff")
+                    self.send_header("content-disposition", 'attachment; filename="animation.json"')
+                    self.end_headers()
+                    while chunk := stream.read(1024 * 1024):
+                        self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                finally:
+                    stream.close()
+                return
+
             artifact_match = re.fullmatch(
                 r"/api/ae/artifacts/([A-Za-z0-9_-]{8,128})",
                 u.path,
@@ -1265,7 +1381,9 @@ def make_server(
                     sd = scene_dir(state.root, state.scene_id)
                     rep = json.loads((sd / "report.json").read_text()) if (sd / "report.json").is_file() else None
                     meta = load_meta(workspace, pid) or {}
-                    return self._json(200, review_state_payload(load_project(state.root), v, scene, rep, state.job, meta.get("status")))
+                    project = load_project(state.root)
+                    scene_status = "approved" if project.approved_scenes.get(scene.id) == v.id else meta.get("status")
+                    return self._json(200, review_state_payload(project, v, scene, rep, state.job, scene_status))
                 except Exception as e:
                     log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -1449,7 +1567,7 @@ def make_server(
                 if (
                     not isinstance(project_id, str)
                     or not _PROJECT_ID_RE.fullmatch(project_id)
-                    or backend not in {"native", "after_effects"}
+                    or backend not in {"native", "after_effects", "lottie"}
                     or mode not in {"preview", "final"}
                 ):
                     return self._json(400, {"error": "render plan payload is invalid"})
@@ -1693,7 +1811,7 @@ def make_server(
                     job_id = _native_execution_job_id(plan.id, plan.digest, state.execution_id)
                     job = JOBS.find(job_id)
                     if job is None:
-                        spec = prepare_native_job(root, plan.id)
+                        spec = prepare_lottie_job(root, plan.id) if plan.backend == "lottie" else prepare_native_job(root, plan.id)
                         job = JOBS.submit(
                             spec.kind,
                             spec=spec,
@@ -1709,7 +1827,7 @@ def make_server(
                             "state": state.model_dump(mode="json"),
                             "job": job.to_json(),
                             "status": _render_status(state, job),
-                            "artifacts": _native_artifacts(root, plan, job),
+                            "artifacts": _local_artifacts(root, plan, job),
                         },
                     )
                 except AEControllerAuthorizationError as exc:
@@ -1864,7 +1982,44 @@ def make_server(
                         range=[start, end] if mode == "range" else None,
                     )
                     frames = max(1, int(end) - int(start) + 1)
-                    return self._json(200, estimate(mode, frames, info["fps"], project_id=meta["id"], start=start, end=end))
+                    started = time.perf_counter()
+                    try:
+                        if data.get("scenes") is not None:
+                            scenes = validate_scenes(data["scenes"], start, end)
+                            transitions = data.get("transitions") or [
+                                {"from": left["id"], "to": right["id"], "frame": right["frames"][0], "transition": "unknown"}
+                                for left, right in zip(scenes, scenes[1:])
+                            ]
+                            warnings = [
+                                {"code": "short_scene", "scene": scene["id"], "frames": scene["frames"][1] - scene["frames"][0] + 1, "requires_ack": True}
+                                for scene in scenes
+                                if scene["frames"][1] - scene["frames"][0] + 1 < 6
+                            ]
+                        elif mode == "range":
+                            scenes = [{"id": "s1", "frames": [start, end]}]
+                            transitions, warnings = [], []
+                        else:
+                            sampled, _ = read_frames(video, start, end)
+                            scenes, transitions, warnings = scene_layout(sampled, global_start=start)
+                    except ValueError as exc:
+                        return self._json(400, {"error": str(exc)})
+                    digest = make_boundary_digest(scenes)
+                    return self._json(
+                        200,
+                        estimate(
+                            mode,
+                            frames,
+                            info["fps"],
+                            project_id=meta["id"],
+                            start=start,
+                            end=end,
+                            scenes=scenes,
+                            transitions=transitions,
+                            warnings=warnings,
+                            boundary_digest=digest,
+                            local_analysis_seconds=time.perf_counter() - started,
+                        ),
+                    )
                 mode = data.get("mode", "full")
                 frames = int(data.get("frames", 0))
                 fps = float(data.get("fps", 30))
@@ -1929,12 +2084,42 @@ def make_server(
                     return self._json(202, {"job": existing.to_json()})
                 if existing is not None and existing.status in ("done", "error") and not token:
                     return self._json(202, {"job": existing.to_json()})
+                if meta.get("status") != "analyzing" and not token:
+                    return self._json(400, {"error": "confirm required"})
                 root = project_dir(workspace, project_id)
                 video = root / "source.mp4"
                 info = probe_video(video)
                 mode, start, end = resolve_analyze_window(meta, data, info["frames"])
+                try:
+                    requested_scenes = validate_scenes(
+                        data.get("scenes") or [{"id": "s1", "frames": [start, end]}],
+                        start,
+                        end,
+                    )
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                digest = make_boundary_digest(requested_scenes)
+                supplied_digest = data.get("boundary_digest")
+                if supplied_digest is None:
+                    return self._json(400, {"error": "boundary digest required"})
+                if (
+                    not isinstance(supplied_digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", supplied_digest)
+                    or supplied_digest != digest
+                ):
+                    return self._json(400, {"error": "boundary digest mismatch"})
+                short = [scene for scene in requested_scenes if scene["frames"][1] - scene["frames"][0] + 1 < 6]
+                if short and not data.get("acknowledge_short_scenes"):
+                    return self._json(400, {"error": "short_scene_ack_required", "scenes": [scene["id"] for scene in short]})
                 # Refresh / re-entry must not demand a token after the first confirm.
-                if mode == "full" and meta.get("status") != "analyzing" and not consume_token(token, project_id=project_id, mode=mode, start=start, end=end):
+                if meta.get("status") != "analyzing" and not consume_token(
+                    token,
+                    project_id=project_id,
+                    mode=mode,
+                    start=start,
+                    end=end,
+                    boundary_digest=supplied_digest,
+                ):
                     return self._json(400, {"error": "confirm required"})
                 frames = max(1, int(end) - int(start) + 1)
                 est = estimate(mode, frames, info["fps"], project_id=project_id, start=start, end=end)
@@ -1954,13 +2139,16 @@ def make_server(
                         "out_root": str(root),
                         "workspace": str(workspace),
                         "project_id": project_id,
+                        "mode": mode,
+                        "scenes": requested_scenes,
+                        "transitions": data.get("transitions") or [],
                     },
                 )
                 job = JOBS.submit(
                     "analyze",
                     spec=spec,
                     project_id=project_id,
-                    scene_id="s1",
+                    scene_id=requested_scenes[0]["id"],
                     stage="frames",
                     eta_s=est["seconds"],
                 )
@@ -1984,12 +2172,15 @@ def make_server(
                     _scene, version = state.scene(data.get("v"))
                 except Exception as e:
                     return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                project = approve_scene(state.root, scene_id, version.id)
+                fully_approved = all(ref.id in project.approved_scenes for ref in project.scenes)
                 meta = write_meta(
                     workspace,
                     project_id,
-                    status="approved",
+                    status="approved" if fully_approved else "review",
                     version=version.id,
                     scene=scene_id,
+                    approved_scenes=project.approved_scenes,
                 )
                 log.info("approved project=%s scene=%s version=%s", project_id, scene_id, version.id)
                 return self._json(200, {"project": meta, "version": version.id})
@@ -2065,9 +2256,11 @@ def make_server(
             if u.path == "/api/agent":
                 if not self._same_origin():
                     return
-                data = self._bounded_json()
+                data = self._bounded_json(2 * 1024 * 1024)
                 if data is None:
                     return
+                if int(self.headers.get("Content-Length", "0")) > 64 * 1024 and "ui_context" not in data:
+                    return self._json(413, {"error": "request body is too large"})
                 project_id = data.get("project")
                 requested_scene_id = data.get("scene", "s1")
                 raw_message = data.get("message")
@@ -2078,6 +2271,12 @@ def make_server(
                     return self._json(400, {"error": "scene required"})
                 if not message:
                     return self._json(400, {"error": "message required"})
+                if len(message.encode("utf-8")) > MAX_HISTORY_BYTES:
+                    return self._json(413, {"error": "message is too large"})
+                try:
+                    ui_context = validate_ui_context(data.get("ui_context"))
+                except UIContextError as exc:
+                    return self._json(413 if "too large" in str(exc) else 400, {"error": str(exc)})
                 root = project_dir(workspace, project_id)
                 try:
                     workspace_real = workspace.resolve()
@@ -2109,13 +2308,14 @@ def make_server(
                     )
                 try:
                     project = load_project(root)
-                    scene_id = meta.get("scene") or requested_scene_id
+                    scene_id = requested_scene_id
                     if not isinstance(scene_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", scene_id):
                         raise ValueError("scene id is invalid")
                     versions = [v for v in project.versions if v.scene_file.startswith(f"scenes/{scene_id}/")]
                     if not versions:
                         raise ValueError("scene version was not found")
-                    version = meta.get("version") or versions[-1].id
+                    requested_version = data.get("v")
+                    version = requested_version or (meta.get("version") if meta.get("scene") == scene_id else None) or versions[-1].id
                     if not any(v.id == version for v in versions):
                         raise ValueError("version is not authoritative for this scene")
                 except Exception as e:  # noqa: BLE001 - malformed workspace input
@@ -2230,7 +2430,7 @@ def make_server(
                         mode, start, end = resolve_analyze_window(meta, args or {}, info["frames"])
                         spec = JobSpec(
                             kind="analyze",
-                            args={"video": str(video), "start": int(start), "end": int(end),
+                            args={"video": str(video), "start": int(start), "end": int(end), "mode": mode,
                                   "out_root": str(root), "workspace": str(workspace), "project_id": resolved_project_id},
                         )
                         job = JOBS.submit("analyze", spec=spec, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="frames")
@@ -2264,8 +2464,6 @@ def make_server(
                         raise ValueError(f"unknown job kind {kind!r}")
                     return job.to_json()
 
-                key = (resolved_project_id, resolved_scene_id)
-                history = agent_states.setdefault(key, [])
                 ctx = SessionContext(
                     root=root,
                     scene_id=resolved_scene_id,
@@ -2277,7 +2475,15 @@ def make_server(
                     prepare_render=prepare_agent_render,
                 )
                 try:
-                    turn = SessionAgent(client).turn(ctx, message, history)
+                    with agent_scene_lock(root, resolved_scene_id):
+                        history = llm_history(root, resolved_scene_id)
+                        agent = SessionAgent(client)
+                        turn = (
+                            agent.turn(ctx, message, history, ui_context=ui_context)
+                            if ui_context is not None
+                            else agent.turn(ctx, message, history)
+                        )
+                        append_turn(root, resolved_scene_id, message, turn)
                 except AEControllerAuthorizationError:
                     return self._json(
                         401,
@@ -2286,8 +2492,6 @@ def make_server(
                 except Exception as e:
                     log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
                     return self._json(400, {"error": f"{type(e).__name__}: {e}"})
-                history.append({"role": "user", "content": message})
-                history.append({"role": "assistant", "content": turn.reply})
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):

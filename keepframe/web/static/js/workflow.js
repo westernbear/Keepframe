@@ -1,7 +1,7 @@
 import { T } from "/static/js/i18n.js?v=20260921v";
 
 const STEPS = ["ingest", "analyze", "review"];
-const PAGE_STAGE = { "/new": "ingest", "/analyze": "analyze" };
+const PAGE_STAGE = { "/new": "ingest", "/analyze": "analyze", "/review": "review" };
 const container = document.querySelector("[data-workflow-shell]");
 let shellReady = Promise.resolve();
 let current = PAGE_STAGE[location.pathname] || null;
@@ -55,6 +55,7 @@ if (container) {
 }
 
 export function setWorkflowStage({ stage, projectName: name, projectStatus: status } = {}) {
+  if (stage === null) current = null;
   if (stage && STEPS.includes(stage)) current = stage;
   if (name != null) projectName = String(name);
   if (status != null) projectStatus = String(status);
