@@ -37,9 +37,11 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
         options = AnalyzeOptions(**args["options"])
     log.info("analyze start project=%s video=%s range=[%s,%s]", project_id, video, start, end)
     try:
-        analyze(video, start, end, out_root, options)
+        extras = {key: args[key] for key in ("scenes", "transitions", "mode") if key in args}
+        project = analyze(video, start, end, out_root, options, **extras)
         if workspace is not None and project_id:
-            write_meta(workspace, project_id, status="review", job_id=None, error=None)
+            first = project.scenes[0]
+            write_meta(workspace, project_id, status="review", job_id=None, error=None, scene=first.id, version="v1", approved_scenes={})
         log.info("analyze done project=%s", project_id)
         return {"project_id": project_id}
     except Exception as e:
@@ -68,6 +70,10 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
+    if args.get("lottie_plan_id"):
+        from keepframe.render.lottie import export_lottie_plan
+
+        return export_lottie_plan(Path(args["project_root"]), args["lottie_plan_id"], args["execution_id"])
     import shutil
 
     if args.get("stage_manifest"):

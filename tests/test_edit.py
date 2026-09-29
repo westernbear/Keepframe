@@ -155,3 +155,64 @@ def test_edit_reports_actual_attempts_on_failure(tmp_path, monkeypatch):
     )
     assert res.status == "failed"
     assert res.attempts == 1
+
+
+def test_generated_assets_stop_at_two_distinct_candidates(tmp_path, monkeypatch):
+    import cv2
+    import numpy as np
+    from keepframe.assets import AssetResponse
+    from keepframe.verify.verifier import VerifyReport
+
+    root = tmp_path / "proj"
+    sd = root / "scenes" / "s1"
+    scene = make_synthetic_scene(sd, seed=9, with_text=False, frames=6).model_copy(update={"id": "s1"})
+    init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size)}, scene)
+    target = scene.elements[0].id
+    calls = []
+
+    class FakeAssets:
+        def request(self, **kwargs):
+            calls.append(kwargs)
+            image = np.full((12, 12, 4), len(calls) * 40, np.uint8)
+            ok, encoded = cv2.imencode(".png", image)
+            assert ok
+            return AssetResponse("image/png", encoded.tobytes())
+
+    monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out: directory / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_args, **_kwargs: VerifyReport(schema_ok=True, keep_pass_rate=0, layer_probe_complete=True, passed=False))
+
+    preview = edit(root, "s1", "이미지를 새로 생성해", element=target)
+    result = edit(root, "s1", "이미지를 새로 생성해", element=target, confirm=True, intent=preview.intent)
+    assert result.status == "failed" and result.attempts == 2 and len(calls) == 2
+    assert calls[1]["prompt"] != calls[0]["prompt"]
+
+
+def test_generated_3d_asset_is_attached_as_glb(tmp_path, monkeypatch):
+    from keepframe.assets import AssetResponse
+    from keepframe.verify.verifier import VerifyReport
+    from tests.test_three import _triangle_glb
+
+    root = tmp_path / "proj"
+    sd = root / "scenes" / "s1"
+    scene = make_synthetic_scene(sd, seed=10, with_text=False, frames=6).model_copy(update={"id": "s1"})
+    init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size)}, scene)
+    target = scene.elements[0].id
+
+    class FakeAssets:
+        def request(self, **kwargs):
+            assert kwargs["kind"] == "3d"
+            return AssetResponse("model/gltf-binary", _triangle_glb())
+
+    monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out: directory / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_args, **_kwargs: VerifyReport(schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
+
+    preview = edit(root, "s1", "3D 모델로 교체해", element=target)
+    result = edit(root, "s1", "3D 모델로 교체해", element=target, confirm=True, intent=preview.intent)
+    edited, _ = current_scene(root, "s1")
+    assert result.status == "done"
+    assert edited.element(target).kind == "3d"
+    assert edited.element(target).canonical.model.endswith(".glb")

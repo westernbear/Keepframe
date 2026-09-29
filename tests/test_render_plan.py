@@ -8,7 +8,7 @@ from pydantic import ValidationError
 import keepframe.after_effects.operations as operations_module
 import keepframe.render.plan as render_plan_module
 
-from keepframe.ir.store import init_project, save_scene
+from keepframe.ir.store import init_project, init_project_scenes, save_scene
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.render.plan import (
     PlanConflict,
@@ -118,12 +118,22 @@ def test_final_plan_requires_exact_approved_version(tmp_path):
     root, _ = _project(tmp_path)
     with pytest.raises(PlanConflict, match="approved"):
         create_render_plan(root, project_id="p1", scene_id="s1", version_id="v1", backend="native", mode="final")
-
     meta = json.loads((root / "meta.json").read_text(encoding="utf-8"))
     meta.update(status="approved", version="v2")
     (root / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     with pytest.raises(PlanConflict, match="version"):
         create_render_plan(root, project_id="p1", scene_id="s1", version_id="v1", backend="native", mode="final")
+
+
+def test_final_plan_uses_scene_specific_approval(tmp_path):
+    root = tmp_path / "p1"
+    first = make_synthetic_scene(root / "scenes" / "s1", seed=31, with_text=False, frames=6).model_copy(update={"id": "s1"})
+    second = make_synthetic_scene(root / "scenes" / "s2", seed=32, with_text=False, frames=6).model_copy(update={"id": "s2"})
+    init_project_scenes(root, {"file": "source.mp4", "fps": 30, "size": list(first.size)}, [(first, (0, 5), {"transition": "cut"}), (second, (6, 11), None)])
+    (root / "meta.json").write_text(json.dumps({"id": "p1", "status": "approved", "scene": "s2", "version": "v1", "approved_scenes": {"s1": "v1", "s2": "v1"}}), encoding="utf-8")
+
+    plan = create_render_plan(root, project_id="p1", scene_id="s1", version_id="v1", backend="native", mode="final")
+    assert plan.scene_id == "s1"
 
 
 def test_approval_is_consume_once_and_idempotent(tmp_path):

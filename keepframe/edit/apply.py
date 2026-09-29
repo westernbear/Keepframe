@@ -10,6 +10,7 @@ import numpy as np
 
 from ..ir.schema import Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
+from ..assets import validate_glb
 
 _DATA_URL = re.compile(r"^data:image/[^;]+;base64,(.+)$", re.S)
 
@@ -88,6 +89,15 @@ def _next_asset(scene_dir: Path, eid: str, suffix: str) -> Path:
         n += 1
 
 
+def _next_model(scene_dir: Path, eid: str) -> Path:
+    assets = scene_dir / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while (path := assets / f"{eid}.model{n}.glb").exists():
+        n += 1
+    return path
+
+
 def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, str] | None, attachment: str | Path | bytes | None) -> Scene:
     scene_dir = Path(scene_dir)
     out = scene.model_copy(deep=True)
@@ -109,6 +119,14 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.canonical.texture = f"assets/{dest.name}"
             el.canonical.height = float(img.shape[0])
             el.canonical.width = float(img.shape[1])
+        elif t.property == "model":
+            if attachment is None:
+                raise ValueError("3D edit needs a GLB attachment")
+            data = attachment if isinstance(attachment, bytes) else Path(attachment).read_bytes()
+            dest = _next_model(scene_dir, el.id)
+            dest.write_bytes(validate_glb(data))
+            el.kind = "3d"
+            el.canonical.model = f"assets/{dest.name}"
         el.provenance = "manual"
     return out
 

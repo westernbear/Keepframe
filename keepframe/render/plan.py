@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..ir.schema import Scene, load_scene_json
 from ..ir.store import load_project, load_scene
 
-RenderBackend = Literal["native", "after_effects"]
+RenderBackend = Literal["native", "after_effects", "lottie"]
 RenderMode = Literal["preview", "final"]
 RenderPlanStatus = Literal["awaiting_approval", "approved", "running", "paused", "done", "failed"]
 _MAX_AE_FINAL_FRAMES = 100_000
@@ -400,10 +400,12 @@ def _media_kind(path: Path) -> str:
         ".jpeg": "image/jpeg",
         ".webp": "image/webp",
         ".gif": "image/gif",
+        ".svg": "image/svg+xml",
         ".mp4": "video/mp4",
         ".mov": "video/quicktime",
         ".npz": "application/x-npz",
         ".json": "application/json",
+        ".glb": "model/gltf-binary",
     }.get(path.suffix.lower(), "application/octet-stream")
 
 
@@ -524,7 +526,8 @@ def _resolve_version(root: Path, project_id: str, scene_id: str, version_id: str
     if meta is not None:
         if meta.get("id") is not None and meta.get("id") != project_id:
             raise PlanConflict("project id is not authoritative")
-        if meta.get("scene") is not None and meta.get("scene") != scene_id:
+        multi_scene = isinstance(meta.get("approved_scenes"), dict)
+        if not multi_scene and meta.get("scene") is not None and meta.get("scene") != scene_id:
             raise PlanConflict("scene id is not authoritative")
     manifest = root / "project.json"
     if manifest.is_symlink() or not manifest.is_file():
@@ -537,14 +540,14 @@ def _resolve_version(root: Path, project_id: str, scene_id: str, version_id: str
     if not candidates:
         raise PlanConflict("scene version was not found")
     wanted = version_id
-    if wanted is None and meta is not None and isinstance(meta.get("version"), str):
+    if wanted is None and meta is not None and not isinstance(meta.get("approved_scenes"), dict) and isinstance(meta.get("version"), str):
         wanted = meta["version"]
     if wanted is None:
         wanted = candidates[-1].id
     version = next((v for v in candidates if v.id == wanted), None)
     if version is None:
         raise PlanConflict("version does not belong to the requested scene")
-    if meta is not None and meta.get("version") is not None and meta.get("version") != version.id:
+    if meta is not None and not isinstance(meta.get("approved_scenes"), dict) and meta.get("version") is not None and meta.get("version") != version.id:
         raise PlanConflict("version is not the server-approved version")
     try:
         scene_file = _relative_asset(version.scene_file)
@@ -557,10 +560,12 @@ def _resolve_version(root: Path, project_id: str, scene_id: str, version_id: str
     return meta, version, scene_path
 
 
-def _final_gate(meta: dict[str, Any] | None, version_id: str) -> None:
+def _final_gate(meta: dict[str, Any] | None, scene_id: str, version_id: str) -> None:
     if meta is None or meta.get("status") != "approved":
         raise PlanConflict("final render requires an approved project")
-    if meta.get("version") != version_id:
+    approvals = meta.get("approved_scenes")
+    approved = approvals.get(scene_id) if isinstance(approvals, dict) else meta.get("version")
+    if approved != version_id:
         raise PlanConflict("final render requires the approved version")
 
 
@@ -701,10 +706,12 @@ def create_render_plan(
     _predecessor_plan: RenderPlan | None = None,
 ) -> RenderPlan:
     """Resolve authoritative project data, pin assets, and publish one plan."""
-    if backend not in ("native", "after_effects"):
+    if backend not in ("native", "after_effects", "lottie"):
         raise ValueError(f"unknown render backend {backend!r}")
     if mode not in ("preview", "final"):
         raise ValueError(f"unknown render mode {mode!r}")
+    if backend == "lottie" and mode != "final":
+        raise PlanConflict("Lottie is a final-only render backend")
     if direction is not None and not isinstance(direction, str):
         raise TypeError("direction must be a string or None")
     if predecessor_digest is not None and not re.fullmatch(
@@ -769,7 +776,7 @@ def create_render_plan(
     root = root.resolve()
     meta, version, scene_path = _resolve_version(root, project_id, scene_id, version_id)
     if mode == "final":
-        _final_gate(meta, version.id)
+        _final_gate(meta, scene_id, version.id)
     if backend == "after_effects" and mode == "final":
         if _predecessor_plan is None:
             try:
@@ -792,6 +799,10 @@ def create_render_plan(
         raise PlanConflict("scene file is invalid") from exc
     if scene.id != scene_id:
         raise PlanConflict("scene id does not match the authoritative version")
+    if backend == "lottie":
+        from .lottie import preflight_lottie
+
+        preflight_lottie(scene)
     if backend == "after_effects" and mode == "final":
         width, height = scene.size
         if (
@@ -818,6 +829,8 @@ def create_render_plan(
     for element in scene.elements:
         if element.canonical.texture:
             refs.append((element.canonical.texture, "texture"))
+        if element.canonical.model:
+            refs.append((element.canonical.model, "texture"))
         if element.raw:
             refs.append((element.raw, "raw"))
     if scene.background.kind == "image":
@@ -893,7 +906,7 @@ def create_render_plan(
         try:
             artifact = dict(artifact_contract) if artifact_contract is not None else {
                 "mode": mode,
-                "outputs": ["frames", "mp4"] if mode == "preview" else ["mp4", "project"],
+                "outputs": ["animation"] if backend == "lottie" else (["frames", "mp4"] if mode == "preview" else ["mp4", "project"]),
             }
             plan_without_digest = {
                 "id": plan_id,
@@ -1054,7 +1067,7 @@ def validate_render_plan_execution(root: Path, plan_id: str, execution_id: str) 
             locked_plan.scene_id,
             locked_plan.version_id,
         )
-        _final_gate(meta, authoritative_version.id)
+        _final_gate(meta, locked_plan.scene_id, authoritative_version.id)
         scene_sha256, _ = _hash_file(scene_path)
         if scene_sha256 != locked_plan.scene_sha256:
             raise PlanConflict("authoritative scene changed since approval")
@@ -1152,7 +1165,7 @@ def approve_render_plan(root: Path, plan_id: str, *, digest: str, revision: int)
             locked_plan.version_id,
         )
         if locked_plan.mode == "final":
-            _final_gate(meta, authoritative_version.id)
+            _final_gate(meta, locked_plan.scene_id, authoritative_version.id)
         scene_sha256, _ = _hash_file(scene_path)
         if scene_sha256 != locked_plan.scene_sha256:
             raise PlanConflict("authoritative scene changed since plan creation")
