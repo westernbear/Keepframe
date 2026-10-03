@@ -22,6 +22,10 @@ class Target(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self):
+        if self.element is not None and not self.element.strip():
+            self.element = None
+        if self.property == "text" and (not self.value or not self.value.strip()):
+            raise ValueError("text value is required")
         if self.property == "color":
             if not self.value or not _HEX_FULL.fullmatch(self.value):
                 raise ValueError("color value must be #rrggbb")
@@ -89,9 +93,9 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
     for t in targets:
         who = t.element or "?"
         if t.property == "text":
-            bits.append(f"{who} 문구를 {t.value}(으)로")
+            bits.append(f"{who} 문구를 {t.value or ''}(으)로")
         elif t.property == "color":
-            bits.append(f"{who} 색을 {t.value}로")
+            bits.append(f"{who} 색을 {t.value or ''}로")
         elif t.property == "model":
             bits.append(f"{who} 3D 모델을 생성해")
         else:
@@ -130,12 +134,12 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
 
     if _MODEL.search(prompt):
         eid, cands = _pick(scene.elements, hinted, element)
-        targets.append(Target(element=eid, property="model", value=prompt))
+        targets.append(Target(element=eid, property="model", value=prompt[:500]))
         if eid is None:
             return Intent(targets=targets, summary="3D 모델로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
     elif (has_attachment and not targets) or _IMAGE.search(prompt):
         eid, cands = _pick(_sprites(scene) or scene.elements, hinted, element)
-        targets.append(Target(element=eid, property="texture", value="attachment" if has_attachment else prompt))
+        targets.append(Target(element=eid, property="texture", value="attachment" if has_attachment else prompt[:500]))
         if eid is None:
             return Intent(targets=targets, summary="첨부 이미지로 텍스처를 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 

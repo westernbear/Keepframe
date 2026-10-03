@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from keepframe.analyze.constraints import apply_keep_preset, extract_constraints
 from keepframe.edit.agent import edit
-from keepframe.edit.intent import Target
+from keepframe.edit.intent import Intent, Target, describe, interpret
 from keepframe.ir.store import current_scene, init_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.session.agent import SYSTEM, SessionAgent
@@ -112,7 +112,7 @@ def test_target_requires_full_hex(value):
 ])
 def test_target_rejects_out_of_bounds_fields(fields):
     with pytest.raises(ValidationError):
-        Target(element="e1", property="text", **fields)
+        Target(element="e1", property="text", **{"value": "Hi", **fields})
 
 
 @pytest.mark.parametrize("fields", [
@@ -120,16 +120,19 @@ def test_target_rejects_out_of_bounds_fields(fields):
     {"weight": 900, "speed": 10, "delay": 30},
 ])
 def test_target_accepts_bounds(fields):
-    target = Target(element="e1", property="text", **fields)
+    target = Target(element="e1", property="text", **{"value": "Hi", **fields})
     assert all(getattr(target, name) == value for name, value in fields.items())
 
 
-def test_typed_intent_without_element_is_ambiguous(tmp_path):
+@pytest.mark.parametrize("element_fields", [{}, {"element": ""}, {"element": " \t\n"}])
+def test_typed_intent_without_element_is_ambiguous(tmp_path, element_fields):
     root, _ = _project(tmp_path)
-    result = edit(root, "s1", "x", confirm=True, intent={"targets": [{"property": "text", "value": "Hi"}]})
+    _, parent = current_scene(root, "s1")
+    result = edit(root, "s1", "x", confirm=True, intent={"targets": [{"property": "text", "value": "Hi", **element_fields}]})
     assert result.status == "failed" and result.intent.ambiguous
     assert result.intent.candidates == [e.id for e in current_scene(root, "s1")[0].elements]
     assert result.attempts == 0
+    assert current_scene(root, "s1")[1].id == parent.id
 
 
 def test_typed_intent_gets_summary(tmp_path):
@@ -139,11 +142,14 @@ def test_typed_intent_gets_summary(tmp_path):
     assert result.summary == f"{text.id} 문구를 Hi(으)로 바꿉니다. 트랙은 유지합니다."
 
 
-def test_edit_tool_preserves_legacy_intent(tmp_path):
+@pytest.mark.parametrize("targets", [None, []])
+def test_edit_tool_ignores_raw_intent(tmp_path, targets):
     root, text = _project(tmp_path)
-    res = run_tool("edit", SessionContext(root, "s1"), {"prompt": "x", "intent": {
-        "targets": [{"element": text.id, "property": "text", "value": "Hi"}], "summary": "legacy summary"}})
-    assert res["needs_confirm"] and res["message"] == "legacy summary"
+    res = run_tool("edit", SessionContext(root, "s1"), {"prompt": "문구를 Hi로", "targets": targets, "intent": {
+        "targets": [{"element": "e99", "property": "text", "value": "Injected"}], "summary": "배경만 바꿉니다"}})
+    assert res["needs_confirm"]
+    assert res["payload"]["intent"]["targets"] == [Target(element=text.id, property="text", value="Hi").model_dump()]
+    assert "Hi" in res["message"] and "배경만" not in res["message"]
 
 
 def test_edit_tool_targets_override_legacy_intent(tmp_path):
@@ -175,3 +181,90 @@ def test_typed_attachment_required_before_conflict_choice(tmp_path, monkeypatch)
     done = run_tool("edit", SessionContext(root, "s1", has_attachment=True), {"prompt": "x", "targets": targets, "confirm": True})
     assert done["ok"] is False and done["message"] == "attachment_required"
     assert done["needs_choice"] is False
+
+
+@pytest.mark.parametrize("as_model", [False, True])
+def test_explicit_intent_summary_matches_targets(tmp_path, as_model):
+    root, text = _project(tmp_path)
+    intent = {"targets": [{"element": text.id, "property": "text", "value": "Hi"}], "summary": "배경만 바꿉니다"}
+    result = edit(root, "s1", "x", intent=Intent.model_validate(intent) if as_model else intent)
+    assert result.status == "needs_confirm"
+    assert "Hi" in result.summary and "배경만" not in result.summary
+    assert result.intent.summary == result.summary
+
+
+@pytest.mark.parametrize("attachment, has_attachment", [(None, True), (b"attached image", False)])
+def test_explicit_intent_summary_uses_attachment_context(tmp_path, attachment, has_attachment):
+    root, _ = _project(tmp_path)
+    sprite = next(e for e in current_scene(root, "s1")[0].elements if e.kind == "sprite")
+    result = edit(root, "s1", "x", attachment=attachment, has_attachment=has_attachment, intent={
+        "targets": [{"element": sprite.id, "property": "texture", "value": "new image"}], "summary": "생성해 바꿉니다"})
+    assert result.status == "needs_confirm"
+    assert "첨부로" in result.summary and "생성해" not in result.summary
+
+
+@pytest.mark.parametrize("element", ["", " \t\n"])
+def test_target_normalizes_blank_element(element):
+    assert Target(element=element, property="text", value="Hi").element is None
+
+
+@pytest.mark.parametrize("element_fields", [{}, {"element": ""}, {"element": " \t\n"}])
+@pytest.mark.parametrize("confirm", [False, True])
+def test_edit_tool_rejects_missing_element(tmp_path, element_fields, confirm):
+    root, _ = _project(tmp_path)
+    scene, parent = current_scene(root, "s1")
+    res = run_tool("edit", SessionContext(root, "s1"), {"prompt": "문구를 Hi로", "confirm": confirm,
+        "targets": [{"property": "text", "value": "Hi", **element_fields}]})
+    assert res["ok"] is False and res["needs_confirm"] is False
+    assert res["message"] == f"대상 요소가 없습니다. 사용 가능한 id: {sorted(e.id for e in scene.elements)}"
+    assert current_scene(root, "s1")[1].id == parent.id
+
+
+@pytest.mark.parametrize("value_fields", [{}, {"value": None}, {"value": ""}, {"value": " \t\n"}])
+def test_text_target_requires_nonempty_value(value_fields):
+    with pytest.raises(ValidationError, match="text value is required"):
+        Target(element="e1", property="text", **value_fields)
+
+
+@pytest.mark.parametrize("property", ["text", "color"])
+def test_describe_never_prints_missing_value(property):
+    assert "None" not in describe([Target.model_construct(element="e1", property=property)])
+
+
+@pytest.mark.parametrize("prefix, property", [("이미지 교체 ", "texture"), ("3D 모델: ", "model")])
+def test_interpret_caps_long_asset_prompt(tmp_path, prefix, property):
+    root, _ = _project(tmp_path)
+    scene, _ = current_scene(root, "s1")
+    sprite = next(e for e in scene.elements if e.kind == "sprite")
+    prompt = prefix + "x" * 600
+    assert len(prompt) == 607
+    parsed = interpret(prompt, scene, element=sprite.id)
+    assert not parsed.ambiguous
+    assert parsed.targets == [Target(element=sprite.id, property=property, value=prompt[:500])]
+
+
+def test_edit_tool_empty_targets_use_prompt(tmp_path):
+    root, text = _project(tmp_path)
+    res = run_tool("edit", SessionContext(root, "s1"), {"prompt": "문구를 Hi로", "targets": []})
+    assert res["needs_confirm"]
+    assert res["payload"]["intent"]["targets"][0]["element"] == text.id
+    assert res["payload"]["intent"]["targets"][0]["value"] == "Hi"
+
+
+@pytest.mark.parametrize("fields, field, message", [
+    ({"property": "color", "value": "blue"}, "value", "color value must be #rrggbb"),
+    ({"property": "text"}, "value", "text value is required"),
+    ({"property": "text", "value": " \t\n"}, "value", "text value is required"),
+    ({"property": "text", "value": "x" * 501}, "value", "500 characters"),
+    ({"property": "bogus", "value": "Hi"}, "property", "Input should be"),
+    ({"property": "text", "value": "Hi", "speed": "fast"}, "speed", "valid number"),
+    ({"property": "text", "value": "Hi", "weight": 99}, "weight", "100"),
+])
+def test_edit_tool_reports_invalid_target_index_and_field(tmp_path, fields, field, message):
+    root, text = _project(tmp_path)
+    _, parent = current_scene(root, "s1")
+    res = run_tool("edit", SessionContext(root, "s1"), {"prompt": "x", "confirm": True,
+        "targets": [{"element": text.id, "property": "text", "value": "Hi"}, {"element": text.id, **fields}]})
+    assert res["ok"] is False
+    assert f"targets[1].{field}:" in res["message"] and message in res["message"]
+    assert current_scene(root, "s1")[1].id == parent.id

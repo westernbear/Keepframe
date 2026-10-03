@@ -98,20 +98,26 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     from pydantic import ValidationError
 
     from ..edit.agent import edit as run_edit
-    from ..edit.intent import Intent, Target, describe
+    from ..edit.intent import SCENE_LEVEL, Intent, Target, describe
 
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
         return _fail("edit에는 prompt가 필요합니다.")
     targets = args.get("targets")
-    intent = args.get("intent")
-    if targets is not None:
+    intent = None
+    if targets:
         scene, _ = _current(ctx)
-        try:
-            parsed = Intent(targets=[Target.model_validate(t) for t in targets])
-        except ValidationError as e:
-            return _fail(f"targets 형식 오류: {e.errors()[0]['msg']}")
+        parsed = Intent()
+        for i, target in enumerate(targets):
+            try:
+                parsed.targets.append(Target.model_validate(target))
+            except ValidationError as e:
+                error = e.errors()[0]
+                field = ".".join(str(part) for part in error["loc"]) or "value"
+                return _fail(f"targets 형식 오류: targets[{i}].{field}: {error['msg']}")
         known = {e.id for e in scene.elements}
+        if any(not t.element and t.property not in SCENE_LEVEL for t in parsed.targets):
+            return _fail(f"대상 요소가 없습니다. 사용 가능한 id: {sorted(known)}")
         unknown = sorted({t.element for t in parsed.targets if t.element and t.element not in known})
         if unknown:
             return _fail(f"없는 요소 {unknown}. 사용 가능한 id: {sorted(known)}")

@@ -98,9 +98,9 @@ def edit(
     parsed = Intent.model_validate(intent) if intent is not None else interpret(
         prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
-    if not parsed.summary and parsed.targets:
-        parsed.summary = describe(parsed.targets)
-    unresolved = [t for t in parsed.targets if t.element is None and t.property not in SCENE_LEVEL]
+    if intent is not None:
+        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment)
+    unresolved = [t for t in parsed.targets if not t.element and t.property not in SCENE_LEVEL]
     if unresolved and not parsed.ambiguous:
         parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
     built = plan(scene, parsed)
