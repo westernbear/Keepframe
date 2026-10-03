@@ -13,9 +13,10 @@ from ..compose.composer import compose
 from ..render.renderer import render
 from ..ir.schema import Scene, Version
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
+from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import VerifyReport, verify
 from .apply import apply_edit
-from .intent import SCENE_LEVEL, Intent, Plan, describe, interpret, plan
+from .intent import SCENE_LEVEL, Conflict, Intent, Plan, describe, interpret, plan
 from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
@@ -71,7 +72,8 @@ def _failure_feedback(report: VerifyReport | None) -> str:
 
 def _promote_assets(source: Path, destination: Path, baseline: set[str]) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    for path in (source / "assets").iterdir():
+    assets = source / "assets"
+    for path in assets.iterdir() if assets.is_dir() else []:
         if path.name not in baseline:
             target = destination / path.name
             if target.exists():
@@ -115,6 +117,7 @@ def edit(
         return EditResult(status="needs_choice", summary=parsed.summary, intent=parsed, plan=built)
 
     last_rep: VerifyReport | None = None
+    released: list[str] = []
     choices_map = dict(choices or {})
     generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None and target.value != "attachment"), None)
     generated = generated_kind is not None
@@ -144,6 +147,17 @@ def edit(
             if (sd / "assets").is_dir():
                 shutil.copytree(sd / "assets", candidate / "assets")
             edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+            ctx = build_context(edited)
+            violated = [c.pred for c in edited.constraints if c.keep and not eval_pred(c.pred, ctx)]
+            if violated and choices_map.get("keep_violation") != "release_keep":
+                conflict = Conflict(id="keep_violation", element=next((t.element for t in built.items if t.element), "scene"),
+                                    choices=["release_keep"], reason=f"유지 조건 {len(violated)}개와 충돌: {', '.join(violated[:5])}")
+                return EditResult(status="needs_choice", summary=parsed.summary, intent=parsed,
+                                  plan=built.model_copy(update={"conflicts": [*built.conflicts, conflict]}), attempts=attempts_run)
+            if violated:
+                gone = set(violated)
+                edited.constraints = [c.model_copy(update={"keep": False}) if c.pred in gone else c for c in edited.constraints]
+                released = violated
             digest = _candidate_digest(edited, candidate)
             if digest in seen:
                 break
@@ -154,7 +168,7 @@ def edit(
             last_rep = verify(edited, candidate, render_result=probes, reference=scene, reference_dir=sd)
             if _passed(last_rep):
                 _promote_assets(candidate, sd / "assets", baseline)
-                v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True, parent_version=parent.id)
+                v = new_version(root, scene_id, edited, note=(parsed.summary or prompt) + (f" (keep 해제 {len(released)}개)" if released else ""), auto=True, parent_version=parent.id)
                 return EditResult(
                     status="done",
                     summary=parsed.summary,
@@ -163,7 +177,7 @@ def edit(
                     version=v,
                     verify=last_rep,
                     attempts=attempts_run,
-                    messages=last_rep.messages,
+                    messages=[*last_rep.messages, *(f"keep released: {p}" for p in released)],
                 )
             if not generated:
                 break
