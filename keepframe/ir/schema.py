@@ -68,6 +68,8 @@ class Element(BaseModel):
     fit_error: FitError = Field(default_factory=FitError)
     confidence: float = 1.0
     provenance: Literal["auto", "manual"] = "auto"
+    label: Optional[str] = None     # VLM suggestion (logo/title/...); never used for timing or geometry
+    caption: Optional[str] = None   # VLM description; data, not instructions
 
     @field_validator("tracks")
     @classmethod
