@@ -17,7 +17,7 @@ from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import RAW_COLS, sprite_props, z_order
-from .text import Ocr, apply_copy, ocr_frames, text_exclusion_mask, text_props, track_text
+from .text import Ocr, apply_copy, drop_junk_text, ocr_frames, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -91,9 +91,13 @@ def _stage_text(frames, bg, opts, ocr, sd):
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)
             tracks = track_text(boxes)
-            log.info("text boxes=%s tracks=%s", sum(len(b) for b in boxes), len(tracks))
             if opts.copy:
                 apply_copy(tracks, opts.copy)
+            boxes, tracks, dropped = drop_junk_text(boxes, tracks)
+            if dropped:
+                msg = f"text tracks dropped as OCR noise: {dropped}"
+                log.info("%s", msg)
+            log.info("text boxes=%s tracks=%s", sum(len(b) for b in boxes), len(tracks))
     _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "message": msg})
     return boxes, tracks, msg
 
@@ -521,9 +525,10 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
                 raise FileNotFoundError(sd / PLATE_PATH)
             plate = cv2.cvtColor(plate, cv2.COLOR_BGR2RGB)
 
+    msg = None
     if boundary <= STAGES.index("text"):
         report_stage("text")
-        boxes, text_tracks, _ = _stage_text(frames, bg, opts, None, sd)
+        boxes, text_tracks, msg = _stage_text(frames, bg, opts, None, sd)
     else:
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]
@@ -550,7 +555,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
                   background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
                   elements=elements)
-    messages = [m for m in [props.get("_message")] if m]
+    messages = [m for m in (msg, props.get("_message")) if m]
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
     for e in scene.elements:   # keep manual text edits across reruns

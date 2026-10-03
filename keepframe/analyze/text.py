@@ -11,6 +11,9 @@ from .device import ocr_cuda, ocr_cuda_expected
 
 log = get("keepframe.analyze")
 
+MIN_TEXT_FRAMES = 3
+CONFIDENT_OCR = 0.9
+
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
 # DTW copy alignment (Haraguchi et al. 2022), Hi-SAM stroke masks.
 
@@ -126,6 +129,25 @@ class TextTrack:
     @property
     def last(self) -> int:
         return max(self.boxes)
+
+
+def keep_text_track(t: TextTrack) -> bool:
+    """OCR on shapes yields 1–2 frame tracks and lone glyphs (O, 0, ·); keep real copy.
+    ponytail: frame-count + alphanumeric heuristic; a text/non-text classifier if real clips still leak junk."""
+    if len(t.boxes) < MIN_TEXT_FRAMES:
+        return False
+    alnum = sum(ch.isalnum() for ch in t.text)
+    if alnum >= 2:
+        return True
+    if alnum == 0:
+        return False
+    return float(np.mean([b.conf for b in t.boxes.values()])) >= CONFIDENT_OCR
+
+
+def drop_junk_text(boxes_by_frame: list[list[TextBox]], tracks: list[TextTrack]) -> tuple[list[list[TextBox]], list[TextTrack], int]:
+    kept = [t for t in tracks if keep_text_track(t)]
+    live = {id(b) for t in kept for b in t.boxes.values()}
+    return [[b for b in frame if id(b) in live] for frame in boxes_by_frame], kept, len(tracks) - len(kept)
 
 
 def _iou(a, b) -> float:
