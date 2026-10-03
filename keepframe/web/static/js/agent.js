@@ -14,12 +14,13 @@ import {
   postEdit,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261003c";
-import { T } from "/static/js/i18n.js?v=20261003c";
+} from "/static/js/api.js?v=20261003d";
+import { T } from "/static/js/i18n.js?v=20261003d";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261003d";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261003c";
+} from "/static/js/playback.js?v=20261003d";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -47,6 +48,8 @@ let frame = 0;
 let selectedId = null;
 let pendingIntent = null;
 let pendingPrompt = "";
+let pendingAttachment = null;
+let pendingAttachmentFile = null;
 
 let renderPayload = null;
 let renderDraft = null;
@@ -58,6 +61,7 @@ let aeStatusPoll = null;
 let renderBusy = false;
 const logEl = document.getElementById("agent-log");
 const inputEl = document.getElementById("agent-input");
+const attachInput = document.getElementById("agent-attach");
 const sendBtn = document.getElementById("agent-send");
 const bannerEl = document.getElementById("agent-banner");
 const emptyEl = document.getElementById("agent-empty");
@@ -915,6 +919,7 @@ function confirmEditBody(withChoices) {
     scene: sceneId,
     v: versionId,
     prompt: pendingPrompt,
+    attachment: pendingAttachment,
     element: selectedId,
     intent: pendingIntent,
     confirm: true,
@@ -926,12 +931,15 @@ async function applyConfirmedEdit(res) {
   pendingIntent = null;
   const editDone = res.status === "done" && res.version;
   if (editDone) {
+    pendingAttachment = pendingAttachmentFile = null;
+    attachInput.value = "";
+    document.getElementById("agent-attach-name").textContent = "";
     appendVerify(res.verify);
     appendAgent(res.summary || EDIT_APPLIED);
     await refreshAfterEdit(res.version.id);
     return true;
   }
-  setBanner(res.error || T("agent.failed"), true);
+  setBanner(res.error === "attachment_required" ? T("agent.attachmentRequired") : (res.error || T("agent.failed")), true);
   return false;
 }
 
@@ -1023,6 +1031,10 @@ async function previewForAI(img, kind) {
   return { kind, mime: "image/jpeg", data };
 }
 
+function attachmentMeta() {
+  return pendingAttachmentFile ? { name: pendingAttachmentFile.name, type: pendingAttachmentFile.type, size: pendingAttachmentFile.size } : null;
+}
+
 async function buildUIContext() {
   const summary = {
     path: location.pathname,
@@ -1032,6 +1044,7 @@ async function buildUIContext() {
     version: versionId,
     frame,
     selected_element: selectedId,
+    attachment: attachmentMeta(),
     workflow: state && state.status,
     inputs: visibleInputs(),
     render: renderPayload ? { plan: renderPayload.plan, status: renderPayloadStatus(renderPayload) } : null,
@@ -1096,6 +1109,12 @@ sceneSelect.addEventListener("change", () => {
   location.href = `/agent?project=${encodeURIComponent(projectId)}&scene=${encodeURIComponent(sceneSelect.value)}`;
 });
 
+document.getElementById("agent-attach-btn").addEventListener("click", () => attachInput.click());
+attachInput.addEventListener("change", async () => {
+  pendingAttachmentFile = attachInput.files[0] || null;
+  pendingAttachment = pendingAttachmentFile ? await readFileAsDataUrl(pendingAttachmentFile) : null;
+  document.getElementById("agent-attach-name").textContent = pendingAttachmentFile ? pendingAttachmentFile.name : "";
+});
 sendBtn.addEventListener("click", () => send());
 inputEl.addEventListener("keydown", (e) => {
   const isSendChord = e.key === "Enter" && (e.ctrlKey || e.metaKey);

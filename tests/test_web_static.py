@@ -162,3 +162,9 @@ def test_all_linked_runtime_assets_exist_locally():
         text = page.read_text(encoding="utf-8")
         for asset in re.findall(r"(?:src|href)=\"(/static/[^\"?#]+)", text):
             assert (STATIC / asset.removeprefix("/static/")).is_file(), f"{page.name} links missing {asset}"
+
+
+def test_agent_sends_attachment_on_confirm():
+    js = (STATIC / "js" / "agent.js").read_text()
+    assert "attachment: pendingAttachment" in js
+    assert "attachment: attachmentMeta()" in js

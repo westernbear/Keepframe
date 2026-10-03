@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261003c" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261003d" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261003c"></script>
-<script type="module" src="/static/js/api.js?v=20261003c"></script>
-<script type="module" src="/static/js/agent.js?v=20261003c"></script>
+<script type="module" src="/static/js/i18n.js?v=20261003d"></script>
+<script type="module" src="/static/js/api.js?v=20261003d"></script>
+<script type="module" src="/static/js/agent.js?v=20261003d"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -54,6 +54,9 @@
 <p class="agent-compose__context">현재 화면과 원본·재구성 preview가 AI에 전달됨</p>
 <div class="agent-compose__row">
 <span class="agent-compose__hint">Ctrl+Enter 전송</span>
+<input type="file" id="agent-attach" accept="image/png,image/jpeg,image/svg+xml,.glb" hidden>
+<button type="button" class="btn btn--secondary" id="agent-attach-btn" data-i18n="agent.attach">첨부</button>
+<span id="agent-attach-name" class="mono"></span>
 <button class="btn btn--primary" id="agent-send" type="button" data-i18n="agent.send">전송</button>
 </div>
 </div>
