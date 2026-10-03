@@ -12,7 +12,9 @@ SCENE_LEVEL: frozenset[str] = frozenset({"background"})
 COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white": "#ffffff", "검정": "#000000", "검은": "#000000", "black": "#000000",
                               "빨간": "#e53935", "빨강": "#e53935", "red": "#e53935", "파란": "#1e66f5", "파랑": "#1e66f5", "blue": "#1e66f5",
                               "초록": "#2e7d32", "green": "#2e7d32", "노란": "#fdd835", "노랑": "#fdd835", "yellow": "#fdd835",
-                              "회색": "#9e9e9e", "gray": "#9e9e9e", "주황": "#fb8c00", "orange": "#fb8c00", "보라": "#8e24aa", "purple": "#8e24aa"}
+                              "회색": "#9e9e9e", "gray": "#9e9e9e", "주황": "#fb8c00", "orange": "#fb8c00", "보라": "#8e24aa", "purple": "#8e24aa",
+                              "녹색": "#2e7d32", "그린": "#2e7d32", "블루": "#1e66f5", "레드": "#e53935", "화이트": "#ffffff", "블랙": "#000000",
+                              "옐로": "#fdd835", "퍼플": "#8e24aa", "오렌지": "#fb8c00", "그레이": "#9e9e9e"}
 _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 
 
@@ -67,6 +69,9 @@ _TEXT_EN = re.compile(r"(?:change|set|replace)\s+(?:the\s+)?text\s+(?:to|with)\s
 _IMAGE = re.compile(r"(이미지|사진|텍스처|교체|replace(?:\s+the)?\s+image|swap(?:\s+image)?|texture)", re.I)
 _MODEL = re.compile(r"(3d|3차원|모델|glb)", re.I)
 _BG = re.compile(r"(배경|background)", re.I)
+_QUOTED = re.compile(r"「[^」]*」|\"[^\"]*\"|'[^']*'")
+_COLOR_CUE = re.compile(r"(색|컬러|colou?r|배경|background)", re.I)
+_CLAUSE = re.compile(r"[,;.!?\n]|\b(?:and|then)\b|하고|그리고", re.I)
 
 
 def _norm_hex(h: str) -> str:
@@ -77,11 +82,17 @@ def _norm_hex(h: str) -> str:
 
 
 def _color_in(prompt: str) -> str | None:
+    prompt = _QUOTED.sub(" ", prompt)
     hexes = _HEX.findall(prompt)
     if hexes:
         return _norm_hex(hexes[-1])
+    if not _COLOR_CUE.search(prompt):
+        return None
     low = prompt.lower()
-    return next((v for k, v in COLOR_NAMES.items() if k in low), None)
+    for name, value in COLOR_NAMES.items():
+        if re.search(rf"\b{re.escape(name)}\b", low) if name.isascii() else name in low:
+            return value
+    return None
 
 
 def _texts(scene: Scene) -> list[Element]:
@@ -124,6 +135,10 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
     prompt = (prompt or "").strip()
     hinted = (_ELEM.search(prompt).group(1).lower() if _ELEM.search(prompt) else None)
     targets: list[Target] = []
+    color_prompt = _QUOTED.sub(" ", prompt)
+    if (_BG.search(color_prompt) and _ELEM.search(color_prompt)
+            and any(_COLOR_CUE.search(_BG.split(clause, maxsplit=1)[0]) for clause in _CLAUSE.split(color_prompt))):
+        return Intent(ambiguous=True, summary="배경과 요소 색을 함께 바꿀 수 없습니다. 하나씩 요청하세요.")
 
     swap = _TEXT_SWAP.search(prompt)
     if swap:
@@ -142,9 +157,9 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
         if eid is None:
             return Intent(targets=targets, summary=f"문구를 {value}(으)로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 
-    if _BG.search(prompt) and (c := _color_in(prompt)):
+    if _BG.search(color_prompt) and (c := _color_in(color_prompt)):
         targets.append(Target(property="background", value=c))
-    elif c := _color_in(prompt):
+    elif c := _color_in(color_prompt):
         eid, cands = _pick(scene.elements, hinted, element)
         targets.append(Target(element=eid, property="color", value=c))
         if eid is None:

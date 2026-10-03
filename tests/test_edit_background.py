@@ -60,6 +60,95 @@ def test_interpret_color_names(name, value, background):
     ]
 
 
+@pytest.mark.parametrize("prompt", [
+    'change the text to "Black Friday"',
+    '문구를 "Red Sale"로 바꿔줘',
+    "replace the image with a blue sky photo",
+    "make e1 reduced",
+])
+def test_interpret_does_not_add_unrequested_color(prompt):
+    scene = _scene_with_element()
+    scene.elements[0].canonical.text = "Title"
+    intent = interpret(prompt, scene)
+    assert all(t.property not in ("color", "background") for t in intent.targets)
+
+
+@pytest.mark.parametrize("left, right", [("「", "」"), ('"', '"'), ("'", "'")])
+def test_interpret_quoted_color_cues_names_and_hex_are_text(left, right):
+    scene = _scene_with_element()
+    scene.elements[0].canonical.text = "Title"
+    value = "color RED 배경 흰색 #abc"
+    intent = interpret(f"문구를 {left}{value}{right}로 바꿔줘", scene)
+    assert not intent.ambiguous
+    assert intent.targets == [Target(element="e1", property="text", value=value)]
+
+
+@pytest.mark.parametrize("name", ["reduced", "blueprint", "blackbird", "offwhite", "evergreen", "yellowish", "grayscale", "orangery", "purples"])
+def test_interpret_english_color_names_require_word_boundaries(name):
+    intent = interpret(f"set e1 color to {name}", _scene_with_element())
+    assert not intent.targets
+
+
+@pytest.mark.parametrize("prompt, element, property, value", [
+    ("e1 색을 빨강으로", "e1", "color", "#e53935"),
+    ("set e1 color to blue", "e1", "color", "#1e66f5"),
+    ("e1 컬러를 초록으로", "e1", "color", "#2e7d32"),
+    ("set e1 COLOUR to RED", "e1", "color", "#e53935"),
+    ("배경을 흰색으로", None, "background", "#ffffff"),
+    ("set BACKGROUND to white", None, "background", "#ffffff"),
+    ("e1 #AbC", "e1", "color", "#aabbcc"),
+    ('set e1 color to blue "background red #abc"', "e1", "color", "#1e66f5"),
+    ('set e1 color to #112233 "white #abc"', "e1", "color", "#112233"),
+])
+def test_interpret_color_cues_and_unquoted_values(prompt, element, property, value):
+    intent = interpret(prompt, _scene_with_element())
+    assert not intent.ambiguous
+    assert intent.targets == [Target(element=element, property=property, value=value)]
+
+
+@pytest.mark.parametrize("prompt", [
+    "e1 색을 #ff0000으로 하고 배경을 흰색으로",
+    "배경을 흰색으로 하고 e1 색을 #ff0000으로",
+    "SET E1 COLOR TO #ff0000 AND BACKGROUND TO WHITE",
+    "background white; set e1 colour to blue",
+    "e1 색을 빨강으로 배경을 흰색으로",
+    'e1 문구를 "Title"로 바꾸고 e1 색을 빨강으로, 배경을 흰색으로',
+])
+def test_interpret_mixed_background_and_element_color_is_ambiguous(prompt):
+    scene = _scene_with_element()
+    scene.elements[0].canonical.text = "Title"
+    intent = interpret(prompt, scene)
+    assert intent.ambiguous
+    assert not intent.targets
+    assert intent.summary == "배경과 요소 색을 함께 바꿀 수 없습니다. 하나씩 요청하세요."
+
+
+@pytest.mark.parametrize("prompt", [
+    "e1 배경색을 흰색으로",
+    "set background color for e1 to white",
+    "set e1 background colour to white",
+    '배경을 흰색으로 "e1 color red"',
+])
+def test_interpret_background_clause_is_not_mixed_element_color(prompt):
+    intent = interpret(prompt, _scene_with_element())
+    assert not intent.ambiguous
+    assert intent.targets == [Target(property="background", value="#ffffff")]
+
+
+@pytest.mark.parametrize("name, value", [
+    ("녹색", "#2e7d32"), ("그린", "#2e7d32"), ("블루", "#1e66f5"),
+    ("레드", "#e53935"), ("화이트", "#ffffff"), ("블랙", "#000000"),
+    ("옐로", "#fdd835"), ("퍼플", "#8e24aa"), ("오렌지", "#fb8c00"),
+    ("그레이", "#9e9e9e"),
+])
+@pytest.mark.parametrize("background", [False, True])
+def test_interpret_color_name_synonyms(name, value, background):
+    prompt = f"{'배경' if background else 'e1 색'}을 {name}으로"
+    intent = interpret(prompt, _scene_with_element())
+    assert not intent.ambiguous
+    assert intent.targets == [Target(element=None if background else "e1", property="background" if background else "color", value=value)]
+
+
 @pytest.mark.parametrize("prefix, element, property", [("background", None, "background"), ("color", "e1", "color")])
 def test_interpret_hex_overrides_names_and_uses_last_hex(prefix, element, property):
     intent = interpret(f"{prefix} white #112233 #AbC", _scene_with_element())
