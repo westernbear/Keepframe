@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 import cv2
 import numpy as np
@@ -112,3 +113,113 @@ def test_edits_forward_font_family_to_measurement_and_raster(tmp_path, monkeypat
     if overflow == "shrink_font":
         assert measured and set(measured) == {"Chosen font"}
     assert (tmp_path / result.element("e1").canonical.texture).is_file()
+
+
+@pytest.mark.parametrize("text", ["Sale 가", "Sale ᄀ", "Sale ㄱ"])
+@needs_font
+def test_named_latin_font_uses_hangul_capable_fallback_for_measure_and_render(monkeypatch, text):
+    from PIL import ImageFont
+
+    patterns = []
+    real_run = textraster.subprocess.run
+    path, index = real_run(["fc-match", "-f", "%{file}\n%{index}", "DejaVu Serif:lang=ko:charset=ac00"], capture_output=True, text=True).stdout.splitlines()
+    font = ImageFont.truetype(path, 32, index=int(index))
+    x0, y0, x1, y1 = font.getbbox(text)
+
+    def run(args, **kwargs):
+        patterns.append(args[-1])
+        return real_run(args, **kwargs)
+
+    font_path.cache_clear()
+    monkeypatch.setattr(textraster.subprocess, "run", run)
+    try:
+        measured = measure(text, 32, "DejaVu Serif")
+        img = render_lines([text], 32, (255, 255, 255), "DejaVu Serif")
+        assert patterns and all(p == "DejaVu Serif:lang=ko:charset=ac00" for p in patterns)
+        assert measured == (x1 - min(0, x0) + 4, y1 - min(0, y0) + 4)
+        assert img.shape == (measured[1], measured[0], 4)
+        assert img[..., 3].any()
+    finally:
+        font_path.cache_clear()
+
+
+@needs_font
+def test_font_cache_separates_latin_and_hangul_for_same_family(monkeypatch):
+    patterns = []
+    real_run = textraster.subprocess.run
+
+    def run(args, **kwargs):
+        if "%{file}" in args[2]:
+            patterns.append(args[-1])
+        return real_run(args, **kwargs)
+
+    font_path.cache_clear()
+    monkeypatch.setattr(textraster.subprocess, "run", run)
+    try:
+        for text in ["Sale", "가", "Sale", "가"]:
+            assert measure(text, 32, "DejaVu Serif")
+        assert patterns == ["DejaVu Serif:lang=ko", "DejaVu Serif:lang=ko:charset=ac00"]
+        assert font_path("DejaVu Serif", False) != font_path("DejaVu Serif", True)
+    finally:
+        font_path.cache_clear()
+
+
+@pytest.mark.parametrize("exc", [subprocess.TimeoutExpired("fc-match", 5), subprocess.SubprocessError("failed"), FileNotFoundError("fc-match"), OSError("failed")])
+def test_fontconfig_subprocess_failures_fall_back_instead_of_crashing(tmp_path, monkeypatch, exc):
+    def fail(*args, **kwargs):
+        raise exc
+
+    font_path.cache_clear()
+    resolve_family.cache_clear()
+    monkeypatch.setattr(textraster.shutil, "which", lambda _: "/usr/bin/fc-match")
+    monkeypatch.setattr(textraster.subprocess, "run", fail)
+    try:
+        assert font_path() is None and resolve_family("sans-serif") is None
+        assert measure("Hello", 22) is None
+        path = tmp_path / "fallback.png"
+        w, h = write_text_texture(path, "Hello", 22, (17, 101, 231))
+        img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        assert img.shape == (h, w, 4) and img[..., 3].any()
+    finally:
+        font_path.cache_clear()
+        resolve_family.cache_clear()
+
+
+def test_font_collection_uses_fontconfig_face_index(tmp_path, monkeypatch):
+    from PIL import ImageFont
+    from types import SimpleNamespace
+
+    font_path.cache_clear()
+    path = tmp_path / "chosen.ttc"
+    path.touch()
+    opened = []
+
+    def run(args, **kwargs):
+        value = args[2].replace("%{file}", str(path)).replace("%{index}", "2")
+        return SimpleNamespace(returncode=0, stdout=value)
+
+    def truetype(path, size, **kwargs):
+        opened.append((path, size, kwargs.get("index")))
+        return SimpleNamespace(getbbox=lambda text: (0, 0, 20, 30))
+
+    monkeypatch.setattr(textraster.shutil, "which", lambda _: "/usr/bin/fc-match")
+    monkeypatch.setattr(textraster.subprocess, "run", run)
+    monkeypatch.setattr(ImageFont, "truetype", truetype)
+    try:
+        assert measure("가", 32)
+        assert opened == [(str(path), 32, 2)]
+    finally:
+        font_path.cache_clear()
+
+
+@needs_font
+def test_mixed_lines_are_measured_with_the_face_used_to_draw_them():
+    from PIL import ImageFont
+
+    path, index = subprocess.run(["fc-match", "-f", "%{file}\n%{index}", "DejaVu Serif:lang=ko:charset=ac00"], capture_output=True, text=True).stdout.splitlines()
+    font = ImageFont.truetype(path, 32, index=int(index))
+    lines = ["가", "WWWW gy"]
+    boxes = [font.getbbox(line) for line in lines]
+    expected = (sum(y1 - min(0, y0) + 4 for x0, y0, x1, y1 in boxes), max(x1 - min(0, x0) + 4 for x0, y0, x1, y1 in boxes), 4)
+    img = render_lines(lines, 32, (255, 255, 255), "DejaVu Serif")
+    assert img.shape == expected

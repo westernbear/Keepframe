@@ -119,6 +119,12 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
         el = out.element(t.element)
         if t.property == "text":
             _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id))
+        elif t.property == "font":
+            if el.kind != "text" or not el.canonical.text:
+                raise ValueError("font edit needs a text element")
+            base = el.canonical.font or FontGuess()
+            el.canonical.font = base.model_copy(update={k: v for k, v in (("family_guess", t.value), ("weight", t.weight)) if v})
+            _apply_text(el, scene_dir, el.canonical.text, choice_of.get("overflow") or choice_of.get(el.id))
         elif t.property == "color":
             _apply_color(el, scene_dir, t.value or "#ffffff")
         elif t.property == "texture":

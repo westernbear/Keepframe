@@ -6,8 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
+from .textraster import resolve_family
 
-Prop = Literal["text", "color", "texture", "model", "background"]
+Prop = Literal["text", "color", "texture", "model", "background", "font"]
 SCENE_LEVEL: frozenset[str] = frozenset({"background"})
 COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white": "#ffffff", "검정": "#000000", "검은": "#000000", "black": "#000000",
                               "빨간": "#e53935", "빨강": "#e53935", "red": "#e53935", "파란": "#1e66f5", "파랑": "#1e66f5", "blue": "#1e66f5",
@@ -38,6 +39,11 @@ class Target(BaseModel):
             if not self.value or not _HEX_FULL.fullmatch(self.value):
                 raise ValueError("color value must be #rrggbb")
             self.value = _norm_hex(self.value)
+        if self.property == "font":
+            if not (self.value or self.weight):
+                raise ValueError("font needs a family or weight")
+            if self.value and not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", self.value):
+                raise ValueError("font family may only contain letters, digits, spaces and hyphens")
         return self
 
 
@@ -124,6 +130,8 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"{who} 색을 {t.value or ''}로")
         elif t.property == "background":
             bits.append(f"배경색을 {t.value or ''}로")
+        elif t.property == "font":
+            bits.append(f"{who} 폰트를 {t.value or ''} {t.weight or ''}".rstrip() + "로")
         elif t.property == "model":
             bits.append(f"{who} 3D 모델을 생성해")
         else:
@@ -203,4 +211,14 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                     choices=["shrink_font", "wrap", "expand_box"],
                     reason="새 문구가 원래 상자보다 깁니다.",
                 ))
+        if t.property == "font" and el is not None and el.canonical.text:
+            family = t.value or (el.canonical.font.family_guess if el.canonical.font else "sans-serif")
+            resolved = resolve_family(t.value) if t.value else None
+            if t.value and resolved not in (t.value, None):
+                conflicts.append(Conflict(id="font_missing", element=el.id, choices=["use_fallback"],
+                                          reason=f"{t.value} 폰트가 설치되어 있지 않습니다. {resolved}(으)로 그려집니다."))
+            size = el.canonical.font.size_px if el.canonical.font else 32.0
+            if measure_text(el.canonical.text, size, family)[0] > el.canonical.width * 1.15:
+                conflicts.append(Conflict(id="overflow", element=el.id, choices=["shrink_font", "wrap", "expand_box"],
+                                          reason="바꾼 폰트로는 문구가 원래 상자보다 깁니다."))
     return Plan(items=items, conflicts=conflicts)
