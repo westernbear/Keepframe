@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from ..ir.schema import Element, FontGuess, Scene
+from ..ir.schema import Background, Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
 from ..assets import validate_glb
 from .textraster import measure as _measure, render_lines
@@ -113,6 +113,9 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
     out = scene.model_copy(deep=True)
     choice_of = choices or {}
     for t in items:
+        if t.property == "background":
+            out.background = Background(kind="color", value=t.value, confidence=1.0)
+            continue
         el = out.element(t.element)
         if t.property == "text":
             _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id))

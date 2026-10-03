@@ -7,8 +7,12 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
 
-Prop = Literal["text", "color", "texture", "model"]
-SCENE_LEVEL: frozenset[str] = frozenset()
+Prop = Literal["text", "color", "texture", "model", "background"]
+SCENE_LEVEL: frozenset[str] = frozenset({"background"})
+COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white": "#ffffff", "검정": "#000000", "검은": "#000000", "black": "#000000",
+                              "빨간": "#e53935", "빨강": "#e53935", "red": "#e53935", "파란": "#1e66f5", "파랑": "#1e66f5", "blue": "#1e66f5",
+                              "초록": "#2e7d32", "green": "#2e7d32", "노란": "#fdd835", "노랑": "#fdd835", "yellow": "#fdd835",
+                              "회색": "#9e9e9e", "gray": "#9e9e9e", "주황": "#fb8c00", "orange": "#fb8c00", "보라": "#8e24aa", "purple": "#8e24aa"}
 _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 
 
@@ -26,7 +30,9 @@ class Target(BaseModel):
             self.element = None
         if self.property == "text" and (not self.value or not self.value.strip()):
             raise ValueError("text value is required")
-        if self.property == "color":
+        if self.property == "background" and self.element is not None:
+            raise ValueError("background targets have no element")
+        if self.property in ("color", "background"):
             if not self.value or not _HEX_FULL.fullmatch(self.value):
                 raise ValueError("color value must be #rrggbb")
             self.value = _norm_hex(self.value)
@@ -60,6 +66,7 @@ _TEXT_SWAP = re.compile(r"[「\"']([^\"'」]+)[」\"']\s*(?:를|을)\s*[「\"'](
 _TEXT_EN = re.compile(r"(?:change|set|replace)\s+(?:the\s+)?text\s+(?:to|with)\s+[\"']?(.+?)[\"']?\s*$", re.I)
 _IMAGE = re.compile(r"(이미지|사진|텍스처|교체|replace(?:\s+the)?\s+image|swap(?:\s+image)?|texture)", re.I)
 _MODEL = re.compile(r"(3d|3차원|모델|glb)", re.I)
+_BG = re.compile(r"(배경|background)", re.I)
 
 
 def _norm_hex(h: str) -> str:
@@ -67,6 +74,14 @@ def _norm_hex(h: str) -> str:
     if len(h) == 4:
         return "#" + "".join(c * 2 for c in h[1:])
     return h
+
+
+def _color_in(prompt: str) -> str | None:
+    hexes = _HEX.findall(prompt)
+    if hexes:
+        return _norm_hex(hexes[-1])
+    low = prompt.lower()
+    return next((v for k, v in COLOR_NAMES.items() if k in low), None)
 
 
 def _texts(scene: Scene) -> list[Element]:
@@ -96,6 +111,8 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"{who} 문구를 {t.value or ''}(으)로")
         elif t.property == "color":
             bits.append(f"{who} 색을 {t.value or ''}로")
+        elif t.property == "background":
+            bits.append(f"배경색을 {t.value or ''}로")
         elif t.property == "model":
             bits.append(f"{who} 3D 모델을 생성해")
         else:
@@ -125,12 +142,13 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
         if eid is None:
             return Intent(targets=targets, summary=f"문구를 {value}(으)로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 
-    hexes = _HEX.findall(prompt)
-    if hexes:
+    if _BG.search(prompt) and (c := _color_in(prompt)):
+        targets.append(Target(property="background", value=c))
+    elif c := _color_in(prompt):
         eid, cands = _pick(scene.elements, hinted, element)
-        targets.append(Target(element=eid, property="color", value=_norm_hex(hexes[-1])))
+        targets.append(Target(element=eid, property="color", value=c))
         if eid is None:
-            return Intent(targets=targets, summary=f"색을 {hexes[-1]}로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
+            return Intent(targets=targets, summary=f"색을 {c}로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
 
     if _MODEL.search(prompt):
         eid, cands = _pick(scene.elements, hinted, element)
