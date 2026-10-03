@@ -10,6 +10,7 @@ from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
+from .captions import caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions
@@ -213,10 +214,15 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
     return elements, raws
 
 
-def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None) -> Scene:
+def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None, captioner=None) -> Scene:
     report_stage("semantics")
     assign_roles(scene.elements)
-    scene.groups = group_by_motion(scene.elements, raws)
+    if captioner is not None:
+        try:
+            log.info("captions elements=%s", caption_scene(scene, frames, captioner))
+        except Exception as e:  # captions are optional suggestions; analysis never fails on them
+            messages.append(f"captions skipped: {type(e).__name__}: {e}"[:200])
+    scene.groups = [] if scene.ui is not None else group_by_motion(scene.elements, raws)  # ponytail: parsed UI has no measured motion tracks.
     report_stage("constraints")
     scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
     if previous is not None:
@@ -287,15 +293,18 @@ def _parse_ui(frames: np.ndarray, scene: Scene, sd: Path) -> Scene:
     return parsed
 
 
-def _apply_ui(frames: np.ndarray, scene: Scene, sd: Path, scene_id: str) -> Scene:
+def _apply_ui(frames: np.ndarray, scene: Scene, sd: Path, scene_id: str, messages: list[str] | None = None) -> Scene:
     try:
         return _parse_ui(frames, scene, sd)
     except Exception as exc:
         message = f"UI parse skipped: {type(exc).__name__}: {exc}"[:200]
         log.warning("%s scene=%s", message, scene_id)
-        report = json.loads((sd / "report.json").read_text())
-        report["messages"].append(message)
-        write_report(sd, report)
+        if messages is not None:
+            messages.append(message)
+        else:
+            report = json.loads((sd / "report.json").read_text())
+            report["messages"].append(message)
+            write_report(sd, report)
     return scene
 
 
@@ -306,6 +315,7 @@ def analyze_scene_frames(
     scene_id: str,
     options: AnalyzeOptions | None = None,
     ocr: Ocr | None = None,
+    captioner=None,
 ) -> Scene:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
@@ -337,9 +347,9 @@ def analyze_scene_frames(
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
-    scene = _finish(sd, scene, frames, raws, messages)
     if opts.ui:
-        scene = _apply_ui(frames, scene, sd, scene_id)
+        scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
+    scene = _finish(sd, scene, frames, raws, messages, captioner=captioner)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
     log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return scene
@@ -414,6 +424,7 @@ def analyze(
     scenes: list[dict] | None = None,
     transitions: list[dict] | None = None,
     mode: str = "range",
+    captioner=None,
 ) -> Project:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
@@ -430,7 +441,7 @@ def analyze(
         local_first, local_last = first - start, last - start
         if local_first < 0 or local_last >= len(frames) or local_first > local_last:
             raise ValueError("scene range is outside analyzed frames")
-        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr)
+        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr, captioner=captioner)
         analyzed.append(scene)
         next_id = str(layout[index + 1].get("id") or f"s{index + 2}") if index + 1 < len(layout) else None
         transition = by_pair.get((scene_id, next_id)) if next_id else None
@@ -454,7 +465,7 @@ def analyze(
     return project
 
 
-def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: AnalyzeOptions | None = None) -> Version:
+def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: AnalyzeOptions | None = None, captioner=None) -> Version:
     if from_stage not in STAGES:
         raise ValueError(from_stage)
     log.info("rerun scene=%s from=%s note=%s", scene_id, from_stage, note)
@@ -508,16 +519,19 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    for e in elements:   # keep manual text edits across reruns
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
+                  background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
+    messages = [m for m in [props.get("_message")] if m]
+    if opts.ui:
+        scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
+    for e in scene.elements:   # keep manual text edits across reruns
         try:
             old = prev.element(e.id)
             if old.provenance == "manual" and old.kind == "text":
                 e.canonical.text, e.canonical.font, e.provenance = old.canonical.text, old.canonical.font, "manual"
+            if captioner is None:
+                e.label, e.caption = old.label, old.caption
         except KeyError:
             pass
-    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
-    scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m], previous=prev)
-    if opts.ui:
-        scene = _apply_ui(frames, scene, sd, scene_id)
+    scene = _finish(sd, scene, frames, raws, messages, previous=prev, captioner=captioner)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

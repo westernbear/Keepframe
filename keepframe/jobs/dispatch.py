@@ -25,6 +25,7 @@ def run_job(spec: JobSpec) -> dict[str, Any]:
 
 def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
     from keepframe.analyze.pipeline import AnalyzeOptions, analyze
+    from keepframe.session.llm import vision_llm
     from keepframe.web.workspace import write_meta
 
     video = Path(args["video"])
@@ -38,7 +39,7 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
     log.info("analyze start project=%s video=%s range=[%s,%s]", project_id, video, start, end)
     try:
         extras = {key: args[key] for key in ("scenes", "transitions", "mode") if key in args}
-        project = analyze(video, start, end, out_root, options, **extras)
+        project = analyze(video, start, end, out_root, options, captioner=vision_llm(workspace), **extras)
         if workspace is not None and project_id:
             first = project.scenes[0]
             write_meta(workspace, project_id, status="review", job_id=None, error=None, scene=first.id, version="v1", approved_scenes={})

@@ -16,9 +16,11 @@ class RecordingRunner:
 def test_run_job_analyze_calls_pipeline(tmp_path, monkeypatch):
     called = {}
 
-    def fake_analyze(video, start, end, out_root, options=None):
+    def fake_analyze(video, start, end, out_root, options=None, captioner=None):
         called["args"] = (Path(video), start, end, Path(out_root), options)
+        assert captioner is None
 
+    monkeypatch.setattr("keepframe.session.llm.vision_llm", lambda workspace=None: None)
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", fake_analyze)
     spec = JobSpec(
         kind="analyze",

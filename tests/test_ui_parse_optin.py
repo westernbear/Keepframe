@@ -151,10 +151,12 @@ def test_cli_analyze_ui_flag(tmp_path, monkeypatch, ui):
 
     called = []
 
-    def fake_analyze(video, first, last, out, options):
+    def fake_analyze(video, first, last, out, options, captioner=None):
         called.append(options)
+        assert captioner is None
         return SimpleNamespace(scenes=[SimpleNamespace(id="s1")], versions=[SimpleNamespace(id="v1")])
 
+    monkeypatch.setattr("keepframe.session.llm.vision_llm", lambda: None)
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", fake_analyze)
     args = ["analyze", "--video", str(tmp_path / "video.mp4"), "--end", "11", "--out", str(tmp_path / "out")]
     assert main(args + (["--ui"] if ui else [])) == 0

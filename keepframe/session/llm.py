@@ -5,6 +5,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from ..log import get
@@ -61,9 +62,9 @@ class OpenAICompatibleClient:
         body = {
             "model": self.model,
             "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
         }
+        if tools:
+            body.update(tools=tools, tool_choice="auto")
         req = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(body).encode("utf-8"),
@@ -110,9 +111,9 @@ class LiteLLMClient:
         kwargs: dict[str, Any] = {
             "model": self.config.litellm_model,
             "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
         }
+        if tools:
+            kwargs.update(tools=tools, tool_choice="auto")
         if self.config.api_key and self.config.provider != "chatgpt":
             kwargs["api_key"] = self.config.api_key
         if self.config.base_url:
@@ -170,3 +171,11 @@ def make_llm(config: ProviderConfig | None = None) -> LLMClient:
             return fallback
         log.warning("litellm unavailable (%s); session agent falls back to NullClient", e)
         return NullClient()
+
+
+def vision_llm(workspace: Path | None = None) -> LLMClient | None:
+    """The configured LLM when it can see images, else None (captions are optional)."""
+    from .provider import load_llm_settings
+    saved = load_llm_settings(workspace)
+    llm = make_llm(saved) if saved is not None else make_llm()
+    return None if isinstance(llm, NullClient) or not getattr(llm, "supports_vision", False) else llm

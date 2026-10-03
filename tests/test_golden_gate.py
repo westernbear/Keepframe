@@ -204,13 +204,14 @@ def test_m2_gate_acceptance_boundaries(tmp_path, monkeypatch, l1, tracking, temp
 
     assert m2_gate(tmp_path, n=3, refine=False)["passed"] is passed
 
-def test_cli_analyze_and_correct(tmp_scene_dir):
+def test_cli_analyze_and_correct(tmp_scene_dir, monkeypatch):
+    from keepframe.cli import main
+    monkeypatch.setattr("keepframe.session.llm.vision_llm", lambda: None)
     gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=82, frames=24, with_text=False, overlap=False)
     vid = render_scene_video(gold, tmp_scene_dir / "gold", tmp_scene_dir / "gold.mp4")
     root = tmp_scene_dir / "proj"
-    r = subprocess.run([sys.executable, "-m", "keepframe.cli", "analyze", "--video", str(vid), "--start", "0", "--end", "23",
-                        "--out", str(root), "--no-ocr", "--no-refine"], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    assert main(["analyze", "--video", str(vid), "--start", "0", "--end", "23",
+                 "--out", str(root), "--no-ocr", "--no-refine"]) == 0
     s, _ = current_scene(root, "s1")
     r = subprocess.run([sys.executable, "-m", "keepframe.cli", "correct", "--root", str(root), "--scene", "s1", "--op", "text",
                         "--args", json.dumps({"element_id": s.elements[0].id, "text": "Hi"})], capture_output=True, text=True)
