@@ -114,6 +114,9 @@ def test_keep_api_applies_presets_then_individual_changes(tmp_path):
         code, body = _post(srv, "/api/keep", {"project": "p1", "preset": "nope"})
         assert code == 400 and body == {"error": "unknown preset"}
         assert current_scene(root, "s1")[1].id == version.id
+        code, body = _post(srv, "/api/keep", {"project": "p1", "preset": []})
+        assert code == 400 and body == {"error": "unknown preset"}
+        assert current_scene(root, "s1")[1].id == version.id
     finally:
         srv.shutdown()
         srv.server_close()

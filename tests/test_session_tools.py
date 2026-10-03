@@ -83,6 +83,21 @@ def test_verify_and_report_tools(tmp_path):
     assert rep["payload"]["elements"] == [e.id for e in scene.elements]
 
 
+def test_verify_tool_includes_kept_constraint_results(tmp_path):
+    root = tmp_path / "proj"
+    sd = root / "scenes" / "s1"
+    scene = make_synthetic_scene(sd, seed=4, with_text=False, frames=12)
+    scene = scene.model_copy(update={"id": "s1"})
+    scene.constraints = [c.model_copy(update={"keep": c.pred.startswith("type(")}) for c in extract_constraints(scene)]
+    kept = sum(c.keep for c in scene.constraints)
+    assert 0 < kept < len(scene.constraints)
+    init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]}, scene)
+
+    ver = run_tool("verify", _ctx(root), {})
+    assert ver["ok"] is True
+    assert len(ver["payload"]["verify"]["keep_results"]) == kept
+
+
 def test_render_prepares_immutable_plan_without_submitting_job(tmp_path):
     root = tmp_path / "proj"
     scene = make_synthetic_scene(root / "scenes" / "s1", seed=4, with_text=False, frames=12)

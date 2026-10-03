@@ -2226,7 +2226,7 @@ def make_server(
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 preset = data.get("preset")
-                if preset is not None and preset not in KEEP_PRESETS:
+                if preset is not None and (not isinstance(preset, str) or preset not in KEEP_PRESETS):
                     return self._json(400, {"error": "unknown preset"})
                 project_id = data.get("project")
                 scene_id = data.get("scene", "s1")

@@ -148,6 +148,7 @@ def _verify(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         verify={
             "schema_ok": rep.schema_ok,
             "keep_pass_rate": rep.keep_pass_rate,
+            "keep_results": rep.keep_results,
             "layer_max_err_px": rep.layer_max_err_px,
             "temporal": rep.temporal,
             "passed": rep.passed,
