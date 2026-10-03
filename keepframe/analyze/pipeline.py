@@ -287,6 +287,18 @@ def _parse_ui(frames: np.ndarray, scene: Scene, sd: Path) -> Scene:
     return parsed
 
 
+def _apply_ui(frames: np.ndarray, scene: Scene, sd: Path, scene_id: str) -> Scene:
+    try:
+        return _parse_ui(frames, scene, sd)
+    except Exception as exc:
+        message = f"UI parse skipped: {type(exc).__name__}: {exc}"[:200]
+        log.warning("%s scene=%s", message, scene_id)
+        report = json.loads((sd / "report.json").read_text())
+        report["messages"].append(message)
+        write_report(sd, report)
+    return scene
+
+
 def analyze_scene_frames(
     frames: np.ndarray,
     fps: float,
@@ -327,14 +339,7 @@ def analyze_scene_frames(
     messages = [m for m in (msg, props.get("_message")) if m]
     scene = _finish(sd, scene, frames, raws, messages)
     if opts.ui:
-        try:
-            scene = _parse_ui(frames, scene, sd)
-        except Exception as exc:
-            message = f"UI parse skipped: {exc}"
-            log.warning("%s scene=%s", message, scene_id)
-            report = json.loads((sd / "report.json").read_text())
-            report["messages"].append(message)
-            write_report(sd, report)
+        scene = _apply_ui(frames, scene, sd, scene_id)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
     log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return scene
@@ -514,12 +519,5 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
                   background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m], previous=prev)
     if opts.ui:
-        try:
-            scene = _parse_ui(frames, scene, sd)
-        except Exception as exc:
-            message = f"UI parse skipped: {exc}"
-            log.warning("%s scene=%s", message, scene_id)
-            report = json.loads((sd / "report.json").read_text())
-            report["messages"].append(message)
-            write_report(sd, report)
+        scene = _apply_ui(frames, scene, sd, scene_id)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

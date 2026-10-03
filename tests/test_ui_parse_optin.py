@@ -57,7 +57,7 @@ def test_rerun_respects_saved_ui_option_and_retains_components(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("stage", ["analyze", "rerun"])
-@pytest.mark.parametrize("error", [AssetAPIError("asset_api_unavailable"), RuntimeError("malformed UI response")])
+@pytest.mark.parametrize("error", [AssetAPIError("asset_api_unavailable"), RuntimeError("malformed UI response"), RuntimeError("x" * 1000)])
 def test_ui_parse_failure_is_reported_and_analysis_continues(tmp_path, monkeypatch, stage, error):
     gold = make_synthetic_scene(tmp_path / "gold", seed=3, with_text=False, frames=12)
     vid = render_scene_video(gold, tmp_path / "gold", tmp_path / "g.mp4")
@@ -78,7 +78,9 @@ def test_ui_parse_failure_is_reported_and_analysis_continues(tmp_path, monkeypat
     assert scene.elements and scene.ui is None
     assert version.id == ("v1" if stage == "analyze" else "v2")
     report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-    assert any("UI parse skipped" in message and str(error) in message for message in report["messages"])
+    message = next(message for message in report["messages"] if message.startswith("UI parse skipped:"))
+    assert len(message) <= 200
+    assert message == f"UI parse skipped: {type(error).__name__}: {error}"[:200]
     assert report["reconstruction"] and report["confidence"]
 
 
