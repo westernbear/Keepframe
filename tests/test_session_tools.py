@@ -66,6 +66,19 @@ def test_edit_tool_needs_confirm(tmp_path):
     assert res["payload"]["intent"]
 
 
+def test_edit_tool_attachment_preview(tmp_path):
+    root = tmp_path / "proj"
+    scene = make_synthetic_scene(root / "scenes" / "s1", seed=4, with_text=False, frames=12).model_copy(update={"id": "s1"})
+    init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]}, scene)
+    sprite = next(e for e in scene.elements if e.kind == "sprite")
+
+    res = run_tool("edit", SessionContext(root, "s1", has_attachment=True), {"prompt": f"{sprite.id} 이미지 교체"})
+
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"]["intent"]["targets"] == [{"element": sprite.id, "property": "texture", "value": "attachment"}]
+
+
 def test_verify_and_report_tools(tmp_path):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"

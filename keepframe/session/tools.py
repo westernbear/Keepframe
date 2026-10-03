@@ -22,6 +22,7 @@ class SessionContext:
     jobs: Any = None
     submit_job: Callable[[str, dict, str], dict] | None = None
     prepare_render: Callable[[str, str, str | None], Any] | None = None
+    has_attachment: bool = False
 
 
 def _ok(message: str, **payload: Any) -> dict[str, Any]:
@@ -108,6 +109,7 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         intent=args.get("intent"),
         choices=args.get("choices"),
         version=ctx.version,
+        has_attachment=ctx.has_attachment,
     )
     if result.status == "done" and result.version is not None:
         return _ok(result.summary or "편집 완료", version=result.version.model_dump(), verify=result.verify.model_dump() if result.verify else None)

@@ -14,13 +14,13 @@ import {
   postEdit,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261003d";
-import { T } from "/static/js/i18n.js?v=20261003d";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261003d";
+} from "/static/js/api.js?v=20261003e";
+import { T } from "/static/js/i18n.js?v=20261003e";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261003e";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261003d";
+} from "/static/js/playback.js?v=20261003e";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -1111,8 +1111,15 @@ sceneSelect.addEventListener("change", () => {
 
 document.getElementById("agent-attach-btn").addEventListener("click", () => attachInput.click());
 attachInput.addEventListener("change", async () => {
-  pendingAttachmentFile = attachInput.files[0] || null;
-  pendingAttachment = pendingAttachmentFile ? await readFileAsDataUrl(pendingAttachmentFile) : null;
+  const file = attachInput.files[0] || null;
+  try {
+    const attachment = file ? await readFileAsDataUrl(file) : null;
+    pendingAttachmentFile = file;
+    pendingAttachment = attachment;
+  } catch (err) {
+    pendingAttachment = pendingAttachmentFile = null;
+    setBanner(T("agent.failed"), true);
+  }
   document.getElementById("agent-attach-name").textContent = pendingAttachmentFile ? pendingAttachmentFile.name : "";
 });
 sendBtn.addEventListener("click", () => send());

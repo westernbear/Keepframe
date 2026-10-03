@@ -7,6 +7,7 @@ import pytest
 from keepframe.after_effects.auth import AEProjectAuth, controller_cookie_name
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import init_project
+from keepframe.session.agent import SessionTurn
 from keepframe.session.llm import NullClient
 from tests.test_web_server import start, get
 
@@ -75,6 +76,37 @@ def test_agent_api_returns_reply(tmp_path, monkeypatch):
     assert body["status"] == "done"
     assert "reply" in body
     assert body["tool_calls"] == []
+
+
+@pytest.mark.parametrize("ui_context, has_attachment", [
+    ({"schema": "keepframe.ui-context/1", "summary": {"attachment": {"name": "replacement.png"}}}, True),
+    ({"schema": "keepframe.ui-context/1", "summary": {"attachment": None}}, False),
+    ({"schema": "keepframe.ui-context/1", "summary": {"attachment": {}}}, False),
+    ({"schema": "keepframe.ui-context/1", "summary": {}}, False),
+    ({"schema": "keepframe.ui-context/1", "summary": '{"attachment": true}'}, False),
+    ({"schema": "keepframe.ui-context/1", "summary": [{"attachment": True}]}, False),
+    ({"schema": "keepframe.ui-context/1", "state": {"attachment": True}}, False),
+    (None, False),
+])
+def test_agent_api_attachment_flag_from_raw_summary(tmp_path, monkeypatch, ui_context, has_attachment):
+    monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
+    captured = []
+
+    def capture_turn(_self, ctx, _message, _history, ui_context=None):
+        captured.append(ctx.has_attachment)
+        return SessionTurn(reply="captured")
+
+    monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", capture_turn)
+    _project(tmp_path)
+    srv = start(tmp_path / "ws")
+    try:
+        code, body = _post(srv, "/api/agent", {
+            "project": "p1", "scene": "synth11", "message": "이미지 교체", "ui_context": ui_context,
+        })
+    finally:
+        srv.shutdown()
+    assert code == 200, body
+    assert captured == [has_attachment]
 
 
 def test_agent_api_requires_message(tmp_path, monkeypatch):

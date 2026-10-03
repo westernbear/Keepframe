@@ -2508,6 +2508,8 @@ def make_server(
                         raise ValueError(f"unknown job kind {kind!r}")
                     return job.to_json()
 
+                raw_ui_context = data.get("ui_context")
+                raw_summary = raw_ui_context.get("summary") if isinstance(raw_ui_context, dict) else None
                 ctx = SessionContext(
                     root=root,
                     scene_id=resolved_scene_id,
@@ -2517,6 +2519,7 @@ def make_server(
                     jobs=JOBS,
                     submit_job=submit_agent_job,
                     prepare_render=prepare_agent_render,
+                    has_attachment=isinstance(raw_summary, dict) and bool(raw_summary.get("attachment")),
                 )
                 try:
                     with agent_scene_lock(root, resolved_scene_id):

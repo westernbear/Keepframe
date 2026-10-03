@@ -85,6 +85,7 @@ def edit(
     prompt: str,
     *,
     attachment: str | Path | bytes | None = None,
+    has_attachment: bool = False,
     element: str | None = None,
     confirm: bool = False,
     intent: Intent | dict | None = None,
@@ -95,7 +96,7 @@ def edit(
     scene, parent = _load(root, scene_id, version)
     sd = scene_dir(root, scene_id)
     parsed = Intent.model_validate(intent) if intent is not None else interpret(
-        prompt, scene, element=element, has_attachment=attachment is not None
+        prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
     built = plan(scene, parsed)
     if parsed.ambiguous or not parsed.targets:
