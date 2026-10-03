@@ -128,6 +128,10 @@ async function postAgent(body) {
   return api("/api/agent", { method: "POST", body: JSON.stringify(body) });
 }
 
+async function fetchAgentHistory(project, scene, before, limit = 50) {
+  return api(withQuery("/api/agent", { project, scene, before, limit }));
+}
+
 async function fetchRenderPlans(project, scene, version) {
   return api(withQuery("/api/render-plans", { project, scene, version }));
 }
@@ -186,6 +190,9 @@ function nativeArtifactUrl(planId, kind, project) {
     { project },
   );
 }
+function lottieArtifactUrl(planId, project) {
+  return withQuery(`/api/lottie/artifacts/${encodeURIComponent(planId)}/animation`, { project });
+}
 
 async function postCorrect(project, scene, op, args) {
   return api("/api/correct", {
@@ -222,6 +229,7 @@ export {
   postKeep,
   postEdit,
   postAgent,
+  fetchAgentHistory,
   postCorrect,
   fetchRenderPlans,
   fetchRenderState,
@@ -232,6 +240,7 @@ export {
   postAeControl,
   aeArtifactUrl,
   nativeArtifactUrl,
+  lottieArtifactUrl,
   reviewFrameUrl,
   reviewAssetUrl,
   DEFAULT_FILMSTRIP_COUNT,

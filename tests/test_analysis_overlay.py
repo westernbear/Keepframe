@@ -144,3 +144,26 @@ def test_manual_text_edit_keeps_observations_and_text_box_correction_forks(obser
     assert now["regions"][0]["source"] == "manual_box"
     assert now["ocr"][0]["confidence"] == .87
     assert frame_overlay(root, scene, v1, 1) == before
+
+
+def test_multiscene_analysis_pins_each_scenes_original_and_overlay(tmp_path, monkeypatch):
+    from keepframe.analyze import pipeline
+    root = tmp_path / "multi"
+    frames = np.zeros((8, 30, 40, 3), np.uint8)
+    frames[:4, 5:20, 5:20] = [255, 0, 0]
+    frames[4:, 5:20, 20:35] = [0, 255, 0]
+    monkeypatch.setattr(pipeline, "read_frames", lambda *args: (frames, 30))
+    monkeypatch.setattr(pipeline, "_parse_ui", lambda frames, scene, sd: scene)
+    project = pipeline.analyze(tmp_path / "source.mp4", 0, 7, root,
+        pipeline.AnalyzeOptions(bg_override="#000000", ocr=False, refine=False, use_ecc=False),
+        scenes=[{"id": "s1", "frames": [0, 3]}, {"id": "s2", "frames": [4, 7]}], mode="full")
+    assert len(project.scenes) == 2
+    originals = []
+    for ref, version in zip(project.scenes, project.versions):
+        assert version.analysis_file and ref.id in version.analysis_file
+        state = ReviewState(root, ref.id)
+        scene, version = state.scene("v1")
+        overlay = frame_overlay(root, scene, version, 0)
+        assert overlay["scene"] == ref.id and overlay["objects"]
+        originals.append(state.orig_png(0, "v1"))
+    assert originals[0] != originals[1]

@@ -548,6 +548,39 @@ def test_native_approval_includes_outputs_when_runner_finishes_inline(tmp_path, 
     ]
 
 
+def test_lottie_final_approval_exposes_single_json_artifact(tmp_path, monkeypatch):
+    workspace = tmp_path / "ws"
+    plan = _plan(workspace, backend="lottie", mode="final")
+
+    class CompleteRunner:
+        def enqueue(self, job, *, spec=None, fn=None):
+            output = workspace / "p1" / "renders" / plan.id / "lottie" / "animation.json"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b'{"v":"5.12.2"}')
+            job.result = {"animation": str(output)}
+            job.status = "done"
+
+    monkeypatch.setattr(web_server, "JOBS", JobStore(runner=CompleteRunner()))
+    server = start(workspace)
+    try:
+        code, approved = _post(
+            server,
+            f"/api/render-plans/{plan.id}/approve",
+            {"project": "p1", "digest": plan.digest, "revision": 0},
+        )
+        request = Request(f"{_origin(server)}/api/lottie/artifacts/{plan.id}/animation?project=p1")
+        with urlopen(request) as response:
+            downloaded = response.read()
+            disposition = response.headers["Content-Disposition"]
+    finally:
+        server.shutdown()
+
+    assert code == 202 and approved["status"] == "done"
+    assert approved["artifacts"] == [{"kind": "animation", "label": "Lottie JSON"}]
+    assert downloaded == b'{"v":"5.12.2"}'
+    assert disposition == 'attachment; filename="animation.json"'
+
+
 def test_ae_plan_approval_creates_durable_waiting_session(tmp_path):
     workspace = tmp_path / "ws"
     plan = _plan(workspace, backend="after_effects")

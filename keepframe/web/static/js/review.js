@@ -29,6 +29,7 @@ function bindAccordions() {
 }
 
 function showEmptyReview() {
+  setWorkflowStage({ stage: null, projectName: "", projectStatus: "" });
   ws.clearLoading();
   ws.dom.reviewRoot.classList.add("is-empty");
   document.body.classList.add("review-empty");
@@ -49,6 +50,7 @@ async function bootReviewWorkspace() {
     }).catch(() => {});
     ws.pollJob();
   } catch (err) {
+    setWorkflowStage({ stage: null, projectName: "", projectStatus: "" });
     ws.clearLoading();
     ws.setJobBanner(err.message || T("review.loadFailed"), true);
   }

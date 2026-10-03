@@ -29,14 +29,17 @@ let callback;
 globalThis.requestAnimationFrame = fn => { callback = fn; return 1; };
 globalThis.cancelAnimationFrame = () => {};
 ''' + src + source + '''
-let version = 'v1';
-const previews = createPreviewCache({project:'p',scene:'s',version:() => version,kinds:['orig']});
+let version = 'v1', sceneId = 's';
+const previews = createPreviewCache({project:'p',scene:() => sceneId,version:() => version,kinds:['orig']});
 previews.prefetch(0, 8);
 assert.equal(await previews.wait(0), true);
 assert.ok(urls.length > 1 && urls.every(url => url.startsWith('/frame/orig/') && url.includes('v=v1')));
 version = 'v2';
 await previews.wait(0);
 assert.ok(urls.at(-1).includes('v=v2'));
+sceneId = 's2';
+await previews.wait(0);
+assert.ok(urls.at(-1).includes('scene=s2'));
 let frame = 0, finish;
 const transport = createFrameTransport({
  getFrame:()=>frame, setFrameIndex:f=>frame=f, getFps:()=>30, getFrameCount:()=>10,

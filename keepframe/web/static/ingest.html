@@ -54,6 +54,15 @@
 </div>
 <div data-filmstrip class="filmstrip"></div>
 <div class="range-meta" data-range-meta>—</div>
+<section class="scene-boundaries" data-scene-boundaries hidden aria-labelledby="scene-boundaries-title">
+<h2 id="scene-boundaries-title" data-i18n="ingest.boundaries">장면 경계</h2>
+<p data-i18n="ingest.boundariesHelp">경계 프레임을 바꾸면 예상 시간과 확인 토큰을 다시 계산합니다.</p>
+<div class="scene-boundaries__list" data-scene-boundary-list></div>
+</section>
+<label class="short-scene-confirm" data-short-confirm hidden>
+<input type="checkbox" data-short-ack/>
+<span data-i18n="ingest.shortConfirm">6프레임 미만 장면을 병합하지 않고 유지합니다.</span>
+</label>
 <div style="display:flex;gap:16px;margin-top:16px;align-items:center" data-range-inputs>
 <label style="font-size:var(--fs-micro);color:var(--muted)" data-i18n="ingest.startFrame">시작</label>
 <input class="input" style="width:64px;padding:4px 8px;text-align:center" type="number" min="0" data-start value="0"/>

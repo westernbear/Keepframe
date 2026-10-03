@@ -192,3 +192,19 @@ def test_agent_rejects_cross_origin_and_oversized_bodies_before_work(tmp_path):
         srv.shutdown()
     assert forbidden.value.code == 403
     assert too_large.value.code == 413
+
+
+def test_agent_rejects_oversized_message_with_ui_context(tmp_path):
+    _project(tmp_path)
+    srv = start(tmp_path / "ws")
+    try:
+        code, body = _post(srv, "/api/agent", {
+            "project": "p1",
+            "scene": "synth11",
+            "message": "x" * (64 * 1024 + 1),
+            "ui_context": {"schema": "keepframe.ui-context/1", "summary": {}, "images": []},
+        })
+    finally:
+        srv.shutdown()
+    assert code == 413
+    assert body["error"] == "message is too large"

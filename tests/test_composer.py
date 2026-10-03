@@ -16,3 +16,18 @@ def test_compose_is_self_contained_and_has_hooks(tmp_scene_dir):
     text = [e for e in scene.elements if e.kind == "text"][0]
     assert f"<span" in html and text.canonical.text in html
     assert f'data-track-index="{int(text.z.keys[0].v)}"' in html
+
+
+def test_compose_escapes_script_breakout_in_scene_json(tmp_scene_dir):
+    scene = make_synthetic_scene(tmp_scene_dir, seed=2)
+    index = next(i for i, element in enumerate(scene.elements) if element.kind == "text")
+    element = scene.elements[index]
+    canonical = element.canonical.model_copy(update={"text": "</script><script>window.pwned=true</script>"})
+    elements = list(scene.elements)
+    elements[index] = element.model_copy(update={"canonical": canonical})
+    scene = scene.model_copy(update={"elements": elements})
+
+    output = compose(scene, tmp_scene_dir, tmp_scene_dir / "composition.html").read_text()
+
+    assert "</script><script>window.pwned=true</script>" not in output
+    assert "\\u003c/script\\u003e\\u003cscript\\u003ewindow.pwned=true\\u003c/script\\u003e" in output

@@ -80,6 +80,7 @@ def load_meta(workspace: Path, project_id: str) -> dict | None:
         "version": latest,
         "confidence": None,
         "scene": scene,
+        "approved_scenes": project.approved_scenes,
     }
     for key in ("mode", "range"):
         if key in source:

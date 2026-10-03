@@ -27,6 +27,8 @@ class LLMClient(Protocol):
 class NullClient:
     """No LLM configured. Keeps the server alive and the tool registry testable."""
 
+    supports_vision = False
+
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         return AssistantReply(
             content="에이전트가 설정되지 않았습니다. 관리자 LLM 페이지에 API 키를 저장하거나 KEEPFRAME_LLM_API_KEY(또는 OPENAI_API_KEY)를 넣으세요."
@@ -51,6 +53,9 @@ class OpenAICompatibleClient:
         self.api_key = api_key or os.environ.get("KEEPFRAME_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
         self.model = model or os.environ.get("KEEPFRAME_LLM_MODEL") or "gpt-4o-mini"
         self.timeout = timeout
+        override = os.environ.get("KEEPFRAME_LLM_VISION")
+        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "vision", "llava", "gemini", "claude-3", "claude-4")
+        self.supports_vision = override == "1" or (override != "0" and any(marker in self.model.lower() for marker in markers))
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         body = {
@@ -97,6 +102,9 @@ class LiteLLMClient:
 
         self._litellm = litellm
         self.config = config
+        override = config.extra.get("vision") if config.extra else None
+        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "vision", "llava", "gemini", "claude-3", "claude-4")
+        self.supports_vision = bool(override) if override is not None else any(marker in config.model.lower() for marker in markers)
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         kwargs: dict[str, Any] = {

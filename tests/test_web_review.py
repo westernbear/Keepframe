@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 import numpy as np
 import pytest
 from keepframe.ir.synth import make_synthetic_scene
-from keepframe.ir.store import init_project, scene_dir
+from keepframe.ir.store import init_project, init_project_scenes, scene_dir
 from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
 
@@ -69,7 +69,7 @@ def test_state_from_synthetic(tmp_path):
     assert "per_frame_l1" not in rec
     assert len(rec["l1_bins"]) <= 200 and len(rec["l1_bins"]) == len(rec["l1_hot"])
     assert rec["l1_max"] == 0.2 and rec["l1_peaks"] and max(rec["l1_peaks"]) < 200
-    assert set(body["project"].keys()) == {"versions"}
+    assert set(body["project"].keys()) == {"versions", "scenes", "links", "approved_scenes"}
     assert body["status"] == "review"
     assert body["project"]["versions"][0]["id"] == "v1"
     assert body["project"]["versions"][0]["scene_file"].startswith(f"scenes/{scene.id}/")
@@ -158,6 +158,23 @@ def test_approve_marks_project(tmp_path):
     assert json.loads(state)["status"] == "approved"
     assert load_meta(tmp_path / "ws", "p1")["status"] == "approved"
     assert load_meta(tmp_path / "ws", "p1")["scene"] == scene.id
+
+
+def test_multiscene_project_is_approved_only_after_every_scene(tmp_path):
+    root = tmp_path / "ws" / "p1"
+    first = make_synthetic_scene(root / "scenes" / "s1", seed=21, with_text=False, frames=6).model_copy(update={"id": "s1"})
+    second = make_synthetic_scene(root / "scenes" / "s2", seed=22, with_text=False, frames=6).model_copy(update={"id": "s2"})
+    init_project_scenes(root, {"file": "ref.mp4", "fps": 30, "size": list(first.size)}, [(first, (0, 5), {"transition": "cut"}), (second, (6, 11), None)])
+    (root / "meta.json").write_text(json.dumps({"id": "p1", "title": "multi", "status": "review", "scene": "s1", "version": "v1"}))
+    srv = start(tmp_path / "ws")
+    try:
+        first_code, first_body = _post(srv, "/api/approve", {"project": "p1", "scene": "s1", "v": "v1"})
+        second_code, second_body = _post(srv, "/api/approve", {"project": "p1", "scene": "s2", "v": "v1"})
+    finally:
+        srv.shutdown()
+    assert first_code == 200 and first_body["project"]["status"] == "review"
+    assert second_code == 200 and second_body["project"]["status"] == "approved"
+    assert second_body["project"]["approved_scenes"] == {"s1": "v1", "s2": "v1"}
 
 
 def test_review_page_has_progress_bar():

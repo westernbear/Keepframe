@@ -34,7 +34,8 @@ export function attachInspector(ws) {
   }
 
   function appendElementRow(frag, opts, item) {
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "element-row" + (item.id === ws.selectedId ? " element-row--selected" : "");
     row.dataset.id = item.id;
     row.tabIndex = 0;
@@ -199,9 +200,35 @@ export function attachInspector(ws) {
 
   function applySceneChrome() {
     dom.sceneBadge.textContent = `${ws.sceneId} · ${ws.state.scene.frames}f`;
+    const scenes = ws.state.project.scenes || [];
+    dom.sceneSelect.replaceChildren();
+    scenes.forEach((scene) => {
+      const option = document.createElement("option");
+      option.value = scene.id;
+      option.textContent = `${scene.id} · ${scene.frames[0]}–${scene.frames[1]}`;
+      option.selected = scene.id === ws.sceneId;
+      dom.sceneSelect.appendChild(option);
+    });
+    dom.sceneSelect.hidden = scenes.length < 2;
+    const current = scenes.find((scene) => scene.id === ws.sceneId);
+    const links = (ws.state.project.links || []).filter((link) => link.from?.scene === ws.sceneId || link.to?.scene === ws.sceneId);
+    dom.sceneMeta.textContent = current ? `${current.frames[0]}–${current.frames[1]} · 전환 ${current.transition_out?.transition || "없음"} · 링크 ${links.length}` : "";
+    dom.sceneSelect.onchange = () => switchScene(dom.sceneSelect.value);
     dom.frameTotal.textContent = String(ws.state.scene.frames);
     fillVersions();
     paintApprove(ws.state.status);
+  }
+
+  async function switchScene(sceneId) {
+    if (!sceneId || sceneId === ws.sceneId) return;
+    ws.setPlaying(false);
+    ws.sceneId = sceneId;
+    ws.versionId = null;
+    ws.selectedId = null;
+    ws.frame = 0;
+    ws.shownFrame = -1;
+    await refreshState(null);
+    ws.pollJob();
   }
 
   function restoreSelection(keepSel) {
@@ -283,8 +310,11 @@ export function attachInspector(ws) {
     }
     dom.approveBtn.disabled = true;
     try {
-      await postApprove(ws.projectId, ws.sceneId, ws.versionId);
-      goAgent();
+      const result = await postApprove(ws.projectId, ws.sceneId, ws.versionId);
+      const approvals = result.project?.approved_scenes || {};
+      const next = (ws.state.project.scenes || []).find((scene) => !approvals[scene.id]);
+      if (next) await switchScene(next.id);
+      else goAgent();
     } catch (err) {
       paintApprove(ws.state && ws.state.status);
       ws.setJobBanner(err.message || T("review.approveFailed"), true);

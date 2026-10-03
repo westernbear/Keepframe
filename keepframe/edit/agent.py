@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +16,7 @@ from ..ir.store import current_scene, load_project, load_scene, new_version, sce
 from ..verify.verifier import VerifyReport, verify
 from .apply import apply_edit
 from .intent import Intent, Plan, interpret, plan
+from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
 ASSET_GEN_CAP = 2
@@ -47,6 +52,34 @@ def _load(root: Path, scene_id: str, version: str | None) -> tuple[Scene, Versio
     return load_scene(Path(root) / v.scene_file), v
 
 
+def _candidate_digest(scene: Scene, candidate_dir: Path) -> str:
+    digest = hashlib.sha256(json.dumps(scene.model_dump(by_alias=True), sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    assets = candidate_dir / "assets"
+    for path in sorted(assets.iterdir()) if assets.is_dir() else []:
+        if path.is_file():
+            digest.update(path.name.encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _failure_feedback(report: VerifyReport | None) -> str:
+    if report is None:
+        return ""
+    failed = [str(item.get("pred")) for item in report.keep_results if not item.get("passed")]
+    frames = sorted({error.frame for error in report.layer_errors})
+    return f" 이전 후보 실패 프레임={frames[:20]}, 실패 술어={failed[:20]}, 메시지={report.messages[:10]}. 이를 피한 다른 후보를 생성하세요."
+
+
+def _promote_assets(source: Path, destination: Path, baseline: set[str]) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in (source / "assets").iterdir():
+        if path.name not in baseline:
+            target = destination / path.name
+            if target.exists():
+                raise FileExistsError(target)
+            shutil.copy2(path, target)
+
+
 def edit(
     root: Path,
     scene_id: str,
@@ -76,49 +109,64 @@ def edit(
 
     last_rep: VerifyReport | None = None
     choices_map = dict(choices or {})
-    asset_uses: dict[str, int] = {}
-    attempt = 0
-    for attempt in range(1, MAX_TRIES + 1):
-        for target in built.items:
-            key = f"{target.element}:{target.property}"
-            if asset_uses.get(key, 0) >= ASSET_GEN_CAP:
+    generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None), None)
+    generated = generated_kind is not None
+    asset_uses = 0
+    seen: set[str] = set()
+    baseline = {path.name for path in (sd / "assets").iterdir()} if (sd / "assets").is_dir() else set()
+    attempts_run = 0
+    with tempfile.TemporaryDirectory(prefix="keepframe-edit-") as temp:
+        temp_root = Path(temp)
+        for candidate_no in range(1, MAX_TRIES + 1):
+            candidate_attachment = attachment
+            if generated:
+                if asset_uses >= ASSET_GEN_CAP:
+                    break
+                try:
+                    response = AssetClient().request(
+                        task="generate",
+                        kind=generated_kind,
+                        prompt=prompt + _failure_feedback(last_rep),
+                    )
+                except AssetAPIError as exc:
+                    return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, attempts=attempts_run, error=exc.code)
+                candidate_attachment = response.data
+                asset_uses += 1
+            candidate = temp_root / f"candidate-{candidate_no}"
+            candidate.mkdir()
+            if (sd / "assets").is_dir():
+                shutil.copytree(sd / "assets", candidate / "assets")
+            edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+            digest = _candidate_digest(edited, candidate)
+            if digest in seen:
+                break
+            seen.add(digest)
+            attempts_run += 1
+            html = compose(edited, candidate, candidate / "composition.html")
+            probes = render(html, edited, candidate / "render")
+            last_rep = verify(edited, candidate, render_result=probes, reference=scene, reference_dir=sd)
+            if _passed(last_rep):
+                _promote_assets(candidate, sd / "assets", baseline)
+                v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True, parent_version=parent.id)
                 return EditResult(
-                    status="failed",
+                    status="done",
                     summary=parsed.summary,
                     intent=parsed,
                     plan=built,
+                    version=v,
                     verify=last_rep,
-                    attempts=attempt,
-                    error="에셋 생성 상한(2회)을 초과했습니다.",
-                    messages=(last_rep.messages if last_rep else []),
+                    attempts=attempts_run,
+                    messages=last_rep.messages,
                 )
-        edited = apply_edit(scene, sd, built.items, choices_map, attachment)
-        for target in built.items:
-            key = f"{target.element}:{target.property}"
-            asset_uses[key] = asset_uses.get(key, 0) + 1
-        html = compose(edited, sd, sd / f"composition.edit{attempt}.html")
-        probes = render(html, edited, sd / f"render.edit{attempt}")
-        last_rep = verify(edited, sd, render_result=probes, reference=scene, reference_dir=sd)
-        if _passed(last_rep):
-            v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True, parent_version=parent.id)
-            return EditResult(
-                status="done",
-                summary=parsed.summary,
-                intent=parsed,
-                plan=built,
-                version=v,
-                verify=last_rep,
-                attempts=attempt,
-                messages=last_rep.messages,
-            )
-        break
+            if not generated:
+                break
     return EditResult(
         status="failed",
         summary=parsed.summary,
         intent=parsed,
         plan=built,
         verify=last_rep,
-        attempts=attempt,
+        attempts=attempts_run,
         error="keep 검증을 통과하지 못했습니다.",
         messages=(last_rep.messages if last_rep else []),
     )

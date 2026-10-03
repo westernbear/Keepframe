@@ -257,7 +257,7 @@ export function attachPlayback(ws) {
     document.getElementById("step-fwd").addEventListener("click", () => setFrame(ws.frame + 1, true));
     document.getElementById("frame-retry").addEventListener("click", () => { ws.previews.clear(); setFrame(ws.frame, true); });
   }
-  ws.previews = createPreviewCache({ project: ws.projectId, scene: ws.sceneId, version: () => ws.versionId, kinds: ["orig"] });
+  ws.previews = createPreviewCache({ project: ws.projectId, scene: () => ws.sceneId, version: () => ws.versionId, kinds: ["orig"] });
   ws.transport = createFrameTransport({
     getFrame: () => ws.frame, setFrameIndex: next => { ws.frame = next; },
     getFps: () => ws.state.scene.fps, getFrameCount: () => ws.state.scene.frames,

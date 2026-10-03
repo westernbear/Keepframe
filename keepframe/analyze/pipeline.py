@@ -1,11 +1,11 @@
 from __future__ import annotations
-import json, pickle, os, time
+import json, pickle, os, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, Version
-from ..ir.store import current_scene, init_project, load_project, new_version, _save_project, scene_dir as _scene_dir
+from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, UIModel, Version
+from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
@@ -19,6 +19,7 @@ from .sprites import RAW_COLS, sprite_props, z_order
 from .text import Ocr, apply_copy, ocr_frames, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
+from ..assets import AssetAPIError, AssetClient
 
 log = get("keepframe.analyze")
 
@@ -227,18 +228,78 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     return scene
 
 
-def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeOptions | None = None,
-            ocr: Ocr | None = None) -> Project:
+def _parse_ui(frames: np.ndarray, scene: Scene, sd: Path) -> Scene:
+    if not os.environ.get("KEEPFRAME_ASSET_API_URL"):
+        return scene
+    change = np.mean(np.abs(frames[1:].astype(np.int16) - frames[:-1].astype(np.int16)), axis=(1, 2, 3)) if len(frames) > 1 else np.array([])
+    picks = [0, *([int(np.argmax(change)) + 1] if change.size else []), len(frames) - 1]
+    selected = [frames[index] for index in dict.fromkeys(picks)]
+    sheet = np.concatenate(selected, axis=1)
+    ok, encoded = cv2.imencode(".png", cv2.cvtColor(sheet, cv2.COLOR_RGB2BGR))
+    if not ok:
+        return scene
+    response = AssetClient().request(
+        task="parse",
+        kind="ui",
+        prompt=f"Parse these representative/state frames as keepframe.ui/1. Each tile is {scene.size[0]}x{scene.size[1]}; bbox coordinates must be relative to one tile. Preserve state frame ranges 0..{scene.frames - 1}.",
+        input_image=encoded.tobytes(),
+        size={"width": scene.size[0], "height": scene.size[1]},
+    )
+    ui = response.ui
+    if ui is None or not ui.components:
+        return scene
+    height, width = frames[0].shape[:2]
+    elements: list[Element] = []
+    for index, component in enumerate(ui.components):
+        x0, y0, x1, y1 = component.bbox
+        x0, x1 = sorted((max(0, min(width, round(x0))), max(0, min(width, round(x1)))))
+        y0, y1 = sorted((max(0, min(height, round(y0))), max(0, min(height, round(y1)))))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        texture = sd / "assets" / f"{component.id}.ui.png"
+        texture.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(texture), cv2.cvtColor(frames[0, y0:y1, x0:x1], cv2.COLOR_RGB2BGRA))
+        visible = (0, scene.frames - 1)
+        if component.states:
+            visible = (
+                max(0, min(state.frames[0] for state in component.states)),
+                min(scene.frames - 1, max(state.frames[1] for state in component.states)),
+            )
+        elements.append(Element(
+            id=component.id,
+            kind="ui",
+            canonical=Canonical(width=x1 - x0, height=y1 - y0, texture=f"assets/{texture.name}"),
+            visible=visible,
+            tracks={
+                "x": Track(keys=[Keyframe(t=0, v=(x0 + x1) / 2)]),
+                "y": Track(keys=[Keyframe(t=0, v=(y0 + y1) / 2)]),
+            },
+            z=Track(keys=[Keyframe(t=0, v=index)]),
+        ))
+    if not elements:
+        return scene
+    parsed = scene.model_copy(update={"elements": elements, "ui": UIModel.model_validate(ui)})
+    assign_roles(parsed.elements)
+    parsed.constraints = extract_constraints(parsed)
+    return parsed
+
+
+def analyze_scene_frames(
+    frames: np.ndarray,
+    fps: float,
+    out_root: Path,
+    scene_id: str,
+    options: AnalyzeOptions | None = None,
+    ocr: Ocr | None = None,
+) -> Scene:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
-    log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
     existing = load_project(out_root) if (out_root / "project.json").exists() else None
-    sd = _scene_dir(out_root, "s1")
+    sd = _scene_dir(out_root, scene_id)
     (sd / "stages").mkdir(parents=True, exist_ok=True)
     overrides = sd / "stages" / "overrides.json"
     if not overrides.exists():
         overrides.write_text(json.dumps({"regions": [], "ids": {}, "merge": []}))
-    frames, fps = read_frames(video, start, end)
     np.save(sd / "stages" / "frames.npy", frames)
     n, H, W = frames.shape[:3]
     log.info("frames n=%s size=%sx%s fps=%s", n, W, H, fps)
@@ -259,23 +320,124 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    scene = Scene(id="s1", size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
     scene = _finish(sd, scene, frames, raws, messages)
+    try:
+        scene = _parse_ui(frames, scene, sd)
+    except AssetAPIError as exc:
+        log.warning("UI parse skipped scene=%s code=%s", scene_id, exc.code)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
-    analysis_file = snapshot_from_stages(sd, scene)
+    log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
+    return scene
+
+
+def _normalized_text(value: str | None) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value or "").casefold().split())
+
+
+def _dhash(path: Path) -> int | None:
+    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        return None
+    small = cv2.resize(image, (9, 8), interpolation=cv2.INTER_AREA)
+    bits = small[:, 1:] > small[:, :-1]
+    value = 0
+    for bit in bits.flat:
+        value = (value << 1) | int(bit)
+    return value
+
+
+def link_adjacent_scenes(scenes: list[Scene], root: Path) -> list[dict]:
+    links: list[dict] = []
+    for left, right in zip(scenes, scenes[1:]):
+        candidates: list[tuple[int, str, Element, Element]] = []
+        for source in left.elements:
+            for target in right.elements:
+                source_text = _normalized_text(source.canonical.text)
+                target_text = _normalized_text(target.canonical.text)
+                if source_text and source_text == target_text:
+                    candidates.append((0, "text", source, target))
+                    continue
+                source_texture, target_texture = source.canonical.texture, target.canonical.texture
+                if not source_texture or not target_texture:
+                    continue
+                source_ratio = source.canonical.width / max(source.canonical.height, 1e-6)
+                target_ratio = target.canonical.width / max(target.canonical.height, 1e-6)
+                if abs(source_ratio - target_ratio) / max(source_ratio, target_ratio, 1e-6) > 0.1:
+                    continue
+                first = _dhash(_scene_dir(root, left.id) / source_texture)
+                second = _dhash(_scene_dir(root, right.id) / target_texture)
+                if first is not None and second is not None:
+                    distance = (first ^ second).bit_count()
+                    if distance <= 5:
+                        candidates.append((distance, "dhash", source, target))
+        used_left: set[str] = set()
+        used_right: set[str] = set()
+        for distance, reason, source, target in sorted(candidates, key=lambda row: (row[0], row[2].id, row[3].id)):
+            if source.id in used_left or target.id in used_right:
+                continue
+            used_left.add(source.id)
+            used_right.add(target.id)
+            links.append(
+                {
+                    "from": {"scene": left.id, "element": source.id},
+                    "to": {"scene": right.id, "element": target.id},
+                    "reason": reason,
+                    "distance": distance,
+                }
+            )
+    return links
+
+
+def analyze(
+    video: Path,
+    start: int,
+    end: int,
+    out_root: Path,
+    options: AnalyzeOptions | None = None,
+    ocr: Ocr | None = None,
+    *,
+    scenes: list[dict] | None = None,
+    transitions: list[dict] | None = None,
+    mode: str = "range",
+) -> Project:
+    opts = options or AnalyzeOptions()
+    out_root = Path(out_root)
+    log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
+    existing = load_project(out_root) if (out_root / "project.json").exists() else None
+    frames, fps = read_frames(video, start, end)
+    layout = scenes or [{"id": "s1", "frames": [start, end]}]
+    by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
+    analyzed: list[Scene] = []
+    stored: list[tuple[Scene, tuple[int, int], dict | None]] = []
+    for index, item in enumerate(layout):
+        scene_id = str(item.get("id") or f"s{index + 1}")
+        first, last = int(item["frames"][0]), int(item["frames"][1])
+        local_first, local_last = first - start, last - start
+        if local_first < 0 or local_last >= len(frames) or local_first > local_last:
+            raise ValueError("scene range is outside analyzed frames")
+        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr)
+        analyzed.append(scene)
+        next_id = str(layout[index + 1].get("id") or f"s{index + 2}") if index + 1 < len(layout) else None
+        transition = by_pair.get((scene_id, next_id)) if next_id else None
+        stored.append((scene, (first, last), transition))
+    height, width = frames.shape[1:3]
+    links = link_adjacent_scenes(analyzed, out_root)
+    analysis_files = {scene.id: snapshot_from_stages(_scene_dir(out_root, scene.id), scene) for scene in analyzed}
+    source = {"file": str(video), "fps": fps, "size": [width, height], "mode": mode, "range": [start, end] if mode == "range" else None}
     if existing:
-        new_version(out_root, scene.id, scene, note="reanalysis", analysis_file=analysis_file)
+        from ..ir.schema import SceneRef
+        for scene in analyzed:
+            new_version(out_root, scene.id, scene, note="reanalysis", analysis_file=analysis_files[scene.id])
         project = load_project(out_root)
-        project.source.update(file=str(video), fps=fps, size=[W, H], mode="range", range=[start, end])
-        for ref in project.scenes:
-            if ref.id == scene.id:
-                ref.frames = (0, scene.frames - 1)
+        project.source.update(source)
+        project.scenes = [SceneRef(id=scene.id, frames=frame_range, transition_out=transition) for scene, frame_range, transition in stored]
+        project.links = links
+        project.approved_scenes = {}
         _save_project(out_root, project)
     else:
-        project = init_project(out_root, {"file": str(video), "fps": fps, "size": [W, H], "mode": "range", "range": [start, end]}, scene,
-                               analysis_file=analysis_file)
-    log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
+        project = init_project_scenes(out_root, source, stored, links=links, analysis_files=analysis_files)
     return project
 
 
@@ -291,7 +453,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
 
     if boundary <= STAGES.index("frames"):
         source = Path(project.source["file"])
-        start, end = project.source.get("range", [0, None])
+        ref = next((item for item in project.scenes if item.id == scene_id), None)
+        start, end = ref.frames if ref is not None else project.source.get("range", [0, None])
         frames, fps = read_frames(source, start, end)
         np.save(sd / "stages" / "frames.npy", frames)
     else:

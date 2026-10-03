@@ -73,6 +73,8 @@ export function createReviewWorkspace() {
       timelineSvg: el("timeline-svg"),
       timelineTracks: el("timeline-tracks"),
       sceneBadge: el("scene-badge"),
+      sceneSelect: el("scene-select"),
+      sceneMeta: el("scene-meta"),
       reassignTo: el("reassign-to"),
       reviewRoot: el("review-root"),
       loadingMsg: el("review-loading-msg"),

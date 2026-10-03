@@ -49,13 +49,48 @@ def _save_project(root: Path, project: Project) -> None:
 
 def init_project(root: Path, source: dict, scene: Scene, note: str = "initial analysis",
                  analysis_file: str | None = None) -> Project:
+    return init_project_scenes(
+        root,
+        source,
+        [(scene, (0, scene.frames - 1), None)],
+        note=note,
+        analysis_files={scene.id: analysis_file},
+    )
+
+
+def init_project_scenes(
+    root: Path,
+    source: dict,
+    scenes: list[tuple[Scene, tuple[int, int], dict | None]],
+    *,
+    links: list[dict] | None = None,
+    note: str = "initial analysis",
+    analysis_files: dict[str, str | None] | None = None,
+) -> Project:
     root = Path(root)
     if (root / "project.json").exists():
         raise FileExistsError(root / "project.json")
-    rel = f"scenes/{scene.id}/scene.v1.json"
-    save_scene(scene, root / rel)
-    project = Project(source=source, analysis_migrated=True, scenes=[SceneRef(id=scene.id, frames=(0, scene.frames - 1))],
-                      versions=[Version(id="v1", parent=None, note=note, auto=True, scene_file=rel, analysis_file=analysis_file)])
+    refs: list[SceneRef] = []
+    versions: list[Version] = []
+    for scene, frame_range, transition_out in scenes:
+        rel = f"scenes/{scene.id}/scene.v1.json"
+        save_scene(scene, root / rel)
+        refs.append(SceneRef(id=scene.id, frames=frame_range, transition_out=transition_out))
+        versions.append(Version(id="v1", parent=None, note=note, auto=True, scene_file=rel, analysis_file=(analysis_files or {}).get(scene.id)))
+    project = Project(source=source, analysis_migrated=True, scenes=refs, links=links or [], versions=versions)
+    _save_project(root, project)
+    return project
+
+
+def approve_scene(root: Path, scene_id: str, version_id: str) -> Project:
+    root = Path(root)
+    project = load_project(root)
+    if not any(
+        version.id == version_id and version.scene_file.startswith(f"scenes/{scene_id}/")
+        for version in project.versions
+    ):
+        raise ValueError("version does not belong to scene")
+    project.approved_scenes[scene_id] = version_id
     _save_project(root, project)
     return project
 

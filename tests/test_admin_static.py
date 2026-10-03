@@ -19,8 +19,6 @@ def test_admin_pages_offline():
             assert bad not in text, f"{name} {bad}"
         assert "/static/css/app.css" in text
 
-
-
 def test_admin_pages_keep_local_assets_and_navigation_contracts():
     for name in PAGES:
         text = (STATIC / name).read_text(encoding="utf-8")

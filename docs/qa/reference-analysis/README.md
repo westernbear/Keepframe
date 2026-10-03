@@ -43,3 +43,9 @@ Used the gstack `browse` shared Chromium on a disposable workspace at `/tmp/keep
 `race-check.js` can be run with `browse eval` on the disposable demo after creating `v2` with a box correction. It intentionally delays responses and simulates an overlay outage, restores `fetch` afterward, and asserts the outcomes. Run it with the UI set to Korean and frame 0. `draw-check.js` dispatches pointer events in the browse page to verify drag coordinate mapping; select `e1` and enable Edit region first. Neither script is intended for a production project.
 
 Screenshots: [desktop](desktop.png), [mobile](mobile.png). Console checks found no application errors. `graphify update .` completed; its optional semantic community relabeling was not run.
+
+## Upstream integration before push
+
+Merged `origin/master` (`6f28cff`, multi-scene approval workflows) while preserving the reference overlay changes. Updated scene initialization to attach a separate snapshot to each scene and kept analysis inheritance when editing older versions. The combined regression run passed **166 tests** (4 marked tests excluded); the added multi-scene/cache checks passed **7 tests**. All browser JavaScript modules passed syntax checks.
+
+In gstack browse, switched from `s1/v1` to `s2/v1` at the same frame index. The original URL changed to `scene=s2&v=v1`, the detected box moved to the second scene's position `(70, 15)`, one region remained visible, and `/frame/recon/` requests stayed at zero. No console errors were observed.

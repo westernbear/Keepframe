@@ -456,7 +456,7 @@ def prepare_ae_render_plan(
     if scene.id != scene_id:
         raise PlanConflict("scene id does not match the authoritative version")
     if mode == "final":
-        _final_gate(meta, version.id)
+        _final_gate(meta, scene_id, version.id)
     predecessor = _validate_predecessor(
         root,
         predecessor_id=predecessor_id,
