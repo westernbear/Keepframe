@@ -4,10 +4,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..log import get
 from .brief import scene_brief
 from .llm import AssistantReply, LLMClient, make_llm
 from .tools import TOOL_SCHEMAS, SessionContext, run_tool
 from .ui_context import UIContext, multimodal_content
+
+log = get(__name__)
 
 MAX_STEPS = 8
 
@@ -64,6 +67,7 @@ def _scene_summary(ctx: SessionContext) -> str:
             scene, _ = current_scene(ctx.root, ctx.scene_id)
         return scene_brief(scene)
     except Exception:  # noqa: BLE001
+        log.exception("scene brief failed scene=%s version=%s", ctx.scene_id, ctx.version)
         return ""
 
 

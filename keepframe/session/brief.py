@@ -32,13 +32,16 @@ def _ease(el: Element, m: Motion) -> str:
 def describe_motion(el: Element, m: Motion, fps: float) -> str:
     span, ease = f"{_sec(m.start, fps)}–{_sec(m.end, fps)}", _ease(el, m)
     tail = f", {ease}" if ease else ""
-    if m.type == "translation" and m.dir is not None:
+    if m.type == "translation":
+        if m.dir is None:
+            return f"moves out and back (net 0px) {span}{tail}"
         return f"moves {_direction(*m.dir)} {m.mag:.0f}px {span}{tail}"
     if m.type == "rotation":
         return f"rotates {m.mag:+.0f}° {span}{tail}"
     if m.type == "scale":
         return f"scales ×{m.mag:.2f} {span}{tail}"
-    return f"{'fades in' if m.mag > 0 else 'fades out'} {m.mag:+.2f} {span}{tail}"
+    if m.type == "opacity":
+        return f"{'fades in' if m.mag > 0 else 'fades out'} {m.mag:+.2f} {span}{tail}"
 
 
 def _content(el: Element) -> str:
@@ -46,7 +49,7 @@ def _content(el: Element) -> str:
     if el.canonical.text:
         bits.append('"' + " ".join(el.canonical.text.split())[:40] + '"')
     if el.caption:
-        bits.append(el.caption[:120])
+        bits.append(" ".join(el.caption.split())[:120])
     if el.canonical.color:
         bits.append(el.canonical.color)
     return " · ".join(bits) or "-"
@@ -68,7 +71,8 @@ def scene_brief(scene: Scene) -> str:
     order = sorted(scene.elements, key=lambda e: (e.visible[0], e.id))
     for el in order[:MAX_ELEMENTS]:
         x0, y0, x1, y1 = element_bbox(el, el.visible[0])
-        what = el.kind + (f"/{el.label}" if el.label else "")
+        label = " ".join(el.label.split())[:40] if el.label else ""
+        what = el.kind + (f"/{label}" if label else "")
         moves = "; ".join(describe_motion(el, m, scene.fps) for m in motions.get(el.id, [])) or "static"
         lines.append(
             f"{el.id} | {what} | {_content(el)} | at ({(x0 + x1) / 2 / W * 100:.0f}%, {(y0 + y1) / 2 / H * 100:.0f}%) "
@@ -78,5 +82,6 @@ def scene_brief(scene: Scene) -> str:
     if len(order) > MAX_ELEMENTS:
         lines.append(f"... {len(order) - MAX_ELEMENTS} later elements omitted")
     for g in scene.groups:
-        lines.append(f"group {g.id}: {', '.join(g.members)} ({g.reason})")
+        reason = " ".join(g.reason.split())[:80]
+        lines.append(f"group {g.id}: {', '.join(g.members)} ({reason})")
     return "\n".join(lines)
