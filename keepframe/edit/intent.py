@@ -3,17 +3,30 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
 
 Prop = Literal["text", "color", "texture", "model"]
+SCENE_LEVEL: frozenset[str] = frozenset()
+_HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 
 
 class Target(BaseModel):
     element: str | None = None
     property: Prop
-    value: str | None = None
+    value: str | None = Field(default=None, max_length=500)
+    weight: int | None = Field(default=None, ge=100, le=900)
+    speed: float | None = Field(default=None, gt=0.1, le=10)
+    delay: float | None = Field(default=None, ge=-30, le=30)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.property == "color":
+            if not self.value or not _HEX_FULL.fullmatch(self.value):
+                raise ValueError("color value must be #rrggbb")
+            self.value = _norm_hex(self.value)
+        return self
 
 
 class Intent(BaseModel):
@@ -71,6 +84,21 @@ def _pick(cands: list[Element], hinted: str | None, selected: str | None) -> tup
     return None, ids
 
 
+def describe(targets: list[Target], has_attachment: bool = False) -> str:
+    bits = []
+    for t in targets:
+        who = t.element or "?"
+        if t.property == "text":
+            bits.append(f"{who} 문구를 {t.value}(으)로")
+        elif t.property == "color":
+            bits.append(f"{who} 색을 {t.value}로")
+        elif t.property == "model":
+            bits.append(f"{who} 3D 모델을 생성해")
+        else:
+            bits.append(f"{who} 이미지를 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
+    return " ".join(bits) + " 바꿉니다. 트랙은 유지합니다."
+
+
 def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_attachment: bool = False) -> Intent:
     prompt = (prompt or "").strip()
     hinted = (_ELEM.search(prompt).group(1).lower() if _ELEM.search(prompt) else None)
@@ -114,18 +142,7 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
     if not targets:
         return Intent(summary="문구·색·이미지 교체를 읽지 못했습니다.", ambiguous=True)
 
-    bits = []
-    for t in targets:
-        who = t.element or "?"
-        if t.property == "text":
-            bits.append(f"{who} 문구를 {t.value}(으)로")
-        elif t.property == "color":
-            bits.append(f"{who} 색을 {t.value}로")
-        elif t.property == "model":
-            bits.append(f"{who} 3D 모델을 생성해")
-        else:
-            bits.append(f"{who} 이미지를 {'첨부로' if has_attachment else '생성해'}")
-    return Intent(targets=targets, summary=" ".join(bits) + " 바꿉니다. 트랙은 유지합니다.")
+    return Intent(targets=targets, summary=describe(targets, has_attachment))
 
 
 def plan(scene: Scene, intent: Intent) -> Plan:
@@ -134,11 +151,11 @@ def plan(scene: Scene, intent: Intent) -> Plan:
     items: list[Target] = []
     conflicts: list[Conflict] = []
     for t in intent.targets:
-        if not t.element:
+        if not t.element and t.property not in SCENE_LEVEL:
             continue
-        el = scene.element(t.element)
+        el = scene.element(t.element) if t.element else None
         items.append(t)
-        if t.property == "text" and t.value:
+        if t.property == "text" and t.value and el is not None:
             font = el.canonical.font
             size = font.size_px if font else 32.0
             w, _ = measure_text(t.value, size, font.family_guess if font else "sans-serif")

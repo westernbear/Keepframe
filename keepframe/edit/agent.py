@@ -15,7 +15,7 @@ from ..ir.schema import Scene, Version
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from ..verify.verifier import VerifyReport, verify
 from .apply import apply_edit
-from .intent import Intent, Plan, interpret, plan
+from .intent import SCENE_LEVEL, Intent, Plan, describe, interpret, plan
 from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
@@ -98,6 +98,11 @@ def edit(
     parsed = Intent.model_validate(intent) if intent is not None else interpret(
         prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
+    if not parsed.summary and parsed.targets:
+        parsed.summary = describe(parsed.targets)
+    unresolved = [t for t in parsed.targets if t.element is None and t.property not in SCENE_LEVEL]
+    if unresolved and not parsed.ambiguous:
+        parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
     built = plan(scene, parsed)
     if parsed.ambiguous or not parsed.targets:
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")

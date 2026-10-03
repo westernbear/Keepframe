@@ -95,18 +95,35 @@ def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
+    from pydantic import ValidationError
+
     from ..edit.agent import edit as run_edit
+    from ..edit.intent import Intent, Target, describe
 
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
         return _fail("edit에는 prompt가 필요합니다.")
+    targets = args.get("targets")
+    intent = args.get("intent")
+    if targets is not None:
+        scene, _ = _current(ctx)
+        try:
+            parsed = Intent(targets=[Target.model_validate(t) for t in targets])
+        except ValidationError as e:
+            return _fail(f"targets 형식 오류: {e.errors()[0]['msg']}")
+        known = {e.id for e in scene.elements}
+        unknown = sorted({t.element for t in parsed.targets if t.element and t.element not in known})
+        if unknown:
+            return _fail(f"없는 요소 {unknown}. 사용 가능한 id: {sorted(known)}")
+        parsed.summary = describe(parsed.targets, has_attachment=ctx.has_attachment)
+        intent = parsed.model_dump()
     result = run_edit(
         ctx.root,
         ctx.scene_id,
         prompt,
         element=args.get("element"),
         confirm=bool(args.get("confirm")),
-        intent=args.get("intent"),
+        intent=intent,
         choices=args.get("choices"),
         version=ctx.version,
         has_attachment=ctx.has_attachment,
@@ -219,6 +236,31 @@ def _fn(name: str, desc: str, properties: dict[str, Any], required: list[str]) -
     }
 
 
+def _edit_params() -> dict[str, Any]:
+    from ..edit.intent import Target
+
+    item = Target.model_json_schema()
+    item.pop("title", None)
+    defs = item.pop("$defs", {})
+
+    def inline(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                node = {**defs[node["$ref"].removeprefix("#/$defs/")], **{k: v for k, v in node.items() if k != "$ref"}}
+            return {k: inline(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [inline(v) for v in node]
+        return node
+
+    return {
+        "prompt": {"type": "string", "description": "사용자 원문 요청"},
+        "targets": {"type": "array", "items": inline(item), "description": "장면 브리프의 요소 id로 해석한 변경 목록"},
+        "element": {"type": "string"},
+        "confirm": {"type": "boolean"},
+        "choices": {"type": "object", "additionalProperties": {"type": "string"}},
+    }
+
+
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     _fn("analyze", "레퍼런스 영상을 IR 장면으로 (재)분석한다.", {"mode": {"type": "string"}}, []),
     _fn(
@@ -235,8 +277,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _fn(
         "edit",
-        "문구·색·이미지를 교체하는 편집을 해석하고 실행한다.",
-        {"prompt": {"type": "string"}, "element": {"type": "string"}, "confirm": {"type": "boolean"}, "intent": {"type": "object"}, "choices": {"type": "object"}},
+        "문구·색·이미지 등을 교체한다. 가능하면 targets를 채운다.",
+        _edit_params(),
         ["prompt"],
     ),
     _fn(

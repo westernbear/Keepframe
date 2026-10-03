@@ -76,7 +76,7 @@ def test_edit_tool_attachment_preview(tmp_path):
 
     assert res["ok"] is True
     assert res["needs_confirm"] is True
-    assert res["payload"]["intent"]["targets"] == [{"element": sprite.id, "property": "texture", "value": "attachment"}]
+    assert res["payload"]["intent"]["targets"] == [{"element": sprite.id, "property": "texture", "value": "attachment", "weight": None, "speed": None, "delay": None}]
 
 
 def test_verify_and_report_tools(tmp_path):
