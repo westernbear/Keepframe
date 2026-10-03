@@ -21,6 +21,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends --fix-missing \
         ffmpeg \
+        fontconfig fonts-noto-cjk \
         libgl1 \
         libglib2.0-0 \
     || { \
@@ -28,6 +29,7 @@ RUN set -eux; \
          apt-get update; \
          apt-get install -y --no-install-recommends \
             ffmpeg \
+            fontconfig fonts-noto-cjk \
             libgl1 \
             libglib2.0-0; \
        }; \
@@ -38,6 +40,7 @@ COPY pyproject.toml ./
 COPY keepframe ./keepframe
 
 RUN pip install --no-cache-dir ".[ocr,llm]" \
+    && python -m playwright install --with-deps chromium \
     && mkdir -p /data/workspace
 
 WORKDIR /data/workspace

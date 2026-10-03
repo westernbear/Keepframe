@@ -11,12 +11,16 @@ import numpy as np
 from ..ir.schema import Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
 from ..assets import validate_glb
+from .textraster import measure as _measure, render_lines
 
 _DATA_URL = re.compile(r"^data:image/[^;]+;base64,(.+)$", re.S)
 
 
-def measure_text(text: str, size_px: float) -> tuple[int, int]:
-    scale = max(0.2, size_px / 22.0)
+def measure_text(text: str, size_px: float, family: str = "sans-serif") -> tuple[int, int]:
+    got = _measure(text, size_px, family)
+    if got is not None:
+        return got
+    scale = max(0.2, size_px / 22.0)      # fallback: no fontconfig (Hershey, ASCII only)
     thick = max(1, int(round(scale * 2)))
     (tw, th), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
     return tw + 4, th + base + 4
@@ -38,11 +42,17 @@ def _split_wrap(text: str) -> list[str]:
     return [p for p in (a, b) if p] or [text]
 
 
-def write_text_texture(path: Path, text: str, size_px: float, color: tuple[int, int, int], lines: list[str] | None = None) -> tuple[int, int]:
+def write_text_texture(path: Path, text: str, size_px: float, color: tuple[int, int, int], lines: list[str] | None = None, family: str = "sans-serif") -> tuple[int, int]:
+    img = render_lines(lines or [text], size_px, color, family)
+    if img is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(path), img)
+        h, w = img.shape[:2]
+        return w, h
     rows = lines or [text]
     if len(rows) == 1:
         return make_text_texture(path, rows[0], int(round(size_px)), color)
-    sizes = [measure_text(row, size_px) for row in rows]
+    sizes = [measure_text(row, size_px, family) for row in rows]
     w = max(s[0] for s in sizes)
     h = sum(s[1] for s in sizes)
     img = np.zeros((h, w, 4), np.uint8)
@@ -140,11 +150,11 @@ def _apply_text(el: Element, scene_dir: Path, text: str, overflow: str | None) -
     if overflow == "wrap":
         lines = _split_wrap(text)
     elif overflow == "shrink_font":
-        while size > 8 and measure_text(text, size)[0] > el.canonical.width:
+        while size > 8 and measure_text(text, size, font.family_guess)[0] > el.canonical.width:
             size -= 2
         font = font.model_copy(update={"size_px": size})
     dest = _next_asset(scene_dir, el.id, "txt")
-    w, h = write_text_texture(dest, text, font.size_px, color, lines=lines)
+    w, h = write_text_texture(dest, text, font.size_px, color, lines=lines, family=font.family_guess)
     el.canonical.text = text
     el.canonical.font = font
     el.canonical.texture = f"assets/{dest.name}"
@@ -159,7 +169,7 @@ def _apply_color(el: Element, scene_dir: Path, hexs: str) -> None:
     if el.kind == "text" and el.canonical.text:
         dest = _next_asset(scene_dir, el.id, "txt")
         font = el.canonical.font or FontGuess()
-        w, h = write_text_texture(dest, el.canonical.text, font.size_px, color)
+        w, h = write_text_texture(dest, el.canonical.text, font.size_px, color, family=font.family_guess)
         el.canonical.texture = f"assets/{dest.name}"
         el.canonical.width = float(w)
         el.canonical.height = float(h)

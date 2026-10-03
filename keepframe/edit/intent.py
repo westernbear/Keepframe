@@ -140,7 +140,8 @@ def plan(scene: Scene, intent: Intent) -> Plan:
         items.append(t)
         if t.property == "text" and t.value:
             font = el.canonical.font
-            w, _ = measure_text(t.value, font.size_px if font else 32.0)
+            size = font.size_px if font else 32.0
+            w, _ = measure_text(t.value, size, font.family_guess if font else "sans-serif")
             if w > el.canonical.width * 1.15:
                 conflicts.append(Conflict(
                     id="overflow",
