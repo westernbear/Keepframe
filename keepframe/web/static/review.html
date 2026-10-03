@@ -4,12 +4,12 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 검수</title>
-<link href="/static/css/app.css?v=20261003h" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261003i" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261003h"></script>
-<script type="module" src="/static/js/workflow.js?v=20261003h"></script>
-<script type="module" src="/static/js/api.js?v=20261003h"></script>
-<script type="module" src="/static/js/review.js?v=20261003h"></script>
+<script type="module" src="/static/js/i18n.js?v=20261003i"></script>
+<script type="module" src="/static/js/workflow.js?v=20261003i"></script>
+<script type="module" src="/static/js/api.js?v=20261003i"></script>
+<script type="module" src="/static/js/review.js?v=20261003i"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static header--review">
@@ -120,6 +120,7 @@
 </div>
 <button class="btn btn--primary-lg" style="margin:24px 0" id="keep-save" data-i18n="review.keepSave" hidden disabled>유지 조건 저장</button>
 <fieldset class="inspector__forms" id="forms-panel">
+<div id="font-candidates"></div>
 <div class="accordion" id="acc-reassign"><div class="accordion__head"><span data-i18n="review.reassign">재할당</span></div>
 <div class="accordion__body"><div class="form-row"><label data-i18n="review.from">출발</label><input id="reassign-from" type="text"/></div>
 <div class="form-row"><label data-i18n="review.to">도착</label><select id="reassign-to"></select></div>

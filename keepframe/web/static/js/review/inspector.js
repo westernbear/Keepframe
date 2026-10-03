@@ -1,9 +1,9 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261003h";
+import { objectColor } from "/static/js/review/colors.js?v=20261003i";
 import {
   fetchReviewState,
   postApprove,
-} from "/static/js/api.js?v=20261003h";
-import { T, Tf } from "/static/js/i18n.js?v=20261003h";
+} from "/static/js/api.js?v=20261003i";
+import { T, Tf } from "/static/js/i18n.js?v=20261003i";
 import {
   LOADING_PCT_START,
   LOADING_PCT_LIST_BASE,
@@ -12,7 +12,7 @@ import {
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20261003h";
+} from "/static/js/review/workspace.js?v=20261003i";
 
 export function attachInspector(ws) {
   const { dom } = ws;
@@ -140,6 +140,39 @@ export function attachInspector(ws) {
     }
   }
 
+  function renderFontCandidates(item) {
+    const root = document.getElementById("font-candidates");
+    root.replaceChildren();
+    const font = item?.canonical?.font;
+    if (item?.kind !== "text" || !font?.candidates?.length) return;
+    const row = document.createElement("div");
+    row.className = "form-row";
+    const label = document.createElement("label");
+    label.htmlFor = "font-candidate-family";
+    label.dataset.i18n = "review.fontCandidates";
+    label.textContent = T(label.dataset.i18n);
+    const select = document.createElement("select");
+    select.id = label.htmlFor;
+    const families = font.candidates.includes(font.family_guess) ? font.candidates : [font.family_guess, ...font.candidates];
+    for (const family of families) {
+      const option = document.createElement("option");
+      option.value = family;
+      option.textContent = family;
+      select.appendChild(option);
+    }
+    select.value = font.family_guess;
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "btn btn--secondary";
+    apply.dataset.i18n = "review.applyFont";
+    apply.textContent = T(apply.dataset.i18n);
+    apply.addEventListener("click", () => ws.runCorrect("text", {
+      element_id: item.id, font: { ...font, family_guess: select.value },
+    }));
+    row.append(label, select);
+    root.append(row, apply);
+  }
+
   function selectElement(id) {
     ws.selectedId = id;
     document.getElementById("reassign-from").value = id;
@@ -150,6 +183,7 @@ export function attachInspector(ws) {
     document.getElementById("text-run").disabled = item?.kind !== "text";
     document.getElementById("mask-run").disabled = item?.kind === "text";
     document.getElementById("region-mode").disabled = !item || ws.versionId !== ws.state.project.versions.at(-1)?.id;
+    renderFontCandidates(item);
     dom.elementList.querySelectorAll(".element-row").forEach((row) => {
       row.classList.toggle("element-row--selected", row.dataset.id === id);
       row.setAttribute("aria-pressed", row.dataset.id === id);

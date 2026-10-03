@@ -34,6 +34,7 @@ class FontGuess(BaseModel):
     family_guess: str = "sans-serif"
     weight: int = 400
     size_px: float = 32.0
+    candidates: list[str] = Field(default_factory=list)
 
 
 class Canonical(BaseModel):

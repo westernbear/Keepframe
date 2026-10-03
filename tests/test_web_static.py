@@ -99,6 +99,83 @@ def test_i18n_has_ko_and_en_keys():
         assert src.count(f'"{key}"') >= 2
 
 
+def test_font_candidate_copy_is_bilingual():
+    src = static_src("js/i18n.js")
+    ko, en = src.split("en: {", 1)
+    assert '"review.fontCandidates": "폰트 후보"' in ko
+    assert '"review.fontCandidates": "Font candidates"' in en
+    assert '"review.applyFont": "폰트 적용"' in ko
+    assert '"review.applyFont": "Apply font"' in en
+
+
+def test_review_font_picker_preserves_font_and_corrects_selected_text(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    source = static_src("js/review/inspector.js")
+    source = source[source.index("export function attachInspector"):].replace("export function", "function", 1)
+    script = tmp_path / "font-picker.mjs"
+    script.write_text('''import assert from 'node:assert/strict';
+import vm from 'node:vm';
+class Element {
+  constructor(tag) { this.tagName = tag; this.children = []; this.events = {}; this.dataset = {}; this.disabled = false; this.value = ''; }
+  append(...children) { this.children.push(...children); }
+  appendChild(child) { this.append(child); }
+  replaceChildren(...children) { this.children = [...children]; }
+  addEventListener(name, fn) { this.events[name] = fn; }
+  setAttribute() {}
+  querySelectorAll() { return []; }
+}
+const ids = new Map();
+const document = {createElement: tag => new Element(tag), getElementById: id => {
+  if (!ids.has(id)) ids.set(id, new Element('div'));
+  return ids.get(id);
+}};
+const font = {family_guess:'DejaVu Serif', weight:700, size_px:40, candidates:['DejaVu Sans', 'DejaVu Serif', 'Liberation Sans']};
+const item = {id:'e1', kind:'text', canonical:{text:'Launch faster', font}, visible:[0, 10]};
+const calls = [];
+const ws = {dom:{objectDetail:new Element('section'), elementList:new Element('div'), timelineTracks:new Element('div'), formsPanel:new Element('fieldset')},
+  state:{scene:{elements:[item]}, project:{versions:[{id:'v1'}]}}, versionId:'v1', frame:0,
+  drawOverlays() {}, runCorrect:async (op, args) => calls.push({op,args})};
+const context = vm.createContext({document, T:key=>key, ws});
+vm.runInContext(''' + json.dumps(source) + ''' + '\\nattachInspector(ws);', context);
+function find(tag, root = document.getElementById('font-candidates')) {
+  if (root.tagName === tag) return root;
+  for (const child of root.children) { const found = find(tag, child); if (found) return found; }
+}
+ws.selectElement('e1');
+const select = find('select'), button = find('button');
+assert.ok(select && button, 'selected text needs a font picker and apply button');
+assert.equal(select.value, 'DejaVu Serif');
+assert.deepEqual(select.children.map(option => option.value), font.candidates);
+assert.equal(find('label').textContent, 'review.fontCandidates');
+assert.equal(find('label').htmlFor, select.id);
+assert.equal(button.textContent, 'review.applyFont');
+assert.equal(calls.length, 0, 'font choice requires explicit apply');
+select.value = 'Liberation Sans';
+await button.events.click();
+assert.equal(calls.length, 1);
+assert.equal(calls[0].op, 'text');
+assert.equal(calls[0].args.element_id, 'e1');
+assert.deepEqual(JSON.parse(JSON.stringify(calls[0].args.font)), {...font, family_guess:'Liberation Sans'});
+assert.equal(font.family_guess, 'DejaVu Serif', 'must not mutate loaded scene');
+item.canonical.font = {...font, family_guess:'Inter'};
+ws.selectElement('e1');
+assert.equal(find('select').value, 'Inter', 'show the current family even after manual font edits');
+item.canonical.font = {...font, candidates:[]};
+ws.selectElement('e1');
+assert.equal(find('select'), undefined);
+item.kind = 'sprite'; item.canonical.font = font;
+ws.selectElement('e1');
+assert.equal(find('select'), undefined);
+item.kind = 'text'; delete item.canonical.font;
+ws.selectElement('e1');
+assert.equal(find('select'), undefined);
+''')
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_i18n_markup_keys_exist_in_both_langs():
     import re
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
@@ -180,7 +257,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261003h"}
+    assert stamps == {"20261003i"}
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):
