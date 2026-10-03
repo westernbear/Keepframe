@@ -13,7 +13,7 @@ from .background import PLATE_PATH, background_plate, estimate_background, foreg
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
-from .regions import build_palette, extract_regions
+from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import RAW_COLS, sprite_props, z_order
@@ -112,8 +112,8 @@ def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
     for i in range(n):
         if i == 0 or i + 1 == n or (i + 1) % max(1, n // 10) == 0:
             report_stage("regions", f"{i + 1}/{n}")
-        rbf.append(extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape),
-                                   overrides=ov_by_frame.get(i)))
+        rbf.append(merge_adjacent_regions(i, frames[i], extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape),
+                                   overrides=ov_by_frame.get(i))))
     log.info("regions frames=%s labels=%s", n, sum(len(r) for r in rbf))
     return _pk(sd, "regions", rbf)
 

@@ -71,3 +71,62 @@ def extract_regions(frame_idx: int, frame: np.ndarray, fg_mask: np.ndarray, pale
             if stats[c, cv2.CC_STAT_AREA] >= min_area:
                 out.append(_region(frame_idx, frame, comp == c, int(lab)))
     return out
+
+
+_K3 = np.ones((3, 3), np.uint8)
+
+
+def _boxes_touch(a: Region, b: Region) -> bool:
+    return a.bbox[0] <= b.bbox[2] and b.bbox[0] <= a.bbox[2] and a.bbox[1] <= b.bbox[3] and b.bbox[1] <= a.bbox[3]
+
+
+def _edge_jump(a: Region, b: Region, lab: np.ndarray) -> float | None:
+    """LAB distance across the shared edge; None when the masks do not touch."""
+    H, W = lab.shape[:2]
+    x0, y0 = max(0, min(a.bbox[0], b.bbox[0]) - 1), max(0, min(a.bbox[1], b.bbox[1]) - 1)
+    x1, y1 = min(W, max(a.bbox[2], b.bbox[2]) + 1), min(H, max(a.bbox[3], b.bbox[3]) + 1)
+    def place(r: Region) -> np.ndarray:
+        m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        m[r.bbox[1] - y0:r.bbox[3] - y0, r.bbox[0] - x0:r.bbox[2] - x0] = r.mask
+        return m
+    ma, mb = place(a), place(b)
+    edge_a = (ma & cv2.dilate(mb, _K3)).astype(bool)
+    edge_b = (mb & cv2.dilate(ma, _K3)).astype(bool)
+    if not edge_a.any() or not edge_b.any():
+        return None
+    win = lab[y0:y1, x0:x1]
+    return float(np.linalg.norm(win[edge_a].mean(0) - win[edge_b].mean(0)))
+
+
+def merge_adjacent_regions(frame_idx: int, frame: np.ndarray, regions: list[Region], max_jump: float = 3.0) -> list[Region]:
+    """Union touching regions with no colour jump at their shared edge (palette bands of one gradient fill).
+    ponytail: edge-jump test only; max_jump=3 because anti-aliased sprite edges merge above ~3 Lab.
+    Anti-alias rings stay separate (min_area drops most), Canny + trapped-ball (Motico §4.2) next."""
+    if len(regions) < 2:
+        return regions
+    lab = rgb_to_lab(frame)
+    parent = list(range(len(regions)))
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+    for i, a in enumerate(regions):
+        for j in range(i + 1, len(regions)):
+            b = regions[j]
+            if a.label >= 1000 or b.label >= 1000 or not _boxes_touch(a, b):
+                continue                                  # manual override regions never merge
+            jump = _edge_jump(a, b, lab)
+            if jump is not None and jump <= max_jump:
+                parent[find(i)] = find(j)
+    groups: dict[int, list[Region]] = {}
+    for i, r in enumerate(regions):
+        groups.setdefault(find(i), []).append(r)
+    out = []
+    for members in groups.values():
+        if len(members) == 1:
+            out.append(members[0]); continue
+        full = np.zeros(frame.shape[:2], bool)
+        for r in members:
+            full[r.bbox[1]:r.bbox[3], r.bbox[0]:r.bbox[2]] |= r.mask
+        out.append(_region(frame_idx, frame, full, max(members, key=lambda r: r.area).label))
+    return out
