@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
-from .retime import retimed_range
+from .retime import apply_timing, retimed_range, timing_args
 from .textraster import resolve_families
 
 Prop = Literal["text", "color", "texture", "model", "background", "font", "timing"]
@@ -56,7 +56,7 @@ class Target(BaseModel):
 
 
 class Intent(BaseModel):
-    targets: list[Target] = Field(default_factory=list)
+    targets: list[Target] = Field(default_factory=list, max_length=16)
     summary: str = ""
     ambiguous: bool = False
     candidates: list[str] = Field(default_factory=list)
@@ -205,16 +205,20 @@ def plan(scene: Scene, intent: Intent) -> Plan:
 
     items: list[Target] = []
     conflicts: list[Conflict] = []
+    timing_scene = scene.model_copy(deep=True) if any(t.property == "timing" for t in intent.targets) else scene
     for t in intent.targets:
         if not t.element and t.property not in SCENE_LEVEL:
             continue
-        el = scene.element(t.element) if t.element else None
+        source = timing_scene if t.property == "timing" else scene
+        el = source.element(t.element) if t.element else None
         items.append(t)
-        if t.property == "timing" and t.element:
-            _, end = retimed_range(el, t.speed or 1.0, round((t.delay or 0) * scene.fps), el.visible[0])
-            if end > scene.frames - 1:
-                conflicts.append(Conflict(id="timing_overflow", element=el.id, choices=["extend_scene"],
-                                          reason=f"장면 끝({scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
+        if t.property == "timing":
+            if el is not None:
+                _, end = retimed_range(el, *timing_args(t, el, timing_scene.fps))
+                if end > timing_scene.frames - 1:
+                    conflicts.append(Conflict(id="timing_overflow", element=el.id, choices=["extend_scene"],
+                                              reason=f"장면 끝({timing_scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
+            apply_timing(timing_scene, [t], {"timing_overflow": "extend_scene"})
         if t.property == "text" and t.value and el is not None:
             font = el.canonical.font
             size = font.size_px if font else 32.0

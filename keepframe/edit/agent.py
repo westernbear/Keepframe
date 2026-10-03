@@ -17,7 +17,7 @@ from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import VerifyReport, verify
 from .apply import apply_edit
 from .intent import SCENE_LEVEL, Conflict, Intent, Plan, describe, interpret, plan
-from .retime import apply_timing
+from .retime import MAX_SCENE_SECONDS, apply_timing
 from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
@@ -106,7 +106,12 @@ def edit(
     unresolved = [t for t in parsed.targets if not t.element and t.property not in SCENE_LEVEL]
     if unresolved and not parsed.ambiguous:
         parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
-    built = plan(scene, parsed)
+    try:
+        built = plan(scene, parsed)
+    except ValueError as exc:
+        if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
+            raise
+        return EditResult(status="failed", summary=parsed.summary, intent=parsed, error=str(exc))
     if parsed.ambiguous or not parsed.targets:
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
     if not confirm:
@@ -123,7 +128,12 @@ def edit(
     expected = scene
     if any(t.property == "timing" for t in built.items):
         expected = scene.model_copy(deep=True)
-        apply_timing(expected, built.items, choices_map)
+        try:
+            apply_timing(expected, built.items, choices_map)
+        except ValueError as exc:
+            if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
+                raise
+            return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=str(exc))
     generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None and target.value != "attachment"), None)
     generated = generated_kind is not None
     asset_uses = 0
@@ -151,7 +161,12 @@ def edit(
             candidate.mkdir()
             if (sd / "assets").is_dir():
                 shutil.copytree(sd / "assets", candidate / "assets")
-            edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+            try:
+                edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+            except ValueError as exc:
+                if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
+                    raise
+                return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, attempts=attempts_run, error=str(exc))
             ctx = build_context(edited)
             violated = [c.pred for c in edited.constraints if c.keep and not eval_pred(c.pred, ctx)]
             if violated and choices_map.get("keep_violation") != "release_keep":

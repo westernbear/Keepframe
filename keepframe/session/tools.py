@@ -98,7 +98,7 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     from pydantic import ValidationError
 
     from ..edit.agent import edit as run_edit
-    from ..edit.intent import SCENE_LEVEL, Intent, Target, describe
+    from ..edit.intent import SCENE_LEVEL, Intent, describe
 
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
@@ -107,14 +107,15 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     intent = None
     if targets:
         scene, _ = _current(ctx)
-        parsed = Intent()
-        for i, target in enumerate(targets):
-            try:
-                parsed.targets.append(Target.model_validate(target))
-            except ValidationError as e:
-                error = e.errors()[0]
-                field = ".".join(str(part) for part in error["loc"]) or "value"
-                return _fail(f"targets 형식 오류: targets[{i}].{field}: {error['msg']}")
+        try:
+            parsed = Intent.model_validate({"targets": targets})
+        except ValidationError as e:
+            error = e.errors()[0]
+            loc = error["loc"]
+            field = "targets"
+            if len(loc) > 1:
+                field += f"[{loc[1]}]." + (".".join(str(part) for part in loc[2:]) or "value")
+            return _fail(f"targets 형식 오류: {field}: {error['msg']}")
         known = {e.id for e in scene.elements}
         if any(not t.element and t.property not in SCENE_LEVEL for t in parsed.targets):
             return _fail(f"대상 요소가 없습니다. 사용 가능한 id: {sorted(known)}")
@@ -243,7 +244,7 @@ def _fn(name: str, desc: str, properties: dict[str, Any], required: list[str]) -
 
 
 def _edit_params() -> dict[str, Any]:
-    from ..edit.intent import Target
+    from ..edit.intent import Intent, Target
 
     item = Target.model_json_schema()
     item.pop("title", None)
@@ -260,7 +261,8 @@ def _edit_params() -> dict[str, Any]:
 
     return {
         "prompt": {"type": "string", "description": "사용자 원문 요청"},
-        "targets": {"type": "array", "items": inline(item), "description": "장면 브리프의 요소 id로 해석한 변경 목록"},
+        "targets": {"type": "array", "maxItems": Intent.model_json_schema()["properties"]["targets"]["maxItems"],
+                    "items": inline(item), "description": "장면 브리프의 요소 id로 해석한 변경 목록"},
         "element": {"type": "string"},
         "confirm": {"type": "boolean"},
         "choices": {"type": "object", "additionalProperties": {"type": "string"}},
