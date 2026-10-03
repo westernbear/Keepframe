@@ -2158,12 +2158,14 @@ def make_server(
                     return self._json(400, {"error": "confirm required"})
                 frames = max(1, int(end) - int(start) + 1)
                 est = estimate(mode, frames, info["fps"], project_id=project_id, start=start, end=end)
+                reference = "ui" if data.get("reference") == "ui" else "mg"
                 write_meta(
                     workspace,
                     project_id,
                     status="analyzing",
                     mode=mode,
                     range=[start, end] if mode == "range" else None,
+                    reference=reference,
                 )
                 spec = JobSpec(
                     kind="analyze",
@@ -2177,6 +2179,7 @@ def make_server(
                         "mode": mode,
                         "scenes": requested_scenes,
                         "transitions": data.get("transitions") or [],
+                        "options": {"ui": reference == "ui"},
                     },
                 )
                 job = JOBS.submit(
@@ -2471,6 +2474,7 @@ def make_server(
                         spec = JobSpec(
                             kind="analyze",
                             args={"video": str(video), "start": int(start), "end": int(end), "mode": mode,
+                                  "options": {"ui": meta.get("reference") == "ui"},
                                   "out_root": str(root), "workspace": str(workspace), "project_id": resolved_project_id},
                         )
                         job = JOBS.submit("analyze", spec=spec, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="frames")

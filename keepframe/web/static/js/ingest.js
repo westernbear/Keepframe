@@ -1,6 +1,6 @@
-import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261003b";
-import { T, Tf } from "/static/js/i18n.js?v=20261003b";
-import { setWorkflowStage } from "/static/js/workflow.js?v=20261003b";
+import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261003c";
+import { T, Tf } from "/static/js/i18n.js?v=20261003c";
+import { setWorkflowStage } from "/static/js/workflow.js?v=20261003c";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;
@@ -168,6 +168,7 @@ async function showProject(project, filmstripData = null) {
   qs("[data-start]").value = String(range[0]);
   qs("[data-end]").value = String(range[1]);
   state.mode = project.mode || "range";
+  qs("[data-reference-ui]").checked = project.reference === "ui";
   state.shortAcknowledged = false;
   uploadCard.hidden = false;
   editor.hidden = false;
@@ -266,6 +267,7 @@ function startAnalysis() {
   const params = new URLSearchParams({
     job: state.project.id, token: snapshot.confirm_token, mode: snapshot.mode,
     start: String(snapshot.start), end: String(snapshot.end),
+    reference: qs("[data-reference-ui]").checked ? "ui" : "mg",
   });
   const query = params.toString();
   sessionStorage.setItem("keepframe.analyze-start", `?${query}`);

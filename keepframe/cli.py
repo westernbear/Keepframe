@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("analyze"); an.add_argument("--video", required=True); an.add_argument("--start", type=int, default=0)
     an.add_argument("--end", type=int, required=True); an.add_argument("--out", required=True); an.add_argument("--copy", default=None)
     an.add_argument("--no-ocr", action="store_true"); an.add_argument("--no-refine", action="store_true"); an.add_argument("--bg", default=None)
+    an.add_argument("--ui", action="store_true")
     co = sub.add_parser("correct"); co.add_argument("--root", required=True); co.add_argument("--scene", default="s1")
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
@@ -122,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         print({k: v for k, v in res.items() if k != "rows"}); return 0 if res["passed"] else 1
     if a.cmd == "analyze":
         from .analyze.pipeline import AnalyzeOptions, analyze
-        opts = AnalyzeOptions(bg_override=a.bg, copy=a.copy.split(",") if a.copy else None, ocr=not a.no_ocr, refine=not a.no_refine)
+        opts = AnalyzeOptions(bg_override=a.bg, copy=a.copy.split(",") if a.copy else None, ocr=not a.no_ocr, refine=not a.no_refine, ui=a.ui)
         p = analyze(Path(a.video), a.start, a.end, Path(a.out), opts)
         print(json.dumps({"scenes": [s.id for s in p.scenes], "version": p.versions[-1].id})); return 0
     if a.cmd == "correct":

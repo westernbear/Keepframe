@@ -19,7 +19,7 @@ from .sprites import RAW_COLS, sprite_props, z_order
 from .text import Ocr, apply_copy, ocr_frames, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
-from ..assets import AssetAPIError, AssetClient
+from ..assets import AssetClient
 
 log = get("keepframe.analyze")
 
@@ -33,6 +33,7 @@ class AnalyzeOptions:
     refine_iters: int = 200
     min_area: int = 30
     use_ecc: bool = True
+    ui: bool = False
 
 
 def _hex(rgb) -> str:
@@ -325,10 +326,15 @@ def analyze_scene_frames(
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
     scene = _finish(sd, scene, frames, raws, messages)
-    try:
-        scene = _parse_ui(frames, scene, sd)
-    except AssetAPIError as exc:
-        log.warning("UI parse skipped scene=%s code=%s", scene_id, exc.code)
+    if opts.ui:
+        try:
+            scene = _parse_ui(frames, scene, sd)
+        except Exception as exc:
+            message = f"UI parse skipped: {exc}"
+            log.warning("%s scene=%s", message, scene_id)
+            report = json.loads((sd / "report.json").read_text())
+            report["messages"].append(message)
+            write_report(sd, report)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
     log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return scene
@@ -507,4 +513,13 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
                   background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m], previous=prev)
+    if opts.ui:
+        try:
+            scene = _parse_ui(frames, scene, sd)
+        except Exception as exc:
+            message = f"UI parse skipped: {exc}"
+            log.warning("%s scene=%s", message, scene_id)
+            report = json.loads((sd / "report.json").read_text())
+            report["messages"].append(message)
+            write_report(sd, report)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

@@ -1,6 +1,6 @@
-import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261003b";
-import { T, Tf } from "/static/js/i18n.js?v=20261003b";
-import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261003b";
+import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261003c";
+import { T, Tf } from "/static/js/i18n.js?v=20261003c";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261003c";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -165,7 +165,7 @@ function paintRangeLabel(project) {
 }
 
 function analyzePayload() {
-  const payload = { project_id: projectId, confirm_token: token };
+  const payload = { project_id: projectId, confirm_token: token, reference: params.get("reference") === "ui" ? "ui" : "mg" };
   if (analyzeMode) payload.mode = analyzeMode;
   if (analyzeStart != null && analyzeStart !== "") payload.start = Number(analyzeStart);
   if (analyzeEnd != null && analyzeEnd !== "") payload.end = Number(analyzeEnd);
