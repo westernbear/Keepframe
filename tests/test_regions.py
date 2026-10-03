@@ -28,3 +28,10 @@ def test_exclude_mask_and_override():
     ov = np.zeros_like(fg); ov[10:40, 20:60] = True; ov[60:70, 20:30] = True
     regs = extract_regions(0, f, fg, pal, overrides=[(ov, 7)])
     assert any(r.label == 7 and r.area == 1300 for r in regs)      # forced single region
+
+
+def test_build_palette_is_deterministic():
+    frames = np.random.default_rng(7).integers(0, 256, (4, 24, 40, 3), dtype=np.uint8)
+    masks = np.ones(frames.shape[:3], bool)
+    palettes = [build_palette(frames, masks) for _ in range(10)]
+    assert all(np.array_equal(palettes[0], palette) for palette in palettes[1:])

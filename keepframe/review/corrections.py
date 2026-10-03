@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import FontGuess, Version
 from ..ir.store import current_scene, new_version, scene_dir
-from ..analyze.background import foreground_mask
+from ..analyze.background import PLATE_PATH, foreground_mask, foreground_mask_plate
 from ..analyze.pipeline import rerun
 
 
@@ -87,10 +87,17 @@ def add_bbox_prompt(root: Path, scene_id: str, frame: int, bbox: tuple[int, int,
         path.write_bytes(pickle.dumps(text))
         return rerun(root, scene_id, "regions", note=note)
     frames = np.load(sd / "stages" / "frames.npy", mmap_mode="r")
-    bg = tuple(json.loads((sd / "stages" / "background.json").read_text())["rgb"])
+    bgj = json.loads((sd / "stages" / "background.json").read_text())
+    if bgj.get("plate", False):
+        plate = cv2.imread(str(sd / PLATE_PATH), cv2.IMREAD_COLOR)
+        if plate is None:
+            raise FileNotFoundError(sd / PLATE_PATH)
+        fg = foreground_mask_plate(frames[frame], cv2.cvtColor(plate, cv2.COLOR_BGR2RGB))
+    else:
+        fg = foreground_mask(frames[frame], tuple(bgj["rgb"]))
     m = np.zeros(frames.shape[1:3], np.uint8)
     x0, y0, x1, y1 = [max(0, v) for v in bbox]
-    m[y0:y1, x0:x1] = foreground_mask(frames[frame], bg)[y0:y1, x0:x1] * 255
+    m[y0:y1, x0:x1] = fg[y0:y1, x0:x1] * 255
     tmp = sd / "stages" / "_bbox_tmp.png"
     cv2.imwrite(str(tmp), m)
     try:

@@ -26,6 +26,7 @@ def build_palette(frames: np.ndarray, fg_masks: np.ndarray, k: int = 8) -> np.nd
     lab = rgb_to_lab(px.reshape(-1, 1, 3)).reshape(-1, 3)
     k = min(k, len(lab))
     crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+    cv2.setRNGSeed(0)
     _, _, centers = cv2.kmeans(lab, k, None, crit, 3, cv2.KMEANS_PP_CENTERS)
     merged: list[np.ndarray] = []
     for c in centers:

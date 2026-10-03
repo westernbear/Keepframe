@@ -2,6 +2,9 @@ from __future__ import annotations
 import cv2, numpy as np
 
 PLATE_CONF_MAX = 0.30   # spec 5.2: dominant colour under 30% of pixels -> not a solid background
+PLATE_RING = 0.08
+PLATE_NONUNIFORM = 0.10
+PLATE_PATH = "assets/background.png"
 
 
 def rgb_to_lab(img_rgb_uint8: np.ndarray) -> np.ndarray:
@@ -12,6 +15,7 @@ def estimate_background(frames: np.ndarray, k: int = 6) -> tuple[tuple[int, int,
     sub = frames[::max(1, len(frames) // 12), ::4, ::4].reshape(-1, 3)
     lab = rgb_to_lab(sub.reshape(-1, 1, 3)).reshape(-1, 3)
     crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+    cv2.setRNGSeed(0)
     _, labels, centers = cv2.kmeans(lab, k, None, crit, 3, cv2.KMEANS_PP_CENTERS)
     counts = np.bincount(labels.ravel(), minlength=k)
     mode = int(counts.argmax())
@@ -26,10 +30,26 @@ def foreground_mask(frame: np.ndarray, bg_rgb: tuple[int, int, int], thr: float 
 
 
 def background_plate(frames: np.ndarray) -> np.ndarray:
-    """Temporal median of sampled frames.
-    ponytail: static-camera MG only; an element that never moves is absorbed into the plate (no element for it)."""
-    return np.median(frames[:: max(1, len(frames) // 24)], axis=0).astype(np.uint8)
+    """Low-pass temporal median of sampled frames.
+    ponytail: static-camera MG only; large blurry static shapes are absorbed into the plate."""
+    med = np.median(frames[::max(1, len(frames) // 24)], axis=0).astype(np.uint8)
+    H, W = med.shape[:2]
+    small = cv2.resize(med, (max(1, W // 32), max(1, H // 32)), interpolation=cv2.INTER_AREA)
+    return cv2.resize(small, (W, H), interpolation=cv2.INTER_CUBIC)
 
 
-def foreground_mask_plate(frame: np.ndarray, plate: np.ndarray, thr: float = 12.0) -> np.ndarray:
-    return np.linalg.norm(rgb_to_lab(frame) - rgb_to_lab(plate), axis=2) > thr
+def needs_plate(plate: np.ndarray, bg_rgb: tuple[int, int, int], conf: float) -> bool:
+    if conf < PLATE_CONF_MAX:
+        return True
+    H, W = plate.shape[:2]
+    b = max(2, int(PLATE_RING * min(H, W)))
+    ring = np.ones((H, W), bool)
+    ring[b:-b, b:-b] = False
+    return bool(foreground_mask(plate, bg_rgb)[ring].mean() > PLATE_NONUNIFORM)
+
+
+def foreground_mask_plate(frame: np.ndarray, plate: np.ndarray, thr: float = 12.0,
+                          plate_lab: np.ndarray | None = None) -> np.ndarray:
+    if plate_lab is None:
+        plate_lab = rgb_to_lab(plate)
+    return np.linalg.norm(rgb_to_lab(frame) - plate_lab, axis=2) > thr

@@ -9,7 +9,7 @@ from ..ir.store import current_scene, init_project_scenes, load_project, new_ver
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
-from .background import PLATE_CONF_MAX, background_plate, estimate_background, foreground_mask, foreground_mask_plate
+from .background import PLATE_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, rgb_to_lab
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
@@ -58,6 +58,21 @@ def _pk(sd: Path, name: str, obj=None):
     p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(pickle.dumps(obj)); return obj
 
 
+def _stage_background(frames, opts, sd):
+    bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
+    plate = None
+    if not opts.bg_override:
+        candidate = background_plate(frames)
+        if needs_plate(candidate, bg, bconf):
+            plate = candidate
+            path = sd / PLATE_PATH
+            path.parent.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(path), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
+            bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
+    (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
+    return bg, bconf, plate
+
+
 def _stage_text(frames, bg, opts, ocr, sd):
     boxes = [[] for _ in frames]; tracks = []; msg = None
     if opts.ocr:
@@ -84,7 +99,8 @@ def _stage_text(frames, bg, opts, ocr, sd):
 
 
 def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
-    fg = np.stack([foreground_mask_plate(f, plate) if plate is not None else foreground_mask(f, bg) for f in frames])
+    plate_lab = rgb_to_lab(plate) if plate is not None else None
+    fg = np.stack([foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames])
     pal = build_palette(frames, fg)
     ov = _load_overrides(sd)
     ov_by_frame: dict[int, list] = {}
@@ -335,14 +351,7 @@ def analyze_scene_frames(
     n, H, W = frames.shape[:3]
     log.info("frames n=%s size=%sx%s fps=%s", n, W, H, fps)
     report_stage("background")
-    bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
-    plate = None
-    if not opts.bg_override and bconf < PLATE_CONF_MAX:
-        plate = background_plate(frames)
-        (sd / "assets").mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(sd / "assets" / "background.png"), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
-        bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
-    (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
+    bg, bconf, plate = _stage_background(frames, opts, sd)
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
     report_stage("text")
     boxes, text_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
@@ -358,7 +367,7 @@ def analyze_scene_frames(
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="image", value="assets/background.png", confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
+                  background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
                   elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
     if opts.ui:
@@ -502,20 +511,14 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
 
     plate = None
     if boundary <= STAGES.index("background"):
-        bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
-        if not opts.bg_override and bconf < PLATE_CONF_MAX:
-            plate = background_plate(frames)
-            (sd / "assets").mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(sd / "assets" / "background.png"), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
-            bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
-        (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
+        bg, bconf, plate = _stage_background(frames, opts, sd)
     else:
         bgj = json.loads((sd / "stages" / "background.json").read_text())
         bg, bconf = tuple(bgj["rgb"]), bgj.get("confidence", 1.0)
         if bgj.get("plate", False):
-            plate = cv2.imread(str(sd / "assets" / "background.png"), cv2.IMREAD_COLOR)
+            plate = cv2.imread(str(sd / PLATE_PATH), cv2.IMREAD_COLOR)
             if plate is None:
-                raise FileNotFoundError(sd / "assets" / "background.png")
+                raise FileNotFoundError(sd / PLATE_PATH)
             plate = cv2.cvtColor(plate, cv2.COLOR_BGR2RGB)
 
     if boundary <= STAGES.index("text"):
@@ -545,7 +548,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="image", value="assets/background.png", confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
+                  background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
                   elements=elements)
     messages = [m for m in [props.get("_message")] if m]
     if opts.ui:
