@@ -1,4 +1,4 @@
-import { T } from "/static/js/i18n.js?v=20260921v";
+import { T } from "/static/js/i18n.js?v=20261003b";
 
 const STEPS = ["ingest", "analyze", "review"];
 const PAGE_STAGE = { "/new": "ingest", "/analyze": "analyze", "/review": "review" };
@@ -46,7 +46,7 @@ if (container) {
       container.innerHTML = html;
       window.addEventListener("keepframe:lang", render);
       render();
-      import("/static/js/i18n.js?v=20260921v").then(({ applyI18n }) => {
+      import("/static/js/i18n.js?v=20261003b").then(({ applyI18n }) => {
         applyI18n(container);
         render();
       });

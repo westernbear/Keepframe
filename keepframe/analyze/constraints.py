@@ -5,6 +5,30 @@ from ..verify.matrix import extract_motions
 from ..verify.predicates import build_context, eval_pred
 
 
+KEEP_PRESETS: dict[str, frozenset[str]] = {
+    # spec §6: "문구·이미지만 바꾸고 나머지 유지" — every motion fact, no layout facts (new copy changes widths)
+    "content_only": frozenset({"type", "dir", "mag", "dur", "before", "after", "while"}),
+    # motion shape and order only: speed/size edits allowed
+    "motion_shape": frozenset({"type", "dir", "before", "after"}),
+    "all": frozenset({"type", "dir", "mag", "dur", "before", "after", "while", "left", "right", "top", "bottom", "intersect"}),
+    "none": frozenset(),
+}
+DEFAULT_KEEP_PRESET = "content_only"
+
+
+def apply_keep_preset(constraints: list[Constraint], preset: str) -> list[Constraint]:
+    if preset not in KEEP_PRESETS:
+        raise ValueError(f"unknown keep preset {preset!r}")
+    names = KEEP_PRESETS[preset]
+    return [c.model_copy(update={"keep": c.pred.split("(", 1)[0].strip() in names}) for c in constraints]
+
+
+def carry_keep(constraints: list[Constraint], previous: list[Constraint]) -> list[Constraint]:
+    """Reanalysis keeps the user's keep choice for predicates that still exist."""
+    old = {c.pred: c.keep for c in previous}
+    return [c.model_copy(update={"keep": old[c.pred]}) if c.pred in old else c for c in constraints]
+
+
 def extract_constraints(scene: Scene) -> list[Constraint]:
     motions = extract_motions(scene)
     preds: list[str] = []

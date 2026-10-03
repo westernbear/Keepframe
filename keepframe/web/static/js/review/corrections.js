@@ -1,9 +1,16 @@
-import { postKeep } from "/static/js/api.js?v=20261003a";
-import { readFileAsBase64 } from "/static/js/files.js?v=20261003a";
-import { KEEP_NOTE } from "/static/js/review/workspace.js?v=20261003a";
+import { postKeep } from "/static/js/api.js?v=20261003b";
+import { readFileAsBase64 } from "/static/js/files.js?v=20261003b";
+import { KEEP_NOTE } from "/static/js/review/workspace.js?v=20261003b";
 
 export function attachCorrections(ws) {
   const { dom } = ws;
+
+  ws.applyKeepPreset = async (preset) => {
+    const res = await postKeep(ws.projectId, ws.sceneId, [], KEEP_NOTE, preset);
+    ws.keepPending.clear();
+    ws.keepDirty = false;
+    ws.refreshState(res.version.id);
+  };
 
   function parseIntList(text) {
     return text.split(",").map((s) => parseInt(s.trim(), 10));

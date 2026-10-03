@@ -113,10 +113,10 @@ async function postApprove(project, scene, v) {
   return api("/api/approve", { method: "POST", body: JSON.stringify(body) });
 }
 
-async function postKeep(project, scene, changes, note) {
+async function postKeep(project, scene, changes, note, preset) {
   return api("/api/keep", {
     method: "POST",
-    body: JSON.stringify({ project, scene, changes, note }),
+    body: JSON.stringify({ project, scene, changes, note, preset }),
   });
 }
 

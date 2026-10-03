@@ -44,6 +44,8 @@ def verify(scene: Scene, scene_dir: Path, render_result: RenderResult | None = N
             rep.schema_ok = False; rep.messages.append(f"missing texture {el.canonical.texture} for {el.id}")
     ctx = build_context(scene)
     keep = [c for c in scene.constraints if c.keep]
+    if not keep:
+        rep.messages.append("no keep predicates: motion was not verified")
     for c in keep:
         ok = eval_pred(c.pred, ctx)
         rep.keep_results.append({"pred": c.pred, "passed": ok})

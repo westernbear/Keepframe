@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from keepframe.analyze.composite import composite_scene
+from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
@@ -2224,6 +2225,9 @@ def make_server(
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
+                preset = data.get("preset")
+                if preset is not None and preset not in KEEP_PRESETS:
+                    return self._json(400, {"error": "unknown preset"})
                 project_id = data.get("project")
                 scene_id = data.get("scene", "s1")
                 if not project_id:
@@ -2233,6 +2237,8 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 try:
                     scene, _ = state.scene()
+                    if preset:
+                        scene.constraints = apply_keep_preset(scene.constraints, preset)
                     wanted = {c["pred"]: bool(c["keep"]) for c in data.get("changes", [])}
                     for c in scene.constraints:
                         if c.pred in wanted:

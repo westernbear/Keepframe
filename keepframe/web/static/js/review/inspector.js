@@ -1,9 +1,9 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261003";
+import { objectColor } from "/static/js/review/colors.js?v=20261003b";
 import {
   fetchReviewState,
   postApprove,
-} from "/static/js/api.js?v=20261003a";
-import { T, Tf } from "/static/js/i18n.js?v=20260921v";
+} from "/static/js/api.js?v=20261003b";
+import { T, Tf } from "/static/js/i18n.js?v=20261003b";
 import {
   LOADING_PCT_START,
   LOADING_PCT_LIST_BASE,
@@ -12,7 +12,7 @@ import {
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20261003a";
+} from "/static/js/review/workspace.js?v=20261003b";
 
 export function attachInspector(ws) {
   const { dom } = ws;
@@ -102,6 +102,17 @@ export function attachInspector(ws) {
   }
 
   async function renderKeepPanel() {
+    const bar = document.createElement("div");
+    bar.className = "keep-presets";
+    for (const preset of ["content_only", "motion_shape", "none"]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn--secondary";
+      btn.textContent = T(`review.keepPreset.${preset}`);
+      btn.addEventListener("click", () => ws.applyKeepPreset(preset));
+      bar.appendChild(btn);
+    }
+    dom.constraintsPanel.appendChild(bar);
     const constraints = ws.state.scene.constraints || [];
     if (!constraints.length) return;
     await renderConstraints(0);

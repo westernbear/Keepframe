@@ -545,6 +545,7 @@ a { color: inherit; text-decoration: none; }
 .verify-chip { display: inline-flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; font-size: var(--fs-micro); padding: 3px 8px; border-radius: var(--r-pill); border: 1px solid var(--hairline); }
 .verify-chip--pass { color: var(--secondary); border-color: var(--secondary); }
 .verify-chip--fail { color: var(--error); border-color: var(--error); }
+.verify-chip--warn { color: var(--gradient-orange); border-color: var(--gradient-orange); }
 .agent-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--hairline); flex-shrink: 0; }
 .tool {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-pill);
@@ -823,7 +824,7 @@ a { color: inherit; text-decoration: none; }
   .analysis-controls { gap: 8px; }
   .analysis-controls strong { width: 100%; }
   .analysis-controls input[type=range] { width: 80px; }
-  .track__label { overflow: hidden; font-size: 10px; }
+  .track__label { overflow: hidden; font-size: var(--fs-micro); }
 }
 
 .analysis-controls .btn { width: auto; min-height: 36px; padding: 6px 14px; margin-left: auto; }

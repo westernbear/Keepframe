@@ -14,12 +14,12 @@ import {
   postEdit,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20260928ae";
-import { T } from "/static/js/i18n.js?v=20260928ae";
+} from "/static/js/api.js?v=20261003b";
+import { T } from "/static/js/i18n.js?v=20261003b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20260928ae";
+} from "/static/js/playback.js?v=20261003b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -786,10 +786,13 @@ function isKeepPassed(verify) {
 
 function appendVerify(verify) {
   if (!verify) return;
-  const keepPassed = isKeepPassed(verify);
+  const total = (verify.keep_results || []).length;
+  const keepPassed = total > 0 && isKeepPassed(verify);
   const chip = document.createElement("span");
-  chip.className = "verify-chip " + (keepPassed ? "verify-chip--pass" : "verify-chip--fail");
-  chip.textContent = `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * CONFIDENCE_PERCENT)}% · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
+  chip.className = "verify-chip " + (total === 0 ? "verify-chip--warn" : keepPassed ? "verify-chip--pass" : "verify-chip--fail");
+  chip.textContent = total === 0
+    ? T("agent.verifyNoKeep")
+    : `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * CONFIDENCE_PERCENT)}% (${total}) · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
   logEl.appendChild(chip);
   logEl.scrollTop = logEl.scrollHeight;
 }

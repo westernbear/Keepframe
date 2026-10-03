@@ -1,4 +1,4 @@
-import { reviewFrameUrl } from "/static/js/api.js?v=20261003a";
+import { reviewFrameUrl } from "/static/js/api.js?v=20261003b";
 
 const PREFETCH_AHEAD = 4;
 const PREVIEW_CACHE_LIMIT = 48;

@@ -20,7 +20,6 @@ from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
 ASSET_GEN_CAP = 2
-KEEP_MIN = 0.95
 TEMPORAL_MIN = 0.7
 
 
@@ -41,7 +40,7 @@ class EditResult(BaseModel):
 
 def _passed(rep: VerifyReport) -> bool:
     temporal_ok = rep.temporal is None or rep.temporal >= TEMPORAL_MIN
-    return bool(rep.schema_ok and rep.keep_pass_rate >= KEEP_MIN and rep.layer_probe_complete and rep.passed and temporal_ok)
+    return bool(rep.passed and temporal_ok)
 
 
 def _load(root: Path, scene_id: str, version: str | None) -> tuple[Scene, Version]:

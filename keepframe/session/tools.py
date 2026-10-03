@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from ..analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from ..ir.store import current_scene, new_version, scene_dir
 from ..log import get
 
@@ -69,6 +70,15 @@ def _correct(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
+    preset = args.get("preset")
+    if preset is not None:
+        scene, parent = _current(ctx)
+        try:
+            scene.constraints = apply_keep_preset(scene.constraints, str(preset))
+        except ValueError as e:
+            return _fail(str(e))
+        v = new_version(ctx.root, ctx.scene_id, scene, note=f"keep preset {preset}", auto=False, parent_version=parent.id)
+        return _ok(f"keep 프리셋 {preset}을 적용했습니다.", version=v.model_dump())
     scene, parent = _current(ctx)
     targets = set(args.get("targets") or [])
     on = bool(args.get("on", True))
@@ -217,8 +227,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     _fn(
         "set_keep",
         "요소나 keep 술어의 유지 여부를 켜고 끈다.",
-        {"targets": {"type": "array", "items": {"type": "string"}}, "on": {"type": "boolean"}},
-        ["targets"],
+        {"targets": {"type": "array", "items": {"type": "string"}}, "on": {"type": "boolean"}, "preset": {"type": "string", "enum": sorted(KEEP_PRESETS)}},
+        [],
     ),
     _fn(
         "edit",

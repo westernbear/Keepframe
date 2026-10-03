@@ -10,7 +10,7 @@ from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
-from .constraints import extract_constraints
+from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions
 from .report import element_confidence, reconstruction_error, write_report
@@ -212,12 +212,14 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
     return elements, raws
 
 
-def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str]) -> Scene:
+def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None) -> Scene:
     report_stage("semantics")
     assign_roles(scene.elements)
     scene.groups = group_by_motion(scene.elements, raws)
     report_stage("constraints")
-    scene.constraints = extract_constraints(scene)
+    scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
+    if previous is not None:
+        scene.constraints = carry_keep(scene.constraints, previous.constraints)
     report_stage("report")
     rec = reconstruction_error(scene, sd, frames, 0)
     conf = element_confidence(scene, sd, frames, 0)
@@ -280,7 +282,7 @@ def _parse_ui(frames: np.ndarray, scene: Scene, sd: Path) -> Scene:
         return scene
     parsed = scene.model_copy(update={"elements": elements, "ui": UIModel.model_validate(ui)})
     assign_roles(parsed.elements)
-    parsed.constraints = extract_constraints(parsed)
+    parsed.constraints = apply_keep_preset(extract_constraints(parsed), DEFAULT_KEEP_PRESET)
     return parsed
 
 
@@ -504,5 +506,5 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             pass
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
                   background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
-    scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m])
+    scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m], previous=prev)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))
