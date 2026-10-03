@@ -102,13 +102,15 @@ def edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
+    if attachment is None and any(t.property == "texture" and t.value == "attachment" for t in built.items):
+        return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="attachment_required")
     missing = [c for c in built.conflicts if not (choices or {}).get(c.id) and not (choices or {}).get(c.element)]
     if missing:
         return EditResult(status="needs_choice", summary=parsed.summary, intent=parsed, plan=built)
 
     last_rep: VerifyReport | None = None
     choices_map = dict(choices or {})
-    generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None), None)
+    generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None and target.value != "attachment"), None)
     generated = generated_kind is not None
     asset_uses = 0
     seen: set[str] = set()

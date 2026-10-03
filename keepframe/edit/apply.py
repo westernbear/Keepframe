@@ -117,8 +117,9 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             if img is None:
                 raise ValueError("could not read attachment image")
             el.canonical.texture = f"assets/{dest.name}"
-            el.canonical.height = float(img.shape[0])
-            el.canonical.width = float(img.shape[1])
+            h, w = img.shape[:2]
+            scale = min(el.canonical.width / w, el.canonical.height / h)   # contain-fit: the motion's box stays the box
+            el.canonical.width, el.canonical.height = float(w * scale), float(h * scale)
         elif t.property == "model":
             if attachment is None:
                 raise ValueError("3D edit needs a GLB attachment")
