@@ -83,11 +83,17 @@ def _boxes_touch(a: Region, b: Region) -> bool:
 def _edge_jump(a: Region, b: Region, lab: np.ndarray) -> float | None:
     """LAB distance across the shared edge; None when the masks do not touch."""
     H, W = lab.shape[:2]
-    x0, y0 = max(0, min(a.bbox[0], b.bbox[0]) - 1), max(0, min(a.bbox[1], b.bbox[1]) - 1)
-    x1, y1 = min(W, max(a.bbox[2], b.bbox[2]) + 1), min(H, max(a.bbox[3], b.bbox[3]) + 1)
+    x0, y0 = max(0, max(a.bbox[0], b.bbox[0]) - 1), max(0, max(a.bbox[1], b.bbox[1]) - 1)
+    x1, y1 = min(W, min(a.bbox[2], b.bbox[2]) + 1), min(H, min(a.bbox[3], b.bbox[3]) + 1)
+    if x1 <= x0 or y1 <= y0:
+        return None
     def place(r: Region) -> np.ndarray:
         m = np.zeros((y1 - y0, x1 - x0), np.uint8)
-        m[r.bbox[1] - y0:r.bbox[3] - y0, r.bbox[0] - x0:r.bbox[2] - x0] = r.mask
+        rx0, ry0 = max(x0, r.bbox[0]), max(y0, r.bbox[1])
+        rx1, ry1 = min(x1, r.bbox[2]), min(y1, r.bbox[3])
+        if rx1 > rx0 and ry1 > ry0:
+            m[ry0 - y0:ry1 - y0, rx0 - x0:rx1 - x0] = r.mask[
+                ry0 - r.bbox[1]:ry1 - r.bbox[1], rx0 - r.bbox[0]:rx1 - r.bbox[0]]
         return m
     ma, mb = place(a), place(b)
     edge_a = (ma & cv2.dilate(mb, _K3)).astype(bool)
@@ -125,8 +131,14 @@ def merge_adjacent_regions(frame_idx: int, frame: np.ndarray, regions: list[Regi
     for members in groups.values():
         if len(members) == 1:
             out.append(members[0]); continue
-        full = np.zeros(frame.shape[:2], bool)
+        x0, y0 = min(r.bbox[0] for r in members), min(r.bbox[1] for r in members)
+        x1, y1 = max(r.bbox[2] for r in members), max(r.bbox[3] for r in members)
+        mask = np.zeros((y1 - y0, x1 - x0), bool)
         for r in members:
-            full[r.bbox[1]:r.bbox[3], r.bbox[0]:r.bbox[2]] |= r.mask
-        out.append(_region(frame_idx, frame, full, max(members, key=lambda r: r.area).label))
+            mask[r.bbox[1] - y0:r.bbox[3] - y0, r.bbox[0] - x0:r.bbox[2] - x0] |= r.mask
+        ys, xs = np.nonzero(mask)
+        color = tuple(float(v) for v in frame[y0:y1, x0:x1][mask].mean(0))
+        out.append(Region(frame=frame_idx, label=max(members, key=lambda r: r.area).label, color=color,
+                          bbox=(x0, y0, x1, y1), area=int(mask.sum()),
+                          centroid=(float((xs + x0).mean()), float((ys + y0).mean())), mask=mask))
     return out
