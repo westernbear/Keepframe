@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import cv2, numpy as np, pytest
 from keepframe.analyze.captions import MAX_TILES, TILE, HEAD, caption_scene, element_sheet, parse_captions
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, rerun
-from keepframe.analyze.video import render_scene_video
+from keepframe.analyze.video import render_scene_video, write_video
 from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track, UIComponent, UIModel
 from keepframe.ir.store import current_scene, new_version, scene_dir
 from keepframe.ir.synth import make_synthetic_scene
@@ -27,6 +27,11 @@ def test_parse_captions_ignores_malformed_rows(raw):
 def test_parse_captions_accepts_only_requested_ids():
     raw = json.dumps({"e1": {"label": " TITLE ", "caption": "white\tbrand\nwordmark"}, "export": {"label": "cta"}})
     assert parse_captions(raw, ["e1"]) == {"e1": ("title", "white brand wordmark")}
+
+
+@pytest.mark.parametrize("row", [{"label": None, "caption": None}, {"label": ["logo"], "caption": ["a", "b"]}])
+def test_parse_captions_accepts_only_strings(row):
+    assert parse_captions(json.dumps({"e1": row}), ["e1"]) == {"e1": ("other", "")}
 
 
 class FakeVision:
@@ -61,6 +66,17 @@ def test_caption_scene_empty_skips_llm():
     llm = FakeVision()
     assert caption_scene(scene, np.zeros((1, 20, 20, 3), np.uint8), llm) == 0
     assert llm.calls == []
+
+
+@pytest.mark.parametrize("caption", [None, ["a", "b"], " \t\n"])
+def test_caption_scene_stores_empty_captions_as_none(tmp_path, caption):
+    class Vision(FakeVision):
+        def complete(self, messages, tools):
+            return AssistantReply(content=json.dumps({"e1": {"label": "shape", "caption": caption}}))
+    scene = make_synthetic_scene(tmp_path, seed=3, with_text=False, frames=12)
+    frames = np.zeros((12, scene.size[1], scene.size[0], 3), np.uint8)
+    assert caption_scene(scene, frames, Vision()) == 1
+    assert scene.element("e1").label == "shape" and scene.element("e1").caption is None
 
 
 def test_element_sheet_caps_area_sorts_and_uses_visible_midpoint():
@@ -103,6 +119,54 @@ def test_caption_failure_never_fails_analysis(tmp_path, caption_video, stage, er
     assert current_scene(root, "s1")[0].elements
 
 
+@pytest.mark.parametrize("stage", ["analyze", "rerun"])
+@pytest.mark.parametrize("raw", ["These are flat shapes.", '{"e1":', '{"unknown": {"label": "shape", "caption": "square"}}'])
+def test_unusable_captions_record_skipped_message(tmp_path, caption_video, stage, raw):
+    class Vision(FakeVision):
+        def complete(self, messages, tools): return AssistantReply(content=raw)
+    root, opts = tmp_path / "p", AnalyzeOptions(ocr=False, refine=False)
+    if stage == "analyze":
+        analyze(caption_video, 0, 11, root, opts, captioner=Vision())
+    else:
+        analyze(caption_video, 0, 11, root, opts)
+        rerun(root, "s1", "keyframes", "unusable captions", captioner=Vision())
+    assert current_scene(root, "s1")[0].elements
+    report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
+    assert "captions skipped: no usable captions" in report["messages"]
+
+
+@pytest.fixture
+def caption_ui(monkeypatch):
+    from keepframe.analyze import pipeline
+    from keepframe.assets import AssetResponse
+    model = UIModel(components=[UIComponent(id=f"e{i}", kind="generic", bbox=(0, 0, i + 5, i + 5))
+                                for i in range(1, 31)])
+    class Assets:
+        def request(self, **kwargs): return AssetResponse("application/json", b"", model)
+    monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", "http://fake")
+    monkeypatch.setattr(pipeline, "AssetClient", Assets)
+    return AnalyzeOptions(ocr=False, refine=False, ui=True)
+
+
+@pytest.fixture
+def caption_ui_video(tmp_path):
+    return write_video(np.zeros((2, 40, 40, 3), np.uint8), 30, tmp_path / "ui.mp4")
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_caption_report_uses_tile_count(tmp_path, caption_ui_video, caption_ui, complete):
+    class Vision(FakeVision):
+        def complete(self, messages, tools):
+            ids = [f"e{i}" for i in range(7, 31)] if complete else ["e30"]
+            return AssistantReply(content=json.dumps({i: {"label": "shape", "caption": "square"} for i in ids}))
+    root = tmp_path / "p"
+    analyze(caption_ui_video, 0, 1, root, caption_ui, captioner=Vision())
+    assert len(current_scene(root, "s1")[0].elements) == 30
+    report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
+    messages = [m for m in report["messages"] if m.startswith("captions")]
+    assert messages == ([] if complete else ["captions partial: 1/24"])
+
+
 def test_analyze_captions_each_scene_before_writing_report(tmp_path, caption_video, monkeypatch):
     from keepframe.analyze import pipeline
     seen, written = {}, {}
@@ -142,6 +206,29 @@ def test_rerun_preserves_captions_without_captioner_and_refreshes_with_one(tmp_p
     refreshed, _ = current_scene(root, "s1")
     assert len(llm.calls) == 1
     assert all(e.label == "shape" and e.caption == "flat square" for e in refreshed.elements)
+
+
+@pytest.mark.parametrize("reply", ["failed", "unusable", "partial", "complete"])
+def test_rerun_preserves_captions_missing_from_reply(tmp_path, caption_ui_video, caption_ui, reply):
+    refreshed_ids = {"e30"} if reply == "partial" else {f"e{i}" for i in range(7, 31)} if reply == "complete" else set()
+    class Vision(FakeVision):
+        def complete(self, messages, tools):
+            if reply == "failed":
+                raise RuntimeError("down")
+            return AssistantReply(content=json.dumps({i: {"label": "shape", "caption": "fresh square"} for i in refreshed_ids}))
+    root = tmp_path / "p"
+    analyze(caption_ui_video, 0, 1, root, caption_ui)
+    scene, _ = current_scene(root, "s1")
+    assert len(scene.elements) == 30
+    scene.elements.reverse()
+    for e in scene.elements:
+        e.label, e.caption = "logo", f"old caption for {e.id}"
+    new_version(root, "s1", scene, note="describe elements", auto=False)
+    rerun(root, "s1", "keyframes", "refresh available captions", captioner=Vision())
+    refreshed, _ = current_scene(root, "s1")
+    expected = {e.id: ("shape", "fresh square") if e.id in refreshed_ids else ("logo", f"old caption for {e.id}")
+                for e in scene.elements}
+    assert {e.id: (e.label, e.caption) for e in refreshed.elements} == expected
 
 
 @pytest.mark.parametrize("stage", ["analyze", "rerun"])

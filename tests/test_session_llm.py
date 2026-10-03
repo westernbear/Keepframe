@@ -1,4 +1,8 @@
 import json
+import sys
+from types import SimpleNamespace
+
+import pytest
 
 from keepframe.session.llm import LiteLLMClient, NullClient, OpenAICompatibleClient, make_llm
 from keepframe.session.provider import ProviderConfig
@@ -164,6 +168,18 @@ def test_litellm_client_calls_and_parses(monkeypatch):
     assert reply.tool_calls[0]["arguments"] == {"prompt": "문구를 Hello로"}
     assert captured["kwargs"]["model"] == "openai/gpt-4o-mini"
     assert captured["kwargs"]["api_key"] == "k"
+
+
+@pytest.mark.parametrize("extra, expected", [({}, 120), ({"timeout": 30}, 30)])
+def test_litellm_client_passes_timeout(monkeypatch, extra, expected):
+    seen = {}
+    def complete(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=[]))])
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=complete))
+    client = LiteLLMClient(ProviderConfig(api_key="k", extra=extra))
+    assert client.complete([{"role": "user", "content": "hi"}], []).content == "ok"
+    assert seen.get("timeout") == expected
 
 
 def test_litellm_client_chatgpt_omits_api_key(monkeypatch):

@@ -43,8 +43,10 @@ def parse_captions(text: str, ids: list[str]) -> dict[str, tuple[str, str]]:
         row = data.get(eid) if isinstance(data, dict) else None
         if not isinstance(row, dict):
             continue
-        label = str(row.get("label", "other")).strip().lower()
-        out[eid] = (label if label in LABELS else "other", " ".join(str(row.get("caption", "")).split())[:120])
+        label, caption = row.get("label"), row.get("caption")
+        label = label.strip().lower() if isinstance(label, str) else "other"
+        caption = " ".join(caption.split())[:120] if isinstance(caption, str) else ""
+        out[eid] = (label if label in LABELS else "other", caption)
     return out
 
 
@@ -62,5 +64,6 @@ def caption_scene(scene: Scene, frames: np.ndarray, llm) -> int:
     found = parse_captions(reply.content, ids)
     for el in scene.elements:
         if el.id in found:
-            el.label, el.caption = found[el.id]
+            label, caption = found[el.id]
+            el.label, el.caption = label, caption or None
     return len(found)

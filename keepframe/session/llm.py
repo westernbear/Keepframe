@@ -126,6 +126,7 @@ class LiteLLMClient:
             else:
                 kwargs["api_key"] = token
         kwargs.update(self.config.litellm_extra())
+        kwargs.setdefault("timeout", 120)
         resp = self._litellm.completion(**kwargs)
         msg = (resp.choices[0].message) if resp and resp.choices else None
         reply = AssistantReply()

@@ -10,7 +10,7 @@ from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
-from .captions import caption_scene
+from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions
@@ -219,7 +219,13 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     assign_roles(scene.elements)
     if captioner is not None:
         try:
-            log.info("captions elements=%s", caption_scene(scene, frames, captioner))
+            count = caption_scene(scene, frames, captioner)
+            log.info("captions elements=%s", count)
+            sent = min(len(scene.elements), MAX_TILES)
+            if count == 0 and scene.elements:
+                messages.append("captions skipped: no usable captions")
+            elif 0 < count < sent:
+                messages.append(f"captions partial: {count}/{sent}")
         except Exception as e:  # captions are optional suggestions; analysis never fails on them
             messages.append(f"captions skipped: {type(e).__name__}: {e}"[:200])
     scene.groups = [] if scene.ui is not None else group_by_motion(scene.elements, raws)  # ponytail: parsed UI has no measured motion tracks.
@@ -529,8 +535,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             old = prev.element(e.id)
             if old.provenance == "manual" and old.kind == "text":
                 e.canonical.text, e.canonical.font, e.provenance = old.canonical.text, old.canonical.font, "manual"
-            if captioner is None:
-                e.label, e.caption = old.label, old.caption
+            e.label, e.caption = old.label, old.caption
         except KeyError:
             pass
     scene = _finish(sd, scene, frames, raws, messages, previous=prev, captioner=captioner)
