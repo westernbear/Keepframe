@@ -45,8 +45,15 @@ def composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacit
 def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray:
     W, H = scene.size
     canvas = np.empty((H, W, 3), np.float32)
-    canvas[:] = hex_to_rgb(scene.background.value) if scene.background.kind == "color" else (0, 0, 0)
     cache = {} if cache is None else cache
+    if scene.background.kind == "image":
+        key = ("background", scene.background.value, scene.size)
+        bg = cache.get(key)
+        if bg is None:
+            bg = cache[key] = cv2.resize(load_texture(Path(scene_dir) / scene.background.value)[..., :3], (W, H))
+        canvas[:] = bg
+    else:
+        canvas[:] = hex_to_rgb(scene.background.value)
     order = sorted((e for e in scene.elements if e.visible[0] <= f <= e.visible[1]), key=lambda e: eval_z(e, f))
     for el in order:
         if not el.canonical.texture:

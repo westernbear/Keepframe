@@ -118,11 +118,13 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path:
     elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui) for e in scene.elements)
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
+    bg = scene.background.value if scene.background.kind == "color" else (
+        f'#000 url("{_data_uri(scene_dir / scene.background.value)}") 0 0/100% 100% no-repeat')
     for k, v in {
         "{{ID}}": html.escape(scene.id),
         "{{WIDTH}}": str(scene.size[0]),
         "{{HEIGHT}}": str(scene.size[1]),
-        "{{BG}}": scene.background.value if scene.background.kind == "color" else "#000000",
+        "{{BG}}": bg,
         "{{GSAP_JS}}": (VENDOR / "gsap.min.js").read_text(),
         "{{CUSTOMEASE_JS}}": (VENDOR / "CustomEase.min.js").read_text(),
         "{{THREE_JS}}": (VENDOR / "three-0.128.0.min.js").read_text(),

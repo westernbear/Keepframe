@@ -9,7 +9,7 @@ from ..ir.store import current_scene, init_project_scenes, load_project, new_ver
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
-from .background import estimate_background, foreground_mask
+from .background import PLATE_CONF_MAX, background_plate, estimate_background, foreground_mask, foreground_mask_plate
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
@@ -83,8 +83,8 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, msg
 
 
-def _stage_regions(frames, bg, boxes, opts, sd):
-    fg = np.stack([foreground_mask(f, bg) for f in frames])
+def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
+    fg = np.stack([foreground_mask_plate(f, plate) if plate is not None else foreground_mask(f, bg) for f in frames])
     pal = build_palette(frames, fg)
     ov = _load_overrides(sd)
     ov_by_frame: dict[int, list] = {}
@@ -336,12 +336,18 @@ def analyze_scene_frames(
     log.info("frames n=%s size=%sx%s fps=%s", n, W, H, fps)
     report_stage("background")
     bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
-    (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf}))
+    plate = None
+    if not opts.bg_override and bconf < PLATE_CONF_MAX:
+        plate = background_plate(frames)
+        (sd / "assets").mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(sd / "assets" / "background.png"), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
+        bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
+    (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
     report_stage("text")
     boxes, text_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
     report_stage("regions")
-    rbf = _stage_regions(frames, bg, boxes, opts, sd)
+    rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
@@ -351,7 +357,9 @@ def analyze_scene_frames(
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
+                  background=Background(kind="image", value="assets/background.png", confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
+                  elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
@@ -492,12 +500,23 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         fps = prev.fps
     n, H, W = frames.shape[:3]
 
+    plate = None
     if boundary <= STAGES.index("background"):
         bg, bconf = (_rgb(opts.bg_override), 1.0) if opts.bg_override else estimate_background(frames)
-        (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf}))
+        if not opts.bg_override and bconf < PLATE_CONF_MAX:
+            plate = background_plate(frames)
+            (sd / "assets").mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(sd / "assets" / "background.png"), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
+            bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
+        (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
     else:
         bgj = json.loads((sd / "stages" / "background.json").read_text())
         bg, bconf = tuple(bgj["rgb"]), bgj.get("confidence", 1.0)
+        if bgj.get("plate", False):
+            plate = cv2.imread(str(sd / "assets" / "background.png"), cv2.IMREAD_COLOR)
+            if plate is None:
+                raise FileNotFoundError(sd / "assets" / "background.png")
+            plate = cv2.cvtColor(plate, cv2.COLOR_BGR2RGB)
 
     if boundary <= STAGES.index("text"):
         report_stage("text")
@@ -507,7 +526,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         boxes, text_tracks = text["boxes"], text["tracks"]
     if boundary <= STAGES.index("regions"):
         report_stage("regions")
-        rbf = _stage_regions(frames, bg, boxes, opts, sd)
+        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
     else:
         rbf = _pk(sd, "regions")
     if boundary <= STAGES.index("tracking"):
@@ -526,7 +545,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
+                  background=Background(kind="image", value="assets/background.png", confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
+                  elements=elements)
     messages = [m for m in [props.get("_message")] if m]
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)

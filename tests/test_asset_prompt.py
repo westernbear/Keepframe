@@ -19,6 +19,14 @@ def test_asset_prompt_carries_box_and_context():
     assert "aspect 2.00" in text
 
 
+def test_asset_prompt_does_not_send_image_background_path():
+    scene = _scene()
+    scene.background = Background(kind="image", value="assets/background.png")
+    text = _asset_prompt(scene, Target(element="e2", property="texture", value="red sneaker"), "신발로 바꿔줘")
+    assert "shown over an image background" in text
+    assert scene.background.value not in text
+
+
 @pytest.mark.parametrize("caption,label,expected", [
     ("  product\n photo\tcard  ", "unused label", "product photo card"),
     ("  " + "c" * 120 + " omitted caption", "unused label", "c" * 120),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 import cv2, numpy as np
 
+PLATE_CONF_MAX = 0.30   # spec 5.2: dominant colour under 30% of pixels -> not a solid background
+
 
 def rgb_to_lab(img_rgb_uint8: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(np.ascontiguousarray(img_rgb_uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -21,3 +23,13 @@ def foreground_mask(frame: np.ndarray, bg_rgb: tuple[int, int, int], thr: float 
     lab = rgb_to_lab(frame)
     bg = rgb_to_lab(np.array(bg_rgb, np.uint8).reshape(1, 1, 3))[0, 0]
     return np.linalg.norm(lab - bg, axis=2) > thr
+
+
+def background_plate(frames: np.ndarray) -> np.ndarray:
+    """Temporal median of sampled frames.
+    ponytail: static-camera MG only; an element that never moves is absorbed into the plate (no element for it)."""
+    return np.median(frames[:: max(1, len(frames) // 24)], axis=0).astype(np.uint8)
+
+
+def foreground_mask_plate(frame: np.ndarray, plate: np.ndarray, thr: float = 12.0) -> np.ndarray:
+    return np.linalg.norm(rgb_to_lab(frame) - rgb_to_lab(plate), axis=2) > thr
