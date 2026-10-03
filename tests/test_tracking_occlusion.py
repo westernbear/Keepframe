@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
+import pytest
 from keepframe.analyze.regions import Region
-from keepframe.analyze.tracking import track_regions
+from keepframe.analyze.tracking import _coverage, _mask_coverage, _predicted_bbox, match_cost, track_regions
 
 
 def _r(f, x0, w, color):
@@ -20,6 +21,64 @@ def test_merged_blob_does_not_spawn_a_third_object():
     tracks = track_regions(frames, cost_thr=2.0, max_gap=3)
     assert len(tracks) == 2
     assert all(3 not in t.regions and 4 not in t.regions for t in tracks)
+    assert all(set(t.regions) == {0, 1, 2, 5, 6, 7} for t in tracks)
+
+
+@pytest.mark.parametrize("blob_frames", [(3, 4, 5), (3, 4, 5, 6)])
+def test_long_blob_keeps_tracks_alive_with_default_max_gap(blob_frames):
+    red, blue = (220.0, 30.0, 30.0), (30.0, 30.0, 220.0)
+    frames = []
+    for f in range(blob_frames[-1] + 4):
+        if f in blob_frames:
+            frames.append([_r(f, 20 + f * 4, 60, (125.0, 30.0, 125.0))])
+        else:
+            frames.append([_r(f, 20 + f * 4, 20, red), _r(f, 60 + f * 4, 20, blue)])
+
+    tracks = track_regions(frames, cost_thr=2.0)
+    assert len(tracks) == 2
+    observed_frames = set(range(len(frames))) - set(blob_frames)
+    for track, index in zip(tracks, (0, 1)):
+        assert set(track.regions) == observed_frames
+        assert all(track.regions[f] is frames[f][index] for f in observed_frames)
+
+
+def test_blob_column_cannot_steal_a_valid_assignment():
+    red, blue = (220.0, 30.0, 30.0), (30.0, 30.0, 220.0)
+    previous = [_r(0, 20, 20, red), _r(0, 60, 20, blue)]
+    blob = _r(1, 20, 60, red)
+    candidates = [_r(1, 20, 20, (160.0, 90.0, 30.0)), _r(1, 60, 20, blue)]
+    assert (match_cost(previous[0], previous[0].centroid, blob, 80.0)
+            < match_cost(previous[0], previous[0].centroid, candidates[0], 80.0) < 2.0)
+
+    tracks = track_regions([previous, [blob, *candidates]], cost_thr=2.0)
+    assert len(tracks) == 2
+    for track, index in zip(tracks, (0, 1)):
+        assert set(track.regions) == {0, 1}
+        assert track.regions[1] is candidates[index]
+
+
+def test_panel_with_holes_does_not_suppress_a_region():
+    red, blue = (220.0, 30.0, 30.0), (30.0, 30.0, 220.0)
+    frames = [[_r(f, 20 + f * 4, 20, red), _r(f, 60 + f * 4, 20, blue)] for f in range(3)]
+    tracks = track_regions(frames[:2], cost_thr=2.0)
+    mask = np.ones((40, 80), bool)
+    mask[10:30, 8:28] = False
+    mask[10:30, 48:68] = False
+    ys, xs = np.nonzero(mask)
+    panel = Region(frame=2, label=0, color=(30.0, 220.0, 30.0), bbox=(20, 0, 100, 40),
+                   area=int(mask.sum()), centroid=(float(xs.mean() + 20), float(ys.mean())), mask=mask)
+    assert panel.area >= 1.2 * max(t.regions[t.last].area for t in tracks)
+    for track in tracks:
+        assert _coverage(panel.bbox, _predicted_bbox(track, 2)) >= 0.5
+        assert _mask_coverage(panel, track, 2) == 0.0
+
+    frames[2].append(panel)
+    tracks = track_regions(frames, cost_thr=2.0)
+    assert len(tracks) == 3
+    for track, index in zip(tracks[:2], (0, 1)):
+        assert set(track.regions) == {0, 1, 2}
+        assert track.regions[2] is frames[2][index]
+    assert tracks[2].regions == {2: panel}
 
 
 def test_separate_objects_passing_close_have_continuous_tracks():

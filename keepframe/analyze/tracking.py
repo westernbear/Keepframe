@@ -119,12 +119,13 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                   cost_thr: float = 1.2, max_gap: int = 2) -> list[ObjectTrack]:
     tracks: list[ObjectTrack] = []
     active: list[ObjectTrack] = []
+    hold: dict[int, int] = {}
     next_id = 1
     for i, regions in enumerate(regions_by_frame):
         f = first_frame + i
-        active = [t for t in active if f - t.last <= max_gap]
+        active = [t for t in active if f - max(t.last, hold.get(t.id, t.last)) <= max_gap]
         matched_r: set[int] = set()
-        # ponytail: blobs become gaps that fill_gaps interpolates; partial occlusions covering <50% of one object still spawn a fragment.
+        # ponytail: blobs keep tracks alive as gaps that fill_gaps interpolates; partial occlusions covering <50% of one object still spawn a fragment.
         # Predicted masks guard against box overlap between separate objects; Motico split/merge mapping for deformations.
         blob: set[int] = set()
         if active and regions:
@@ -134,7 +135,10 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                 if len(covered) >= 2 and r.area >= 1.2 * max(t.regions[t.last].area for t in covered):
                     if sum(_mask_coverage(r, t, f) >= 0.5 for t in covered) >= 2:
                         blob.add(j)
+                        for t in covered:
+                            hold[t.id] = f
             C = np.array([[match_cost(t.regions[t.last], _predict(t, f), r, max_dist) for r in regions] for t in active])
+            C[:, sorted(blob)] = cost_thr + 1
             rows, cols = linear_sum_assignment(C)
             for a, b in zip(rows, cols):
                 if C[a, b] <= cost_thr and b not in blob:
