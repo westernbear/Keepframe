@@ -67,3 +67,22 @@ def test_rerun_from_keyframes_appends_version(tmp_scene_dir):
     assert v2.id == "v2" and v2.auto is False
     s1, _ = current_scene(root, "s1")
     assert len(s1.elements) == len(gold.elements)
+
+
+def test_full_reanalysis_appends_snapshot_without_rewriting_old_frames(tmp_scene_dir):
+    from keepframe.review.overlay import frame_overlay
+    from keepframe.web.server import ReviewState
+    gold = make_synthetic_scene(tmp_scene_dir / "gold", seed=71, frames=12, with_text=False)
+    video = render_scene_video(gold, tmp_scene_dir / "gold", tmp_scene_dir / "gold.mp4")
+    root = tmp_scene_dir / "project"
+    options = AnalyzeOptions(ocr=False, refine=False, use_ecc=False)
+    analyze(video, 0, 7, root, options)
+    scene, old = current_scene(root, "s1")
+    before = frame_overlay(root, scene, old, 0)
+    image = ReviewState(root, "s1").orig_png(0, old.id)
+    project = analyze(video, 2, 9, root, options)
+    assert [v.id for v in project.versions] == ["v1", "v2"]
+    assert project.source["range"] == [2, 9]
+    assert project.versions[-1].analysis_file != old.analysis_file
+    assert frame_overlay(root, scene, old, 0) == before
+    assert ReviewState(root, "s1").orig_png(0, old.id) == image

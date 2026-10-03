@@ -130,12 +130,14 @@ class Version(BaseModel):
     note: str = ""
     auto: bool = True
     scene_file: str
+    analysis_file: Optional[str] = None
 
 
 class Project(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     schema_version: str = Field("keepframe.project/1", alias="schema")
     source: dict
+    analysis_migrated: bool = False
     scenes: list[SceneRef]
     links: list[dict] = Field(default_factory=list)
     versions: list[Version] = Field(default_factory=list)

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, shutil
+import json, shutil, pickle
 from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import FontGuess, Version
@@ -46,14 +46,17 @@ def edit_text(root: Path, scene_id: str, element_id: str, text: str | None = Non
 
 
 def set_region_mask(root: Path, scene_id: str, frame: int, mask_png: Path, object_id: str, note: str = "set region mask") -> Version:
+    scene, _ = current_scene(root, scene_id)
+    if not 0 <= frame < scene.frames:
+        raise ValueError("frame out of range")
     sd = scene_dir(root, scene_id)
+    key = _object_of(sd, object_id)
+    if key.startswith("t"):
+        raise ValueError("region masks apply to sprite objects, not text")
     ov = _load(sd)
     n = len(ov["regions"]) + 1
     dst = sd / "stages" / f"ov_{n}.png"
     shutil.copy(mask_png, dst)
-    key = _object_of(sd, object_id)
-    if key.startswith("t"):
-        raise ValueError("region masks apply to sprite objects, not text")
     ov["regions"].append({"frame": int(frame), "mask": f"stages/ov_{n}.png", "label": 1000 + _object_num(key)})
     _save(sd, ov)
     return rerun(root, scene_id, "regions", note=note)
@@ -61,8 +64,29 @@ def set_region_mask(root: Path, scene_id: str, frame: int, mask_png: Path, objec
 
 def add_bbox_prompt(root: Path, scene_id: str, frame: int, bbox: tuple[int, int, int, int], object_id: str,
                     note: str = "bbox prompt") -> Version:
+    scene, _ = current_scene(root, scene_id)  # migrate legacy observations before changing caches
     sd = scene_dir(root, scene_id)
-    frames = np.load(sd / "stages" / "frames.npy")
+    if not 0 <= frame < scene.frames or len(bbox) != 4:
+        raise ValueError("invalid frame or box")
+    w, h = scene.size
+    x0, y0, x1, y1 = bbox
+    x0, x1 = max(0, min(w, x0)), max(0, min(w, x1))
+    y0, y1 = max(0, min(h, y0)), max(0, min(h, y1))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("box must have positive area")
+    bbox = (x0, y0, x1, y1)
+    if scene.element(object_id).kind == "text":
+        key = _object_of(sd, object_id)
+        path = sd / "stages/text.pkl"
+        text = pickle.loads(path.read_bytes())
+        track = next(t for t in text["tracks"] if t.id == _object_num(key))
+        if frame not in track.boxes:
+            raise ValueError("text was not detected in this frame")
+        track.boxes[frame].bbox = bbox
+        track.boxes[frame].source = "manual_box"
+        path.write_bytes(pickle.dumps(text))
+        return rerun(root, scene_id, "regions", note=note)
+    frames = np.load(sd / "stages" / "frames.npy", mmap_mode="r")
     bg = tuple(json.loads((sd / "stages" / "background.json").read_text())["rgb"])
     m = np.zeros(frames.shape[1:3], np.uint8)
     x0, y0, x1, y1 = [max(0, v) for v in bbox]

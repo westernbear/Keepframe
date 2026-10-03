@@ -38,7 +38,7 @@ python -c "import torch; from rapidocr_onnxruntime import RapidOCR; print('ocr o
 keepframe serve --workspace ./data/workspace
 ```
 
-http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic sample and opens review — no upload or analysis. `/admin` is on by default and requires an explicitly configured account; set `KEEPFRAME_ADMIN_EMAIL` and `KEEPFRAME_ADMIN_PASSWORD` (or `KEEPFRAME_ADMIN_USERS` as comma-separated `email:password` pairs). `--no-admin` turns it off.
+http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by default; header toggle for English). `/demo` seeds a synthetic video, detects its graphic regions, and opens reference analysis. Demo text boxes are labelled fixtures with no OCR confidence. `/admin` is on by default and requires an explicitly configured account; set `KEEPFRAME_ADMIN_EMAIL` and `KEEPFRAME_ADMIN_PASSWORD` (or `KEEPFRAME_ADMIN_USERS` as comma-separated `email:password` pairs). `--no-admin` turns it off.
 
 CLI-generated project directories placed under the workspace appear in the library even without `meta.json`; the first metadata change creates that file. Analysis creates `overrides.json` without overwriting existing overrides, and frame-stage reruns reuse the recorded source range.
 
@@ -142,3 +142,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 - Flat 2D motion graphics and UI recordings only
 - Keep predicates required on every edit
 - Repair retries: 4. Asset generation: 2. Caps are display-only
+
+### Reference analysis review
+
+Review displays the original frame with per-object detection masks and OCR boxes. Select a region, object row, or appearance track to inspect it. The analysis layer starts at 25% opacity; use **Edit region** to draw a correction box, then apply it. Approving the analysis opens the existing AI recreation workflow. Reconstruction diagnostics and render APIs remain available internally.
+
+`GET /api/analysis-overlay?project=<id>&scene=<id>&frame=<index>&v=<version>` returns the requested frame/version, original size, snapshot ID, object IDs, contour rings (including holes and separate components), and OCR observations. A successful response with `available: false` means that version has no recoverable analysis; `objects: []` with `available: true` means the frame has no detections. Only actual OCR scores are labelled as OCR confidence.
+
+Analysis manifests and per-frame observations live under `scenes/<scene>/analysis/<content-hash>/`; immutable source arrays are deduplicated in `analysis/sources/`. Each scene version references its manifest through `analysis_file`. Ordinary edits inherit the reference; reanalysis and region corrections publish observations before adding a new version. Existing stage caches are migrated once to the latest version only. Historical versions without evidence show no analysis layer. These snapshots must be retained when archiving a project.

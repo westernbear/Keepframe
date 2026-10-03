@@ -100,7 +100,7 @@ def edit(
         probes = render(html, edited, sd / f"render.edit{attempt}")
         last_rep = verify(edited, sd, render_result=probes, reference=scene, reference_dir=sd)
         if _passed(last_rep):
-            v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True)
+            v = new_version(root, scene_id, edited, note=parsed.summary or prompt, auto=True, parent_version=parent.id)
             return EditResult(
                 status="done",
                 summary=parsed.summary,

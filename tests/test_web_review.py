@@ -201,14 +201,19 @@ def test_review_timeline_playhead_spans_tracks_without_overflowing_ruler():
     assert re.search(r"\.timeline__ruler\s*\{[^}]*overflow:\s*hidden", css, re.S)
 
 
-def test_review_diff_microscope_controls():
+def test_review_analysis_layer_controls():
     html = review_src()
     css = REVIEW_CSS.read_text(encoding="utf-8")
     assert "drawOverlays" in html
-    assert "fetchBboxes" in html
+    assert "fetchAnalysisOverlay" in html
+    assert "fetchBboxes" not in html
+    assert 'id="recon"' not in html
+    assert 'id="peak-back"' not in html
+    assert 'id="overlay-opacity"' in html
+    assert 'id="region-mode"' in html
     assert 'id="element-filter"' in html
     assert 'id="transport-keys"' in html
-    assert "mapBox" in html
+    assert "positionOverlay" in html
     assert "#play-btn" in css
     assert re.search(r"#play-btn\s*\{[^}]*width:\s*44px", css, re.S)
     assert "keepSave.hidden" in html or "keep-save" in html and "hidden" in html
@@ -305,7 +310,7 @@ def test_review_playback_updates_icon_frame_and_playhead(tmp_path):
                   const src = document.getElementById('orig').src;
                   const frame = parseInt(document.getElementById('frame-num').textContent, 10);
                   const pause = document.getElementById('pause-icon');
-                  const box = document.querySelector('#orig-overlay rect');
+                  const box = document.querySelector('#orig-overlay path');
                   return frame > 2 && src.includes('/frame/orig/') && !src.includes('/frame/orig/0?') && pause && !pause.hidden && box;
                 }""",
                 timeout=8000,

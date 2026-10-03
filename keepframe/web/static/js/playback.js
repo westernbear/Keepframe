@@ -1,4 +1,4 @@
-import { reviewFrameUrl } from "/static/js/api.js?v=20260921v";
+import { reviewFrameUrl } from "/static/js/api.js?v=20261003a";
 
 const PREFETCH_AHEAD = 4;
 const PREVIEW_CACHE_LIMIT = 48;
@@ -51,6 +51,7 @@ function createFrameTransport({
   let raf = 0;
   let lastTick = 0;
   let waiting = false;
+  let generation = 0;
 
   function isPlaying() {
     return playing;
@@ -86,7 +87,9 @@ function createFrameTransport({
         showNextPlaybackFrame(next);
       } else {
         waiting = true;
+        const requestGeneration = generation;
         wait(next).then((ok) => {
+          if (requestGeneration !== generation) return;
           waiting = false;
           if (!playing) return;
           lastTick = performance.now();
@@ -103,6 +106,7 @@ function createFrameTransport({
   }
 
   function setPlaying(on) {
+    generation++;
     playing = Boolean(on);
     lastTick = 0;
     waiting = false;
@@ -125,6 +129,7 @@ function createPreviewCache({
   version,
   prefetchAhead = PREFETCH_AHEAD,
   cacheLimit = PREVIEW_CACHE_LIMIT,
+  kinds = ["orig", "recon"],
 }) {
   const cache = new Map();
 
@@ -193,24 +198,19 @@ function createPreviewCache({
   function prefetch(from, total) {
     const n = Math.max(0, total | 0);
     for (let d = 0; d <= prefetchAhead && from + d < n; d++) {
-      entry("orig", from + d);
-      entry("recon", from + d);
+      kinds.forEach((kind) => entry(kind, from + d));
     }
   }
 
   function isReady(index) {
-    return isImageDecoded(entry("orig", index).img) && isImageDecoded(entry("recon", index).img);
+    return kinds.every((kind) => isImageDecoded(entry(kind, index).img));
   }
 
   async function wait(index) {
-    const [origOk, reconOk] = await Promise.all([
-      entry("orig", index).ready,
-      entry("recon", index).ready,
-    ]);
-    return origOk && reconOk;
+    return (await Promise.all(kinds.map((kind) => entry(kind, index).ready))).every(Boolean);
   }
 
-  return { prefetch, isReady, wait, src };
+  return { prefetch, isReady, wait, src, image: (kind, index) => entry(kind, index).img, clear: () => cache.clear() };
 }
 
 export {

@@ -1,20 +1,18 @@
+import { objectColor } from "/static/js/review/colors.js?v=20261003";
 import {
   fetchReviewState,
   postApprove,
-  reviewAssetUrl,
-} from "/static/js/api.js?v=20260921v";
+} from "/static/js/api.js?v=20261003a";
 import { T, Tf } from "/static/js/i18n.js?v=20260921v";
 import {
   LOADING_PCT_START,
-  LOADING_PCT_STATE,
-  LOADING_PCT_FRAMES,
   LOADING_PCT_LIST_BASE,
   LOADING_PCT_LIST_SPAN,
   PROGRESS_MAX,
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20260921v";
+} from "/static/js/review/workspace.js?v=20261003a";
 
 export function attachInspector(ws) {
   const { dom } = ws;
@@ -39,11 +37,19 @@ export function attachInspector(ws) {
     const row = document.createElement("div");
     row.className = "element-row" + (item.id === ws.selectedId ? " element-row--selected" : "");
     row.dataset.id = item.id;
-    const tex = item.canonical && item.canonical.texture;
-    const thumb = tex
-      ? `<img class="element-thumb" alt="" src="${reviewAssetUrl(tex, ws.projectId, ws.sceneId)}"/>`
-      : `<span class="element-thumb"></span>`;
-    row.innerHTML = `${thumb}<div class="element-row__meta"><span class="mono">${item.id}</span><span>${item.kind}</span></div>`;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-pressed", item.id === ws.selectedId);
+    const swatch = document.createElement("span");
+    swatch.className = "object-swatch";
+    swatch.style.background = objectColor(item.id);
+    const meta = document.createElement("span");
+    meta.className = "element-row__meta";
+    meta.textContent = `${item.id} · ${T(`review.kind.${item.kind}`)}${item.canonical?.text ? ` · ${item.canonical.text}` : ""}`;
+    row.append(swatch, meta);
+    row.addEventListener("keydown", e => {
+      if (["Enter", " "].includes(e.key)) { e.preventDefault(); selectElement(item.id); }
+    });
     row.addEventListener("click", () => selectElement(item.id));
     frag.appendChild(row);
     const opt = document.createElement("option");
@@ -53,6 +59,7 @@ export function attachInspector(ws) {
   }
 
   async function renderElements() {
+    const request = ws.stateReq;
     const els = ws.state.scene.elements || [];
     const hasElements = els.length > 0;
     dom.elementCount.textContent = Tf("review.elements", { n: els.length });
@@ -65,6 +72,7 @@ export function attachInspector(ws) {
     dom.timelineTracks.innerHTML = "";
     const n = Math.max(els.length, 1);
     for (let from = 0; from < els.length; from += LIST_CHUNK) {
+      if (request !== ws.stateReq) return;
       const end = Math.min(els.length, from + LIST_CHUNK);
       const frag = document.createDocumentFragment();
       const opts = document.createDocumentFragment();
@@ -95,10 +103,6 @@ export function attachInspector(ws) {
   async function renderKeepPanel() {
     const constraints = ws.state.scene.constraints || [];
     if (!constraints.length) return;
-    const head = document.createElement("div");
-    head.className = "keep-head";
-    head.textContent = T("review.keep");
-    dom.constraintsPanel.appendChild(head);
     await renderConstraints(0);
   }
 
@@ -130,15 +134,18 @@ export function attachInspector(ws) {
     document.getElementById("bbox-frame").value = String(ws.frame);
     document.getElementById("mask-frame").value = String(ws.frame);
     const item = ws.state.scene.elements.find((e) => e.id === id);
-    if (item?.canonical?.text != null) {
-      document.getElementById("text-value").value = item.canonical.text;
-    }
+    document.getElementById("text-value").value = item?.canonical?.text || "";
+    document.getElementById("text-run").disabled = item?.kind !== "text";
+    document.getElementById("mask-run").disabled = item?.kind === "text";
+    document.getElementById("region-mode").disabled = !item || ws.versionId !== ws.state.project.versions.at(-1)?.id;
     dom.elementList.querySelectorAll(".element-row").forEach((row) => {
       row.classList.toggle("element-row--selected", row.dataset.id === id);
+      row.setAttribute("aria-pressed", row.dataset.id === id);
     });
     dom.timelineTracks.querySelectorAll(".track").forEach((row) => {
       row.classList.toggle("track--selected", row.dataset.id === id);
     });
+    renderObjectDetail();
     ws.drawOverlays();
   }
 
@@ -200,59 +207,73 @@ export function attachInspector(ws) {
   function restoreSelection(keepSel) {
     const stillThere = keepSel && ws.state.scene.elements.some((e) => e.id === keepSel);
     if (stillThere) ws.selectedId = keepSel;
-    else if (!ws.state.scene.elements.length) ws.selectedId = null;
+    else ws.selectedId = null;
+  }
+
+  function renderObjectDetail() {
+    dom.objectDetail.replaceChildren();
+    const item = ws.state?.scene.elements.find(e => e.id === ws.selectedId);
+    if (!item) return;
+    const detected = ws.overlay?.objects.find(o => o.id === item.id);
+    const info = ws.state.analysis?.objects.find(o => o.id === item.id);
+    function line(label, value) {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = T(label);
+      dd.textContent = value;
+      list.append(dt, dd);
+    }
+    const title = document.createElement("h2");
+    title.textContent = `${item.id} · ${T("review.objectDetails")}`;
+    const list = document.createElement("dl");
+    line("review.objectType", T(`review.kind.${item.kind}`));
+    line("review.recognizedText", detected?.ocr.map(o => o.text).join(" / ") || "—");
+    if (item.kind === "text" && item.canonical?.text) line("review.savedText", item.canonical.text);
+    const confidences = detected?.ocr.filter(o => Number.isFinite(o.confidence)).map(o => `${(o.confidence * 100).toFixed(1)}%`) || [];
+    if (confidences.length) line("review.ocrConfidence", confidences.join(" / "));
+    if (detected?.regions.length) {
+      const boxes = detected.regions.map(r => r.bbox);
+      const x = Math.min(...boxes.map(b => b[0])), y = Math.min(...boxes.map(b => b[1]));
+      line("review.position", `${x}, ${y} px`);
+      line("review.size", `${Math.max(...boxes.map(b => b[2])) - x} × ${Math.max(...boxes.map(b => b[3])) - y} px`);
+    } else line("review.position", T(ws.state.analysis ? "review.notDetected" : "review.noAnalysis"));
+    line("review.appearance", (info?.intervals || (!ws.state.analysis ? [item.visible] : [])).map(([a, b]) => `${a}–${b} f`).join(", ") || "—");
+    dom.objectDetail.append(title, list);
   }
 
   async function refreshState(v) {
-    const keepFrame = ws.frame;
-    const keepSel = ws.selectedId;
-    ws.versionId = v;
+    const request = ++ws.stateReq;
+    const keepFrame = ws.frame, keepSel = ws.selectedId;
+    ws.setPlaying(false);
+    ws.invalidateFrames();
     setProgress(LOADING_PCT_START, T("review.loading"));
     try {
-      ws.state = await fetchReviewState(ws.projectId, ws.sceneId, ws.versionId);
+      const state = await fetchReviewState(ws.projectId, ws.sceneId, v);
+      if (request !== ws.stateReq) return;
+      ws.state = state;
+      ws.versionId = state.version.id;
+      replaceReviewUrl();
+      restoreSelection(keepSel);
+      if (!ws.selectedId) ws.selectedId = state.scene.elements[0]?.id || null;
+      applySceneChrome();
+      await renderElements();
+      if (request !== ws.stateReq) return;
+      ws.buildRuler();
+      if (ws.selectedId) selectElement(ws.selectedId);
+      const historical = ws.versionId !== state.project.versions.at(-1)?.id;
+      dom.formsPanel.toggleAttribute("disabled", historical);
+      document.getElementById("region-mode").disabled = historical || !ws.selectedId;
+      document.getElementById("region-mode").title = historical ? T("review.latestOnly") : "";
+      ws.updateOverlayStatus(historical && !state.analysis ? "review.noAnalysis" : "review.overlayLoading");
+      await ws.setFrame(Math.max(0, Math.min(keepFrame, state.scene.frames - 1)), true);
+      if (request === ws.stateReq) clearLoading();
     } catch (err) {
+      if (request !== ws.stateReq) return;
       clearLoading();
       ws.setJobBanner(err.message || T("review.loadFailed"), true);
-      return;
     }
-    ws.versionId = ws.state.version.id;
-    replaceReviewUrl();
-    restoreSelection(keepSel);
-    applySceneChrome();
-    await renderElements();
-    ws.buildErrorStrip();
-    if (ws.selectedId) selectElement(ws.selectedId);
-    ws.frame = Math.max(0, Math.min(keepFrame, ws.state.scene.frames - 1));
-    ws.shownFrame = -1;
-    ws.setFrame(ws.frame, true);
-    clearLoading();
   }
 
-  function selectFirstElementIfNeeded() {
-    if (!ws.selectedId && ws.state.scene.elements.length) selectElement(ws.state.scene.elements[0].id);
-  }
-
-  async function loadState() {
-    setProgress(LOADING_PCT_START, T("review.loading"));
-    dom.orig.src = ws.previews.src("orig", 0);
-    const origReady = ws.waitImg(dom.orig);
-    ws.state = await fetchReviewState(ws.projectId, ws.sceneId, ws.versionId);
-    await yieldMain();
-    setProgress(LOADING_PCT_STATE, T("review.loading"));
-    ws.versionId = ws.state.version.id;
-    applySceneChrome();
-    dom.reconLoading.hidden = false;
-    dom.recon.src = ws.previews.src("recon", 0);
-    await renderElements();
-    ws.buildErrorStrip();
-    selectFirstElementIfNeeded();
-    ws.shownFrame = 0;
-    ws.frame = 0;
-    setProgress(LOADING_PCT_FRAMES, T("review.loadingFrames"));
-    await origReady;
-    ws.loadBboxes();
-    clearLoading();
-  }
+  async function loadState() { await refreshState(ws.versionId); }
 
   async function handleApproveClick() {
     if (!ws.projectId || dom.approveBtn.disabled) return;
@@ -270,6 +291,7 @@ export function attachInspector(ws) {
     }
   }
 
+  ws.renderObjectDetail = renderObjectDetail;
   ws.setProgress = setProgress;
   ws.clearLoading = clearLoading;
   ws.renderElements = renderElements;

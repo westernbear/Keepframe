@@ -5,7 +5,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, Version
-from ..ir.store import current_scene, init_project, load_project, new_version, scene_dir as _scene_dir
+from ..ir.store import current_scene, init_project, load_project, new_version, _save_project, scene_dir as _scene_dir
+from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
 from .background import estimate_background, foreground_mask
@@ -231,6 +232,7 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
     log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
+    existing = load_project(out_root) if (out_root / "project.json").exists() else None
     sd = _scene_dir(out_root, "s1")
     (sd / "stages").mkdir(parents=True, exist_ok=True)
     overrides = sd / "stages" / "overrides.json"
@@ -252,7 +254,8 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
-    ids: dict = {}
+    ids_path = sd / "stages" / "ids.json"
+    ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
@@ -260,7 +263,18 @@ def analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeO
     messages = [m for m in (msg, props.get("_message")) if m]
     scene = _finish(sd, scene, frames, raws, messages)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
-    project = init_project(out_root, {"file": str(video), "fps": fps, "size": [W, H], "mode": "range", "range": [start, end]}, scene)
+    analysis_file = snapshot_from_stages(sd, scene)
+    if existing:
+        new_version(out_root, scene.id, scene, note="reanalysis", analysis_file=analysis_file)
+        project = load_project(out_root)
+        project.source.update(file=str(video), fps=fps, size=[W, H], mode="range", range=[start, end])
+        for ref in project.scenes:
+            if ref.id == scene.id:
+                ref.frames = (0, scene.frames - 1)
+        _save_project(out_root, project)
+    else:
+        project = init_project(out_root, {"file": str(video), "fps": fps, "size": [W, H], "mode": "range", "range": [start, end]}, scene,
+                               analysis_file=analysis_file)
     log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return project
 
@@ -328,4 +342,4 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
                   background=Background(kind="color", value=_hex(bg), confidence=bconf), elements=elements)
     scene = _finish(sd, scene, frames, raws, [m for m in [props.get("_message")] if m])
-    return new_version(root, scene_id, scene, note=note, auto=False)
+    return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

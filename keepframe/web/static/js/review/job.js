@@ -1,6 +1,6 @@
-import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20260921v";
+import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20261003a";
 import { T, Tf } from "/static/js/i18n.js?v=20260921v";
-import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20260921v";
+import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20261003a";
 
 export function attachJob(ws) {
   const { dom } = ws;
@@ -13,17 +13,20 @@ export function attachJob(ws) {
 
   function setFormsDisabled(disabled) {
     const keepSave = dom.keepSave;
-    dom.formsPanel.toggleAttribute("disabled", disabled);
+    dom.formsPanel.toggleAttribute("disabled", disabled || ws.versionId !== ws.state?.project.versions.at(-1)?.id);
     keepSave.disabled = disabled || !ws.keepDirty;
     keepSave.hidden = !ws.keepDirty;
   }
 
   function showRunningJob(job) {
+    ws.waitingForCorrection = true;
     setFormsDisabled(true);
     setJobBanner(Tf("review.running", { op: job.op || "" }));
   }
 
   function showFinishedJob(version) {
+    if (!ws.waitingForCorrection) { clearInterval(ws.pollTimer); return; }
+    ws.waitingForCorrection = false;
     setFormsDisabled(false);
     setJobBanner("");
     clearInterval(ws.pollTimer);
@@ -69,7 +72,14 @@ export function attachJob(ws) {
   }
 
   async function runCorrect(op, args) {
-    await postCorrect(ws.projectId, ws.sceneId, op, args);
+    if (ws.versionId !== ws.state?.project.versions.at(-1)?.id) {
+      setJobBanner(T("review.latestOnly"), true);
+      return;
+    }
+    ws.setRegionMode(false);
+    try { await postCorrect(ws.projectId, ws.sceneId, op, { ...args, version: ws.versionId }); }
+    catch (err) { setJobBanner(err.message, true); return; }
+    ws.waitingForCorrection = true;
     clearInterval(ws.pollTimer);
     ws.pollTimer = setInterval(pollJob, JOB_POLL_INTERVAL_MS);
     pollJob();

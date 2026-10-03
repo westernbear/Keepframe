@@ -69,7 +69,7 @@ def _correct(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
-    scene, _ = _current(ctx)
+    scene, parent = _current(ctx)
     targets = set(args.get("targets") or [])
     on = bool(args.get("on", True))
     touched = 0
@@ -79,7 +79,7 @@ def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
             touched += 1
     if touched == 0:
         return _fail("대상과 일치하는 keep 조건을 찾지 못했습니다.")
-    v = new_version(ctx.root, ctx.scene_id, scene, note=f"keep {'on' if on else 'off'} {len(targets)} targets", auto=False)
+    v = new_version(ctx.root, ctx.scene_id, scene, note=f"keep {'on' if on else 'off'} {len(targets)} targets", auto=False, parent_version=parent.id)
     return _ok(f"keep 조건 {touched}개를 {'유지' if on else '해제'}했습니다.", version=v.model_dump())
 
 

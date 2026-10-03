@@ -470,6 +470,7 @@ def _slim_scene(scene) -> dict:
         el.pop("z", None)
         el.pop("raw", None)
         el.pop("fit_error", None)
+        el.pop("confidence", None)
         can = el.get("canonical") or {}
         tex = can.get("texture") or ""
         el["canonical"] = {"text": can.get("text"), "texture": tex.split("/")[-1] if tex else None}
@@ -507,6 +508,9 @@ def _png(rgb: np.ndarray, max_w: int = PREVIEW_MAX_W) -> bytes:
     return buf.tobytes() if ok else b""
 
 
+from ..review.overlay import frame_overlay, read_manifest
+
+
 class ReviewState:
     def __init__(self, root: Path, scene_id: str):
         self.root, self.scene_id = Path(root), scene_id
@@ -540,13 +544,20 @@ class ReviewState:
             return load_scene(self.root / v.scene_file), v
         return current_scene(self.root, self.scene_id)
 
-    def orig_png(self, f: int) -> bytes:
-        key = ("orig", "", f)
+    def orig_png(self, f: int, version: str | None = None) -> bytes:
+        scene, v = self.scene(version)
+        if not 0 <= f < scene.frames:
+            raise IndexError("frame out of range")
+        key = ("orig", v.id, f)
         hit = self._preview.get(key)
         if hit is not None:
             self._preview.move_to_end(key)
             return hit
-        fr = self.frames()
+        if v.analysis_file:
+            manifest = read_manifest(self.root, v.analysis_file)
+            fr = np.load(scene_dir(self.root, self.scene_id) / manifest["frames_file"], mmap_mode="r")
+        else:
+            fr = self.frames()
         if fr is not None:
             if not 0 <= f < len(fr):
                 raise IndexError("frame out of range")
@@ -622,6 +633,7 @@ class ReviewState:
                         note=args.get("note", "edit text"),
                     )
                 self._preview.clear()
+                self._frames = None
                 self._tex.clear()
                 self.job = {"status": "done", "op": op, "error": None, "version": v.id}
                 log.info("correction done scene=%s op=%s version=%s", self.scene_id, op, v.id)
@@ -1265,7 +1277,12 @@ def make_server(
                     sd = scene_dir(state.root, state.scene_id)
                     rep = json.loads((sd / "report.json").read_text()) if (sd / "report.json").is_file() else None
                     meta = load_meta(workspace, pid) or {}
-                    return self._json(200, review_state_payload(load_project(state.root), v, scene, rep, state.job, meta.get("status")))
+                    status = meta.get("status")
+                    if status == "approved" and meta.get("version") != v.id:
+                        status = "review"
+                    payload = review_state_payload(load_project(state.root), v, scene, rep, state.job, status)
+                    payload["analysis"] = read_manifest(state.root, v.analysis_file) if v.analysis_file else None
+                    return self._json(200, payload)
                 except Exception as e:
                     log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
@@ -1277,6 +1294,21 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 return self._json(200, state.job)
+
+            if u.path == "/api/analysis-overlay":
+                if not pid:
+                    return self._json(400, {"error": "project required"})
+                state = review_state(pid, sid)
+                if state is None:
+                    return self._json(404, {"error": "not found"})
+                try:
+                    scene, version = state.scene(ver)
+                    frame = int(q.get("frame", ["0"])[0])
+                    return self._json(200, frame_overlay(state.root, scene, version, frame))
+                except ValueError:
+                    return self._json(400, {"error": "invalid frame"})
+                except (StopIteration, IndexError, FileNotFoundError):
+                    return self._json(404, {"error": "analysis or frame not found"})
 
             if u.path == "/api/bboxes":
                 if not pid:
@@ -1307,7 +1339,7 @@ def make_server(
                 if state is None:
                     return self._json(404, {"error": "not found"})
                 try:
-                    return self._send(200, state.orig_png(int(parts[2])), "image/png", cache="public, max-age=604800")
+                    return self._send(200, state.orig_png(int(parts[2]), ver), "image/png", cache="public, max-age=604800")
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
@@ -2309,8 +2341,11 @@ def make_server(
                 op = data.get("op")
                 if op not in CORRECTION_OPS:
                     return self._json(400, {"error": f"unknown op {op!r}; expected one of {sorted(CORRECTION_OPS)}"})
+                args = data.get("args", {})
+                if args.get("version") and args["version"] != state.scene()[1].id:
+                    return self._json(409, {"error": "Select the latest version to make corrections."})
                 try:
-                    state.run_correction(op, data.get("args", {}))
+                    state.run_correction(op, args)
                 except RuntimeError:
                     return self._json(409, {"error": "a correction is already running"})
                 return self._json(202, {"job": state.job})

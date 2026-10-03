@@ -8,8 +8,6 @@ export const PROGRESS_MAX = 100;
 export const LIST_CHUNK = 32;
 export const CONSTRAINT_STEP = 128;
 export const TIMELINE_HEIGHT_PX = 72;
-export const ERROR_STRIP_HEIGHT_PX = 64;
-export const MIN_L1_MAX = 1e-6;
 export const MIN_BBOX_EDGE = 2;
 export const KEEP_NOTE = "keep 조건 수정";
 export const DEFAULT_SCENE_ID = "s1";
@@ -40,21 +38,22 @@ export function createReviewWorkspace() {
     frame: 0,
     keepDirty: false,
     keepPending: new Map(),
-    errorPeaks: [],
     pollTimer: 0,
     selectedId: null,
     shownFrame: -1,
     imgTimer: 0,
     playheadEl: null,
-    boxes: {},
-    bboxReq: 0,
+    overlay: null,
+    overlayEnabled: true,
+    overlayOpacity: 0.25,
+    editRegion: false,
+    stateReq: 0,
     drag: null,
     pendingIntent: null,
     previews: null,
     transport: null,
     dom: {
       orig: el("orig"),
-      recon: el("recon"),
       frameNum: el("frame-num"),
       frameTotal: el("frame-total"),
       frameTime: el("frame-time"),
@@ -80,10 +79,11 @@ export function createReviewWorkspace() {
       progressBar: el("review-progress"),
       progressFill: el("review-progress-fill"),
       progressPct: el("review-progress-pct"),
-      reconLoading: el("recon-loading"),
-      reconError: el("recon-error"),
+      frameLoading: el("frame-loading"),
+      frameError: el("frame-error"),
       origOverlay: el("orig-overlay"),
-      reconOverlay: el("recon-overlay"),
+      overlayStatus: el("overlay-status"),
+      objectDetail: el("object-detail"),
       origDraw: el("orig-draw"),
       elementFilter: el("element-filter"),
       editPrompt: el("edit-prompt"),

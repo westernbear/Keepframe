@@ -1,12 +1,13 @@
+import { fetchProjects } from "/static/js/api.js?v=20261003a";
 import { T } from "/static/js/i18n.js?v=20260921v";
 import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20260926v";
-import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20260921v";
-import { attachPlayback } from "/static/js/review/playback-ui.js?v=20260921v";
-import { attachTimeline } from "/static/js/review/timeline.js?v=20260921v";
-import { attachInspector } from "/static/js/review/inspector.js?v=20260921v";
-import { attachEditForm } from "/static/js/review/edit-form.js?v=20260921v";
-import { attachCorrections } from "/static/js/review/corrections.js?v=20260921v";
-import { attachJob } from "/static/js/review/job.js?v=20260921v";
+import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20261003a";
+import { attachPlayback } from "/static/js/review/playback-ui.js?v=20261003a";
+import { attachTimeline } from "/static/js/review/timeline.js?v=20261003a";
+import { attachInspector } from "/static/js/review/inspector.js?v=20261003a";
+import { attachEditForm } from "/static/js/review/edit-form.js?v=20261003a";
+import { attachCorrections } from "/static/js/review/corrections.js?v=20261003a";
+import { attachJob } from "/static/js/review/job.js?v=20261003a";
 
 const ws = createReviewWorkspace();
 attachJob(ws);
@@ -61,18 +62,12 @@ function bindReview() {
   ws.bindEdit();
   ws.bindCorrections();
   ws.dom.approveBtn.addEventListener("click", ws.handleApproveClick);
-  ws.dom.recon.addEventListener("load", () => {
-    ws.dom.reconLoading.hidden = true;
-    ws.dom.reconError.hidden = true;
-    ws.drawOverlays();
-  });
-  ws.dom.recon.addEventListener("error", () => {
-    ws.dom.reconLoading.hidden = true;
-    ws.dom.reconError.hidden = false;
-  });
   window.addEventListener("keepframe:lang", () => {
     if (ws.state) {
-      ws.renderElements();
+      ws.renderElements().then(() => ws.clearLoading());
+      ws.renderObjectDetail();
+      ws.drawOverlays();
+      ws.updateOverlayStatus();
       ws.paintApprove(ws.state.status);
     }
     ws.dom.playBtn.setAttribute("aria-label", ws.transport.isPlaying() ? T("review.pause") : T("review.play"));

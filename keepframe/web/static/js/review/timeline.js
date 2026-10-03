@@ -1,10 +1,10 @@
+import { objectColor } from "/static/js/review/colors.js?v=20261003";
+import { T } from "/static/js/i18n.js?v=20260921v";
 import {
   LIST_CHUNK,
   TIMELINE_HEIGHT_PX,
-  ERROR_STRIP_HEIGHT_PX,
-  MIN_L1_MAX,
   trackGutterPx,
-} from "/static/js/review/workspace.js?v=20260921v";
+} from "/static/js/review/workspace.js?v=20261003a";
 
 export function attachTimeline(ws) {
   const { dom } = ws;
@@ -32,27 +32,19 @@ export function attachTimeline(ws) {
     }
   }
 
-  function buildErrorStrip() {
-    dom.timelineSvg.innerHTML = "";
+  function buildRuler() {
+    dom.timelineSvg.replaceChildren();
     ws.playheadEl = null;
-    const rec = ws.state.report?.reconstruction;
-    const bins = rec?.l1_bins || [];
-    const hot = rec?.l1_hot || [];
-    const max = rec?.l1_max || MIN_L1_MAX;
-    ws.errorPeaks = rec?.l1_peaks || [];
-    if (bins.length) {
-      const frag = document.createDocumentFragment();
-      for (let b = 0; b < bins.length; b++) {
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        const height = (bins[b] / max) * ERROR_STRIP_HEIGHT_PX;
-        rect.setAttribute("x", `${(b / bins.length) * 100}%`);
-        rect.setAttribute("y", `${TIMELINE_HEIGHT_PX - height}`);
-        rect.setAttribute("width", `${100 / bins.length}%`);
-        rect.setAttribute("height", `${height}`);
-        rect.setAttribute("fill", hot[b] ? "var(--error)" : "var(--muted)");
-        frag.appendChild(rect);
-      }
-      dom.timelineSvg.appendChild(frag);
+    const n = ws.state.scene.frames;
+    for (let i = 0; i <= 5; i++) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("x", `${i * 19.6 + 1}%`);
+      label.setAttribute("y", "38");
+      label.setAttribute("text-anchor", i === 0 ? "start" : i === 5 ? "end" : "middle");
+      label.setAttribute("fill", "var(--muted)");
+      label.setAttribute("font-size", "11");
+      label.textContent = `${Math.round(i / 5 * (n - 1))} f`;
+      dom.timelineSvg.append(label);
     }
     drawPlayhead();
   }
@@ -67,11 +59,19 @@ export function attachTimeline(ws) {
       const row = document.createElement("div");
       row.className = "track" + (item.id === ws.selectedId ? " track--selected" : "");
       row.dataset.id = item.id;
-      const vis = item.visible || [0, ws.state.scene.frames - 1];
-      const left = (vis[0] / ws.state.scene.frames) * 100;
-      const right = 100 - ((vis[1] + 1) / ws.state.scene.frames) * 100;
-      row.innerHTML = `<div class="track__label"><span class="mono track__id">${item.id}</span><span>${item.kind}</span></div>
-      <div class="track__lane"><div class="track__bar" style="left:${left}%;right:${right}%"></div></div>`;
+      const intervals = ws.state.analysis?.objects.find(o => o.id === item.id)?.intervals || (!ws.state.analysis ? [item.visible] : []);
+      const label = document.createElement("div");
+      label.className = "track__label";
+      label.textContent = `${item.id} · ${T(`review.kind.${item.kind}`)}`;
+      const lane = document.createElement("div");
+      lane.className = "track__lane";
+      for (const [a, b] of intervals) {
+        const bar = document.createElement("div");
+        bar.className = "track__bar";
+        Object.assign(bar.style, { left: `${a / ws.state.scene.frames * 100}%`, right: `${100 - (b + 1) / ws.state.scene.frames * 100}%`, background: objectColor(item.id), borderColor: objectColor(item.id) });
+        lane.append(bar);
+      }
+      row.append(label, lane);
       row.addEventListener("click", (ev) => {
         const clickedLane = ev.target.closest(".track__lane");
         if (clickedLane) {
@@ -87,27 +87,7 @@ export function attachTimeline(ws) {
     dom.timelineTracks.appendChild(frag);
   }
 
-  function seekPrevErrorPeak() {
-    if (!ws.errorPeaks.length) return;
-    const prev = [...ws.errorPeaks].reverse().find((p) => p < ws.frame);
-    ws.setFrame(prev != null ? prev : ws.errorPeaks[ws.errorPeaks.length - 1]);
-  }
-
-  function seekNextErrorPeak() {
-    if (!ws.errorPeaks.length) return;
-    const idx = ws.errorPeaks.findIndex((p) => p >= ws.frame);
-    ws.setFrame(idx >= 0 ? ws.errorPeaks[idx] : ws.errorPeaks[0]);
-  }
-
-  function nextErrorPeak(backward = false) {
-    if (backward) seekPrevErrorPeak();
-    else seekNextErrorPeak();
-  }
-
   ws.drawPlayhead = drawPlayhead;
-  ws.buildErrorStrip = buildErrorStrip;
+  ws.buildRuler = buildRuler;
   ws.renderTracks = renderTracks;
-  ws.seekPrevErrorPeak = seekPrevErrorPeak;
-  ws.seekNextErrorPeak = seekNextErrorPeak;
-  ws.nextErrorPeak = nextErrorPeak;
 }

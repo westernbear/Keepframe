@@ -38,8 +38,13 @@ def test_bbox_prompt_appends_override_and_reruns(tmp_scene_dir):
     s, _ = current_scene(root, "s1")
     from keepframe.ir.tracks import element_bbox
     x0, y0, x1, y1 = [int(v) for v in element_bbox(s.elements[0], 0)]
+    old_version = load_project(root).versions[-1]
+    from keepframe.review.overlay import frame_overlay
+    before = frame_overlay(root, s, old_version, 0)
     v = add_bbox_prompt(root, "s1", 0, (x0 - 2, y0 - 2, x1 + 2, y1 + 2), s.elements[0].id)
     assert v.id == "v2"
+    assert v.analysis_file and old_version.analysis_file
+    assert frame_overlay(root, s, old_version, 0) == before
     ov = json.loads((scene_dir(root, "s1") / "stages" / "overrides.json").read_text())
     assert ov["regions"] and (scene_dir(root, "s1") / ov["regions"][0]["mask"]).exists()
     s2, _ = current_scene(root, "s1")

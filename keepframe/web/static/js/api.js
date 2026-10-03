@@ -99,6 +99,10 @@ async function fetchReviewJob(project, scene) {
   return api(withQuery("/api/job", { project, scene }));
 }
 
+async function fetchAnalysisOverlay(project, scene, frame, v, signal) {
+  return api(withQuery("/api/analysis-overlay", { project, scene, frame, v }), { signal });
+}
+
 async function fetchBboxes(project, scene, frame, v) {
   return api(withQuery("/api/bboxes", { project, scene, frame, v }));
 }
@@ -191,8 +195,7 @@ async function postCorrect(project, scene, op, args) {
 }
 
 function reviewFrameUrl(kind, frame, project, scene, v) {
-  const version = kind === "recon" ? v : null;
-  return withQuery(`/frame/${kind}/${frame}`, { project, scene, v: version });
+  return withQuery(`/frame/${kind}/${frame}`, { project, scene, v });
 }
 
 function reviewAssetUrl(name, project, scene) {
@@ -214,6 +217,7 @@ export {
   fetchReviewState,
   fetchReviewJob,
   fetchBboxes,
+  fetchAnalysisOverlay,
   postApprove,
   postKeep,
   postEdit,

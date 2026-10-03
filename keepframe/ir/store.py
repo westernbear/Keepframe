@@ -1,7 +1,12 @@
 from __future__ import annotations
 from pathlib import Path
+import threading
+import os
+import tempfile
 from .schema import Project, Scene, SceneRef, Version, dump, load_project_json, load_scene_json
 
+
+_STORE_LOCK = threading.RLock()
 
 def save_scene(scene: Scene, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -17,21 +22,40 @@ def scene_dir(root: Path, scene_id: str) -> Path:
 
 
 def load_project(root: Path) -> Project:
-    return load_project_json((Path(root) / "project.json").read_text())
+    root = Path(root)
+    with _STORE_LOCK:
+        project = load_project_json((root / "project.json").read_text())
+        if not project.analysis_migrated:
+            from ..review.overlay import snapshot_from_stages
+            for ref in project.scenes:
+                versions = _versions_for(project, ref.id)
+                if versions and not versions[-1].analysis_file:
+                    latest = versions[-1]
+                    latest.analysis_file = snapshot_from_stages(scene_dir(root, ref.id), load_scene(root / latest.scene_file))
+            project.analysis_migrated = True
+            _save_project(root, project)
+        return project
 
 
 def _save_project(root: Path, project: Project) -> None:
-    (Path(root) / "project.json").write_text(dump(project))
+    with tempfile.NamedTemporaryFile(mode="w", dir=root, delete=False) as stream:
+        stream.write(dump(project))
+        temporary = Path(stream.name)
+    try:
+        os.replace(temporary, Path(root) / "project.json")
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
-def init_project(root: Path, source: dict, scene: Scene, note: str = "initial analysis") -> Project:
+def init_project(root: Path, source: dict, scene: Scene, note: str = "initial analysis",
+                 analysis_file: str | None = None) -> Project:
     root = Path(root)
     if (root / "project.json").exists():
         raise FileExistsError(root / "project.json")
     rel = f"scenes/{scene.id}/scene.v1.json"
     save_scene(scene, root / rel)
-    project = Project(source=source, scenes=[SceneRef(id=scene.id, frames=(0, scene.frames - 1))],
-                      versions=[Version(id="v1", parent=None, note=note, auto=True, scene_file=rel)])
+    project = Project(source=source, analysis_migrated=True, scenes=[SceneRef(id=scene.id, frames=(0, scene.frames - 1))],
+                      versions=[Version(id="v1", parent=None, note=note, auto=True, scene_file=rel, analysis_file=analysis_file)])
     _save_project(root, project)
     return project
 
@@ -46,16 +70,21 @@ def current_scene(root: Path, scene_id: str) -> tuple[Scene, Version]:
     return load_scene(Path(root) / v.scene_file), v
 
 
-def new_version(root: Path, scene_id: str, scene: Scene, note: str, auto: bool = True) -> Version:
+def new_version(root: Path, scene_id: str, scene: Scene, note: str, auto: bool = True,
+                analysis_file: str | None = None, parent_version: str | None = None) -> Version:
     root = Path(root)
     project = load_project(root)
     prev = _versions_for(project, scene_id)
+    parent = next((v for v in prev if v.id == parent_version), None) if parent_version else (prev[-1] if prev else None)
+    if parent_version and parent is None:
+        raise ValueError("unknown parent version")
     n = len(prev) + 1
     rel = f"scenes/{scene_id}/scene.v{n}.json"
     if (root / rel).exists():
         raise FileExistsError(rel)  # append-only: never overwrite
     save_scene(scene, root / rel)
-    v = Version(id=f"v{n}", parent=prev[-1].id if prev else None, note=note, auto=auto, scene_file=rel)
+    v = Version(id=f"v{n}", parent=parent.id if parent else None, note=note, auto=auto, scene_file=rel,
+                analysis_file=analysis_file if analysis_file is not None else (parent.analysis_file if parent else None))
     project.versions.append(v)
     _save_project(root, project)
     return v
