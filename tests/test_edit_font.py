@@ -17,7 +17,7 @@ def _scene():
     return Scene(id="s1", size=(300, 100), fps=30, frames=5, background=Background(), elements=[el])
 
 
-@pytest.mark.parametrize("value", ["x;background:url(evil)", "x'", 'x"', "x\\", "x:charset=ac00", "x\n", "x" * 65])
+@pytest.mark.parametrize("value", ["x;background:url(evil)", "x'", 'x"', "x\\", "x:charset=ac00", "x\ny", "x" * 65])
 def test_font_value_cannot_inject_css(value):
     with pytest.raises(ValidationError, match="font family may only contain letters, digits, spaces and hyphens"):
         Target(element="e1", property="font", value=value)
@@ -28,10 +28,15 @@ def test_font_accepts_safe_family_names(value):
     assert Target(element="e1", property="font", value=value).value == value
 
 
-@pytest.mark.parametrize("value", [None, ""])
+@pytest.mark.parametrize("value", [None, "", "   "])
 def test_font_needs_family_or_weight(value):
     with pytest.raises(ValidationError, match="font needs a family or weight"):
         Target(element="e1", property="font", value=value)
+
+
+def test_font_strips_family_and_normalizes_blank_weight_only_family():
+    assert Target(property="font", value="  DejaVu Serif  ").value == "DejaVu Serif"
+    assert Target(property="font", value="   ", weight=700).value is None
 
 
 @pytest.mark.parametrize("weight", [99, 901])
@@ -79,16 +84,42 @@ def test_apply_font_rejects_nontext_elements(tmp_path, kind, text):
 
 
 def test_missing_font_is_a_conflict(monkeypatch):
-    monkeypatch.setattr("keepframe.edit.intent.resolve_family", lambda name: "DejaVu Sans")
+    monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda name: ("DejaVu Sans",))
     built = plan(_scene(), Intent(targets=[Target(element="e1", property="font", value="Pretendard")]))
     conflict = next(c for c in built.conflicts if c.id == "font_missing")
     assert conflict.element == "e1" and conflict.choices == ["use_fallback"]
     assert conflict.reason == "Pretendard 폰트가 설치되어 있지 않습니다. DejaVu Sans(으)로 그려집니다."
 
 
-@pytest.mark.parametrize("resolved", ["DejaVu Serif", None])
+@pytest.mark.parametrize("family,names,missing", [
+    ("dejavu serif", ("DejaVu Serif",), False),
+    ("나눔고딕", ("NanumGothic", "나눔고딕"), False),
+    ("Pretendard", ("DejaVu Sans", "다른 폰트"), True),
+])
+def test_font_installation_matches_any_family_name_case_insensitively(monkeypatch, family, names, missing):
+    from keepframe.edit import textraster
+
+    def fc(fmt, name, hangul=False):
+        assert name == family
+        return ",".join(names) if fmt == "%{family}" else names[0]
+
+    monkeypatch.setattr(textraster, "_fc", fc)
+    monkeypatch.setattr("keepframe.edit.apply.measure_text", lambda *args: (100, 40))
+    textraster.resolve_family.cache_clear()
+    try:
+        built = plan(_scene(), Intent(targets=[Target(element="e1", property="font", value=family)]))
+        conflicts = [c for c in built.conflicts if c.id == "font_missing"]
+        assert bool(conflicts) == missing
+        if missing:
+            assert conflicts[0].choices == ["use_fallback"]
+            assert conflicts[0].reason == f"{family} 폰트가 설치되어 있지 않습니다. {names[0]}(으)로 그려집니다."
+    finally:
+        textraster.resolve_family.cache_clear()
+
+
+@pytest.mark.parametrize("resolved", [("DejaVu Serif",), ()])
 def test_installed_font_or_unavailable_fontconfig_has_no_missing_conflict(monkeypatch, resolved):
-    monkeypatch.setattr("keepframe.edit.intent.resolve_family", lambda name: resolved)
+    monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda name: resolved)
     built = plan(_scene(), Intent(targets=[Target(element="e1", property="font", value="DejaVu Serif")]))
     assert not any(c.id == "font_missing" for c in built.conflicts)
 
@@ -96,7 +127,7 @@ def test_installed_font_or_unavailable_fontconfig_has_no_missing_conflict(monkey
 @pytest.mark.parametrize("width,overflow", [(229, False), (231, True)])
 def test_font_plan_measures_new_family_and_flags_overflow(monkeypatch, width, overflow):
     measured = []
-    monkeypatch.setattr("keepframe.edit.intent.resolve_family", lambda name: name)
+    monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda name: (name,))
 
     def measure(text, size, family):
         measured.append((text, size, family))
@@ -117,7 +148,7 @@ def test_weight_only_plan_uses_current_or_default_family(monkeypatch, has_font):
     scene = _scene()
     scene.element("e1").canonical.font = FontGuess(family_guess="DejaVu Serif", size_px=24) if has_font else None
     measured = []
-    monkeypatch.setattr("keepframe.edit.intent.resolve_family", lambda _: pytest.fail("weight-only edit must not check installation"))
+    monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda _: pytest.fail("weight-only edit must not check installation"))
     monkeypatch.setattr("keepframe.edit.apply.measure_text", lambda text, size, family: measured.append((text, size, family)) or (100, 40))
     assert not plan(scene, Intent(targets=[Target(element="e1", property="font", weight=700)])).conflicts
     assert measured == [("Sale", 24 if has_font else 32, "DejaVu Serif" if has_font else "sans-serif")]
@@ -158,7 +189,7 @@ def test_font_missing_waits_for_explicit_fallback_then_creates_version(tmp_path,
     root = tmp_path / "proj"
     scene = _scene()
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size)}, scene)
-    monkeypatch.setattr("keepframe.edit.intent.resolve_family", lambda _: "DejaVu Sans")
+    monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda _: ("DejaVu Sans",))
     monkeypatch.setattr("keepframe.edit.agent.render", lambda html, scene, out_dir: RenderResult(
         frames_dir=out_dir / "frames", frames=list(range(scene.frames)), hashes=[],
         bboxes={"e1": [[-100, -20, 100, 20]] * scene.frames}))

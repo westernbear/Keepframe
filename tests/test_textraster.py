@@ -149,17 +149,19 @@ def test_font_cache_separates_latin_and_hangul_for_same_family(monkeypatch):
     real_run = textraster.subprocess.run
 
     def run(args, **kwargs):
-        if "%{file}" in args[2]:
-            patterns.append(args[-1])
+        patterns.append(args[-1])
         return real_run(args, **kwargs)
 
     font_path.cache_clear()
     monkeypatch.setattr(textraster.subprocess, "run", run)
     try:
-        for text in ["Sale", "가", "Sale", "가"]:
-            assert measure(text, 32, "DejaVu Serif")
-        assert patterns == ["DejaVu Serif:lang=ko", "DejaVu Serif:lang=ko:charset=ac00"]
+        for size in range(20, 40):
+            for text in ["Sale", "가"]:
+                assert measure(text, size, "DejaVu Serif")
         assert font_path("DejaVu Serif", False) != font_path("DejaVu Serif", True)
+        assert patterns == ["DejaVu Serif:lang=ko", "DejaVu Serif:lang=ko:charset=ac00"]
+        assert measure("Sale", 32, "DejaVu Sans")
+        assert patterns == ["DejaVu Serif:lang=ko", "DejaVu Serif:lang=ko:charset=ac00", "DejaVu Sans:lang=ko"]
     finally:
         font_path.cache_clear()
 
@@ -210,6 +212,79 @@ def test_font_collection_uses_fontconfig_face_index(tmp_path, monkeypatch):
         assert opened == [(str(path), 32, 2)]
     finally:
         font_path.cache_clear()
+
+
+@pytest.mark.parametrize("index", ["", "invalid"])
+def test_missing_or_invalid_collection_index_does_not_open_face_zero(tmp_path, monkeypatch, index):
+    from PIL import ImageFont
+    from types import SimpleNamespace
+
+    path = tmp_path / "chosen.ttc"
+    path.touch()
+    opened = []
+    monkeypatch.setattr(textraster.shutil, "which", lambda _: "/usr/bin/fc-match")
+    monkeypatch.setattr(textraster.subprocess, "run", lambda args, **kwargs: SimpleNamespace(
+        returncode=0, stdout=args[2].replace("%{file}", str(path)).replace("%{index}", index)))
+    monkeypatch.setattr(ImageFont, "truetype", lambda *args, **kwargs: opened.append(args) or SimpleNamespace(getbbox=lambda _: (0, 0, 20, 30)))
+    font_path.cache_clear()
+    try:
+        assert measure("가", 32) is None
+        assert not opened
+    finally:
+        font_path.cache_clear()
+
+
+@pytest.mark.parametrize("lookup", ["font_path", "resolve_family", "resolve_families"])
+def test_failed_font_lookup_is_retried_then_success_is_cached(tmp_path, monkeypatch, lookup):
+    from types import SimpleNamespace
+
+    path = tmp_path / "chosen.ttc"
+    path.touch()
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired("fc-match", 5)
+        value = args[2].replace("%{file}", str(path)).replace("%{index}", "2")
+        value = value.replace("%{family[0]}", "NanumGothic").replace("%{family}", "NanumGothic,나눔고딕")
+        return SimpleNamespace(returncode=0, stdout=value)
+
+    monkeypatch.setattr(textraster.shutil, "which", lambda _: "/usr/bin/fc-match")
+    monkeypatch.setattr(textraster.subprocess, "run", run)
+    font_path.cache_clear()
+    resolve_family.cache_clear()
+    try:
+        fn = getattr(textraster, lookup)
+        assert not fn("나눔고딕")
+        expected = {"font_path": str(path), "resolve_family": "NanumGothic", "resolve_families": ("NanumGothic", "나눔고딕")}[lookup]
+        assert fn("나눔고딕") == expected
+        assert fn("나눔고딕") == expected
+        assert len(calls) == 2
+    finally:
+        font_path.cache_clear()
+        resolve_family.cache_clear()
+
+
+def test_resolve_families_returns_all_names_and_shares_successful_cache(monkeypatch):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout="NanumGothic, 나눔고딕\n")
+
+    monkeypatch.setattr(textraster.shutil, "which", lambda _: "/usr/bin/fc-match")
+    monkeypatch.setattr(textraster.subprocess, "run", run)
+    resolve_family.cache_clear()
+    try:
+        assert textraster.resolve_families("나눔고딕") == ("NanumGothic", "나눔고딕")
+        assert resolve_family("나눔고딕") == "NanumGothic"
+        assert textraster.resolve_families("나눔고딕") == ("NanumGothic", "나눔고딕")
+        assert calls == [["fc-match", "-f", "%{family}", "나눔고딕:lang=ko"]]
+    finally:
+        resolve_family.cache_clear()
 
 
 @needs_font

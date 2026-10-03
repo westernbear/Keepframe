@@ -25,24 +25,61 @@ def _fc(fmt: str, family: str, hangul: bool = False) -> str | None:
 
 
 @functools.lru_cache(maxsize=64)
+def _font_match(family: str, hangul: bool) -> tuple[str, int]:
+    value = _fc("%{file}\n%{index}", family, hangul)
+    if value:
+        parts = value.rsplit("\n", 1)
+        if len(parts) == 2 and Path(parts[0]).is_file():
+            try:
+                return parts[0], int(parts[1])
+            except ValueError:
+                pass
+    # Exceptions are not cached, so a transient lookup failure can recover.
+    raise LookupError("fontconfig did not return a font file and face index")
+
+
 def font_path(family: str = "sans-serif", hangul: bool = False) -> str | None:
-    path = _fc("%{file}", family, hangul)
-    return path if path and Path(path).is_file() else None
+    try:
+        return _font_match(family, hangul)[0]
+    except LookupError:
+        return None
+
+
+font_path.cache_clear = _font_match.cache_clear
 
 
 @functools.lru_cache(maxsize=64)
+def _families(family: str) -> tuple[str, ...]:
+    value = _fc("%{family}", family)
+    names = tuple(name.strip() for name in (value or "").split(",") if name.strip())
+    if not names:
+        raise LookupError("fontconfig did not return family names")
+    return names
+
+
+def resolve_families(family: str) -> tuple[str, ...]:
+    try:
+        return _families(family)
+    except LookupError:
+        return ()
+
+
 def resolve_family(family: str) -> str | None:
-    name = _fc("%{family[0]}", family)
-    return name.split(",")[0] if name else None
+    names = resolve_families(family)
+    return names[0] if names else None
+
+
+resolve_families.cache_clear = _families.cache_clear
+resolve_family.cache_clear = _families.cache_clear
 
 
 def _font(family: str, size_px: float, hangul: bool = False):
     from PIL import ImageFont
-    path = font_path(family, hangul)
-    if path is None:
+    try:
+        path, index = _font_match(family, hangul)
+    except LookupError:
         return None
-    index = _fc("%{index}", family, hangul)
-    return ImageFont.truetype(path, max(1, round(size_px)), index=int(index or 0))
+    return ImageFont.truetype(path, max(1, round(size_px)), index=index)
 
 
 def _size(font, text: str) -> tuple[int, int]:

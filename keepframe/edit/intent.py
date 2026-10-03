@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
-from .textraster import resolve_family
+from .textraster import resolve_families
 
 Prop = Literal["text", "color", "texture", "model", "background", "font"]
 SCENE_LEVEL: frozenset[str] = frozenset({"background"})
@@ -40,6 +40,8 @@ class Target(BaseModel):
                 raise ValueError("color value must be #rrggbb")
             self.value = _norm_hex(self.value)
         if self.property == "font":
+            if self.value is not None:
+                self.value = self.value.strip() or None
             if not (self.value or self.weight):
                 raise ValueError("font needs a family or weight")
             if self.value and not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", self.value):
@@ -213,10 +215,10 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                 ))
         if t.property == "font" and el is not None and el.canonical.text:
             family = t.value or (el.canonical.font.family_guess if el.canonical.font else "sans-serif")
-            resolved = resolve_family(t.value) if t.value else None
-            if t.value and resolved not in (t.value, None):
+            resolved = resolve_families(t.value) if t.value else ()
+            if t.value and resolved and t.value.casefold() not in {name.casefold() for name in resolved}:
                 conflicts.append(Conflict(id="font_missing", element=el.id, choices=["use_fallback"],
-                                          reason=f"{t.value} 폰트가 설치되어 있지 않습니다. {resolved}(으)로 그려집니다."))
+                                          reason=f"{t.value} 폰트가 설치되어 있지 않습니다. {resolved[0]}(으)로 그려집니다."))
             size = el.canonical.font.size_px if el.canonical.font else 32.0
             if measure_text(el.canonical.text, size, family)[0] > el.canonical.width * 1.15:
                 conflicts.append(Conflict(id="overflow", element=el.id, choices=["shrink_font", "wrap", "expand_box"],
