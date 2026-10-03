@@ -157,7 +157,7 @@ def edit(
             if violated:
                 gone = set(violated)
                 edited.constraints = [c.model_copy(update={"keep": False}) if c.pred in gone else c for c in edited.constraints]
-                released = violated
+            released = violated if violated else []
             digest = _candidate_digest(edited, candidate)
             if digest in seen:
                 break

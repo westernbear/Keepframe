@@ -14,13 +14,13 @@ import {
   postEdit,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261003e";
-import { T } from "/static/js/i18n.js?v=20261003e";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261003e";
+} from "/static/js/api.js?v=20261003f";
+import { T } from "/static/js/i18n.js?v=20261003f";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261003f";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261003e";
+} from "/static/js/playback.js?v=20261003f";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -928,6 +928,11 @@ function confirmEditBody(withChoices) {
 }
 
 async function applyConfirmedEdit(res) {
+  if (res.status === "needs_choice") {
+    pendingIntent = res.intent || pendingIntent;
+    appendChoices(res.plan);
+    return false;
+  }
   pendingIntent = null;
   const editDone = res.status === "done" && res.version;
   if (editDone) {

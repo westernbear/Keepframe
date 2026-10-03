@@ -81,6 +81,53 @@ def test_release_choice_without_violation_keeps_constraints(tmp_path):
     assert done.messages == done.verify.messages
 
 
+def test_successful_generated_candidate_does_not_report_previous_keep_release(tmp_path, monkeypatch):
+    from keepframe.assets import AssetResponse
+    from keepframe.verify.verifier import VerifyReport
+
+    root = _root(tmp_path)
+    generated, verified = [], []
+
+    class FakeAssets:
+        def request(self, **kwargs):
+            assert kwargs["task"] == "generate" and kwargs["kind"] == "raster"
+            data = f"candidate-{len(generated) + 1}".encode()
+            generated.append(data)
+            return AssetResponse("image/png", data)
+
+    def apply_candidate(scene, directory, items, choices, attachment):
+        assert items[0].property == "texture"
+        out = _shifted(scene) if attachment == b"candidate-1" else scene.model_copy(deep=True)
+        assets = directory / "assets"
+        assets.mkdir()
+        (assets / "generated.png").write_bytes(attachment)
+        out.element("e1").canonical.texture = "assets/generated.png"
+        return out
+
+    def verify_candidate(scene, *args, **kwargs):
+        assert scene.constraints[0].keep == bool(verified)
+        verified.append(scene)
+        passed = len(verified) == 2
+        return VerifyReport(schema_ok=True, keep_pass_rate=1, layer_probe_complete=True, passed=passed,
+                            messages=[f"candidate {len(verified)} {'passed' if passed else 'failed'}"])
+
+    monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
+    monkeypatch.setattr("keepframe.edit.agent.apply_edit", apply_candidate)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda scene, directory, out: out)
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda *args, **kwargs: None)
+    monkeypatch.setattr("keepframe.edit.agent.verify", verify_candidate)
+    done = edit(root, "s1", "generate image", confirm=True, choices={"keep_violation": "release_keep"},
+                intent={"targets": [{"element": "e1", "property": "texture", "value": "generate image"}]})
+    assert done.status == "done" and done.attempts == 2
+    assert generated == [b"candidate-1", b"candidate-2"] and len(verified) == 2
+    scene, version = current_scene(root, "s1")
+    assert scene.constraints[0].keep and version.note == done.summary
+    assert "(keep 해제" not in version.note
+    assert not any(message.startswith("keep released:") for message in done.messages)
+    assert done.messages == ["candidate 2 passed"]
+    assert (root / "scenes" / "s1" / scene.element("e1").canonical.texture).read_bytes() == b"candidate-2"
+
+
 def _shifted(scene):
     out = scene.model_copy(deep=True)
     out.element("e2").tracks["x"] = Track(keys=[Keyframe(t=0, v=0.0)])

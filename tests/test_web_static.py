@@ -1,4 +1,10 @@
+import json
+import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGNS = ROOT / ".stitch" / "designs"
@@ -168,3 +174,67 @@ def test_agent_sends_attachment_on_confirm():
     js = (STATIC / "js" / "agent.js").read_text()
     assert "attachment: pendingAttachment" in js
     assert "attachment: attachmentMeta()" in js
+
+
+def test_runtime_assets_share_updated_cache_stamp():
+    stamps = set()
+    for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
+        stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
+    assert stamps == {"20261003f"}
+
+
+def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    js = (STATIC / "js" / "agent.js").read_text()
+    confirm = js[js.index("function confirmEditBody("):js.index("\nasync function refreshAfterEdit(")]
+    script = tmp_path / "agent-confirm.mjs"
+    script.write_text('''import assert from 'node:assert/strict';
+import vm from 'node:vm';
+for (const conflict of ['keep_violation', 'timing_overflow', 'font_missing']) {
+  for (const intentMode of ['missing', 'null', 'updated']) {
+    const initialIntent = {targets:[{element:'e1', property:'color', value:'#ffffff'}]};
+    const updatedIntent = {targets:[{element:'e1', property:'color', value:'#222222'}]};
+    const plan = {conflicts:[{id:conflict, choices:['release_keep']}]};
+    const response = {status:'needs_choice', plan};
+    if (intentMode !== 'missing') response.intent = intentMode === 'updated' ? updatedIntent : null;
+    const expectedIntent = intentMode === 'updated' ? updatedIntent : initialIntent;
+    const requests = [], choices = [], banners = [], refreshed = [];
+    const context = vm.createContext({
+      projectId:'p1', sceneId:'s1', versionId:'v1', selectedId:'e1',
+      pendingIntent:initialIntent, pendingPrompt:'change color',
+      pendingAttachment:'attachment-data', pendingAttachmentFile:{},
+      attachInput:{value:'attachment.png'}, document:{getElementById:() => ({textContent:''})},
+      EDIT_APPLIED:'applied', T:key => key,
+      postEdit:async body => {
+        requests.push(body);
+        return requests.length === 1 ? response : {status:'done', version:{id:'v2'}};
+      },
+      appendChoices:plan => choices.push(plan), editChoices:() => ({[conflict]:'release_keep'}),
+      setBanner:(message, failure) => banners.push({message, failure}),
+      appendVerify:() => {}, appendAgent:() => {}, refreshAfterEdit:async id => refreshed.push(id),
+    });
+    vm.runInContext(''' + json.dumps(confirm) + ''', context);
+    await context.runConfirm(false);
+    assert.equal(choices.length, 1, 'confirm needs_choice must append choices');
+    assert.equal(choices[0], plan);
+    assert.equal(context.pendingIntent, expectedIntent, 'pending intent must survive needs_choice');
+    assert.equal(context.pendingAttachment, 'attachment-data');
+    assert.equal(banners.some(banner => banner.failure || banner.message), false, 'no failure banner');
+    assert.equal(requests[0].confirm, true);
+    assert.equal(Object.keys(requests[0].choices).length, 0);
+    await context.runConfirmWithChoices();
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].intent, expectedIntent);
+    assert.equal(requests[1].choices[conflict], 'release_keep');
+    assert.equal(requests[1].prompt, 'change color');
+    assert.equal(requests[1].attachment, 'attachment-data');
+    assert.equal(context.pendingIntent, null);
+    assert.equal(context.pendingAttachment, null);
+    assert.deepEqual(refreshed, ['v2']);
+  }
+}
+''')
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
