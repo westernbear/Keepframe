@@ -17,6 +17,7 @@ from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import VerifyReport, verify
 from .apply import apply_edit
 from .intent import SCENE_LEVEL, Conflict, Intent, Plan, describe, interpret, plan
+from .retime import apply_timing
 from ..assets import AssetAPIError, AssetClient
 
 MAX_TRIES = 4
@@ -119,6 +120,10 @@ def edit(
     last_rep: VerifyReport | None = None
     released: list[str] = []
     choices_map = dict(choices or {})
+    expected = scene
+    if any(t.property == "timing" for t in built.items):
+        expected = scene.model_copy(deep=True)
+        apply_timing(expected, built.items, choices_map)
     generated_kind = next(("3d" if target.property == "model" else "raster" for target in built.items if target.property in {"texture", "model"} and attachment is None and target.value != "attachment"), None)
     generated = generated_kind is not None
     asset_uses = 0
@@ -165,7 +170,7 @@ def edit(
             attempts_run += 1
             html = compose(edited, candidate, candidate / "composition.html")
             probes = render(html, edited, candidate / "render")
-            last_rep = verify(edited, candidate, render_result=probes, reference=scene, reference_dir=sd)
+            last_rep = verify(edited, candidate, render_result=probes, reference=expected, reference_dir=sd)
             if _passed(last_rep):
                 _promote_assets(candidate, sd / "assets", baseline)
                 v = new_version(root, scene_id, edited, note=(parsed.summary or prompt) + (f" (keep 해제 {len(released)}개)" if released else ""), auto=True, parent_version=parent.id)

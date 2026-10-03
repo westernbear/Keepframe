@@ -6,10 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from ..ir.schema import Element, Scene
+from .retime import retimed_range
 from .textraster import resolve_families
 
-Prop = Literal["text", "color", "texture", "model", "background", "font"]
-SCENE_LEVEL: frozenset[str] = frozenset({"background"})
+Prop = Literal["text", "color", "texture", "model", "background", "font", "timing"]
+SCENE_LEVEL: frozenset[str] = frozenset({"background", "timing"})
 COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white": "#ffffff", "검정": "#000000", "검은": "#000000", "black": "#000000",
                               "빨간": "#e53935", "빨강": "#e53935", "red": "#e53935", "파란": "#1e66f5", "파랑": "#1e66f5", "blue": "#1e66f5",
                               "초록": "#2e7d32", "green": "#2e7d32", "노란": "#fdd835", "노랑": "#fdd835", "yellow": "#fdd835",
@@ -35,6 +36,11 @@ class Target(BaseModel):
             raise ValueError("text value is required")
         if self.property == "background" and self.element is not None:
             raise ValueError("background targets have no element")
+        if self.property == "timing":
+            if self.speed is None and self.delay is None:
+                raise ValueError("timing needs speed or delay")
+            if self.element is None and self.delay is not None:
+                raise ValueError("delay needs an element")
         if self.property in ("color", "background"):
             if not self.value or not _HEX_FULL.fullmatch(self.value):
                 raise ValueError("color value must be #rrggbb")
@@ -134,6 +140,8 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"배경색을 {t.value or ''}로")
         elif t.property == "font":
             bits.append(f"{who} 폰트를 {t.value or ''} {t.weight or ''}".rstrip() + "로")
+        elif t.property == "timing":
+            bits.append(f"{t.element or '장면 전체'} 속도 ×{t.speed or 1:g} 지연 {t.delay or 0:g}s로")
         elif t.property == "model":
             bits.append(f"{who} 3D 모델을 생성해")
         else:
@@ -202,6 +210,11 @@ def plan(scene: Scene, intent: Intent) -> Plan:
             continue
         el = scene.element(t.element) if t.element else None
         items.append(t)
+        if t.property == "timing" and t.element:
+            _, end = retimed_range(el, t.speed or 1.0, round((t.delay or 0) * scene.fps), el.visible[0])
+            if end > scene.frames - 1:
+                conflicts.append(Conflict(id="timing_overflow", element=el.id, choices=["extend_scene"],
+                                          reason=f"장면 끝({scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
         if t.property == "text" and t.value and el is not None:
             font = el.canonical.font
             size = font.size_px if font else 32.0

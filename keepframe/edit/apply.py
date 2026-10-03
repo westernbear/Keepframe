@@ -11,6 +11,7 @@ import numpy as np
 from ..ir.schema import Background, Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
 from ..assets import validate_glb
+from .retime import apply_timing
 from .textraster import measure as _measure, render_lines
 
 _DATA_URL = re.compile(r"^data:image/[^;]+;base64,(.+)$", re.S)
@@ -113,6 +114,11 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
     out = scene.model_copy(deep=True)
     choice_of = choices or {}
     for t in items:
+        if t.property == "timing":
+            apply_timing(out, [t], choice_of)
+            if t.element is not None:
+                out.element(t.element).provenance = "manual"
+            continue
         if t.property == "background":
             out.background = Background(kind="color", value=t.value, confidence=1.0)
             continue
