@@ -1639,6 +1639,68 @@ def _overlaps(a, b) -> bool:
 - [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥: `elements` 감소, 합성 m2 `tracking_errors` 유지/감소)
 - [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): leave occlusion blobs as tracking gaps`
 
+### Task 20: 텍스트 트랙 위생 — OCR 잡음 제거 (Task 17 다음에 실행; 기준선 측정으로 추가됨)
+
+**Files:** Modify `keepframe/analyze/text.py`, `keepframe/analyze/pipeline.py` (`_stage_text`) · Test: `tests/test_text_hygiene.py`
+
+**Why:** 실제 클립 기준선에서 텍스트 트랙 33–76개 중 다수가 도형 위의 OCR 오인식(`O`, `0`, `·`, 1프레임 트랙, `ust` 같은 부분 노출)이었다. 이들이 텍스트 요소가 되고, 그 박스가 영역 추출에서 제외되어 도형이 스프라이트로 잡히지도 않는다.
+
+**Interfaces:** Produces: `MIN_TEXT_FRAMES = 3`, `CONFIDENT_OCR = 0.9`, `keep_text_track(t: TextTrack) -> bool`, `drop_junk_text(boxes_by_frame, tracks) -> tuple[list[list[TextBox]], list[TextTrack], int]`.
+
+- [ ] **Step 1: 실패하는 테스트**
+```python
+# tests/test_text_hygiene.py
+import numpy as np
+from keepframe.analyze.text import TextBox, TextTrack, drop_junk_text, keep_text_track
+
+
+def _track(text, frames, conf=0.5, tid=1):
+    return TextTrack(id=tid, text=text, boxes={f: TextBox(f, text, (10, 10, 40, 30), conf) for f in frames})
+
+
+def test_keep_rules():
+    assert not keep_text_track(_track("Sale", [0]))                 # one-frame flash
+    assert not keep_text_track(_track("O", [0, 1, 2], conf=0.5))    # single glyph on a shape
+    assert keep_text_track(_track("O", [0, 1, 2], conf=0.95))       # confident single glyph stays
+    assert not keep_text_track(_track("·...", [0, 1, 2, 3], conf=0.9))
+    assert keep_text_track(_track("Sale", [0, 1, 2]))
+    assert keep_text_track(_track("가나", [0, 1, 2]))
+
+
+def test_drop_junk_text_removes_their_boxes_from_frames():
+    good, junk = _track("Sale", [0, 1, 2], tid=1), _track("0", [1], tid=2)
+    frames = [[good.boxes[0]], [good.boxes[1], junk.boxes[1]], [good.boxes[2]]]
+    kept_frames, kept, dropped = drop_junk_text(frames, [good, junk])
+    assert [t.id for t in kept] == [1] and dropped == 1
+    assert [len(f) for f in kept_frames] == [1, 1, 1] and junk.boxes[1] not in kept_frames[1]
+```
+그리고 파이프라인 테스트 1개: 가짜 OCR(`analyze(..., ocr=fake)`)이 프레임 0–5에서 실제 문구 박스 "Sale"(conf 0.95)과, 프레임 2에서만 원형 도형 위에 `"O"`(conf 0.4)를 돌려줄 때 → 장면의 text 요소는 1개("Sale")이고, 도형은 sprite 요소로 잡힌다(그 박스가 영역 제외 마스크에 들어가지 않음). `report.json` `messages`에 `"text tracks dropped as OCR noise: 1"`.
+- [ ] **Step 2:** FAIL 확인
+- [ ] **Step 3: 구현** (`text.py`)
+```python
+MIN_TEXT_FRAMES = 3
+CONFIDENT_OCR = 0.9
+
+
+def keep_text_track(t: TextTrack) -> bool:
+    """OCR on shapes yields 1–2 frame tracks and lone glyphs (O, 0, ·); keep real copy.
+    ponytail: frame-count + alphanumeric heuristic; a text/non-text classifier if real clips still leak junk."""
+    if len(t.boxes) < MIN_TEXT_FRAMES:
+        return False
+    if sum(ch.isalnum() for ch in t.text) >= 2:
+        return True
+    return float(np.mean([b.conf for b in t.boxes.values()])) >= CONFIDENT_OCR
+
+
+def drop_junk_text(boxes_by_frame: list[list[TextBox]], tracks: list[TextTrack]) -> tuple[list[list[TextBox]], list[TextTrack], int]:
+    kept = [t for t in tracks if keep_text_track(t)]
+    live = {id(b) for t in kept for b in t.boxes.values()}
+    return [[b for b in frame if id(b) in live] for frame in boxes_by_frame], kept, len(tracks) - len(kept)
+```
+`_stage_text`: `track_text`(+`apply_copy`) 직후 `boxes, tracks, dropped = drop_junk_text(boxes, tracks)`; `dropped`가 있으면 report 메시지 `f"text tracks dropped as OCR noise: {dropped}"`를 기존 `msg`와 함께 `_finish`의 `messages`에 실어 보낸다(현재 `msg` 단일 값 → 메시지 목록으로 바꾸거나 별도 값으로 반환). `text.pkl`에는 걸러진 boxes/tracks를 저장해 검수 오버레이와 일치시킨다.
+- [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥: 텍스트 요소 수 감소, `low_conf` 감소, `mean_l1` 비악화)
+- [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): drop OCR noise text tracks`
+
 ### Task 18: 폰트 후보 3개(스펙 §12) + 검수 UI 선택
 
 **Files:** Modify `keepframe/ir/schema.py` (`FontGuess.candidates`), `keepframe/analyze/text.py` (`text_props`), `keepframe/web/static/js/review/inspector.js`, `i18n.js` · Create `keepframe/analyze/fonts.py` · Test: `tests/test_font_candidates.py`
