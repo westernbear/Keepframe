@@ -65,7 +65,7 @@ def test_real_gate_returns_empty_rows_for_missing_clip_directory(tmp_path):
 
     result = m2_gate_real(tmp_path / "clips", tmp_path / "out")
 
-    assert result == {"clips": 0, "rows": []}
+    assert result == {"clips": 0, "max_frames": 150, "rows": []}
 
 
 def test_real_gate_reports_null_for_unmatchable_annotations(tmp_path, monkeypatch):
@@ -81,7 +81,7 @@ def test_real_gate_reports_null_for_unmatchable_annotations(tmp_path, monkeypatc
     clip = clips / "empty.mp4"
     clip.touch()
     clip.with_suffix(".gt.json").write_text(json.dumps({"elements": [{"frames": {}}]}))
-    scene = SimpleNamespace(elements=[])
+    scene = SimpleNamespace(frames=1, size=(1, 1), elements=[], constraints=[])
     monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
     monkeypatch.setattr(gates, "analyze", lambda *_args, **_kwargs: None, raising=False)
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
@@ -109,7 +109,7 @@ def test_real_gate_reports_malformed_ground_truth(tmp_path, monkeypatch):
     clip = clips / "bad.mp4"
     clip.touch()
     clip.with_suffix(".gt.json").write_text("not json")
-    scene = SimpleNamespace(elements=[])
+    scene = SimpleNamespace(frames=1, size=(1, 1), elements=[], constraints=[])
     monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
@@ -136,7 +136,7 @@ def test_real_gate_keeps_processing_after_malformed_annotation_entry(tmp_path, m
     good = clips / "b-good.mp4"
     good.touch()
     good.with_suffix(".gt.json").write_text(json.dumps({"elements": [{"frames": {}}]}))
-    scene = SimpleNamespace(elements=[])
+    scene = SimpleNamespace(frames=1, size=(1, 1), elements=[], constraints=[])
     monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
@@ -165,7 +165,7 @@ def test_real_gate_keeps_processing_after_malformed_elements_container(tmp_path,
     good = clips / "b-good.mp4"
     good.touch()
     good.with_suffix(".gt.json").write_text(json.dumps({"elements": []}))
-    scene = SimpleNamespace(elements=[])
+    scene = SimpleNamespace(frames=1, size=(1, 1), elements=[], constraints=[])
     monkeypatch.setattr(video, "read_frames", lambda _clip: (np.zeros((1, 1, 1, 3)), 30))
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))

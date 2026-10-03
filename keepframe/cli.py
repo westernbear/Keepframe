@@ -75,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
     g2r = sub.add_parser("gate-m2-real"); g2r.add_argument("--clips", required=True); g2r.add_argument("--out", required=True)
+    g2r.add_argument("--max-frames", type=int, default=150)
     ed = sub.add_parser("edit")
     ed.add_argument("--root", required=True)
     ed.add_argument("--scene", default="s1")
@@ -171,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res["passed"] else 1
     if a.cmd == "gate-m2-real":
         from .gates import m2_gate_real
-        print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out)), indent=2)); return 0
+        print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out), max_frames=a.max_frames), indent=2)); return 0
     if a.cmd == "ae-install":
         from .after_effects.installer import install_panel, manual_instructions
 

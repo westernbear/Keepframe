@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 from statistics import mean
+from typing import TYPE_CHECKING
 from .analyze.constraints import extract_constraints
 from .compose.composer import compose
 from .ir.store import save_scene
@@ -9,6 +10,9 @@ from .ir.synth import make_synthetic_scene
 from .render.renderer import render
 from .verify.predicates import build_context, eval_pred
 from .verify.verifier import verify
+
+if TYPE_CHECKING:
+    from .analyze.pipeline import AnalyzeOptions
 
 
 def m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict:
@@ -62,20 +66,31 @@ def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
             "passed": l1_ok >= math.ceil(0.8 * n) and trk_ok and temporal >= 0.7, "rows": rows}
 
 
-def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:
-    import json, numpy as np
+def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options: AnalyzeOptions | None = None) -> dict:
+    import json, time, cv2, numpy as np
+    from collections import Counter
     from .analyze.pipeline import AnalyzeOptions, analyze
-    from .analyze.video import read_frames
     from .ir.store import current_scene, scene_dir
     from .verify.matrix import animation_matrix
+    from .web.liveaction import looks_live_action
     rows = []
     for clip in sorted(Path(clips_dir).glob("*.mp4")):
-        frames, _ = read_frames(clip)
+        cap = cv2.VideoCapture(str(clip))
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or max_frames
+        cap.release()
+        end = min(total, max_frames) - 1
         root = Path(out_root) / clip.stem
-        analyze(clip, 0, len(frames) - 1, root, AnalyzeOptions())
+        t0 = time.perf_counter()
+        analyze(clip, 0, end, root, options or AnalyzeOptions())
         scene, _ = current_scene(root, "s1")
         rep = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-        row = {"clip": clip.name, "elements": len(scene.elements), "mean_l1": rep["reconstruction"]["mean_l1"], "messages": rep["messages"]}
+        row = {"clip": clip.name, "frames": scene.frames, "size": list(scene.size),
+               "live_action": looks_live_action(clip), "elements": len(scene.elements),
+               "kinds": dict(Counter(e.kind for e in scene.elements)),
+               "mean_l1": rep["reconstruction"]["mean_l1"],
+               "low_conf": sum(e.confidence < 0.7 for e in scene.elements),
+               "keep_on": sum(c.keep for c in scene.constraints), "constraints": len(scene.constraints),
+               "seconds": round(time.perf_counter() - t0, 1), "messages": rep["messages"]}
         gt = clip.with_suffix(".gt.json")
         if gt.exists():
             try:
@@ -109,7 +124,7 @@ def m2_gate_real(clips_dir: Path, out_root: Path) -> dict:
             if invalid_annotation:
                 row["messages"].append("invalid ground truth annotation; pos_err_px may be incomplete")
         rows.append(row)
-    return {"clips": len(rows), "rows": rows}
+    return {"clips": len(rows), "max_frames": max_frames, "rows": rows}
 
 
 def m3_gate(out_root: Path, n: int = 8) -> dict:
