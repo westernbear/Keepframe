@@ -52,7 +52,7 @@ def test_rapidocr_passes_cuda_flags_when_ep_available(monkeypatch):
     monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", fake)
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: True)
     RapidOcr()
-    assert seen == dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
+    assert seen == dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True, det_limit_type="max")
 
 
 def test_ocr_gpu_mem_limit_stays_small():
@@ -85,7 +85,7 @@ def test_rapidocr_stays_cpu_without_cuda_ep(monkeypatch):
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: False)
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda_expected", lambda: False)
     RapidOcr()
-    assert seen == {}
+    assert seen == {"det_limit_type": "max"}
 
 
 @pytest.mark.ocr

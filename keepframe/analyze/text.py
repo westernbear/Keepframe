@@ -3,7 +3,7 @@ import difflib, math
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Protocol
-import numpy as np
+import cv2, numpy as np
 from ..ir.schema import FontGuess
 from ..log import get
 from .background import foreground_mask
@@ -75,7 +75,10 @@ def _ocr_gpu_mem_limit() -> int:
 
 
 class RapidOcr:
-    def __init__(self):
+    def __init__(self, max_side: int | None = 1280):
+        if max_side is not None and max_side <= 0:
+            raise ValueError("max_side must be positive or None")
+        self.max_side = max_side
         from .device import preload_torch_cuda
         preload_torch_cuda()
         from rapidocr_onnxruntime import RapidOCR  # lazy import
@@ -94,10 +97,34 @@ class RapidOcr:
             else:
                 log.info("ocr device=cpu")
             kw = {}
+        if max_side is not None:
+            # RapidOCR 1.4.4 ignores det_limit_side_len for limit_type="max".
+            # Prevent detector upscaling; cap its input explicitly below.
+            kw["det_limit_type"] = "max"
         self._ocr = RapidOCR(**kw)
 
     def __call__(self, frame_rgb: np.ndarray):
-        result, _ = self._ocr(frame_rgb[..., ::-1])  # expects BGR
+        bgr = frame_rgb[..., ::-1]  # expects BGR
+        h, w = bgr.shape[:2]
+        if self.max_side is None or max(h, w) <= self.max_side:
+            result, _ = self._ocr(bgr)
+        else:
+            # ponytail: staged RapidOCR 1.x API; use native detection limits once they honor the cap.
+            scale = self.max_side / max(h, w)
+            small = cv2.resize(bgr, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+            quads, times = self._ocr(small, use_cls=False, use_rec=False)
+            if not quads:
+                return []
+            boxes = np.asarray(quads, np.float64)
+            boxes[..., 0] *= w / small.shape[1]
+            boxes[..., 1] *= h / small.shape[0]
+            boxes = boxes.astype(np.float32)
+            crops = self._ocr.get_crop_img_list(bgr, boxes)
+            cls_res, cls_time = None, 0.0
+            if self._ocr.use_cls:
+                crops, cls_res, cls_time = self._ocr.text_cls(crops)
+            rec_res, rec_time = self._ocr.text_rec(crops)
+            result, _ = self._ocr.get_final_res(boxes, cls_res, rec_res, times[0], cls_time, rec_time)
         out = []
         for quad, text, conf in result or []:
             xs = [p[0] for p in quad]; ys = [p[1] for p in quad]

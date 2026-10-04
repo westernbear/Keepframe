@@ -35,6 +35,7 @@ class AnalyzeOptions:
     min_area: int = 30
     use_ecc: bool = True
     ui: bool = False
+    ocr_max_side: int = 1280
 
 
 def _hex(rgb) -> str:
@@ -79,7 +80,7 @@ def _stage_text(frames, bg, opts, ocr, sd):
         if ocr is None:
             try:
                 from .text import RapidOcr
-                ocr = RapidOcr()
+                ocr = RapidOcr(max_side=opts.ocr_max_side)
             except Exception as e:  # rapidocr missing or broken onnxruntime
                 msg = f"text stage skipped: {e}"
                 err = str(e)

@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--no-ocr", action="store_true"); an.add_argument("--no-refine", action="store_true"); an.add_argument("--bg", default=None)
     an.add_argument("--ui", action="store_true")
     an.add_argument("--no-captions", action="store_true")
+    an.add_argument("--ocr-max-side", type=int, default=1280)
     co = sub.add_parser("correct"); co.add_argument("--root", required=True); co.add_argument("--scene", default="s1")
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
@@ -126,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "analyze":
         from .analyze.pipeline import AnalyzeOptions, analyze
         from .session.llm import vision_llm
-        opts = AnalyzeOptions(bg_override=a.bg, copy=a.copy.split(",") if a.copy else None, ocr=not a.no_ocr, refine=not a.no_refine, ui=a.ui)
+        opts = AnalyzeOptions(bg_override=a.bg, copy=a.copy.split(",") if a.copy else None, ocr=not a.no_ocr,
+                              refine=not a.no_refine, ui=a.ui, ocr_max_side=a.ocr_max_side)
         p = analyze(Path(a.video), a.start, a.end, Path(a.out), opts, captioner=None if a.no_captions else vision_llm())
         print(json.dumps({"scenes": [s.id for s in p.scenes], "version": p.versions[-1].id})); return 0
     if a.cmd == "correct":

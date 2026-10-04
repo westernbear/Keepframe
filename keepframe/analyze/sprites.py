@@ -87,10 +87,17 @@ def _refine_ecc(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarra
     Tc = np.array([[1.0, 0.0, -x0], [0.0, 1.0, -y0], [0.0, 0.0, 1.0]])
     M_tex_to_crop = Tc @ affine_matrix(init) @ L
     img = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    scale = min(1.0, 384 / max(*img.shape, *tpl.shape))
     try:
+        if scale < 1.0:
+            # ponytail: one 384px ECC level; upgrade to coarse-to-fine fitting if quality gates require it.
+            img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            tpl = cv2.resize(tpl, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 60, 1e-5)
         init_crop_to_tex = np.linalg.inv(M_tex_to_crop)[:2].astype(np.float32)
+        init_crop_to_tex[:, 2] *= scale
         _, w_crop_to_tex = cv2.findTransformECC(img, tpl, init_crop_to_tex, cv2.MOTION_AFFINE, crit, None, 5)
+        w_crop_to_tex[:, 2] /= scale
         M2 = np.linalg.inv(Tc) @ np.linalg.inv(np.vstack([w_crop_to_tex, [0, 0, 1]]))
     except cv2.error:
         return init
