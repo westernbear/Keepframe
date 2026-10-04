@@ -69,7 +69,7 @@ def _stage_background(frames, opts, sd):
             path = sd / PLATE_PATH
             path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(path), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
-            bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # ponytail: mean plate colour for text/opacity estimates
+            bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # Representative cache colour; measurements/refine use the local plate.
     (sd / "stages" / "background.json").write_text(json.dumps({"rgb": list(bg), "confidence": bconf, "plate": plate is not None}))
     return bg, bconf, plate
 
@@ -149,7 +149,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     workers = max(1, min(8, os.cpu_count() or 4))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         text_futs = {
-            ex.submit(text_props, t, frames, bg, n_frames, 0, infer_font=is_text): (t, is_text)
+            ex.submit(text_props, t, frames, bg, n_frames, 0, infer_font=is_text, plate=plate): (t, is_text)
             for tracks, is_text in ((text_tracks, True), (shape_tracks, False)) for t in tracks
         }
         for fut, (t, is_text) in text_futs.items():
@@ -168,7 +168,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         # cv2 (moments, findTransformECC) releases the GIL, so tracks refine in parallel.
         obj_futs = {
-            ex.submit(sprite_props, t, frames, bg, n_frames, 0, opts.use_ecc): t for t in obj_tracks
+            ex.submit(sprite_props, t, frames, bg, n_frames, 0, opts.use_ecc, plate=plate): t for t in obj_tracks
         }
         for fut, t in obj_futs.items():
             raw, canon, cf = fut.result()
@@ -182,12 +182,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             m = np.isnan(pa["raw"][:, 0]) & ~np.isnan(pb["raw"][:, 0])
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
-    if opts.refine and plate is not None:
-        from .refine import torch_available
-        if torch_available():
-            props["_message"] = "refine skipped: background plate scenes are not supported by refine yet"
-            log.info(props["_message"])
-    elif opts.refine and any(p["kind"] == "sprite" for p in props.values()):
+    if opts.refine and any(p["kind"] == "sprite" for p in props.values()):
         try:
             from .device import resolve_device
             from .refine import refine_affine, torch_available
@@ -209,7 +204,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
                 t0 = time.perf_counter()
                 refined = refine_affine(frames, bg, {k: props[k]["raw"] for k in keys}, {k: props[k]["canon"] for k in keys},
                                         {k: (0.5, 0.5) for k in keys}, {k: props[k]["z"] for k in keys},
-                                        iters=opts.refine_iters, device=dev)
+                                        iters=opts.refine_iters, device=dev, plate=plate)
                 log.info("refine done device=%s sprites=%s frames=%s %.2fs", dev, len(keys), n,
                          time.perf_counter() - t0)
                 for k in keys:

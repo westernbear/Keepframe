@@ -123,9 +123,17 @@ def _refine_ecc_xy(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.nda
     return props
 
 
-def estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple) -> float:
+def estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple,
+                     plate: np.ndarray | None = None) -> float:
     x0, y0, x1, y1 = region.bbox
     px = frame[y0:y1, x0:x1][region.mask].astype(np.float32)
+    if plate is not None:
+        bg_px = plate[y0:y1, x0:x1][region.mask].astype(np.float32)
+        c = np.array(canon_color, np.float32) - bg_px
+        n = np.sum(c * c, axis=1)
+        valid = n > 1e-6
+        a = np.sum((px - bg_px) * c, axis=1)[valid] / n[valid]
+        return float(np.clip(np.median(a), 0.0, 1.0)) if len(a) else 1.0
     c = np.array(canon_color, np.float32) - np.array(bg_rgb, np.float32)
     n = float(np.dot(c, c))
     if n < 1e-6 or len(px) == 0:
@@ -159,7 +167,7 @@ def z_order(tracks: list[ObjectTrack], frames: np.ndarray, bg_rgb: tuple) -> dic
 
 
 def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int,
-                 use_ecc: bool = True) -> tuple[np.ndarray, np.ndarray, int]:
+                 use_ecc: bool = True, plate: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, int]:
     canon, cf = canonical_texture(track, frames)
     areas = [r.area for r in track.regions.values()]
     med_area = float(np.median(areas))
@@ -186,6 +194,6 @@ def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames
             if prev_rot is not None:
                 p["rot"] = prev_rot + ((p["rot"] - prev_rot + 90) % 180 - 90)
         prev_rot = p["rot"]
-        p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb)
+        p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb, plate=plate)
         raw[f - first_frame] = [p[c] for c in RAW_COLS]
     return raw, canon, cf

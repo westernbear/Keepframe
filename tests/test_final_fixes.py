@@ -178,13 +178,17 @@ def test_lottie_plate_is_embedded_bottom_image_layer(tmp_path):
 
 @pytest.mark.parametrize("stage", ["analyze", "rerun"])
 @pytest.mark.parametrize("torch_available", [True, False])
-def test_plate_analysis_and_rerun_skip_torch_refine(tmp_path, monkeypatch, stage, torch_available):
+def test_plate_analysis_and_rerun_refine_when_torch_available(tmp_path, monkeypatch, stage, torch_available):
     calls = []
-    def forbidden(*args, **kwargs):
-        calls.append(True)
-        raise AssertionError("refine must not run over a plate")
+    def fake_refine(frames, bg, raws, *args, plate=None, **kwargs):
+        refined = {k: r.copy() for k, r in raws.items()}
+        for raw in refined.values():
+            raw[:, 0] += 0.25
+        calls.append((plate, refined))
+        return refined
     monkeypatch.setattr("keepframe.analyze.refine.torch_available", lambda: torch_available)
-    monkeypatch.setattr("keepframe.analyze.refine.refine_affine", forbidden)
+    monkeypatch.setattr("keepframe.analyze.refine.refine_affine", fake_refine)
+    monkeypatch.setattr("keepframe.analyze.device.resolve_device", lambda: "cpu")
     opts = AnalyzeOptions(ocr=False, refine=stage == "analyze", use_ecc=False)
     frames = _gradient_clip(h=320, w=640)
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", opts)
@@ -194,10 +198,17 @@ def test_plate_analysis_and_rerun_skip_torch_refine(tmp_path, monkeypatch, stage
         scene, _ = current_scene(tmp_path, "s1")
     assert scene.background.kind == "image"
     assert any(e.kind == "sprite" for e in scene.elements)
-    assert calls == []
-    report = json.loads((scene_dir(tmp_path, "s1") / "report.json").read_text())
+    assert len(calls) == int(torch_available)
+    sd = scene_dir(tmp_path, "s1")
+    if calls:
+        plate, refined = calls[0]
+        saved_plate = cv2.cvtColor(cv2.imread(str(sd / scene.background.value)), cv2.COLOR_BGR2RGB)
+        assert np.array_equal(plate, saved_plate)
+        saved_raw = np.load(sd / scene.elements[0].raw)["raw"]
+        assert np.allclose(saved_raw, next(iter(refined.values())), equal_nan=True)
+    report = json.loads((sd / "report.json").read_text())
     message = "refine skipped: background plate scenes are not supported by refine yet"
-    assert (message in report["messages"]) == torch_available
+    assert message not in report["messages"]
 
 
 def _post(server, route, payload, origin):

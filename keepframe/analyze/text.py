@@ -6,7 +6,7 @@ from typing import Protocol
 import cv2, numpy as np
 from ..ir.schema import FontGuess
 from ..log import get
-from .background import foreground_mask
+from .background import foreground_mask, foreground_mask_plate
 from .device import ocr_cuda, ocr_cuda_expected
 from .fonts import font_candidates, font_family_guess
 
@@ -241,23 +241,28 @@ def text_exclusion_mask(boxes: list[TextBox], shape: tuple[int, int], pad: int =
     return m
 
 
-def stroke_mask(frame: np.ndarray, bbox, bg_rgb: tuple, thr: float = 12.0) -> np.ndarray:
+def stroke_mask(frame: np.ndarray, bbox, bg_rgb: tuple, thr: float = 12.0,
+                plate: np.ndarray | None = None) -> np.ndarray:
     x0, y0, x1, y1 = bbox
     h, w = frame.shape[:2]
     x0, y0 = max(0, x0), max(0, y0)
     x1, y1 = min(w, x1), min(h, y1)
     if x1 <= x0 or y1 <= y0:
         return np.zeros((0, 0), dtype=bool)
-    return foreground_mask(frame[y0:y1, x0:x1], bg_rgb, thr)
+    crop = frame[y0:y1, x0:x1]
+    if plate is not None:
+        return foreground_mask_plate(crop, plate[y0:y1, x0:x1], thr)
+    return foreground_mask(crop, bg_rgb, thr)
 
 
-def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *, infer_font: bool = True):
+def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
+               infer_font: bool = True, plate: np.ndarray | None = None):
     cf = max(track.boxes, key=lambda f: (track.boxes[f].bbox[2] - track.boxes[f].bbox[0]) * (track.boxes[f].bbox[3] - track.boxes[f].bbox[1]))
     cb = track.boxes[cf].bbox
     frame_h, frame_w = frames[cf].shape[:2]
     cx0, cy0, cx1, cy1 = max(0, cb[0]), max(0, cb[1]), min(frame_w, cb[2]), min(frame_h, cb[3])
     crop = frames[cf][cy0:cy1, cx0:cx1]
-    sm = stroke_mask(frames[cf], cb, bg_rgb)
+    sm = stroke_mask(frames[cf], cb, bg_rgb, plate=plate)
     canon = np.dstack([crop, (sm * 255).astype(np.uint8)])
     cw, ch = cb[2] - cb[0], cb[3] - cb[1]
     track_h = track.boxes[track.first].bbox[3] - track.boxes[track.first].bbox[1]
@@ -270,9 +275,17 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         x0, y0, x1, y1 = b.bbox
         fh, fw = frames[f].shape[:2]
         cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
-        m = stroke_mask(frames[f], b.bbox, bg_rgb)
+        m = stroke_mask(frames[f], b.bbox, bg_rgb, plate=plate)
         px = frames[f][cy0:cy1, cx0:cx1][m].astype(np.float32) if m.any() else np.zeros((0, 3), np.float32)
-        opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
+        if plate is None:
+            opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
+        else:
+            bg_px = plate[cy0:cy1, cx0:cx1][m].astype(np.float32)
+            local_c = col - bg_px
+            local_n = np.sum(local_c * local_c, axis=1)
+            valid = local_n > 1e-6
+            a = np.sum((px - bg_px) * local_c, axis=1)[valid] / local_n[valid]
+            opacity = float(np.clip(np.median(a), 0, 1)) if len(a) else 1.0
         raw[f - first_frame] = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / cw, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity]
     if not infer_font:
         return raw, canon, cf, None, None
