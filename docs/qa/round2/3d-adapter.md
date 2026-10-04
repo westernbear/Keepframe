@@ -15,20 +15,32 @@ model/gltf-binary`. Unsupported requests return HTTP 501. Invalid input returns
 From the repository root:
 
 ```bash
+export KEEPFRAME_ASSET_API_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(24))")
 uv run --with gradio_client scripts/asset_adapter_hf.py --port 8790
 uv run --with gradio_client scripts/asset_adapter_hf.py --port 8790 --space trellis-community/TRELLIS
 ```
 
-Use one server command at a time. In the analysis process, set:
+Use one server command at a time. The server refuses to start without a
+nonempty `KEEPFRAME_ASSET_API_KEY`. The analysis process must inherit the same
+exported key; the existing `AssetClient` sends it as `Authorization: Bearer
+<key>` automatically. In that process, also set:
 
 ```bash
 export KEEPFRAME_ASSET_API_URL=http://127.0.0.1:8790
 ```
 
+Missing or incorrect bearer authentication returns HTTP 401. Any `Origin`
+header (including an empty value or `null`) returns HTTP 403, and requests
+whose `Content-Type` is not `application/json` return HTTP 415. These checks
+run before parsing the body or calling a Space. Keys are never logged.
+
 `gradio_client` is imported lazily and is not a project runtime dependency.
 Server requests use `HF_TOKEN`, or `huggingface_hub.get_token()` when the
 environment variable is absent. Tokens are never printed. Each request uses its
-own temporary directory and Gradio session. The adapter bounds discovery,
+own temporary download directory and Gradio session. Result file paths must
+resolve inside that request's directory; symlinks, including directory
+symlinks, and nonregular files are ignored. If no valid GLB remains, the adapter
+returns HTTP 503 with `code=asset_api_unavailable`. The adapter bounds discovery,
 upload, generation, and download with a **300-second** deadline and attempts to
 cancel timed-out jobs. A running remote GPU job may outlive local cancellation.
 
@@ -73,7 +85,8 @@ uv run --with gradio_client scripts/asset_adapter_hf.py --probe
 ```
 
 `--probe` explicitly uses `token=False`, even when local credential lookup
-would succeed. It visits the candidates in the required order, calls
+would succeed. It starts no HTTP server and requires no
+`KEEPFRAME_ASSET_API_KEY`. It visits the candidates in the required order, calls
 `view_api(print_info=False, return_format="dict")`, performs the required
 session preparation, and attempts one generation pipeline for a 64×64 RGBA PNG containing
 a red circle on a transparent background. Its only output is one JSON result
@@ -105,7 +118,8 @@ user login request belongs to the controller.
 
 The ig2 measurement depends on Tasks 15/16 and is deferred to the controller.
 No evaluation inputs or outputs were changed here. After integrating those
-tasks, start the adapter, set
+tasks, generate and export a key as above, start the adapter, and ensure the
+analysis process inherits that same `KEEPFRAME_ASSET_API_KEY`. Set
 `KEEPFRAME_ASSET_API_URL=http://127.0.0.1:8790`, and run the ig2 re-analysis and
 render check using the [round-2 evaluation commands](README.md). Record the
 guard-selected representation, all three representation error values, any
@@ -124,3 +138,6 @@ cover the real asset-client request/response contract, the three generation
 endpoint layouts, session preparation, fixed seeds, textured-output selection,
 invalid images/GLBs, remote failures, deadlines/cancellation, optional imports,
 credential selection, forced anonymous probes, and redacted HTTP/probe errors.
+Security regressions cover required server configuration, bearer authentication,
+Origin and media-type rejection, request-isolated downloads, and ignoring
+outside paths and file/directory symlinks.

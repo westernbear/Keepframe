@@ -8,15 +8,18 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import hmac
 import inspect
 import io
 import json
 import os
 import queue
 import re
+import stat
 import tempfile
 import threading
 import time
+from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -97,24 +100,52 @@ def _input_image(body: Any) -> bytes:
     return data
 
 
-def _glb_outputs(value: Any):
+def _downloaded_glb(path: Path, directory: Path) -> bytes | None:
+    if path.suffix.lower() != ".glb":
+        return None
+    try:
+        root = directory.resolve(strict=True)
+        relative = path.absolute().relative_to(root)
+        path.resolve(strict=True).relative_to(root)
+        if not relative.parts or ".." in relative.parts:
+            return None
+        # Walk from the request's trusted directory without following symlinks,
+        # including parent directories. File descriptors keep the check/open
+        # boundary safe if a path is replaced while we read it.
+        with ExitStack() as stack:
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            parent = os.open(root, flags)
+            stack.callback(os.close, parent)
+            for part in relative.parts[:-1]:
+                parent = os.open(part, flags, dir_fd=parent)
+                stack.callback(os.close, parent)
+            descriptor = os.open(relative.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=parent)
+            with os.fdopen(descriptor, "rb") as stream:
+                if stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    return stream.read(MAX_GLB + 1)
+    except (OSError, ValueError, RuntimeError):
+        pass  # Ignore missing, outside, symlinked or otherwise unsafe results.
+    return None
+
+
+def _glb_outputs(value: Any, directory: Path):
     if isinstance(value, bytes):
         yield value
     elif isinstance(value, (str, Path)):
-        path = Path(value)
-        if path.suffix.lower() == ".glb" and path.is_file():
-            with path.open("rb") as stream:
-                yield stream.read(MAX_GLB + 1)
+        data = _downloaded_glb(Path(value), directory)
+        if data is not None:
+            yield data
     elif isinstance(value, dict):
         if value.get("mime") == "model/gltf-binary" and isinstance(value.get("data"), str):
             if len(value["data"]) <= (MAX_GLB + 2) // 3 * 4:
                 yield base64.b64decode(value["data"], validate=True)
         else:
             for nested in value.values():
-                yield from _glb_outputs(nested)
+                yield from _glb_outputs(nested, directory)
     elif isinstance(value, (list, tuple)):
         for nested in value:
-            yield from _glb_outputs(nested)
+            yield from _glb_outputs(nested, directory)
 
 
 class HFAdapter:
@@ -132,6 +163,7 @@ class HFAdapter:
                 raise TimeoutError("Space request timed out")
             return seconds
         with tempfile.TemporaryDirectory(prefix="keepframe-hf-") as directory:
+            directory = str(Path(directory).resolve())
             token = self.token or False
             client = None
             try:
@@ -194,7 +226,7 @@ class HFAdapter:
                     # Hunyuan returns shape-only, then textured mesh. Prefer the
                     # textured output while retaining the shape fallback.
                     result = [result[1], result[0], *result[2:]]
-                for data in _glb_outputs(result):
+                for data in _glb_outputs(result, Path(directory)):
                     try:
                         return validate_glb(data)
                     except AssetAPIError:
@@ -234,12 +266,26 @@ class HFAdapter:
 
 
 def create_server(adapter: HFAdapter, *, port: int = 8790) -> ThreadingHTTPServer:
+    key = os.environ.get("KEEPFRAME_ASSET_API_KEY", "")
+    if not key.strip():
+        raise RuntimeError(
+            'KEEPFRAME_ASSET_API_KEY is required. Set one before starting the server:\n'
+            'export KEEPFRAME_ASSET_API_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(24))")'
+        )
+    authorization = f"Bearer {key}".encode("utf-8")
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass  # Never log request URLs, authorization headers or credentials.
 
         def do_POST(self):
             try:
+                if "Origin" in self.headers:
+                    raise AdapterError("browser origins are not allowed", status=403, code="forbidden_origin")
+                if not hmac.compare_digest(self.headers.get("Authorization", "").encode("utf-8"), authorization):
+                    raise AdapterError("bearer authentication is required", status=401, code="unauthorized")
+                if self.headers.get_content_type() != "application/json":
+                    raise AdapterError("Content-Type must be application/json", status=415, code="unsupported_media_type")
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= MAX_REQUEST:
                     raise AdapterError("invalid request length", status=413, code="asset_too_large")
@@ -293,7 +339,10 @@ def main() -> int:
         probe_spaces(spaces=(args.space,) if args.space else CANDIDATE_SPACES,
                      token=False, emit=lambda row: print(json.dumps(row), flush=True))
         return 0
-    server = create_server(HFAdapter(args.space or CANDIDATE_SPACES[0]), port=args.port)
+    try:
+        server = create_server(HFAdapter(args.space or CANDIDATE_SPACES[0]), port=args.port)
+    except RuntimeError as exc:
+        parser.error(str(exc))
     print(f"Asset adapter listening on http://127.0.0.1:{server.server_port}", flush=True)
     try:
         server.serve_forever()
