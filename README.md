@@ -48,6 +48,7 @@ In review, choose a keep preset before approving the analysis:
 | --- | --- |
 | `content_only` (default) | Motion type, direction, distance, duration and temporal relations |
 | `motion_shape` | Motion type, direction and order |
+| `all` | All motion and spatial predicates |
 | `none` | No keep predicates |
 
 After approval, ask the agent for an edit. Confirm its preview in the browser.
@@ -123,6 +124,8 @@ keepframe verify --scene ./out/scenes/s1/scene.json --render-json ./out/frames/r
 keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","text":"New title"}'
 ```
 
+`keepframe verify --reference` compares motion by element id.
+
 `--end` is inclusive. `correct` ops: `reassign`, `mask`, `bbox`, `text`.
 `analyze --ui` enables UI parsing. `--no-captions` skips optional VLM captions.
 
@@ -177,7 +180,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 - Background plates assume a static camera
 - Font candidates come only from installed fonts
 - Agent edits are preview-only; confirm in the browser
-- Keep predicates required on every edit
+- The default `content_only` preset keeps motion predicates; choose `content_only`, `motion_shape`, `all` or `none`. `none` disables keep checks
 - Repair retries: 4. Asset generation: 2. Caps are display-only
 - After Effects work is frozen until the core flow is validated
 

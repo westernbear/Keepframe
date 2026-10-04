@@ -32,6 +32,7 @@ def _post(srv, path, payload):
     url = f"http://127.0.0.1:{srv.server_address[1]}{path}"
     req = Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
     req.add_header("Content-Type", "application/json")
+    req.add_header("Origin", f"http://127.0.0.1:{srv.server_address[1]}")
     try:
         with urlopen(req) as r:
             return r.status, json.loads(r.read())
@@ -39,7 +40,8 @@ def _post(srv, path, payload):
         return e.code, json.loads(e.read())
 
 
-def test_text_correction_api_rejects_css_family_injection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("family", ["x;color:red", "Noto_Sans.Regular", "x,y"])
+def test_text_correction_api_rejects_invalid_family(tmp_path, monkeypatch, family):
     root = tmp_path / "ws" / "p1"
     scene = make_synthetic_scene(root / "gold", seed=11, frames=4)
     init_project(root, {"file": "ref.mp4"}, scene)
@@ -50,7 +52,7 @@ def test_text_correction_api_rejects_css_family_injection(tmp_path, monkeypatch)
     try:
         code, body = _post(srv, "/api/correct", {"project": "p1", "scene": scene.id, "op": "text",
                                               "args": {"element_id": scene.elements[0].id,
-                                                       "font": {"family_guess": "x;color:red"}}})
+                                                       "font": {"family_guess": family}}})
     finally:
         srv.shutdown()
         srv.server_close()

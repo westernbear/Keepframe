@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Element, Scene
+from ..ir.paths import scene_asset_path
 from ..ir.tracks import affine_matrix, eval_props, eval_z
 
 
@@ -47,10 +48,11 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
     canvas = np.empty((H, W, 3), np.float32)
     cache = {} if cache is None else cache
     if scene.background.kind == "image":
+        path = scene_asset_path(scene_dir, scene.background.value)
         key = ("background", scene.background.value, scene.size)
         bg = cache.get(key)
         if bg is None:
-            bg = cache[key] = cv2.resize(load_texture(Path(scene_dir) / scene.background.value)[..., :3], (W, H))
+            bg = cache[key] = cv2.resize(load_texture(path)[..., :3], (W, H))
         canvas[:] = bg
     else:
         canvas[:] = hex_to_rgb(scene.background.value)

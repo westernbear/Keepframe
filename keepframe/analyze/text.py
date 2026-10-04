@@ -8,7 +8,7 @@ from ..ir.schema import FontGuess
 from ..log import get
 from .background import foreground_mask
 from .device import ocr_cuda, ocr_cuda_expected
-from .fonts import font_candidates
+from .fonts import font_candidates, font_family_guess
 
 log = get("keepframe.analyze")
 
@@ -253,6 +253,6 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     tight = sm[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(xs) else sm
     size = float(min(ch, track_h) * 0.8)
     cands = font_candidates(tight, track.text, size)
-    font = FontGuess(family_guess=cands[0] if cands else "sans-serif", weight=700 if sm.mean() > 0.35 else 400,
+    font = FontGuess(family_guess=font_family_guess(tight, track.text, size, cands), weight=700 if sm.mean() > 0.35 else 400,
                      size_px=size, candidates=cands)
     return raw, canon, cf, font, color

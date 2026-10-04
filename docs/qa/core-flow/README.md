@@ -42,7 +42,7 @@ Synthetic `gate-m2` (n=20, no torch): frame_l1_ok 18/20, tracking ok, temporal 0
 
 ## Prompt evaluation
 
-`scripts/eval_prompts.py`, `gpt-6.1-sol`, preview-only. All ok rows have typed targets.
+`scripts/eval_prompts.py`, `gpt-6.1-sol`, preview-only. An "ok" means a valid typed target, not verified to be the right element.
 
 | clip | ok / prompts |
 | --- | --- |
@@ -77,12 +77,14 @@ Visible fidelity limits: the globe is rebuilt as flat white fragments. Letter re
 | --- | --- |
 | Temporal gate failed every edit on fragmented scenes | Task 22: compare motion by element ID; exclude tracks without motion evidence |
 | ChatGPT provider broken for current models | Task 21: direct Responses client; default `gpt-6.1-sol` |
-| Font candidates skipped headlines >256 px | Task 18 follow-up (`5356cf9`): render at a capped size for ranking |
+| Font guesses changed rendered text; headlines >256 px lacked candidates | Task 18: font family now only replaces sans-serif when it clearly matches better (final fix); headline ranking uses a capped render size (`5356cf9`) |
 | Edit tool executed without user confirmation | Task 23: agent tool previews only; execution requires browser confirmation |
 
 ## Known limits / next
 
 - Predicate explosion: ig1 has 55k predicates.
+- text stroke/opacity use the mean plate colour on gradient scenes.
+- GPU refine is skipped on plate scenes.
 - Kinetic letter reveal fragments headlines and glyphs.
 - CPU cost: 9–31 min per 150 frames.
 - 3D-looking shapes reconstruct as flat fragments.

@@ -14,13 +14,13 @@ import {
   postEdit,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261003i";
-import { T } from "/static/js/i18n.js?v=20261003i";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261003i";
+} from "/static/js/api.js?v=20261003j";
+import { T } from "/static/js/i18n.js?v=20261003j";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261003j";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261003i";
+} from "/static/js/playback.js?v=20261003j";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -790,13 +790,15 @@ function isKeepPassed(verify) {
 
 function appendVerify(verify) {
   if (!verify) return;
-  const total = (verify.keep_results || []).length;
-  const keepPassed = total > 0 && isKeepPassed(verify);
+  const total = verify.keep_total ?? (verify.keep_results || []).length;
+  const failed = verify.keep_failed ?? (verify.keep_results || []).filter(r => !r.passed).length;
+  const rate = total > 0 ? (total - failed) / total : 0;
+  const keepPassed = total > 0 && failed === 0 && isKeepPassed({ ...verify, keep_pass_rate: rate });
   const chip = document.createElement("span");
   chip.className = "verify-chip " + (total === 0 ? "verify-chip--warn" : keepPassed ? "verify-chip--pass" : "verify-chip--fail");
   chip.textContent = total === 0
     ? T("agent.verifyNoKeep")
-    : `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round((verify.keep_pass_rate || 0) * CONFIDENCE_PERCENT)}% (${total}) · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
+    : `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round(rate * CONFIDENCE_PERCENT)}% (${total}) · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
   logEl.appendChild(chip);
   logEl.scrollTop = logEl.scrollHeight;
 }

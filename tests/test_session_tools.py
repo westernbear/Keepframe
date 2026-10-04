@@ -99,7 +99,7 @@ def test_verify_and_report_tools(tmp_path):
     assert rep["payload"]["elements"] == [e.id for e in scene.elements]
 
 
-def test_verify_tool_includes_kept_constraint_results(tmp_path):
+def test_verify_tool_includes_counts_without_successful_predicates(tmp_path):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"
     scene = make_synthetic_scene(sd, seed=4, with_text=False, frames=12)
@@ -111,7 +111,9 @@ def test_verify_tool_includes_kept_constraint_results(tmp_path):
 
     ver = run_tool("verify", _ctx(root), {})
     assert ver["ok"] is True
-    assert len(ver["payload"]["verify"]["keep_results"]) == kept
+    payload = ver["payload"]["verify"]
+    assert payload["keep_total"] == kept and payload["keep_failed"] == 0
+    assert payload["keep_failures"] == [] and "keep_results" not in payload
 
 
 def test_render_prepares_immutable_plan_without_submitting_job(tmp_path):

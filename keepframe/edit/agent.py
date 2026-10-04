@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from ..compose.composer import compose
 from ..render.renderer import render
@@ -35,6 +35,14 @@ class EditResult(BaseModel):
     attempts: int = 0
     error: str | None = None
     messages: list[str] = Field(default_factory=list)
+
+    @field_serializer("verify")
+    def _compact_verify(self, report: VerifyReport | None) -> dict | None:
+        if report is None:
+            return None
+        payload = report.model_dump(mode="json", exclude={"keep_results"})
+        payload["keep_results"] = [r for r in report.keep_results if not r["passed"]][:50]
+        return payload
 
     def to_json(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

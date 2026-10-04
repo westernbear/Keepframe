@@ -1,6 +1,6 @@
-import { postKeep } from "/static/js/api.js?v=20261003i";
-import { readFileAsBase64 } from "/static/js/files.js?v=20261003i";
-import { KEEP_NOTE } from "/static/js/review/workspace.js?v=20261003i";
+import { postKeep } from "/static/js/api.js?v=20261003j";
+import { readFileAsBase64 } from "/static/js/files.js?v=20261003j";
+import { KEEP_NOTE } from "/static/js/review/workspace.js?v=20261003j";
 
 export function attachCorrections(ws) {
   const { dom } = ws;

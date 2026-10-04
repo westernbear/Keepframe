@@ -143,7 +143,10 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 raise ValueError("could not read attachment image")
             el.canonical.texture = f"assets/{dest.name}"
             h, w = img.shape[:2]
-            scale = min(el.canonical.width / w, el.canonical.height / h)   # contain-fit: the motion's box stays the box
+            original = scene_dir / "assets" / f"{el.id}.png"
+            crop = cv2.imread(str(original), cv2.IMREAD_UNCHANGED) if original.is_file() else None
+            box_w, box_h = (crop.shape[1], crop.shape[0]) if crop is not None else (el.canonical.width, el.canonical.height)
+            scale = min(box_w / w, box_h / h)
             el.canonical.width, el.canonical.height = float(w * scale), float(h * scale)
         elif t.property == "model":
             if attachment is None:

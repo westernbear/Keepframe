@@ -164,11 +164,11 @@ def make_llm(config: ProviderConfig | None = None, workspace: Path | None = None
         log.warning("no LLM credentials for provider=%s; session agent falls back to NullClient", cfg.provider)
         return NullClient()
     if cfg.provider == "chatgpt":
-        from .chatgpt_client import ChatGPTClient
-        from .provider import load_llm_settings, save_llm_settings
+        from .chatgpt_client import ChatGPTClient, persist_refreshed_tokens
+        from .provider import load_llm_settings
         return ChatGPTClient(
             cfg,
-            on_refresh=(lambda refreshed: save_llm_settings(workspace, refreshed)) if workspace is not None else None,
+            on_refresh=(lambda refreshed: persist_refreshed_tokens(workspace, refreshed)) if workspace is not None else None,
             load_config=(lambda: load_llm_settings(workspace)) if workspace is not None else None,
         )
     try:

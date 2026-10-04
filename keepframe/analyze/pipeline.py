@@ -142,7 +142,7 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames):
+def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
@@ -181,7 +181,10 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             m = np.isnan(pa["raw"][:, 0]) & ~np.isnan(pb["raw"][:, 0])
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
-    if opts.refine and any(p["kind"] == "sprite" for p in props.values()):
+    if opts.refine and plate is not None:
+        props["_message"] = "refine skipped: background plate scenes are not supported by refine yet"
+        log.info(props["_message"])
+    elif opts.refine and any(p["kind"] == "sprite" for p in props.values()):
         try:
             from .device import resolve_device
             from .refine import refine_affine, torch_available
@@ -370,7 +373,7 @@ def analyze_scene_frames(
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
-    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n)
+    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
     report_stage("keyframes")
@@ -551,7 +554,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         obj_tracks = _pk(sd, "tracks")
     if boundary <= STAGES.index("sprites"):
         report_stage("sprites")
-        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n)
+        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate)
     else:
         props = _pk(sd, "props")
     ids = json.loads((sd / "stages" / "ids.json").read_text())

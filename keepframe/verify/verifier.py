@@ -23,6 +23,8 @@ class LayerError(BaseModel):
 class VerifyReport(BaseModel):
     schema_ok: bool
     keep_results: list[dict] = Field(default_factory=list)
+    keep_total: int = 0
+    keep_failed: int = 0
     keep_pass_rate: float = 1.0
     layer_errors: list[LayerError] = Field(default_factory=list)
     layer_max_err_px: float = 0.0
@@ -51,7 +53,9 @@ def verify(scene: Scene, scene_dir: Path, render_result: RenderResult | None = N
     for c in keep:
         ok = eval_pred(c.pred, ctx)
         rep.keep_results.append({"pred": c.pred, "passed": ok})
-    rep.keep_pass_rate = (sum(r["passed"] for r in rep.keep_results) / len(keep)) if keep else 1.0
+    rep.keep_total = len(keep)
+    rep.keep_failed = sum(not r["passed"] for r in rep.keep_results)
+    rep.keep_pass_rate = (rep.keep_total - rep.keep_failed) / rep.keep_total if keep else 1.0
     if render_result is not None:
         rep.layer_probe_complete = True
         for el in scene.elements:

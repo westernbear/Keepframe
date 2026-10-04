@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..assets import validate_glb
 from ..ir.schema import Element, Scene, UIComponent, UIModel
+from ..ir.paths import scene_asset_path
 from ..ir.tracks import eval_z
 
 VENDOR = Path(__file__).parent / "vendor"
@@ -119,7 +120,7 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path:
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
     bg = scene.background.value if scene.background.kind == "color" else (
-        f'#000 url("{_data_uri(scene_dir / scene.background.value)}") 0 0/100% 100% no-repeat')
+        f'#000 url("{_data_uri(scene_asset_path(scene_dir, scene.background.value))}") 0 0/100% 100% no-repeat')
     for k, v in {
         "{{ID}}": html.escape(scene.id),
         "{{WIDTH}}": str(scene.size[0]),

@@ -4,6 +4,7 @@ import math
 import re
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from ..log import get
 
 Ease = tuple[float, float, float, float]
 PROPS = ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity")
@@ -36,12 +37,13 @@ class FontGuess(BaseModel):
     size_px: float = 32.0
     candidates: list[str] = Field(default_factory=list)
 
-    @field_validator("family_guess")
+    @field_validator("family_guess", mode="before")
     @classmethod
     def _safe_family(cls, value: str) -> str:
-        value = value.strip()
+        value = value.strip() if isinstance(value, str) else ""
         if not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", value):
-            raise ValueError("font family may only contain 1–64 letters, digits, spaces and hyphens")
+            get("keepframe.ir").warning("invalid stored font family; using sans-serif")
+            return "sans-serif"
         return value
 
 

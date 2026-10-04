@@ -637,6 +637,10 @@ class ReviewState:
         with self.lock:
             if self.job["status"] == "running":
                 raise RuntimeError("busy")
+            if op == "text" and args.get("font") and "family_guess" in args["font"]:
+                family = args["font"]["family_guess"]
+                if not isinstance(family, str) or not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", family.strip()):
+                    raise ValueError("font family may only contain 1–64 letters, digits, spaces and hyphens")
             font = FontGuess(**args["font"]) if op == "text" and args.get("font") else None
             try:
                 corrections.validate_correction_targets(self.root, self.scene_id, op, args)
@@ -783,7 +787,7 @@ def make_server(
                 persist = client.on_refresh
                 def on_refresh(cfg):
                     persist(cfg)
-                    admin_svc.set_llm_settings(cfg, "chatgpt-oauth-refresh")
+                    admin_svc.set_llm_settings(load_llm_settings(workspace), "chatgpt-oauth-refresh")
                 client.on_refresh = on_refresh
                 client.load_config = lambda: load_llm_settings(workspace) or admin_svc.get_llm_settings()
             return client
@@ -2238,6 +2242,8 @@ def make_server(
                 return self._json(200, {"project": meta, "version": version.id})
 
             if u.path == "/api/keep":
+                if not self._same_origin():
+                    return
                 try:
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                 except json.JSONDecodeError:
@@ -2275,6 +2281,8 @@ def make_server(
                     return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
             if u.path == "/api/edit":
+                if not self._same_origin():
+                    return
                 try:
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                 except json.JSONDecodeError:
@@ -2560,6 +2568,8 @@ def make_server(
                 return self._json(200, turn.to_json())
 
             if u.path == "/api/correct":
+                if not self._same_origin():
+                    return
                 try:
                     data = json.loads(self._read_body().decode("utf-8") or "{}")
                 except json.JSONDecodeError:

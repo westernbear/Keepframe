@@ -83,12 +83,19 @@ def test_text_props_scores_tight_crop_and_keeps_measured_size(monkeypatch, candi
         return candidates
 
     monkeypatch.setattr("keepframe.analyze.text.font_candidates", rank)
+    def guess(stroke, text, size, ranked):
+        assert ranked == candidates
+        calls.append((stroke.copy(), text, size))
+        return "sans-serif"
+    monkeypatch.setattr("keepframe.analyze.text.font_family_guess", guess)
     raw, canon, cf, font, color = text_props(track, frames, (0, 0, 0), 1, 0)
     stroke, text, size = calls[0]
-    assert len(calls) == 1 and stroke.shape == (4, 14) and stroke.all()
+    assert len(calls) == 2 and stroke.shape == (4, 14) and stroke.all()
+    np.testing.assert_array_equal(calls[1][0], stroke)
+    assert calls[1][1:] == (text, size)
     assert (text, size) == ("Text", 16.0)
     assert font.candidates == candidates
-    assert font.family_guess == (candidates[0] if candidates else "sans-serif")
+    assert font.family_guess == "sans-serif"
     assert (font.size_px, font.weight, cf, color) == (16.0, 400, 0, "#ffffff")
     assert canon.shape == (20, 30, 4)
     np.testing.assert_array_equal(raw[0], [20, 13, 1, 1, 0, 0, 0, 1])

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..ir.schema import DEFAULTS, Element, Scene, Track, UIComponent
+from ..ir.paths import scene_asset_path
 from ..ir.tracks import eval_track
 from ..jobs.spec import JobSpec
 from .plan import (
@@ -23,8 +24,8 @@ AssetResolver = Callable[[str], tuple[bytes, str]]
 
 
 def preflight_lottie(scene: Scene) -> None:
-    if scene.background.kind != "color":
-        raise PlanConflict("Lottie only supports solid backgrounds")
+    if scene.background.kind not in {"color", "image"}:
+        raise PlanConflict(f"Lottie does not support background kind {scene.background.kind}")
     for element in scene.elements:
         if element.kind == "3d" or element.canonical.model:
             raise PlanConflict(f"Lottie does not support 3D element {element.id}")
@@ -180,6 +181,14 @@ def animation_from_scene(scene: Scene, resolve_asset: AssetResolver) -> dict:
         "sc": scene.background.value, "ks": {"o": {"a": 0, "k": 100}, "r": {"a": 0, "k": 0}, "p": {"a": 0, "k": [0, 0, 0]}, "a": {"a": 0, "k": [0, 0, 0]}, "s": {"a": 0, "k": [100, 100, 100]}},
         "ip": 0, "op": scene.frames, "st": 0, "bm": 0,
     }]
+    if scene.background.kind == "image":
+        content, mime = resolve_asset(scene.background.value)
+        asset_id = "image-background"
+        assets.append({"id": asset_id, "w": scene.size[0], "h": scene.size[1], "u": "",
+                       "p": f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}", "e": 1})
+        layers[0].update(ty=2, refId=asset_id)
+        for key in ("sw", "sh", "sc"):
+            del layers[0][key]
     fonts: set[str] = set()
     ordered = sorted(scene.elements, key=lambda element: element.z.keys[0].v)
     for element in ordered:
@@ -218,7 +227,7 @@ def write_lottie(scene: Scene, scene_dir: Path, output: Path) -> Path:
     scene_dir = Path(scene_dir)
 
     def resolve(raw: str) -> tuple[bytes, str]:
-        path = scene_dir / raw
+        path = scene_asset_path(scene_dir, raw)
         return path.read_bytes(), mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
     output = Path(output)
