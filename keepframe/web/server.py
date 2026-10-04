@@ -23,7 +23,7 @@ from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
-from keepframe.ir.schema import FontGuess
+from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
@@ -637,11 +637,10 @@ class ReviewState:
         with self.lock:
             if self.job["status"] == "running":
                 raise RuntimeError("busy")
-            if op == "text" and args.get("font") and "family_guess" in args["font"]:
-                family = args["font"]["family_guess"]
-                if not isinstance(family, str) or not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", family.strip()):
-                    raise ValueError("font family may only contain 1–64 letters, digits, spaces and hyphens")
-            font = FontGuess(**args["font"]) if op == "text" and args.get("font") else None
+            font_data = args.get("font") if op == "text" else None
+            if font_data and "family_guess" in font_data:
+                font_data = {**font_data, "family_guess": validate_font_family(font_data["family_guess"])}
+            font = FontGuess(**font_data) if font_data else None
             try:
                 corrections.validate_correction_targets(self.root, self.scene_id, op, args)
             except KeyError as exc:
@@ -2522,8 +2521,12 @@ def make_server(
                             elif op == "bbox":
                                 v = corrections.add_bbox_prompt(root, resolved_scene_id, int(cargs["frame"]), tuple(int(x) for x in cargs["bbox"]), cargs["object_id"], note=cargs.get("note", "bbox prompt"))
                             else:
+                                font_data = cargs.get("font")
+                                if font_data and "family_guess" in font_data:
+                                    font_data = {**font_data, "family_guess": validate_font_family(font_data["family_guess"])}
+                                font = FontGuess(**font_data) if font_data else None
                                 v = corrections.edit_text(root, resolved_scene_id, cargs["element_id"], text=cargs.get("text"),
-                                                            font=FontGuess(**cargs["font"]) if cargs.get("font") else None,
+                                                            font=font,
                                                             note=cargs.get("note", "edit text"))
                             return {"version": v.model_dump()}
 

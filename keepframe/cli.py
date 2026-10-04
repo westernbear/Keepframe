@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"scenes": [s.id for s in p.scenes], "version": p.versions[-1].id})); return 0
     if a.cmd == "correct":
         from .review import corrections as C
-        from .ir.schema import FontGuess
+        from .ir.schema import FontGuess, validate_font_family
         kw = json.loads(a.args)
         if a.op == "reassign":
             v = C.reassign_id(Path(a.root), a.scene, tuple(kw["frames"]), kw["from_id"], kw["to_id"], note=kw.get("note", "reassign id"))
@@ -140,8 +140,15 @@ def main(argv: list[str] | None = None) -> int:
         elif a.op == "bbox":
             v = C.add_bbox_prompt(Path(a.root), a.scene, kw["frame"], tuple(kw["bbox"]), kw["object_id"], note=kw.get("note", "bbox prompt"))
         else:
+            font_data = kw.get("font")
+            if font_data and "family_guess" in font_data:
+                try:
+                    font_data = {**font_data, "family_guess": validate_font_family(font_data["family_guess"])}
+                except ValueError as exc:
+                    co.error(str(exc))
+            font = FontGuess(**font_data) if font_data else None
             v = C.edit_text(Path(a.root), a.scene, kw["element_id"], text=kw.get("text"),
-                            font=FontGuess(**kw["font"]) if kw.get("font") else None, note=kw.get("note", "edit text"))
+                            font=font, note=kw.get("note", "edit text"))
         print(v.model_dump_json(indent=2)); return 0
     if a.cmd == "gate-m2":
         from .gates import m2_gate

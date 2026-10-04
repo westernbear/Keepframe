@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..ir.schema import Element, Scene
+from ..ir.schema import Element, Scene, validate_font_family
 from .retime import apply_timing, retimed_range, timing_args
 from .textraster import resolve_families
 
@@ -50,8 +50,8 @@ class Target(BaseModel):
                 self.value = self.value.strip() or None
             if not (self.value or self.weight):
                 raise ValueError("font needs a family or weight")
-            if self.value and not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", self.value):
-                raise ValueError("font family may only contain letters, digits, spaces and hyphens")
+            if self.value:
+                self.value = validate_font_family(self.value)
         return self
 
 

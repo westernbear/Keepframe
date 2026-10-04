@@ -9,6 +9,16 @@ from ..log import get
 Ease = tuple[float, float, float, float]
 PROPS = ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity")
 DEFAULTS: dict[str, float] = {"x": 0.0, "y": 0.0, "sx": 1.0, "sy": 1.0, "rot": 0.0, "skx": 0.0, "sky": 0.0, "opacity": 1.0}
+FONT_FAMILY_RE = re.compile(r"[A-Za-z0-9 \-가-힣]{1,64}")
+
+
+def validate_font_family(value: object) -> str:
+    """Normalize a font family from input, rejecting unsafe or empty names."""
+    if isinstance(value, str):
+        value = value.strip()
+        if FONT_FAMILY_RE.fullmatch(value):
+            return value
+    raise ValueError("font family may only contain letters, digits, spaces and hyphens (1–64 characters)")
 
 
 class Keyframe(BaseModel):
@@ -39,12 +49,12 @@ class FontGuess(BaseModel):
 
     @field_validator("family_guess", mode="before")
     @classmethod
-    def _safe_family(cls, value: str) -> str:
-        value = value.strip() if isinstance(value, str) else ""
-        if not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", value):
+    def _safe_family(cls, value: object) -> str:
+        try:
+            return validate_font_family(value)
+        except ValueError:
             get("keepframe.ir").warning("invalid stored font family; using sans-serif")
             return "sans-serif"
-        return value
 
 
 class Canonical(BaseModel):
