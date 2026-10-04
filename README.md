@@ -42,6 +42,28 @@ http://127.0.0.1:8765/ landing. Maker UI at `/library` and `/new` (Korean by def
 
 CLI-generated project directories placed under the workspace appear in the library even without `meta.json`; the first metadata change creates that file. Analysis creates `overrides.json` without overwriting existing overrides, and frame-stage reruns reuse the recorded source range.
 
+In review, choose a keep preset before approving the analysis:
+
+| Preset | Keeps |
+| --- | --- |
+| `content_only` (default) | Motion type, direction, distance, duration and temporal relations |
+| `motion_shape` | Motion type, direction and order |
+| `none` | No keep predicates |
+
+After approval, ask the agent for an edit. Confirm its preview in the browser.
+
+| Edit | Changes |
+| --- | --- |
+| `text` | Text copy |
+| `color` | Element color |
+| `background` | Scene background color |
+| `font` | Font family or weight |
+| `timing` | Speed or element delay |
+| `texture` | Texture from a PNG/JPEG attachment |
+| `model` | 3D model |
+
+ChatGPT login uses a direct Responses client with `gpt-6.1-sol` by default. VLM labels and captions are suggestions; timing, position and size stay measured.
+
 The optional After Effects relay is a second, connector-only listener. Set
 `KEEPFRAME_AE_RELAY_URL`, `KEEPFRAME_AE_RELAY_HOST`,
 `KEEPFRAME_AE_RELAY_PORT`, and `KEEPFRAME_AE_RELAY_TOKEN` together; partial
@@ -94,6 +116,7 @@ The five admin pages share the Korean/English toggle. Entity values and timestam
 
 ```bash
 keepframe analyze --video ref.mp4 --start 0 --end 90 --out ./out
+keepframe analyze --video ui.mp4 --start 0 --end 90 --out ./ui-out --ui --no-captions
 keepframe compose --scene ./out/scenes/s1/scene.json --out ./out/comp.html
 keepframe render --scene ./out/scenes/s1/scene.json --html ./out/comp.html --out ./out/frames --mp4
 keepframe verify --scene ./out/scenes/s1/scene.json --render-json ./out/frames/render.json
@@ -101,6 +124,16 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 ```
 
 `--end` is inclusive. `correct` ops: `reassign`, `mask`, `bbox`, `text`.
+`analyze --ui` enables UI parsing. `--no-captions` skips optional VLM captions.
+
+Real-clip evaluation caps each clip with `--max-frames`. Prompt evaluation previews typed edits on project copies; it does not execute them.
+
+```bash
+keepframe gate-m2-real --clips eval/clips --out eval/out/final --max-frames 150
+python scripts/eval_prompts.py --project eval/out/final/ig2 --scene s1 --workspace ./data/workspace
+```
+
+Results: [core-flow evaluation](docs/qa/core-flow/README.md).
 
 ## CLI
 
@@ -116,6 +149,7 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 | `ae-connect` | Pair or resume the Windows connector and local MCP bridge |
 | `synth` | Synthetic scene |
 | `gate-m1` / `gate-m2` | Synthetic gates |
+| `gate-m2-real` | Real-clip evaluation; `--max-frames` defaults to 150 |
 
 ## Docker
 
@@ -140,8 +174,12 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ## Limits
 
 - Flat 2D motion graphics and UI recordings only
+- Background plates assume a static camera
+- Font candidates come only from installed fonts
+- Agent edits are preview-only; confirm in the browser
 - Keep predicates required on every edit
 - Repair retries: 4. Asset generation: 2. Caps are display-only
+- After Effects work is frozen until the core flow is validated
 
 ### Reference analysis review
 
