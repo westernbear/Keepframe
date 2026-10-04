@@ -29,6 +29,7 @@ def scene():
 
 @pytest.mark.parametrize("targets, expected", [
     ([{"element": "headline", "property": "text"}], True),
+    ([{"element": "headline", "property": "text"}, {"element": "headline", "property": "text"}], True),
     ([{"element": "other", "property": "text", "value": "A Weekend Away"}], False),
     ([{"element": "headline", "property": "font"}], False),
     ([{"element": "missing", "property": "text"}], False),
@@ -83,6 +84,23 @@ def test_gold_constraints_must_match_the_same_target(scene):
     targets = [{"element": "headline", "property": "text"}, {"element": "card", "property": "color"}]
     assert eval_prompts.gold_match(scene, targets,
                                    {"property": "text", "text": "A Weekend Away", "at": [50, 30, 1.2]}) is False
+
+
+@pytest.mark.parametrize("reverse_targets", [False, True])
+@pytest.mark.parametrize("targets, gold", [
+    ([{"element": "headline", "property": "text"}, {"element": "other", "property": "text"}],
+     {"property": "text", "text": "A Weekend Away"}),
+    ([{"element": "headline", "property": "text"}, {"element": "headline", "property": "font"}],
+     {"property": "text", "text": "A Weekend Away"}),
+    ([{"element": "card", "property": "color"}, {"element": "other", "property": "color"}],
+     {"property": "color", "at": [50, 30, 1.2]}),
+    ([{"element": None, "property": "background"}, {"element": "card", "property": "background"}],
+     {"property": "background"}),
+])
+def test_gold_rejects_any_non_matching_target(scene, targets, gold, reverse_targets):
+    if reverse_targets:
+        targets = list(reversed(targets))
+    assert eval_prompts.gold_match(scene, targets, gold) is False
 
 
 def test_eval_gold_reports_correct_only_for_successful_typed_matching_targets(scene, tmp_path, monkeypatch, capsys):

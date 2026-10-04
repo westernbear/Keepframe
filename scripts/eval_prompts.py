@@ -29,29 +29,28 @@ PROMPTS = [
 
 
 def gold_match(scene: Scene, targets: list[dict], gold: dict) -> bool:
-    """Match a typed target to original content or a scene-percent point at seconds."""
-    if not gold.get("property"):
+    """Require every typed target to match original content or a scene-percent point at seconds."""
+    if not targets or not gold.get("property"):
         return False
     for target in targets:
         if target.get("property") != gold.get("property"):
-            continue
+            return False
         if "text" not in gold and "at" not in gold:
-            if target.get("element") is None:
-                return True
+            if target.get("element") is not None:
+                return False
             continue
         element = next((e for e in scene.elements if e.id == target.get("element")), None)
         if element is None or gold["property"] == "background":
-            continue
+            return False
         if "text" in gold and gold["text"].casefold() not in (element.canonical.text or "").casefold():
-            continue
+            return False
         if "at" in gold:
             x, y, seconds = gold["at"]
             x0, y0, x1, y1 = element_bbox(element, round(seconds * scene.fps))
             if not (x0 <= x * scene.size[0] / 100 <= x1 and y0 <= y * scene.size[1] / 100 <= y1):
-                continue
-        # ponytail: target/property accuracy only; add value predicates for edit-value evaluation.
-        return True
-    return False
+                return False
+    # ponytail: target/property accuracy only; add value predicates for edit-value evaluation.
+    return True
 
 
 class PreviewLLM:

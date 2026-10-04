@@ -135,7 +135,16 @@ def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options
                "low_conf": sum(e.confidence < 0.7 for e in scene.elements),
                "keep_on": sum(c.keep for c in scene.constraints), "constraints": len(scene.constraints),
                "seconds": round(time.perf_counter() - t0, 1), "messages": rep["messages"]}
-        row["render_l1"] = render_fidelity(root, "s1", clip, max_frames=max_frames)["render_l1"] if render_check else None
+        row["render_l1"] = None
+        row["render_frames"] = None
+        if render_check:
+            try:
+                fidelity = render_fidelity(root, "s1", clip, max_frames=max_frames)
+            except Exception as e:
+                row["messages"].append(f"render check failed: {type(e).__name__}: {e}"[:200])
+            else:
+                row["render_l1"] = fidelity["render_l1"]
+                row["render_frames"] = len(fidelity["frames"])
         gt = clip.with_suffix(".gt.json")
         if gt.exists():
             try:

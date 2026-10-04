@@ -1,9 +1,12 @@
+import json
+
 import cv2
 import numpy as np
 import pytest
 
 from keepframe import gates
 from keepframe.analyze.pipeline import AnalyzeOptions
+from keepframe.analyze.video import render_scene_video
 from keepframe.compose.composer import compose
 from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
 from keepframe.ir.store import init_project, new_version, scene_dir
@@ -59,10 +62,47 @@ def test_real_gate_render_check_is_optional_and_preserves_frame_limit(tmp_path):
 
     default = gates.m2_gate_real(clips, tmp_path / "unchecked", max_frames=11, options=options)
     assert default["rows"][0]["render_l1"] is None
+    assert default["rows"][0]["render_frames"] is None
     checked = gates.m2_gate_real(clips, tmp_path / "checked", max_frames=11, options=options, render_check=True)
     row = checked["rows"][0]
     assert row["frames"] == 11
     assert 0 <= row["render_l1"] <= 1
+    assert row["render_frames"] == 2
+
+
+@pytest.mark.parametrize("error", [
+    RuntimeError("Chromium launch failed"),
+    FileNotFoundError("unreadable clip"),
+    ValueError("no source frames to compare: " + "x" * 250),
+])
+def test_real_gate_continues_after_render_check_failure(tmp_path, monkeypatch, error):
+    _, scene, sd = _project(tmp_path)
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    first = render_scene_video(scene, sd, clips / "a-failed.mp4")
+    (clips / "b-good.mp4").write_bytes(first.read_bytes())
+    first.with_suffix(".gt.json").write_text(json.dumps({"elements": []}))
+
+    def render_check(root, scene_id, clip, sample_every=10, max_frames=150):
+        if clip.name == "a-failed.mp4":
+            raise error
+        return {"render_l1": 0.125, "frames": [0, 10]}
+
+    monkeypatch.setattr(gates, "render_fidelity", render_check)
+    out = tmp_path / "out"
+    result = gates.m2_gate_real(clips, out, max_frames=11, options=AnalyzeOptions(ocr=False, refine=False),
+                                render_check=True)
+
+    assert result["clips"] == 2
+    failed, good = result["rows"]
+    assert [row["clip"] for row in result["rows"]] == ["a-failed.mp4", "b-good.mp4"]
+    assert failed["render_l1"] is None and failed["render_frames"] is None
+    report = json.loads((scene_dir(out / "a-failed", "s1") / "report.json").read_text())
+    assert failed["messages"] == report["messages"] + [f"render check failed: {type(error).__name__}: {error}"[:200]]
+    assert len(failed["messages"][-1]) <= 200
+    assert failed["pos_err_px"] is None
+    assert good["render_l1"] == 0.125 and good["render_frames"] == 2
+    assert not any(message.startswith("render check failed:") for message in good["messages"])
 
 
 def test_real_gate_cli_accepts_render_check(tmp_path, capsys):
