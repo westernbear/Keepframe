@@ -1,5 +1,5 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261003j";
-import { T, Tf } from "/static/js/i18n.js?v=20261003j";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261004a";
+import { T, Tf } from "/static/js/i18n.js?v=20261004a";
 
 const STATUS_KEYS = { ok: "admin.status.ok", quota: "admin.status.quota", suspended: "admin.status.suspended" };
 const ROLE_KEYS = { admin: "admin.role.admin", billing: "admin.role.billing", review_lead: "admin.role.reviewLead", maker: "admin.role.maker" };

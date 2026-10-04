@@ -110,8 +110,7 @@ def test_main_evaluates_typed_edits_on_independent_copies(tmp_path, monkeypatch,
         assert current_scene(ctx.root, scene_id)[1].id == "v1"
         copies.append(ctx.root)
         result = real_turn(self, ctx, prompt, history)
-        if prompt == PROMPTS[0]:
-            assert current_scene(ctx.root, scene_id)[1].id == "v2"
+        assert current_scene(ctx.root, scene_id)[1].id == "v1"
         return result
 
     monkeypatch.setattr(SessionAgent, "turn", turn)
@@ -123,14 +122,14 @@ def test_main_evaluates_typed_edits_on_independent_copies(tmp_path, monkeypatch,
     captured = capsys.readouterr()
     report = json.loads(captured.out)
     assert set(report) == {"ok", "typed_ok", "n", "rows"}
-    assert report["ok"] == 5 and report["n"] == 8
-    assert report["typed_ok"] == 5
+    assert report["ok"] == 4 and report["n"] == 8
+    assert report["typed_ok"] == 4
     assert eval_prompts.PROMPTS == PROMPTS
     assert llm.prompts == PROMPTS and llm.replies == []
     assert made == [(saved, workspace)]
     assert [row["prompt"] for row in report["rows"]] == PROMPTS
-    assert [row["ok"] for row in report["rows"]] == [True, True, True, False, True, False, False, True]
-    assert [row["typed"] for row in report["rows"]] == [True, True, True, False, True, True, True, True]
+    assert [row["ok"] for row in report["rows"]] == [False, True, True, False, True, False, False, True]
+    assert [row["typed"] for row in report["rows"]] == [False, True, True, False, True, True, True, True]
     for row in report["rows"]:
         assert set(row) == {"prompt", "ok", "typed", "calls", "results", "targets", "reply"}
         assert isinstance(row["ok"], bool)
@@ -138,8 +137,12 @@ def test_main_evaluates_typed_edits_on_independent_copies(tmp_path, monkeypatch,
         assert len(row["calls"]) == len(row["results"])
         assert len(row["reply"]) <= 200
     rows = report["rows"]
-    assert [c["name"] for c in rows[0]["calls"]] == ["set_keep", "edit"]
-    assert rows[0]["targets"] == [{"element": "e1", "property": "text", "value": "가을 신상", "element_exists": True}]
+    # A keep preview stops the turn before the queued edit until browser confirmation.
+    assert "error" not in rows[0]
+    assert [c["name"] for c in rows[0]["calls"]] == ["set_keep"]
+    assert rows[0]["targets"] == []
+    assert rows[0]["results"][0]["needs_confirm"] is True
+    assert rows[0]["results"][0]["payload"] == {"keep_change": {"preset": "none"}}
     assert rows[1]["targets"][0]["value"] == "attachment"
     assert rows[2]["targets"] == [{"element": None, "property": "background", "value": "#001133", "element_exists": None}]
     assert rows[3]["targets"] == rows[3]["calls"] == []

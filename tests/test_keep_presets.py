@@ -37,15 +37,18 @@ def test_analysis_turns_on_default_preset(tmp_path):
     assert any(c.keep for c in scene.constraints if c.pred.startswith("type("))
 
 
-def test_set_keep_preset_tool(tmp_path):
+def test_set_keep_preset_tool_only_previews(tmp_path):
     root = tmp_path / "proj"
     scene = make_synthetic_scene(root / "scenes" / "s1", seed=2, with_text=False, frames=12).model_copy(update={"id": "s1"})
     scene.constraints = extract_constraints(scene)
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]}, scene)
     res = run_tool("set_keep", SessionContext(root=root, scene_id="s1"), {"preset": "all"})
     assert res["ok"] is True
-    updated, _ = current_scene(root, "s1")
-    assert all(c.keep for c in updated.constraints)
+    assert res["needs_confirm"] is True
+    assert res["payload"] == {"keep_change": {"preset": "all"}}
+    updated, version = current_scene(root, "s1")
+    assert version.id == "v1"
+    assert updated.constraints == scene.constraints
     assert run_tool("set_keep", SessionContext(root=root, scene_id="s1"), {"preset": "nope"})["ok"] is False
 
 

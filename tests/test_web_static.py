@@ -253,11 +253,147 @@ def test_agent_sends_attachment_on_confirm():
     assert "attachment: attachmentMeta()" in js
 
 
+def test_agent_keep_and_correction_use_browser_confirmation_apis():
+    js = static_src("js/agent.js")
+    assert 'payloadOf(turn.results, "keep_change")' in js
+    assert 'payloadOf(turn.results, "correction")' in js
+    assert "postKeep(" in js
+    assert "postCorrect(" in js
+    assert "fetchReviewJob(" in js
+
+
+def test_agent_keep_and_correction_copy_is_bilingual():
+    ko, en = static_src("js/i18n.js").split("en: {", 1)
+    for key in ("agent.keepPresetPreview", "agent.keepOnPreview", "agent.keepOffPreview",
+                "agent.keepPreviewChanged", "agent.correctionPreview", "agent.applied"):
+        assert f'"{key}":' in ko
+        assert f'"{key}":' in en
+
+
+@pytest.mark.parametrize("scenario", [
+    "keep_preset", "keep_targets", "keep_error", "keep_mismatch",
+    "correct_done", "correct_submit_error", "correct_job_error", "correct_poll_error",
+])
+def test_agent_pending_mutations_execute_only_on_click(tmp_path, scenario):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    js = static_src("js/agent.js")
+    pending = js[js.index("function payloadOf("):js.index("\nfunction confirmEditBody(")]
+    script = tmp_path / "agent-pending.mjs"
+    script.write_text('''import assert from 'node:assert/strict';
+import vm from 'node:vm';
+const scenario = ''' + json.dumps(scenario) + ''';
+const buttons = [], requests = [], banners = [], refreshed = [], summaries = [], polls = [];
+class Element {
+  constructor() { this.disabled = false; this.listeners = {}; }
+  addEventListener(event, handler) { this.listeners[event] = handler; }
+  click() { return this.listeners.click(); }
+}
+const constraints = [
+  {pred:"type(e1,'translation')", keep:true},
+  {pred:'left(e1,e2)', keep:true},
+  {pred:'right(e10,e2)', keep:false},
+  {pred:"type(e2,'translation')", keep:false},
+];
+const snapshots = [
+  {status:'running', op:'text'}, {status:'running', op:'text'},
+  scenario === 'correct_job_error'
+    ? {status:'error', error:'correction failed'}
+    : {status:'done', version:'v2'},
+];
+const context = vm.createContext({
+  projectId:'p1', sceneId:'s1', versionId:'v1', pendingIntent:null,
+  state:{scene:{constraints}}, CORRECTION_POLL_INTERVAL_MS:800,
+  document:{createElement:() => new Element()},
+  logEl:{appendChild:el => buttons.push(el), scrollTop:0, scrollHeight:1},
+  T:key => key, Tf:(key, vars) => key + JSON.stringify(vars),
+  setBanner:(message, failure=false) => banners.push({message, failure}),
+  appendAgent:message => summaries.push(message),
+  refreshAfterEdit:async version => {
+    assert.equal(requests.length, 1, 'refresh follows exactly one confirmed request');
+    if (scenario.startsWith('correct')) assert.equal(snapshots.length, 0, 'refresh waits for done');
+    refreshed.push(version);
+  },
+  postKeep:async (...args) => {
+    requests.push({kind:'keep', args});
+    if (scenario === 'keep_error') throw new Error('keep save failed');
+    return {version:{id:'v2'}};
+  },
+  postCorrect:async (...args) => {
+    requests.push({kind:'correct', args});
+    if (scenario === 'correct_submit_error') throw new Error('correction submit failed');
+    return {job:{status:'running', op:'text'}};
+  },
+  fetchReviewJob:async (...args) => {
+    polls.push(args);
+    if (scenario === 'correct_poll_error') throw new Error('poll failed');
+    assert.ok(snapshots.length, 'polling stops at a terminal status');
+    return snapshots.shift();
+  },
+  setTimeout:fn => { fn(); return 1; },
+});
+vm.runInContext(''' + json.dumps(pending) + ''', context);
+const isCorrect = scenario.startsWith('correct');
+const payload = isCorrect
+  ? {correction:{op:'text', args:{element_id:'e1', text:'Hello', version:'untrusted'}}}
+  : {keep_change:scenario === 'keep_preset'
+      ? {preset:'all'}
+      : {targets:['e1', 'left(e1,e2)', 'e1'], on:false, matched:scenario === 'keep_mismatch' ? 4 : 3}};
+context.paintPending({results:[{ok:true, payload}], needs_confirm:true, needs_choice:false});
+assert.equal(requests.length, 0, 'painting a preview must never execute it');
+assert.equal(polls.length, 0, 'painting must never poll correction jobs');
+assert.ok(summaries.length, 'show a translated preview');
+if (scenario === 'keep_mismatch') {
+  assert.equal(buttons.length, 0, 'a mismatched preview cannot be confirmed');
+  assert.ok(banners.at(-1).failure);
+} else {
+  assert.equal(buttons.length, 1);
+  // Snapshot matching predicates and the displayed version before confirmation.
+  constraints.push({pred:'bottom(e1,e3)', keep:true});
+  context.versionId = 'v99';
+  await Promise.all([buttons[0].click(), buttons[0].click()]);
+  assert.equal(requests.length, 1, 'double click must not submit twice');
+  const args = requests[0].args;
+  assert.deepEqual(args.slice(0, 2), ['p1', 's1']);
+  if (isCorrect) {
+    assert.equal(requests[0].kind, 'correct');
+    assert.equal(args[2], 'text');
+    assert.equal(args[3].element_id, 'e1');
+    assert.equal(args[3].text, 'Hello');
+    assert.equal(args[3].version, 'v1', 'use the preview version, overriding model args');
+  } else if (scenario === 'keep_preset') {
+    assert.equal(args[4], 'all');
+    assert.equal(args[2].length, 0);
+  } else {
+    assert.deepEqual(JSON.parse(JSON.stringify(args[2])), [
+      {pred:"type(e1,'translation')", keep:false},
+      {pred:'left(e1,e2)', keep:false},
+      {pred:'right(e10,e2)', keep:false},
+    ], 'submit exact predicates using equality or substring matching');
+  }
+  if (scenario.endsWith('error')) {
+    assert.equal(refreshed.length, 0);
+    assert.ok(banners.at(-1).failure, 'show request, job and polling errors in the banner');
+    assert.equal(buttons[0].disabled, false, 'allow retry after failure');
+  } else {
+    assert.deepEqual(refreshed, ['v2']);
+    assert.equal(banners.at(-1).failure, false);
+    assert.equal(buttons[0].disabled, true, 'do not repeat an applied change');
+    await buttons[0].click();
+    assert.equal(requests.length, 1);
+  }
+}
+''')
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261003j"}
+    assert stamps == {"20261004a"}
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):

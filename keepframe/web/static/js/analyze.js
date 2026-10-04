@@ -1,6 +1,6 @@
-import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261003j";
-import { T, Tf } from "/static/js/i18n.js?v=20261003j";
-import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261003j";
+import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261004a";
+import { T, Tf } from "/static/js/i18n.js?v=20261004a";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261004a";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
 const SECONDS_PER_MINUTE = 60;

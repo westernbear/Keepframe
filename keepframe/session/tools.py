@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from ..analyze.constraints import KEEP_PRESETS, apply_keep_preset
-from ..ir.store import current_scene, new_version, scene_dir
+from ..analyze.constraints import KEEP_PRESETS
+from ..ir.store import current_scene, scene_dir
 from ..log import get
 
 log = get("keepframe.session")
@@ -64,34 +64,35 @@ def _correct(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     op = args.get("op")
     if op not in ("reassign", "mask", "bbox", "text"):
         return _fail(f"지원하지 않는 보정 연산 {op!r}입니다. reassign/mask/bbox/text 중 하나를 쓰세요.")
-    if ctx.submit_job is None:
-        return _fail("correct는 작업 큐가 필요합니다.")
-    job = ctx.submit_job("correct", {"op": op, "args": args.get("args", {})}, "correct")
-    return _ok(f"보정({op}) 작업을 큐에 넣었습니다.", job=job)
+    return _pending(
+        f"보정({op}) 미리보기를 준비했습니다. 브라우저에서 확인하면 실행됩니다.",
+        confirm=True,
+        correction={"op": op, "args": args.get("args", {})},
+    )
 
 
 def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     preset = args.get("preset")
     if preset is not None:
-        scene, parent = _current(ctx)
-        try:
-            scene.constraints = apply_keep_preset(scene.constraints, str(preset))
-        except ValueError as e:
-            return _fail(str(e))
-        v = new_version(ctx.root, ctx.scene_id, scene, note=f"keep preset {preset}", auto=False, parent_version=parent.id)
-        return _ok(f"keep 프리셋 {preset}을 적용했습니다.", version=v.model_dump())
-    scene, parent = _current(ctx)
-    targets = set(args.get("targets") or [])
+        if preset not in KEEP_PRESETS:
+            return _fail(f"unknown keep preset {preset!r}")
+        return _pending(
+            f"keep 프리셋 {preset} 미리보기를 준비했습니다. 브라우저에서 확인하면 적용됩니다.",
+            confirm=True,
+            keep_change={"preset": preset},
+        )
+    scene, _ = _current(ctx)
+    requested_targets = args.get("targets") or []
+    targets = set(requested_targets)
     on = bool(args.get("on", True))
-    touched = 0
-    for c in scene.constraints:
-        if c.pred in targets or any(t in c.pred for t in targets):
-            c.keep = on
-            touched += 1
-    if touched == 0:
+    matched = sum(c.pred in targets or any(t in c.pred for t in targets) for c in scene.constraints)
+    if matched == 0:
         return _fail("대상과 일치하는 keep 조건을 찾지 못했습니다.")
-    v = new_version(ctx.root, ctx.scene_id, scene, note=f"keep {'on' if on else 'off'} {len(targets)} targets", auto=False, parent_version=parent.id)
-    return _ok(f"keep 조건 {touched}개를 {'유지' if on else '해제'}했습니다.", version=v.model_dump())
+    return _pending(
+        f"keep 조건 {matched}개를 {'유지' if on else '해제'}할 미리보기입니다. 브라우저에서 확인하면 적용됩니다.",
+        confirm=True,
+        keep_change={"targets": requested_targets, "on": on, "matched": matched},
+    )
 
 
 def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -272,13 +273,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     _fn("analyze", "레퍼런스 영상을 IR 장면으로 (재)분석한다.", {"mode": {"type": "string"}}, []),
     _fn(
         "correct",
-        "검수 보정 4연산(reassign/mask/bbox/text) 중 하나를 실행한다.",
+        "검수 보정 4연산(reassign/mask/bbox/text) 중 하나의 미리보기만 준비한다. 실행은 사용자가 브라우저에서 확인한 뒤 이뤄진다.",
         {"op": {"type": "string", "enum": ["reassign", "mask", "bbox", "text"]}, "args": {"type": "object"}},
         ["op"],
     ),
     _fn(
         "set_keep",
-        "요소나 keep 술어의 유지 여부를 켜고 끈다.",
+        "요소나 keep 술어의 유지 여부 변경 미리보기만 준비한다. 적용은 사용자가 브라우저에서 확인한 뒤 이뤄진다.",
         {"targets": {"type": "array", "items": {"type": "string"}}, "on": {"type": "boolean"}, "preset": {"type": "string", "enum": sorted(KEEP_PRESETS)}},
         [],
     ),

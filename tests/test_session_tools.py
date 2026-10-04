@@ -1,9 +1,12 @@
 import json
+from unittest.mock import Mock
+
+import pytest
 
 from keepframe.analyze.constraints import extract_constraints
 from keepframe.edit.agent import edit
 from keepframe.ir.schema import Background, Constraint, Element, Canonical, Scene
-from keepframe.ir.store import current_scene, init_project, scene_dir
+from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.session.tools import SessionContext, run_tool
 
@@ -12,20 +15,104 @@ def _ctx(root, scene_id="s1", version=None):
     return SessionContext(root=root, scene_id=scene_id, version=version)
 
 
-def test_set_keep_toggles_matching_constraints(tmp_path):
+def _keep_project(tmp_path):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"
     scene = make_synthetic_scene(sd, seed=2, with_text=False, frames=12)
     scene = scene.model_copy(update={"id": "s1"})
-    scene.constraints = extract_constraints(scene)
+    scene.constraints = [
+        Constraint(pred="type(e1,'translation')", keep=True),
+        Constraint(pred="left(e1,e2)", keep=True),
+        Constraint(pred="right(e10,e2)", keep=False),
+        Constraint(pred="type(e2,'translation')", keep=False),
+    ]
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]}, scene)
+    return root, scene
 
-    target = scene.constraints[0].pred
-    res = run_tool("set_keep", _ctx(root), {"targets": [target], "on": True})
+
+@pytest.mark.parametrize("targets,on,matched", [
+    (["e1"], False, 3),
+    (["type(e1,'translation')"], True, 1),
+    (["e1", "left(e1,e2)", "e1"], True, 3),
+    (["e"], False, 4),
+])
+def test_set_keep_previews_matching_constraints_without_mutation(tmp_path, targets, on, matched):
+    root, scene = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+
+    res = run_tool("set_keep", _ctx(root), {"targets": targets, "on": on, "confirm": True})
     assert res["ok"] is True
-    assert res["payload"]["version"]["id"] == "v2"
-    updated, _ = current_scene(root, "s1")
-    assert next(c for c in updated.constraints if c.pred == target).keep is True
+    assert res["needs_confirm"] is True
+    assert res["needs_choice"] is False
+    assert res["payload"] == {"keep_change": {"targets": targets, "on": on, "matched": matched}}
+    assert load_project(root).model_dump() == before
+    unchanged, version = current_scene(root, "s1")
+    assert version.id == "v1"
+    assert unchanged.constraints == scene.constraints
+
+
+@pytest.mark.parametrize("preset", ["all", "none", "content_only", "motion_shape"])
+def test_set_keep_preset_only_previews(tmp_path, preset):
+    root, scene = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+
+    res = run_tool("set_keep", _ctx(root), {"preset": preset})
+
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"] == {"keep_change": {"preset": preset}}
+    assert load_project(root).model_dump() == before
+    assert current_scene(root, "s1")[0].constraints == scene.constraints
+
+
+def test_set_keep_rejects_unknown_preset_without_mutation(tmp_path):
+    root, _ = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+    res = run_tool("set_keep", _ctx(root), {"preset": "invalid"})
+    assert res["ok"] is False
+    assert res["needs_confirm"] is False
+    assert load_project(root).model_dump() == before
+
+
+@pytest.mark.parametrize("op", ["reassign", "mask", "bbox", "text"])
+def test_correct_only_previews_and_never_submits_job(tmp_path, op):
+    submit = Mock(return_value={"id": "job1"})
+    args = {"element_id": "e1", "text": "Hello"}
+    ctx = SessionContext(root=tmp_path, scene_id="s1", submit_job=submit)
+
+    res = run_tool("correct", ctx, {"op": op, "args": args, "confirm": True})
+
+    submit.assert_not_called()
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"] == {"correction": {"op": op, "args": args}}
+
+
+def test_correct_preview_does_not_need_job_queue(tmp_path):
+    res = run_tool("correct", _ctx(tmp_path), {"op": "text"})
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"] == {"correction": {"op": "text", "args": {}}}
+
+
+@pytest.mark.parametrize("op", [None, "invalid"])
+def test_correct_rejects_unknown_op_without_submitting(tmp_path, op):
+    submit = Mock()
+    res = run_tool("correct", SessionContext(tmp_path, "s1", submit_job=submit), {"op": op})
+    submit.assert_not_called()
+    assert res["ok"] is False
+    assert res["needs_confirm"] is False
+
+
+def test_correct_and_keep_descriptions_require_browser_confirmation():
+    from keepframe.session.agent import SYSTEM
+    from keepframe.session.tools import TOOL_SCHEMAS
+
+    assert "correct·set_keep도 미리보기만 한다" in SYSTEM
+    for tool in TOOL_SCHEMAS:
+        if tool["function"]["name"] in ("correct", "set_keep"):
+            assert "브라우저" in tool["function"]["description"]
+            assert "미리보기" in tool["function"]["description"]
 
 
 def test_set_keep_reports_no_match(tmp_path):

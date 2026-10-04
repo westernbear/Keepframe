@@ -8,25 +8,29 @@ import {
   postAePairing,
   fetchRenderPlans,
   fetchRenderState,
+  fetchReviewJob,
   fetchReviewState,
   postAeControl,
   postAgent,
+  postCorrect,
   postEdit,
+  postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261003j";
-import { T } from "/static/js/i18n.js?v=20261003j";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261003j";
+} from "/static/js/api.js?v=20261004a";
+import { T, Tf } from "/static/js/i18n.js?v=20261004a";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261004a";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261003j";
+} from "/static/js/playback.js?v=20261004a";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
 const DEFAULT_SCENE_ID = "s1";
 const MODEL_LABEL = "LLM 도구";
 const EDIT_APPLIED = "적용 완료.";
+const CORRECTION_POLL_INTERVAL_MS = 800;
 
 const TOOL_PROMPTS = {
   analyze: "이 장면을 다시 분석해줘",
@@ -864,12 +868,16 @@ function payloadOf(results, key) {
   return hit && hit.payload ? hit.payload[key] : null;
 }
 
-function appendConfirmButton() {
+function appendConfirmButton(onConfirm = () => runConfirm(false)) {
   const confirm = document.createElement("button");
   confirm.className = "btn btn--primary";
   confirm.type = "button";
   confirm.textContent = T("agent.confirm");
-  confirm.addEventListener("click", () => runConfirm(false));
+  confirm.addEventListener("click", async () => {
+    if (confirm.disabled) return;
+    confirm.disabled = true;
+    confirm.disabled = await onConfirm() === true;
+  });
   logEl.appendChild(confirm);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -907,12 +915,73 @@ function paintPending(turn) {
     });
     return;
   }
+  const keepChange = payloadOf(turn.results, "keep_change");
+  if (keepChange) {
+    const preset = keepChange.preset != null;
+    const changes = preset ? [] : (state.scene.constraints || [])
+      .filter((c) => keepChange.targets.some((target) => c.pred === target || c.pred.includes(target)))
+      .map((c) => ({ pred: c.pred, keep: keepChange.on }));
+    appendAgent(preset
+      ? Tf("agent.keepPresetPreview", { preset: keepChange.preset })
+      : Tf(keepChange.on ? "agent.keepOnPreview" : "agent.keepOffPreview", { n: keepChange.matched }));
+    if (!preset && changes.length !== keepChange.matched) {
+      setBanner(T("agent.keepPreviewChanged"), true);
+      return;
+    }
+    appendConfirmButton(() => confirmKeepChange(keepChange, changes));
+    return;
+  }
+  const correction = payloadOf(turn.results, "correction");
+  if (correction) {
+    const previewVersion = versionId;
+    appendAgent(Tf("agent.correctionPreview", { op: correction.op }));
+    appendConfirmButton(() => confirmCorrection(correction, previewVersion));
+    return;
+  }
   pendingIntent = payloadOf(turn.results, "intent");
   const plan = payloadOf(turn.results, "plan");
   const needsChoice = Boolean(turn.needs_choice);
   const needsConfirm = Boolean(turn.needs_confirm);
   if (needsChoice) appendChoices(plan);
   if (needsConfirm) appendConfirmButton();
+}
+
+async function confirmKeepChange(keepChange, changes) {
+  setBanner("");
+  try {
+    const res = await postKeep(projectId, sceneId, changes, T("review.keepSave"), keepChange.preset);
+    await refreshAfterEdit(res.version.id);
+    appendAgent(T("agent.applied"));
+    return true;
+  } catch (err) {
+    setBanner(err.message || T("agent.failed"), true);
+    return false;
+  }
+}
+
+async function pollCorrection() {
+  while (true) {
+    const job = await fetchReviewJob(projectId, sceneId);
+    if (job.status === "done" && job.version) return job;
+    if (job.status === "error") throw new Error(job.error || T("review.error"));
+    if (!["running", "queued"].includes(job.status)) throw new Error(T("agent.failed"));
+    await new Promise((resolve) => setTimeout(resolve, CORRECTION_POLL_INTERVAL_MS));
+  }
+}
+
+async function confirmCorrection(correction, previewVersion) {
+  setBanner(Tf("review.running", { op: correction.op }));
+  try {
+    await postCorrect(projectId, sceneId, correction.op, { ...correction.args, version: previewVersion });
+    const job = await pollCorrection();
+    await refreshAfterEdit(job.version);
+    setBanner("");
+    appendAgent(T("agent.applied"));
+    return true;
+  } catch (err) {
+    setBanner(err.message || T("agent.failed"), true);
+    return false;
+  }
 }
 
 function confirmEditBody(withChoices) {
@@ -954,7 +1023,7 @@ async function runConfirm(withChoices) {
   setBanner("");
   try {
     const res = await postEdit(confirmEditBody(withChoices));
-    await applyConfirmedEdit(res);
+    return await applyConfirmedEdit(res);
   } catch (err) {
     setBanner(err.message || T("agent.failed"), true);
   }
