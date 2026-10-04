@@ -17,13 +17,13 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261004a";
-import { T, Tf } from "/static/js/i18n.js?v=20261004a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261004a";
+} from "/static/js/api.js?v=20261004b";
+import { T, Tf } from "/static/js/i18n.js?v=20261004b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261004b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261004a";
+} from "/static/js/playback.js?v=20261004b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -918,12 +918,20 @@ function paintPending(turn) {
   const keepChange = payloadOf(turn.results, "keep_change");
   if (keepChange) {
     const preset = keepChange.preset != null;
+    if (!preset && !Array.isArray(keepChange.targets)) {
+      setBanner(T("agent.keepPreviewChanged"), true);
+      return;
+    }
     const changes = preset ? [] : (state.scene.constraints || [])
       .filter((c) => keepChange.targets.some((target) => c.pred === target || c.pred.includes(target)))
       .map((c) => ({ pred: c.pred, keep: keepChange.on }));
-    appendAgent(preset
+    const preview = preset
       ? Tf("agent.keepPresetPreview", { preset: keepChange.preset })
-      : Tf(keepChange.on ? "agent.keepOnPreview" : "agent.keepOffPreview", { n: keepChange.matched }));
+      : Tf(keepChange.on ? "agent.keepOnPreview" : "agent.keepOffPreview", { n: keepChange.matched });
+    const examples = !preset && Array.isArray(keepChange.examples) ? keepChange.examples.slice(0, 5) : [];
+    appendAgent(examples.length
+      ? `${preview}\n${Tf("agent.keepExamplesPreview", { examples: examples.join("; ") })}`
+      : preview);
     if (!preset && changes.length !== keepChange.matched) {
       setBanner(T("agent.keepPreviewChanged"), true);
       return;
@@ -949,7 +957,7 @@ function paintPending(turn) {
 async function confirmKeepChange(keepChange, changes) {
   setBanner("");
   try {
-    const res = await postKeep(projectId, sceneId, changes, T("review.keepSave"), keepChange.preset);
+    const res = await postKeep(projectId, sceneId, changes, T("agent.keepChangeNote"), keepChange.preset);
     await refreshAfterEdit(res.version.id);
     appendAgent(T("agent.applied"));
     return true;

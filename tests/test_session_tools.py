@@ -15,7 +15,7 @@ def _ctx(root, scene_id="s1", version=None):
     return SessionContext(root=root, scene_id=scene_id, version=version)
 
 
-def _keep_project(tmp_path):
+def _keep_project(tmp_path, *, extra_constraints=()):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"
     scene = make_synthetic_scene(sd, seed=2, with_text=False, frames=12)
@@ -26,6 +26,7 @@ def _keep_project(tmp_path):
         Constraint(pred="right(e10,e2)", keep=False),
         Constraint(pred="type(e2,'translation')", keep=False),
     ]
+    scene.constraints.extend(extra_constraints)
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 11]}, scene)
     return root, scene
 
@@ -44,11 +45,73 @@ def test_set_keep_previews_matching_constraints_without_mutation(tmp_path, targe
     assert res["ok"] is True
     assert res["needs_confirm"] is True
     assert res["needs_choice"] is False
-    assert res["payload"] == {"keep_change": {"targets": targets, "on": on, "matched": matched}}
+    examples = [c.pred for c in scene.constraints if any(t in c.pred for t in targets)][:5]
+    assert res["payload"] == {"keep_change": {"targets": targets, "on": on, "matched": matched, "examples": examples}}
     assert load_project(root).model_dump() == before
     unchanged, version = current_scene(root, "s1")
     assert version.id == "v1"
     assert unchanged.constraints == scene.constraints
+
+
+@pytest.mark.parametrize("targets", [
+    "e1", ["e1", 1], ["e1", None], ["e1", {}], [""],
+    ["e1"] * 201, ["e1", "x" * 201], None, {"e1": True}, ("e1",),
+], ids=["string", "number_item", "null_item", "object_item", "empty_item",
+        "too_many", "too_long", "null", "object", "tuple"])
+def test_set_keep_rejects_malformed_targets_without_mutation(tmp_path, targets):
+    root, scene = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+
+    res = run_tool("set_keep", _ctx(root), {"targets": targets})
+
+    assert res["ok"] is False
+    assert res["needs_confirm"] is False
+    assert res["payload"] == {}
+    assert "targets" in res["message"]
+    assert load_project(root).model_dump() == before
+    assert current_scene(root, "s1")[0].constraints == scene.constraints
+
+
+def test_set_keep_accepts_target_size_limits(tmp_path):
+    root, _ = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+    targets = ["e1"] * 199 + ["x" * 200]
+
+    res = run_tool("set_keep", _ctx(root), {"targets": targets})
+
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    assert res["payload"]["keep_change"]["matched"] == 3
+    assert load_project(root).model_dump() == before
+
+
+def test_set_keep_preview_examples_are_first_five_matches(tmp_path):
+    extra = [Constraint(pred=f"top(e{i},e2)") for i in range(3, 6)]
+    root, scene = _keep_project(tmp_path, extra_constraints=extra)
+    before = load_project(root).model_dump()
+
+    res = run_tool("set_keep", _ctx(root), {"targets": ["e"], "on": False})
+
+    assert res["ok"] is True
+    assert res["needs_confirm"] is True
+    preview = res["payload"]["keep_change"]
+    assert preview["matched"] == 7
+    assert preview["examples"] == [c.pred for c in scene.constraints[:5]]
+    assert load_project(root).model_dump() == before
+
+
+@pytest.mark.parametrize("preset", [[], {}, 1, True, None])
+def test_set_keep_rejects_non_string_preset_without_mutation(tmp_path, preset):
+    root, _ = _keep_project(tmp_path)
+    before = load_project(root).model_dump()
+
+    res = run_tool("set_keep", _ctx(root), {"preset": preset})
+
+    assert res["ok"] is False
+    assert res["needs_confirm"] is False
+    assert res["payload"] == {}
+    assert "preset" in res["message"]
+    assert load_project(root).model_dump() == before
 
 
 @pytest.mark.parametrize("preset", ["all", "none", "content_only", "motion_shape"])

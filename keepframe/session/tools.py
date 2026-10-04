@@ -73,6 +73,15 @@ def _correct(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     preset = args.get("preset")
+    if "preset" in args and not isinstance(preset, str):
+        return _fail("preset은 문자열이어야 합니다.")
+    requested_targets = args.get("targets", [])
+    if (
+        not isinstance(requested_targets, list)
+        or len(requested_targets) > 200
+        or any(not isinstance(t, str) or not t or len(t) > 200 for t in requested_targets)
+    ):
+        return _fail("targets는 비어 있지 않은 문자열 목록이어야 합니다(최대 200개, 각 200자 이하).")
     if preset is not None:
         if preset not in KEEP_PRESETS:
             return _fail(f"unknown keep preset {preset!r}")
@@ -82,16 +91,16 @@ def _set_keep(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
             keep_change={"preset": preset},
         )
     scene, _ = _current(ctx)
-    requested_targets = args.get("targets") or []
     targets = set(requested_targets)
     on = bool(args.get("on", True))
-    matched = sum(c.pred in targets or any(t in c.pred for t in targets) for c in scene.constraints)
+    predicates = [c.pred for c in scene.constraints if c.pred in targets or any(t in c.pred for t in targets)]
+    matched = len(predicates)
     if matched == 0:
         return _fail("대상과 일치하는 keep 조건을 찾지 못했습니다.")
     return _pending(
         f"keep 조건 {matched}개를 {'유지' if on else '해제'}할 미리보기입니다. 브라우저에서 확인하면 적용됩니다.",
         confirm=True,
-        keep_change={"targets": requested_targets, "on": on, "matched": matched},
+        keep_change={"targets": requested_targets, "on": on, "matched": matched, "examples": predicates[:5]},
     )
 
 
@@ -280,7 +289,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     _fn(
         "set_keep",
         "요소나 keep 술어의 유지 여부 변경 미리보기만 준비한다. 적용은 사용자가 브라우저에서 확인한 뒤 이뤄진다.",
-        {"targets": {"type": "array", "items": {"type": "string"}}, "on": {"type": "boolean"}, "preset": {"type": "string", "enum": sorted(KEEP_PRESETS)}},
+        {"targets": {"type": "array", "maxItems": 200, "items": {"type": "string", "minLength": 1, "maxLength": 200}}, "on": {"type": "boolean"}, "preset": {"type": "string", "enum": sorted(KEEP_PRESETS)}},
         [],
     ),
     _fn(

@@ -262,16 +262,28 @@ def test_agent_keep_and_correction_use_browser_confirmation_apis():
     assert "fetchReviewJob(" in js
 
 
+def test_agent_keep_preview_guards_target_array_before_matching():
+    js = static_src("js/agent.js")
+    keep = js[js.index('const keepChange = payloadOf(turn.results, "keep_change");'):
+              js.index('const correction = payloadOf(turn.results, "correction");')]
+    assert "Array.isArray(keepChange.targets)" in keep
+    assert keep.index("Array.isArray(keepChange.targets)") < keep.index("keepChange.targets.some(")
+
+
 def test_agent_keep_and_correction_copy_is_bilingual():
     ko, en = static_src("js/i18n.js").split("en: {", 1)
     for key in ("agent.keepPresetPreview", "agent.keepOnPreview", "agent.keepOffPreview",
-                "agent.keepPreviewChanged", "agent.correctionPreview", "agent.applied"):
+                "agent.keepExamplesPreview", "agent.keepChangeNote", "agent.keepPreviewChanged",
+                "agent.correctionPreview", "agent.applied"):
         assert f'"{key}":' in ko
         assert f'"{key}":' in en
+    assert '"agent.keepChangeNote": "에이전트 keep 변경"' in ko
+    assert '"agent.keepChangeNote": "Agent keep change"' in en
 
 
 @pytest.mark.parametrize("scenario", [
-    "keep_preset", "keep_targets", "keep_error", "keep_mismatch",
+    "keep_preset", "keep_targets", "keep_on", "keep_error", "keep_mismatch",
+    "keep_targets_string", "keep_targets_missing", "keep_targets_null",
     "correct_done", "correct_submit_error", "correct_job_error", "correct_poll_error",
 ])
 def test_agent_pending_mutations_execute_only_on_click(tmp_path, scenario):
@@ -339,13 +351,26 @@ const payload = isCorrect
   ? {correction:{op:'text', args:{element_id:'e1', text:'Hello', version:'untrusted'}}}
   : {keep_change:scenario === 'keep_preset'
       ? {preset:'all'}
-      : {targets:['e1', 'left(e1,e2)', 'e1'], on:false, matched:scenario === 'keep_mismatch' ? 4 : 3}};
+      : {targets:['e1', 'left(e1,e2)', 'e1'], on:scenario === 'keep_on',
+         matched:scenario === 'keep_mismatch' ? 4 : 3,
+         examples:constraints.slice(0, 3).map(c => c.pred)}};
+const malformed = ['keep_targets_string', 'keep_targets_missing', 'keep_targets_null'].includes(scenario);
+if (scenario === 'keep_targets_string') payload.keep_change.targets = 'e1';
+if (scenario === 'keep_targets_missing') delete payload.keep_change.targets;
+if (scenario === 'keep_targets_null') payload.keep_change.targets = null;
 context.paintPending({results:[{ok:true, payload}], needs_confirm:true, needs_choice:false});
 assert.equal(requests.length, 0, 'painting a preview must never execute it');
 assert.equal(polls.length, 0, 'painting must never poll correction jobs');
-assert.ok(summaries.length, 'show a translated preview');
-if (scenario === 'keep_mismatch') {
-  assert.equal(buttons.length, 0, 'a mismatched preview cannot be confirmed');
+if (!malformed) assert.ok(summaries.length, 'show a translated preview');
+if (!isCorrect && scenario !== 'keep_preset' && !malformed) {
+  assert.ok(summaries[0].includes('"n":' + payload.keep_change.matched), 'show the matched count');
+  for (const example of payload.keep_change.examples) {
+    assert.ok(summaries[0].includes(example), 'show example predicate ' + example);
+  }
+}
+if (scenario === 'keep_mismatch' || malformed) {
+  assert.equal(buttons.length, 0, 'a mismatched or malformed preview cannot be confirmed');
+  assert.equal(banners.at(-1).message, 'agent.keepPreviewChanged');
   assert.ok(banners.at(-1).failure);
 } else {
   assert.equal(buttons.length, 1);
@@ -362,15 +387,19 @@ if (scenario === 'keep_mismatch') {
     assert.equal(args[3].element_id, 'e1');
     assert.equal(args[3].text, 'Hello');
     assert.equal(args[3].version, 'v1', 'use the preview version, overriding model args');
-  } else if (scenario === 'keep_preset') {
-    assert.equal(args[4], 'all');
-    assert.equal(args[2].length, 0);
   } else {
-    assert.deepEqual(JSON.parse(JSON.stringify(args[2])), [
-      {pred:"type(e1,'translation')", keep:false},
-      {pred:'left(e1,e2)', keep:false},
-      {pred:'right(e10,e2)', keep:false},
-    ], 'submit exact predicates using equality or substring matching');
+    assert.equal(args[3], 'agent.keepChangeNote', 'agent-confirmed keep changes need their own version note');
+    if (scenario === 'keep_preset') {
+      assert.equal(args[4], 'all');
+      assert.equal(args[2].length, 0);
+    } else {
+      const keep = scenario === 'keep_on';
+      assert.deepEqual(JSON.parse(JSON.stringify(args[2])), [
+        {pred:"type(e1,'translation')", keep},
+        {pred:'left(e1,e2)', keep},
+        {pred:'right(e10,e2)', keep},
+      ], 'submit exact predicates using equality or substring matching');
+    }
   }
   if (scenario.endsWith('error')) {
     assert.equal(refreshed.length, 0);
@@ -393,7 +422,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261004a"}
+    assert stamps == {"20261004b"}
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):
