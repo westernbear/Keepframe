@@ -330,7 +330,7 @@ def test_vision_llm_uses_workspace_or_environment_and_filters_clients(tmp_path, 
     if saved:
         save_llm_settings(tmp_path, config)
     assert vision_llm(tmp_path) is (client if getattr(client, "supports_vision", False) else None)
-    assert calls == ([(config,)] if saved else [()])
+    assert calls == ([(config, tmp_path)] if saved else [()])
 
 
 @pytest.mark.parametrize("disabled", [False, True])

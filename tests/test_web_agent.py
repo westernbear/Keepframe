@@ -130,8 +130,9 @@ def test_agent_uses_workspace_llm_settings(tmp_path, monkeypatch):
         def complete(self, messages, tools):
             return AssistantReply(content="saved-settings")
 
-    def fake_make(config=None):
+    def fake_make(config=None, workspace=None):
         captured["config"] = config
+        captured["workspace"] = workspace
         return Fake()
 
     monkeypatch.setattr("keepframe.web.server.make_llm", fake_make)
@@ -146,6 +147,7 @@ def test_agent_uses_workspace_llm_settings(tmp_path, monkeypatch):
     assert code == 200
     assert body["reply"] == "saved-settings"
     assert captured["config"].api_key == "sk-from-admin"
+    assert captured["workspace"] == ws
 
 
 def test_agent_api_requires_existing_controller_cookie(tmp_path, monkeypatch):

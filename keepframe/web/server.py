@@ -777,9 +777,18 @@ def make_server(
 
     def agent_llm():
         if admin_svc is not None:
-            return make_llm(admin_svc.get_llm_settings())
+            from keepframe.session.chatgpt_client import ChatGPTClient
+            client = make_llm(admin_svc.get_llm_settings(), workspace)
+            if isinstance(client, ChatGPTClient):
+                persist = client.on_refresh
+                def on_refresh(cfg):
+                    persist(cfg)
+                    admin_svc.set_llm_settings(cfg, "chatgpt-oauth-refresh")
+                client.on_refresh = on_refresh
+                client.load_config = lambda: load_llm_settings(workspace) or admin_svc.get_llm_settings()
+            return client
         saved = load_llm_settings(workspace)
-        return make_llm(saved) if saved is not None else make_llm()
+        return make_llm(saved, workspace) if saved is not None else make_llm()
     ae_workflow = workflow if workflow is not None else AEWorkflowService(
         workspace,
         agent_llm,

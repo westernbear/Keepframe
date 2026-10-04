@@ -22,7 +22,7 @@ def test_chatgpt_models_are_static():
     models, source = list_models("chatgpt")
     assert source == "static"
     assert models == ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"]
-    assert catalog_entry("chatgpt")["default_model"] == "gpt-6-sol"
+    assert catalog_entry("chatgpt")["default_model"] == "gpt-6.1-sol"
 
 
 def test_openai_without_key_skips_network():

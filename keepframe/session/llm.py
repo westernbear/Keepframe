@@ -158,14 +158,19 @@ def _openai_compatible_fallback(cfg: ProviderConfig) -> OpenAICompatibleClient |
     return None
 
 
-def make_llm(config: ProviderConfig | None = None) -> LLMClient:
+def make_llm(config: ProviderConfig | None = None, workspace: Path | None = None) -> LLMClient:
     cfg = config if config is not None else ProviderConfig.from_env()
     if not cfg.credentials_present():
         log.warning("no LLM credentials for provider=%s; session agent falls back to NullClient", cfg.provider)
         return NullClient()
     if cfg.provider == "chatgpt":
         from .chatgpt_client import ChatGPTClient
-        return ChatGPTClient(cfg)
+        from .provider import load_llm_settings, save_llm_settings
+        return ChatGPTClient(
+            cfg,
+            on_refresh=(lambda refreshed: save_llm_settings(workspace, refreshed)) if workspace is not None else None,
+            load_config=(lambda: load_llm_settings(workspace)) if workspace is not None else None,
+        )
     try:
         return LiteLLMClient(cfg)
     except Exception as e:  # noqa: BLE001 - litellm missing or broken
@@ -181,5 +186,5 @@ def vision_llm(workspace: Path | None = None) -> LLMClient | None:
     """The configured LLM when it can see images, else None (captions are optional)."""
     from .provider import load_llm_settings
     saved = load_llm_settings(workspace)
-    llm = make_llm(saved) if saved is not None else make_llm()
+    llm = make_llm(saved, workspace) if saved is not None else make_llm()
     return None if isinstance(llm, NullClient) or not getattr(llm, "supports_vision", False) else llm
