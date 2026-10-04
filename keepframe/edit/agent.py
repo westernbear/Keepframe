@@ -23,6 +23,7 @@ from ..assets import AssetAPIError, AssetClient
 MAX_TRIES = 4
 ASSET_GEN_CAP = 2
 TEMPORAL_MIN = 0.7
+TEMPORAL_ELEMENT_MIN = 0.5
 
 
 class EditResult(BaseModel):
@@ -50,7 +51,8 @@ class EditResult(BaseModel):
 
 def _passed(rep: VerifyReport) -> bool:
     temporal_ok = rep.temporal is None or rep.temporal >= TEMPORAL_MIN
-    return bool(rep.passed and temporal_ok)
+    temporal_element_ok = rep.temporal_worst is None or rep.temporal_worst >= TEMPORAL_ELEMENT_MIN
+    return bool(rep.passed and temporal_ok and temporal_element_ok)
 
 
 def _verification_error(rep: VerifyReport | None) -> str:
@@ -59,6 +61,8 @@ def _verification_error(rep: VerifyReport | None) -> str:
     failures = []
     if rep.temporal is not None and rep.temporal < TEMPORAL_MIN:
         failures.append(f"시간 유사도 {rep.temporal:.3f} < {TEMPORAL_MIN:.3f}")
+    if rep.temporal_worst is not None and rep.temporal_worst < TEMPORAL_ELEMENT_MIN:
+        failures.append(f"요소 {rep.temporal_worst_element} 시간 유사도 {rep.temporal_worst:.3f} < {TEMPORAL_ELEMENT_MIN:.3f}")
     failed_keep = sum(not item.get("passed") for item in rep.keep_results)
     if failed_keep:
         failures.append(f"keep 술어 {failed_keep}개 실패")

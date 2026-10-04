@@ -44,23 +44,39 @@ def temporal_similarity(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) 
     return float(np.clip(0.5 * (np.mean(r2o) + np.mean(o2r)), 0.0, 1.0))
 
 
-def temporal_similarity_by_id(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) -> float:
-    def evidence_weight(track: np.ndarray) -> int:
-        finite = np.isfinite(track).all(axis=1)
-        return int(np.count_nonzero(finite[:-1] & finite[1:]))
+def _evidence_weight(track: np.ndarray) -> int:
+    finite = np.isfinite(track).all(axis=1)
+    return int(np.count_nonzero(finite[:-1] & finite[1:]))
 
+
+def temporal_similarity_by_id(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) -> float:
     total_weight, weighted_score = 0, 0.0
     for eid, track in ref.items():
-        weight = evidence_weight(track)
+        weight = _evidence_weight(track)
         if weight == 0:
             continue
         score = tracklet_correlation(track, out[eid]) if eid in out else None
         weighted_score += weight * (score if score is not None else 0.0)
         total_weight += weight
     if total_weight == 0:
-        motionless = all(evidence_weight(out[eid]) == 0 for eid in ref if eid in out)
+        motionless = all(_evidence_weight(out[eid]) == 0 for eid in ref if eid in out)
         return 1.0 if motionless else 0.0
     return float(np.clip(weighted_score / total_weight, 0.0, 1.0))
+
+
+def temporal_by_id_detail(ref: dict[str, np.ndarray], out: dict[str, np.ndarray],
+                          min_share: float = 0.10) -> tuple[float, tuple[str, float] | None]:
+    weights = {eid: _evidence_weight(track) for eid, track in ref.items()}
+    total = sum(weights.values())
+    worst = None
+    for eid, weight in weights.items():
+        if not total or weight == 0 or weight / total < min_share:
+            continue
+        score = tracklet_correlation(ref[eid], out[eid]) if eid in out else None
+        score = 0.0 if score is None else score
+        if worst is None or score < worst[1]:
+            worst = (eid, score)
+    return temporal_similarity_by_id(ref, out), worst
 
 
 def appearance_similarity(tex_a: np.ndarray, tex_b: np.ndarray) -> float:
