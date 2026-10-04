@@ -1,0 +1,3 @@
+Gold for scripts/eval_prompts.py --gold (content/position based, valid across reanalysis). Written 2026-10-04 from frames:
+envato1 title "Build SaaS Promo" (after giant "Build"); ig1 title "Every day, ideas are born" / second "inside your walls."; ig2 giant "Weekend" then title "A Weekend Away", Airbnb logo top centre (50%,10%) at 1.67s; ig3 title "You just speak" (letter fade-in), then zoomed "just", second distinct text "Your idea".
+Not graded (absent prompt key → always false; excluded from the denominator in reports): logo prompt on envato1/ig1/ig3 (no logo), card prompt everywhere (several cards or none — ambiguous). Scorable: envato1 6, ig1 6, ig2 7, ig3 6 = 25.

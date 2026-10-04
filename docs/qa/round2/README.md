@@ -4,7 +4,7 @@ Commands (clips in the main checkout's `eval/`, not committed):
 
 ```
 keepframe gate-m2-real --clips eval/clips --out eval/out/<name> --max-frames 150 --render-check
-python scripts/eval_prompts.py --project eval/out/<name>/<clip> --workspace eval/ws --gold eval/gold/<clip>.json
+python scripts/eval_prompts.py --project eval/out/<name>/<clip> --workspace eval/ws --gold docs/qa/round2/gold/<clip>.json
 ```
 
 - `mean_l1`: the analysis reconstruction compared with the source frames (numpy composite).
@@ -32,7 +32,7 @@ Stage seconds (4 CPU cores, run alongside other work; indicative only, speed dec
 
 ### Prompt evaluation with gold (`gpt-6.1-sol`, preview only, scenes captioned)
 
-The gold answers in `eval/gold/` are written from the frames, by content and position, so they stay valid when a scene is re-analysed.
+The gold answers in `docs/qa/round2/gold/` (committed so they can be reviewed) are written from the frames, by content and position, so they stay valid when a scene is re-analysed.
 - "ok" means the edit is a valid typed edit.
 - "correct" means every target is the element a person would pick.
 - Not graded: the logo prompt on clips with no logo, and the card prompt everywhere (there are several cards, or none). That leaves 25 gradable prompts.

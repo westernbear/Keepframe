@@ -1,0 +1,32 @@
+{
+ "제목 문구를 '가을 신상'으로 바꿔줘": {
+  "property": "text",
+  "text": "weekend away"
+ },
+ "배경을 짙은 남색으로 바꿔줘": {
+  "property": "background"
+ },
+ "전체를 1.5배 빠르게 해줘": {
+  "property": "timing"
+ },
+ "두 번째로 등장하는 텍스트를 0.3초 늦게 나오게 해줘": {
+  "property": "timing",
+  "text": "weekend away"
+ },
+ "제목 폰트를 더 굵게 해줘": {
+  "property": "font",
+  "text": "weekend away"
+ },
+ "Change the headline to 'Fall Drop'": {
+  "property": "text",
+  "text": "weekend away"
+ },
+ "로고를 첨부한 이미지로 바꿔줘": {
+  "property": "texture",
+  "at": [
+   50,
+   10,
+   1.67
+  ]
+ }
+}

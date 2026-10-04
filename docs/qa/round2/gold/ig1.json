@@ -1,0 +1,24 @@
+{
+ "제목 문구를 '가을 신상'으로 바꿔줘": {
+  "property": "text",
+  "text": "every day"
+ },
+ "배경을 짙은 남색으로 바꿔줘": {
+  "property": "background"
+ },
+ "전체를 1.5배 빠르게 해줘": {
+  "property": "timing"
+ },
+ "두 번째로 등장하는 텍스트를 0.3초 늦게 나오게 해줘": {
+  "property": "timing",
+  "text": "inside your walls"
+ },
+ "제목 폰트를 더 굵게 해줘": {
+  "property": "font",
+  "text": "every day"
+ },
+ "Change the headline to 'Fall Drop'": {
+  "property": "text",
+  "text": "every day"
+ }
+}
