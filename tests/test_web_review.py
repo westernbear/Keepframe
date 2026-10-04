@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 import numpy as np
 import pytest
 from keepframe.ir.synth import make_synthetic_scene
-from keepframe.ir.store import init_project, init_project_scenes, scene_dir
+from keepframe.ir.store import current_scene, init_project, init_project_scenes, load_project, scene_dir
 from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
 
@@ -35,6 +35,28 @@ def _post(srv, path, payload):
             return r.status, json.loads(r.read())
     except HTTPError as e:
         return e.code, json.loads(e.read())
+
+
+def test_text_correction_api_rejects_css_family_injection(tmp_path, monkeypatch):
+    root = tmp_path / "ws" / "p1"
+    scene = make_synthetic_scene(root / "gold", seed=11, frames=4)
+    init_project(root, {"file": "ref.mp4"}, scene)
+    (root / "meta.json").write_text(json.dumps({"id": "p1", "status": "review"}))
+    calls = []
+    monkeypatch.setattr("keepframe.web.server.corrections.edit_text", lambda *args, **kw: calls.append((args, kw)))
+    srv = start(tmp_path / "ws")
+    try:
+        code, body = _post(srv, "/api/correct", {"project": "p1", "scene": scene.id, "op": "text",
+                                              "args": {"element_id": scene.elements[0].id,
+                                                       "font": {"family_guess": "x;color:red"}}})
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert code == 400
+    assert "font family" in body["error"]
+    assert calls == []
+    assert len(load_project(root).versions) == 1
+    assert current_scene(root, scene.id)[0] == scene
 
 
 def test_state_from_synthetic(tmp_path):

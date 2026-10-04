@@ -637,6 +637,7 @@ class ReviewState:
         with self.lock:
             if self.job["status"] == "running":
                 raise RuntimeError("busy")
+            font = FontGuess(**args["font"]) if op == "text" and args.get("font") else None
             self.job = {"status": "running", "op": op, "error": None, "version": None}
         log.info("correction start scene=%s op=%s", self.scene_id, op)
 
@@ -681,7 +682,7 @@ class ReviewState:
                         self.scene_id,
                         args["element_id"],
                         text=args.get("text"),
-                        font=FontGuess(**args["font"]) if args.get("font") else None,
+                        font=font,
                         note=args.get("note", "edit text"),
                     )
                 self._preview.clear()
@@ -2567,6 +2568,8 @@ def make_server(
                     state.run_correction(op, args)
                 except RuntimeError:
                     return self._json(409, {"error": "a correction is already running"})
+                except (TypeError, ValueError) as exc:
+                    return self._json(400, {"error": str(exc)})
                 return self._json(202, {"job": state.job})
 
             return self._json(404, {"error": "not found"})

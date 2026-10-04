@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from keepframe.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background,
+from keepframe.ir.schema import (Keyframe, Track, Element, Canonical, Scene, Background, FontGuess,
                                  Constraint, Project, SceneRef, Version, dump, load_scene_json, PROPS, DEFAULTS)
 
 def make_scene():
@@ -37,3 +37,15 @@ def test_project_roundtrip():
                 versions=[Version(id="v1", parent=None, note="initial", scene_file="scenes/s1/scene.v1.json")])
     text = dump(p)
     assert '"schema": "keepframe.project/1"' in text
+
+
+@pytest.mark.parametrize("family", ["x;color:red", "x'", 'x"', "x\\", "url(foo)", "x,y", "x\ny", "", "   ", "x" * 65])
+def test_font_guess_rejects_invalid_family(family):
+    with pytest.raises(ValueError, match="font family"):
+        FontGuess(family_guess=family)
+
+
+@pytest.mark.parametrize("family", ["sans-serif", "Noto Sans CJK KR", "나눔 고딕", "x" * 64])
+def test_font_guess_strips_valid_family(family):
+    assert FontGuess(family_guess=f"  {family}  ").family_guess == family
+    assert FontGuess().family_guess == "sans-serif"

@@ -325,7 +325,7 @@ def test_font_weight_mismatch_or_ambiguity_is_a_font_issue(records, weight, reas
 
 def test_empty_text_font_family_is_reported_as_a_font_issue():
     scene = _scene(
-        _element("title", "text", text="Launch", font=FontGuess(family_guess="")),
+        _element("title", "text", text="Launch", font=FontGuess.model_construct(family_guess="")),
     )
     issues = analyze_ae_compatibility(scene, _capabilities())
     assert [(issue.source_element_id, issue.semantic_key) for issue in issues] == [("title", "font")]

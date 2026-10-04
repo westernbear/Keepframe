@@ -36,6 +36,14 @@ class FontGuess(BaseModel):
     size_px: float = 32.0
     candidates: list[str] = Field(default_factory=list)
 
+    @field_validator("family_guess")
+    @classmethod
+    def _safe_family(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9 \-가-힣]{1,64}", value):
+            raise ValueError("font family may only contain 1–64 letters, digits, spaces and hyphens")
+        return value
+
 
 class Canonical(BaseModel):
     width: float
