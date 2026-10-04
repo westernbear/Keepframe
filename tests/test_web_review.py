@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from pathlib import Path
@@ -9,6 +10,7 @@ from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import current_scene, init_project, init_project_scenes, load_project, scene_dir
 from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
+from tests.test_corrections import ocr_shape_project
 
 REVIEW_HTML = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html"
 REVIEW_JS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "review.js"
@@ -57,6 +59,85 @@ def test_text_correction_api_rejects_css_family_injection(tmp_path, monkeypatch)
     assert calls == []
     assert len(load_project(root).versions) == 1
     assert current_scene(root, scene.id)[0] == scene
+
+
+@pytest.mark.parametrize("op", ["mask", "bbox", "reassign_from", "reassign_to"])
+def test_shape_correction_api_returns_400_without_mutation(ocr_shape_project, op):
+    root = ocr_shape_project
+    sd = scene_dir(root, "s1")
+    stages = sd / "stages"
+    ids = json.loads((stages / "ids.json").read_text())
+    args = {"object_id": ids["s2"], "frame": 2}
+    if op == "mask":
+        import cv2
+        ok, png = cv2.imencode(".png", np.full((96, 144), 255, np.uint8))
+        assert ok
+        args["mask_png_base64"] = base64.b64encode(png).decode("ascii")
+    elif op == "bbox":
+        args["bbox"] = [98, 52, 126, 80]
+    else:
+        args = {"frames": [2, 3], "from_id": ids["s2"], "to_id": ids["o2"]}
+        if op == "reassign_to":
+            args["from_id"], args["to_id"] = args["to_id"], args["from_id"]
+    before = {p.name: p.read_bytes() for p in stages.iterdir() if p.is_file()}
+    project_before = (root / "project.json").read_bytes()
+    scene, version = current_scene(root, "s1")
+    srv = start(root.parent)
+    try:
+        code, body = _post(srv, "/api/correct", {"project": "p1", "scene": "s1",
+                                              "op": "reassign" if op.startswith("reassign") else op,
+                                              "args": args})
+        state = json.loads(get(srv, "/api/state?project=p1&scene=s1")[2])
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert code == 400 and "shape elements from OCR boxes" in body["error"]
+    assert state["job"]["status"] == "idle"
+    assert {p.name: p.read_bytes() for p in stages.iterdir() if p.is_file()} == before
+    assert (root / "project.json").read_bytes() == project_before
+    assert current_scene(root, "s1") == (scene, version)
+    assert list(sd.glob("scene.v*.json")) == [sd / "scene.v1.json"]
+
+
+@pytest.mark.parametrize("op", ["mask", "bbox", "reassign"])
+def test_object_correction_api_still_accepts_and_reruns(ocr_shape_project, monkeypatch, op):
+    import cv2
+    import threading
+    from keepframe.review import corrections
+
+    root = ocr_shape_project
+    stages = scene_dir(root, "s1") / "stages"
+    ids = json.loads((stages / "ids.json").read_text())
+    finished = threading.Event()
+    real_rerun = corrections.rerun
+
+    def observed_rerun(*args, **kwargs):
+        result = real_rerun(*args, **kwargs)
+        finished.set()
+        return result
+
+    monkeypatch.setattr(corrections, "rerun", observed_rerun)
+    args = {"object_id": ids["o2"], "frame": 2}
+    if op == "mask":
+        pixels = np.zeros((96, 144), np.uint8)
+        pixels[52:80, 50:75] = 255
+        ok, png = cv2.imencode(".png", pixels)
+        assert ok
+        args["mask_png_base64"] = base64.b64encode(png).decode("ascii")
+    elif op == "bbox":
+        args["bbox"] = [50, 52, 75, 80]
+    else:
+        args = {"frames": [2, 3], "from_id": ids["o1"], "to_id": ids["o2"]}
+    srv = start(root.parent)
+    try:
+        code, _ = _post(srv, "/api/correct", {"project": "p1", "scene": "s1", "op": op, "args": args})
+        assert code == 202 and finished.wait(5)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert current_scene(root, "s1")[1].id == "v2"
+    overrides = json.loads((stages / "overrides.json").read_text())
+    assert overrides["regions"] and all(r["label"] == 1002 for r in overrides["regions"])
 
 
 def test_state_from_synthetic(tmp_path):

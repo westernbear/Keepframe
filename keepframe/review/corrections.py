@@ -30,7 +30,28 @@ def _object_of(sd: Path, element_id: str) -> str:
 
 
 def _object_num(key: str) -> int:
+    if key.startswith("s"):
+        raise ValueError("shape elements from OCR boxes cannot take region masks or partial ID reassignment; "
+                         "use the text correction or reanalyze")
+    if not key.startswith("o"):
+        raise ValueError("region masks and partial ID reassignment require object tracks, not text or other elements")
     return int(key[1:])
+
+
+def validate_correction_targets(root: Path, scene_id: str, op: str, args: dict) -> None:
+    sd = scene_dir(root, scene_id)
+    if op in {"mask", "bbox"}:
+        key = _object_of(sd, args["object_id"])
+        if op == "bbox" and key.startswith("t"):
+            return
+        _object_num(key)
+    elif op == "reassign":
+        scene, _ = current_scene(root, scene_id)
+        frames = args["frames"]
+        if frames[0] <= 0 and frames[1] >= scene.frames - 1:
+            return
+        for element_id in (args["from_id"], args["to_id"]):
+            _object_num(_object_of(sd, element_id))
 
 
 def edit_text(root: Path, scene_id: str, element_id: str, text: str | None = None, font: FontGuess | None = None,
@@ -51,13 +72,12 @@ def set_region_mask(root: Path, scene_id: str, frame: int, mask_png: Path, objec
         raise ValueError("frame out of range")
     sd = scene_dir(root, scene_id)
     key = _object_of(sd, object_id)
-    if key.startswith("t"):
-        raise ValueError("region masks apply to sprite objects, not text")
+    object_num = _object_num(key)
     ov = _load(sd)
     n = len(ov["regions"]) + 1
     dst = sd / "stages" / f"ov_{n}.png"
     shutil.copy(mask_png, dst)
-    ov["regions"].append({"frame": int(frame), "mask": f"stages/ov_{n}.png", "label": 1000 + _object_num(key)})
+    ov["regions"].append({"frame": int(frame), "mask": f"stages/ov_{n}.png", "label": 1000 + object_num})
     _save(sd, ov)
     return rerun(root, scene_id, "regions", note=note)
 
@@ -75,17 +95,20 @@ def add_bbox_prompt(root: Path, scene_id: str, frame: int, bbox: tuple[int, int,
     if x1 <= x0 or y1 <= y0:
         raise ValueError("box must have positive area")
     bbox = (x0, y0, x1, y1)
+    key = _object_of(sd, object_id)
     if scene.element(object_id).kind == "text":
-        key = _object_of(sd, object_id)
+        if not key.startswith("t"):
+            raise ValueError("text boxes require a text track")
         path = sd / "stages/text.pkl"
         text = pickle.loads(path.read_bytes())
-        track = next(t for t in text["tracks"] if t.id == _object_num(key))
+        track = next(t for t in text["tracks"] if t.id == int(key[1:]))
         if frame not in track.boxes:
             raise ValueError("text was not detected in this frame")
         track.boxes[frame].bbox = bbox
         track.boxes[frame].source = "manual_box"
         path.write_bytes(pickle.dumps(text))
         return rerun(root, scene_id, "regions", note=note)
+    _object_num(key)
     frames = np.load(sd / "stages" / "frames.npy", mmap_mode="r")
     bgj = json.loads((sd / "stages" / "background.json").read_text())
     if bgj.get("plate", False):
@@ -115,8 +138,9 @@ def reassign_id(root: Path, scene_id: str, frames: tuple[int, int], from_id: str
         ov["merge"].append([dst, src])
         _save(sd, ov)
         return rerun(root, scene_id, "sprites", note=note)
+    src_num, dst_num = _object_num(src), _object_num(dst)
     tracks = __import__("pickle").loads((sd / "stages" / "tracks.pkl").read_bytes())
-    t = next(t for t in tracks if t.id == _object_num(src))
+    t = next(t for t in tracks if t.id == src_num)
     for f in range(frames[0], frames[1] + 1):
         r = t.regions.get(f)
         if r is None:
@@ -126,6 +150,6 @@ def reassign_id(root: Path, scene_id: str, frames: tuple[int, int], from_id: str
         m[y0:y1, x0:x1] = r.mask * 255
         n = len(ov["regions"]) + 1
         cv2.imwrite(str(sd / "stages" / f"ov_{n}.png"), m)
-        ov["regions"].append({"frame": f, "mask": f"stages/ov_{n}.png", "label": 1000 + _object_num(dst)})
+        ov["regions"].append({"frame": f, "mask": f"stages/ov_{n}.png", "label": 1000 + dst_num})
     _save(sd, ov)
     return rerun(root, scene_id, "regions", note=note)

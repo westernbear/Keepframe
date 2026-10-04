@@ -638,6 +638,10 @@ class ReviewState:
             if self.job["status"] == "running":
                 raise RuntimeError("busy")
             font = FontGuess(**args["font"]) if op == "text" and args.get("font") else None
+            try:
+                corrections.validate_correction_targets(self.root, self.scene_id, op, args)
+            except KeyError as exc:
+                raise ValueError(f"unknown correction element or field: {exc.args[0]}") from exc
             self.job = {"status": "running", "op": op, "error": None, "version": None}
         log.info("correction start scene=%s op=%s", self.scene_id, op)
 

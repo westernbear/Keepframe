@@ -116,13 +116,16 @@ def test_mask_correction_decodes_payload_before_dispatch(tmp_path, monkeypatch):
     import threading
     from types import SimpleNamespace
 
-    from keepframe.ir.store import init_project
+    from keepframe.ir.store import init_project, scene_dir
     from keepframe.ir.synth import make_synthetic_scene
     from keepframe.web.server import ReviewState
 
     root = tmp_path / "p1"
     scene = make_synthetic_scene(root / "scenes" / "s1", seed=3, with_text=False, frames=4)
     init_project(root, {"file": "source.mp4"}, scene.model_copy(update={"id": "s1"}))
+    stages = scene_dir(root, "s1") / "stages"
+    stages.mkdir()
+    (stages / "ids.json").write_text(json.dumps({"o1": "e1"}))
     dispatched = threading.Event()
     captured = {}
 
