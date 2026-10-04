@@ -73,7 +73,7 @@ def test_complete_writes_auth_and_settings(tmp_path, monkeypatch):
     cfg = flow.complete("the-code", state)
     assert cfg.provider == "chatgpt"
     assert cfg.auth == "oauth"
-    assert cfg.model == "gpt-5.4"
+    assert cfg.model == "gpt-6-sol"
     assert cfg.refresh_token == "rt"
     assert cfg.account_id == "acc-1"
     assert admin.get_llm_settings().refresh_token == "rt"

@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..log import get
-from .provider import ProviderConfig
+from .provider import ProviderConfig, catalog_entry
 
 log = get("keepframe.session")
 
@@ -26,7 +26,7 @@ CHATGPT_ISSUER = "https://auth.openai.com"
 CHATGPT_CALLBACK_PORT = 1455
 CHATGPT_REDIRECT_URI = f"http://localhost:{CHATGPT_CALLBACK_PORT}/auth/callback"
 CHATGPT_SCOPE = "openid profile email offline_access"
-CHATGPT_DEFAULT_MODEL = "gpt-5.4"
+CHATGPT_DEFAULT_MODEL = catalog_entry("chatgpt")["default_model"]
 OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
 
 
@@ -159,9 +159,8 @@ def _read_token_response(req: urllib.request.Request, timeout: float) -> dict:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
-        log.error("chatgpt oauth http %s: %s", e.code, detail[:400])
-        raise RuntimeError(f"ChatGPT OAuth 실패({e.code})") from e
+        log.error("chatgpt oauth http %s", e.code)
+        raise RuntimeError(f"ChatGPT OAuth 실패({e.code})") from None
     if not payload.get("access_token"):
         raise RuntimeError("ChatGPT OAuth 응답에 access_token이 없습니다.")
     return payload

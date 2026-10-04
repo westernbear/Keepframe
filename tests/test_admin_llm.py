@@ -185,7 +185,7 @@ def test_admin_llm_models_chatgpt_and_compatible(tmp_path, monkeypatch):
         code, body = _api(srv, "/admin/api/llm/models", cookie, method="POST", body={"provider": "chatgpt"})
         assert code == 200
         assert body["source"] == "static"
-        assert "gpt-5.4" in body["models"]
+        assert "gpt-6.1-sol" in body["models"]
 
         class _Resp:
             def __enter__(self):

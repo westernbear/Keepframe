@@ -32,7 +32,7 @@ OPENAI_COMPATIBLE_FALLBACK = {
 
 # Admin LLM picker. `id` is the LiteLLM prefix except openai_compatible → openai/.
 PROVIDER_CATALOG: tuple[dict, ...] = (
-    {"id": "chatgpt", "label": "ChatGPT", "default_model": "gpt-5.4", "default_base_url": "", "auth_modes": ["oauth"], "live_models": False, "hide_base_url": True, "hide_api_key": True},
+    {"id": "chatgpt", "label": "ChatGPT", "default_model": "gpt-6-sol", "default_base_url": "", "auth_modes": ["oauth"], "live_models": False, "hide_base_url": True, "hide_api_key": True},
     {"id": "openai", "label": "OpenAI", "default_model": "gpt-4o-mini", "default_base_url": "https://api.openai.com/v1", "auth_modes": ["api_key"], "live_models": True},
     {"id": "openai_compatible", "label": "OpenAI Compatible", "default_model": "", "default_base_url": "http://127.0.0.1:8000/v1", "auth_modes": ["api_key"], "live_models": True},
     {"id": "anthropic", "label": "Anthropic Claude", "default_model": "claude-sonnet-4-5", "default_base_url": "https://api.anthropic.com", "auth_modes": ["api_key"], "live_models": True},

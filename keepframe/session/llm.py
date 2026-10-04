@@ -55,7 +55,7 @@ class OpenAICompatibleClient:
         self.model = model or os.environ.get("KEEPFRAME_LLM_MODEL") or "gpt-4o-mini"
         self.timeout = timeout
         override = os.environ.get("KEEPFRAME_LLM_VISION")
-        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "vision", "llava", "gemini", "claude-3", "claude-4")
+        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "vision", "llava", "gemini", "claude-3", "claude-4")
         self.supports_vision = override == "1" or (override != "0" and any(marker in self.model.lower() for marker in markers))
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
@@ -104,7 +104,7 @@ class LiteLLMClient:
         self._litellm = litellm
         self.config = config
         override = config.extra.get("vision") if config.extra else None
-        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "vision", "llava", "gemini", "claude-3", "claude-4")
+        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "vision", "llava", "gemini", "claude-3", "claude-4")
         self.supports_vision = bool(override) if override is not None else any(marker in config.model.lower() for marker in markers)
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
@@ -163,6 +163,9 @@ def make_llm(config: ProviderConfig | None = None) -> LLMClient:
     if not cfg.credentials_present():
         log.warning("no LLM credentials for provider=%s; session agent falls back to NullClient", cfg.provider)
         return NullClient()
+    if cfg.provider == "chatgpt":
+        from .chatgpt_client import ChatGPTClient
+        return ChatGPTClient(cfg)
     try:
         return LiteLLMClient(cfg)
     except Exception as e:  # noqa: BLE001 - litellm missing or broken

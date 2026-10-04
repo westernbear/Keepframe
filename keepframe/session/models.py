@@ -8,7 +8,7 @@ import urllib.request
 from .. import __version__
 from .provider import PROVIDER_CATALOG, catalog_entry, default_base_url
 
-CHATGPT_MODELS = ("gpt-5.4", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o")
+CHATGPT_MODELS = ("gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
 USER_AGENT = f"Keepframe/{__version__}"
 _OPENER = urllib.request.build_opener()
 _OPENER.addheaders = []
