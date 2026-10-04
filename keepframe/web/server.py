@@ -787,7 +787,9 @@ def make_server(
                 persist = client.on_refresh
                 def on_refresh(cfg):
                     persist(cfg)
-                    admin_svc.set_llm_settings(load_llm_settings(workspace), "chatgpt-oauth-refresh")
+                    saved = load_llm_settings(workspace)
+                    if saved is not None:
+                        admin_svc.set_llm_settings(saved, "chatgpt-oauth-refresh")
                 client.on_refresh = on_refresh
                 client.load_config = lambda: load_llm_settings(workspace) or admin_svc.get_llm_settings()
             return client

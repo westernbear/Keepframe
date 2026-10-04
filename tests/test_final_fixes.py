@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 import cv2
 import numpy as np
@@ -176,12 +177,13 @@ def test_lottie_plate_is_embedded_bottom_image_layer(tmp_path):
 
 
 @pytest.mark.parametrize("stage", ["analyze", "rerun"])
-def test_plate_analysis_and_rerun_skip_torch_refine(tmp_path, monkeypatch, stage):
+@pytest.mark.parametrize("torch_available", [True, False])
+def test_plate_analysis_and_rerun_skip_torch_refine(tmp_path, monkeypatch, stage, torch_available):
     calls = []
     def forbidden(*args, **kwargs):
         calls.append(True)
         raise AssertionError("refine must not run over a plate")
-    monkeypatch.setattr("keepframe.analyze.refine.torch_available", lambda: True)
+    monkeypatch.setattr("keepframe.analyze.refine.torch_available", lambda: torch_available)
     monkeypatch.setattr("keepframe.analyze.refine.refine_affine", forbidden)
     opts = AnalyzeOptions(ocr=False, refine=stage == "analyze", use_ecc=False)
     frames = _gradient_clip(h=320, w=640)
@@ -194,7 +196,8 @@ def test_plate_analysis_and_rerun_skip_torch_refine(tmp_path, monkeypatch, stage
     assert any(e.kind == "sprite" for e in scene.elements)
     assert calls == []
     report = json.loads((scene_dir(tmp_path, "s1") / "report.json").read_text())
-    assert "refine skipped: background plate scenes are not supported by refine yet" in report["messages"]
+    message = "refine skipped: background plate scenes are not supported by refine yet"
+    assert (message in report["messages"]) == torch_available
 
 
 def _post(server, route, payload, origin):
@@ -277,14 +280,14 @@ def test_image_background_rejects_unsafe_path(tmp_path, consumer, path_kind):
             composite_scene(scene, directory, 0)
 
 
-@pytest.mark.parametrize("provider,model", [("chatgpt", "admin-selected-model"), ("openai", "admin-model")])
+@pytest.mark.parametrize("change", ["model", "provider", "account"])
 @pytest.mark.parametrize("factory", ["direct", "server_admin"])
-def test_oauth_refresh_preserves_saved_admin_settings(tmp_path, monkeypatch, provider, model, factory):
+def test_oauth_refresh_preserves_saved_admin_settings(tmp_path, monkeypatch, caplog, change, factory):
     from keepframe.admin.memory import MemoryAdmin
     from keepframe.web.server import make_server
 
     config = ProviderConfig(provider="chatgpt", auth="oauth", model="gpt-6.1-sol", api_key="old-access",
-                            refresh_token="old-refresh", id_token="old-id", account_id="account", oauth_expires_at=0)
+                            refresh_token="old-refresh", id_token="old-id", account_id=uuid4().hex, oauth_expires_at=0)
     save_llm_settings(tmp_path, config)
     admin, server = None, None
     if factory == "direct":
@@ -299,8 +302,19 @@ def test_oauth_refresh_preserves_saved_admin_settings(tmp_path, monkeypatch, pro
         monkeypatch.setattr("keepframe.web.server.AEWorkflowService", workflow)
         server = make_server(tmp_path, port=0, admin_svc=admin)
         client = factories[0]()
+    provider = "openai" if change == "provider" else "chatgpt"
+    model = "admin-selected-model"
     edited = config.model_copy(update={"provider": provider, "model": model, "base_url": "https://admin.example",
                                        "extra": {"reasoning_effort": "high"}})
+    if change == "account":
+        for field in ("api_key", "refresh_token", "id_token", "account_id"):
+            setattr(edited, field, uuid4().hex)
+        edited.oauth_expires_at = time.time() + 7200
+    writes = []
+    def save(workspace, refreshed):
+        writes.append(True)
+        save_llm_settings(workspace, refreshed)
+    monkeypatch.setattr("keepframe.session.chatgpt_client.save_llm_settings", save)
     def refresh(token):
         assert token == "old-refresh"
         if admin is None:
@@ -316,10 +330,51 @@ def test_oauth_refresh_preserves_saved_admin_settings(tmp_path, monkeypatch, pro
             server.server_close()
     saved = load_llm_settings(tmp_path)
     assert (saved.provider, saved.model, saved.base_url, saved.extra) == (provider, model, edited.base_url, edited.extra)
-    assert (saved.api_key, saved.refresh_token, saved.id_token, saved.account_id) == ("new-access", "new-refresh", "new-id", "account")
-    assert saved.oauth_expires_at > time.time() + 3500
+    if change == "model":
+        tokens_merged = (saved.api_key, saved.refresh_token, saved.id_token, saved.account_id) == (
+            "new-access", "new-refresh", "new-id", config.account_id)
+        assert tokens_merged
+        assert saved.oauth_expires_at > time.time() + 3500
+        assert writes == [True]
+    else:
+        settings_preserved = saved == edited
+        assert settings_preserved
+        assert writes == []
+        assert any(record.levelname == "WARNING" and record.message ==
+                   "chatgpt refresh not persisted: saved settings changed provider/account" for record in caplog.records)
+        credentials = [getattr(cfg, field) for cfg in (config, edited, client.config)
+                       for field in ("api_key", "refresh_token", "id_token", "account_id")]
+        secrets_hidden = all(not value or value not in caplog.text for value in credentials)
+        assert secrets_hidden
     if admin is not None:
-        assert admin.get_llm_settings() == saved
+        admin_matches_saved = admin.get_llm_settings() == saved
+        assert admin_matches_saved
+
+
+def test_oauth_refresh_admin_callback_handles_missing_saved_settings(tmp_path, monkeypatch):
+    from keepframe.admin.memory import MemoryAdmin
+    from keepframe.web.server import make_server
+
+    config = ProviderConfig(provider="chatgpt", auth="oauth", api_key=uuid4().hex,
+                            refresh_token=uuid4().hex, account_id=uuid4().hex, oauth_expires_at=0)
+    admin = MemoryAdmin(workspace=tmp_path)
+    admin.set_llm_settings(config, "test")
+    factories = []
+    def workflow(workspace, factory):
+        factories.append(factory)
+        return object()
+    def forbidden(*args):
+        raise AssertionError("admin must not receive missing or stale settings")
+    monkeypatch.setattr("keepframe.web.server.AEWorkflowService", workflow)
+    monkeypatch.setattr("keepframe.web.server.load_llm_settings", lambda workspace: None)
+    monkeypatch.setattr("keepframe.session.chatgpt_client.refresh_chatgpt_token", lambda token: {
+        "access_token": uuid4().hex, "refresh_token": uuid4().hex, "expires_in": 3600})
+    monkeypatch.setattr(admin, "set_llm_settings", forbidden)
+    server = make_server(tmp_path, port=0, admin_svc=admin)
+    try:
+        factories[0]()._refresh()
+    finally:
+        server.server_close()
 
 
 def test_core_flow_docs_state_verified_semantics():

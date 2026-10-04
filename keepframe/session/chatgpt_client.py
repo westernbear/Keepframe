@@ -12,6 +12,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from .. import __version__
+from ..log import get
 from .chatgpt_oauth import account_id_from_token, refresh_chatgpt_token
 from .llm import AssistantReply
 from .provider import ProviderConfig, load_llm_settings, save_llm_settings
@@ -19,11 +20,19 @@ from .provider import ProviderConfig, load_llm_settings, save_llm_settings
 BASE_URL = "https://chatgpt.com/backend-api/codex"
 _REFRESH_LOCK = threading.Lock()
 _TOKEN_FIELDS = ("api_key", "refresh_token", "id_token", "account_id", "oauth_expires_at")
+log = get("keepframe.session")
 
 
 def persist_refreshed_tokens(workspace: Path, refreshed: ProviderConfig) -> None:
     # Called by _refresh while holding _REFRESH_LOCK.
-    saved = load_llm_settings(workspace) or refreshed.model_copy(deep=True)
+    saved = load_llm_settings(workspace)
+    if saved is not None and (saved.provider != "chatgpt" or (
+        saved.account_id and refreshed.account_id and saved.account_id != refreshed.account_id
+    )):
+        log.warning("chatgpt refresh not persisted: saved settings changed provider/account")
+        return
+    if saved is None:
+        saved = refreshed.model_copy(deep=True)
     for field in _TOKEN_FIELDS:
         setattr(saved, field, getattr(refreshed, field))
     save_llm_settings(workspace, saved)

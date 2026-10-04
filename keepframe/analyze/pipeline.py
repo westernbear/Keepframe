@@ -182,8 +182,10 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
     if opts.refine and plate is not None:
-        props["_message"] = "refine skipped: background plate scenes are not supported by refine yet"
-        log.info(props["_message"])
+        from .refine import torch_available
+        if torch_available():
+            props["_message"] = "refine skipped: background plate scenes are not supported by refine yet"
+            log.info(props["_message"])
     elif opts.refine and any(p["kind"] == "sprite" for p in props.values()):
         try:
             from .device import resolve_device
