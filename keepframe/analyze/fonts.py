@@ -16,7 +16,7 @@ def installed_families() -> tuple[str, ...]:
 def font_candidates(stroke: np.ndarray, text: str, size_px: float, k: int = 3) -> list[str]:
     """Rank installed families by mask IoU against the observed stroke mask.
     ponytail: whole-string IoU after resize; a learned font classifier if IoU ranking proves noisy on real clips."""
-    if not text.strip() or len(text) > 200 or not 0 < size_px <= 256 or not stroke.any():
+    if not text.strip() or len(text) > 200 or not 0 < size_px < float("inf") or not stroke.any():
         return []
     h, w = stroke.shape
     scored, seen = [], set()
@@ -27,7 +27,7 @@ def font_candidates(stroke: np.ndarray, text: str, size_px: float, k: int = 3) -
                 path = font_path(family, hangul=False)
                 if not path or font_path(family, hangul=True) != path:
                     continue
-            img = render_lines([text], size_px, (255, 255, 255), family)
+            img = render_lines([text], min(size_px, 128), (255, 255, 255), family)
             if img is None:
                 continue
             raster = (img.shape, img.tobytes())

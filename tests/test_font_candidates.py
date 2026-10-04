@@ -8,16 +8,17 @@ from keepframe.ir.schema import FontGuess
 
 
 @pytest.mark.skipif(len(installed_families()) < 2, reason="needs two installed candidate fonts")
-def test_rendered_family_ranks_first():
+@pytest.mark.parametrize("size", [40, 300])
+def test_rendered_family_ranks_first(size):
     family = installed_families()[0]
-    alpha = render_lines(["Launch faster"], 40, (255, 255, 255), family)[..., 3] > 127
+    alpha = render_lines(["Launch faster"], size, (255, 255, 255), family)[..., 3] > 127
     ys, xs = np.nonzero(alpha)
     stroke = alpha[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    candidates = font_candidates(stroke, "Launch faster", 40)
+    candidates = font_candidates(stroke, "Launch faster", size)
     assert candidates[0] == family
     assert len(candidates) == min(3, len(installed_families()))
     assert len(set(candidates)) == len(candidates)
-    assert font_candidates(stroke, "Launch faster", 40, k=1) == [family]
+    assert font_candidates(stroke, "Launch faster", size, k=1) == [family]
 
 
 def test_candidates_never_include_uninstalled_fonts():
@@ -193,14 +194,16 @@ def test_family_failure_is_skipped_and_ranking_continues(monkeypatch, error, ope
     assert calls == list(families)
 
 
-@pytest.mark.parametrize("text,size", [("x" * 201, 40), ("Text", 257), ("Text", float("inf")),
+@pytest.mark.parametrize("text,size", [("x" * 201, 40), ("Text", float("inf")), ("Text", float("-inf")),
                                        ("Text", float("nan")), ("Text", 0), ("Text", -1)])
 def test_font_candidate_render_limits_skip_work(monkeypatch, text, size):
-    monkeypatch.setattr(fonts, "render_lines", lambda *args: pytest.fail("oversized inputs must not render"))
+    monkeypatch.setattr(fonts, "render_lines", lambda *args: pytest.fail("invalid inputs must not render"))
     assert font_candidates(np.ones((2, 3), bool), text, size) == []
 
 
-def test_font_candidate_render_limits_allow_boundary(monkeypatch):
+@pytest.mark.parametrize("size,render_size", [(40, 40), (128, 128), (129, 128), (256, 128),
+                                            (257, 128), (300, 128), (746, 128)])
+def test_font_candidate_render_limits_allow_boundary(monkeypatch, size, render_size):
     family = FONT_FAMILIES[0]
     monkeypatch.setattr(fonts, "installed_families", lambda: (family,))
     calls = []
@@ -210,8 +213,8 @@ def test_font_candidate_render_limits_allow_boundary(monkeypatch):
         return np.full((4, 6, 4), 255, np.uint8)
 
     monkeypatch.setattr(fonts, "render_lines", render)
-    assert font_candidates(np.ones((2, 3), bool), "x" * 200, 256) == [family]
-    assert calls == [(["x" * 200], 256)]
+    assert font_candidates(np.ones((2, 3), bool), "x" * 200, size) == [family]
+    assert calls == [(["x" * 200], render_size)]
 
 
 @pytest.mark.parametrize("error", [OSError, ValueError, MemoryError])
