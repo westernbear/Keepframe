@@ -23,7 +23,7 @@ _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 class Target(BaseModel):
     element: str | None = Field(default=None, description="장면 브리프의 요소 id(예: e12). background와 장면 전체 timing에는 비워 둔다(장면 id 's1'을 넣지 않는다)")
     property: Prop = Field(description="허용된 편집: text(문구), color(요소 색), texture(이미지), model(3D 모델), background(배경색), font(폰트), timing(속도·지연).")
-    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color/background: #rrggbb, font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 3D 모델 생성 설명.")
+    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color/background: #rrggbb, font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 3D 모델 생성 설명 또는 'attachment'.")
     weight: int | None = Field(default=None, ge=100, le=900, description="폰트 굵기(100~900, 400=보통, 700=굵게).")
     speed: float | None = Field(default=None, gt=0.1, le=10, description="timing 속도 배율(1=원래 속도, 2=2배 빠르게).")
     delay: float | None = Field(default=None, ge=-30, le=30, description="timing 지연 시간(초). 요소별 timing에만 사용하며 음수는 앞당긴다.")
@@ -143,7 +143,7 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
         elif t.property == "timing":
             bits.append(f"{t.element or '장면 전체'} 속도 ×{t.speed or 1:g} 지연 {t.delay or 0:g}s로")
         elif t.property == "model":
-            bits.append(f"{who} 3D 모델을 생성해")
+            bits.append(f"{who} 3D 모델을 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
         else:
             bits.append(f"{who} 이미지를 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
     return " ".join(bits) + " 바꿉니다. 트랙은 유지합니다."
@@ -185,7 +185,7 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
 
     if _MODEL.search(prompt):
         eid, cands = _pick(scene.elements, hinted, element)
-        targets.append(Target(element=eid, property="model", value=prompt[:500]))
+        targets.append(Target(element=eid, property="model", value="attachment" if has_attachment else prompt[:500]))
         if eid is None:
             return Intent(targets=targets, summary="3D 모델로 바꿉니다. 요소를 고르세요.", ambiguous=True, candidates=cands)
     elif (has_attachment and not targets) or _IMAGE.search(prompt):
