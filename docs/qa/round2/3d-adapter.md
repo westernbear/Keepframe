@@ -17,11 +17,12 @@ From the repository root:
 ```bash
 export KEEPFRAME_ASSET_API_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(24))")
 uv run --with gradio_client scripts/asset_adapter_hf.py --port 8790
-uv run --with gradio_client scripts/asset_adapter_hf.py --port 8790 --space trellis-community/TRELLIS
+uv run --with gradio_client scripts/asset_adapter_hf.py --port 8790 --space stabilityai/stable-fast-3d
 ```
 
-Use one server command at a time. The server refuses to start without a
-nonempty `KEEPFRAME_ASSET_API_KEY`. The analysis process must inherit the same
+The default `--space` is `trellis-community/TRELLIS`; the second command shows
+an explicit override. Use one server command at a time. The server refuses to
+start without a nonempty `KEEPFRAME_ASSET_API_KEY`. The analysis process must inherit the same
 exported key; the existing `AssetClient` sends it as `Authorization: Bearer
 <key>` automatically. In that process, also set:
 
@@ -36,13 +37,17 @@ run before parsing the body or calling a Space. Keys are never logged.
 
 `gradio_client` is imported lazily and is not a project runtime dependency.
 Server requests use `HF_TOKEN`, or `huggingface_hub.get_token()` when the
-environment variable is absent. Tokens are never printed. Each request uses its
+environment variable is absent, so the server uses the logged-in Hugging Face
+token when available. Tokens are never printed. Each request uses its
 own temporary download directory and Gradio session. Result file paths must
 resolve inside that request's directory; symlinks, including directory
 symlinks, and nonregular files are ignored. If no valid GLB remains, the adapter
 returns HTTP 503 with `code=asset_api_unavailable`. The adapter bounds discovery,
 upload, generation, and download with a **300-second** deadline and attempts to
 cancel timed-out jobs. A running remote GPU job may outlive local cancellation.
+Each accepted client connection also has a **30-second socket timeout** to
+bound stalled request reads and response writes; the upstream generation
+deadline remains 300 seconds.
 
 The existing `AssetClient` has a 120-second default timeout and represents HTTP
 failures as `asset_api_http_error`; its caller can still take the existing error
@@ -84,8 +89,10 @@ results despite fixed seeds.
 uv run --with gradio_client scripts/asset_adapter_hf.py --probe
 ```
 
-`--probe` explicitly uses `token=False`, even when local credential lookup
-would succeed. It starts no HTTP server and requires no
+`--probe` is **always anonymous**: it explicitly uses `token=False`, even when
+`HF_TOKEN` is set or local credential lookup would succeed. ZeroGPU Spaces may
+fail this anonymous probe on quota even when logged-in server requests succeed.
+It starts no HTTP server and requires no
 `KEEPFRAME_ASSET_API_KEY`. It visits the candidates in the required order, calls
 `view_api(print_info=False, return_format="dict")`, performs the required
 session preparation, and attempts one generation pipeline for a 64×64 RGBA PNG containing
@@ -114,6 +121,18 @@ or login attempted. A preliminary probe used credential lookup and is excluded
 from this anonymous evidence; the final CLI now prevents that path. Any later
 user login request belongs to the controller.
 
+## Controller logged-in smoke
+
+The controller supplied these results using the logged-in token:
+
+| Space | Result |
+| --- | --- |
+| `trellis-community/TRELLIS` | Returned a valid **1.33 MB GLB in 51 s**. This is the default server Space. |
+| `stabilityai/stable-fast-3d` | Failed Space-side: "upstream Gradio app has raised an exception". |
+
+These authenticated results are separate from the anonymous `--probe` results
+above. This fix round did not make additional live Space requests.
+
 ## Controller follow-up: ig2 re-analysis
 
 The ig2 measurement depends on Tasks 15/16 and is deferred to the controller.
@@ -137,7 +156,8 @@ Tests inject fake Gradio clients and perform only loopback HTTP calls. They
 cover the real asset-client request/response contract, the three generation
 endpoint layouts, session preparation, fixed seeds, textured-output selection,
 invalid images/GLBs, remote failures, deadlines/cancellation, optional imports,
-credential selection, forced anonymous probes, and redacted HTTP/probe errors.
+credential selection, forced anonymous probes, the TRELLIS default and explicit
+Space overrides, connection timeouts, and redacted HTTP/probe errors.
 Security regressions cover required server configuration, bearer authentication,
 Origin and media-type rejection, request-isolated downloads, and ignoring
 outside paths and file/directory symlinks.

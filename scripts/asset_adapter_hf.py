@@ -33,6 +33,7 @@ CANDIDATE_SPACES = (
     "tencent/Hunyuan3D-2",
     "trellis-community/TRELLIS",
 )
+DEFAULT_SPACE = "trellis-community/TRELLIS"
 TIMEOUT = 300.0
 MAX_REQUEST = 14 * 1024 * 1024
 _GENERATION_ENDPOINTS = ("/run_button", "/generation_all", "/generate_and_extract_glb")
@@ -149,7 +150,7 @@ def _glb_outputs(value: Any, directory: Path):
 
 
 class HFAdapter:
-    def __init__(self, space: str = CANDIDATE_SPACES[0], *, client_factory: Callable = _client_factory,
+    def __init__(self, space: str = DEFAULT_SPACE, *, client_factory: Callable = _client_factory,
                  file_handler: Callable = _handle_file, token: str | bool | None = None,
                  timeout: float = TIMEOUT):
         self.space, self.client_factory, self.file_handler = space, client_factory, file_handler
@@ -275,6 +276,8 @@ def create_server(adapter: HFAdapter, *, port: int = 8790) -> ThreadingHTTPServe
     authorization = f"Bearer {key}".encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = 30
+
         def log_message(self, *_args):
             pass  # Never log request URLs, authorization headers or credentials.
 
@@ -332,7 +335,7 @@ def probe_spaces(*, spaces=CANDIDATE_SPACES, client_factory: Callable = _client_
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8790)
-    parser.add_argument("--space", help="Space ID (default: stabilityai/stable-fast-3d)")
+    parser.add_argument("--space", help=f"Space ID (default: {DEFAULT_SPACE})")
     parser.add_argument("--probe", action="store_true", help="probe each candidate anonymously once and exit")
     args = parser.parse_args()
     if args.probe:
@@ -340,7 +343,7 @@ def main() -> int:
                      token=False, emit=lambda row: print(json.dumps(row), flush=True))
         return 0
     try:
-        server = create_server(HFAdapter(args.space or CANDIDATE_SPACES[0]), port=args.port)
+        server = create_server(HFAdapter(args.space or DEFAULT_SPACE), port=args.port)
     except RuntimeError as exc:
         parser.error(str(exc))
     print(f"Asset adapter listening on http://127.0.0.1:{server.server_port}", flush=True)

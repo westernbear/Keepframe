@@ -1042,7 +1042,10 @@ def _proposal_payload(
         if reference is None and canonical is not None:
             reference = canonical.texture
         if reference is None and element is None:
-            reference = scene.background.value
+            try:
+                reference = _safe_asset_reference(scene.background.value, label="background image")
+            except ValueError as exc:
+                raise AEMappingError(str(exc)) from exc
         if not reference:
             raise AEMappingError(f"footage substitution for {source_id} has no pinned texture")
         return _SourcePayload(
@@ -1523,7 +1526,7 @@ def map_baseline(
     # other elements need dynamic z segmentation.
     if scene.background.kind == "image" or scene.id in substitutions_by_source:
         proposal = substitutions_by_source.get(scene.id)
-        if scene.background.kind == "image":
+        if proposal is None:
             try:
                 _safe_asset_reference(scene.background.value, label="background image")
             except ValueError as exc:

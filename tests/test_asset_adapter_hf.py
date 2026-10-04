@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import socket
 import struct
 import sys
 import threading
@@ -158,6 +159,36 @@ def test_real_asset_client_contract_over_loopback(output, api_key):
     assert fake.calls[0]["texture_size"] == 1024
     assert 0 < fake.timeouts[0] <= 300
     assert not fake.directory.exists()
+
+
+def test_adapter_defaults_to_trellis(output):
+    spaces = []
+    fake = FakeClient(str(output))
+    def factory(space, **kwargs):
+        spaces.append(space)
+        fake.directory = Path(kwargs["directory"])
+        return fake
+    instance = HFAdapter(client_factory=factory, file_handler=lambda path: path, token=False)
+    assert instance.generate(request()) == glb()
+    assert spaces == ["trellis-community/TRELLIS"]
+
+
+def test_slow_request_headers_use_connection_timeout(output, api_key, monkeypatch):
+    fake = FakeClient(str(output))
+    timeouts = []
+    with serving(adapter(fake)) as server:
+        original_handle = server.RequestHandlerClass.handle
+        def handle_with_short_wait(handler):
+            timeouts.append(handler.connection.gettimeout())
+            # Exercise expiry without waiting for the production 30 seconds.
+            handler.connection.settimeout(0.05)
+            original_handle(handler)
+        monkeypatch.setattr(server.RequestHandlerClass, "handle", handle_with_short_wait)
+        with socket.create_connection(server.server_address, timeout=2) as connection:
+            connection.sendall(b"POST / HTTP/1.1\r\n")
+            assert connection.recv(1) == b""
+    assert timeouts == [30]
+    assert fake.calls == []
 
 
 @pytest.mark.parametrize("endpoint,image_name", [("/run_button", "input_image"), ("/generation_all", "image"), ("/generate_and_extract_glb", "image")])
@@ -343,6 +374,30 @@ def test_probe_cli_does_not_require_api_key(monkeypatch):
     assert main() == 0
     assert calls[0]["token"] is False
     assert calls[0]["spaces"] == CANDIDATE_SPACES
+
+
+@pytest.mark.parametrize("space", [None, "stabilityai/stable-fast-3d"])
+def test_cli_server_space_default_and_override(monkeypatch, space):
+    from types import SimpleNamespace
+    arguments = ["asset_adapter_hf.py", "--port", "0"]
+    if space is not None:
+        arguments.extend(["--space", space])
+    monkeypatch.setattr(sys, "argv", arguments)
+    selected = []
+    def server(instance, *, port):
+        selected.append((instance.space, port))
+        return SimpleNamespace(server_port=0, serve_forever=lambda: None, server_close=lambda: None)
+    monkeypatch.setattr("scripts.asset_adapter_hf.create_server", server)
+    assert main() == 0
+    assert selected == [(space or "trellis-community/TRELLIS", 0)]
+
+
+def test_cli_help_documents_trellis_default(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["asset_adapter_hf.py", "--help"])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 0
+    assert "default: trellis-community/TRELLIS" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("headers,status", [
