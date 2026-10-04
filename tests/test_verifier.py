@@ -61,6 +61,31 @@ def test_empty_scene_needs_no_bbox_probe(tmp_scene_dir):
     assert report.layer_probe_complete
     assert report.passed
 
+
+@pytest.mark.parametrize("delta, passed", [(0.0, True), (0.01, False)])
+def test_default_layer_tolerance_matches_edit_failure_error(tmp_scene_dir, delta, passed):
+    import inspect
+    from keepframe.edit.agent import _verification_error
+    from keepframe.ir.schema import Background, Canonical, Element, Scene
+    from keepframe.ir.tracks import element_bbox
+    from keepframe.render.renderer import RenderResult
+    from keepframe.verify import verifier
+
+    tolerance = getattr(verifier, "LAYER_TOLERANCE_PX", None)
+    assert tolerance is not None
+    assert inspect.signature(verify).parameters["tol_px"].default == tolerance
+    scene = Scene(id="tolerance", size=(200, 100), fps=30, frames=2, background=Background(),
+                  elements=[Element(id="static", kind="sprite", visible=(0, 1),
+                                    canonical=Canonical(width=10, height=10))])
+    frames = [0, 1]
+    probes = {el.id: [[v + tolerance + delta for v in element_bbox(el, frame)] for frame in frames]
+              for el in scene.elements}
+    report = verify(scene, tmp_scene_dir, render_result=RenderResult(
+        frames_dir=tmp_scene_dir, frames=frames, hashes=[], bboxes=probes))
+    assert report.passed is passed
+    assert bool(report.layer_errors) is not passed
+    assert ("레이어 위치 오차" in _verification_error(report)) is not passed
+
 def test_missing_texture_fails_schema(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=8, with_text=False)
     scene.elements[0].canonical.texture = "assets/nope.png"

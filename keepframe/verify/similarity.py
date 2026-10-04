@@ -44,6 +44,25 @@ def temporal_similarity(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) 
     return float(np.clip(0.5 * (np.mean(r2o) + np.mean(o2r)), 0.0, 1.0))
 
 
+def temporal_similarity_by_id(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) -> float:
+    def evidence_weight(track: np.ndarray) -> int:
+        finite = np.isfinite(track).all(axis=1)
+        return int(np.count_nonzero(finite[:-1] & finite[1:]))
+
+    total_weight, weighted_score = 0, 0.0
+    for eid, track in ref.items():
+        weight = evidence_weight(track)
+        if weight == 0:
+            continue
+        score = tracklet_correlation(track, out[eid]) if eid in out else None
+        weighted_score += weight * (score if score is not None else 0.0)
+        total_weight += weight
+    if total_weight == 0:
+        motionless = all(evidence_weight(out[eid]) == 0 for eid in ref if eid in out)
+        return 1.0 if motionless else 0.0
+    return float(np.clip(weighted_score / total_weight, 0.0, 1.0))
+
+
 def appearance_similarity(tex_a: np.ndarray, tex_b: np.ndarray) -> float:
     if tex_b.shape[:2] != tex_a.shape[:2]:
         tex_b = cv2.resize(tex_b, (tex_a.shape[1], tex_a.shape[0]), interpolation=cv2.INTER_AREA)

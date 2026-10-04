@@ -14,7 +14,7 @@ from ..render.renderer import render
 from ..ir.schema import Scene, Version
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from ..verify.predicates import build_context, eval_pred
-from ..verify.verifier import VerifyReport, verify
+from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
 from .apply import apply_edit
 from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
@@ -50,13 +50,13 @@ def _verification_error(rep: VerifyReport | None) -> str:
         return "검증 실패: 검증 보고서 없음"
     failures = []
     if rep.temporal is not None and rep.temporal < TEMPORAL_MIN:
-        failures.append(f"시간 유사도 {rep.temporal:.2f} < {TEMPORAL_MIN:.2f}")
+        failures.append(f"시간 유사도 {rep.temporal:.3f} < {TEMPORAL_MIN:.3f}")
     failed_keep = sum(not item.get("passed") for item in rep.keep_results)
     if failed_keep:
         failures.append(f"keep 술어 {failed_keep}개 실패")
     elif rep.keep_pass_rate != 1.0:
         failures.append("keep 검증을 통과하지 못했습니다.")
-    if rep.layer_max_err_px > 2.0:
+    if rep.layer_max_err_px > LAYER_TOLERANCE_PX:
         failures.append(f"레이어 위치 오차 {rep.layer_max_err_px:.1f}px")
     if not rep.schema_ok or not rep.layer_probe_complete:
         failures.append("스키마/레이어 프로브 불완전")

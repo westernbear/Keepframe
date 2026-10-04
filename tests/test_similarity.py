@@ -2,6 +2,8 @@ import numpy as np, pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
 from keepframe.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
+from keepframe.verify import similarity
+from keepframe.verify.verifier import verify
 
 def test_identical_scene_scores_one(tmp_scene_dir):
     s = make_synthetic_scene(tmp_scene_dir, seed=4)
@@ -54,6 +56,92 @@ def test_reversed_motion_in_fragmented_scene_still_fails_gate():
     score = temporal_similarity(centroid_tracks(scene), centroid_tracks(out))
     assert score == pytest.approx(1 / 3)
     assert score < 0.7
+
+
+@pytest.mark.parametrize("change, expected", [
+    ("identical", 1.0), ("reversed", 29 / 47),
+    ("deleted", 20 / 47), ("static", 20 / 47),
+    ("non_overlapping", 20 / 29),
+])
+def test_edit_temporal_gate_with_one_and_two_frame_fragments(tmp_path, change, expected):
+    scene = _fragmented_scene()
+    if change == "non_overlapping":
+        scene.elements = [el for el in scene.elements if el.id not in {"moving1", "moving2"}]
+    out = scene.model_copy(deep=True)
+    if change == "reversed":
+        keys = out.element("moving0").tracks["x"].keys
+        keys[0].v, keys[-1].v = keys[-1].v, keys[0].v
+    elif change == "deleted":
+        out.elements = [el for el in out.elements if not el.id.startswith("moving")]
+    elif change == "static":
+        for el in out.elements:
+            if el.id.startswith("moving"):
+                el.tracks = {}
+    elif change == "non_overlapping":
+        el = out.element("moving0")
+        el.visible = (20, 29)
+        for key in el.tracks["x"].keys:
+            key.t += 10
+    report = verify(out, tmp_path, reference=scene)
+    assert report.temporal == pytest.approx(expected)
+    assert report.temporal == similarity.temporal_similarity_by_id(centroid_tracks(scene), centroid_tracks(out))
+    if change != "identical":
+        assert report.temporal < 0.7
+
+
+def test_real_clip_like_fragments_with_one_untouched_mover_score_one(tmp_path):
+    scene = _fragmented_scene(two_frame_elements=33)
+    scene.elements = [el for el in scene.elements if el.id not in {"moving1", "moving2"}]
+    assert len(scene.elements) == 54
+    out = scene.model_copy(deep=True)
+    assert similarity.temporal_similarity_by_id(centroid_tracks(scene), centroid_tracks(out)) == 1.0
+    assert verify(out, tmp_path, reference=scene).temporal == 1.0
+
+
+def test_by_id_weights_only_valid_consecutive_reference_rows():
+    ref = {"long": np.c_[np.arange(7.), np.zeros(7)],
+           "short": np.array([[0., 0.], [1., 0.], [np.nan, np.nan], [2., 0.], [3., 0.]]),
+           "single": np.array([[np.inf, 0.], [1., 0.], [np.nan, np.nan]])}
+    out = {"long": ref["long"] / 2, "short": ref["short"] * -1,
+           "single": np.c_[np.arange(3.), np.zeros(3)]}
+    score = similarity.temporal_similarity_by_id(ref, out)
+    assert score == pytest.approx(1 / 8)  # (6 * 0.5 + 2 * -1) / 8
+    assert isinstance(score, float)
+
+
+@pytest.mark.parametrize("out", [
+    {}, {"other": np.c_[np.arange(4.), np.zeros(4)]},
+    {"moving": np.array([[0., 0.], [np.nan, np.nan], [1., 0.], [np.nan, np.nan]])},
+])
+def test_by_id_missing_or_unusable_counterpart_counts_as_zero(out):
+    ref = {"moving": np.c_[np.arange(4.), np.zeros(4)]}
+    assert similarity.temporal_similarity_by_id(ref, out) == 0.0
+
+
+@pytest.mark.parametrize("out, expected", [
+    ({}, 1.0),
+    ({"fragment": np.array([[20., 30.]])}, 1.0),
+    ({"fragment": np.array([[20., 30.], [np.nan, np.nan], [21., 30.]])}, 1.0),
+    ({"fragment": np.array([[20., 30.], [21., 30.]])}, 0.0),
+    ({"fragment": np.zeros((2, 2))}, 0.0),
+    ({"extra": np.c_[np.arange(4.), np.zeros(4)]}, 1.0),
+])
+def test_by_id_no_reference_diffs_checks_output_for_reference_ids(out, expected):
+    ref = {"fragment": np.array([[np.nan, np.nan], [10., 20.], [np.nan, np.nan]])}
+    assert similarity.temporal_similarity_by_id(ref, out) == expected
+
+
+def test_by_id_empty_reference_and_static_reference_score_one():
+    assert similarity.temporal_similarity_by_id({}, {}) == 1.0
+    ref = {"static": np.zeros((4, 2))}
+    assert similarity.temporal_similarity_by_id(ref, ref) == 1.0
+
+
+def test_analysis_temporal_matching_keeps_unknown_id_correspondences():
+    moving = np.c_[np.arange(4.), np.zeros(4)]
+    ref, out = {"golden": moving}, {"analyzed": moving.copy()}
+    assert temporal_similarity(ref, out) == 1.0
+    assert similarity.temporal_similarity_by_id(ref, out) == 0.0
 
 
 @pytest.mark.parametrize("a, b", [

@@ -110,15 +110,20 @@ def fragmented_project(tmp_path, monkeypatch):
     return root, scene
 
 
-def test_text_edit_with_one_frame_sprites_keeps_tracks_and_passes(fragmented_project):
+@pytest.mark.parametrize("prop, value", [("text", "Hello"), ("color", "#00ffaa"), ("background", "#112233")])
+def test_text_edit_with_one_frame_sprites_keeps_tracks_and_passes(fragmented_project, prop, value):
     root, before = fragmented_project
-    result = edit(root, "s1", "문구를 Hello로", confirm=True,
-                  intent={"targets": [{"element": "e1", "property": "text", "value": "Hello"}]})
+    target = {"property": prop, "value": value}
+    if prop != "background":
+        target["element"] = "e1"
+    result = edit(root, "s1", "내용을 바꿔줘", confirm=True, intent={"targets": [target]})
     assert result.verify.passed
     assert result.status == "done", f"temporal={result.verify.temporal}"
     assert result.verify.temporal == 1.0
     edited, version = current_scene(root, "s1")
-    assert version.id == "v2" and edited.element("e1").canonical.text == "Hello"
+    assert version.id == "v2"
+    assert (edited.background.value if prop == "background" else getattr(edited.element("e1").canonical, prop)) == value
+    assert [el.id for el in edited.elements] == [el.id for el in before.elements]
     assert [(el.visible, el.tracks) for el in edited.elements] == [(el.visible, el.tracks) for el in before.elements]
 
 
@@ -144,7 +149,8 @@ def test_timing_edit_with_unintended_track_change_names_temporal_gate(fragmented
 
 
 @pytest.mark.parametrize("failure, expected", [
-    ({"temporal": 0.63, "passed": True}, "시간 유사도 0.63 < 0.70"),
+    ({"temporal": 0.63, "passed": True}, "시간 유사도 0.630 < 0.700"),
+    ({"temporal": 0.6994, "passed": True}, "시간 유사도 0.699 < 0.700"),
     ({"keep_pass_rate": 0.25, "keep_results": [{"pred": "test", "passed": False}] * 3 + [{"pred": "ok", "passed": True}]},
      "keep 술어 3개 실패"),
     ({"keep_pass_rate": 0.0}, "keep 검증을 통과하지 못했습니다."),
@@ -154,7 +160,7 @@ def test_timing_edit_with_unintended_track_change_names_temporal_gate(fragmented
     ({"temporal": 0.63, "keep_pass_rate": 0.0,
       "keep_results": [{"pred": "test", "passed": False}] * 3,
       "layer_max_err_px": 4.2, "schema_ok": False, "layer_probe_complete": False},
-     "시간 유사도 0.63 < 0.70; keep 술어 3개 실패; 레이어 위치 오차 4.2px; 스키마/레이어 프로브 불완전"),
+     "시간 유사도 0.630 < 0.700; keep 술어 3개 실패; 레이어 위치 오차 4.2px; 스키마/레이어 프로브 불완전"),
 ])
 def test_edit_failure_names_each_gate_and_preserves_messages(fragmented_project, monkeypatch, failure, expected):
     root, _ = fragmented_project
