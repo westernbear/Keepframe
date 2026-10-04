@@ -1,6 +1,8 @@
+import pytest
+
 from keepframe.analyze.constraints import extract_constraints
 from keepframe.ir.synth import make_synthetic_scene
-from keepframe.ir.store import init_project
+from keepframe.ir.store import current_scene, init_project, load_project
 from keepframe.session.agent import SessionAgent, SessionTurn
 from keepframe.session.llm import AssistantReply
 from keepframe.session.tools import SessionContext
@@ -47,7 +49,8 @@ def test_turn_runs_tool_then_replies(tmp_path):
     assert turn.reply == "리포트를 만들었습니다."
 
 
-def test_turn_stops_on_pending(tmp_path):
+@pytest.mark.parametrize("confirm", [False, True])
+def test_turn_stops_on_pending(tmp_path, confirm):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"
     scene = make_synthetic_scene(sd, seed=4, with_text=True, frames=24)
@@ -55,11 +58,19 @@ def test_turn_stops_on_pending(tmp_path):
     scene.constraints = [c.model_copy(update={"keep": c.pred.startswith("type(")}) for c in extract_constraints(scene)]
     text = next(e for e in scene.elements if e.kind == "text")
     init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [0, 23]}, scene)
+    before = load_project(root)
 
     replies = [
-        AssistantReply(tool_calls=[{"id": "c1", "name": "edit", "arguments": {"prompt": "문구를 Hello로", "confirm": False, "element": text.id}}]),
+        AssistantReply(tool_calls=[{"id": "c1", "name": "edit", "arguments": {"prompt": "문구를 Hello로", "confirm": confirm,
+            "targets": [{"element": text.id, "property": "text", "value": "Hello"}]}}]),
+        AssistantReply(content="편집을 마쳤습니다."),
     ]
     agent = SessionAgent(StubLLM(replies))
     turn = agent.turn(_ctx(root), "문구 바꿔줘", [])
     assert turn.status == "pending"
     assert turn.needs_confirm is True
+    assert turn.needs_choice is False
+    assert turn.results[0]["payload"]["intent"]["targets"][0]["value"] == "Hello"
+    assert turn.results[0]["payload"]["plan"]["items"][0]["element"] == text.id
+    assert load_project(root) == before
+    assert current_scene(root, "s1")[0] == scene

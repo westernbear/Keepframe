@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from keepframe.edit.agent import edit
 from keepframe.edit.apply import apply_edit
 from keepframe.edit.intent import Intent, Target, describe, plan
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Scene
@@ -197,14 +198,16 @@ def test_font_missing_waits_for_explicit_fallback_then_creates_version(tmp_path,
     args = {"prompt": "폰트를 바꿔줘", "targets": [{"element": "e1", "property": "font", "value": "Pretendard", "weight": 700}]}
     preview = run_tool("edit", ctx, args)
     assert preview["ok"] and preview["needs_confirm"]
-    blocked = run_tool("edit", ctx, {**args, "confirm": True})
-    assert blocked["ok"] and blocked["needs_choice"]
-    assert blocked["payload"]["plan"]["conflicts"][0]["id"] == "font_missing"
+    model_choice = run_tool("edit", ctx, {**args, "confirm": True, "choices": {"font_missing": "use_fallback"}})
+    assert model_choice["ok"] and model_choice["needs_confirm"] and not model_choice["needs_choice"]
+    assert model_choice["payload"] == preview["payload"]
     unchanged, version = current_scene(root, "s1")
     assert version.id == "v1" and unchanged == scene
-    done = run_tool("edit", ctx, {**args, "confirm": True, "choices": {"font_missing": "use_fallback"}})
-    assert done["ok"] and not done["needs_choice"] and not done["needs_confirm"], done
-    assert done["payload"]["version"]["id"] == "v2"
+    blocked = edit(root, "s1", args["prompt"], confirm=True, intent=preview["payload"]["intent"])
+    assert blocked.status == "needs_choice" and blocked.plan.conflicts[0].id == "font_missing"
+    assert current_scene(root, "s1")[1].id == "v1"
+    done = edit(root, "s1", args["prompt"], confirm=True, intent=preview["payload"]["intent"], choices={"font_missing": "use_fallback"})
+    assert done.status == "done" and done.version.id == "v2", done
     edited, version = current_scene(root, "s1")
     assert version.id == "v2"
     assert edited.element("e1").canonical.font.family_guess == "Pretendard"

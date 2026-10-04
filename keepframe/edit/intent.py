@@ -21,12 +21,12 @@ _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 
 
 class Target(BaseModel):
-    element: str | None = None
-    property: Prop
-    value: str | None = Field(default=None, max_length=500)
-    weight: int | None = Field(default=None, ge=100, le=900)
-    speed: float | None = Field(default=None, gt=0.1, le=10)
-    delay: float | None = Field(default=None, ge=-30, le=30)
+    element: str | None = Field(default=None, description="장면 브리프의 요소 id(예: e12). background와 장면 전체 timing에는 비워 둔다(장면 id 's1'을 넣지 않는다)")
+    property: Prop = Field(description="허용된 편집: text(문구), color(요소 색), texture(이미지), model(3D 모델), background(배경색), font(폰트), timing(속도·지연).")
+    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color/background: #rrggbb, font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 3D 모델 생성 설명.")
+    weight: int | None = Field(default=None, ge=100, le=900, description="폰트 굵기(100~900, 400=보통, 700=굵게).")
+    speed: float | None = Field(default=None, gt=0.1, le=10, description="timing 속도 배율(1=원래 속도, 2=2배 빠르게).")
+    delay: float | None = Field(default=None, ge=-30, le=30, description="timing 지연 시간(초). 요소별 timing에만 사용하며 음수는 앞당긴다.")
 
     @model_validator(mode="after")
     def _shape(self):

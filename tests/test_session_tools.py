@@ -1,6 +1,7 @@
 import json
 
 from keepframe.analyze.constraints import extract_constraints
+from keepframe.edit.agent import edit
 from keepframe.ir.schema import Background, Constraint, Element, Canonical, Scene
 from keepframe.ir.store import current_scene, init_project, scene_dir
 from keepframe.ir.synth import make_synthetic_scene
@@ -35,7 +36,7 @@ def test_set_keep_reports_no_match(tmp_path):
     assert res["ok"] is False
 
 
-def test_edit_tool_completes(tmp_path):
+def test_edit_tool_preview_then_confirmed_edit_completes(tmp_path):
     root = tmp_path / "proj"
     sd = root / "scenes" / "s1"
     scene = make_synthetic_scene(sd, seed=4, with_text=True, frames=24)
@@ -46,8 +47,10 @@ def test_edit_tool_completes(tmp_path):
 
     res = run_tool("edit", _ctx(root), {"prompt": "문구를 Hello로", "element": text.id, "confirm": True})
     assert res["ok"] is True
-    assert res["needs_confirm"] is False
-    assert res["payload"]["version"]["id"] == "v2"
+    assert res["needs_confirm"] is True
+    assert current_scene(root, "s1")[1].id == "v1"
+    done = edit(root, "s1", "문구를 Hello로", confirm=True, intent=res["payload"]["intent"])
+    assert done.status == "done" and done.version.id == "v2"
     edited, _ = current_scene(root, "s1")
     assert edited.element(text.id).canonical.text == "Hello"
 

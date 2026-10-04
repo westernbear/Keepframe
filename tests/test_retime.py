@@ -392,8 +392,8 @@ def test_session_scene_speed_requests_keep_choice_before_render(tmp_path, monkey
     args = {"prompt": "장면 속도를 바꿔줘", "targets": [{"element": None, "property": "timing", "speed": 1.5}]}
     preview = run_tool("edit", ctx, args)
     assert preview["needs_confirm"] and not preview["needs_choice"]
-    result = run_tool("edit", ctx, {**args, "confirm": True})
-    assert result["needs_choice"] and result["payload"]["plan"]["conflicts"][-1]["id"] == "keep_violation"
+    result = edit(tmp_path, "s1", args["prompt"], confirm=True, intent=preview["payload"]["intent"])
+    assert result.status == "needs_choice" and result.plan.conflicts[-1].id == "keep_violation"
     after, version = current_scene(tmp_path, "s1")
     assert after == scene and version.id == "v1"
 
@@ -402,9 +402,11 @@ def test_session_element_delay_requests_extension_before_render(tmp_path, monkey
     scene = _scene()
     init_project(tmp_path, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size)}, scene)
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *a, **k: pytest.fail("unresolved timing overflow reached render"))
-    result = run_tool("edit", SessionContext(tmp_path, "s1"), {"prompt": "요소를 늦춰줘", "confirm": True,
+    preview = run_tool("edit", SessionContext(tmp_path, "s1"), {"prompt": "요소를 늦춰줘", "confirm": True,
         "targets": [{"element": "e1", "property": "timing", "delay": 1.0}]})
-    assert result["needs_choice"] and result["payload"]["plan"]["conflicts"][0]["choices"] == ["extend_scene"]
+    assert preview["needs_confirm"]
+    result = edit(tmp_path, "s1", "요소를 늦춰줘", confirm=True, intent=preview["payload"]["intent"])
+    assert result.status == "needs_choice" and result.plan.conflicts[0].choices == ["extend_scene"]
     assert current_scene(tmp_path, "s1")[1].id == "v1"
 
 

@@ -26,8 +26,8 @@ def test_edit_tool_accepts_typed_targets(tmp_path):
     targets = [{"element": text.id, "property": "text", "value": "Hi"}]
     first = run_tool("edit", SessionContext(root=root, scene_id="s1"), {"prompt": "제목을 Hi로", "targets": targets})
     assert first["needs_confirm"] and first["payload"]["intent"]["targets"][0]["value"] == "Hi"
-    done = run_tool("edit", SessionContext(root=root, scene_id="s1"), {"prompt": "제목을 Hi로", "targets": targets, "confirm": True})
-    assert done["ok"] and current_scene(root, "s1")[0].element(text.id).canonical.text == "Hi"
+    done = edit(root, "s1", "제목을 Hi로", confirm=True, intent=first["payload"]["intent"])
+    assert done.status == "done" and current_scene(root, "s1")[0].element(text.id).canonical.text == "Hi"
 
 
 def test_edit_tool_rejects_unknown_element(tmp_path):
@@ -66,6 +66,22 @@ def test_edit_schema_is_typed():
     params = next(t for t in TOOL_SCHEMAS if t["function"]["name"] == "edit")["function"]["parameters"]
     assert "text" in params["properties"]["targets"]["items"]["properties"]["property"]["enum"]
     _assert_refs_resolve(params)
+
+
+def test_edit_schema_describes_fields_and_confirmation_authority():
+    params = next(t for t in TOOL_SCHEMAS if t["function"]["name"] == "edit")["function"]["parameters"]
+    properties = params["properties"]
+    fields = properties["targets"]["items"]["properties"]
+    for name in ("element", "property", "value", "weight", "speed", "delay"):
+        assert fields[name].get("description"), name
+    assert all(word in fields["element"]["description"] for word in ("e12", "background", "timing", "s1"))
+    assert all(prop in fields["property"]["description"] for prop in fields["property"]["enum"])
+    assert all(word in fields["value"]["description"] for word in ("text", "새 문구", "color", "background", "#rrggbb", "font", "폰트 패밀리", "texture", "생성 설명", "attachment"))
+    assert "배율" in fields["speed"]["description"]
+    assert "초" in fields["delay"]["description"]
+    if "confirm" in properties:
+        assert "권한이 아니며 무시된다" in properties["confirm"]["description"]
+        assert "브라우저의 확인 버튼" in properties["confirm"]["description"]
 
 
 def test_edit_schema_resolves_pydantic_defs(monkeypatch):
@@ -178,9 +194,8 @@ def test_typed_attachment_required_before_conflict_choice(tmp_path, monkeypatch)
                {"element": text.id, "property": "text", "value": "long text " * 40}]
     preview = run_tool("edit", SessionContext(root, "s1", has_attachment=True), {"prompt": "x", "targets": targets})
     assert preview["needs_confirm"] and preview["payload"]["plan"]["conflicts"]
-    done = run_tool("edit", SessionContext(root, "s1", has_attachment=True), {"prompt": "x", "targets": targets, "confirm": True})
-    assert done["ok"] is False and done["message"] == "attachment_required"
-    assert done["needs_choice"] is False
+    done = edit(root, "s1", "x", confirm=True, has_attachment=True, intent=preview["payload"]["intent"])
+    assert done.status == "failed" and done.error == "attachment_required"
 
 
 @pytest.mark.parametrize("as_model", [False, True])

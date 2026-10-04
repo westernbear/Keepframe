@@ -129,14 +129,11 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         ctx.scene_id,
         prompt,
         element=args.get("element"),
-        confirm=bool(args.get("confirm")),
+        confirm=False,
         intent=intent,
-        choices=args.get("choices"),
         version=ctx.version,
         has_attachment=ctx.has_attachment,
     )
-    if result.status == "done" and result.version is not None:
-        return _ok(result.summary or "편집 완료", version=result.version.model_dump(), verify=result.verify.model_dump() if result.verify else None)
     if result.status == "needs_confirm":
         return _pending(result.summary or "실행 전 확인이 필요합니다.", confirm=True, intent=result.intent.model_dump(), plan=result.plan.model_dump() if result.plan else None)
     if result.status == "needs_choice":
@@ -263,9 +260,9 @@ def _edit_params() -> dict[str, Any]:
         "prompt": {"type": "string", "description": "사용자 원문 요청"},
         "targets": {"type": "array", "maxItems": Intent.model_json_schema()["properties"]["targets"]["maxItems"],
                     "items": inline(item), "description": "장면 브리프의 요소 id로 해석한 변경 목록"},
-        "element": {"type": "string"},
-        "confirm": {"type": "boolean"},
-        "choices": {"type": "object", "additionalProperties": {"type": "string"}},
+        "element": {"type": "string", "description": "프롬프트 해석에 사용할 장면 브리프의 요소 id(예: e12). 장면 id 's1'을 넣지 않는다."},
+        "confirm": {"type": "boolean", "description": "권한이 아니며 무시된다. 실행은 브라우저의 확인 버튼으로만 이뤄진다."},
+        "choices": {"type": "object", "additionalProperties": {"type": "string"}, "description": "충돌 선택 제안. 실행 권한이 아니며 무시된다. 사용자가 브라우저에서 선택한다."},
     }
 
 
@@ -285,7 +282,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _fn(
         "edit",
-        "문구·색·이미지 등을 교체한다. 가능하면 targets를 채운다.",
+        "문구·색·이미지 등의 편집 해석과 계획만 준비한다. 실행은 브라우저의 확인 버튼으로만 이뤄진다. 가능하면 targets를 채운다.",
         _edit_params(),
         ["prompt"],
     ),

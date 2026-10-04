@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from keepframe.edit.agent import edit
 from keepframe.edit.apply import apply_edit
 from keepframe.edit.intent import Target, describe, interpret, plan
 from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
@@ -211,11 +212,10 @@ def test_edit_tool_background_needs_confirm_then_creates_version(tmp_path, monke
     unchanged, parent = current_scene(root, "s1")
     assert parent.id == "v1" and unchanged.background.value == "#000000"
 
-    done = run_tool("edit", ctx, {**args, "confirm": True})
-    assert done["ok"] and not done["needs_confirm"], done
-    assert done["payload"]["version"]["id"] == "v2"
+    done = edit(root, "s1", args["prompt"], confirm=True, intent=preview["payload"]["intent"])
+    assert done.status == "done" and done.version.id == "v2", done
     edited, version = current_scene(root, "s1")
     assert version.id == "v2" and version.parent == "v1"
     assert edited.background == Background(kind="color", value="#112233", confidence=1.0)
     assert edited.elements == scene.elements
-    assert done["payload"]["verify"]["temporal"] == 1.0
+    assert done.verify.temporal == 1.0
