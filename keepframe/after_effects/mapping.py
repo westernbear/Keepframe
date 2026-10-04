@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from ..ir.schema import DEFAULTS, PROPS, Element, Scene, Track
 from ..ir.tracks import eval_z
 from ..render.plan import PlanAsset
+from .compatibility import _safe_asset_reference
 from .models import AECapabilities, AESubstitution
 from .operations import (
     MAX_LAYERS,
@@ -1522,6 +1523,11 @@ def map_baseline(
     # other elements need dynamic z segmentation.
     if scene.background.kind == "image" or scene.id in substitutions_by_source:
         proposal = substitutions_by_source.get(scene.id)
+        if scene.background.kind == "image":
+            try:
+                _safe_asset_reference(scene.background.value, label="background image")
+            except ValueError as exc:
+                raise AEMappingError(str(exc)) from exc
         payloads = (
             tuple(
                 _proposal_payload(
@@ -1747,6 +1753,11 @@ def map_baseline(
             )
         if rep.source_kind == "group":
             operations.extend(_neutral_group_operations(rep.instance_id))
+        elif rep.role == "background" and scene.id not in substitutions_by_source:
+            # ponytail: generated plates have composition dimensions; fitting
+            # external images needs source dimensions added to the pinned manifest.
+            operations.extend(_neutral_group_operations(rep.instance_id))
+            operations.append(SetOpacityOperation(layer_instance_id=rep.instance_id, opacity=1.0))
         elif rep.element is not None:
             operations.extend(
                 _transform_operations(

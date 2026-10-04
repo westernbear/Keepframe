@@ -181,6 +181,44 @@ def test_image_background_is_black_comp_with_pinned_asset_layer():
     assert result.imported_asset_ids == (background.id,)
 
 
+def test_background_plate_is_bottom_full_duration_footage_at_comp_origin():
+    scene = _scene(
+        _sprite(z=-999999),
+        groups=(Group(id="controls", members=["sprite-1"]),),
+        background=Background(kind="image", value="assets/background.png"),
+    )
+    plate = _asset("scenes/demo/assets/background.png")
+    result = map_baseline(
+        scene, [plate, _asset("scenes/demo/img.png", "b")], "scenes/demo", _capabilities()
+    )
+    adds = [op for op in _ops(result) if op.kind == "add_layer"]
+    background = adds[0]
+    assert background.layer_type == "footage"
+    assert background.asset_id == plate.id
+    assert background.parent_instance_id is None
+    assert result.composition.width == 100 and result.composition.height == 50
+    inventory = result.final_inventory[0]
+    assert inventory.source_element_id == scene.id
+    assert inventory.active_interval == (0, scene.frames)
+    operations = [op for op in _ops(result) if op.layer_instance_id == background.layer_instance_id]
+    visibility = next(op for op in operations if op.kind == "set_visibility")
+    assert visibility.visible and (visibility.frame_start, visibility.frame_end) == (0, scene.frames)
+    transforms = {op.property_name: op.value for op in operations if op.kind == "set_transform"}
+    assert transforms["anchor"] == [0.0, 0.0]
+    assert transforms["position_x"] == 0.0
+    assert transforms["position_y"] == 0.0
+    assert transforms["scale"] == [100.0, 100.0]
+
+
+@pytest.mark.parametrize("reference", ["../outside.png", "assets/../../outside.png", "/outside.png", "C:\\outside.png", "https://example.com/a.png", "assets/a\n.png"])
+def test_background_mapping_rejects_unsafe_asset_references(reference):
+    with pytest.raises(AEMappingError):
+        map_baseline(
+            _scene(background=Background(kind="image", value=reference)),
+            [_asset("scenes/demo/assets/a\n.png")], "scenes/demo", _capabilities()
+        )
+
+
 def test_static_z_order_is_ascending_with_scene_order_ties():
     low = _sprite("low", z=-1)
     tie_a = _sprite("tie-a", z=2)

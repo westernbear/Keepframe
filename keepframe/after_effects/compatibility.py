@@ -83,6 +83,8 @@ def _safe_untrusted_text(value: Any, *, label: str, nonempty: bool = True) -> st
 
 def _safe_asset_reference(value: Any, *, label: str = "texture") -> str:
     value = _safe_text(value, label=label)
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{label} contains a control character")
     if not value or _URL_RE.match(value) or _DRIVE_RE.match(value):
         raise ValueError(f"{label} must be a scene-relative asset reference")
     if value.startswith(("/", "\\", "./", "../")) or "\\" in value:

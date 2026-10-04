@@ -75,6 +75,34 @@ def layers(*, source="e1"):
     ]
 
 
+def test_image_background_inventory_is_verified_without_element_constraints():
+    scene = motion_scene().model_copy(update={
+        "background": Background(kind="image", value="assets/background.png"),
+        "elements": [],
+    })
+    layer = AELayerInventory(
+        layer_instance_id="mapped:s:background:0", native_layer_id=101,
+        source_element_id=scene.id, kind="footage", index=1,
+        frame_start=0, frame_end=scene.frames,
+    )
+    inspection = AEInspection(
+        layers=[layer], layer_sources={layer.layer_instance_id: scene.id},
+        layer_native_ids={layer.layer_instance_id: 101},
+    )
+    report = verify_inspection(
+        scene, [inspection],
+        authoritative_instance_sources={layer.layer_instance_id: scene.id},
+        authoritative_instance_native_ids={layer.layer_instance_id: 101},
+    )
+    assert report.passed
+    with pytest.raises(ValueError, match="incomplete"):
+        verify_inspection(
+            scene, [inspection.model_copy(update={"layers": ()})],
+            authoritative_instance_sources={layer.layer_instance_id: scene.id},
+            authoritative_instance_native_ids={layer.layer_instance_id: 101},
+        )
+
+
 def sample(source, frame, *, x=0, bounds=(-10, -10, 10, 10), instance=None, provenance=()):
     return AESourceSample(
         source_element_id=source,

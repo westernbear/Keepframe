@@ -171,6 +171,14 @@ def test_image_background_with_a_fixed_asset_reference_is_supported():
     ]
 
 
+@pytest.mark.parametrize("reference", ["../outside.png", "assets/../../outside.png", "/outside.png", "C:\\outside.png", "https://example.com/a.png", "assets/a\n.png"])
+def test_image_background_rejects_unsafe_references(reference):
+    issues = analyze_ae_compatibility(
+        _scene(background=Background(kind="image", value=reference)), _capabilities()
+    )
+    assert [(issue.source_element_id, issue.semantic_key) for issue in issues] == [("scene-1", "background")]
+
+
 def test_valid_substitution_proposal_is_bound_to_issue_and_capability():
     issue = analyze_ae_compatibility(
         _scene(_element("space", "3d")),
