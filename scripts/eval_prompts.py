@@ -1,4 +1,4 @@
-"""Run fixed Korean/English prompts through the session agent on a copy of a project; report how many became valid typed edits."""
+"""Evaluate fixed Korean/English prompts on project copies, with optional gold target checks."""
 from __future__ import annotations
 
 import argparse
@@ -8,8 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from keepframe.ir.schema import load_project_json
+from keepframe.ir.schema import Scene, load_project_json
 from keepframe.ir.store import current_scene
+from keepframe.ir.tracks import element_bbox
 from keepframe.session.agent import SessionAgent
 from keepframe.session.llm import AssistantReply, LLMClient, NullClient, make_llm
 from keepframe.session.provider import load_llm_settings
@@ -25,6 +26,32 @@ PROMPTS = [
     "카드 색을 브랜드 컬러 #ff5a1f로 바꿔줘",
     "Change the headline to 'Fall Drop'",
 ]
+
+
+def gold_match(scene: Scene, targets: list[dict], gold: dict) -> bool:
+    """Match a typed target to original content or a scene-percent point at seconds."""
+    if not gold.get("property"):
+        return False
+    for target in targets:
+        if target.get("property") != gold.get("property"):
+            continue
+        if "text" not in gold and "at" not in gold:
+            if target.get("element") is None:
+                return True
+            continue
+        element = next((e for e in scene.elements if e.id == target.get("element")), None)
+        if element is None or gold["property"] == "background":
+            continue
+        if "text" in gold and gold["text"].casefold() not in (element.canonical.text or "").casefold():
+            continue
+        if "at" in gold:
+            x, y, seconds = gold["at"]
+            x0, y0, x1, y1 = element_bbox(element, round(seconds * scene.fps))
+            if not (x0 <= x * scene.size[0] / 100 <= x1 and y0 <= y * scene.size[1] / 100 <= y1):
+                continue
+        # ponytail: target/property accuracy only; add value predicates for edit-value evaluation.
+        return True
+    return False
 
 
 class PreviewLLM:
@@ -47,7 +74,11 @@ def main() -> int:
     ap.add_argument("--project", required=True)
     ap.add_argument("--scene", default="s1")
     ap.add_argument("--workspace")
+    ap.add_argument("--gold", type=Path, help="JSON mapping exact prompt strings to gold property/text/at dictionaries")
     a = ap.parse_args()
+    gold = json.loads(a.gold.read_text()) if a.gold else None
+    if a.gold and (not isinstance(gold, dict) or any(not isinstance(entry, dict) for entry in gold.values())):
+        ap.error("--gold must be a JSON object mapping prompt strings to gold dictionaries")
     workspace = Path(a.workspace) if a.workspace else None
     saved = load_llm_settings(workspace) if workspace is not None else None
     llm = make_llm(saved, workspace) if saved is not None else make_llm()
@@ -58,6 +89,8 @@ def main() -> int:
     rows = []
     for prompt in PROMPTS:
         row = {"prompt": prompt, "ok": False, "typed": False, "calls": [], "results": [], "targets": [], "reply": ""}
+        if gold is not None:
+            row["correct"] = False
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp) / "project"
@@ -89,13 +122,18 @@ def main() -> int:
                         and ((result.get("payload") or {}).get("intent") or {}).get("targets")
                     )
                 row["typed"] = bool(row["targets"])
+                if gold is not None:
+                    row["correct"] = bool(row["ok"] and row["typed"] and gold_match(scene, row["targets"], gold.get(prompt, {})))
         except Exception as e:
             row.update(ok=False, error=f"{type(e).__name__}: {e}"[:300])
         rows.append(row)
-    print(json.dumps({
+    report = {
         "ok": sum(r["ok"] for r in rows), "typed_ok": sum(r["ok"] and r["typed"] for r in rows),
         "n": len(rows), "rows": rows,
-    }, ensure_ascii=False, indent=2))
+    }
+    if gold is not None:
+        report["correct"] = sum(r["correct"] for r in rows)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
 

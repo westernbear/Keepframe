@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+import tempfile
 from pathlib import Path
 from statistics import mean
 from typing import TYPE_CHECKING
@@ -66,7 +67,50 @@ def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
             "passed": l1_ok >= math.ceil(0.8 * n) and trk_ok and temporal >= 0.7, "rows": rows}
 
 
-def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options: AnalyzeOptions | None = None) -> dict:
+def render_fidelity(root: Path, scene_id: str, clip: Path, sample_every: int = 10, max_frames: int = 150) -> dict:
+    """Return normalized browser/source L1 and compared frame indices, starting at source zero."""
+    import cv2, numpy as np
+    from .ir.store import current_scene, scene_dir
+
+    if sample_every <= 0 or max_frames <= 0:
+        raise ValueError("sample_every and max_frames must be positive")
+    scene, _ = current_scene(root, scene_id)
+    indices = list(range(0, min(scene.frames, max_frames), sample_every))
+    if not indices:
+        raise ValueError("scene has no frames to compare")
+    cap = cv2.VideoCapture(str(clip))
+    try:
+        if not cap.isOpened():
+            raise FileNotFoundError(clip)
+        with tempfile.TemporaryDirectory(prefix="keepframe-fidelity-") as tmp:
+            tmp = Path(tmp)
+            html = compose(scene, scene_dir(root, scene_id), tmp / "composition.html")
+            rendered = render(html, scene, tmp / "render", frames=indices)
+            samples = {f: i for i, f in enumerate(rendered.frames)}
+            errors, compared = [], []
+            for f in range(indices[-1] + 1):
+                ok, source = cap.read()
+                if not ok:
+                    break
+                if f not in samples:
+                    continue
+                image = rendered.frames_dir / f"f_{samples[f]:05d}.png"
+                actual = cv2.imread(str(image), cv2.IMREAD_COLOR)
+                if actual is None:
+                    raise FileNotFoundError(image)
+                if actual.shape[:2] != source.shape[:2]:
+                    actual = cv2.resize(actual, (source.shape[1], source.shape[0]))
+                errors.append(float(np.abs(actual.astype(np.float32) - source.astype(np.float32)).mean() / 255))
+                compared.append(f)
+            if not errors:
+                raise ValueError(f"no source frames to compare in {clip}")
+            return {"render_l1": float(mean(errors)), "frames": compared}
+    finally:
+        cap.release()
+
+
+def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options: AnalyzeOptions | None = None,
+                 render_check: bool = False) -> dict:
     import json, time, cv2, numpy as np
     from collections import Counter
     from .analyze.pipeline import AnalyzeOptions, analyze
@@ -91,6 +135,7 @@ def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options
                "low_conf": sum(e.confidence < 0.7 for e in scene.elements),
                "keep_on": sum(c.keep for c in scene.constraints), "constraints": len(scene.constraints),
                "seconds": round(time.perf_counter() - t0, 1), "messages": rep["messages"]}
+        row["render_l1"] = render_fidelity(root, "s1", clip, max_frames=max_frames)["render_l1"] if render_check else None
         gt = clip.with_suffix(".gt.json")
         if gt.exists():
             try:
