@@ -1783,6 +1783,26 @@ def font_candidates(stroke: np.ndarray, text: str, size_px: float, k: int = 3) -
 
 ## Phase E — 종단 검증과 문서
 
+### Task 21: ChatGPT 계정 연동 수리 — LiteLLM 대신 직접 Responses 스트리밍 클라이언트 (사용자 요청, 2026-10-04)
+
+**Files:** Create `keepframe/session/chatgpt_client.py` · Modify `keepframe/session/llm.py` (`make_llm`, 비전 마커), `keepframe/session/provider.py` (chatgpt 기본 모델), `keepframe/session/models.py` (CHATGPT_MODELS) · Test: `tests/test_chatgpt_client.py`
+
+**Why:** ChatGPT OAuth 로그인은 성공하지만 LiteLLM의 chatgpt 어댑터가 현재 모델에서 전부 실패한다: 기본 `gpt-5.4`는 백엔드가 거부("not supported when using Codex with a ChatGPT account"), `gpt-5.5`/`gpt-5.6-sol`은 LiteLLM 1.103/1.104가 응답을 해석 못함("Unknown items in responses API response: []"), `gpt-6.x`는 HTML 차단 페이지. 같은 계정으로 Codex CLI는 `gpt-6.1-sol`을 정상 사용한다.
+
+**Interfaces:** Produces: `ChatGPTClient(config: ProviderConfig)` with `supports_vision = True` and `complete(messages: list[dict], tools: list[dict]) -> AssistantReply` (same contract as the other clients in llm.py); `make_llm` returns it for `provider == "chatgpt"`.
+
+- [ ] **Step 1: 실패하는 테스트** (`tests/test_chatgpt_client.py`, 로컬 `ThreadingHTTPServer`가 SSE를 흘려 주는 가짜 백엔드; base URL은 테스트에서 주입 가능하게)
+  - 텍스트 응답: SSE `response.output_item.done`(type `message`, `output_text`) + `response.completed` → `AssistantReply(content="pong")`.
+  - 함수 호출: `response.output_item.done`(type `function_call`, `call_id`, `name`, `arguments` JSON 문자열) → `tool_calls=[{"id": call_id, "name": ..., "arguments": dict}]`.
+  - 에러 이벤트(`response.failed`/`error`)와 HTTP 4xx(HTML 본문 포함) → 본문을 200자로 자른 `RuntimeError`; 토큰은 메시지·로그에 절대 포함하지 않음.
+  - 요청 변환: system 메시지들 → `instructions`(줄바꿈으로 합침); user 텍스트 → `{"type":"message","role":"user","content":[{"type":"input_text",...}]}`; user 이미지(`image_url` data URL) → `{"type":"input_image","image_url": <data url>}`; assistant 텍스트 → `output_text`; assistant `tool_calls` → `{"type":"function_call","call_id","name","arguments"}`; `role:"tool"` → `{"type":"function_call_output","call_id","output"}`; chat 함수 스키마 → `{"type":"function","name","description","parameters"}`; `tools=[]`면 `tools`/`tool_choice` 생략; `stream: true`, `store: false`, `parallel_tool_calls: false`.
+  - 헤더: `Authorization: Bearer <access>`, `chatgpt-account-id`, `OpenAI-Beta: responses=experimental`, `originator`, `session_id`(uuid), `accept: text/event-stream`.
+  - 만료 토큰(`oauth_expires_at` 과거)은 기존 `refresh_chatgpt_token(refresh_token)`으로 갱신 후 요청(가짜 갱신 함수로 테스트).
+- [ ] **Step 2:** FAIL 확인
+- [ ] **Step 3: 구현** — 표준 라이브러리 `urllib`로 POST, SSE를 줄 단위로 파싱(`data: {...}`), `response.completed`에서 종료. 엔드포인트 `https://chatgpt.com/backend-api/codex/responses`(LiteLLM 어댑터가 쓰던 것과 동일; `litellm/llms/chatgpt/`의 헤더 구성을 참고하되 의존하지 않음). 요청 타임아웃 120초. 비전 마커 목록(두 클라이언트)에 `"gpt-6"` 추가. chatgpt 기본 모델과 `CHATGPT_MODELS`를 실제로 동작하는 모델로 교체.
+- [ ] **Step 4: 실제 백엔드 확인(구현자, 네트워크 허용)** — `eval/ws/admin/llm.json`의 연결된 계정 설정으로 (a) "Reply with exactly: pong" 텍스트 응답, (b) 도구 1개(`edit`) 스키마로 함수 호출 1회, (c) 작은 PNG를 붙인 비전 요청 1회를 후보 모델(`gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.5` 순)로 시험하고, 성공한 첫 모델을 기본값으로. 결과(모델별 성공/실패와 오류 앞 120자)를 보고서에 기록. 토큰·계정 id는 출력하지 않는다. `eval/ws/admin/llm.json`은 수정하지 않는다(갱신된 토큰은 메모리에서만).
+- [ ] **Step 5:** 전체 스위트 → Commit `fix(session): talk to the ChatGPT backend directly with streamed Responses`
+
 ### Task 19: 자연어 프롬프트 평가 스크립트 + 최종 측정 + 문서
 
 **Files:** Create `scripts/eval_prompts.py` · Modify `README.md`, `docs/superpowers/specs/2026-09-05-keepframe-design.md`(구현 상태 주석), `docs/qa/core-flow/README.md`
