@@ -45,6 +45,24 @@ def _passed(rep: VerifyReport) -> bool:
     return bool(rep.passed and temporal_ok)
 
 
+def _verification_error(rep: VerifyReport | None) -> str:
+    if rep is None:
+        return "검증 실패: 검증 보고서 없음"
+    failures = []
+    if rep.temporal is not None and rep.temporal < TEMPORAL_MIN:
+        failures.append(f"시간 유사도 {rep.temporal:.2f} < {TEMPORAL_MIN:.2f}")
+    failed_keep = sum(not item.get("passed") for item in rep.keep_results)
+    if failed_keep:
+        failures.append(f"keep 술어 {failed_keep}개 실패")
+    elif rep.keep_pass_rate != 1.0:
+        failures.append("keep 검증을 통과하지 못했습니다.")
+    if rep.layer_max_err_px > 2.0:
+        failures.append(f"레이어 위치 오차 {rep.layer_max_err_px:.1f}px")
+    if not rep.schema_ok or not rep.layer_probe_complete:
+        failures.append("스키마/레이어 프로브 불완전")
+    return "검증 실패: " + "; ".join(failures) if failures else "검증 실패"
+
+
 def _load(root: Path, scene_id: str, version: str | None) -> tuple[Scene, Version]:
     if not version:
         return current_scene(root, scene_id)
@@ -222,6 +240,6 @@ def edit(
         plan=built,
         verify=last_rep,
         attempts=attempts_run,
-        error="keep 검증을 통과하지 못했습니다.",
+        error=_verification_error(last_rep),
         messages=(last_rep.messages if last_rep else []),
     )

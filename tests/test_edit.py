@@ -1,9 +1,15 @@
+import pytest
+
 from keepframe.analyze.constraints import extract_constraints
-from keepframe.edit.agent import ASSET_GEN_CAP, edit
+from keepframe.edit.agent import ASSET_GEN_CAP, TEMPORAL_MIN, edit
+from keepframe.edit.apply import apply_edit
 from keepframe.edit.intent import interpret, plan
 from keepframe.ir.schema import Canonical, Constraint, Element, FontGuess, Keyframe, Scene, Track, Background
 from keepframe.ir.store import current_scene, init_project
-from keepframe.ir.synth import make_synthetic_scene
+from keepframe.ir.synth import make_synthetic_scene, make_text_texture, make_texture
+from keepframe.ir.tracks import element_bbox
+from keepframe.render.renderer import RenderResult
+from keepframe.verify.verifier import VerifyReport
 
 
 def _scene_with_text(text="Hi", width=40):
@@ -75,6 +81,93 @@ def test_edit_keeps_tracks_and_passes_verify(tmp_path):
     assert got.canonical.text == "Hello"
     after = {k: [kf.model_dump() for kf in got.tracks[k].keys] for k in got.tracks}
     assert after == before
+
+
+@pytest.fixture
+def fragmented_project(tmp_path, monkeypatch):
+    root = tmp_path / "proj"
+    sd = root / "scenes" / "s1"
+    scene = _scene_with_text(width=120)
+    scene.frames = 24
+    text = scene.element("e1")
+    text.visible = (0, 23)
+    text.tracks["x"].keys[-1].t = 23
+    make_text_texture(sd / "assets" / "e1.png", "Hi", 20, (255, 255, 255))
+    text.canonical.texture = "assets/e1.png"
+    make_texture(sd / "assets" / "sprite.png", "rect", 10, 10, (255, 255, 255))
+    scene.elements.extend(Element(id=f"fragment{i}", kind="sprite", visible=(i, i),
+                                 canonical=Canonical(width=10, height=10, texture="assets/sprite.png"))
+                          for i in range(20))
+    scene.constraints = [c.model_copy(update={"keep": c.pred.startswith("type(")}) for c in extract_constraints(scene)]
+    init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size)}, scene)
+
+    def render_probes(_html, edited, out_dir):
+        frames = list(range(edited.frames))
+        return RenderResult(frames_dir=out_dir / "frames", frames=frames, hashes=[],
+                            bboxes={el.id: [list(element_bbox(el, f)) for f in frames] for el in edited.elements})
+
+    monkeypatch.setattr("keepframe.edit.agent.render", render_probes)
+    return root, scene
+
+
+def test_text_edit_with_one_frame_sprites_keeps_tracks_and_passes(fragmented_project):
+    root, before = fragmented_project
+    result = edit(root, "s1", "문구를 Hello로", confirm=True,
+                  intent={"targets": [{"element": "e1", "property": "text", "value": "Hello"}]})
+    assert result.verify.passed
+    assert result.status == "done", f"temporal={result.verify.temporal}"
+    assert result.verify.temporal == 1.0
+    edited, version = current_scene(root, "s1")
+    assert version.id == "v2" and edited.element("e1").canonical.text == "Hello"
+    assert [(el.visible, el.tracks) for el in edited.elements] == [(el.visible, el.tracks) for el in before.elements]
+
+
+def test_timing_edit_with_unintended_track_change_names_temporal_gate(fragmented_project, monkeypatch):
+    root, before = fragmented_project
+    _, parent = current_scene(root, "s1")
+
+    def unintended_reversal(scene, *args, **kwargs):
+        out = apply_edit(scene, *args, **kwargs)
+        keys = out.element("e1").tracks["x"].keys
+        keys[0].v, keys[-1].v = keys[-1].v, keys[0].v
+        return out
+
+    monkeypatch.setattr("keepframe.edit.agent.apply_edit", unintended_reversal)
+    result = edit(root, "s1", "속도를 바꿔줘", confirm=True,
+                  intent={"targets": [{"element": "e1", "property": "timing", "speed": 2.0}]})
+    assert result.status == "failed" and result.attempts == 1
+    assert result.verify.passed and result.verify.temporal < TEMPORAL_MIN
+    assert "시간 유사도" in result.error and "keep 검증" not in result.error
+    assert result.messages == result.verify.messages
+    assert current_scene(root, "s1") == (before, parent)
+    assert parent.id == "v1"
+
+
+@pytest.mark.parametrize("failure, expected", [
+    ({"temporal": 0.63, "passed": True}, "시간 유사도 0.63 < 0.70"),
+    ({"keep_pass_rate": 0.25, "keep_results": [{"pred": "test", "passed": False}] * 3 + [{"pred": "ok", "passed": True}]},
+     "keep 술어 3개 실패"),
+    ({"keep_pass_rate": 0.0}, "keep 검증을 통과하지 못했습니다."),
+    ({"layer_max_err_px": 4.2}, "레이어 위치 오차 4.2px"),
+    ({"schema_ok": False}, "스키마/레이어 프로브 불완전"),
+    ({"layer_probe_complete": False}, "스키마/레이어 프로브 불완전"),
+    ({"temporal": 0.63, "keep_pass_rate": 0.0,
+      "keep_results": [{"pred": "test", "passed": False}] * 3,
+      "layer_max_err_px": 4.2, "schema_ok": False, "layer_probe_complete": False},
+     "시간 유사도 0.63 < 0.70; keep 술어 3개 실패; 레이어 위치 오차 4.2px; 스키마/레이어 프로브 불완전"),
+])
+def test_edit_failure_names_each_gate_and_preserves_messages(fragmented_project, monkeypatch, failure, expected):
+    root, _ = fragmented_project
+    report = VerifyReport(**{"schema_ok": True, "keep_pass_rate": 1.0, "temporal": 1.0,
+                             "layer_probe_complete": True, "passed": False,
+                             "messages": ["original verification detail"], **failure})
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *args, **kwargs: report)
+    result = edit(root, "s1", "문구를 Hello로", confirm=True,
+                  intent={"targets": [{"element": "e1", "property": "text", "value": "Hello"}]})
+    assert result.status == "failed" and result.verify == report and result.attempts == 1
+    assert result.error == f"검증 실패: {expected}"
+    assert result.messages == report.messages
+    assert current_scene(root, "s1")[1].id == "v1"
 
 
 def test_edit_does_not_accept_missing_layer_proof(monkeypatch):

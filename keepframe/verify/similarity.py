@@ -8,14 +8,14 @@ def centroid_tracks(scene: Scene) -> dict[str, np.ndarray]:
     return {eid: m[:, :2].copy() for eid, m in animation_matrix(scene).items()}
 
 
-def tracklet_correlation(a: np.ndarray, b: np.ndarray, static_eps: float = 0.25) -> float:
+def tracklet_correlation(a: np.ndarray, b: np.ndarray, static_eps: float = 0.25) -> float | None:
     n = min(len(a), len(b)) - 1
     if n < 1:
-        return 0.0
+        return None
     da, db = np.diff(a[: n + 1], axis=0), np.diff(b[: n + 1], axis=0)
     ok = ~(np.isnan(da).any(1) | np.isnan(db).any(1))
     if not ok.any():
-        return 0.0
+        return None
     da, db = da[ok], db[ok]
     na, nb = np.linalg.norm(da, axis=1), np.linalg.norm(db, axis=1)
     both_static = (na < static_eps) & (nb < static_eps)
@@ -28,11 +28,20 @@ def tracklet_correlation(a: np.ndarray, b: np.ndarray, static_eps: float = 0.25)
 
 
 def temporal_similarity(ref: dict[str, np.ndarray], out: dict[str, np.ndarray]) -> float:
-    if not ref or not out:
-        return 0.0
-    r2o = np.mean([max(tracklet_correlation(r, o) for o in out.values()) for r in ref.values()])
-    o2r = np.mean([max(tracklet_correlation(o, r) for r in ref.values()) for o in out.values()])
-    return float(np.clip(0.5 * (r2o + o2r), 0.0, 1.0))
+    def best_scores(source: dict[str, np.ndarray], target: dict[str, np.ndarray]) -> list[float]:
+        best = []
+        for track in source.values():
+            scores = [score for counterpart in target.values()
+                      if (score := tracklet_correlation(track, counterpart)) is not None]
+            if scores:
+                best.append(max(scores))
+        return best
+
+    r2o, o2r = best_scores(ref, out), best_scores(out, ref)
+    if not r2o and not o2r:
+        identical = ref.keys() == out.keys() and all(np.array_equal(ref[key], out[key], equal_nan=True) for key in ref)
+        return 1.0 if identical else 0.0
+    return float(np.clip(0.5 * (np.mean(r2o) + np.mean(o2r)), 0.0, 1.0))
 
 
 def appearance_similarity(tex_a: np.ndarray, tex_b: np.ndarray) -> float:
