@@ -17,7 +17,7 @@ from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import RAW_COLS, sprite_props, z_order
-from .text import Ocr, apply_copy, drop_junk_text, ocr_frames, text_exclusion_mask, text_props, track_text
+from .text import Ocr, apply_copy, ocr_frames, split_junk_text, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -74,7 +74,7 @@ def _stage_background(frames, opts, sd):
 
 
 def _stage_text(frames, bg, opts, ocr, sd):
-    boxes = [[] for _ in frames]; tracks = []; msg = None
+    boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None
     if opts.ocr:
         if ocr is None:
             try:
@@ -93,13 +93,13 @@ def _stage_text(frames, bg, opts, ocr, sd):
             tracks = track_text(boxes)
             if opts.copy:
                 apply_copy(tracks, opts.copy)
-            boxes, tracks, dropped = drop_junk_text(boxes, tracks)
-            if dropped:
-                msg = f"text tracks dropped as OCR noise: {dropped}"
+            tracks, shape_tracks, n = split_junk_text(tracks)
+            if n:
+                msg = f"text tracks reclassified as shapes: {n}"
                 log.info("%s", msg)
-            log.info("text boxes=%s tracks=%s", sum(len(b) for b in boxes), len(tracks))
-    _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "message": msg})
-    return boxes, tracks, msg
+            log.info("text boxes=%s tracks=%s shapes=%s", sum(len(b) for b in boxes), len(tracks), len(shape_tracks))
+    _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "shape_tracks": shape_tracks, "message": msg})
+    return boxes, tracks, shape_tracks, msg
 
 
 def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
@@ -142,18 +142,24 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n_frames):
+def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         text_futs = {
-            ex.submit(text_props, t, frames, bg, n_frames, 0): t for t in text_tracks
+            ex.submit(text_props, t, frames, bg, n_frames, 0, infer_font=is_text): (t, is_text)
+            for tracks, is_text in ((text_tracks, True), (shape_tracks, False)) for t in tracks
         }
-        for fut, t in text_futs.items():
+        for fut, (t, is_text) in text_futs.items():
             raw, canon, cf, font, color = fut.result()
-            props[f"t{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "text", "text": t.text, "font": font, "color": color, "first": t.first, "last": t.last}
-    log.info("sprites text_props tracks=%s %.2fs", len(text_tracks), time.perf_counter() - t0)
+            p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last}
+            if is_text:
+                p.update(text=t.text, font=font, color=color)
+            else:
+                p["z"] = 0
+            props[f"{'t' if is_text else 's'}{t.id}"] = p
+    log.info("sprites text_props tracks=%s shapes=%s %.2fs", len(text_tracks), len(shape_tracks), time.perf_counter() - t0)
     t0 = time.perf_counter()
     z = z_order(obj_tracks, frames, bg)
     log.info("sprites z_order objects=%s %.2fs", len(obj_tracks), time.perf_counter() - t0)
@@ -358,13 +364,13 @@ def analyze_scene_frames(
     bg, bconf, plate = _stage_background(frames, opts, sd)
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
     report_stage("text")
-    boxes, text_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
+    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
     report_stage("regions")
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
-    props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
+    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
     report_stage("keyframes")
@@ -528,10 +534,11 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     msg = None
     if boundary <= STAGES.index("text"):
         report_stage("text")
-        boxes, text_tracks, msg = _stage_text(frames, bg, opts, None, sd)
+        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd)
     else:
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]
+        shape_tracks = text.get("shape_tracks", [])
     if boundary <= STAGES.index("regions"):
         report_stage("regions")
         rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
@@ -544,7 +551,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         obj_tracks = _pk(sd, "tracks")
     if boundary <= STAGES.index("sprites"):
         report_stage("sprites")
-        props = _stage_sprites(frames, bg, text_tracks, obj_tracks, opts, sd, n)
+        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n)
     else:
         props = _pk(sd, "props")
     ids = json.loads((sd / "stages" / "ids.json").read_text())

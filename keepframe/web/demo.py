@@ -71,10 +71,10 @@ def ensure_demo_project(workspace: Path) -> dict:
             return [(text_element.canonical.text, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), None)]
         (stages / "background.json").write_text(json.dumps({"rgb": bg, "confidence": 1.0}))
         (stages / "options.json").write_text(json.dumps(asdict(opts)))
-        boxes, text_tracks, _ = _stage_text(frames, bg, opts, demo_ocr, sd)
+        boxes, text_tracks, shape_tracks, _ = _stage_text(frames, bg, opts, demo_ocr, sd)
         regions = _stage_regions(frames, bg, boxes, opts, sd)
         tracks = _stage_tracking(regions, sd)
-        props = _stage_sprites(frames, bg, text_tracks, tracks, opts, sd, len(frames))
+        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, tracks, opts, sd, len(frames))
         ids = {}
         scene.elements, _ = _elements_from_props(props, sd, ids)
         (stages / "ids.json").write_text(json.dumps(ids))

@@ -145,10 +145,11 @@ def keep_text_track(t: TextTrack) -> bool:
     return float(np.mean([b.conf for b in t.boxes.values()])) >= CONFIDENT_OCR
 
 
-def drop_junk_text(boxes_by_frame: list[list[TextBox]], tracks: list[TextTrack]) -> tuple[list[list[TextBox]], list[TextTrack], int]:
-    kept = [t for t in tracks if keep_text_track(t)]
-    live = {id(b) for t in kept for b in t.boxes.values()}
-    return [[b for b in frame if id(b) in live] for frame in boxes_by_frame], kept, len(tracks) - len(kept)
+def split_junk_text(tracks: list[TextTrack]) -> tuple[list[TextTrack], list[TextTrack], int]:
+    text_tracks, shape_tracks = [], []
+    for t in tracks:
+        (text_tracks if keep_text_track(t) else shape_tracks).append(t)
+    return text_tracks, shape_tracks, len(shape_tracks)
 
 
 def _iou(a, b) -> float:
@@ -223,7 +224,7 @@ def stroke_mask(frame: np.ndarray, bbox, bg_rgb: tuple, thr: float = 12.0) -> np
     return foreground_mask(frame[y0:y1, x0:x1], bg_rgb, thr)
 
 
-def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int):
+def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *, infer_font: bool = True):
     cf = max(track.boxes, key=lambda f: (track.boxes[f].bbox[2] - track.boxes[f].bbox[0]) * (track.boxes[f].bbox[3] - track.boxes[f].bbox[1]))
     cb = track.boxes[cf].bbox
     frame_h, frame_w = frames[cf].shape[:2]
@@ -246,6 +247,8 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         px = frames[f][cy0:cy1, cx0:cx1][m].astype(np.float32) if m.any() else np.zeros((0, 3), np.float32)
         opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         raw[f - first_frame] = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / cw, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity]
+    if not infer_font:
+        return raw, canon, cf, None, None
     ys, xs = np.nonzero(sm)
     tight = sm[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(xs) else sm
     size = float(min(ch, track_h) * 0.8)
