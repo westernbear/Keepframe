@@ -1,8 +1,7 @@
 from __future__ import annotations
 import difflib, math, os
-from collections import Counter
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 from threading import Lock, local
 from typing import Protocol
@@ -95,7 +94,11 @@ class RapidOcr:
             kw = dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
         else:
             # ponytail: four-worker ceiling; tune CPU/memory budgets for larger hosts.
-            self.workers = min(4, os.cpu_count() or 1)
+            try:
+                cores = len(os.sched_getaffinity(0))
+            except (AttributeError, OSError):
+                cores = os.cpu_count() or 1
+            self.workers = min(4, cores)
             if ocr_cuda_expected():
                 log.warning(
                     "ocr on cpu: CUDAExecutionProvider missing "
@@ -164,6 +167,7 @@ def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1, *,
 
     Engines with ``fork`` get an independent instance per worker. Other callables
     stay sequential by default and must be thread safe when requesting workers.
+    At most twice the worker count of distinct sample futures wait to be consumed.
     """
     from keepframe.progress import report_stage
     workers = getattr(ocr, "workers", 1) if workers is None else workers
@@ -188,13 +192,26 @@ def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1, *,
         worker.ocr = engine if engine is not None else getattr(ocr, "fork", lambda: ocr)()
 
     def evaluate(frame):
+        # Initialize inside the task so fork failures retain their original exception.
+        if not hasattr(worker, "ocr"):
+            start_worker()
         return worker.ocr(frame)
 
-    with ExitStack() as stack:
-        pool = None
-        if workers > 1 and n:
-            pool = stack.enter_context(ThreadPoolExecutor(max_workers=workers, initializer=start_worker))
-        pending = []
+    def consume(start, stop, future):
+        # Equal samples share a future; retain just the start of each result's run.
+        result = None
+        for i in range(start, stop):
+            progress(i)
+            if i % step == 0:
+                if result is None:
+                    result = future.result()
+                out.append([TextBox(i, t, b, c) for t, b, c in result])
+            else:
+                out.append([])
+
+    pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 and n else None
+    try:
+        pending = deque()
         previous_frame, previous_result = None, None
         for i, frame in enumerate(frames):
             if pool is None:
@@ -205,14 +222,24 @@ def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1, *,
                 if previous_frame is None or not np.array_equal(frame, previous_frame):
                     previous_frame = frame
                     previous_result = pool.submit(evaluate, frame) if pool is not None else ocr(frame)
+                    if pool is not None:
+                        pending.append((i, previous_result))
+                        if len(pending) >= 2 * workers:
+                            start, future = pending.popleft()
+                            consume(start, pending[0][0], future)
                 result = previous_result
             if pool is None:
                 out.append([TextBox(i, t, b, c) for t, b, c in result] if result is not None else [])
-            else:
-                pending.append(result)
-        for i, future in enumerate(pending):
-            progress(i)
-            out.append([TextBox(i, t, b, c) for t, b, c in future.result()] if future is not None else [])
+        while pending:
+            start, future = pending.popleft()
+            consume(start, pending[0][0] if pending else n, future)
+        if pool is not None:
+            pool.shutdown(wait=True)
+    except BaseException:
+        if pool is not None:
+            # Running calls must finish; queued calls should never start after failure.
+            pool.shutdown(wait=True, cancel_futures=True)
+        raise
     return out
 
 

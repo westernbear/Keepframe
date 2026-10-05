@@ -1,4 +1,5 @@
-from threading import Barrier, Lock
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event, Lock
 
 import numpy as np
 import pytest
@@ -118,6 +119,134 @@ def test_pool_propagates_engine_failure():
         ocr_frames(np.ones((3, 1, 1, 3), np.uint8), broken, workers=2)
 
 
+@pytest.mark.parametrize("failure", [RuntimeError("OCR frame 3 failed"),
+                                     KeyboardInterrupt("OCR frame 3 interrupted")])
+def test_pool_cancels_queued_frames_and_preserves_original_error(monkeypatch, failure):
+    released = Event()
+    calls = []
+    shutdowns = []
+
+    class ReleasingPool(ThreadPoolExecutor):
+        def shutdown(self, wait=True, *, cancel_futures=False):
+            shutdowns.append((wait, cancel_futures))
+            # Cancel before releasing running calls, so queued work cannot race cleanup.
+            super().shutdown(wait=False, cancel_futures=cancel_futures)
+            released.set()
+            super().shutdown(wait=wait, cancel_futures=cancel_futures)
+
+    def broken(frame):
+        index = int(frame[0, 0, 0])
+        calls.append(index)
+        if index == 3:
+            raise failure
+        if index > 3:
+            assert released.wait(timeout=10)
+        return []
+
+    monkeypatch.setattr("keepframe.analyze.text.ThreadPoolExecutor", ReleasingPool)
+    frames = np.arange(40, dtype=np.uint8).reshape(40, 1, 1, 1)
+    with pytest.raises(type(failure), match=str(failure)) as raised:
+        ocr_frames(frames, broken, workers=2)
+    assert raised.value is failure
+    assert shutdowns == [(True, True)]
+    assert 3 in calls and max(calls) < 3 + 2 * 2
+
+
+def test_pool_cancels_pending_frames_on_caller_keyboard_interrupt(monkeypatch):
+    released = Event()
+    started = Event()
+    calls = []
+    shutdowns = []
+    failure = KeyboardInterrupt("OCR cancelled by caller")
+
+    class ReleasingPool(ThreadPoolExecutor):
+        def shutdown(self, wait=True, *, cancel_futures=False):
+            shutdowns.append((wait, cancel_futures))
+            super().shutdown(wait=False, cancel_futures=cancel_futures)
+            released.set()
+            super().shutdown(wait=wait, cancel_futures=cancel_futures)
+
+    def blocked(frame):
+        calls.append(int(frame[0, 0, 0]))
+        started.set()
+        assert released.wait(timeout=10)
+        return []
+
+    def interrupted(stage, detail):
+        assert started.wait(timeout=10)
+        raise failure
+
+    monkeypatch.setattr("keepframe.analyze.text.ThreadPoolExecutor", ReleasingPool)
+    monkeypatch.setattr("keepframe.progress.report_stage", interrupted)
+    frames = np.arange(40, dtype=np.uint8).reshape(40, 1, 1, 1)
+    with pytest.raises(KeyboardInterrupt, match=str(failure)) as raised:
+        ocr_frames(frames, blocked, workers=2)
+    assert raised.value is failure
+    assert shutdowns == [(True, True)]
+    assert calls and max(calls) < 2 * 2
+
+
+@pytest.mark.parametrize("workers", [2, 3, 4])
+@pytest.mark.parametrize("step", [1, 2])
+def test_pool_bounds_unconsumed_futures_and_preserves_long_clip_output(monkeypatch, workers, step):
+    pending = set()
+    peaks = []
+
+    class RecordingPool(ThreadPoolExecutor):
+        def submit(self, fn, *args, **kwargs):
+            future = super().submit(fn, *args, **kwargs)
+            pending.add(future)
+            peaks.append(len(pending))
+            result = future.result
+
+            def consumed(timeout=None):
+                value = result(timeout=timeout)
+                pending.discard(future)
+                return value
+
+            future.result = consumed
+            return future
+
+    monkeypatch.setattr("keepframe.analyze.text.ThreadPoolExecutor", RecordingPool)
+    frames = np.repeat(np.arange(1, 41, dtype=np.uint8), 3).reshape(120, 1, 1, 1)
+    engine = PixelOcr()
+    assert ocr_frames(frames, engine, step=step, workers=workers) == sequential(frames, step=step)
+    assert sorted(engine.calls) == list(range(1, 41))
+    assert max(peaks) == 2 * workers
+    assert not pending
+
+
+def test_pool_propagates_original_rapidocr_fork_failure(monkeypatch):
+    import sys
+    import types
+    from keepframe.analyze.text import RapidOcr
+
+    fork_started = Event()
+    constructed = []
+    failure = OSError("OCR worker model could not load")
+
+    class FakeRapid:
+        def __init__(self, **kwargs):
+            if constructed:
+                fork_started.set()
+                raise failure
+            constructed.append(self)
+
+        def __call__(self, frame):
+            assert fork_started.wait(timeout=10)
+            assert int(frame[0, 0, -1]) == 0
+            return None, None
+
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", types.SimpleNamespace(RapidOCR=FakeRapid))
+    monkeypatch.setattr("keepframe.analyze.device.preload_torch_cuda", lambda: None)
+    monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: False)
+    monkeypatch.setattr("keepframe.analyze.text.ocr_cuda_expected", lambda: False)
+    frames = np.arange(12, dtype=np.uint8).reshape(4, 1, 1, 3)
+    with pytest.raises(OSError, match=str(failure)) as raised:
+        ocr_frames(frames, RapidOcr(), workers=2)
+    assert raised.value is failure
+
+
 def test_pool_uses_independent_engines_and_automatic_worker_count():
     barrier = Barrier(3, timeout=10)
     instances = []
@@ -145,8 +274,12 @@ def test_pool_uses_independent_engines_and_automatic_worker_count():
     assert len(instances) == len({id(engine) for engine in calls}) == 3
 
 
-@pytest.mark.parametrize("cores,expected", [(1, 1), (2, 2), (4, 4), (16, 4), (None, 1)])
-def test_cpu_workers_use_one_ort_thread_each_and_keep_detection_uncapped(monkeypatch, cores, expected):
+@pytest.mark.parametrize("affinity,cores,expected", [
+    ({0}, 16, 1), ({2, 5}, 16, 2), ({0, 1, 2, 3}, 16, 4), (set(range(16)), 16, 4),
+    (None, 1, 1), (None, 2, 2), (None, 4, 4), (None, 16, 4), (None, None, 1),
+    (OSError("affinity unavailable"), 2, 2),
+])
+def test_cpu_workers_use_one_ort_thread_each_and_keep_detection_uncapped(monkeypatch, affinity, cores, expected):
     import sys
     import types
     from keepframe.analyze.text import RapidOcr
@@ -161,6 +294,16 @@ def test_cpu_workers_use_one_ort_thread_each_and_keep_detection_uncapped(monkeyp
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: False)
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda_expected", lambda: False)
     monkeypatch.setattr("os.cpu_count", lambda: cores)
+    if affinity is None:
+        monkeypatch.delattr("os.sched_getaffinity", raising=False)
+    else:
+        def get_affinity(pid):
+            assert pid == 0
+            if isinstance(affinity, OSError):
+                raise affinity
+            return affinity
+
+        monkeypatch.setattr("os.sched_getaffinity", get_affinity, raising=False)
     ocr = RapidOcr()
     assert ocr.workers == expected
     assert ocr.max_side is None
