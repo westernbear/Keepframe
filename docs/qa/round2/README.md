@@ -50,7 +50,7 @@ The background and whole-scene speed prompts are correct everywhere. Every miss 
 - **Title prompts:** they fail on envato1, ig1 and ig3, where the headline is split into pieces, and the agent asks which piece to edit.
 - **Logo prompt on ig2:** the Airbnb logo is not found, because it is not its own element.
 
-## Final (2026-10-05, commit c086117 = integrated feature/round2)
+## Final (2026-10-05, commit 6feae9e = merge head of feature/round2)
 
 Measured on this machine (4 CPU cores, no GPU), with the 3D adapter configured
 (TRELLIS, user's HF login) and a torch-free venv. Baseline is commit ff9e6f3.
@@ -59,18 +59,22 @@ are indicative.
 
 | clip | analysis s base→final | mean_l1 base→final | render_l1 base→final | elements base→final | predicates base→final |
 | --- | --- | --- | --- | --- | --- |
-| envato1 | 1513→580 (2.6×) | 0.0750→0.0678 | 0.0868→0.0787 | 56→55 | 4744→1061 |
-| ig1 | 1970→426 (4.6×) | 0.0393→0.0400 | 0.0425→0.0439 | 128→126 | 55484→3802 |
-| ig2 | 1342→457 (2.9×) | 0.0644→0.0642 | 0.0738→0.0674 | 54→45 | 5549→1295 |
-| ig3 | 633→200 (3.2×) | 0.0175→0.0182 | 0.0219→0.0216 | 71→64 | 6443→745 |
+| envato1 | 1513→412 (3.7×) | 0.0750→0.0674 | 0.0868→0.0791 | 56→55 | 4744→983 |
+| ig1 | 1970→366 (5.4×) | 0.0393→0.0402 | 0.0425→0.0455 | 128→126 | 55484→3769 |
+| ig2 | 1342→412 (3.3×) | 0.0644→0.0646 | 0.0738→0.0712 | 54→50 | 5549→1033 |
+| ig3 | 633→215 (3.2×) | 0.0175→0.0183 | 0.0219→0.0228 | 71→64 | 6443→678 |
+
+An earlier run at c086117 (before the last two analysis fixes) gave similar
+numbers; the head adds glyph-core text colour (envato1 title #140a35 → #e7dffd,
+so edited titles stay visible) and the 60%-of-frame cap on 3D candidates.
 
 ### Synthetic gates
 
 | Gate | Final result |
 | --- | --- |
-| `gate-m1` | 20/20 (constraints, hash, layer) |
-| `gate-m2` | Passed: 18/20 frame_l1, tracking ok, temporal 0.798 |
-| `gate-m3` | 8/8 |
+| `gate-m1` | 20/20 (constraints, hash, layer), at c086117 |
+| `gate-m2` | Passed at 6feae9e: 18/20 frame_l1, tracking ok, temporal 0.798 |
+| `gate-m3` | 8/8, at c086117 |
 
 ### Speed decisions
 
@@ -98,17 +102,20 @@ letter without box growth; it stays one element without reveal. Its giant
 
 ### 3D generation and fidelity guard
 
-Solid candidates: envato1 2, ig1 0, ig2 2, ig3 0. TRELLIS
+At the merge head, the only 3D candidate is ig2's globe (e23): fragments .080,
+still .102, model .291 → the guard kept the fragments. TRELLIS
 (`trellis-community/TRELLIS` via `scripts/asset_adapter_hf.py`, ~50 s per GLB)
-generated 4 GLBs. The fidelity guard compares local L1 on every 5th visible
-frame; lower is better.
+generates the GLB; the guard compares local L1 on every 5th visible frame
+(lower is better).
+
+Earlier run (c086117, before the full-frame cap) — 4 GLBs generated:
 
 | clip / element | fragments L1 | still L1 | model L1 | Guard choice |
 | --- | --- | --- | --- | --- |
 | envato1 e1 | .157 | .182 | .185 | fragments |
 | envato1 e33 | .087 | .185 | .148 | fragments |
-| ig2 globe e1 | .134 | .108 | .217 | STILL |
-| ig2 e18 | .080 | .102 | .292 | fragments |
+| ig2 e1 (full-frame "Weekend" opening — now excluded by the cap) | .134 | .108 | .217 | still |
+| ig2 e18 (globe) | .080 | .102 | .292 | fragments |
 
 No generated model reproduced the source better than the alternatives.
 Single-crop image→3D guesses the unseen side and texture.
@@ -119,7 +126,7 @@ user's account and use its ZeroGPU quota. Each analysis makes at most 2
 generation requests, largest solids first; other candidates stay “3D 후보”
 with a “3D 생성” button.
 
-### Prompt evaluation: baseline→final
+### Prompt evaluation: baseline→final (final scenes from c086117)
 
 Gold in [gold/](gold/) is user-confirmed; 25 prompts are gradable.
 
