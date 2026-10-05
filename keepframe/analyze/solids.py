@@ -47,6 +47,7 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
     kernel = np.ones((11, 11), np.uint8)  # radius 5px
     floor = max(min_life, int(np.ceil(0.30 * len(frames))))
     min_area = max(1, int(np.ceil(0.001 * frames.shape[1] * frames.shape[2])))
+    max_area = 0.60 * frames.shape[1] * frames.shape[2]
     candidates = {}
     serial = 0
     previous = []
@@ -102,6 +103,9 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
         life = len(solid.frames)
         if life < floor:
             continue
+        areas = [(box[2] - box[0]) * (box[3] - box[1]) for box, _ in solid.frames.values()]
+        if np.median(areas) > max_area:
+            continue  # Backgrounds/transitions are never objects, even with changing interiors or fragments.
         membership_masks = {f: cv2.dilate(np.pad(mask.astype(np.uint8), 5), kernel).astype(bool)
                             for f, (_, mask) in solid.frames.items()}
         members = []

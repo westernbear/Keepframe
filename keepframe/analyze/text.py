@@ -8,7 +8,7 @@ from typing import Protocol
 import cv2, numpy as np
 from ..ir.schema import FontGuess
 from ..log import get
-from .background import foreground_mask, foreground_mask_plate, opacity_against_plate
+from .background import foreground_mask, foreground_mask_plate, opacity_against_plate, rgb_to_lab
 from .device import ocr_cuda, ocr_cuda_expected
 from .fonts import font_candidates, font_family_guess
 
@@ -436,6 +436,21 @@ def stroke_mask(frame: np.ndarray, bbox, bg_rgb: tuple, thr: float = 12.0,
     return foreground_mask(crop, bg_rgb, thr)
 
 
+def _glyph_core_mask(crop: np.ndarray, mask: np.ndarray, bg_rgb: tuple,
+                     plate: np.ndarray | None = None) -> np.ndarray:
+    """Exclude glow and plate differences from colour/opacity measurements."""
+    if not mask.any():
+        return mask
+    pixels_lab = rgb_to_lab(crop[mask][None])[0]
+    background_lab = (rgb_to_lab(plate[mask][None])[0] if plate is not None else
+                      rgb_to_lab(np.array(bg_rgb, np.uint8).reshape(1, 1, 3))[0, 0])
+    contrast = np.linalg.norm(pixels_lab - background_lab, axis=1)
+    # ponytail: a single fill from the strongest contrast decile; multicolour text needs glyph segmentation.
+    core = np.zeros_like(mask)
+    core[mask] = contrast >= np.percentile(contrast, 90)
+    return core
+
+
 def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
                infer_font: bool = True, plate: np.ndarray | None = None):
     reveal = getattr(track, "reveal", False)
@@ -451,7 +466,9 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     canon = np.dstack([crop, (sm * 255).astype(np.uint8)])
     cw, ch = cb[2] - cb[0], cb[3] - cb[1]
     track_h = track.boxes[track.first].bbox[3] - track.boxes[track.first].bbox[1]
-    stroke_px = crop[sm].astype(np.float32) if sm.any() else crop.reshape(-1, 3).astype(np.float32)
+    local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
+    core = _glyph_core_mask(crop, sm, bg_rgb, local_plate)
+    stroke_px = crop[core].astype(np.float32) if core.any() else crop.reshape(-1, 3).astype(np.float32)
     col = np.median(stroke_px, axis=0)
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
@@ -461,11 +478,14 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         fh, fw = frames[f].shape[:2]
         cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
         m = stroke_mask(frames[f], b.bbox, bg_rgb, plate=plate)
-        px = frames[f][cy0:cy1, cx0:cx1][m].astype(np.float32) if m.any() else np.zeros((0, 3), np.float32)
+        frame_crop = frames[f][cy0:cy1, cx0:cx1]
+        local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
+        m = _glyph_core_mask(frame_crop, m, bg_rgb, local_plate)
+        px = frame_crop[m].astype(np.float32) if m.any() else np.zeros((0, 3), np.float32)
         if plate is None:
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
-            bg_px = plate[cy0:cy1, cx0:cx1][m].astype(np.float32)
+            bg_px = local_plate[m].astype(np.float32)
             opacity = opacity_against_plate(px, bg_px, col)
         # A reveal clips the full texture; shrinking sx too would clip twice.
         x = x0 + cw / 2 if reveal else (x0 + x1) / 2

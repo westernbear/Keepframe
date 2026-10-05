@@ -1,8 +1,8 @@
-import numpy as np, pytest
+import cv2, numpy as np, pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.text import TextBox, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.analyze.text import TextBox, TextTrack, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -36,6 +36,46 @@ def test_track_text_and_copy(tmp_scene_dir):
     assert abs(raw[cf, 0] - p["x"]) < 2 and abs(raw[cf, 1] - p["y"]) < 2 and canon.shape[2] == 4
     # Hershey bbox + scale/rotation AABB; 40px canonical can read back above 60.
     assert 25 <= font.size_px <= 80 and color.startswith("#")
+
+
+@pytest.mark.parametrize("plate_has_text_ghost", [False, True])
+def test_light_text_colour_excludes_glow_and_dark_plate_pixels(plate_has_text_ghost):
+    h, w = 96, 440
+    ramp = np.linspace(0, 1, w)[None, :, None]
+    plate = np.broadcast_to((10, 5, 25) + ramp * np.array((35, 13, 65)), (h, w, 3)).astype(np.uint8).copy()
+    glyph = np.zeros((h, w), np.uint8)
+    cv2.putText(glyph, "Build SaaS", (12, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.6, 255, 3, cv2.LINE_AA)
+    alpha = glyph[..., None].astype(np.float32) / 255
+    glow = cv2.GaussianBlur(alpha[..., 0], (0, 0), 8)[..., None] * 0.8
+    true_rgb = np.array((230, 220, 253), np.float32)
+    frame = plate * (1 - glow) + np.array((130, 80, 230)) * glow
+    frame = np.rint(frame * (1 - alpha) + true_rgb * alpha).astype(np.uint8)
+    if plate_has_text_ghost:
+        # The temporal median plate can retain blurred title remnants, as in envato1.
+        plate = cv2.resize(cv2.resize(frame, (w // 32, h // 32), interpolation=cv2.INTER_AREA),
+                           (w, h), interpolation=cv2.INTER_CUBIC)
+    track = TextTrack(id=1, text="Build SaaS", boxes={0: TextBox(0, "Build SaaS", (0, 0, w, h), 0.99)})
+    bg = tuple(int(v) for v in plate.mean((0, 1)))
+    raw, _, _, _, colour = text_props(track, frame[None], bg, 1, 0, plate=plate)
+    estimated = np.array([int(colour[i:i + 2], 16) for i in (1, 3, 5)], np.float32)
+    # Float RGB conversion gives actual CIELAB units, rather than OpenCV's uint8 scaling.
+    lab = cv2.cvtColor(np.array([[estimated, true_rgb]], np.float32) / 255, cv2.COLOR_RGB2LAB)[0]
+    delta_e = np.linalg.norm(lab[0] - lab[1])
+    assert delta_e < 10, f"estimated {colour}, glyph #e6dcfd, delta E {delta_e:.2f}"
+    assert raw[0, 7] == pytest.approx(1.0, abs=0.1)
+
+
+@pytest.mark.parametrize("bg,glyph_rgb", [((240, 240, 250), (20, 10, 40)),
+                                        ((10, 5, 30), (230, 220, 253)),
+                                        ((130, 180, 60), (220, 100, 190))])
+def test_opaque_text_colour_preserves_both_polarities_and_coloured_fill(bg, glyph_rgb):
+    frame = np.full((64, 160, 3), bg, np.uint8)
+    mask = np.zeros(frame.shape[:2], np.uint8)
+    cv2.putText(mask, "HI", (10, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.5, 255, 3)
+    frame[mask > 0] = glyph_rgb
+    track = TextTrack(id=1, text="HI", boxes={0: TextBox(0, "HI", (0, 0, 160, 64), 0.99)})
+    colour = text_props(track, frame[None], bg, 1, 0)[-1]
+    assert colour == "#%02x%02x%02x" % glyph_rgb
 
 def test_rapidocr_passes_cuda_flags_when_ep_available(monkeypatch):
     import sys, types

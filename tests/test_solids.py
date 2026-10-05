@@ -37,6 +37,18 @@ def test_rigid_gradient_card_is_not_solid():
     assert find_solids(frames, fg, [], np.zeros_like(fg)) == []
 
 
+@pytest.mark.parametrize("widths,expected", [([100] * 30, 0), ([61] * 30, 0),
+                                          ([60] * 30, 1), ([61] * 14 + [60] * 16, 1)])
+def test_changing_blob_uses_median_bbox_area_limit(widths, expected):
+    frames = np.zeros((30, 100, 100, 3), np.uint8)
+    fg = np.zeros(frames.shape[:3], bool)
+    rng = np.random.default_rng(4)
+    for f, width in enumerate(widths):
+        frames[f, :, :width] = rng.integers(30, 256, (100, width, 3), dtype=np.uint8)
+        fg[f, :, :width] = True
+    assert len(find_solids(frames, fg, [], np.zeros_like(fg))) == expected
+
+
 def test_moving_flat_rectangle_and_text_are_not_solids():
     frames = np.zeros((30, 120, 180, 3), np.uint8)
     fg = np.zeros(frames.shape[:3], bool)
@@ -286,8 +298,9 @@ def _legacy_find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_mem
 
 @pytest.fixture(autouse=True)
 def compare_legacy_tracking(request, monkeypatch):
-    if request.node.name in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
-                             "test_two_thousand_tiny_components_are_skipped_before_tracking"}:
+    if request.node.originalname in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
+                                     "test_two_thousand_tiny_components_are_skipped_before_tracking",
+                                     "test_changing_blob_uses_median_bbox_area_limit"}:
         return
     from keepframe.analyze.solids import solid_props
     optimized = find_solids
