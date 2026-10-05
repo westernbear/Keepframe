@@ -26,6 +26,7 @@ from .operations import (
     MAX_OPERATIONS,
     MAX_SOLID_DIMENSION,
     MIN_SOLID_DIMENSION,
+    LINEAR_WIPE_PROPERTIES,
     ApprovedCapabilities,
     AddLayerOperation,
     Keyframe as AEKeyframe,
@@ -50,6 +51,7 @@ _MIN_COMP_FPS = 1.0
 _MAX_COMP_FPS = 99.0
 _MAX_COMP_DURATION = 10_800.0
 _MAX_NUMBER = 1_000_000.0
+LINEAR_WIPE_ANGLE = 270.0
 
 
 class AEMappingError(ValueError):
@@ -472,6 +474,7 @@ def _approved_capabilities(value: Any) -> ApprovedCapabilities:
             fonts=tuple(catalog.font_names),
             effects=tuple(catalog.effect_names),
             properties=dict(properties),
+            model_layers=catalog.model_layers,
         )
     if isinstance(value, Mapping):
         raw = dict(value)
@@ -569,6 +572,9 @@ def _validate_operation_domains(element: Element, *, width: float, height: float
     opacity = element.tracks.get("opacity")
     if opacity is not None and any(not 0.0 <= float(key.v) <= 1.0 for key in opacity.keys):
         raise AEMappingError(f"{element.id} opacity is outside AE bounds")
+    reveal = element.tracks.get("reveal")
+    if reveal is not None and any(not 0 <= key.v <= 1 for key in reveal.keys):
+        raise AEMappingError(f"{element.id} reveal is outside the unit interval")
 
 def _validate_track(track: Track, source_id: str, property_name: str, frames: int) -> None:
     if not track.keys:
@@ -900,10 +906,25 @@ def _prepare_mapping_domains(
         if element.kind == "group":
             continue
         substitution = substitutions_by_source.get(element.id)
+        reveal = element.tracks.get("reveal")
+        if reveal is not None and any(key.v != 1.0 for key in reveal.keys) and (substitution is None or "reveal" not in substitution.lost_semantics):
+            if "ADBE Linear Wipe" not in approved.effects or any(
+                approved.properties.get(name) not in {"number", "float"}
+                for name in LINEAR_WIPE_PROPERTIES
+            ):
+                raise AEMappingError(f"unsupported semantics for {element.id}: reveal requires Linear Wipe")
         if substitution is not None:
             continue
         if element.kind == "3d":
-            raise AEMappingError(f"unsupported semantics for {element.id}: 3d")
+            if not approved.model_layers:
+                raise AEMappingError(f"unsupported semantics for {element.id}: model_layers capability is unavailable")
+            if not element.canonical.model or not element.canonical.model.lower().endswith(".glb"):
+                raise AEMappingError(f"unsupported semantics for {element.id}: a GLB model asset is required")
+            if any(approved.properties.get(name) not in {"number", "float"} for name in ("ADBE Rotate X", "ADBE Rotate Y")):
+                raise AEMappingError(f"unsupported semantics for {element.id}: Rotate X/Y schemas are unavailable")
+            skx = element.tracks.get("skx")
+            if skx is not None and any(key.v != 0.0 for key in skx.keys):
+                raise AEMappingError(f"unsupported semantics for {element.id}: model X skew")
         sky = element.tracks.get("sky")
         if sky is not None and any(abs(float(key.v)) > 1e-12 for key in sky.keys):
             raise AEMappingError(f"unsupported semantics for {element.id}: nonzero Y skew")
@@ -955,7 +976,10 @@ def _default_payload(
 ) -> _SourcePayload:
     canonical = element.canonical
     if element.kind == "3d":
-        raise AEMappingError(f"unsupported semantics for {element.id}: 3d")
+        return _SourcePayload(
+            layer_type="model", name=element.id,
+            asset_id=resolver.resolve(canonical.model, label=f"{element.id} model"),
+        )
     if element.kind == "group":
         return _SourcePayload(layer_type="null", name=element.id)
     if element.kind == "text":
@@ -1245,6 +1269,7 @@ def _transform_operations(
     *,
     fps: float,
     substituted: bool = False,
+    lost_semantics: Sequence[str] = (),
 ) -> list[Operation]:
     canonical = element.canonical
     anchor = [
@@ -1283,6 +1308,8 @@ def _transform_operations(
                         "x": "position_x",
                         "y": "position_y",
                         "rot": "rotation",
+                        "rx": "rotation_x",
+                        "ry": "rotation_y",
                         "skx": "skew_x",
                     }.get(property_name, property_name),
                     value=value,
@@ -1374,13 +1401,36 @@ def _transform_operations(
         operations.append(SetTransformOperation(layer_instance_id=layer_id, property_name="scale", value=[static_sx, static_sy]))
 
     scalar("rot", "ADBE Rotate Z", lambda value: _finite(value, label=f"{element.id} rotation"))
-    scalar("skx", "ADBE Skew", lambda value: _finite(value, label=f"{element.id} skew x"))
+    if element.kind == "3d" and not substituted:
+        scalar("rx", "ADBE Rotate X", lambda value: _finite(value, label=f"{element.id} rotation x"))
+        scalar("ry", "ADBE Rotate Y", lambda value: _finite(value, label=f"{element.id} rotation y"))
+    else:
+        scalar("skx", "ADBE Skew", lambda value: _finite(value, label=f"{element.id} skew x"))
     sky = element.tracks.get("sky")
     if sky is not None and any(abs(float(key.v)) > 1e-12 for key in sky.keys):
         # Y skew is an explicitly acknowledged lost semantic when this source
         # arrived through a substitution; no fixed operation represents it.
         pass
     scalar("opacity", "ADBE Opacity", lambda value: _finite(value, label=f"{element.id} opacity"), opacity=True)
+    reveal = element.tracks.get("reveal")
+    if "reveal" not in lost_semantics and reveal is not None and any(key.v != 1.0 for key in reveal.keys):
+        def completion(value: float) -> float:
+            return (1.0 - value) * 100.0
+
+        operations.append(SetEffectOperation(
+            layer_instance_id=layer_id,
+            effect_name="ADBE Linear Wipe",
+            properties={
+                "ADBE Linear Wipe-0001": completion(reveal.keys[0].v),
+                "ADBE Linear Wipe-0002": LINEAR_WIPE_ANGLE,
+                "ADBE Linear Wipe-0003": 0.0,
+            },
+        ))
+        if len(reveal.keys) > 1:
+            operations.append(SetKeyframesOperation(
+                layer_instance_id=layer_id, property_name="ADBE Linear Wipe-0001",
+                keyframes=_track_keyframes(reveal, converter=completion, fps=fps, substituted="easing" in lost_semantics),
+            ))
     return operations
 
 
@@ -1768,6 +1818,7 @@ def map_baseline(
                     rep.instance_id,
                     fps=fps,
                     substituted=rep.substituted,
+                    lost_semantics=substitutions_by_source[rep.source_id].lost_semantics if rep.substituted else (),
                 )
             )
         if rep.effects:

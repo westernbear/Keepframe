@@ -540,6 +540,7 @@ class AEWorkflowService:
             "fonts": list(fonts) if isinstance(fonts, (list, tuple)) else [],
             "effects": list(effects) if isinstance(effects, (list, tuple)) else [],
             "properties": dict(properties) if isinstance(properties, Mapping) else {},
+            "model_layers": catalog.get("model_layers", False),
         }
 
     @staticmethod
@@ -577,12 +578,15 @@ class AEWorkflowService:
             for name, schema in approved.get("properties", {}).items()
             if name in property_refs
         }
-        return {
+        compact = {
             "digest": approved.get("digest"),
             "fonts": list(fonts),
             "effects": list(effects),
             "properties": properties,
         }
+        if approved.get("model_layers", False):
+            compact["model_layers"] = True
+        return compact
 
     @staticmethod
     def _plan_assets(plan: Any) -> dict[str, PlanAsset]:

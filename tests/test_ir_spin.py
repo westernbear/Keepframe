@@ -140,8 +140,9 @@ def test_spin_motion_constraints_brief_and_ae_compatibility(tmp_path, prop):
     assert all(c.keep and eval_pred(c.pred, build_context(scene)) for c in apply_keep_preset(extract_constraints(scene), "content_only"))
     assert "spins 360°" in scene_brief(scene) and "(3D 후보)" in scene_brief(scene)
     assert 'sprites ignore' in scene_brief(scene)
-    issues = {issue.semantic_key for issue in analyze_ae_compatibility(scene, _capabilities())}
-    assert {"3d", prop} <= issues
+    issues = analyze_ae_compatibility(scene, _capabilities())
+    assert "3d" in {issue.semantic_key for issue in issues}
+    assert {"3d", prop} <= {semantic for issue in issues for semantic in issue.lost_semantics}
     element.kind = "sprite"
     element.canonical.model = None
     assert extract_motions(scene) == []

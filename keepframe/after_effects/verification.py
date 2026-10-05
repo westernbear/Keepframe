@@ -8,7 +8,7 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..ir.schema import Scene
+from ..ir.schema import Element, Scene
 from ..verify.matrix import COLS, Motion, extract_motions, extract_motions_from_matrices
 from ..verify.predicates import PredContext, eval_pred, parse_pred
 
@@ -184,6 +184,9 @@ class AESourceSample(_StrictFrozen):
         default=(),
         validation_alias=AliasChoices("provenance", "instance_ids", "layer_instance_ids"),
     )
+    wipe_completion: float | None = None
+    rotation_x: float | None = None
+    rotation_y: float | None = None
 
     _source_id = field_validator("source_element_id")(_bounded_id)
     _frame = field_validator("frame")(_bounded_int)
@@ -196,6 +199,24 @@ class AESourceSample(_StrictFrozen):
     _instance_id = field_validator("layer_instance_id")(
         lambda value: _bounded_id(value, optional=True)
     )
+
+    @field_validator("wipe_completion", mode="before")
+    @classmethod
+    def _completion(cls, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError("wipe completion must be between 0 and 100")
+        return float(value)
+
+    @field_validator("rotation_x", "rotation_y", mode="before")
+    @classmethod
+    def _rotation_axis(cls, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 1_000_000:
+            raise ValueError("3D rotation must be a finite degree value")
+        return float(value)
 
     @field_validator("provenance", mode="before")
     @classmethod
@@ -218,7 +239,7 @@ class AESourceSample(_StrictFrozen):
             x0, y0, x1, y1 = self.world_bounds
             if x1 < x0 or y1 < y0:
                 raise ValueError("world_bounds must be ordered xmin,ymin,xmax,ymax")
-        if not self.active and (self.transform is not None or self.world_bounds is not None):
+        if not self.active and any(value is not None for value in (self.transform, self.world_bounds, self.wipe_completion, self.rotation_x, self.rotation_y)):
             raise ValueError("inactive samples must omit transform and world_bounds")
         if self.layer_instance_id is not None and self.provenance:
             raise ValueError("raw instance samples cannot also carry provenance")
@@ -306,7 +327,7 @@ def _nested_sample_rows(value: Any) -> dict[str, Any]:
                 "xmax",
                 "ymax",
             }
-            if set(sample) != expected:
+            if set(sample) - (expected | {"wipe_completion", "rotation_x", "rotation_y"}) or expected - set(sample):
                 raise ValueError("inspection geometry sample fields are incomplete")
             flattened.append(
                 {
@@ -321,13 +342,16 @@ def _nested_sample_rows(value: Any) -> dict[str, Any]:
                         sample["rot"],
                         sample["opacity"],
                     ),
-                    "world_bounds": (
+                    "world_bounds": None if all(sample[name] is None for name in ("xmin", "ymin", "xmax", "ymax")) else (
                         sample["xmin"],
                         sample["ymin"],
                         sample["xmax"],
                         sample["ymax"],
                     ),
                     "layer_instance_id": instance_id,
+                    "wipe_completion": sample.get("wipe_completion"),
+                    "rotation_x": sample.get("rotation_x"),
+                    "rotation_y": sample.get("rotation_y"),
                 }
             )
     payload["samples"] = flattened
@@ -485,7 +509,7 @@ class AEInspection(_StrictFrozen):
 class AEObservedMotion(_StrictFrozen):
     id: str
     element: str
-    type: Literal["translation", "rotation", "scale", "opacity"]
+    type: Literal["translation", "rotation", "scale", "opacity", "reveal", "spin"]
     start: int
     end: int
     dir: tuple[float, float] | None = None
@@ -1028,6 +1052,7 @@ def merge_inspection_chunks(
     complete_aggregate_pairs: set[tuple[str, int]] = set()
     complete_raw_pairs: set[tuple[str, int]] = set()
     motion_required, bounds_required = _required_geometry_pairs(scene)
+    elements = {element.id: element for element in scene.elements}
     for source_id, frame in candidate_pairs:
         expected_instances = mapped_instances.get(source_id, set())
         raw = grouped_raw.get((source_id, frame), ())
@@ -1038,7 +1063,7 @@ def merge_inspection_chunks(
             complete = complete and returned_instances == expected_instances
             if (source_id, frame) in motion_required:
                 complete = complete and all(
-                    not row.active or row.transform is not None for row in raw
+                    not row.active or (row.transform is not None and _has_extra_observations(elements.get(source_id), row)) for row in raw
                 )
             if (source_id, frame) in bounds_required:
                 complete = complete and all(
@@ -1093,6 +1118,9 @@ def merge_inspection_chunks(
                 frame=pair[1],
                 active=True,
                 transform=selected.transform,
+                wipe_completion=selected.wipe_completion,
+                rotation_x=selected.rotation_x,
+                rotation_y=selected.rotation_y,
                 world_bounds=union,
                 provenance=tuple(
                     sorted(row.layer_instance_id for row in active_rows if row.layer_instance_id)
@@ -1150,6 +1178,40 @@ def _required_geometry_pairs(
     return transform_pairs, bounds_pairs
 
 
+def _has_extra_observations(element: Element | None, row: AESourceSample) -> bool:
+    if element is None:
+        return True
+    reveal = element.tracks.get("reveal")
+    if reveal is not None and any(key.v != 1.0 for key in reveal.keys) and row.wipe_completion is None:
+        return False
+    if element.kind == "3d":
+        for prop, observed in (("rx", row.rotation_x), ("ry", row.rotation_y)):
+            track = element.tracks.get(prop)
+            if track is not None and any(key.v != 0.0 for key in track.keys) and observed is None:
+                return False
+    return True
+
+
+def _observed_extra_channels(scene: Scene, inspection: AEInspection) -> dict[str, np.ndarray]:
+    channels = {element.id: np.full((scene.frames, 3), np.nan) for element in scene.elements}
+    elements = {element.id: element for element in scene.elements}
+    missing = {(pair.source_element_id, pair.frame) for pair in inspection.missing_pairs}
+    for row in inspection.samples:
+        if (
+            row.source_element_id in channels
+            and row.frame < scene.frames
+            and row.active
+            and (row.source_element_id, row.frame) not in missing
+            and _has_extra_observations(elements.get(row.source_element_id), row)
+        ):
+            channels[row.source_element_id][row.frame] = [
+                1.0 - row.wipe_completion / 100.0 if row.wipe_completion is not None else 1.0,
+                row.rotation_x if row.rotation_x is not None else 0.0,
+                row.rotation_y if row.rotation_y is not None else 0.0,
+            ]
+    return channels
+
+
 def _observed_arrays(
     scene: Scene, inspection: AEInspection
 ) -> tuple[
@@ -1169,6 +1231,7 @@ def _observed_arrays(
     transform_observed: set[tuple[str, int]] = set()
     bounds_observed: set[tuple[str, int]] = set()
     missing = {(pair.source_element_id, pair.frame) for pair in inspection.missing_pairs}
+    elements = {element.id: element for element in scene.elements}
     for row in inspection.samples:
         if row.source_element_id not in matrices:
             continue
@@ -1181,7 +1244,7 @@ def _observed_arrays(
             transform_observed.add(pair)
             bounds_observed.add(pair)
             continue
-        if row.transform is not None:
+        if row.transform is not None and _has_extra_observations(elements.get(row.source_element_id), row):
             matrices[row.source_element_id][row.frame] = row.transform
             transform_observed.add(pair)
         if row.world_bounds is not None:
@@ -1232,7 +1295,7 @@ def verify_inspection(
     ]
 
     try:
-        motions = extract_motions_from_matrices(scene, matrices)
+        motions = extract_motions_from_matrices(scene, matrices, extra_channels=_observed_extra_channels(scene, inspection))
         context = PredContext(
             scene=scene,
             motions={motion.id: motion for motion in motions},
