@@ -3998,6 +3998,12 @@ def run_connector(
         relay.device_id = device_id
         relay.set_device_token(device_token)
         relay.publish_capabilities(checked.capabilities, project=project)
+        print(
+            f"ae-connect: {'paired and ' if code is not None else ''}connected — project {project}, "
+            f"device {str(device_id)[:8]}, relay {checked.relay_url}. "
+            "Keep this window open; press Ctrl+C to stop.",
+            flush=True,
+        )
         client = MCPStdioClient(bridge_root=checked.private_root)
         Connector(
             relay,
@@ -4013,8 +4019,29 @@ def run_connector(
             ffmpeg=getattr(checked, "ffmpeg", None),
         ).run_forever()
         return 0
-    except ConnectorError:
+    except ConnectorError as exc:
+        print(f"ae-connect failed: {_connector_failure_text(exc)}", file=sys.stderr, flush=True)
         return 1
+
+
+_FAILURE_HINTS = (
+    ("deployment credential", "set KEEPFRAME_AE_RELAY_TOKEN in this shell (the relay deployment token)"),
+    ("deployment token", "check KEEPFRAME_AE_RELAY_TOKEN matches the server's relay token"),
+    ("panel", "open After Effects with a project, then Window > Keepframe Panel, and retry"),
+    ("ffmpeg", "install ffmpeg and make sure `ffmpeg` is on PATH"),
+    ("pairing", "press Pair on the project's agent page again and use the new code within its expiry"),
+    ("unauthorized", "the pairing code was rejected or expired; press Pair again for a new code"),
+)
+
+
+def _connector_failure_text(exc: Exception) -> str:
+    """One readable line for the CLI; never echoes the deployment token."""
+    text = str(exc) or type(exc).__name__
+    token = os.environ.get("KEEPFRAME_AE_RELAY_TOKEN")
+    if token:
+        text = text.replace(token, "[redacted]")
+    hint = next((h for key, h in _FAILURE_HINTS if key in text.lower()), None)
+    return f"{text} — {hint}" if hint else text
 
 
 __all__ = [

@@ -17,13 +17,13 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261005d";
-import { T, Tf } from "/static/js/i18n.js?v=20261005d";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261005d";
+} from "/static/js/api.js?v=20261005e";
+import { T, Tf } from "/static/js/i18n.js?v=20261005e";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261005e";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261005d";
+} from "/static/js/playback.js?v=20261005e";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -284,13 +284,49 @@ function paintPairingDetails() {
   renderPairingEl.hidden = !pairingDetails;
   if (!pairingDetails) return;
   const relay = pairingDetails.relay_url;
-  renderPairingCodeEl.textContent = pairingDetails.code || "—";
-  renderPairingExpiryEl.textContent = pairingDetails.expires_at || "—";
-  renderPairingRelayEl.textContent = relay || "—";
-  renderPairingCommandEl.textContent = relay
-    ? `keepframe ae-connect --url ${relay}`
-    : "—";
+  // Repaint only on change: the status poll would otherwise wipe a text selection before Ctrl+C.
+  setTextIfChanged(renderPairingCodeEl, pairingDetails.code || "—");
+  setTextIfChanged(renderPairingExpiryEl, pairingDetails.expires_at || "—");
+  setTextIfChanged(renderPairingRelayEl, relay || "—");
+  setTextIfChanged(renderPairingCommandEl, relay ? `keepframe ae-connect --url ${relay}` : "—");
 }
+
+function setTextIfChanged(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  // Plain-HTTP pages (e.g. a tailnet host) have no async clipboard API.
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  if (!ok) throw new Error(T("agent.copyFailed"));
+}
+
+document.querySelectorAll("[data-copy-target]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const source = document.getElementById(btn.dataset.copyTarget);
+    const text = source ? source.textContent.trim() : "";
+    if (!text || text === "—") return;
+    try {
+      await copyText(text);
+      btn.textContent = T("agent.copied");
+      setTimeout(() => { btn.textContent = T("agent.copy"); }, 1500);
+    } catch (err) {
+      setBanner(err.message || T("agent.copyFailed"), true);
+    }
+  });
+});
 
 
 function expectedOutputs(plan, draft) {

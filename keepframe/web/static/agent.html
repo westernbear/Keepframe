@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261005d" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261005e" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261005d"></script>
-<script type="module" src="/static/js/api.js?v=20261005d"></script>
-<script type="module" src="/static/js/agent.js?v=20261005d"></script>
+<script type="module" src="/static/js/i18n.js?v=20261005e"></script>
+<script type="module" src="/static/js/api.js?v=20261005e"></script>
+<script type="module" src="/static/js/agent.js?v=20261005e"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -101,10 +101,10 @@
 <div id="render-pairing" class="render-card__section render-pairing" data-ai-private hidden>
 <h3>Connector pairing</h3>
 <div class="render-card__facts render-card__facts--pairing">
-<div><span>Code</span><strong id="render-pairing-code" class="mono">—</strong></div>
+<div><span>Code</span><strong id="render-pairing-code" class="mono">—</strong><button type="button" class="btn btn--secondary btn--inline" data-copy-target="render-pairing-code" data-i18n="agent.copy">복사</button></div>
 <div><span>Expires</span><strong id="render-pairing-expiry" class="mono">—</strong></div>
 <div><span>Relay URL</span><strong id="render-pairing-relay" class="mono">—</strong></div>
-<div><span>Connect command</span><strong id="render-pairing-command" class="mono render-pairing__command">—</strong></div>
+<div><span>Connect command</span><strong id="render-pairing-command" class="mono render-pairing__command">—</strong><button type="button" class="btn btn--secondary btn--inline" data-copy-target="render-pairing-command" data-i18n="agent.copy">복사</button></div>
 </div>
 </div>
 <div id="render-substitutions" class="render-card__section" hidden>
