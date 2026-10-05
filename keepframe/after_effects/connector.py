@@ -3987,7 +3987,7 @@ def _exception_leaves(exc: BaseException) -> list[BaseException]:
 
 def _probe_panel_with_mcp(root: Path) -> dict[str, Any]:
     command_id = "preflight-" + secrets.token_urlsafe(16)
-    nonce = secrets.token_urlsafe(16)
+    nonce = "nonce-" + secrets.token_urlsafe(16)  # the panel requires an alphanumeric first character
     raw = MCPStdioClient(bridge_root=root).call_tool(
         "capability_heartbeat",
         {"command_id": command_id, "nonce": nonce, "payload": {}},

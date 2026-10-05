@@ -3,6 +3,73 @@
  * The bridge vocabulary is deliberately closed.  Commands and operations are
  * selected only by the switches below; command data is never executable text.
  */
+/* ExtendScript is ES3: there is no built-in JSON, and without it every bridge
+ * read fails quietly.  Minimal parse/stringify after json2.js (public domain),
+ * installed only when the host lacks them. */
+if (typeof JSON !== "object" || JSON === null) {
+    JSON = {};
+}
+(function (json) {
+    var ESCAPES = { "\"": "\\\"", "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+    var UNSAFE = /[\\"\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+    var DANGEROUS = /[\u0000\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+    var STRUCTURE = /^[\],:{}\s]*$/;
+    var ESCAPE_SEQ = /\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4})/g;
+    var TOKENS = /"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g;
+    var OPEN_BRACKETS = /(?:^|:|,)(?:\s*\[)+/g;
+
+    function hex(c) {
+        return "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4);
+    }
+
+    function quote(text) {
+        return "\"" + text.replace(UNSAFE, function (c) { return ESCAPES[c] || hex(c); }) + "\"";
+    }
+
+    function encode(value) {
+        var parts = [];
+        var key;
+        var index;
+        var item;
+        if (value === null) { return "null"; }
+        switch (typeof value) {
+            case "string": return quote(value);
+            case "number": return isFinite(value) ? String(value) : "null";
+            case "boolean": return String(value);
+            case "object":
+                if (Object.prototype.toString.call(value) === "[object Array]") {
+                    for (index = 0; index < value.length; index += 1) {
+                        item = encode(value[index]);
+                        parts.push(item === undefined ? "null" : item);
+                    }
+                    return "[" + parts.join(",") + "]";
+                }
+                for (key in value) {
+                    if (Object.prototype.hasOwnProperty.call(value, key)) {
+                        item = encode(value[key]);
+                        if (item !== undefined) { parts.push(quote(String(key)) + ":" + item); }
+                    }
+                }
+                return "{" + parts.join(",") + "}";
+            default:
+                return undefined;
+        }
+    }
+
+    if (typeof json.stringify !== "function") {
+        json.stringify = function (value) { return encode(value); };
+    }
+    if (typeof json.parse !== "function") {
+        json.parse = function (text) {
+            var source = String(text).replace(DANGEROUS, hex);
+            if (STRUCTURE.test(source.replace(ESCAPE_SEQ, "@").replace(TOKENS, "]").replace(OPEN_BRACKETS, ""))) {
+                return eval("(" + source + ")");
+            }
+            throw new SyntaxError("JSON.parse");
+        };
+    }
+}(JSON));
+
 (function (global) {
     var BRIDGE_SCHEMA_VERSION = 1;
     var LOCAL_APPDATA = $.getenv("LOCALAPPDATA");
