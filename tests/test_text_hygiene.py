@@ -139,7 +139,7 @@ def _assert_clean_scene(root):
 
 def test_analyze_reclassifies_noise_without_losing_pixels(noisy_ocr_clip, monkeypatch):
     report = _assert_clean_scene(noisy_ocr_clip)
-    assert report["messages"] == ["text tracks reclassified as shapes: 1"]
+    assert report["messages"] == ["text tracks reclassified as shapes: 1", "3D 후보 0개"]
     monkeypatch.setattr(text_module, "keep_text_track", lambda track: True)
     monkeypatch.setattr(text_module, "font_candidates", lambda *args: [])
     baseline = noisy_ocr_clip.parent / "hygiene-disabled"
@@ -161,7 +161,7 @@ def test_rerun_reuses_shape_tracks_and_reports_new_reclassifications(noisy_ocr_c
     version = rerun(noisy_ocr_clip, "s1", stage, note="text hygiene regression")
     assert version.id == "v2"
     report = _assert_clean_scene(noisy_ocr_clip)
-    assert report["messages"] == (["text tracks reclassified as shapes: 1"] if stage == "text" else [])
+    assert report["messages"] == (["text tracks reclassified as shapes: 1"] if stage == "text" else []) + ["3D 후보 0개"]
     after, _ = current_scene(noisy_ocr_clip, "s1")
     assert [(e.id, e.kind) for e in after.elements] == [(e.id, e.kind) for e in before.elements]
     assert (sd / "stages/ids.json").read_bytes() == cached_ids
@@ -188,4 +188,4 @@ def test_ocr_failure_message_still_reaches_report(tmp_path, monkeypatch, stage):
     else:
         rerun(root, "s1", "text", note="OCR failure", options=options)
     report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-    assert report["messages"] == ["text stage skipped: OCR unavailable"]
+    assert report["messages"] == ["text stage skipped: OCR unavailable", "3D 후보 0개"]

@@ -9,6 +9,27 @@ from .tracks import PRESET_EASES
 PALETTE = [(239, 71, 111), (255, 209, 102), (6, 214, 160), (17, 138, 178), (7, 59, 76), (255, 255, 255)]
 
 
+def make_spinning_sphere_video(frames: int = 30, size: tuple[int, int] = (240, 180),
+                               radius: float = 48, deg_per_frame: float = 6,
+                               translation: tuple[float, float] = (1, 0.5)) -> np.ndarray:
+    """Orthographic striped sphere with a known yaw and independent translation (RGB)."""
+    w, h = size
+    yy, xx = np.mgrid[:h, :w]
+    video = np.empty((frames, h, w, 3), np.uint8)
+    for f in range(frames):
+        x = xx - (w / 2 - translation[0] * (frames - 1) / 2 + translation[0] * f)
+        y = yy - (h / 2 - translation[1] * (frames - 1) / 2 + translation[1] * f)
+        z = np.sqrt(np.maximum(radius ** 2 - x ** 2 - y ** 2, 0))
+        mask = x ** 2 + y ** 2 <= radius ** 2
+        lon = np.arctan2(x, z) - np.radians(deg_per_frame * f)
+        lat = np.arcsin(np.clip(y / radius, -1, 1))
+        stripes = np.sin(8 * lon + 0.5 * np.sin(10 * lat))
+        texture = 120 + 75 * stripes + 30 * np.cos(12 * lat)
+        video[f] = (16, 20, 24)
+        video[f][mask] = np.stack([texture, texture * 0.85, texture * 0.65], axis=-1)[mask].clip(0, 255).astype(np.uint8)
+    return video
+
+
 def make_texture(path: Path, shape: str, w: int, h: int, color: tuple[int, int, int]) -> None:
     img = np.zeros((h, w, 4), np.uint8)
     bgr = (color[2], color[1], color[0])

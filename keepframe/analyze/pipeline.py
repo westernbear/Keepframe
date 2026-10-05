@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, UIModel, Version
+from ..ir.schema import PROPS, Background, Canonical, Element, Keyframe, Project, Scene, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
@@ -16,7 +16,8 @@ from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
-from .sprites import RAW_COLS, sprite_props, z_order
+from .sprites import sprite_props, z_order
+from .solids import find_solids, solid_props
 from .text import Ocr, apply_copy, ocr_frames, split_junk_text, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
@@ -36,6 +37,7 @@ class AnalyzeOptions:
     use_ecc: bool = True
     ui: bool = False
     ocr_max_side: int = 1280
+    generate_3d: bool = True
 
 
 def _hex(rgb) -> str:
@@ -143,7 +145,14 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None):
+def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None):
+    plate_lab = rgb_to_lab(plate) if plate is not None else None
+    fg = np.stack([foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames])
+    text_masks = np.stack([text_exclusion_mask(b, fg.shape[1:]) for b in boxes])
+    return _pk(sd, "solids", find_solids(frames, fg, obj_tracks, text_masks))
+
+
+def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=()):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
@@ -214,6 +223,11 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         except Exception as e:
             log.error("refine skipped: %s", e)
             props["_message"] = f"refine skipped: {e}"
+    for i, solid in enumerate(solids):
+        p = solid_props(solid, frames)
+        p["fragments"] = {k: props.pop(k) for mid in solid.members if (k := f"o{mid}") in props}
+        p["z"] = max((v.get("z", 0) for v in p["fragments"].values()), default=0)
+        props[f"solid{i + 1}"] = p
     return _pk(sd, "props", props)
 
 
@@ -231,17 +245,21 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         tracks, fe = tracks_from_raw(raw_full[first:last + 1], first)
         (sd / "assets").mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(sd / "assets" / f"{eid}.png"), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA))
-        np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(RAW_COLS))
+        np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]]))
         h, w = p["canon"].shape[:2]
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
                               text=p.get("text"), font=p.get("font"), color=p.get("color"))
         elements.append(Element(id=eid, kind=p["kind"], canonical=canonical, visible=(first, last), tracks=tracks,
-                                z=Track(keys=[Keyframe(t=0, v=p.get("z", 0))]), raw=f"assets/{eid}_raw.npz", fit_error=fe))
+                                z=Track(keys=[Keyframe(t=0, v=p.get("z", 0))]), raw=f"assets/{eid}_raw.npz", fit_error=fe,
+                                pending_asset=p.get("pending_asset")))
         raws[eid] = raw_full
     return elements, raws
 
 
-def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None, captioner=None) -> Scene:
+def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None, captioner=None,
+            props=None, ids=None, generate_3d=True) -> Scene:
+    from .solid_assets import finish_solid_assets
+    solids_report = finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=generate_3d, previous=previous) if props is not None else []
     report_stage("semantics")
     assign_roles(scene.elements)
     if captioner is not None:
@@ -266,7 +284,7 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     for e in scene.elements:
         e.confidence = conf[e.id]
     write_report(sd, {"reconstruction": rec, "confidence": conf, "messages": messages,
-                      "elements": len(scene.elements), "fit_error_max_px": max([e.fit_error.max_px for e in scene.elements] or [0])})
+                      "solids": solids_report, "elements": len(scene.elements), "fit_error_max_px": max([e.fit_error.max_px for e in scene.elements] or [0])})
     return scene
 
 
@@ -353,6 +371,7 @@ def analyze_scene_frames(
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
     existing = load_project(out_root) if (out_root / "project.json").exists() else None
+    previous = current_scene(out_root, scene_id)[0] if existing and any(s.id == scene_id for s in existing.scenes) else None
     sd = _scene_dir(out_root, scene_id)
     (sd / "stages").mkdir(parents=True, exist_ok=True)
     overrides = sd / "stages" / "overrides.json"
@@ -370,8 +389,10 @@ def analyze_scene_frames(
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
+    report_stage("solids")
+    solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
     report_stage("sprites")
-    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate)
+    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
     report_stage("keyframes")
@@ -381,9 +402,11 @@ def analyze_scene_frames(
                   background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
                   elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
+    messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
-    scene = _finish(sd, scene, frames, raws, messages, captioner=captioner)
+    scene = _finish(sd, scene, frames, raws, messages, captioner=captioner, props=props, ids=ids,
+                    generate_3d=opts.generate_3d and previous is None, previous=previous)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
     log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return scene
@@ -469,17 +492,19 @@ def analyze(
     by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
     analyzed: list[Scene] = []
     stored: list[tuple[Scene, tuple[int, int], dict | None]] = []
-    for index, item in enumerate(layout):
-        scene_id = str(item.get("id") or f"s{index + 1}")
-        first, last = int(item["frames"][0]), int(item["frames"][1])
-        local_first, local_last = first - start, last - start
-        if local_first < 0 or local_last >= len(frames) or local_first > local_last:
-            raise ValueError("scene range is outside analyzed frames")
-        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr, captioner=captioner)
-        analyzed.append(scene)
-        next_id = str(layout[index + 1].get("id") or f"s{index + 2}") if index + 1 < len(layout) else None
-        transition = by_pair.get((scene_id, next_id)) if next_id else None
-        stored.append((scene, (first, last), transition))
+    from .solid_assets import solid_generation_budget
+    with solid_generation_budget():
+        for index, item in enumerate(layout):
+            scene_id = str(item.get("id") or f"s{index + 1}")
+            first, last = int(item["frames"][0]), int(item["frames"][1])
+            local_first, local_last = first - start, last - start
+            if local_first < 0 or local_last >= len(frames) or local_first > local_last:
+                raise ValueError("scene range is outside analyzed frames")
+            scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr, captioner=captioner)
+            analyzed.append(scene)
+            next_id = str(layout[index + 1].get("id") or f"s{index + 2}") if index + 1 < len(layout) else None
+            transition = by_pair.get((scene_id, next_id)) if next_id else None
+            stored.append((scene, (first, last), transition))
     height, width = frames.shape[1:3]
     links = link_adjacent_scenes(analyzed, out_root)
     analysis_files = {scene.id: snapshot_from_stages(_scene_dir(out_root, scene.id), scene) for scene in analyzed}
@@ -550,9 +575,14 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         obj_tracks = _stage_tracking(rbf, sd)
     else:
         obj_tracks = _pk(sd, "tracks")
+    if boundary <= STAGES.index("solids") or not (sd / "stages" / "solids.pkl").exists():
+        report_stage("solids")
+        solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
+    else:
+        solids = _pk(sd, "solids")
     if boundary <= STAGES.index("sprites"):
         report_stage("sprites")
-        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate)
+        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
     else:
         props = _pk(sd, "props")
     ids = json.loads((sd / "stages" / "ids.json").read_text())
@@ -564,6 +594,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
                   background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
                   elements=elements)
     messages = [m for m in (msg, props.get("_message")) if m]
+    messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
     for e in scene.elements:   # keep manual text edits across reruns
@@ -574,5 +605,6 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             e.label, e.caption = old.label, old.caption
         except KeyError:
             pass
-    scene = _finish(sd, scene, frames, raws, messages, previous=prev, captioner=captioner)
+    scene = _finish(sd, scene, frames, raws, messages, previous=prev, captioner=captioner,
+                    props=props, ids=ids, generate_3d=False)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

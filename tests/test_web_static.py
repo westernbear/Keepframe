@@ -422,7 +422,67 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261005b"}
+    assert stamps == {"20261005d"}
+
+
+def test_pending_solid_button_uses_edit_preview_and_confirmation(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    inspector = static_src("js/review/inspector.js")
+    inspector = inspector[inspector.index("export function attachInspector"):].replace("export function", "function", 1)
+    form = static_src("js/review/edit-form.js")
+    form = form[form.index("export function attachEditForm"):].replace("export function", "function", 1)
+    script = tmp_path / "solid-button.mjs"
+    script.write_text('''import assert from 'node:assert/strict';
+import vm from 'node:vm';
+class Element {
+  constructor(tag='div') { this.tagName=tag; this.children=[]; this.events={}; this.dataset={}; this.files=[]; this.value=''; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children=[...children]; }
+  addEventListener(name, fn) { this.events[name]=fn; }
+  querySelectorAll() { return []; }
+}
+const dom = Object.fromEntries(['objectDetail','editSummary','editConflicts','editConfirm','editCancel','editFile','editPrompt','editRun'].map(k=>[k,new Element()]));
+const item={id:'e1',kind:'sprite',pending_asset:'3d',canonical:{},visible:[0,11]};
+const requests=[];
+const ws={dom,projectId:'p1',sceneId:'s1',versionId:'v1',selectedId:'e1',
+  state:{scene:{elements:[item]},project:{versions:[{id:'v1'}]}},setJobBanner(){}};
+const context=vm.createContext({ws,document:{createElement:tag=>new Element(tag)},T:k=>k,
+  postEdit:async body=>{requests.push(body);return {status:'needs_confirm',summary:'preview',intent:body.intent};},
+  readFileAsDataUrl:async()=>null,isEditNeedsConfirm:s=>s==='needs_confirm'});
+vm.runInContext(''' + json.dumps(form + '\n' + inspector + '\nattachEditForm(ws);attachInspector(ws);') + ''',context);
+ws.renderObjectDetail();
+const button=dom.objectDetail.children.find(el=>el.tagName==='button');
+assert.ok(button,'pending solid needs a generation button');
+assert.equal(button.textContent,'review.generate3d');
+assert.equal(requests.length,0);
+await button.events.click();
+assert.equal(requests.length,1);
+assert.equal(requests[0].confirm,false,'generation first previews the edit');
+assert.equal(requests[0].intent.targets[0].property,'model');
+assert.equal(requests[0].intent.targets[0].value,'reference');
+assert.equal(requests[0].intent.targets[0].element,'e1');
+assert.equal(dom.editConfirm.hidden,false);
+ws.bindEdit();await dom.editConfirm.events.click();
+assert.equal(requests.length,2);
+assert.equal(requests[1].confirm,true,'only confirmation submits generation');
+assert.equal(requests[1].intent.targets[0].value,'reference');
+ws.versionId='v0';ws.renderObjectDetail();
+assert.equal(dom.objectDetail.children.find(el=>el.tagName==='button').disabled,true,'historical review is read only');
+item.pending_asset=null;ws.renderObjectDetail();
+assert.equal(dom.objectDetail.children.some(el=>el.tagName==='button'),false);
+''')
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_solid_generation_copy_is_bilingual():
+    ko, en = static_src("js/i18n.js").split("en: {", 1)
+    assert '"review.generate3d": "3D 생성"' in ko
+    assert '"review.generate3d": "Generate 3D"' in en
+    for key in ("review.generate3d", "review.generate3dPrompt"):
+        assert f'"{key}":' in ko and f'"{key}":' in en
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):

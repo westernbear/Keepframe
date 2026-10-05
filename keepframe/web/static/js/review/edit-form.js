@@ -1,7 +1,7 @@
-import { postEdit } from "/static/js/api.js?v=20261005b";
-import { T, Tf } from "/static/js/i18n.js?v=20261005b";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261005b";
-import { isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261005b";
+import { postEdit } from "/static/js/api.js?v=20261005d";
+import { T, Tf } from "/static/js/i18n.js?v=20261005d";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261005d";
+import { isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261005d";
 
 export function attachEditForm(ws) {
   const { dom } = ws;
@@ -128,7 +128,16 @@ export function attachEditForm(ws) {
     dom.editCancel.addEventListener("click", () => resetEditUi());
   }
 
+  async function previewReference3d(id) {
+    resetEditUi();
+    dom.editPrompt.value = T("review.generate3dPrompt");
+    dom.editFile.value = "";
+    ws.pendingIntent = { targets: [{ element: id, property: "model", value: "reference" }] };
+    await runEditPreview();
+  }
+
   ws.resetEditUi = resetEditUi;
   ws.paintEditResult = paintEditResult;
   ws.bindEdit = bindEdit;
+  ws.previewReference3d = previewReference3d;
 }

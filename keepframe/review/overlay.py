@@ -128,6 +128,12 @@ def snapshot_from_stages(sd: Path, scene) -> str | None:
     for track in pickle.loads((stages / "tracks.pkl").read_bytes()):
         for f, region in track.regions.items():
             add(target(f"o{track.id}"), f, mask_region(region.mask, region.bbox))
+    solids_path = stages / "solids.pkl"
+    if solids_path.is_file():
+        for i, solid in enumerate(pickle.loads(solids_path.read_bytes())):
+            for f, (bbox, mask) in solid.frames.items():
+                x0, y0, x1, y1 = bbox
+                add(target(f"solid{i + 1}"), f, mask_region(mask[y0:y1, x0:x1], bbox))
     text = pickle.loads((stages / "text.pkl").read_bytes())
     for track in text["tracks"]:
         for f, box in track.boxes.items():
