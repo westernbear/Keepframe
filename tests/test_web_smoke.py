@@ -29,8 +29,17 @@ def test_library_and_review_render(tmp_path):
             page.wait_for_selector('[data-mode="range"]', state="visible")
             page.goto(f"{base}/review?project={row['id']}&scene={row['scene']}")
             page.wait_for_selector("#orig", state="visible")
-            page.wait_for_selector("#recon", state="visible")
-            page.wait_for_function("() => ['orig', 'recon'].every(id => document.getElementById(id).naturalWidth > 0)")
+            # Review renders analysis regions over the decoded reference frame.
+            page.wait_for_selector("#orig-overlay [data-object-id] path", state="visible")
+            page.wait_for_function("""() => {
+                const orig = document.getElementById('orig');
+                const overlay = document.getElementById('orig-overlay');
+                return orig.complete && orig.naturalWidth > 0 && orig.naturalHeight > 0
+                    && orig.dataset.frame === '0' && orig.dataset.version === 'v1'
+                    && overlay.dataset.frame === orig.dataset.frame
+                    && overlay.dataset.version === orig.dataset.version
+                    && document.getElementById('review-root').getAttribute('aria-busy') === 'false';
+            }""")
             browser.close()
     finally:
         srv.shutdown()
