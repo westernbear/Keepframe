@@ -49,3 +49,118 @@ The background and whole-scene speed prompts are correct everywhere. Every miss 
 - **"Second text":** the agent picks a fragment every time (envato1 `ul`, ig1 the title, ig2 a giant-word `e`, ig3 `U`).
 - **Title prompts:** they fail on envato1, ig1 and ig3, where the headline is split into pieces, and the agent asks which piece to edit.
 - **Logo prompt on ig2:** the Airbnb logo is not found, because it is not its own element.
+
+## Final (2026-10-05, commit c086117 = integrated feature/round2)
+
+Measured on this machine (4 CPU cores, no GPU), with the 3D adapter configured
+(TRELLIS, user's HF login) and a torch-free venv. Baseline is commit ff9e6f3.
+Baseline timings ran alongside other work; final ran mostly alone, so speedups
+are indicative.
+
+| clip | analysis s base→final | mean_l1 base→final | render_l1 base→final | elements base→final | predicates base→final |
+| --- | --- | --- | --- | --- | --- |
+| envato1 | 1513→580 (2.6×) | 0.0750→0.0678 | 0.0868→0.0787 | 56→55 | 4744→1061 |
+| ig1 | 1970→426 (4.6×) | 0.0393→0.0400 | 0.0425→0.0439 | 128→126 | 55484→3802 |
+| ig2 | 1342→457 (2.9×) | 0.0644→0.0642 | 0.0738→0.0674 | 54→45 | 5549→1295 |
+| ig3 | 633→200 (3.2×) | 0.0175→0.0182 | 0.0219→0.0216 | 71→64 | 6443→745 |
+
+### Synthetic gates
+
+| Gate | Final result |
+| --- | --- |
+| `gate-m1` | 20/20 (constraints, hash, layer) |
+| `gate-m2` | Passed: 18/20 frame_l1, tracking ok, temporal 0.798 |
+| `gate-m3` | 8/8 |
+
+### Speed decisions
+
+Adopted:
+
+- Region labelling inside component boxes: bit-identical.
+- ECC on ≤384 px crops.
+- Report stage one-pass + ROI warps: ~22× on synthetic.
+- OCR on 4 parallel single-thread engines: 2.6–3.5×, output identical frame by frame.
+
+The OCR detection cap (`--ocr-max-side`) was rejected as a default speedup and
+remains opt-in, default off. It changed text tracks (envato1 9→5, ig2 15→8) and
+cost envato1 +0.0116 mean_l1.
+
+### Plate and text reveal
+
+Stroke/opacity now use the local plate colour (gradient clips −0.0006 mean_l1).
+Refine composites over the plate are unit-tested, but unmeasured on real clips:
+there was no GPU and CPU torch was too slow.
+
+“Build SaaS Promo” (envato1) and “and it builts for you” (ig3) became one text
+element each with a reveal track. The ig3 title “You just” fades in letter by
+letter without box growth; it stays one element without reveal. Its giant
+“just” zoom fragments remain.
+
+### 3D generation and fidelity guard
+
+Solid candidates: envato1 2, ig1 0, ig2 2, ig3 0. TRELLIS
+(`trellis-community/TRELLIS` via `scripts/asset_adapter_hf.py`, ~50 s per GLB)
+generated 4 GLBs. The fidelity guard compares local L1 on every 5th visible
+frame; lower is better.
+
+| clip / element | fragments L1 | still L1 | model L1 | Guard choice |
+| --- | --- | --- | --- | --- |
+| envato1 e1 | .157 | .182 | .185 | fragments |
+| envato1 e33 | .087 | .185 | .148 | fragments |
+| ig2 globe e1 | .134 | .108 | .217 | STILL |
+| ig2 e18 | .080 | .102 | .292 | fragments |
+
+No generated model reproduced the source better than the alternatives.
+Single-crop image→3D guesses the unseen side and texture.
+
+Generation is automatic whenever `KEEPFRAME_ASSET_API_URL` is configured
+(user decision). Object crops go to the public Hugging Face Space under the
+user's account and use its ZeroGPU quota. Each analysis makes at most 2
+generation requests, largest solids first; other candidates stay “3D 후보”
+with a “3D 생성” button.
+
+### Prompt evaluation: baseline→final
+
+Gold in [gold/](gold/) is user-confirmed; 25 prompts are gradable.
+
+| clip | correct baseline | correct final |
+| --- | --- | --- |
+| envato1 | 3 | 5 |
+| ig1 | 2 | 2 |
+| ig2 | 5 | 5 |
+| ig3 | 2 | 2 |
+| Total | 12 | 14 |
+
+Valid typed edits (“ok”): 19/32 → 20/32. Remaining misses: “second text” picks
+a fragment everywhere; ig1/ig3 title prompts ask which fragment.
+
+### Gaps closed
+
+- Agent `correct`/`set_keep` are preview-only, with full field display and browser confirmation.
+- Font names are validated on every input path.
+- Temporal verification has a per-element floor of 0.5 for elements with ≥10% of motion.
+- Chat accepts SVG (sanitised, offline Chromium raster) and GLB.
+- Pairwise predicates use only the 24 most salient elements (ig1 55k→3.8k).
+
+### After Effects status
+
+AE work is unfrozen. Image backgrounds map to a bottom footage layer, reveal
+maps to Linear Wipe (angle 270° still needs live confirmation), and `kind="3d"`
+maps to an AE model layer when AE ≥ 24.1 reports `model_layers`; otherwise a
+substitution is proposed. AE verification extracts reveal/spin motions with
+matching ids. The panel's ES3 regex character-class parse issue is fixed.
+
+The kit and [live AE checklist](ae-live-check.md) are ready. Access uses
+Tailscale: UI on the tailnet IP, relay through `tailscale serve` HTTPS.
+**The user has not completed the live AE check; it remains open.** A
+Higgsfield-style CEP extension (one install, no Python connector) is planned
+after that check, by user decision.
+
+### Known limits
+
+- OCR still takes ~45-70% of analysis on text-heavy clips.
+- Zoomed/kinetic text fragments and title/second-text prompt ambiguity remain.
+- TRELLIS models lose to fragments or stills on these clips.
+- Refine-over-plate is unmeasured on real clips.
+- AE live verification is pending.
+- Demo thumbnail 404 is pre-existing.

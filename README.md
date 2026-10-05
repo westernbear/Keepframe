@@ -65,6 +65,41 @@ After approval, ask the agent for an edit. Confirm its preview in the browser.
 
 ChatGPT login uses a direct Responses client with `gpt-6.1-sol` by default. VLM labels and captions are suggestions; timing, position and size stay measured.
 
+IR `tracks` include `reveal`, `rx`, and `ry`. `reveal` is the fraction visible
+from left to right: 0 hides the element, 1 shows it fully (the default). It
+clips the element without resizing its box. `rx` and `ry` rotate around the X
+and Y axes in degrees, default 0. They render only on `kind="3d"` elements;
+sprite and text elements ignore them.
+
+For image→3D generation, run the Hugging Face adapter in a separate terminal
+with `uv` and your HF login (or `HF_TOKEN`). Set the same non-empty
+`KEEPFRAME_ASSET_API_KEY` privately in the adapter and Keepframe environments;
+it authenticates the local asset API, separately from your HF credentials.
+
+```bash
+uv run --with gradio_client scripts/asset_adapter_hf.py
+```
+
+In the Keepframe terminal, set the adapter URL before starting the server or
+running `analyze`:
+
+```bash
+export KEEPFRAME_ASSET_API_URL=http://127.0.0.1:8790
+keepframe serve --workspace ./data/workspace
+```
+
+The adapter defaults to `trellis-community/TRELLIS`. Generation is automatic
+whenever `KEEPFRAME_ASSET_API_URL` is set. Object crops are sent to the public
+Hugging Face Space under your account and consume its ZeroGPU quota. Analysis
+makes ≤2 generation requests, largest solids first. Other candidates show a
+“3D candidate” badge and “Generate 3D” button in English (“3D 후보” / “3D 생성”
+in Korean); the button previews the edit for browser confirmation.
+
+The fidelity guard compares fragments, a still, and the generated model using
+local L1 on every 5th visible frame and keeps the best reconstruction. A
+generated GLB may therefore stay unused; no generated model won on the round-2
+clips. Results are in the [round-2 evaluation](docs/qa/round2/README.md).
+
 The optional After Effects relay is a second, connector-only listener. Set
 `KEEPFRAME_AE_RELAY_URL`, `KEEPFRAME_AE_RELAY_HOST`,
 `KEEPFRAME_AE_RELAY_PORT`, and `KEEPFRAME_AE_RELAY_TOKEN` together; partial
@@ -94,6 +129,19 @@ assets, source locks, and any acknowledged compatibility substitutions.
 Unsupported fonts or converter semantics produce a non-approvable draft until
 the proposed lost semantics are acknowledged; capability changes require a new
 successor plan.
+
+After Effects support:
+
+| Scene feature | AE mapping / requirement |
+| --- | --- |
+| Image background plate | Bottom footage layer |
+| `reveal` track | Linear Wipe; angle 270° awaits live confirmation |
+| `kind="3d"` model with `rx`/`ry` | Model layer on AE ≥ 24.1 when the capability manifest reports `model_layers` |
+| Unsupported model layers or other semantics | Substitution proposal; acknowledge lost semantics before approval |
+
+AE verification compares reveal/spin motions with matching element ids.
+The [live AE check kit and checklist](docs/qa/round2/ae-live-check.md) cover
+plate, reveal, and model layers. The user's live check is still open.
 
 Approved After Effects sessions first build and verify deterministic checkpoint
 0, then send at most 12 bounded preview frames to the configured LLM for typed
@@ -129,6 +177,12 @@ keepframe correct --root ./out --scene s1 --op text --args '{"element_id":"e3","
 `--end` is inclusive. `correct` ops: `reassign`, `mask`, `bbox`, `text`.
 `analyze --ui` enables UI parsing. `--no-captions` skips optional VLM captions.
 
+`analyze --ocr-max-side N` caps the longest side of the OCR detection input in
+pixels. It is an opt-in speed/accuracy trade-off, default off; smaller detection
+images can lose text tracks. In round 2 the cap changed envato1 9→5 and ig2
+15→8 text tracks and cost envato1 +0.0116 mean_l1. Leave it unset for full-size
+OCR detection.
+
 Real-clip evaluation caps each clip with `--max-frames`. Prompt evaluation previews typed edits on project copies; it does not execute them.
 
 ```bash
@@ -136,7 +190,7 @@ keepframe gate-m2-real --clips eval/clips --out eval/out/final --max-frames 150
 python scripts/eval_prompts.py --project eval/out/final/ig2 --scene s1 --workspace ./data/workspace
 ```
 
-Results: [core-flow evaluation](docs/qa/core-flow/README.md).
+Results: [core-flow evaluation](docs/qa/core-flow/README.md), [round-2 evaluation](docs/qa/round2/README.md).
 
 ## CLI
 
@@ -176,13 +230,18 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
 ## Limits
 
-- Flat 2D motion graphics and UI recordings only
+- Flat 2D motion graphics and UI recordings, including 3D object candidates; live-action and camera reconstruction are unsupported
 - Background plates assume a static camera
 - Font candidates come only from installed fonts
 - Agent edits are preview-only; confirm in the browser
 - The default `content_only` preset keeps motion predicates; choose `content_only`, `motion_shape`, `all` or `none`. `none` disables keep checks
-- Repair retries: 4. Asset generation: 2. Caps are display-only
-- After Effects work is frozen until the core flow is validated
+- Native repair retries: 4. Automatic asset generation: ≤2 requests per analysis
+- OCR still takes ~45-70% of analysis on text-heavy clips; `--ocr-max-side` can sacrifice accuracy
+- Zoomed/kinetic text fragments and title/second-text prompt ambiguity remain
+- Single-crop image→3D guesses unseen geometry and texture; the fidelity guard can retain fragments or a still
+- Refine-over-plate is unit-tested but unmeasured on real clips
+- After Effects work is unfrozen; live verification of plate/reveal/3D is pending. A CEP extension is planned after the live check
+- Demo thumbnail 404 is pre-existing
 
 ### Reference analysis review
 
