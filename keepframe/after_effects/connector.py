@@ -135,6 +135,10 @@ _CHILD_ENV_ALLOWLIST = frozenset(
         "KEEPFRAME_AE_BRIDGE_ROOT",
         "PYTHONIOENCODING",
         "PYTHONUNBUFFERED",
+        # Windows Python locates the user site-packages (a plain `pip install`) via APPDATA.
+        "APPDATA",
+        "LOCALAPPDATA",
+        "USERPROFILE",
     }
 )
 
@@ -3822,7 +3826,9 @@ class MCPStdioClient:
         self._stdio_client = stdio_client
 
     def child_argv(self) -> list[str]:
-        return [self.python, "-I", "-m", "keepframe.after_effects.mcp_server"]
+        # -E ignores PYTHON* variables and -P never puts the cwd on sys.path (no shadow imports);
+        # unlike -I this keeps the user site-packages, where `pip install keepframe[ae]` usually lands.
+        return [self.python, "-E", "-P", "-m", "keepframe.after_effects.mcp_server"]
 
     @staticmethod
     def _result(result: Any) -> dict[str, Any]:
@@ -3912,8 +3918,9 @@ class MCPStdioClient:
                     return self._result(result)
         except ConnectorError:
             raise
-        except Exception as exc:  # noqa: BLE001 - hide optional SDK internals
-            raise MCPError("MCP stdio command failed") from exc
+        except Exception as exc:  # noqa: BLE001 - optional SDK internals; report the class and a short message
+            detail = " ".join(str(exc).split())[:160]
+            raise MCPError(f"MCP stdio command failed: {type(exc).__name__}" + (f": {detail}" if detail else "")) from exc
 
     def call_tool(self, tool: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         if tool not in MCP_TOOL_NAMES:

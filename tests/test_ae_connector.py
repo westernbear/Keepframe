@@ -791,7 +791,8 @@ def test_mcp_import_is_lazy_and_child_environment_is_allowlisted(monkeypatch):
     assert env == {"SystemRoot": "C:\\Windows"}
     assert client.child_argv() == [
         str(Path(sys.executable).resolve()),
-        "-I",
+        "-E",
+        "-P",
         "-m",
         "keepframe.after_effects.mcp_server",
     ]
