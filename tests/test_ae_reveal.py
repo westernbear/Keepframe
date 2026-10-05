@@ -50,6 +50,17 @@ def image_asset():
     return PlanAsset(id="a" * 64, project_path="sprite.png", sha256="a" * 64, length=1, media_kind="image/png")
 
 
+@pytest.mark.parametrize("values", [(0, 1), (0.5, 0.5)])
+def test_group_reveal_reports_compatibility_issue_and_rejects_mapping(values):
+    scene = scene_with_reveal([Keyframe(t=0, v=values[0]), Keyframe(t=10, v=values[1])])
+    scene.elements[0].kind = "group"
+    issues = analyze_ae_compatibility(scene, capabilities())
+    assert [(issue.source_element_id, issue.semantic_key) for issue in issues] == [("e", "reveal")]
+    assert "group" in issues[0].reason
+    with pytest.raises(AEMappingError, match="group.*reveal"):
+        map_baseline(scene, [], capabilities=capabilities())
+
+
 def run_panel(script, tmp_path):
     """Execute the shipped panel against the external AE API boundary."""
     node = shutil.which("node")

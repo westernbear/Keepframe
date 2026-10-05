@@ -300,7 +300,9 @@ def _element_issues(
             issues.append(_issue(element.id, element.kind, "3d", "model layers require approved AE Rotate X/Y schemas; propose static texture footage", *lost_spin))
     reveal = element.tracks.get("reveal")
     if reveal is not None and any(key.v != 1.0 for key in reveal.keys):
-        if any(not 0 <= key.v <= 1 for key in reveal.keys):
+        if element.kind == "group":
+            issues.append(_issue(element.id, element.kind, "reveal", "group reveal cannot be preserved by neutral AE null layers"))
+        elif any(not 0 <= key.v <= 1 for key in reveal.keys):
             issues.append(_issue(element.id, element.kind, "reveal", "reveal visible fraction must be between zero and one"))
         elif "ADBE Linear Wipe" not in catalog.effect_names or any(
             catalog.property_schemas.get(name) not in {"number", "float"}
@@ -314,7 +316,7 @@ def _element_issues(
 
     if element.kind == "group":
         non_neutral = any(
-            property_name in DEFAULTS
+            property_name in DEFAULTS and property_name != "reveal"
             and any(
                 not math.isfinite(float(key.v))
                 or abs(float(key.v) - DEFAULTS[property_name]) > 1e-12
@@ -803,7 +805,21 @@ def propose_ae_substitutions(
     static_issues = tuple(issue for issue in all_issues if issue not in issues)
     validated_static = parse_ae_substitutions([proposal.model_dump() for proposal in static], static_issues, capabilities)
     combined = [*validated_static, *generated]
-    return tuple(next(proposal for proposal in combined if proposal.source_element_id == issue.source_element_id and issue.semantic_key in proposal.lost_semantics) for issue in all_issues)
+    return tuple(_proposal_for_issue(combined, issue) for issue in all_issues)
+
+
+def _proposal_for_issue(
+    proposals: Sequence[AESubstitution], issue: AECompatibilityIssue,
+) -> AESubstitution:
+    for proposal in proposals:
+        if (
+            proposal.source_element_id == issue.source_element_id
+            and issue.semantic_key in proposal.lost_semantics
+        ):
+            return proposal
+    raise ValueError(
+        f"{issue.source_element_id} {issue.semantic_key}: no matching AE substitution proposal"
+    )
 
 
 def _extract_json(content: str) -> Any:

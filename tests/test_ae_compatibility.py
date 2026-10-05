@@ -374,6 +374,15 @@ def test_non_neutral_group_transform_is_a_compatibility_issue():
     ]
 
 
+def test_missing_proposal_has_an_actionable_issue_error():
+    from keepframe.after_effects import compatibility
+
+    scene = _scene(_element("model", "3d", texture="static.png"))
+    issue = analyze_ae_compatibility(scene, _capabilities())[0]
+    with pytest.raises(ValueError, match="model.*3d.*proposal"):
+        compatibility._proposal_for_issue([], issue)
+
+
 def test_temporal_ease_requires_ae_influences_at_least_point_one_percent():
     scene = _scene(
         _element(

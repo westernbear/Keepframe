@@ -271,3 +271,72 @@ def test_panel_spin_wire_without_projected_bounds_verifies_motion_only_keeps():
     report = verify_inspection(scene, [wire])
     assert report.passed, report.violations
     assert all(sample.world_bounds is None for sample in report.inspection.samples)
+
+
+@pytest.mark.parametrize("keep_spin", [False, True])
+@pytest.mark.parametrize("with_reveal", [False, True])
+def test_approved_static_substitution_verifies_later_2d_motion_without_spin_samples(keep_spin, with_reveal):
+    scene = model_scene()
+    scene.elements[0].tracks = {
+        "ry": Track(keys=[Keyframe(t=0, v=0), Keyframe(t=6, v=360)]),
+        "x": Track(keys=[Keyframe(t=10, v=0), Keyframe(t=16, v=60)]),
+    }
+    if with_reveal:
+        scene.elements[0].tracks["reveal"] = Track(keys=[Keyframe(t=0, v=0), Keyframe(t=4, v=1)])
+        scene.elements[0].tracks["rx"] = Track(keys=[Keyframe(t=0, v=0), Keyframe(t=6, v=360)])
+    spin_id, translation_id = ("m_model_2", "m_model_4") if with_reveal else ("m_model_1", "m_model_2")
+    scene.constraints = [Constraint(pred=f"type({translation_id}, translation)", keep=True)]
+    if keep_spin:
+        scene.constraints.extend(Constraint(pred=pred, keep=True) for pred in (
+            f"type({spin_id}, spin)", f"mag({spin_id}, 360)",
+            f"before({spin_id}, {translation_id})",
+        ))
+    proposal = propose_ae_substitutions(None, scene, capabilities(model_layers=False))[0]
+    approved = proposal.model_copy(update={"acknowledged": True})
+    inspection = AEInspection(
+        layers=[AELayerInventory(layer_instance_id="l", native_layer_id=101,
+            source_element_id="model", kind="footage", index=1, frame_start=0, frame_end=20)],
+        layer_sources={"l": "model"}, layer_native_ids={"l": 101},
+        samples=[AESourceSample(source_element_id="model", layer_instance_id="l", frame=f,
+            active=True, transform=(float(max(0, min(f - 10, 6)) * 10), 0., 1., 1., 0., 1.),
+            wipe_completion=float(max(0, 100 - f * 25)) if with_reveal else None)
+            for f in range(20)],
+    )
+    report = verify_inspection(scene, [inspection], substitutions=[approved])
+    assert report.keep_results[0].passed, report.violations
+    expected = [("m_model_1", "reveal", 1.0), ("m_model_4", "translation", 60.0)] if with_reveal else [
+        ("m_model_2", "translation", 60.0)]
+    assert [(m.id, m.type, m.mag) for m in report.observed_motions] == expected
+    assert not any("missing observation" in item for item in report.violations)
+    assert report.passed is (not keep_spin)
+    for result in report.keep_results[1:]:
+        assert not result.passed
+        assert result.violations == ("not verifiable: substituted",)
+    # An inventory row alone, or an unapproved proposal, cannot waive evidence.
+    for substitutions in ([], [proposal]):
+        failed = verify_inspection(scene, [inspection], substitutions=substitutions)
+        assert not failed.passed
+        assert any("missing observation" in item for item in failed.violations)
+    if with_reveal:
+        missing_wipe = inspection.model_copy(update={"samples": tuple(
+            row.model_copy(update={"wipe_completion": None}) for row in inspection.samples)})
+        failed = verify_inspection(scene, [missing_wipe], substitutions=[approved])
+        assert not failed.keep_results[0].passed
+        assert any("missing observation" in item for item in failed.violations)
+
+
+def test_panel_renames_only_model_layers(tmp_path):
+    run_panel(r"""
+comp.layers.addNull = () => { layer.name = 'Null 1'; return layer; };
+comp.layers.addText = text => { layer.name = text; return layer; };
+comp.layers.addSolid = (color, name) => { layer.name = name; return layer; };
+const addAsset = comp.layers.add;
+comp.layers.add = item => { addAsset(item); layer.name = item.name; return layer; };
+for (const [type, expected] of [['null', 'Null 1'], ['text', 'requested'],
+    ['solid', 'requested'], ['footage', 'object.glb'], ['model', 'requested']]) {
+    panel.apply({kind: 'add_layer', layer_type: type, name: 'requested',
+        layer_instance_id: 'l', source_element_id: 'model',
+        asset_id: 'b'.repeat(64) + '.glb', color: '#ffffff', width: 20, height: 10});
+    assert.equal(layer.name, expected, type);
+}
+""", tmp_path)

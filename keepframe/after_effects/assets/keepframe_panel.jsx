@@ -1055,7 +1055,7 @@
                 throw new Error("layer type is not in the fixed catalog");
         }
         layer.comment = "keepframe:layer=" + operation.layer_instance_id + ";source_element_id=" + (operation.source_element_id || "");
-        layer.name = operation.name;
+        if (operation.layer_type === "model") { layer.name = operation.name; }
         if (operation.parent_instance_id) {
             var parent = findLayer(operation.parent_instance_id);
             if (!parent) { throw new Error("parent layer is not mapped"); }

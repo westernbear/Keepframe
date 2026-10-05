@@ -9,8 +9,9 @@ import numpy as np
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..ir.schema import Element, Scene
-from ..verify.matrix import COLS, Motion, extract_motions, extract_motions_from_matrices
+from ..verify.matrix import COLS, TYPE_ORDER, Motion, extract_motions, extract_motions_from_matrices
 from ..verify.predicates import PredContext, eval_pred, parse_pred
+from .models import AESubstitution
 
 
 INSPECTION_SCHEMA = "keepframe.ae-inspection/1"
@@ -870,6 +871,7 @@ def merge_inspection_chunks(
     *,
     authoritative_instance_sources: Mapping[str, str | None] | None = None,
     authoritative_instance_native_ids: Mapping[str, int] | None = None,
+    substitutions: Iterable[AESubstitution | Mapping[str, Any]] = (),
 ) -> AEInspection:
     """Merge chunks and aggregate only complete per-instance observations."""
     records = [_as_inspection(chunk) for chunk in chunks]
@@ -1051,6 +1053,7 @@ def merge_inspection_chunks(
     incomplete_pairs: set[tuple[str, int]] = set()
     complete_aggregate_pairs: set[tuple[str, int]] = set()
     complete_raw_pairs: set[tuple[str, int]] = set()
+    static_sources = _static_texture_sources(substitutions)
     motion_required, bounds_required = _required_geometry_pairs(scene)
     elements = {element.id: element for element in scene.elements}
     for source_id, frame in candidate_pairs:
@@ -1063,7 +1066,7 @@ def merge_inspection_chunks(
             complete = complete and returned_instances == expected_instances
             if (source_id, frame) in motion_required:
                 complete = complete and all(
-                    not row.active or (row.transform is not None and _has_extra_observations(elements.get(source_id), row)) for row in raw
+                    not row.active or (row.transform is not None and _has_extra_observations(elements.get(source_id), row, static_sources)) for row in raw
                 )
             if (source_id, frame) in bounds_required:
                 complete = complete and all(
@@ -1155,6 +1158,7 @@ def merge_inspection_chunks(
 
 def _required_geometry_pairs(
     scene: Scene,
+    substituted_spin_ids: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[set[tuple[str, int]], set[tuple[str, int]]]:
     """Split validated keep requests by the geometry each predicate needs."""
     required_observation_frames(scene)
@@ -1168,6 +1172,8 @@ def _required_geometry_pairs(
         if name in _MOTION_PREDICATES:
             references = args if name in {"before", "after", "while"} else [args[0]]
             for motion_id in references:
+                if motion_id in substituted_spin_ids:
+                    continue
                 motion = motions[motion_id]
                 transform_pairs.update(
                     (motion.element, frame) for frame in range(scene.frames)
@@ -1178,13 +1184,15 @@ def _required_geometry_pairs(
     return transform_pairs, bounds_pairs
 
 
-def _has_extra_observations(element: Element | None, row: AESourceSample) -> bool:
+def _has_extra_observations(
+    element: Element | None, row: AESourceSample, static_sources: set[str],
+) -> bool:
     if element is None:
         return True
     reveal = element.tracks.get("reveal")
     if reveal is not None and any(key.v != 1.0 for key in reveal.keys) and row.wipe_completion is None:
         return False
-    if element.kind == "3d":
+    if element.kind == "3d" and element.id not in static_sources:
         for prop, observed in (("rx", row.rotation_x), ("ry", row.rotation_y)):
             track = element.tracks.get(prop)
             if track is not None and any(key.v != 0.0 for key in track.keys) and observed is None:
@@ -1192,7 +1200,9 @@ def _has_extra_observations(element: Element | None, row: AESourceSample) -> boo
     return True
 
 
-def _observed_extra_channels(scene: Scene, inspection: AEInspection) -> dict[str, np.ndarray]:
+def _observed_extra_channels(
+    scene: Scene, inspection: AEInspection, static_sources: set[str],
+) -> dict[str, np.ndarray]:
     channels = {element.id: np.full((scene.frames, 3), np.nan) for element in scene.elements}
     elements = {element.id: element for element in scene.elements}
     missing = {(pair.source_element_id, pair.frame) for pair in inspection.missing_pairs}
@@ -1202,18 +1212,18 @@ def _observed_extra_channels(scene: Scene, inspection: AEInspection) -> dict[str
             and row.frame < scene.frames
             and row.active
             and (row.source_element_id, row.frame) not in missing
-            and _has_extra_observations(elements.get(row.source_element_id), row)
+            and _has_extra_observations(elements.get(row.source_element_id), row, static_sources)
         ):
             channels[row.source_element_id][row.frame] = [
                 1.0 - row.wipe_completion / 100.0 if row.wipe_completion is not None else 1.0,
-                row.rotation_x if row.rotation_x is not None else 0.0,
-                row.rotation_y if row.rotation_y is not None else 0.0,
+                row.rotation_x if row.rotation_x is not None and row.source_element_id not in static_sources else 0.0,
+                row.rotation_y if row.rotation_y is not None and row.source_element_id not in static_sources else 0.0,
             ]
     return channels
 
 
 def _observed_arrays(
-    scene: Scene, inspection: AEInspection
+    scene: Scene, inspection: AEInspection, static_sources: set[str],
 ) -> tuple[
     dict[str, np.ndarray],
     dict[str, np.ndarray],
@@ -1244,7 +1254,7 @@ def _observed_arrays(
             transform_observed.add(pair)
             bounds_observed.add(pair)
             continue
-        if row.transform is not None and _has_extra_observations(elements.get(row.source_element_id), row):
+        if row.transform is not None and _has_extra_observations(elements.get(row.source_element_id), row, static_sources):
             matrices[row.source_element_id][row.frame] = row.transform
             transform_observed.add(pair)
         if row.world_bounds is not None:
@@ -1266,23 +1276,50 @@ def _motion_wire(motion: Motion) -> AEObservedMotion:
     )
 
 
+def _static_texture_sources(
+    substitutions: Iterable[AESubstitution | Mapping[str, Any]],
+) -> set[str]:
+    static_sources: set[str] = set()
+    for value in substitutions:
+        substitution = value if isinstance(value, AESubstitution) else AESubstitution.model_validate(value)
+        if (
+            substitution.acknowledged and substitution.source_type == "3d"
+            and "3d" in substitution.lost_semantics and substitution.proposed_layers
+            and all(
+                (layer if isinstance(layer, str) else layer.get("layer_type")) == "footage"
+                for layer in substitution.proposed_layers
+            )
+        ):
+            static_sources.add(substitution.source_element_id)
+    return static_sources
+
+
 def verify_inspection(
     scene: Scene,
     chunks: Iterable[AEInspection | Mapping[str, Any]],
     *,
     authoritative_instance_sources: Mapping[str, str | None] | None = None,
     authoritative_instance_native_ids: Mapping[str, int] | None = None,
+    substitutions: Iterable[AESubstitution | Mapping[str, Any]] = (),
 ) -> AEVerificationReport:
-    """Evaluate enabled keep predicates against merged AE observations."""
+    """Evaluate keeps against observations and disclose substituted spin keeps."""
+    substitutions = tuple(substitutions)
+    static_sources = _static_texture_sources(substitutions)
     inspection = merge_inspection_chunks(
         scene,
         chunks,
         authoritative_instance_sources=authoritative_instance_sources,
         authoritative_instance_native_ids=authoritative_instance_native_ids,
+        substitutions=substitutions,
     )
-    motion_required, bounds_required = _required_geometry_pairs(scene)
+    substituted_spins = [
+        motion for motion in extract_motions(scene)
+        if motion.element in static_sources and motion.type == "spin"
+    ]
+    substituted_spin_ids = {motion.id for motion in substituted_spins}
+    motion_required, bounds_required = _required_geometry_pairs(scene, substituted_spin_ids)
     matrices, bboxes, transform_observed, bounds_observed = _observed_arrays(
-        scene, inspection
+        scene, inspection, static_sources
     )
     missing = sorted(
         (motion_required - transform_observed)
@@ -1295,7 +1332,18 @@ def verify_inspection(
     ]
 
     try:
-        motions = extract_motions_from_matrices(scene, matrices, extra_channels=_observed_extra_channels(scene, inspection))
+        motions = extract_motions_from_matrices(
+            scene, matrices, extra_channels=_observed_extra_channels(scene, inspection, static_sources),
+        )
+        # Reserve the missing spin slots for numbering only. They are never
+        # observations and never enter the predicate context or report.
+        for source_id in static_sources:
+            numbered = sorted(
+                [motion for motion in [*motions, *substituted_spins] if motion.element == source_id],
+                key=lambda motion: (motion.start, TYPE_ORDER.index(motion.type)),
+            )
+            for index, motion in enumerate(numbered, 1):
+                motion.id = f"m_{source_id}_{index}"
         context = PredContext(
             scene=scene,
             motions={motion.id: motion for motion in motions},
@@ -1312,7 +1360,13 @@ def verify_inspection(
             continue
         predicate_violations: list[str] = []
         try:
-            passed = bool(eval_pred(constraint.pred, context)) if context is not None else False
+            name, args, _frame = parse_pred(constraint.pred)
+            references = args if name in {"before", "after", "while"} else args[:1]
+            if name in _MOTION_PREDICATES and any(ref in substituted_spin_ids for ref in references):
+                passed = False
+                predicate_violations.append("not verifiable: substituted")
+            else:
+                passed = bool(eval_pred(constraint.pred, context)) if context is not None else False
         except Exception as exc:
             passed = False
             predicate_violations.append(f"predicate error: {exc}")

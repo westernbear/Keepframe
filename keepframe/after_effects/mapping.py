@@ -671,6 +671,9 @@ def _validate_groups(
     for source_id in group_element_ids:
         if source_id in substitutions:
             raise AEMappingError(f"group substitutions are not supported: {source_id}")
+        reveal = elements[source_id].tracks.get("reveal")
+        if reveal is not None and any(key.v != 1.0 for key in reveal.keys):
+            raise AEMappingError(f"group {source_id} reveal cannot be preserved by a neutral null")
         element = elements[source_id]
         for property_name, track in element.tracks.items():
             default = DEFAULTS[property_name]
