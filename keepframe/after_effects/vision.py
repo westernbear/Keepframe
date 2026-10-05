@@ -496,6 +496,7 @@ def _approved_capabilities(value: Any) -> ApprovedCapabilities:
             fonts=tuple(catalog.font_names),
             effects=tuple(catalog.effect_names),
             properties=dict(catalog.property_schemas or catalog.properties),
+            model_layers=catalog.model_layers,
         )
     if isinstance(value, Mapping):
         raw = dict(value)
@@ -507,6 +508,7 @@ def _approved_capabilities(value: Any) -> ApprovedCapabilities:
                 "fonts": nested.get("font_names", nested.get("fonts", ())),
                 "effects": nested.get("effect_names", nested.get("effects", ())),
                 "properties": nested.get("property_schemas", nested.get("properties", {})),
+                "model_layers": nested.get("model_layers", False),
             }
         return ApprovedCapabilities.model_validate(raw)
     if hasattr(value, "model_dump"):

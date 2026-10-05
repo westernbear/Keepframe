@@ -150,12 +150,33 @@
         };
     }
 
+    function modelLayersAvailable() {
+        var parts = String(app.version).split(".");
+        var major = parseInt(parts[0], 10);
+        var minor = parseInt(parts[1] || "0", 10);
+        return major > 24 || (major === 24 && minor >= 1);
+    }
+
+    function advanced3DRenderer(comp) {
+        var renderers = comp.renderers || [];
+        var index;
+        var name;
+        for (index = 0; index < renderers.length; index += 1) {
+            name = String(renderers[index]).toLowerCase();
+            if (name.indexOf("advanced") !== -1 && name.indexOf("3d") !== -1) { return renderers[index]; }
+        }
+        throw new Error("Advanced 3D renderer is unavailable");
+    }
+
     var FIXED_EFFECT_TRANSLATIONS = {
         "ADBE Gaussian Blur 2": {
             properties: { "ADBE Gaussian Blur 2-0001": "number" }
         },
         "ADBE Fill": {
             properties: { "ADBE Fill-0002": "color" }
+        },
+        "ADBE Linear Wipe": {
+            properties: { "ADBE Linear Wipe-0001": "number", "ADBE Linear Wipe-0002": "number", "ADBE Linear Wipe-0003": "number" }
         }
     };
 
@@ -168,10 +189,12 @@
             "ADBE Scale X": "number",
             "ADBE Scale Y": "number",
             "ADBE Rotate Z": "number",
+            "ADBE Rotate X": "number",
+            "ADBE Rotate Y": "number",
             "ADBE Skew": "number",
             "ADBE Skew Axis": "number",
             "ADBE Anchor Point": "vec2",
-            "ADBE Opacity": "number",
+            "ADBE Opacity": "number"
         };
     }
 
@@ -341,6 +364,7 @@
             schemas["ADBE Fill Color"] = "color";
         }
         return {
+            model_layers: modelLayersAvailable(),
             font_names: fonts.font_names,
             fonts: fonts.fonts,
             effect_names: effects.effect_names,
@@ -678,6 +702,12 @@
             case "ADBE Rotate Z":
                 property = layer.transform.zRotation;
                 break;
+            case "ADBE Rotate X":
+                property = layer.transform.xRotation;
+                break;
+            case "ADBE Rotate Y":
+                property = layer.transform.yRotation;
+                break;
             case "ADBE Skew":
                 property = layer.transform.skew;
                 break;
@@ -687,11 +717,40 @@
             case "ADBE Opacity":
                 property = layer.transform.opacity;
                 break;
+            case "ADBE Linear Wipe-0001":
+            case "ADBE Linear Wipe-0002":
+            case "ADBE Linear Wipe-0003":
+                var wipe = layer.property("ADBE Effect Parade").property("ADBE Linear Wipe");
+                if (!wipe) { throw new Error("Linear Wipe is not installed on the layer"); }
+                property = wipe.property(propertyName);
+                break;
             default:
                 throw new Error("property is not in the fixed catalog");
         }
         if (propertyName === "ADBE Anchor Point") {
             value = mappedTextAnchor(layer, value);
+        }
+        if (layer.threeDLayer && value instanceof Array && value.length === 2 && /^(ADBE Position|ADBE Scale|ADBE Anchor Point)$/.test(propertyName)) {
+            var atTime = propertyTime(frame, time);
+            var current = atTime === null ? property.value : property.valueAtTime(atTime, false);
+            value = [value[0], value[1], current[2]];
+            if (keyframe) {
+                var expanded = {};
+                var key;
+                for (key in keyframe) { if (hasOwn(keyframe, key)) { expanded[key] = keyframe[key]; } }
+                var easeNames = ["ease_in", "ease_out"];
+                var easeIndex;
+                for (easeIndex = 0; easeIndex < easeNames.length; easeIndex += 1) {
+                    var easeName = easeNames[easeIndex];
+                    var ease = keyframe[easeName];
+                    if (ease instanceof Array) {
+                        expanded[easeName] = ease[0] instanceof Array
+                            ? [ease[0], ease[1], [0, 33.333333]]
+                            : [ease, ease, [0, 33.333333]];
+                    }
+                }
+                keyframe = expanded;
+            }
         }
         setTimedProperty(property, value, frame, time, keyframe, speedScale);
     }
@@ -758,6 +817,14 @@
     function setEffect(layer, effectName, properties) {
         var effect;
         switch (effectName) {
+            case "ADBE Linear Wipe":
+                effect = layer.property("ADBE Effect Parade").property(effectName);
+                if (!effect) { effect = layer.property("ADBE Effect Parade").addProperty(effectName); }
+                var wipeProperty;
+                for (wipeProperty in properties) {
+                    if (hasOwn(properties, wipeProperty)) { effect.property(wipeProperty).setValue(Number(properties[wipeProperty])); }
+                }
+                break;
             case "ADBE Gaussian Blur 2":
                 effect = layer.property("ADBE Effect Parade").property("ADBE Gaussian Blur 2");
                 if (!effect) { effect = layer.property("ADBE Effect Parade").addProperty("ADBE Gaussian Blur 2"); }
@@ -843,6 +910,10 @@
                     setPropertyAtFrame(layer, "ADBE Anchor Point", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "rotation") {
                     setPropertyAtFrame(layer, "ADBE Rotate Z", operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "rotation_x") {
+                    setPropertyAtFrame(layer, "ADBE Rotate X", operation.value, operation.frame, operation.time);
+                } else if (operation.property_name === "rotation_y") {
+                    setPropertyAtFrame(layer, "ADBE Rotate Y", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "skew" || operation.property_name === "skew_x") {
                     setPropertyAtFrame(layer, "ADBE Skew", operation.value, operation.frame, operation.time);
                 } else if (operation.property_name === "skew_y") {
@@ -968,16 +1039,23 @@
                 layer = comp.layers.addSolid(normalizedColor(operation.color).slice(0, 3), operation.name, operation.width, operation.height, 1);
                 break;
             case "footage":
+            case "model":
+                if (operation.layer_type === "model") {
+                    if (!modelLayersAvailable()) { throw new Error("model_layers capability is unavailable"); }
+                    comp.renderer = advanced3DRenderer(comp);
+                }
                 footage = findAssetItem(operation.asset_id);
                 if (!footage || footage instanceof CompItem || !footage.mainSource) {
                     throw new Error("server asset is not imported");
                 }
                 layer = comp.layers.add(footage);
+                if (operation.layer_type === "model" && !layer.threeDLayer) { throw new Error("GLB did not create a 3D model layer"); }
                 break;
             default:
                 throw new Error("layer type is not in the fixed catalog");
         }
         layer.comment = "keepframe:layer=" + operation.layer_instance_id + ";source_element_id=" + (operation.source_element_id || "");
+        if (operation.layer_type === "model") { layer.name = operation.name; }
         if (operation.parent_instance_id) {
             var parent = findLayer(operation.parent_instance_id);
             if (!parent) { throw new Error("parent layer is not mapped"); }
@@ -1008,7 +1086,7 @@
         if (typeof value !== "string" || value.length > 4096) {
             throw new Error(label + " must be a bounded string");
         }
-        if (/^(https?|file|javascript|data):/i.test(value) || /^(\/|\\|\.\/|\.\.\/)/.test(value) || /^[A-Za-z]:[\\/]/.test(value) || value.indexOf("\\") >= 0 || value.indexOf("/../") >= 0) {
+        if (/^(https?|file|javascript|data):/i.test(value) || /^(\/|\\|\.\/|\.\.\/)/.test(value) || /^[A-Za-z]:[\\\/]/.test(value) || value.indexOf("\\") >= 0 || value.indexOf("/../") >= 0) {
             throw new Error(label + " must not contain a path or URL");
         }
     }
@@ -1136,12 +1214,14 @@
             throw new Error("property is not in the approved catalog");
         }
         requiredEffect = { "ADBE Fill Color": "ADBE Fill", "ADBE Fill-0002": "ADBE Fill" }[propertyName];
+        if (/^ADBE Linear Wipe-000[123]$/.test(propertyName)) { requiredEffect = "ADBE Linear Wipe"; }
         if (requiredEffect !== undefined && !catalogName(catalog, "effects", requiredEffect)) {
             throw new Error("property requires an approved effect");
         }
         if (propertyName === "ADBE Opacity" && (typeof value !== "number" || !isFinite(value) || value < 0 || value > 1)) {
             throw new Error("opacity is outside the unit interval");
         }
+        if (propertyName === "ADBE Linear Wipe-0001" && (typeof value !== "number" || !isFinite(value) || value < 0 || value > 100)) { throw new Error("Linear Wipe completion is outside bounds"); }
         schema = String(catalog.properties[propertyName]).toLowerCase();
         if (schema === "number" || schema === "float") {
             if (typeof value !== "number" || !isFinite(value)) { throw new Error("property value type is invalid"); }
@@ -1169,6 +1249,9 @@
     }
 
     function assertEffectPropertyOperation(kind, propertyName) {
+        if (/^ADBE Linear Wipe-000[123]$/.test(propertyName) && !/^(set_effect|add_effect|set_layer_effect|set_keyframes|set_property_keyframes)$/.test(kind)) {
+            throw new Error("Linear Wipe properties require set_effect or set_keyframes");
+        }
         if (
             (propertyName === "ADBE Gaussian Blur 2-0001" || propertyName === "ADBE Fill-0002")
             && kind !== "set_effect"
@@ -1180,7 +1263,7 @@
     }
 
     function assertDirectProperty(propertyName) {
-        if (propertyName !== "ADBE Fill Color" && !hasOwn(fixedPropertySchemas(), propertyName)) {
+        if (propertyName !== "ADBE Fill Color" && !/^ADBE Linear Wipe-000[123]$/.test(propertyName) && !hasOwn(fixedPropertySchemas(), propertyName)) {
             throw new Error("property is not in the fixed catalog");
         }
     }
@@ -1201,7 +1284,7 @@
             case "set_transform":
             case "set_layer_transform":
                 assertKeys(operation, { kind: true, layer_instance_id: true, property_name: true, value: true, frame: true, time: true }, "set_transform");
-                if (!/^(position|position_x|position_y|scale|scale_x|scale_y|rotation|skew|skew_x|skew_y|anchor)$/.test(operation.property_name)) { throw new Error("transform property is invalid"); }
+                if (!/^(position|position_x|position_y|scale|scale_x|scale_y|rotation|rotation_x|rotation_y|skew|skew_x|skew_y|anchor)$/.test(operation.property_name)) { throw new Error("transform property is invalid"); }
                 assertSafeValue(operation.value, 0);
                 capabilityProperty(payload, {
                     position: "ADBE Position",
@@ -1211,6 +1294,8 @@
                     scale_x: "ADBE Scale X",
                     scale_y: "ADBE Scale Y",
                     rotation: "ADBE Rotate Z",
+                    rotation_x: "ADBE Rotate X",
+                    rotation_y: "ADBE Rotate Y",
                     skew: "ADBE Skew",
                     skew_x: "ADBE Skew",
                     skew_y: "ADBE Skew Axis",
@@ -1283,12 +1368,13 @@
                 break;
             case "add_layer":
                 assertKeys(operation, { kind: true, layer_instance_id: true, layer_type: true, name: true, source_element_id: true, parent_instance_id: true, asset_id: true, width: true, height: true, color: true }, "add_layer");
-                if (!/^(text|solid|null|footage)$/.test(operation.layer_type)) { throw new Error("layer type is invalid"); }
+                if (!/^(text|solid|null|footage|model)$/.test(operation.layer_type)) { throw new Error("layer type is invalid"); }
+                if (operation.layer_type === "model" && (payload.approved_capabilities.model_layers !== true || !modelLayersAvailable())) { throw new Error("model_layers capability is unavailable"); }
                 assertString(operation.name, "layer name");
                 if (operation.name.length === 0) { throw new Error("layer name must not be empty"); }
                 if (operation.source_element_id !== undefined && operation.source_element_id !== null) { assertIdentifier(operation.source_element_id, "source_element_id"); }
                 if (operation.parent_instance_id !== undefined && operation.parent_instance_id !== null) { assertIdentifier(operation.parent_instance_id, "parent_instance_id"); }
-                if (operation.layer_type === "footage") {
+                if (operation.layer_type === "footage" || operation.layer_type === "model") {
                     if (operation.asset_id === undefined || operation.asset_id === null) { throw new Error("footage layers require asset_id"); }
                     assertAssetIdentifier(operation.asset_id, "asset_id");
                     if (operation.width !== undefined && operation.width !== null || operation.height !== undefined && operation.height !== null || operation.color !== undefined && operation.color !== null) { throw new Error("footage layers forbid solid fields"); }
@@ -1606,7 +1692,8 @@
         for (index = 0; index < operations.length; index += 1) {
             operation = operations[index];
             if (operation.kind === "add_layer") {
-                if (operation.layer_type === "footage") {
+                if (operation.layer_type === "footage" || operation.layer_type === "model") {
+                    if (operation.layer_type === "model") { advanced3DRenderer(comp); }
                     footage = findAssetItem(operation.asset_id);
                     if (!footage || footage instanceof CompItem || !footage.mainSource) {
                         throw new Error("server asset is not imported");
@@ -1932,6 +2019,7 @@
         var file;
         var footage;
         if (typeof assetId !== "string" || !ASSET_ID_PATTERN.test(assetId)) { throw new Error("asset id is invalid"); }
+        if (/\.glb$/i.test(assetId) && !modelLayersAvailable()) { throw new Error("GLB import requires the model_layers capability"); }
         footage = findAssetItem(assetId);
         if (footage) {
             if (footage instanceof CompItem || !footage.mainSource) { throw new Error("server asset is not footage"); }
@@ -2243,7 +2331,38 @@
     }
 
 
+    function inspectModelTransformSample(layer, time) {
+        try {
+            var transform = layer.transform;
+            var position = transform.position.valueAtTime(time, false);
+            var scale = transform.scale.valueAtTime(time, false);
+            var effects = layer.property("ADBE Effect Parade");
+            var wipe = effects ? effects.property("ADBE Linear Wipe") : null;
+            var sample = {
+                x: Number(position[0]), y: Number(position[1]),
+                sx: Number(scale[0]) / 100, sy: Number(scale[1]) / 100,
+                rot: Number(transform.zRotation.valueAtTime(time, false)),
+                opacity: Number(transform.opacity.valueAtTime(time, false)) / 100,
+                rotation_x: Number(transform.xRotation.valueAtTime(time, false)),
+                rotation_y: Number(transform.yRotation.valueAtTime(time, false)),
+                wipe_completion: wipe ? Number(wipe.property("ADBE Linear Wipe-0001").valueAtTime(time, false)) : 0,
+                xmin: null, ymin: null, xmax: null, ymax: null
+            };
+            var key;
+            for (key in sample) {
+                if (hasOwn(sample, key) && sample[key] !== null && (!isFinite(sample[key]) || Math.abs(sample[key]) > 1000000)) { return null; }
+            }
+            if (sample.opacity < 0 || sample.opacity > 1 || sample.wipe_completion < 0 || sample.wipe_completion > 100) { return null; }
+            // ponytail: local model transforms preserve IR motion channels;
+            // projected model bounds require host sourceRectAtTime/toComp support.
+            return sample;
+        } catch (ignored) {
+            return null;
+        }
+    }
+
     function inspectLayerSample(layer, time, rotationState) {
+        var modelSample = layer.threeDLayer ? inspectModelTransformSample(layer, time) : null;
         var transform;
         var anchor;
         var origin;
@@ -2264,21 +2383,21 @@
         var ymax = null;
         try {
             if (typeof layer.toComp !== "function" || typeof layer.sourceRectAtTime !== "function") {
-                return null;
+                return modelSample;
             }
             transform = layer.transform;
             anchor = transform.anchorPoint.valueAtTime(time, false);
-            if (!anchor || anchor.length < 2) { return null; }
+            if (!anchor || anchor.length < 2) { return modelSample; }
             origin = layer.toComp([0, 0], time);
             basisX = layer.toComp([1, 0], time);
             basisY = layer.toComp([0, 1], time);
             anchorWorld = layer.toComp([Number(anchor[0]), Number(anchor[1])], time);
             if (!finiteCompPoint(origin) || !finiteCompPoint(basisX) || !finiteCompPoint(basisY) || !finiteCompPoint(anchorWorld)) {
-                return null;
+                return modelSample;
             }
             rect = layer.sourceRectAtTime(time, false);
             if (!rect || !isFinite(Number(rect.left)) || !isFinite(Number(rect.top)) || !isFinite(Number(rect.width)) || !isFinite(Number(rect.height))) {
-                return null;
+                return modelSample;
             }
             corners.push([Number(rect.left), Number(rect.top)]);
             corners.push([Number(rect.left) + Number(rect.width), Number(rect.top)]);
@@ -2286,7 +2405,7 @@
             corners.push([Number(rect.left) + Number(rect.width), Number(rect.top) + Number(rect.height)]);
             for (index = 0; index < corners.length; index += 1) {
                 point = layer.toComp(corners[index], time);
-                if (!finiteCompPoint(point)) { return null; }
+                if (!finiteCompPoint(point)) { return modelSample; }
                 xmin = xmin === null ? Number(point[0]) : Math.min(xmin, Number(point[0]));
                 ymin = ymin === null ? Number(point[1]) : Math.min(ymin, Number(point[1]));
                 xmax = xmax === null ? Number(point[0]) : Math.max(xmax, Number(point[0]));
@@ -2304,28 +2423,40 @@
                 (Number(basisX[0]) - Number(origin[0])) * (Number(basisY[1]) - Number(origin[1]))
                 - (Number(basisX[1]) - Number(origin[1])) * (Number(basisY[0]) - Number(origin[0]))
             );
-            if (!isFinite(determinant)) { return null; }
+            if (!isFinite(determinant)) { return modelSample; }
             if (determinant < 0) { sy = -sy; }
             rotation = Math.atan2(Number(basisX[1]) - Number(origin[1]), Number(basisX[0]) - Number(origin[0])) * 180 / Math.PI;
             rotation = unwrapWorldRotation(rotation, rotationState);
             opacity = Number(transform.opacity.valueAtTime(time, false)) / 100;
+            var wipe = layer.property("ADBE Effect Parade").property("ADBE Linear Wipe");
+            var completion = wipe ? Number(wipe.property("ADBE Linear Wipe-0001").valueAtTime(time, false)) : 0;
+            if (!isFinite(completion) || completion < 0 || completion > 100) { return modelSample; }
             if (!isFinite(sx) || !isFinite(sy) || Math.abs(sx) > 1000000 || Math.abs(sy) > 1000000 || !isFinite(rotation) || Math.abs(rotation) > 1000000 || !isFinite(opacity) || opacity < 0 || opacity > 1) {
-                return null;
+                return modelSample;
             }
-            return {
+            var sample = {
                 x: Number(anchorWorld[0]),
                 y: Number(anchorWorld[1]),
                 sx: sx,
                 sy: sy,
                 rot: rotation,
                 opacity: opacity,
+                wipe_completion: completion,
                 xmin: xmin,
                 ymin: ymin,
                 xmax: xmax,
                 ymax: ymax
             };
+            if (modelSample) {
+                modelSample.xmin = sample.xmin;
+                modelSample.ymin = sample.ymin;
+                modelSample.xmax = sample.xmax;
+                modelSample.ymax = sample.ymax;
+                return modelSample;
+            }
+            return sample;
         } catch (ignored) {
-            return null;
+            return modelSample;
         }
     }
 

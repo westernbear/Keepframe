@@ -540,6 +540,7 @@ class AEWorkflowService:
             "fonts": list(fonts) if isinstance(fonts, (list, tuple)) else [],
             "effects": list(effects) if isinstance(effects, (list, tuple)) else [],
             "properties": dict(properties) if isinstance(properties, Mapping) else {},
+            "model_layers": catalog.get("model_layers", False),
         }
 
     @staticmethod
@@ -577,12 +578,15 @@ class AEWorkflowService:
             for name, schema in approved.get("properties", {}).items()
             if name in property_refs
         }
-        return {
+        compact = {
             "digest": approved.get("digest"),
             "fonts": list(fonts),
             "effects": list(effects),
             "properties": properties,
         }
+        if approved.get("model_layers", False):
+            compact["model_layers"] = True
+        return compact
 
     @staticmethod
     def _plan_assets(plan: Any) -> dict[str, PlanAsset]:
@@ -1356,6 +1360,7 @@ class AEWorkflowService:
                 rows,
                 authoritative_instance_sources=layer_sources,
                 authoritative_instance_native_ids=layer_native_ids,
+                substitutions=plan.substitutions,
             )
         except Exception:
             self._pause(coordinator, "verification_error")
@@ -1394,6 +1399,7 @@ class AEWorkflowService:
                 rows,
                 authoritative_instance_sources=layer_sources,
                 authoritative_instance_native_ids=layer_native_ids,
+                substitutions=plan.substitutions,
             )
             representative, frame_ids, preview_id = self._render_records(render)
             aep_id = coordinator.reserve_artifact("aep", _MAX_AEP_BYTES).id
@@ -1698,6 +1704,7 @@ class AEWorkflowService:
                     rows,
                     authoritative_instance_sources=layer_sources,
                     authoritative_instance_native_ids=layer_native_ids,
+                    substitutions=plan.substitutions,
                 )
             except Exception:
                 self._pause(coordinator, "verification_error")
@@ -1743,6 +1750,7 @@ class AEWorkflowService:
                     rows,
                     authoritative_instance_sources=layer_sources,
                     authoritative_instance_native_ids=layer_native_ids,
+                    substitutions=plan.substitutions,
                 )
                 _representative, frame_ids, preview_id = self._render_records(render)
                 aep_id = coordinator.reserve_artifact("aep", _MAX_AEP_BYTES).id
@@ -2209,6 +2217,7 @@ class AEWorkflowService:
                 rows,
                 authoritative_instance_sources=authoritative,
                 authoritative_instance_native_ids=authoritative_native_ids,
+                substitutions=plan.substitutions,
             )
         except Exception:
             self._pause(coordinator, "verification_error")
@@ -2262,6 +2271,7 @@ class AEWorkflowService:
                 rows,
                 authoritative_instance_sources=authoritative,
                 authoritative_instance_native_ids=authoritative_native_ids,
+                substitutions=plan.substitutions,
             )
             _representative, frame_ids, preview_id = self._render_records(render)
             aep_id = coordinator.reserve_artifact("aep", _MAX_AEP_BYTES).id
@@ -2527,6 +2537,7 @@ class AEWorkflowService:
                 rows,
                 authoritative_instance_sources=authoritative,
                 authoritative_instance_native_ids=native_ids,
+                substitutions=final_plan.substitutions,
             )
             if not report.passed:
                 self._pause(coordinator, "verification_failed")

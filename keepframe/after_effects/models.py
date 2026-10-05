@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -157,6 +157,7 @@ class AEEffect(_FrozenRecord):
 
 
 class AECapabilityCatalog(_FrozenRecord):
+    model_layers: bool = False
     font_names: tuple[str, ...] = ()
     fonts: tuple[AEFont, ...] = ()
     effect_names: tuple[str, ...] = ()
@@ -166,6 +167,15 @@ class AECapabilityCatalog(_FrozenRecord):
     # they describe the same object so the wire snapshot remains lossless.
     properties: dict[str, str] = Field(default_factory=dict)
     plugin_versions: dict[str, str | None] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def _wire_catalog(self, handler: Any) -> dict[str, Any]:
+        payload = handler(self)
+        # Absence and false both deny model layers. Preserve legacy catalog
+        # bytes while binding an enabled capability into manifests and hashes.
+        if not self.model_layers:
+            payload.pop("model_layers", None)
+        return payload
 
     @field_validator("font_names", "effect_names", mode="before")
     @classmethod

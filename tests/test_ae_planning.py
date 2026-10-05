@@ -109,6 +109,30 @@ def _proposal(*, acknowledged: bool = False):
     }
 
 
+def test_background_plate_plans_without_substitutions_or_llm(tmp_path):
+    from PIL import Image
+    from keepframe.after_effects.mapping import map_baseline
+
+    root = _project(tmp_path)
+    scene_path = root / "scenes" / "s1" / "scene.v1.json"
+    scene = load_scene(scene_path)
+    scene.background = Background(kind="image", value="assets/background.png")
+    plate = scene_path.parent / "assets" / "background.png"
+    plate.parent.mkdir(exist_ok=True)
+    Image.new("RGB", scene.size, "red").save(plate)
+    save_scene(scene, scene_path)
+    plan = prepare_ae_render_plan(
+        root, project_id="p1", scene_id="s1", version_id="v1", mode="preview",
+        capabilities=_capabilities(), client=SimpleNamespace(),
+    )
+    assert not isinstance(plan, AERenderDraft)
+    assert plan.substitutions == ()
+    assert len(plan.assets) == 1
+    assert plan.assets[0].project_path == "scenes/s1/assets/background.png"
+    mapped = map_baseline(scene, plan.assets, "scenes/s1", _capabilities())
+    assert mapped.final_inventory[0].source_element_id == scene.id
+
+
 def test_supported_scene_creates_immutable_ae_plan_with_server_manifest(tmp_path):
     root = _project(tmp_path)
     plan = prepare_ae_render_plan(

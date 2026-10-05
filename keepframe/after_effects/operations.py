@@ -324,6 +324,8 @@ class SetTransformOperation(_StrictRecord):
         "scale_x",
         "scale_y",
         "rotation",
+        "rotation_x",
+        "rotation_y",
         "skew",
         "skew_x",
         "skew_y",
@@ -494,7 +496,7 @@ class SetEffectOperation(_StrictRecord):
 class AddLayerOperation(_StrictRecord):
     kind: Literal["add_layer"] = "add_layer"
     layer_instance_id: str
-    layer_type: Literal["text", "solid", "null", "footage"]
+    layer_type: Literal["text", "solid", "null", "footage", "model"]
     name: str
     source_element_id: str | None = None
     parent_instance_id: str | None = None
@@ -539,7 +541,7 @@ class AddLayerOperation(_StrictRecord):
     @model_validator(mode="after")
     def _layer_fields(self) -> "AddLayerOperation":
         has_dimensions = self.width is not None or self.height is not None
-        if self.layer_type == "footage":
+        if self.layer_type in {"footage", "model"}:
             if self.asset_id is None:
                 raise ValueError("footage layers require asset_id")
             if has_dimensions or self.color is not None:
@@ -613,6 +615,7 @@ class ApprovedCapabilities(_StrictRecord):
         default_factory=dict,
         validation_alias=AliasChoices("properties", "property_schemas"),
     )
+    model_layers: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -722,6 +725,7 @@ def _catalog(value: ApprovedCapabilities | Mapping[str, Any] | Any) -> ApprovedC
                 "effect_names",
                 "properties",
                 "property_schemas",
+                "model_layers",
             )
             if key in raw
         }
@@ -737,6 +741,8 @@ _TRANSFORM_PROPERTIES = {
     "scale_x": "ADBE Scale X",
     "scale_y": "ADBE Scale Y",
     "rotation": "ADBE Rotate Z",
+    "rotation_x": "ADBE Rotate X",
+    "rotation_y": "ADBE Rotate Y",
     "skew": "ADBE Skew",
     "skew_x": "ADBE Skew",
     "skew_y": "ADBE Skew Axis",
@@ -747,15 +753,20 @@ _TRANSFORM_PROPERTIES = {
 _REQUIRED_EFFECTS = {
     "ADBE Fill Color": "ADBE Fill",
     "ADBE Fill-0002": "ADBE Fill",
+    "ADBE Linear Wipe-0001": "ADBE Linear Wipe",
+    "ADBE Linear Wipe-0002": "ADBE Linear Wipe",
+    "ADBE Linear Wipe-0003": "ADBE Linear Wipe",
 }
 
-_SUPPORTED_EFFECT_PROPERTIES = frozenset({"ADBE Gaussian Blur 2-0001", "ADBE Fill-0002"})
+LINEAR_WIPE_PROPERTIES = frozenset({"ADBE Linear Wipe-0001", "ADBE Linear Wipe-0002", "ADBE Linear Wipe-0003"})
+_SUPPORTED_EFFECT_PROPERTIES = frozenset({"ADBE Gaussian Blur 2-0001", "ADBE Fill-0002"}) | LINEAR_WIPE_PROPERTIES
 _SUPPORTED_DIRECT_PROPERTIES = frozenset(_TRANSFORM_PROPERTIES.values()) | frozenset(
     {"ADBE Opacity", "ADBE Fill Color"}
-)
+) | LINEAR_WIPE_PROPERTIES
 _EFFECT_PROPERTIES = {
     "ADBE Gaussian Blur 2": frozenset({"ADBE Gaussian Blur 2-0001"}),
     "ADBE Fill": frozenset({"ADBE Fill-0002"}),
+    "ADBE Linear Wipe": LINEAR_WIPE_PROPERTIES,
 }
 
 
@@ -774,6 +785,11 @@ def _operation_properties(operation: Any) -> list[str]:
 
 
 def _validate_property_value(schema: str, value: Any, *, label: str) -> None:
+    if label == "ADBE Linear Wipe-0001":
+        if schema.lower() not in {"number", "float"}:
+            raise OperationValidationError("Linear Wipe completion schema must be numeric")
+        _number(value, label=label, minimum=0, maximum=100)
+        return
     if label == "ADBE Opacity":
         if schema.lower() not in {"number", "float"}:
             raise OperationValidationError("ADBE Opacity schema must be numeric")
@@ -837,6 +853,8 @@ def _check_catalog(batch: "OperationBatch", capabilities: ApprovedCapabilities) 
     effects = set(capabilities.effects)
     properties = capabilities.properties
     for operation in batch.operations:
+        if isinstance(operation, AddLayerOperation) and operation.layer_type == "model" and not capabilities.model_layers:
+            raise OperationValidationError("model layers require the approved model_layers capability")
         if isinstance(operation, (SetFontOperation, SetTextOperation)) and operation.font_name is not None:
             if operation.font_name not in fonts:
                 raise OperationValidationError(f"font is not in the approved catalog: {operation.font_name}")
@@ -859,7 +877,9 @@ def _check_catalog(batch: "OperationBatch", capabilities: ApprovedCapabilities) 
                 raise OperationValidationError(
                     f"property {property_name} requires effect {required_effect}"
                 )
-            if property_name in _SUPPORTED_EFFECT_PROPERTIES and not isinstance(operation, SetEffectOperation):
+            if property_name in _SUPPORTED_EFFECT_PROPERTIES and not isinstance(operation, SetEffectOperation) and not (
+                property_name in LINEAR_WIPE_PROPERTIES and isinstance(operation, SetKeyframesOperation)
+            ):
                 raise OperationValidationError("effect properties require set_effect")
             if (
                 not isinstance(operation, SetEffectOperation)

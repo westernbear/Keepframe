@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from ..ir.schema import DEFAULTS, Element, FontGuess, Scene
 from .models import AECapabilities, AECapabilityCatalog, AESubstitution
+from .operations import LINEAR_WIPE_PROPERTIES
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
@@ -83,6 +84,8 @@ def _safe_untrusted_text(value: Any, *, label: str, nonempty: bool = True) -> st
 
 def _safe_asset_reference(value: Any, *, label: str = "texture") -> str:
     value = _safe_text(value, label=label)
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{label} contains a control character")
     if not value or _URL_RE.match(value) or _DRIVE_RE.match(value):
         raise ValueError(f"{label} must be a scene-relative asset reference")
     if value.startswith(("/", "\\", "./", "../")) or "\\" in value:
@@ -96,7 +99,7 @@ def _safe_asset_reference(value: Any, *, label: str = "texture") -> str:
 def _field_layout(track: Any) -> tuple[tuple[int, Any], ...]:
     return tuple((key.t, key.ease) for key in track.keys)
 
-_AE_ANIMATED_TRACKS = frozenset({"x", "y", "sx", "sy", "rot", "skx", "sky", "opacity"})
+_AE_ANIMATED_TRACKS = frozenset({"x", "y", "sx", "sy", "rot", "skx", "sky", "opacity", "reveal", "rx", "ry"})
 
 
 def _ease_is_mapper_safe(ease: Any) -> bool:
@@ -284,20 +287,36 @@ def _element_issues(
     fps: float,
 ) -> list[AECompatibilityIssue]:
     issues: list[AECompatibilityIssue] = []
+    lost_spin = tuple(
+        prop for prop in ("rx", "ry")
+        if prop in element.tracks and any(key.v != 0.0 for key in element.tracks[prop].keys)
+    )
     if element.kind == "3d":
-        issues.append(_issue(element.id, element.kind, "3d", "3D semantics have no fixed AE mapping"))
+        if not catalog.model_layers:
+            issues.append(_issue(element.id, element.kind, "3d", "AE 24.1 or newer model_layers capability is unavailable; propose static texture footage", *lost_spin))
+        elif not element.canonical.model or not element.canonical.model.lower().endswith(".glb"):
+            issues.append(_issue(element.id, element.kind, "3d", "3D element requires a GLB model asset; propose static texture footage", *lost_spin))
+        elif any(catalog.property_schemas.get(name) not in {"number", "float"} for name in ("ADBE Rotate X", "ADBE Rotate Y")):
+            issues.append(_issue(element.id, element.kind, "3d", "model layers require approved AE Rotate X/Y schemas; propose static texture footage", *lost_spin))
     reveal = element.tracks.get("reveal")
     if reveal is not None and any(key.v != 1.0 for key in reveal.keys):
-        issues.append(_issue(element.id, element.kind, "reveal", "reveal clipping has no fixed AE mapping"))
+        if element.kind == "group":
+            issues.append(_issue(element.id, element.kind, "reveal", "group reveal cannot be preserved by neutral AE null layers"))
+        elif any(not 0 <= key.v <= 1 for key in reveal.keys):
+            issues.append(_issue(element.id, element.kind, "reveal", "reveal visible fraction must be between zero and one"))
+        elif "ADBE Linear Wipe" not in catalog.effect_names or any(
+            catalog.property_schemas.get(name) not in {"number", "float"}
+            for name in LINEAR_WIPE_PROPERTIES
+        ):
+            issues.append(_issue(element.id, element.kind, "reveal", "reveal requires the approved AE Linear Wipe effect and property schemas"))
     if element.kind == "3d":
-        for prop in ("rx", "ry"):
-            track = element.tracks.get(prop)
-            if track is not None and any(key.v != 0.0 for key in track.keys):
-                issues.append(_issue(element.id, element.kind, prop, "3D rotation has no fixed AE mapping"))
+        skx = element.tracks.get("skx")
+        if skx is not None and any(key.v != 0.0 for key in skx.keys):
+            issues.append(_issue(element.id, element.kind, "skx", "AE model layers do not support X skew"))
 
     if element.kind == "group":
         non_neutral = any(
-            property_name in DEFAULTS
+            property_name in DEFAULTS and property_name != "reveal"
             and any(
                 not math.isfinite(float(key.v))
                 or abs(float(key.v) - DEFAULTS[property_name]) > 1e-12
@@ -362,6 +381,8 @@ def _element_issues(
     for property_name, track in element.tracks.items():
         if property_name not in _AE_ANIMATED_TRACKS:
             continue
+        if property_name in {"rx", "ry"} and element.kind != "3d":
+            continue
         reason: str | None = None
         for index, key in enumerate(track.keys):
             if key.ease is None:
@@ -371,7 +392,7 @@ def _element_issues(
                     key,
                     track.keys[index + 1],
                     fps,
-                    100.0 if property_name in {"sx", "sy"} else 1.0,
+                    100.0 if property_name in {"sx", "sy", "reveal"} else 1.0,
                 )
             elif not _ease_is_mapper_safe(key.ease):
                 reason = "temporal easing influence endpoints must be at least 0.1% and controls must be finite and monotone"
@@ -709,10 +730,22 @@ def propose_ae_substitutions(
     issues_or_scene: Sequence[AECompatibilityIssue] | Scene,
     capabilities: AECapabilities | AECapabilityCatalog,
 ) -> tuple[AESubstitution, ...]:
-    """Ask the configured client once and validate its JSON response."""
+    """Propose static 3D textures, then ask the client for remaining gaps."""
 
+    static: list[AESubstitution] = []
     if isinstance(issues_or_scene, Scene):
         issues = analyze_ae_compatibility(issues_or_scene, capabilities)
+        elements = {element.id: element for element in issues_or_scene.elements}
+        for issue in issues:
+            element = elements.get(issue.source_element_id)
+            if element is not None and element.kind == "3d" and issue.semantic_key == "3d" and element.canonical.texture:
+                texture = _safe_asset_reference(element.canonical.texture)
+                static.append(AESubstitution(
+                    source_element_id=element.id, source_type=element.kind,
+                    proposed_layers=({"layer_type": "footage", "name": element.id, "texture": texture},),
+                    lost_semantics=issue.lost_semantics,
+                    reason="Use the static texture as footage; model depth and X/Y spin are lost",
+                ))
     else:
         issues = tuple(
             issue
@@ -722,6 +755,18 @@ def propose_ae_substitutions(
         )
     if not issues:
         return ()
+    all_issues = issues
+    issues = tuple(
+        issue for issue in issues if not any(
+            proposal.source_element_id == issue.source_element_id
+            and issue.semantic_key in proposal.lost_semantics
+            for proposal in static
+        )
+    )
+    if not issues:
+        return parse_ae_substitutions([proposal.model_dump() for proposal in static], all_issues, capabilities)
+    if client is None:
+        raise ValueError("an LLM client is required for AE compatibility proposals")
     catalog = _catalog(capabilities)
     request = {
         "issues": [issue.model_dump(mode="json") for issue in issues],
@@ -756,7 +801,25 @@ def propose_ae_substitutions(
         decoded = _extract_json(content)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("AE substitution response is not valid JSON") from exc
-    return parse_ae_substitutions(decoded, issues, capabilities)
+    generated = parse_ae_substitutions(decoded, issues, capabilities)
+    static_issues = tuple(issue for issue in all_issues if issue not in issues)
+    validated_static = parse_ae_substitutions([proposal.model_dump() for proposal in static], static_issues, capabilities)
+    combined = [*validated_static, *generated]
+    return tuple(_proposal_for_issue(combined, issue) for issue in all_issues)
+
+
+def _proposal_for_issue(
+    proposals: Sequence[AESubstitution], issue: AECompatibilityIssue,
+) -> AESubstitution:
+    for proposal in proposals:
+        if (
+            proposal.source_element_id == issue.source_element_id
+            and issue.semantic_key in proposal.lost_semantics
+        ):
+            return proposal
+    raise ValueError(
+        f"{issue.source_element_id} {issue.semantic_key}: no matching AE substitution proposal"
+    )
 
 
 def _extract_json(content: str) -> Any:

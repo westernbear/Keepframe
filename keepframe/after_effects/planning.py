@@ -485,9 +485,10 @@ def prepare_ae_render_plan(
     if current_issues and not substitutions:
         if substitutions_acknowledged:
             raise PlanConflict("substitution acknowledgement requires substitutions")
-        if client is None:
-            raise PlanConflict("an LLM client is required for AE compatibility proposals")
-        proposed = propose_ae_substitutions(client, current_issues, capabilities)
+        try:
+            proposed = propose_ae_substitutions(client, scene, capabilities)
+        except ValueError as exc:
+            raise PlanConflict(str(exc)) from exc
         return AERenderDraft(
             project_id=project_id,
             scene_id=scene_id,

@@ -91,11 +91,13 @@ def extract_motions_from_matrices(
     scene: Scene,
     matrices: dict[str, np.ndarray],
     eps: dict[str, float] | None = None,
+    *,
+    extra_channels: dict[str, np.ndarray] | None = None,
 ) -> list[Motion]:
-    """Extract 2D transform motions from observed six-column matrices.
+    """Extract motions from six-column transforms and optional reveal/rx/ry.
 
-    Scene-only reveal/spin tracks are evaluated by :func:`extract_motions`;
-    they are not inferred from an observed transform-only matrix.
+    Extra channels are observations, never inferred from scene tracks. All
+    channels share the same per-element chronological motion numbering.
 
     Inactive source frames are represented by rows containing only NaNs.  This
     function intentionally does not infer visibility from the scene: callers
@@ -145,28 +147,25 @@ def extract_motions_from_matrices(
                     dur=end - start,
                 )
             )
-    return motions
-
-
-def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
-    # Keep the six-column observed-transform interface used by AE verification.
-    motions = extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps)
-    thresholds = {**EPS, **(eps or {})}
-    for el in scene.elements:
-        values = np.full((scene.frames, 3), np.nan)
-        for f in range(max(0, el.visible[0]), min(el.visible[1], scene.frames - 1) + 1):
-            props = eval_props(el, f)
-            values[f] = [props["reveal"], props["rx"], props["ry"]]
-        delta = np.diff(values, axis=0)
-        channels = [("reveal", 0)]
-        if el.kind == "3d":  # rx/ry have no motion semantics for sprites
-            channels.extend([("spin", 1), ("spin", 2)])
-        for typ, channel in channels:
-            signal = np.abs(delta[:, channel])
-            for a, b in _runs(np.nan_to_num(signal, nan=0.0) > thresholds[typ]):
-                start, end = int(a), int(b) + 1
-                mag = float(values[end, channel] - values[start, channel])
-                motions.append(Motion("", el.id, typ, start, end, None, mag, end - start))
+    if extra_channels is not None:
+        if set(extra_channels) != {el.id for el in scene.elements}:
+            raise ValueError("extra motion channels do not match scene elements")
+        for el in scene.elements:
+            values = extra_channels[el.id]
+            if not isinstance(values, np.ndarray) or values.shape != (scene.frames, 3) or not np.issubdtype(values.dtype, np.floating):
+                raise ValueError(f"extra motion channels for {el.id} must be a floating reveal/rx/ry array")
+            if not bool((np.isfinite(values).all(axis=1) | np.isnan(values).all(axis=1)).all()):
+                raise ValueError(f"extra motion channels for {el.id} have invalid rows")
+            delta = np.diff(values, axis=0)
+            channels = [("reveal", 0)]
+            if el.kind == "3d":
+                channels.extend([("spin", 1), ("spin", 2)])
+            for typ, channel in channels:
+                signal = np.abs(delta[:, channel])
+                for a, b in _runs(np.nan_to_num(signal, nan=0.0) > eps[typ]):
+                    start, end = int(a), int(b) + 1
+                    mag = float(values[end, channel] - values[start, channel])
+                    motions.append(Motion("", el.id, typ, start, end, None, mag, end - start))
     ordered = []
     for el in scene.elements:
         found = sorted((m for m in motions if m.element == el.id), key=lambda m: (m.start, TYPE_ORDER.index(m.type)))
@@ -174,3 +173,14 @@ def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[M
             motion.id = f"m_{el.id}_{n}"
         ordered.extend(found)
     return ordered
+
+
+def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
+    extra = {}
+    for el in scene.elements:
+        values = np.full((scene.frames, 3), np.nan)
+        for f in range(max(0, el.visible[0]), min(el.visible[1], scene.frames - 1) + 1):
+            props = eval_props(el, f)
+            values[f] = [props["reveal"], props["rx"], props["ry"]]
+        extra[el.id] = values
+    return extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps, extra_channels=extra)

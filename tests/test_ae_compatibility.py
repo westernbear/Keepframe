@@ -171,6 +171,14 @@ def test_image_background_with_a_fixed_asset_reference_is_supported():
     ]
 
 
+@pytest.mark.parametrize("reference", ["../outside.png", "assets/../../outside.png", "/outside.png", "C:\\outside.png", "https://example.com/a.png", "assets/a\n.png"])
+def test_image_background_rejects_unsafe_references(reference):
+    issues = analyze_ae_compatibility(
+        _scene(background=Background(kind="image", value=reference)), _capabilities()
+    )
+    assert [(issue.source_element_id, issue.semantic_key) for issue in issues] == [("scene-1", "background")]
+
+
 def test_valid_substitution_proposal_is_bound_to_issue_and_capability():
     issue = analyze_ae_compatibility(
         _scene(_element("space", "3d")),
@@ -364,6 +372,15 @@ def test_non_neutral_group_transform_is_a_compatibility_issue():
     assert [(issue.source_element_id, issue.semantic_key) for issue in issues] == [
         ("group", "group_transform")
     ]
+
+
+def test_missing_proposal_has_an_actionable_issue_error():
+    from keepframe.after_effects import compatibility
+
+    scene = _scene(_element("model", "3d", texture="static.png"))
+    issue = analyze_ae_compatibility(scene, _capabilities())[0]
+    with pytest.raises(ValueError, match="model.*3d.*proposal"):
+        compatibility._proposal_for_issue([], issue)
 
 
 def test_temporal_ease_requires_ae_influences_at_least_point_one_percent():

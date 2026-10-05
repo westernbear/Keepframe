@@ -181,6 +181,93 @@ def test_image_background_is_black_comp_with_pinned_asset_layer():
     assert result.imported_asset_ids == (background.id,)
 
 
+def test_background_plate_is_bottom_full_duration_footage_at_comp_origin():
+    scene = _scene(
+        _sprite(z=-999999),
+        groups=(Group(id="controls", members=["sprite-1"]),),
+        background=Background(kind="image", value="assets/background.png"),
+    )
+    plate = _asset("scenes/demo/assets/background.png")
+    result = map_baseline(
+        scene, [plate, _asset("scenes/demo/img.png", "b")], "scenes/demo", _capabilities()
+    )
+    adds = [op for op in _ops(result) if op.kind == "add_layer"]
+    background = adds[0]
+    assert background.layer_type == "footage"
+    assert background.asset_id == plate.id
+    assert background.parent_instance_id is None
+    assert result.composition.width == 100 and result.composition.height == 50
+    inventory = result.final_inventory[0]
+    assert inventory.source_element_id == scene.id
+    assert inventory.active_interval == (0, scene.frames)
+    operations = [op for op in _ops(result) if op.layer_instance_id == background.layer_instance_id]
+    visibility = next(op for op in operations if op.kind == "set_visibility")
+    assert visibility.visible and (visibility.frame_start, visibility.frame_end) == (0, scene.frames)
+    transforms = {op.property_name: op.value for op in operations if op.kind == "set_transform"}
+    assert transforms["anchor"] == [0.0, 0.0]
+    assert transforms["position_x"] == 0.0
+    assert transforms["position_y"] == 0.0
+    assert transforms["scale"] == [100.0, 100.0]
+
+
+@pytest.mark.parametrize("reference", ["../outside.png", "assets/../../outside.png", "/outside.png", "C:\\outside.png", "https://example.com/a.png", "assets/a\n.png"])
+def test_background_mapping_rejects_unsafe_asset_references(reference):
+    with pytest.raises(AEMappingError):
+        map_baseline(
+            _scene(background=Background(kind="image", value=reference)),
+            [_asset("scenes/demo/assets/a\n.png")], "scenes/demo", _capabilities()
+        )
+
+
+@pytest.mark.parametrize("reference", ["../outside.png", "/outside.png", "assets/a\n.png"])
+@pytest.mark.parametrize("layer_type", ["solid", "footage"])
+def test_unsafe_background_maps_only_through_approved_substitution(reference, layer_type):
+    scene = _scene(background=Background(kind="image", value=reference))
+    replacement = _asset("scenes/demo/assets/replacement.png")
+    layer = {"layer_type": layer_type, "name": "Replacement background"}
+    if layer_type == "footage":
+        layer["texture"] = "assets/replacement.png"
+    else:
+        layer["color"] = "#abcdef"
+    proposal = AESubstitution(
+        source_element_id=scene.id,
+        source_type="background",
+        proposed_layers=(layer,),
+        lost_semantics=("background",),
+        acknowledged=True,
+    )
+
+    with pytest.raises(AEMappingError, match="background image"):
+        map_baseline(scene, [replacement], "scenes/demo", _capabilities())
+
+    result = map_baseline(scene, [replacement], "scenes/demo", _capabilities(), (proposal,))
+    adds = [op for op in _ops(result) if op.kind == "add_layer"]
+    assert len(adds) == 1
+    assert adds[0].source_element_id == scene.id
+    assert adds[0].layer_type == layer_type
+    assert adds[0].name == "Replacement background"
+    assert adds[0].asset_id == (replacement.id if layer_type == "footage" else None)
+    assert result.imported_asset_ids == ((replacement.id,) if layer_type == "footage" else ())
+    assert result.final_inventory[0].active_interval == (0, scene.frames)
+
+
+@pytest.mark.parametrize("layer", ["footage", {"layer_type": "footage", "name": "Background"}])
+def test_background_footage_substitution_without_replacement_still_checks_original_path(layer):
+    scene = _scene(background=Background(kind="image", value="assets/a\n.png"))
+    proposal = AESubstitution(
+        source_element_id=scene.id,
+        source_type="background",
+        proposed_layers=(layer,),
+        lost_semantics=("background",),
+        acknowledged=True,
+    )
+    with pytest.raises(AEMappingError, match="background image"):
+        map_baseline(
+            scene, [_asset("scenes/demo/assets/a\n.png")],
+            "scenes/demo", _capabilities(), (proposal,),
+        )
+
+
 def test_static_z_order_is_ascending_with_scene_order_ties():
     low = _sprite("low", z=-1)
     tie_a = _sprite("tie-a", z=2)
