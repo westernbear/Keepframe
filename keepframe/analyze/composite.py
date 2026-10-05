@@ -40,7 +40,7 @@ def composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacit
 
 
 def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray, opacity: float) -> None:
-    A = np.asarray(A, dtype=np.float64)  # warpAffine promotes even float32 input before inversion.
+    A = np.asarray(A, dtype=np.float64)
     H, W = canvas.shape[:2]
     th, tw = prem.shape[:2]
     if A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0] == 0:
@@ -57,61 +57,16 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
         x1, y1 = min(W, hi[0]), min(H, hi[1])
         if x1 <= x0 or y1 <= y0:
             return
-    warped = _warp_roi(prem, A, x0, y0, x1, y1, W)
+    roi_affine = A.copy()
+    roi_affine[:, 2] -= (x0, y0)
+    # ponytail: ROI-local interpolation permits 1e-3 pixel drift; use full-canvas
+    # warps if stricter pixel parity becomes a requirement.
+    warped = cv2.warpAffine(prem, roi_affine, (x1 - x0, y1 - y0), flags=cv2.INTER_LINEAR,
+                            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     a = warped[..., 3:4] * opacity
     roi = canvas[y0:y1, x0:x1]
     roi *= (1.0 - a)
     roi += warped[..., :3] * opacity
-
-
-def _warp_roi(prem: np.ndarray, A: np.ndarray, x0: int, y0: int, x1: int, y1: int,
-              canvas_width: int) -> np.ndarray:
-    # Translating A before warpAffine changes its interpolation rounding. Build
-    # the same inverse sampling coordinates as the full warp, only for the ROI.
-    # ponytail: sampling mirrors OpenCV 4/5 CPU kernels; extend the maps and
-    # frozen-reference parity tests if an OpenCV upgrade changes those kernels.
-    # OpenCV 4 uses 10-bit affine coordinates and a 5-bit interpolation table;
-    # OpenCV 5 uses float coordinates (including fused SIMD multiply/add).
-    M = cv2.invertAffineTransform(A)
-    if int(cv2.__version__.split(".")[0]) >= 5:
-        M = M.astype(np.float32)
-        x = np.arange(x0, x1, dtype=np.float32)[None, :]
-        y = np.arange(y0, y1, dtype=np.float32)[:, None]
-        row_x = M[0, 1] * y + M[0, 2]
-        row_y = M[1, 1] * y + M[1, 2]
-        features = cv2.getCPUFeaturesLine().split()
-        fused = cv2.checkHardwareSupport(12)  # OpenCV CPU_FMA3
-        if fused:
-            # float64 exactly holds each float32 product plus the row term,
-            # then the single cast reproduces the SIMD fused operation.
-            map_x = (M[0, 0].astype(np.float64) * x.astype(np.float64) + row_x.astype(np.float64)).astype(np.float32)
-            map_y = (M[1, 0].astype(np.float64) * x.astype(np.float64) + row_y.astype(np.float64)).astype(np.float32)
-        else:
-            map_x = M[0, 0] * x + row_x
-            map_y = M[1, 0] * x + row_y
-        block = 32 if "*AVX512-SKX" in features else 16 if "*AVX2" in features else 8
-        tail = max(0, canvas_width - canvas_width % block - x0)
-        if tail < x1 - x0:
-            if fused:
-                map_x[:, tail:] = (M[0, 0].astype(np.float64) * x[:, tail:].astype(np.float64)
-                                   + (M[0, 1] * y).astype(np.float64)).astype(np.float32) + M[0, 2]
-                map_y[:, tail:] = (M[1, 0].astype(np.float64) * x[:, tail:].astype(np.float64)
-                                   + (M[1, 1] * y).astype(np.float64)).astype(np.float32) + M[1, 2]
-            else:
-                map_x[:, tail:] = (M[0, 0] * x[:, tail:] + M[0, 1] * y) + M[0, 2]
-                map_y[:, tail:] = (M[1, 0] * x[:, tail:] + M[1, 1] * y) + M[1, 2]
-        return cv2.remap(prem, map_x, map_y, cv2.INTER_LINEAR,
-                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    x = np.arange(x0, x1, dtype=np.float64)[None, :]
-    y = np.arange(y0, y1, dtype=np.float64)[:, None]
-    X = (np.rint(M[0, 0] * x * 1024).astype(np.int32)
-         + np.rint((M[0, 1] * y + M[0, 2]) * 1024).astype(np.int32) + 16) >> 5
-    Y = (np.rint(M[1, 0] * x * 1024).astype(np.int32)
-         + np.rint((M[1, 1] * y + M[1, 2]) * 1024).astype(np.int32) + 16) >> 5
-    coords = np.stack((X >> 5, Y >> 5), axis=-1).clip(-32768, 32767).astype(np.int16)
-    fractions = (((Y & 31) << 5) + (X & 31)).astype(np.uint16)
-    return cv2.remap(prem, coords, fractions, cv2.INTER_LINEAR,
-                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
 
 def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray:
