@@ -468,17 +468,12 @@ def ensure_private_root(
         raise PreflightError("current-user SID is invalid")
     # icacls treats a bare "S-1-..." as an account name; a raw SID needs the "*" prefix.
     icacls = str(Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32" / "icacls.exe")
+    # Reset the tree so every file inherits, then protect only the root: /inheritance:r with /T
+    # strips each existing file's inherited entries without applying the (OI)(CI) grant to it,
+    # which left files with an empty DACL (unopenable even by their owner).
     commands = [
         [icacls, str(root_path), "/reset", "/T", "/C"],
-        [
-            icacls,
-            str(root_path),
-            "/inheritance:r",
-            "/grant:r",
-            f"*{sid}:(OI)(CI)F",
-            "/T",
-            "/C",
-        ],
+        [icacls, str(root_path), "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F", "/C"],
     ]
     runner = acl_runner or _default_acl_runner
     try:
@@ -501,6 +496,10 @@ def ensure_private_root(
         raise PreflightError(f"private connector ACL could not be applied: {type(exc).__name__}") from exc
     except Exception as exc:  # noqa: BLE001 - ACL failures fail closed
         raise PreflightError("private connector ACL could not be applied") from exc
+    try:  # the bridge must be able to open its lock file under the new ACL
+        os.close(os.open(root_path / ".bridge.lock", os.O_RDWR | os.O_CREAT, 0o600))
+    except OSError as exc:
+        raise PreflightError(f"private connector ACL left the bridge unusable: {exc}") from exc
     return root_path
 
 

@@ -48,6 +48,27 @@ def test_private_root_grants_the_sid_with_star_prefix(tmp_path):
     grant = calls[1]
     assert grant[0].lower().endswith("icacls.exe")
     assert "*S-1-5-21-1-2-3-1001:(OI)(CI)F" in grant
+    assert calls[0][2:] == ["/reset", "/T", "/C"]
+    assert "/T" not in grant  # files inherit from the root; a per-file grant left them with no ACL
+    assert (root / ".bridge.lock").exists()
+
+
+def test_private_root_fails_when_the_lock_file_cannot_be_opened(tmp_path, monkeypatch):
+    import os
+    import pytest
+
+    real_open = os.open
+
+    def denied(path, *args, **kwargs):
+        if str(path).endswith(".bridge.lock"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", denied)
+    with pytest.raises(connector.PreflightError, match="left the bridge unusable: .*Permission denied"):
+        connector.ensure_private_root(
+            tmp_path / "bridge", sid_provider=lambda: "S-1-5-21-1", acl_runner=lambda argv, **kw: None, windows=lambda: True
+        )
 
 
 def test_private_root_failure_includes_icacls_detail(tmp_path):
