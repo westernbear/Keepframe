@@ -133,7 +133,9 @@ def snapshot_from_stages(sd: Path, scene) -> str | None:
         for i, solid in enumerate(pickle.loads(solids_path.read_bytes())):
             for f, (bbox, mask) in solid.frames.items():
                 x0, y0, x1, y1 = bbox
-                add(target(f"solid{i + 1}"), f, mask_region(mask[y0:y1, x0:x1], bbox))
+                if mask.shape != (y1 - y0, x1 - x0):  # Legacy full-frame cache.
+                    mask = mask[y0:y1, x0:x1]
+                add(target(f"solid{i + 1}"), f, mask_region(mask, bbox))
     text = pickle.loads((stages / "text.pkl").read_bytes())
     for track in text["tracks"]:
         for f, box in track.boxes.items():

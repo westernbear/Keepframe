@@ -11,7 +11,7 @@ import pytest
 
 from keepframe.analyze.solid_assets import choose_solid, generate_solid_assets, solid_errors
 from keepframe.assets import AssetClient
-from keepframe.ir.schema import Background, Canonical, Element, Scene
+from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
 from tests.test_three import _triangle_glb
 
 
@@ -56,6 +56,8 @@ def pending_scene(sd, count=1):
         eid = f"e{i + 1}"
         cv2.imwrite(str(sd / "assets" / f"{eid}.png"), crop)
         elements.append(Element(id=eid, kind="sprite", pending_asset="3d", visible=(0, 11),
+                                tracks={"x": Track(keys=[Keyframe(t=0, v=20 + i * 50)]),
+                                        "y": Track(keys=[Keyframe(t=0, v=40)])},
                                 canonical=Canonical(width=32, height=24, texture=f"assets/{eid}.png")))
     return Scene(id="s1", size=(100, 80), fps=30, frames=12, background=Background(), elements=elements)
 
@@ -79,25 +81,26 @@ def test_reference_generation_saves_versioned_glb_keeps_crop_and_reuses_it(tmp_p
         assert calls == [] and rebuilt.elements[0].canonical.model == el.canonical.model
 
 
-@pytest.mark.parametrize("mode", ["html", "timeout", "large", "invalid"])
-def test_generation_failures_fall_back(tmp_path, mode):
+@pytest.mark.parametrize("mode, code", [("html", "asset_mime_not_allowed"), ("timeout", "TimeoutError"),
+                                       ("large", "asset_too_large"), ("invalid", "invalid_glb")])
+def test_generation_failures_fall_back(tmp_path, mode, code):
     scene = pending_scene(tmp_path)
     with asset_server(mode) as (url, calls):
         messages = generate_solid_assets(scene, tmp_path, AssetClient(url, timeout=0.03))
-        assert len(calls) == 1
+        assert len(calls) == 2
     assert scene.elements[0].kind == "sprite" and scene.elements[0].pending_asset == "3d"
     assert not list((tmp_path / "assets").glob("*.glb"))
-    assert messages and "e1" in messages[0]
+    assert messages and all(code in m for m in messages)
 
 
-def test_missing_generator_and_analysis_generation_cap(tmp_path, monkeypatch):
+def test_missing_generator_and_per_solid_generation_cap(tmp_path, monkeypatch):
     monkeypatch.delenv("KEEPFRAME_ASSET_API_URL", raising=False)
     scene = pending_scene(tmp_path, count=3)
     assert generate_solid_assets(scene, tmp_path, None) == ["3D 후보 3개: 생성기 미설정"]
     with asset_server() as (url, calls):
         generate_solid_assets(scene, tmp_path, AssetClient(url, timeout=310))
-        assert len(calls) == 2
-        assert scene.elements[2].pending_asset == "3d"
+        assert len(calls) == 3
+        assert all(e.kind == "3d" for e in scene.elements)
 
 
 @pytest.mark.parametrize("errors, expected", [
@@ -224,8 +227,9 @@ def test_different_colour_glb_is_rejected_and_browser_displays_fallback(tmp_path
     assert np.mean(np.abs(image - np.array((16, 20, 24)) / 255)) > 0.02
 
 
-@pytest.mark.parametrize("mode", ["html", "timeout", "large", "invalid"])
-def test_analysis_completes_after_generation_failure(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize("mode, code", [("html", "asset_mime_not_allowed"), ("timeout", "TimeoutError"),
+                                       ("large", "asset_too_large"), ("invalid", "invalid_glb")])
+def test_analysis_completes_after_generation_failure(tmp_path, monkeypatch, mode, code):
     from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
     from keepframe.ir.synth import make_spinning_sphere_video
 
@@ -243,11 +247,12 @@ def test_analysis_completes_after_generation_failure(tmp_path, monkeypatch, mode
         monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
         scene = analyze_scene_frames(make_spinning_sphere_video(frames=12), 30, tmp_path, "s1", AnalyzeOptions(
             bg_override="#101418", ocr=False, refine=False, use_ecc=False))
-        assert len(calls) == 1
+        assert len(calls) == 2
     assert timeouts == [310]
     assert any(e.kind == "sprite" and e.pending_asset == "3d" for e in scene.elements)
     report = json.loads((tmp_path / "scenes/s1/report.json").read_text())
-    assert any("실패" in m for m in report["messages"])
+    assert any(code in m for m in report["messages"])
+    assert not any("3D render failed" in m for m in report["messages"])
 
 
 def test_reference_edit_of_solid_obeys_fidelity_guard(tmp_path, monkeypatch):
@@ -316,7 +321,7 @@ def test_regenerated_fragment_model_survives_repeated_reruns(tmp_path, monkeypat
         assert calls == []
 
 
-def test_multiscene_analysis_shares_two_generation_requests(tmp_path, monkeypatch):
+def test_multiscene_analysis_generates_each_solid(tmp_path, monkeypatch):
     from keepframe.analyze.pipeline import AnalyzeOptions, analyze
     from keepframe.ir.synth import make_spinning_sphere_video
 
@@ -336,4 +341,177 @@ def test_multiscene_analysis_shares_two_generation_requests(tmp_path, monkeypatc
         analyze(video, 0, 35, tmp_path / "project", AnalyzeOptions(
             bg_override="#101418", ocr=False, refine=False, use_ecc=False),
             scenes=[{"id": f"s{i + 1}", "frames": [12 * i, 12 * i + 11]} for i in range(3)])
-        assert len(calls) == 2
+        assert len(calls) == 3
+
+
+def test_reanalysis_generates_first_model_then_reuses_it(tmp_path, monkeypatch):
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
+    from keepframe.ir.store import init_project
+    from keepframe.ir.synth import make_spinning_sphere_video
+
+    frames = make_spinning_sphere_video(frames=12)
+    options = AnalyzeOptions(bg_override="#101418", ocr=False, refine=False, use_ecc=False)
+    monkeypatch.delenv("KEEPFRAME_ASSET_API_URL", raising=False)
+    monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
+                        lambda _f, _b, _p, glb: {"fragments": 0.2, "still": 0.1, "model": 0.08 if glb else None})
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", options)
+    init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
+    with asset_server() as (url, calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        first = analyze_scene_frames(frames, 30, tmp_path, "s1", options)
+        assert len(calls) == 1 and any(e.kind == "3d" for e in first.elements)
+        calls.clear()
+        second = analyze_scene_frames(frames, 30, tmp_path, "s1", options)
+        assert calls == [] and any(e.kind == "3d" for e in second.elements)
+
+
+@pytest.mark.parametrize("initial, choice", [("still", "model"), ("still", "still"),
+                                          ("fragments", "model"), ("fragments", "fragments"),
+                                          ("fragments", "still"), ("still", "fragments")])
+def test_solid_reference_edit_uses_whole_crop_and_preserves_current_state(tmp_path, monkeypatch, initial, choice):
+    import pickle
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
+    from keepframe.edit.agent import edit
+    from keepframe.ir.store import current_scene, init_project
+    from keepframe.ir.synth import make_spinning_sphere_video
+    from keepframe.ir.tracks import element_bbox
+    from keepframe.verify.verifier import VerifyReport
+
+    scores = {"fragments": 0.01 if initial == "fragments" else 0.2, "still": 0.1, "model": None}
+    measured = []
+    def score(_f, _b, p, _glb):
+        measured.append(p)
+        return scores.copy()
+    monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors", score)
+    scene = analyze_scene_frames(make_spinning_sphere_video(frames=12), 30, tmp_path, "s1", AnalyzeOptions(
+        bg_override="#101418", ocr=False, refine=False, use_ecc=False, generate_3d=False))
+    sd = tmp_path / "scenes/s1"
+    props = pickle.loads((sd / "stages/props.pkl").read_bytes())
+    key, p = next((k, p) for k, p in props.items() if "fragments" in p)
+    ids = json.loads((sd / "stages/ids.json").read_text())
+    target = next(e for e in scene.elements if e.pending_asset == "3d")
+    target.role, target.label, target.caption, target.confidence = "primary", "manual label", "manual caption", 0.73
+    target.canonical.color = "#abcdef"
+    target.visible = (1, 10)
+    target.provenance = "manual"
+    before = {e.id: e.model_dump() for e in scene.elements}
+    init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
+    scores.update(fragments=0.01 if choice == "fragments" else 0.2, model=0.0 if choice == "model" else 0.8)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
+        schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
+    with asset_server() as (url, calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        result = edit(tmp_path, "s1", "3D 모델로 바꿔줘", element=target.id, confirm=True,
+                      choices={"keep_violation": "release_keep"})
+    assert result.status == "done" and len(calls) == 1
+    data = base64.b64decode(calls[0]["input_image"]["data"])
+    crop = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert crop.shape[:2] == p["canon"].shape[:2]
+    assert min(crop.shape[:2]) >= 90
+    assert calls[0]["size"] == {"width": crop.shape[1], "height": crop.shape[0]}
+    assert "model_props" not in measured[-1]
+    edited, _ = current_scene(tmp_path, "s1")
+    el = edited.element(target.id) if initial == "fragments" or choice != "fragments" else next(e for e in edited.elements if e.pending_asset)
+    assert (el.role, el.label, el.caption, el.confidence) == ("primary", "manual label", "manual caption", 0.73)
+    assert el.canonical.color == "#abcdef"
+    if choice == "model":
+        assert el.kind == "3d"
+        if initial == "fragments":
+            assert element_bbox(el, 0) == pytest.approx(p["boxes"][0], abs=0.5)
+        else:
+            assert el.visible == (1, 10) and el.tracks == target.tracks
+    elif initial == "fragments" or choice == "still":
+        assert el.visible == (1, 10) and el.tracks == target.tracks
+        assert el.canonical.texture == target.canonical.texture
+        for sibling in edited.elements:
+            if sibling.id != target.id and sibling.id in before:
+                assert sibling.model_dump() == before[sibling.id]
+
+
+def test_model_render_failure_is_reported_separately(tmp_path, monkeypatch):
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
+    from keepframe.ir.synth import make_spinning_sphere_video
+
+    def fail_render(*_a, **_k):
+        raise RuntimeError("do not expose upstream detail")
+    monkeypatch.setattr("keepframe.analyze.solid_assets.render", fail_render)
+    with asset_server() as (url, _calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        analyze_scene_frames(make_spinning_sphere_video(frames=12), 30, tmp_path, "s1", AnalyzeOptions(
+            bg_override="#101418", ocr=False, refine=False, use_ecc=False))
+    report = json.loads((tmp_path / "scenes/s1/report.json").read_text())
+    assert any("3D render failed" in m for m in report["messages"])
+    assert not any("do not expose" in m for m in report["messages"])
+
+
+def test_model_reuse_follows_solid_signature_across_element_ids(tmp_path):
+    from keepframe.ir.schema import Keyframe, Track
+
+    scene = pending_scene(tmp_path, count=2)
+    for i, el in enumerate(scene.elements):
+        el.tracks["x"] = Track(keys=[Keyframe(t=0, v=20 + i * 50)])
+        el.tracks["y"] = Track(keys=[Keyframe(t=0, v=40)])
+    with asset_server() as (url, calls):
+        generate_solid_assets(scene, tmp_path, AssetClient(url))
+        old_paths = {e.tracks["x"].keys[0].v: e.canonical.model for e in scene.elements}
+        rebuilt = pending_scene(tmp_path, count=2)
+        for new, old in zip(rebuilt.elements, reversed(scene.elements)):
+            new.tracks = old.tracks
+        calls.clear()
+        generate_solid_assets(rebuilt, tmp_path, AssetClient(url))
+        assert calls == []
+        assert all(e.canonical.model == old_paths[e.tracks["x"].keys[0].v] for e in rebuilt.elements)
+
+
+def test_generation_retries_each_solid_independently(tmp_path):
+    from keepframe.assets import AssetAPIError, AssetResponse
+
+    scene = pending_scene(tmp_path, count=3)
+    class Client:
+        calls = 0
+        def request(self, **_kwargs):
+            self.calls += 1
+            if self.calls % 2:
+                raise AssetAPIError("asset_api_unavailable")
+            return AssetResponse(mime="model/gltf-binary", data=_triangle_glb())
+    client = Client()
+    messages = generate_solid_assets(scene, tmp_path, client)
+    assert client.calls == 6
+    assert all(e.kind == "3d" for e in scene.elements)
+    assert sum("재시도" in m for m in messages) == 3
+
+
+def test_changed_signature_never_reuses_model_for_same_element_id(tmp_path):
+    scene = pending_scene(tmp_path)
+    with asset_server() as (url, calls):
+        generate_solid_assets(scene, tmp_path, AssetClient(url))
+        rebuilt = pending_scene(tmp_path)
+        rebuilt.elements[0].tracks["x"].keys[0].v += 30
+        calls.clear()
+        generate_solid_assets(rebuilt, tmp_path, AssetClient(url))
+        assert len(calls) == 1
+        assert rebuilt.elements[0].canonical.model == "assets/e1.model2.glb"
+
+
+def test_legacy_project_rerun_builds_missing_solid_props(tmp_path, monkeypatch):
+    import pickle
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
+    from keepframe.ir.store import current_scene, init_project
+    from keepframe.ir.synth import make_spinning_sphere_video
+
+    monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
+                        lambda *_a, **_k: {"fragments": 0.2, "still": 0.1, "model": None})
+    scene = analyze_scene_frames(make_spinning_sphere_video(frames=12), 30, tmp_path, "s1", AnalyzeOptions(
+        bg_override="#101418", ocr=False, refine=False, use_ecc=False, generate_3d=False))
+    sd = tmp_path / "scenes/s1"
+    props = pickle.loads((sd / "stages/props.pkl").read_bytes())
+    fragments = next(p["fragments"] for p in props.values() if "fragments" in p)
+    (sd / "stages/props.pkl").write_bytes(pickle.dumps(fragments))
+    (sd / "stages/solids.pkl").unlink()
+    init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
+    rerun(tmp_path, "s1", "keyframes", "upgrade pre-solid stages")
+    rebuilt, _ = current_scene(tmp_path, "s1")
+    assert any(e.pending_asset == "3d" for e in rebuilt.elements)
+    assert json.loads((sd / "report.json").read_text())["solids"]
