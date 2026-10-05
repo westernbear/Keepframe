@@ -10,7 +10,6 @@ import time
 from collections import OrderedDict
 from email import message_from_bytes
 from email.policy import default
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -960,12 +959,13 @@ def make_server(
             if len(values) != 1:
                 return None
             try:
-                cookies = SimpleCookie()
-                cookies.load(values[0])
-                morsel = cookies.get(controller_cookie_name(project_id))
-                return morsel.value if morsel is not None else None
-            except (AEAuthError, AttributeError):
+                prefix = controller_cookie_name(project_id) + "="
+            except AEAuthError:
                 return None
+            # Not SimpleCookie: one foreign cookie it cannot parse (a JSON value set by another
+            # app on this host, any port) makes it silently drop every cookie after it.
+            found = [part.strip()[len(prefix):] for part in values[0].split(";") if part.strip().startswith(prefix)]
+            return found[0] if len(found) == 1 else None
 
         def _authorize_ae_browser(
             self,
@@ -994,12 +994,14 @@ def make_server(
             *,
             clear: bool = False,
         ) -> str:
-            value = f"{controller_cookie_name(project_id)}={token}; Path=/; HttpOnly; SameSite=Strict"
+            # Persistent: a session cookie dies with the browser and locks the project to a controller
+            # nobody holds any more.
+            value = f"{controller_cookie_name(project_id)}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={365 * 86400}"
             origin = self.headers.get("Origin") or ""
             if urlparse(origin).scheme == "https":
                 value += "; Secure"
             if clear:
-                value += "; Max-Age=0"
+                value = value.replace(f"Max-Age={365 * 86400}", "Max-Age=0")
             return value
 
         def do_GET(self):

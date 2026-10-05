@@ -94,6 +94,10 @@ if (typeof JSON !== "object" || JSON === null) {
     var SESSION_COMP = null;
     var SESSION_MARKER = null;
     var panelWindow = null;
+    var PANEL_BUILD = "2026-10-05.3";
+    var statusText = null;
+    var pollCount = 0;
+    var lastEvent = "";
     var pollScheduled = false;
     var activeBatch = false;
 
@@ -3176,18 +3180,71 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
+    function setStatus(text) {
+        try {
+            if (statusText !== null) { statusText.text = "Keepframe " + PANEL_BUILD + ": " + text; }
+        } catch (ignored) {
+            /* The panel may be closing. */
+        }
+    }
+
+    function report(text) {
+        lastEvent = text;
+        setStatus(text);
+    }
+
+    function describeError(error) {
+        return String(error && error.message ? error.message : error) + (error && error.line ? " (line " + error.line + ")" : "");
+    }
+
+    function fileAccessOff() {
+        try {
+            return app.preferences.getPrefAsLong("Main Pref Section", "Pref_SCRIPTING_FILE_NETWORK_SECURITY") !== 1;
+        } catch (ignored) {
+            return false;
+        }
+    }
+
+    function clock() {
+        var now = new Date();
+        return ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2) + ":" + ("0" + now.getSeconds()).slice(-2);
+    }
+
     function KeepframeBridge_poll() {
+        /* Every failure is shown in the panel: a silent poll looks exactly like a closed one. */
+        try {
+            pollCount += 1;
+            if (pollBridge()) { return; }
+            if (pollCount % 10 === 1) {
+                setStatus(
+                    "listening (" + clock() + ")" + (lastEvent ? "; last: " + lastEvent : "")
+                    + (fileAccessOff() ? "; file access looks OFF: enable Preferences > Scripting & Expressions > Allow Scripts to Write Files and Access Network" : "")
+                );
+            }
+        } catch (error) {
+            report("error: " + describeError(error));
+        }
+    }
+
+    function pollBridge() {
         ensureFolders();
         var command = readJson(COMMAND_FILE);
         var cached;
         var response;
         var dispatched = false;
-        if (!command || command.schema_version !== BRIDGE_SCHEMA_VERSION) { return; }
-        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(String(command.command_id || "")) || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(String(command.nonce || "")) || !command.kind || !command.payload_digest) { return; }
+        if (!command) { return false; }
+        if (command.schema_version !== BRIDGE_SCHEMA_VERSION) {
+            report("ignored a command with schema " + command.schema_version + "; update the panel (keepframe ae-install)");
+            return true;
+        }
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(String(command.command_id || "")) || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(String(command.nonce || "")) || !command.kind || !command.payload_digest) {
+            report("ignored a malformed command");
+            return true;
+        }
         cached = completedResult(command);
         if (cached) {
-            writeAtomic(RESULT_FILE, cached);
-            return;
+            if (!writeAtomic(RESULT_FILE, cached)) { report("cannot write result.json"); }
+            return true;
         }
         try {
             validateCommandScope(command.kind, command.payload || {});
@@ -3205,12 +3262,15 @@ if (typeof JSON !== "object" || JSON === null) {
          * durable indeterminate barrier, so recovery never dispatches again. */
         try {
             markCompleted(response);
-            writeAtomic(RESULT_FILE, response);
+            if (!writeAtomic(RESULT_FILE, response)) { throw new Error("cannot write result.json"); }
             if (dispatched) { removeAttempt(command); }
+            report((response.ok ? "answered " : "failed ") + command.kind + " (" + clock() + ")" + (response.error ? ": " + response.error : ""));
         } catch (writeError) {
             /* Keep the attempt marker whenever completed persistence is not
              * confirmed; a later poll must fail closed. */
+            report("cannot write bridge files: " + describeError(writeError));
         }
+        return true;
     }
 
     function buildPanel(thisObj) {
@@ -3218,15 +3278,18 @@ if (typeof JSON !== "object" || JSON === null) {
         if (!window) { return window; }
         window.orientation = "column";
         window.alignChildren = ["fill", "top"];
-        var status = window.add("statictext", undefined, "Keepframe: waiting for heartbeat");
+        statusText = window.add("statictext", undefined, "", { multiline: true });
+        statusText.preferredSize = [360, 48];
+        setStatus("starting");
         var heartbeatButton = window.add("button", undefined, "Heartbeat");
         heartbeatButton.onClick = function () {
             var value = heartbeat(false);
-            status.text = "AE " + value.version + (value.ready ? " ready" : " unsupported");
+            setStatus("AE " + value.version + (value.ready ? " ready" : " unsupported"));
         };
         var closeButton = window.add("button", undefined, "Close");
         closeButton.onClick = function () { window.close(); };
         window.onClose = function () { pollScheduled = false; };
+        if (window.layout) { window.layout.layout(true); }
         return window;
     }
 

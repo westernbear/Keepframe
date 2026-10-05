@@ -1052,3 +1052,36 @@ def test_ae_replacement_drains_active_lease_before_new_device_can_bind(tmp_path)
         assert continued["session"]["device_id"] is None
     finally:
         server.shutdown()
+
+
+def test_controller_cookie_survives_foreign_cookies_and_browser_restarts(tmp_path):
+    workspace = tmp_path / "ws"
+    _plan(workspace, backend="after_effects")
+    server = start(workspace, ae_relay_url="https://relay.example")
+
+    def pair(cookie):
+        request = Request(
+            f"{_origin(server)}/api/ae/pairings",
+            data=json.dumps({"project": "p1", "capability_request": {"required": ["ae_version"]}}).encode(),
+            headers={"Content-Type": "application/json", "Origin": _origin(server), "Cookie": cookie},
+            method="POST",
+        )
+        try:
+            with urlopen(request) as response:
+                return response.status, response.headers["Set-Cookie"]
+        except HTTPError as exc:
+            return exc.code, exc.read().decode()
+
+    try:
+        first_status, first_cookie = pair("")
+        cookie = first_cookie.split(";", 1)[0]
+        # Another app on the same host (any port) can set cookies SimpleCookie cannot parse.
+        again = pair(f'theme={{"x":1}}; x=a b; {cookie}')
+        stranger = pair('theme={"x":1}')
+    finally:
+        server.shutdown()
+
+    assert first_status == 201
+    assert f"Max-Age={365 * 86400}" in first_cookie  # not a session cookie
+    assert again[0] == 201, again
+    assert stranger[0] == 401, stranger

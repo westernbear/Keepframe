@@ -65,7 +65,14 @@ Folder.userData = new Folder(localAppData);
 
 function Panel() {}
 function Window() {}
-Window.prototype.add = function (type, bounds, text) { return { type, text, onClick: null }; };
+Window.prototype.add = function (type, bounds, text) {
+  let value = text;
+  return { // statictext changes are echoed so a run shows what the user would see
+    type, onClick: null,
+    get text() { return value; },
+    set text(next) { if (type === "statictext" && next !== value) process.stderr.write(`STATUS: ${next}\n`); value = next; },
+  };
+};
 Window.prototype.show = function () { return true; };
 Window.prototype.close = function () { if (this.onClose) this.onClose(); };
 
