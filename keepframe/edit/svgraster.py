@@ -27,16 +27,18 @@ def _sanitize_chat_svg(svg: bytes) -> bytes:
 
 
 def rasterize_svg(svg: bytes, width: int, height: int) -> bytes:
-    """Render sanitized SVG into a transparent PNG at twice the box resolution."""
+    """Render a transparent PNG at up to twice the box resolution, capped at 4096px."""
     data = _sanitize_chat_svg(svg)
     if width <= 0 or height <= 0:
         raise ValueError("SVG raster box dimensions must be positive")
+    scale = min(2.0, 4096 / max(width, height))
+    viewport = {"width": max(1, round(width * scale)), "height": max(1, round(height * scale))}
     encoded = base64.b64encode(data).decode("ascii")
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--disable-gpu", "--hide-scrollbars", "--force-color-profile=srgb"])
         try:
             page = browser.new_page(
-                viewport={"width": width * 2, "height": height * 2},
+                viewport=viewport,
                 device_scale_factor=1, java_script_enabled=False, service_workers="block",
             )
             page.route("**/*", lambda route: route.abort())

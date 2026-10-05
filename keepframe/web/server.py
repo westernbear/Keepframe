@@ -2317,6 +2317,8 @@ def make_server(
                     write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
                     state._preview.clear()
                     state._tex.clear()
+                if result.status == "failed" and result.error in {"invalid_attachment", "invalid_svg", "invalid_glb"}:
+                    return self._json(422, result.to_json())
                 return self._json(200, result.to_json())
 
             if u.path == "/api/agent":

@@ -26,6 +26,29 @@ def _url(mime, data):
     return f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
 
 
+@pytest.fixture(params=[
+    ("texture", "data:image/svg+xml;base64,%%%", "invalid_attachment"),
+    ("model", "data:model/gltf-binary;base64,%%%", "invalid_attachment"),
+    ("texture", "data:image/png;base64,A", "invalid_attachment"),
+    ("texture", "data:image/svg+xml;base64,é", "invalid_attachment"),
+    ("texture", "data:image/svg+xml;base64,", "invalid_attachment"),
+    ("texture", "data:image/svg+xml,<svg/>", "invalid_attachment"),
+    ("texture", _url("image/svg+xml", b"<svg>"), "invalid_attachment"),
+    ("texture", _url("image/svg+xml", b'<?xml version="1.0" encoding="unknown"?><svg/>'), "invalid_attachment"),
+    ("model", _url("model/gltf-binary", b"not a glb"), "invalid_glb"),
+    ("model", _url("model/gltf-binary", _triangle_glb()[:20] + b"\xff" + _triangle_glb()[21:]), "invalid_glb"),
+    ("texture", Path("missing.svg"), "invalid_attachment"),
+    ("model", Path("missing.glb"), "invalid_attachment"),
+], ids=["svg-base64", "glb-base64", "base64-padding", "non-ascii-base64", "empty-data-url",
+        "non-base64-url", "broken-svg", "unknown-svg-encoding", "broken-glb", "undecodable-glb",
+        "missing-svg", "missing-glb"])
+def invalid_attachment_case(request, tmp_path):
+    property, attachment, error = request.param
+    if isinstance(attachment, Path):
+        attachment = str(tmp_path / attachment)
+    return property, attachment, error
+
+
 def _scene():
     return Scene(id="s1", size=(200, 100), fps=30, frames=3, background=Background(), elements=[
         Element(id="e1", kind="sprite", canonical=Canonical(width=40, height=20), visible=(0, 2),
@@ -57,6 +80,22 @@ def test_svg_data_url_becomes_transparent_png_inside_original_box(tmp_path):
     assert el.canonical.width <= 40 and el.canonical.height <= 20
     assert out.element("e1").tracks == scene.element("e1").tracks
     assert scene.element("e1").canonical.texture is None
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width,height,shape", [
+    (2048, 1024, (2048, 4096, 4)),
+    (3072, 768, (1024, 4096, 4)),
+    (768, 3072, (4096, 1024, 4)),
+    (2304, 3072, (4096, 3072, 4)),
+], ids=["at-cap", "wide", "tall", "both-over-cap"])
+def test_svg_rasterizer_caps_resolution_and_preserves_box_aspect(width, height, shape):
+    from keepframe.edit.svgraster import rasterize_svg
+
+    data = rasterize_svg(SVG, width, height)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert img.shape == shape
+    assert img[..., 3].min() == 0 and img[..., 3].max() == 255
 
 
 @pytest.mark.browser
@@ -147,6 +186,18 @@ def test_confirm_invalid_glb_returns_failure_message(tmp_path):
     assert res.status == "failed" and res.error == "invalid_glb" and res.attempts == 0
     assert current_scene(root, "s1")[0] == scene
     assert len(load_project(root).versions) == 1
+
+
+def test_confirm_invalid_attachment_returns_failure_without_version(tmp_path, invalid_attachment_case):
+    property, attachment, error = invalid_attachment_case
+    root, scene = _project(tmp_path)
+    res = edit(root, "s1", "e1 첨부로 교체", confirm=True, attachment=attachment,
+               intent={"targets": [{"element": "e1", "property": property, "value": "attachment"}]})
+    assert res.status == "failed" and res.error == error and res.attempts == 0
+    assert res.version is None
+    assert current_scene(root, "s1")[0] == scene
+    assert [v.id for v in load_project(root).versions] == ["v1"]
+    assert not list((root / "scenes/s1/assets").glob("*"))
 
 
 def test_chat_accepts_svg_and_glb_and_localizes_attachment_errors():

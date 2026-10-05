@@ -11,7 +11,7 @@ import numpy as np
 
 from ..ir.schema import Background, Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
-from ..assets import validate_glb
+from ..assets import AssetAPIError, validate_glb
 from .retime import apply_timing
 from .svgraster import rasterize_svg
 from .textraster import measure as _measure, render_lines
@@ -75,17 +75,20 @@ def write_text_texture(path: Path, text: str, size_px: float, color: tuple[int, 
 def _attachment_data(src: str | Path | bytes) -> bytes:
     if isinstance(src, bytes):
         return src
-    if isinstance(src, Path):
-        return src.read_bytes()
-    m = _DATA_URL.match(src.strip())
-    if m:
-        return base64.b64decode(m.group(1), validate=True)
-    if src.strip().startswith("data:"):
-        raise ValueError("attachment must be a base64 image or GLB data URL")
-    p = Path(src)
-    if p.is_file():
-        return p.read_bytes()
-    raise ValueError("attachment must be a data URL or asset path")
+    try:
+        if isinstance(src, Path):
+            return src.read_bytes()
+        m = _DATA_URL.match(src.strip())
+        if m:
+            return base64.b64decode(m.group(1), validate=True)
+        if src.strip().startswith("data:"):
+            raise AssetAPIError("invalid_attachment")
+        p = Path(src)
+        if p.is_file():
+            return p.read_bytes()
+    except (ValueError, OSError) as exc:
+        raise AssetAPIError("invalid_attachment") from exc
+    raise AssetAPIError("invalid_attachment")
 
 
 def save_attachment(src: str | Path | bytes, dest: Path) -> Path:
@@ -98,7 +101,7 @@ def save_attachment(src: str | Path | bytes, dest: Path) -> Path:
 def _is_svg(data: bytes) -> bool:
     try:
         return ET.fromstring(data).tag.rsplit("}", 1)[-1].lower() == "svg"
-    except ET.ParseError:
+    except (ET.ParseError, LookupError, ValueError):
         return False
 
 
@@ -159,7 +162,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             save_attachment(data, dest)
             img = cv2.imread(str(dest), cv2.IMREAD_UNCHANGED)
             if img is None:
-                raise ValueError("could not read attachment image")
+                raise AssetAPIError("invalid_attachment", "could not read attachment image")
             el.canonical.texture = f"assets/{dest.name}"
             h, w = img.shape[:2]
             scale = min(box_w / w, box_h / h)
@@ -167,7 +170,10 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
         elif t.property == "model":
             if attachment is None:
                 raise ValueError("3D edit needs a GLB attachment")
-            data = validate_glb(_attachment_data(attachment))
+            try:
+                data = validate_glb(_attachment_data(attachment))
+            except UnicodeDecodeError as exc:
+                raise AssetAPIError("invalid_glb") from exc
             dest = _next_model(scene_dir, el.id)
             dest.write_bytes(data)
             el.kind = "3d"

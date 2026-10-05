@@ -6,6 +6,7 @@ from keepframe.analyze.constraints import extract_constraints
 from keepframe.ir.store import current_scene, init_project, load_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.session.llm import AssistantReply
+from tests.test_chat_attachments import _project, invalid_attachment_case
 from tests.test_session_agent import StubLLM
 from tests.test_web_server import start
 
@@ -20,6 +21,27 @@ def _post(srv, path, payload):
             return r.status, json.loads(r.read())
     except HTTPError as e:
         return e.code, json.loads(e.read())
+
+
+def test_edit_api_rejects_invalid_attachment_without_version(tmp_path, invalid_attachment_case):
+    property, attachment, error = invalid_attachment_case
+    root, scene = _project(tmp_path)
+    srv = start(tmp_path / "ws")
+    try:
+        code, result = _post(srv, "/api/edit", {
+            "project": "p1", "scene": "s1", "v": "v1", "prompt": "e1 첨부로 교체",
+            "confirm": True, "attachment": attachment,
+            "intent": {"targets": [{"element": "e1", "property": property, "value": "attachment"}]},
+        })
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert code == 422, result
+    assert result["status"] == "failed" and result["error"] == error
+    assert result["version"] is None and result["attempts"] == 0
+    assert current_scene(root, "s1")[0] == scene
+    assert [v.id for v in load_project(root).versions] == ["v1"]
+    assert not list((root / "scenes/s1/assets").glob("*"))
 
 
 def test_edit_api_confirm_creates_version(tmp_path, monkeypatch):
