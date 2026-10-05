@@ -34,13 +34,84 @@ def texture_to_scene_affine(el: Element, props: dict[str, float], tex_shape: tup
 
 
 def composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacity: float) -> None:
-    H, W = canvas.shape[:2]
     prem = tex.copy()
     prem[..., :3] *= prem[..., 3:4]
-    warped = cv2.warpAffine(prem, A, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    _composite_premultiplied(canvas, prem, A, opacity)
+
+
+def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray, opacity: float) -> None:
+    A = np.asarray(A, dtype=np.float64)  # warpAffine promotes even float32 input before inversion.
+    H, W = canvas.shape[:2]
+    th, tw = prem.shape[:2]
+    if A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0] == 0:
+        # OpenCV's singular inverse samples tex[0, 0] across the whole canvas.
+        # Preserve that legacy behavior even for zero canonical width/height.
+        x0, y0, x1, y1 = 0, 0, W, H
+    else:
+        # Include bilinear support one source pixel beyond the texture, then
+        # pad two destination pixels. Source padding matters for large scales.
+        corners = np.array([[-1, -1, 1], [tw, -1, 1], [tw, th, 1], [-1, th, 1]]) @ A.T
+        lo = np.floor(corners.min(axis=0)).astype(int) - 2
+        hi = np.ceil(corners.max(axis=0)).astype(int) + 2
+        x0, y0 = max(0, lo[0]), max(0, lo[1])
+        x1, y1 = min(W, hi[0]), min(H, hi[1])
+        if x1 <= x0 or y1 <= y0:
+            return
+    warped = _warp_roi(prem, A, x0, y0, x1, y1, W)
     a = warped[..., 3:4] * opacity
-    canvas *= (1.0 - a)
-    canvas += warped[..., :3] * opacity
+    roi = canvas[y0:y1, x0:x1]
+    roi *= (1.0 - a)
+    roi += warped[..., :3] * opacity
+
+
+def _warp_roi(prem: np.ndarray, A: np.ndarray, x0: int, y0: int, x1: int, y1: int,
+              canvas_width: int) -> np.ndarray:
+    # Translating A before warpAffine changes its interpolation rounding. Build
+    # the same inverse sampling coordinates as the full warp, only for the ROI.
+    # ponytail: sampling mirrors OpenCV 4/5 CPU kernels; extend the maps and
+    # frozen-reference parity tests if an OpenCV upgrade changes those kernels.
+    # OpenCV 4 uses 10-bit affine coordinates and a 5-bit interpolation table;
+    # OpenCV 5 uses float coordinates (including fused SIMD multiply/add).
+    M = cv2.invertAffineTransform(A)
+    if int(cv2.__version__.split(".")[0]) >= 5:
+        M = M.astype(np.float32)
+        x = np.arange(x0, x1, dtype=np.float32)[None, :]
+        y = np.arange(y0, y1, dtype=np.float32)[:, None]
+        row_x = M[0, 1] * y + M[0, 2]
+        row_y = M[1, 1] * y + M[1, 2]
+        features = cv2.getCPUFeaturesLine().split()
+        fused = cv2.checkHardwareSupport(12)  # OpenCV CPU_FMA3
+        if fused:
+            # float64 exactly holds each float32 product plus the row term,
+            # then the single cast reproduces the SIMD fused operation.
+            map_x = (M[0, 0].astype(np.float64) * x.astype(np.float64) + row_x.astype(np.float64)).astype(np.float32)
+            map_y = (M[1, 0].astype(np.float64) * x.astype(np.float64) + row_y.astype(np.float64)).astype(np.float32)
+        else:
+            map_x = M[0, 0] * x + row_x
+            map_y = M[1, 0] * x + row_y
+        block = 32 if "*AVX512-SKX" in features else 16 if "*AVX2" in features else 8
+        tail = max(0, canvas_width - canvas_width % block - x0)
+        if tail < x1 - x0:
+            if fused:
+                map_x[:, tail:] = (M[0, 0].astype(np.float64) * x[:, tail:].astype(np.float64)
+                                   + (M[0, 1] * y).astype(np.float64)).astype(np.float32) + M[0, 2]
+                map_y[:, tail:] = (M[1, 0].astype(np.float64) * x[:, tail:].astype(np.float64)
+                                   + (M[1, 1] * y).astype(np.float64)).astype(np.float32) + M[1, 2]
+            else:
+                map_x[:, tail:] = (M[0, 0] * x[:, tail:] + M[0, 1] * y) + M[0, 2]
+                map_y[:, tail:] = (M[1, 0] * x[:, tail:] + M[1, 1] * y) + M[1, 2]
+        return cv2.remap(prem, map_x, map_y, cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    x = np.arange(x0, x1, dtype=np.float64)[None, :]
+    y = np.arange(y0, y1, dtype=np.float64)[:, None]
+    X = (np.rint(M[0, 0] * x * 1024).astype(np.int32)
+         + np.rint((M[0, 1] * y + M[0, 2]) * 1024).astype(np.int32) + 16) >> 5
+    Y = (np.rint(M[1, 0] * x * 1024).astype(np.int32)
+         + np.rint((M[1, 1] * y + M[1, 2]) * 1024).astype(np.int32) + 16) >> 5
+    coords = np.stack((X >> 5, Y >> 5), axis=-1).clip(-32768, 32767).astype(np.int16)
+    fractions = (((Y & 31) << 5) + (X & 31)).astype(np.uint16)
+    return cv2.remap(prem, coords, fractions, cv2.INTER_LINEAR,
+                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
 
 
 def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray:
@@ -63,12 +134,18 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
         tex = cache.get(el.canonical.texture)
         if tex is None:
             tex = cache[el.canonical.texture] = load_texture(Path(scene_dir) / el.canonical.texture)
+        prem_key = ("premultiplied", el.canonical.texture)
+        prem = cache.get(prem_key)
+        if prem is None:
+            prem = tex.copy()
+            prem[..., :3] *= prem[..., 3:4]
+            cache[prem_key] = prem
         p = eval_props(el, f)
         # ponytail: kind "3d" uses canonical.texture as a static preview here;
         # animated GLB rotation belongs to the Three.js composer. Sprites ignore rx/ry.
         reveal = float(np.clip(p["reveal"], 0.0, 1.0))
         if reveal < 1.0:
-            tex = tex.copy()  # never clip the shared full-texture cache
-            tex[:, int(round(tex.shape[1] * reveal)):, 3] = 0
-        composite_element(canvas, tex, texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
+            prem = prem.copy()  # never clip either shared full-texture cache
+            prem[:, int(round(prem.shape[1] * reveal)):] = 0
+        _composite_premultiplied(canvas, prem, texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
     return canvas

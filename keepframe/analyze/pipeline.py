@@ -265,8 +265,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     if previous is not None:
         scene.constraints = carry_keep(scene.constraints, previous.constraints)
     report_stage("report")
-    rec = reconstruction_error(scene, sd, frames, 0)
-    conf = element_confidence(scene, sd, frames, 0)
+    from .report import reconstruction_and_confidence
+    rec, conf = reconstruction_and_confidence(scene, sd, frames, 0)
     for e in scene.elements:
         e.confidence = conf[e.id]
     write_report(sd, {"reconstruction": rec, "confidence": conf, "messages": messages,
