@@ -7,7 +7,7 @@ from ..ir.tracks import element_bbox
 from ..render.renderer import RenderResult
 from ..analyze.composite import load_texture
 from .predicates import build_context, eval_pred
-from .similarity import appearance_similarity, centroid_tracks, temporal_similarity_by_id
+from .similarity import appearance_similarity, centroid_tracks, temporal_by_id_detail
 
 LAYER_TOLERANCE_PX = 2.0
 
@@ -29,6 +29,8 @@ class VerifyReport(BaseModel):
     layer_errors: list[LayerError] = Field(default_factory=list)
     layer_max_err_px: float = 0.0
     temporal: float | None = None
+    temporal_worst: float | None = None
+    temporal_worst_element: str | None = None
     appearance: float | None = None
     layer_probe_complete: bool = False
     passed: bool = False
@@ -81,7 +83,9 @@ def verify(scene: Scene, scene_dir: Path, render_result: RenderResult | None = N
     elif scene.elements:
         rep.messages.append("layer geometry not verified: render probes required")
     if reference is not None:
-        rep.temporal = temporal_similarity_by_id(centroid_tracks(reference), centroid_tracks(scene))
+        rep.temporal, worst = temporal_by_id_detail(centroid_tracks(reference), centroid_tracks(scene))
+        if worst is not None:
+            rep.temporal_worst_element, rep.temporal_worst = worst
         if reference_dir is not None:
             scores = []
             for el in scene.elements:

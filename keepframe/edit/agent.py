@@ -23,6 +23,7 @@ from ..assets import AssetAPIError, AssetClient
 MAX_TRIES = 4
 ASSET_GEN_CAP = 2
 TEMPORAL_MIN = 0.7
+TEMPORAL_ELEMENT_MIN = 0.5
 
 
 class EditResult(BaseModel):
@@ -50,7 +51,8 @@ class EditResult(BaseModel):
 
 def _passed(rep: VerifyReport) -> bool:
     temporal_ok = rep.temporal is None or rep.temporal >= TEMPORAL_MIN
-    return bool(rep.passed and temporal_ok)
+    temporal_element_ok = rep.temporal_worst is None or rep.temporal_worst >= TEMPORAL_ELEMENT_MIN
+    return bool(rep.passed and temporal_ok and temporal_element_ok)
 
 
 def _verification_error(rep: VerifyReport | None) -> str:
@@ -59,6 +61,8 @@ def _verification_error(rep: VerifyReport | None) -> str:
     failures = []
     if rep.temporal is not None and rep.temporal < TEMPORAL_MIN:
         failures.append(f"시간 유사도 {rep.temporal:.3f} < {TEMPORAL_MIN:.3f}")
+    if rep.temporal_worst is not None and rep.temporal_worst < TEMPORAL_ELEMENT_MIN:
+        failures.append(f"요소 {rep.temporal_worst_element} 시간 유사도 {rep.temporal_worst:.3f} < {TEMPORAL_ELEMENT_MIN:.3f}")
     failed_keep = sum(not item.get("passed") for item in rep.keep_results)
     if failed_keep:
         failures.append(f"keep 술어 {failed_keep}개 실패")
@@ -155,7 +159,10 @@ def edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
-    if attachment is None and any(t.property == "texture" and t.value == "attachment" for t in built.items):
+    gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
+    # ponytail: edits share one asset payload; retain mixed generation batches until per-target attachments exist.
+    if attachment is None and any(t.value == "attachment" and
+            (t.property == "texture" or (t.property == "model" and gen_target is None)) for t in built.items):
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="attachment_required")
     missing = [c for c in built.conflicts if not (choices or {}).get(c.id) and not (choices or {}).get(c.element)]
     if missing:
@@ -173,7 +180,6 @@ def edit(
             if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
                 raise
             return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=str(exc))
-    gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
     generated_kind = ("3d" if gen_target.property == "model" else "raster") if gen_target is not None and attachment is None else None
     generated = generated_kind is not None
     asset_uses = 0
@@ -203,6 +209,8 @@ def edit(
                 shutil.copytree(sd / "assets", candidate / "assets")
             try:
                 edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+            except AssetAPIError as exc:
+                return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, attempts=attempts_run, error=exc.code)
             except ValueError as exc:
                 if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
                     raise

@@ -1,9 +1,9 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261004b";
+import { objectColor } from "/static/js/review/colors.js?v=20261005b";
 import {
   fetchReviewState,
   postApprove,
-} from "/static/js/api.js?v=20261004b";
-import { T, Tf } from "/static/js/i18n.js?v=20261004b";
+} from "/static/js/api.js?v=20261005b";
+import { T, Tf } from "/static/js/i18n.js?v=20261005b";
 import {
   LOADING_PCT_START,
   LOADING_PCT_LIST_BASE,
@@ -12,7 +12,7 @@ import {
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20261004b";
+} from "/static/js/review/workspace.js?v=20261005b";
 
 export function attachInspector(ws) {
   const { dom } = ws;
@@ -310,6 +310,13 @@ export function attachInspector(ws) {
     } else line("review.position", T(ws.state.analysis ? "review.notDetected" : "review.noAnalysis"));
     line("review.appearance", (info?.intervals || (!ws.state.analysis ? [item.visible] : [])).map(([a, b]) => `${a}–${b} f`).join(", ") || "—");
     dom.objectDetail.append(title, list);
+    if (item.pending_asset === "3d") {
+      const badge = document.createElement("span");
+      badge.className = "badge badge--active";
+      badge.dataset.i18n = "review.pending3d";
+      badge.textContent = T(badge.dataset.i18n);
+      dom.objectDetail.append(badge);
+    }
   }
 
   async function refreshState(v) {

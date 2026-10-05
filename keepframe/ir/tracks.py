@@ -62,6 +62,8 @@ def eval_z(el: Element, f: float) -> int:
 
 
 def affine_matrix(p: dict[str, float]) -> np.ndarray:
+    # reveal clips pixels without changing geometry; rx/ry are degrees for kind
+    # "3d" only. Sprites ignore rx/ry in composer, composite and Lottie.
     if abs(p.get("sky", 0.0)) > 1e-9:
         raise ValueError("sky must be 0 (decomposition uses skewX only)")
     r = math.radians(p["rot"])

@@ -286,6 +286,14 @@ def _element_issues(
     issues: list[AECompatibilityIssue] = []
     if element.kind == "3d":
         issues.append(_issue(element.id, element.kind, "3d", "3D semantics have no fixed AE mapping"))
+    reveal = element.tracks.get("reveal")
+    if reveal is not None and any(key.v != 1.0 for key in reveal.keys):
+        issues.append(_issue(element.id, element.kind, "reveal", "reveal clipping has no fixed AE mapping"))
+    if element.kind == "3d":
+        for prop in ("rx", "ry"):
+            track = element.tracks.get(prop)
+            if track is not None and any(key.v != 0.0 for key in track.keys):
+                issues.append(_issue(element.id, element.kind, prop, "3D rotation has no fixed AE mapping"))
 
     if element.kind == "group":
         non_neutral = any(

@@ -17,13 +17,13 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261004b";
-import { T, Tf } from "/static/js/i18n.js?v=20261004b";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261004b";
+} from "/static/js/api.js?v=20261005b";
+import { T, Tf } from "/static/js/i18n.js?v=20261005b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261005b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261004b";
+} from "/static/js/playback.js?v=20261005b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -1023,7 +1023,11 @@ async function applyConfirmedEdit(res) {
     await refreshAfterEdit(res.version.id);
     return true;
   }
-  setBanner(res.error === "attachment_required" ? T("agent.attachmentRequired") : (res.error || T("agent.failed")), true);
+  const errorMessage = res.error === "attachment_required" ? T("agent.attachmentRequired")
+    : res.error === "invalid_glb" ? T("agent.invalidGlb")
+    : res.error === "unsafe_svg" || res.error === "invalid_svg" ? T("agent.invalidSvg")
+    : (res.error || T("agent.failed"));
+  setBanner(errorMessage, true);
   return false;
 }
 
@@ -1115,6 +1119,13 @@ async function previewForAI(img, kind) {
   return { kind, mime: "image/jpeg", data };
 }
 
+async function readChatAttachment(file) {
+  const data = await readFileAsDataUrl(file);
+  const mime = /\.glb$/i.test(file.name) ? "model/gltf-binary"
+    : /\.svg$/i.test(file.name) ? "image/svg+xml" : null;
+  return mime ? data.replace(/^data:[^,]*,/, `data:${mime};base64,`) : data;
+}
+
 function attachmentMeta() {
   return pendingAttachmentFile ? { name: pendingAttachmentFile.name, type: pendingAttachmentFile.type, size: pendingAttachmentFile.size } : null;
 }
@@ -1197,7 +1208,7 @@ document.getElementById("agent-attach-btn").addEventListener("click", () => atta
 attachInput.addEventListener("change", async () => {
   const file = attachInput.files[0] || null;
   try {
-    const attachment = file ? await readFileAsDataUrl(file) : null;
+    const attachment = file ? await readChatAttachment(file) : null;
     pendingAttachmentFile = file;
     pendingAttachment = attachment;
   } catch (err) {

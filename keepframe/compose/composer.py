@@ -93,7 +93,7 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) 
     start = el.visible[0] / fps
     dur = (el.visible[1] - el.visible[0] + 1) / fps
     if el.kind == "3d" and c.model:
-        model_path = scene_dir / c.model
+        model_path = scene_asset_path(scene_dir, c.model)
         validate_glb(model_path.read_bytes())
         inner = f'<canvas class="model-canvas" width="{max(1, round(c.width))}" height="{max(1, round(c.height))}" data-model="{_data_uri(model_path, "model/gltf-binary")}"></canvas>'
     elif el.kind == "ui":

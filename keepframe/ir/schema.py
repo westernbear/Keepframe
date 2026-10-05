@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..log import get
 
 Ease = tuple[float, float, float, float]
-PROPS = ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity")
-DEFAULTS: dict[str, float] = {"x": 0.0, "y": 0.0, "sx": 1.0, "sy": 1.0, "rot": 0.0, "skx": 0.0, "sky": 0.0, "opacity": 1.0}
+PROPS = ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity", "reveal", "rx", "ry")
+DEFAULTS: dict[str, float] = {"x": 0.0, "y": 0.0, "sx": 1.0, "sy": 1.0, "rot": 0.0, "skx": 0.0, "sky": 0.0, "opacity": 1.0, "reveal": 1.0, "rx": 0.0, "ry": 0.0}
 FONT_FAMILY_RE = re.compile(r"[A-Za-z0-9 \-가-힣]{1,64}")
 
 
@@ -91,6 +91,7 @@ class Element(BaseModel):
     provenance: Literal["auto", "manual"] = "auto"
     label: Optional[str] = None     # VLM suggestion (logo/title/...); never used for timing or geometry
     caption: Optional[str] = None   # VLM description; data, not instructions
+    pending_asset: Optional[Literal["3d"]] = None
 
     @field_validator("tracks")
     @classmethod

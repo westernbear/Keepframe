@@ -5,8 +5,8 @@ from ..ir.schema import Scene
 from ..ir.tracks import element_bbox, eval_props
 
 COLS = ("x", "y", "sx", "sy", "rot", "opacity")
-EPS = {"translation": 0.5, "rotation": 0.25, "scale": 0.002, "opacity": 0.005}
-TYPE_ORDER = ("translation", "rotation", "scale", "opacity")
+EPS = {"translation": 0.5, "rotation": 0.25, "scale": 0.002, "opacity": 0.005, "reveal": 0.005, "spin": 0.25}
+TYPE_ORDER = ("translation", "rotation", "scale", "opacity", "reveal", "spin")
 
 
 def animation_matrix(scene: Scene) -> dict[str, np.ndarray]:
@@ -92,7 +92,10 @@ def extract_motions_from_matrices(
     matrices: dict[str, np.ndarray],
     eps: dict[str, float] | None = None,
 ) -> list[Motion]:
-    """Extract motions using the same signals as :func:`extract_motions`.
+    """Extract 2D transform motions from observed six-column matrices.
+
+    Scene-only reveal/spin tracks are evaluated by :func:`extract_motions`;
+    they are not inferred from an observed transform-only matrix.
 
     Inactive source frames are represented by rows containing only NaNs.  This
     function intentionally does not infer visibility from the scene: callers
@@ -111,7 +114,7 @@ def extract_motions_from_matrices(
             "scale": np.abs(d[:, 2]) + np.abs(d[:, 3]),
             "opacity": np.abs(d[:, 5]),
         }
-        for typ in TYPE_ORDER:
+        for typ in signals:
             sig = np.nan_to_num(signals[typ], nan=0.0)
             for a, b in _runs(sig > eps[typ]):
                 start, end = int(a), int(b) + 1
@@ -146,4 +149,28 @@ def extract_motions_from_matrices(
 
 
 def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
-    return extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps)
+    # Keep the six-column observed-transform interface used by AE verification.
+    motions = extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps)
+    thresholds = {**EPS, **(eps or {})}
+    for el in scene.elements:
+        values = np.full((scene.frames, 3), np.nan)
+        for f in range(max(0, el.visible[0]), min(el.visible[1], scene.frames - 1) + 1):
+            props = eval_props(el, f)
+            values[f] = [props["reveal"], props["rx"], props["ry"]]
+        delta = np.diff(values, axis=0)
+        channels = [("reveal", 0)]
+        if el.kind == "3d":  # rx/ry have no motion semantics for sprites
+            channels.extend([("spin", 1), ("spin", 2)])
+        for typ, channel in channels:
+            signal = np.abs(delta[:, channel])
+            for a, b in _runs(np.nan_to_num(signal, nan=0.0) > thresholds[typ]):
+                start, end = int(a), int(b) + 1
+                mag = float(values[end, channel] - values[start, channel])
+                motions.append(Motion("", el.id, typ, start, end, None, mag, end - start))
+    ordered = []
+    for el in scene.elements:
+        found = sorted((m for m in motions if m.element == el.id), key=lambda m: (m.start, TYPE_ORDER.index(m.type)))
+        for n, motion in enumerate(found, 1):
+            motion.id = f"m_{el.id}_{n}"
+        ordered.extend(found)
+    return ordered

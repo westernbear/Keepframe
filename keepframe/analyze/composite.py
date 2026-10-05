@@ -64,5 +64,11 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
         if tex is None:
             tex = cache[el.canonical.texture] = load_texture(Path(scene_dir) / el.canonical.texture)
         p = eval_props(el, f)
+        # ponytail: kind "3d" uses canonical.texture as a static preview here;
+        # animated GLB rotation belongs to the Three.js composer. Sprites ignore rx/ry.
+        reveal = float(np.clip(p["reveal"], 0.0, 1.0))
+        if reveal < 1.0:
+            tex = tex.copy()  # never clip the shared full-texture cache
+            tex[:, int(round(tex.shape[1] * reveal)):, 3] = 0
         composite_element(canvas, tex, texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
     return canvas

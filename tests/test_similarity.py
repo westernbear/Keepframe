@@ -4,6 +4,9 @@ from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene,
 from keepframe.verify.similarity import centroid_tracks, tracklet_correlation, temporal_similarity, appearance_similarity, frame_l1
 from keepframe.verify import similarity
 from keepframe.verify.verifier import verify
+from keepframe.edit.agent import _passed
+from keepframe.ir.tracks import element_bbox
+from keepframe.render.renderer import RenderResult
 
 def test_identical_scene_scores_one(tmp_scene_dir):
     s = make_synthetic_scene(tmp_scene_dir, seed=4)
@@ -61,12 +64,10 @@ def test_reversed_motion_in_fragmented_scene_still_fails_gate():
 @pytest.mark.parametrize("change, expected", [
     ("identical", 1.0), ("reversed", 29 / 47),
     ("deleted", 20 / 47), ("static", 20 / 47),
-    ("non_overlapping", 20 / 29),
+    ("non_overlapping", 38 / 47),
 ])
 def test_edit_temporal_gate_with_one_and_two_frame_fragments(tmp_path, change, expected):
     scene = _fragmented_scene()
-    if change == "non_overlapping":
-        scene.elements = [el for el in scene.elements if el.id not in {"moving1", "moving2"}]
     out = scene.model_copy(deep=True)
     if change == "reversed":
         keys = out.element("moving0").tracks["x"].keys
@@ -82,10 +83,18 @@ def test_edit_temporal_gate_with_one_and_two_frame_fragments(tmp_path, change, e
         el.visible = (20, 29)
         for key in el.tracks["x"].keys:
             key.t += 10
-    report = verify(out, tmp_path, reference=scene)
+    frames = list(range(out.frames))
+    probes = RenderResult(frames_dir=tmp_path, frames=frames, hashes=[],
+                          bboxes={el.id: [list(element_bbox(el, f)) for f in frames] for el in out.elements})
+    report = verify(out, tmp_path, render_result=probes, reference=scene)
     assert report.temporal == pytest.approx(expected)
     assert report.temporal == similarity.temporal_similarity_by_id(centroid_tracks(scene), centroid_tracks(out))
-    if change != "identical":
+    assert report.passed
+    assert _passed(report) is (change == "identical")
+    if change == "non_overlapping":
+        assert report.temporal > 0.7  # The average passes; the significant element floor rejects it.
+        assert report.temporal_worst_element == "moving0" and report.temporal_worst == 0.0
+    elif change != "identical":
         assert report.temporal < 0.7
 
 
