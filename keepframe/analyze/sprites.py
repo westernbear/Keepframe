@@ -3,6 +3,7 @@ import math
 from itertools import combinations
 import cv2, numpy as np
 from ..ir.tracks import affine_matrix, decompose_affine
+from .background import opacity_against_plate
 from .regions import Region
 from .tracking import ObjectTrack
 
@@ -129,11 +130,7 @@ def estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_r
     px = frame[y0:y1, x0:x1][region.mask].astype(np.float32)
     if plate is not None:
         bg_px = plate[y0:y1, x0:x1][region.mask].astype(np.float32)
-        c = np.array(canon_color, np.float32) - bg_px
-        n = np.sum(c * c, axis=1)
-        valid = n > 1e-6
-        a = np.sum((px - bg_px) * c, axis=1)[valid] / n[valid]
-        return float(np.clip(np.median(a), 0.0, 1.0)) if len(a) else 1.0
+        return opacity_against_plate(px, bg_px, canon_color)
     c = np.array(canon_color, np.float32) - np.array(bg_rgb, np.float32)
     n = float(np.dot(c, c))
     if n < 1e-6 or len(px) == 0:

@@ -15,33 +15,34 @@ def cpu_threads():
     torch.set_num_threads(previous)
 
 
-@pytest.mark.parametrize("use_plate", [False, True])
 @pytest.mark.parametrize("scale,checkpoint", [(1.0, False), (0.5, True)])
-def test_refine_corrects_three_pixel_x_error(use_plate, scale, checkpoint):
+def test_refine_corrects_three_pixel_x_error(scale, checkpoint):
     h, w = 48, 80
     ramp = np.linspace((10, 30, 50), (180, 120, 80), w).astype(np.uint8)
     plate = np.repeat(ramp[None], h, axis=0)
     bg = tuple(int(v) for v in plate.mean((0, 1)))
-    if not use_plate:
-        plate[:] = bg
-    frames = np.repeat(plate[None], 3, axis=0)
     texture = np.full((16, 16, 4), 255, np.uint8)
     expected_x = np.array([28.0, 36.0, 44.0])
-    for f, x in enumerate(expected_x.astype(int)):
-        frames[f, 16:32, x - 8:x + 8] = 255
     raw = np.array([[x + 3, 24, 1, 1, 0, 0, 0, 1] for x in expected_x], dtype=float)
-    kwargs = {"plate": plate} if use_plate else {}
-    out = refine.refine_affine(frames, bg, {"s": raw}, {"s": texture}, {"s": (0.5, 0.5)}, {"s": 1},
-                               iters=80, scale=scale, device="cpu", checkpoint=checkpoint, **kwargs)["s"]
-    error = np.max(np.abs(out[:, 0] - expected_x))
+    errors = {}
+    for use_plate in (False, True):
+        background = plate if use_plate else np.full_like(plate, bg)
+        frames = np.repeat(background[None], 3, axis=0)
+        for f, x in enumerate(expected_x.astype(int)):
+            frames[f, 16:32, x - 8:x + 8] = 255
+        kwargs = {"plate": plate} if use_plate else {}
+        out = refine.refine_affine(frames, bg, {"s": raw}, {"s": texture}, {"s": (0.5, 0.5)}, {"s": 1},
+                                   iters=80, scale=scale, device="cpu", checkpoint=checkpoint, **kwargs)["s"]
+        errors[use_plate] = np.max(np.abs(out[:, 0] - expected_x))
+        assert np.max(np.abs(out[:, 1] - 24)) < 1.0
+        assert np.array_equal(raw[:, 0], expected_x + 3)
+        assert np.array_equal(out[:, 2:], raw[:, 2:])
     if scale == 1.0:
-        assert error < 1.0
+        assert max(errors.values()) < 1.0
     else:
-        # Downscaled sampling can plateau between grid points; require improvement here.
-        assert error < 3.0
-    assert np.max(np.abs(out[:, 1] - 24)) < 1.0
-    assert np.array_equal(raw[:, 0], expected_x + 3)
-    assert np.array_equal(out[:, 2:], raw[:, 2:])
+        # CPU half-resolution sampling plateaus; plate accuracy must match or beat solid.
+        assert errors[False] < 2.0
+        assert errors[True] <= errors[False]
 
 
 @pytest.mark.parametrize("use_plate", [False, True])

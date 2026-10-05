@@ -109,6 +109,33 @@ def test_smaller_frames_are_passed_at_original_resolution(fake_engine):
     np.testing.assert_array_equal(ocr._ocr.calls[0][0], frame[..., ::-1])
 
 
+@pytest.mark.parametrize("missing", [
+    ("get_crop_img_list",),
+    ("text_cls",),
+    ("text_rec",),
+    ("get_final_res",),
+    ("get_crop_img_list", "text_cls", "text_rec", "get_final_res"),
+])
+def test_missing_staged_api_uses_full_frame_and_warns_once(fake_engine, monkeypatch, caplog, missing):
+    from keepframe.analyze import text
+
+    for name in missing:
+        monkeypatch.delattr(fake_engine, name)
+    monkeypatch.setattr(text, "_warned_ocr_cap_unavailable", False, raising=False)
+    frame = np.full((1080, 1920, 3), (21, 42, 84), np.uint8)
+    for _ in range(2):
+        ocr = RapidOcr(max_side=1280)
+        for _ in range(2):
+            assert ocr(frame) == [("Original text", (240, 120, 880, 240), 0.98)]
+        assert len(ocr._ocr.calls) == 2
+        for bgr, use_cls, use_rec in ocr._ocr.calls:
+            np.testing.assert_array_equal(bgr, frame[..., ::-1])
+            assert use_cls is None and use_rec is None
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "max_side ignored" in warnings[0].getMessage()
+
+
 def test_pipeline_constructs_ocr_with_configured_cap(fake_engine, tmp_path):
     (tmp_path / "stages").mkdir()
     constructed = []

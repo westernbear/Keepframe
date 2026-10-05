@@ -6,7 +6,7 @@ from typing import Protocol
 import cv2, numpy as np
 from ..ir.schema import FontGuess
 from ..log import get
-from .background import foreground_mask, foreground_mask_plate
+from .background import foreground_mask, foreground_mask_plate, opacity_against_plate
 from .device import ocr_cuda, ocr_cuda_expected
 from .fonts import font_candidates, font_family_guess
 
@@ -14,6 +14,7 @@ log = get("keepframe.analyze")
 
 MIN_TEXT_FRAMES = 3
 CONFIDENT_OCR = 0.9
+_warned_ocr_cap_unavailable = False
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
 # DTW copy alignment (Haraguchi et al. 2022), Hi-SAM stroke masks.
@@ -104,9 +105,17 @@ class RapidOcr:
         self._ocr = RapidOCR(**kw)
 
     def __call__(self, frame_rgb: np.ndarray):
+        global _warned_ocr_cap_unavailable
         bgr = frame_rgb[..., ::-1]  # expects BGR
         h, w = bgr.shape[:2]
-        if self.max_side is None or max(h, w) <= self.max_side:
+        capped = self.max_side is not None and max(h, w) > self.max_side
+        if capped and not all(hasattr(self._ocr, name) for name in
+                              ("get_crop_img_list", "text_cls", "text_rec", "get_final_res")):
+            if not _warned_ocr_cap_unavailable:
+                _warned_ocr_cap_unavailable = True
+                log.warning("ocr max_side ignored: RapidOCR staged API unavailable; using full-frame OCR")
+            capped = False
+        if not capped:
             result, _ = self._ocr(bgr)
         else:
             # ponytail: staged RapidOCR 1.x API; use native detection limits once they honor the cap.
@@ -281,11 +290,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
             bg_px = plate[cy0:cy1, cx0:cx1][m].astype(np.float32)
-            local_c = col - bg_px
-            local_n = np.sum(local_c * local_c, axis=1)
-            valid = local_n > 1e-6
-            a = np.sum((px - bg_px) * local_c, axis=1)[valid] / local_n[valid]
-            opacity = float(np.clip(np.median(a), 0, 1)) if len(a) else 1.0
+            opacity = opacity_against_plate(px, bg_px, col)
         raw[f - first_frame] = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / cw, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity]
     if not infer_font:
         return raw, canon, cf, None, None

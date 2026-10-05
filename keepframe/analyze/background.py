@@ -53,3 +53,12 @@ def foreground_mask_plate(frame: np.ndarray, plate: np.ndarray, thr: float = 12.
     if plate_lab is None:
         plate_lab = rgb_to_lab(plate)
     return np.linalg.norm(rgb_to_lab(frame) - plate_lab, axis=2) > thr
+
+
+def opacity_against_plate(pixels: np.ndarray, plate_pixels: np.ndarray, foreground_rgb) -> float:
+    """Project matched float32 RGB pixels onto their local foreground contrast."""
+    c = np.asarray(foreground_rgb, np.float32) - plate_pixels
+    n = np.sum(c * c, axis=1)
+    valid = n > 1e-6
+    a = np.sum((pixels - plate_pixels) * c, axis=1)[valid] / n[valid]
+    return float(np.clip(np.median(a), 0.0, 1.0)) if len(a) else 1.0
