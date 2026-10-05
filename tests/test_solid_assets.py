@@ -93,14 +93,89 @@ def test_generation_failures_fall_back(tmp_path, mode, code):
     assert messages and all(code in m for m in messages)
 
 
-def test_missing_generator_and_per_solid_generation_cap(tmp_path, monkeypatch):
+def test_missing_generator_and_analysis_generation_cap(tmp_path, monkeypatch):
     monkeypatch.delenv("KEEPFRAME_ASSET_API_URL", raising=False)
-    scene = pending_scene(tmp_path, count=3)
-    assert generate_solid_assets(scene, tmp_path, None) == ["3D 후보 3개: 생성기 미설정"]
+    scene = pending_scene(tmp_path, count=5)
+    assert generate_solid_assets(scene, tmp_path, None) == ["3D 후보 5개: 생성기 미설정"]
+    # Rank by canonical area * visible frames, rather than element order or area alone.
+    scene.elements[3].canonical.width = 64
+    scene.elements[4].canonical.width = 96
+    scene.elements[4].visible = (0, 1)
     with asset_server() as (url, calls):
-        generate_solid_assets(scene, tmp_path, AssetClient(url, timeout=310))
-        assert len(calls) == 3
-        assert all(e.kind == "3d" for e in scene.elements)
+        messages = generate_solid_assets(scene, tmp_path, AssetClient(url, timeout=310))
+        assert len(calls) == 2
+        assert [c["size"]["width"] for c in calls] == [64, 32]
+        assert [e.id for e in scene.elements if e.kind == "3d"] == ["e1", "e4"]
+        pending = [e for e in scene.elements if e.pending_asset == "3d"]
+        assert len(pending) == 3 and all(e.kind == "sprite" for e in pending)
+        assert messages.count("3D 생성 상한 도달: 3개는 검수의 '3D 생성' 버튼으로 생성하세요") == 1
+
+
+@pytest.mark.parametrize("reused, requests", [(range(5), 0), ([1, 3, 4], 2)])
+def test_reused_glbs_do_not_spend_generation_budget(tmp_path, reused, requests):
+    from keepframe.analyze.solid_assets import _record_model, _signature
+    from keepframe.ir.tracks import element_bbox
+
+    scene = pending_scene(tmp_path, count=5)
+    for i in reused:
+        el = scene.elements[i]
+        model = f"assets/{el.id}.model1.glb"
+        (tmp_path / model).write_bytes(_triangle_glb())
+        _record_model(tmp_path, model, _signature(el.visible[0], element_bbox(el, el.visible[0])))
+    with asset_server() as (url, calls):
+        messages = generate_solid_assets(scene, tmp_path, AssetClient(url))
+        assert len(calls) == requests
+    assert all(e.kind == "3d" and e.pending_asset is None for e in scene.elements)
+    assert not any("상한" in m for m in messages)
+
+
+def test_quota_skipped_solids_keep_whole_stills(tmp_path, monkeypatch):
+    from keepframe.analyze.solid_assets import finish_solid_assets
+
+    scene = pending_scene(tmp_path, count=5)
+    (tmp_path / "stages").mkdir()
+    ids, props = {}, {}
+    for i, el in enumerate(scene.elements):
+        key = f"solid{i + 1}"
+        ids[key] = el.id
+        raw = np.full((12, 11), np.nan)
+        raw[:, :8] = (20 + i * 50, 40, 1, 1, 0, 0, 0, 1)
+        props[key] = dict(first=0, raw=raw, canon=np.zeros((24, 32, 4), np.uint8), fragments={})
+    # Unattempted solids must remain whole stills even if fragments score better.
+    monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
+                        lambda _f, _b, _p, glb: {"fragments": 0.01, "still": 0.1, "model": 0.0 if glb else None})
+    messages = []
+    with asset_server() as (url, calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        reports = finish_solid_assets(scene, tmp_path, np.zeros((12, 80, 100, 3), np.uint8),
+                                      props, ids, {}, messages)
+        assert len(calls) == 2
+    assert len(scene.elements) == 5
+    assert sum(e.kind == "3d" for e in scene.elements) == 2
+    assert sum(e.kind == "sprite" and e.pending_asset == "3d" for e in scene.elements) == 3
+    assert [r["choice"] for r in reports] == ["model", "model", "still", "still", "still"]
+    assert messages.count("3D 생성 상한 도달: 3개는 검수의 '3D 생성' 버튼으로 생성하세요") == 1
+
+
+def test_explicit_edit_has_its_own_two_request_job_budget(tmp_path, monkeypatch):
+    from keepframe.edit.agent import edit
+    from keepframe.ir.store import init_project
+    from keepframe.verify.verifier import VerifyReport
+
+    sd = tmp_path / "scenes/s1"
+    scene = pending_scene(sd, count=5)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(schema_ok=True, passed=False))
+    with asset_server() as (url, calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        generate_solid_assets(scene, sd, AssetClient(url))
+        assert len(calls) == 2 and scene.element("e3").pending_asset == "3d"
+        init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [100, 80]}, scene)
+        for _ in range(2):
+            calls.clear()
+            result = edit(tmp_path, "s1", "3D 모델로 바꿔줘", element="e3", confirm=True)
+            assert result.status == "failed" and len(calls) == 2
 
 
 @pytest.mark.parametrize("errors, expected", [
@@ -321,11 +396,19 @@ def test_regenerated_fragment_model_survives_repeated_reruns(tmp_path, monkeypat
         assert calls == []
 
 
-def test_multiscene_analysis_generates_each_solid(tmp_path, monkeypatch):
+def test_multiscene_analysis_shares_generation_cap(tmp_path, monkeypatch):
     from keepframe.analyze.pipeline import AnalyzeOptions, analyze
     from keepframe.ir.synth import make_spinning_sphere_video
 
-    frames = np.tile(make_spinning_sphere_video(frames=12), (3, 1, 1, 1))
+    sphere = make_spinning_sphere_video(frames=12)
+    clips = []
+    for scale in (0.5, 1, 0.75):
+        clip = np.full_like(sphere, (16, 20, 24))
+        for f, frame in enumerate(sphere):
+            small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+            clip[f, :small.shape[0], :small.shape[1]] = small
+        clips.append(clip)
+    frames = np.concatenate(clips)
     video = tmp_path / "spheres.mp4"
     writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), 30, (240, 180))
     assert writer.isOpened()
@@ -341,7 +424,10 @@ def test_multiscene_analysis_generates_each_solid(tmp_path, monkeypatch):
         analyze(video, 0, 35, tmp_path / "project", AnalyzeOptions(
             bg_override="#101418", ocr=False, refine=False, use_ecc=False),
             scenes=[{"id": f"s{i + 1}", "frames": [12 * i, 12 * i + 11]} for i in range(3)])
-        assert len(calls) == 3
+        assert len(calls) == 2
+        assert calls[0]["size"]["width"] > calls[1]["size"]["width"] > 48
+    report = json.loads((tmp_path / "project/scenes/s1/report.json").read_text())
+    assert "3D 생성 상한 도달: 1개는 검수의 '3D 생성' 버튼으로 생성하세요" in report["messages"]
 
 
 def test_reanalysis_generates_first_model_then_reuses_it(tmp_path, monkeypatch):
@@ -394,6 +480,7 @@ def test_solid_reference_edit_uses_whole_crop_and_preserves_current_state(tmp_pa
     target.canonical.color = "#abcdef"
     target.visible = (1, 10)
     target.provenance = "manual"
+    target.tracks["opacity"] = Track(keys=[Keyframe(t=0, v=0.73)])
     before = {e.id: e.model_dump() for e in scene.elements}
     init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
     scores.update(fragments=0.01 if choice == "fragments" else 0.2, model=0.0 if choice == "model" else 0.8)
@@ -416,10 +503,19 @@ def test_solid_reference_edit_uses_whole_crop_and_preserves_current_state(tmp_pa
     el = edited.element(target.id) if initial == "fragments" or choice != "fragments" else next(e for e in edited.elements if e.pending_asset)
     assert (el.role, el.label, el.caption, el.confidence) == ("primary", "manual label", "manual caption", 0.73)
     assert el.canonical.color == "#abcdef"
-    if choice == "model":
-        assert el.kind == "3d"
+    if choice == "model" or (initial == "fragments" and choice == "still"):
+        assert el.kind == ("3d" if choice == "model" else "sprite")
+        assert el.pending_asset == (None if choice == "model" else "3d")
         if initial == "fragments":
             assert element_bbox(el, 0) == pytest.approx(p["boxes"][0], abs=0.5)
+            assert el.visible == (0, 11)
+            assert el.canonical.texture == f"assets/{ids[key]}.png"
+            assert (el.canonical.height, el.canonical.width) == p["canon"].shape[:2]
+            assert el.tracks["opacity"] == target.tracks["opacity"]
+            assert el.provenance == "manual"
+            related = {ids[key], *(ids[k] for k in p["fragments"])}
+            assert {e.id for e in edited.elements} & related == {target.id}
+            np.testing.assert_allclose(np.load(sd / el.raw)["raw"], p["raw"], equal_nan=True)
         else:
             assert el.visible == (1, 10) and el.tracks == target.tracks
     elif initial == "fragments" or choice == "still":
@@ -465,7 +561,7 @@ def test_model_reuse_follows_solid_signature_across_element_ids(tmp_path):
         assert all(e.canonical.model == old_paths[e.tracks["x"].keys[0].v] for e in rebuilt.elements)
 
 
-def test_generation_retries_each_solid_independently(tmp_path):
+def test_generation_retries_share_the_analysis_cap(tmp_path):
     from keepframe.assets import AssetAPIError, AssetResponse
 
     scene = pending_scene(tmp_path, count=3)
@@ -478,9 +574,11 @@ def test_generation_retries_each_solid_independently(tmp_path):
             return AssetResponse(mime="model/gltf-binary", data=_triangle_glb())
     client = Client()
     messages = generate_solid_assets(scene, tmp_path, client)
-    assert client.calls == 6
-    assert all(e.kind == "3d" for e in scene.elements)
-    assert sum("재시도" in m for m in messages) == 3
+    assert client.calls == 2
+    assert scene.elements[0].kind == "3d"
+    assert all(e.kind == "sprite" and e.pending_asset == "3d" for e in scene.elements[1:])
+    assert sum("재시도" in m for m in messages) == 1
+    assert "3D 생성 상한 도달: 2개는 검수의 '3D 생성' 버튼으로 생성하세요" in messages
 
 
 def test_changed_signature_never_reuses_model_for_same_element_id(tmp_path):

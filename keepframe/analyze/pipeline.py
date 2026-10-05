@@ -268,9 +268,10 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
 
 
 def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None, captioner=None,
-            props=None, ids=None, generate_3d=True) -> Scene:
+            props=None, ids=None, generate_3d=True, generation_skipped=None) -> Scene:
     from .solid_assets import finish_solid_assets
-    solids_report = finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=generate_3d, previous=previous) if props is not None else []
+    solids_report = finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=generate_3d,
+                                        previous=previous, generation_skipped=generation_skipped) if props is not None else []
     report_stage("semantics")
     assign_roles(scene.elements)
     if captioner is not None:
@@ -378,6 +379,8 @@ def analyze_scene_frames(
     options: AnalyzeOptions | None = None,
     ocr: Ocr | None = None,
     captioner=None,
+    *,
+    _deferred_finish=None,
 ) -> Scene:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
@@ -418,10 +421,15 @@ def analyze_scene_frames(
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
-    scene = _finish(sd, scene, frames, raws, messages, captioner=captioner, props=props, ids=ids,
-                    generate_3d=opts.generate_3d, previous=previous)
+    finish_args = dict(sd=sd, scene=scene, frames=frames, raws=raws, messages=messages, captioner=captioner,
+                       props=props, ids=ids, generate_3d=opts.generate_3d, previous=previous)
+    if _deferred_finish is None:
+        scene = _finish(**finish_args)
+    else:
+        _deferred_finish.append(finish_args)
     (sd / "stages" / "options.json").write_text(json.dumps(asdict(opts)))
-    log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
+    if _deferred_finish is None:
+        log.info("pipeline done scene=%s elements=%s frames=%s", scene.id, len(scene.elements), n)
     return scene
 
 
@@ -505,17 +513,24 @@ def analyze(
     by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
     analyzed: list[Scene] = []
     stored: list[tuple[Scene, tuple[int, int], dict | None]] = []
+    deferred_finish = []
     for index, item in enumerate(layout):
         scene_id = str(item.get("id") or f"s{index + 1}")
         first, last = int(item["frames"][0]), int(item["frames"][1])
         local_first, local_last = first - start, last - start
         if local_first < 0 or local_last >= len(frames) or local_first > local_last:
             raise ValueError("scene range is outside analyzed frames")
-        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr, captioner=captioner)
+        scene = analyze_scene_frames(frames[local_first : local_last + 1], fps, out_root, scene_id, opts, ocr,
+                                     captioner=captioner, _deferred_finish=deferred_finish)
         analyzed.append(scene)
         next_id = str(layout[index + 1].get("id") or f"s{index + 2}") if index + 1 < len(layout) else None
         transition = by_pair.get((scene_id, next_id)) if next_id else None
         stored.append((scene, (first, last), transition))
+    from .solid_assets import prepare_solid_assets
+    skipped = prepare_solid_assets(deferred_finish, generate=opts.generate_3d)
+    for job, pending in zip(deferred_finish, skipped):
+        finished = _finish(**job, generation_skipped=pending)
+        log.info("pipeline done scene=%s elements=%s frames=%s", finished.id, len(finished.elements), finished.frames)
     height, width = frames.shape[1:3]
     links = link_adjacent_scenes(analyzed, out_root)
     analysis_files = {scene.id: snapshot_from_stages(_scene_dir(out_root, scene.id), scene) for scene in analyzed}

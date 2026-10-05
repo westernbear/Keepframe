@@ -115,13 +115,24 @@ def _render_failure(messages, eid, model_path, errors):
 
 
 def generate_solid_assets(scene: Scene, sd: Path, client, *, signatures=None) -> list[str]:
-    """Reuse models by solid signature; allow at most two attempts per solid."""
-    sd = Path(sd)
-    candidates = [e for e in scene.elements if e.pending_asset == "3d"]
+    """Reuse models by signature; cap total requests and process largest solids first."""
     messages = []
-    missing = 0
-    for el in candidates:
-        signature = (signatures or {}).get(el.id) or _signature(el.visible[0], element_bbox(el, el.visible[0]))
+    _generate_solid_asset_jobs([(scene, Path(sd), signatures or {}, messages)], client)
+    return messages
+
+
+def _generate_solid_asset_jobs(jobs, client):
+    """One request budget across all scenes, including retries; reuse costs nothing."""
+    candidates = [(el, sd, signatures, messages, i)
+                  for i, (scene, sd, signatures, messages) in enumerate(jobs)
+                  for el in scene.elements if el.pending_asset == "3d"]
+    candidates.sort(key=lambda row: row[0].canonical.width * row[0].canonical.height *
+                    (row[0].visible[1] - row[0].visible[0] + 1), reverse=True)
+    missing = [0 for _ in jobs]
+    skipped = [set() for _ in jobs]
+    requests = 0
+    for el, sd, signatures, messages, i in candidates:
+        signature = signatures.get(el.id) or _signature(el.visible[0], element_bbox(el, el.visible[0]))
         try:
             models = sorted((p for p in (sd / "assets").glob("*.model[0-9]*.glb")
                              if _model_signature(sd, f"assets/{p.name}") == signature),
@@ -133,15 +144,21 @@ def generate_solid_assets(scene: Scene, sd: Path, client, *, signatures=None) ->
                 validate_glb(path.read_bytes())
                 messages.append(f"3D 재사용 {el.id}: {path.name}")
             elif client is None:
-                missing += 1
+                missing[i] += 1
+                continue
+            elif requests >= ASSET_GEN_CAP:
+                skipped[i].add(el.id)
+                el.kind, el.pending_asset, el.canonical.model = "sprite", "3d", None
                 continue
             else:
-                for attempt in range(ASSET_GEN_CAP):
+                input_image = (sd / el.canonical.texture).read_bytes()
+                while requests < ASSET_GEN_CAP:
                     try:
+                        requests += 1
                         response = client.request(
                             task="generate", kind="3d",
                             prompt="Reconstruct this reference object as a 3D model. Preserve its shape, colours and texture.",
-                            input_image=(sd / el.canonical.texture).read_bytes(),
+                            input_image=input_image,
                             size={"width": round(el.canonical.width), "height": round(el.canonical.height)},
                         )
                         if response.mime != "model/gltf-binary":
@@ -155,7 +172,7 @@ def generate_solid_assets(scene: Scene, sd: Path, client, *, signatures=None) ->
                         messages.append(f"3D 생성 {el.id}: {path.name}")
                         break
                     except Exception as exc:
-                        if attempt + 1 == ASSET_GEN_CAP:
+                        if requests >= ASSET_GEN_CAP:
                             raise
                         code = exc.code if isinstance(exc, AssetAPIError) else type(exc).__name__
                         messages.append(f"3D 생성 {el.id} 실패: {code}; 재시도")
@@ -169,37 +186,60 @@ def generate_solid_assets(scene: Scene, sd: Path, client, *, signatures=None) ->
             el.kind = "sprite"
             el.pending_asset = "3d"
             el.canonical.model = None
-    if missing:
-        reason = "생성 대기" if os.environ.get("KEEPFRAME_ASSET_API_URL") else "생성기 미설정"
-        messages.append(f"3D 후보 {missing}개: {reason}")
-    return messages
+    for i, (_, _, _, messages) in enumerate(jobs):
+        if missing[i]:
+            reason = "생성 대기" if os.environ.get("KEEPFRAME_ASSET_API_URL") else "생성기 미설정"
+            messages.append(f"3D 후보 {missing[i]}개: {reason}")
+        if skipped[i]:
+            messages.append(f"3D 생성 상한 도달: {len(skipped[i])}개는 검수의 '3D 생성' 버튼으로 생성하세요")
+    return skipped
 
 
-def finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=True, previous=None):
+def prepare_solid_assets(jobs, generate=True):
+    """Prepare measured scenes together so generation priority is analysis-wide."""
+    generation_jobs, indices = [], []
+    for i, job in enumerate(jobs):
+        scene, sd, props, ids, previous, messages = (job[k] for k in ("scene", "sd", "props", "ids", "previous", "messages"))
+        solids = {k: p for k, p in props.items() if not k.startswith("_") and "fragments" in p}
+        if not solids:
+            continue
+        if previous is not None:
+            for key, p in solids.items():
+                if not any(e.id == ids[key] for e in scene.elements):
+                    continue
+                manual = next((e for e in previous.elements if e.provenance == "manual" and e.canonical.model and
+                               _model_signature(sd, e.canonical.model) == _props_signature(p)), None)
+                if manual is not None:
+                    scene.element(ids[key]).canonical.model = manual.canonical.model
+                    scene.element(ids[key]).provenance = "manual"
+        generation_jobs.append((scene, sd, {ids[k]: _props_signature(p) for k, p in solids.items()}, messages))
+        indices.append(i)
+    client = None
+    if generation_jobs and generate and os.environ.get("KEEPFRAME_ASSET_API_URL"):
+        try:
+            client = AssetClient(timeout=310)
+        except AssetAPIError as exc:
+            for _, _, _, messages in generation_jobs:
+                messages.append(f"3D 생성기 실패: {exc.code}")
+    skipped = [set() for _ in jobs]
+    for i, pending in zip(indices, _generate_solid_asset_jobs(generation_jobs, client)):
+        skipped[i] = pending
+    return skipped
+
+
+def finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=True, previous=None,
+                        generation_skipped=None):
     """Apply the fidelity decision before semantics/constraints see the final elements."""
     from .pipeline import _elements_from_props
 
     solids = {k: p for k, p in props.items() if not k.startswith("_") and "fragments" in p}
     if not solids:
         return []
-    if previous is not None:
-        for key, p in solids.items():
-            if not any(e.id == ids[key] for e in scene.elements):
-                continue
-            manual = next((e for e in previous.elements if e.provenance == "manual" and e.canonical.model and
-                           _model_signature(sd, e.canonical.model) == _props_signature(p)), None)
-            if manual is not None:
-                scene.element(ids[key]).canonical.model = manual.canonical.model
-                scene.element(ids[key]).provenance = "manual"
-    client = None
-    if generate and os.environ.get("KEEPFRAME_ASSET_API_URL"):
-        try:
-            client = AssetClient(timeout=310)
-        except AssetAPIError as exc:
-            messages.append(f"3D 생성기 실패: {exc.code}")
     from ..progress import report_stage
     report_stage("keyframes", f"3D 생성/충실도 {len(solids)}개")
-    messages.extend(generate_solid_assets(scene, sd, client, signatures={ids[k]: _props_signature(p) for k, p in solids.items()}))
+    if generation_skipped is None:
+        generation_skipped = prepare_solid_assets([dict(scene=scene, sd=sd, props=props, ids=ids,
+                                                       previous=previous, messages=messages)], generate)[0]
     plate = _plate(scene, sd)
     reports = []
     for key, p in solids.items():
@@ -211,7 +251,7 @@ def finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=
         model_path = sd / el.canonical.model if el.canonical.model else None
         errors = solid_errors(frames, plate, {**p, "fps": scene.fps}, model_path)
         _render_failure(messages, eid, model_path, errors)
-        choice = choose_solid(errors)
+        choice = "still" if eid in generation_skipped else choose_solid(errors)
         reports.append({"element": eid, **errors, "choice": choice})
         messages.append(_fidelity_message(eid, errors, choice))
         if choice == "still":
@@ -245,7 +285,7 @@ def guard_reference_edit(edited, source_dir, candidate_dir, eid, previous=None):
     choice = choose_solid(errors)
     _record_model(candidate_dir, model.canonical.model, _props_signature(p))
     related = {ids.get(key), *(ids.get(k) for k in p["fragments"])}
-    if choice == "model":
+    if choice in {"model", "still"}:
         if ids.get(key) != eid:
             # Replace fragment geometry with the whole solid, keeping the current element's metadata.
             raw = fill_gaps(p["raw"])
@@ -261,8 +301,8 @@ def guard_reference_edit(edited, source_dir, candidate_dir, eid, previous=None):
             from ..ir.schema import PROPS
             np.savez_compressed(candidate_dir / model.raw, raw=raw, first=first, cols=np.array(PROPS[:raw.shape[1]]))
         edited.elements = [e for e in edited.elements if e.id not in related or e.id == eid]
-    elif choice == "still":
-        model.kind, model.pending_asset = "sprite", "3d"
+        if choice == "still":
+            model.kind, model.pending_asset = "sprite", "3d"
     else:
         if eid != ids[key]:
             model.kind, model.pending_asset = "sprite", "3d"

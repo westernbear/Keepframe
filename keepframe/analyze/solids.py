@@ -46,6 +46,7 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
     """Track 5px-dilated components, retaining only cropped foreground support."""
     kernel = np.ones((11, 11), np.uint8)  # radius 5px
     floor = max(min_life, int(np.ceil(0.30 * len(frames))))
+    min_area = max(1, int(np.ceil(0.001 * frames.shape[1] * frames.shape[2])))
     candidates = {}
     serial = 0
     previous = []
@@ -56,6 +57,8 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
         components = []
         for label in range(1, count):
             x, y, w, h, area = (int(v) for v in stats[label])
+            if area < min_area:
+                continue  # Exclude tiny dilated components before allocating masks or pairwise tracking.
             components.append(((x, y, x + w, y + h), labels[y:y + h, x:x + w] == label, area))
         pairs = []
         for i, (_, abox, a, aarea) in enumerate(previous):

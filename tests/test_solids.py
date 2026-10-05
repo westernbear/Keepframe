@@ -156,6 +156,36 @@ def test_thirty_moving_blobs_at_720p_finish_under_ten_seconds():
     assert len(pickle.dumps(solids)) < 2_000_000
 
 
+def test_two_thousand_tiny_components_are_skipped_before_tracking(monkeypatch):
+    import time
+    import keepframe.analyze.solids as module
+
+    frames = np.zeros((12, 720, 1280, 3), np.uint8)
+    sphere = make_spinning_sphere_video(frames=12)
+    frames[:, :180, 950:1190] = sphere
+    fg = np.zeros(frames.shape[:3], bool)
+    fg[:, :180, 950:1190] = np.any(sphere != (16, 20, 24), axis=-1)
+    for row in range(40):
+        for col in range(50):
+            y, x = 200 + row * 12, 10 + col * 12
+            fg[:, y, x] = True
+    count, *_ = cv2.connectedComponentsWithStats(cv2.dilate(fg[0].astype(np.uint8), np.ones((11, 11), np.uint8)))
+    assert count == 2002  # Background, 2,000 isolated noise components, and the sphere.
+    allocations = 0
+    def candidate():
+        nonlocal allocations
+        allocations += 1
+        assert allocations == 1, "tiny components entered the tracker"
+        return Solid()
+    monkeypatch.setattr(module, "Solid", candidate)
+    started = time.perf_counter()
+    solids = module.find_solids(frames, fg, [], np.zeros_like(fg))
+    elapsed = time.perf_counter() - started
+    assert elapsed < 10, f"noisy frame tracking took {elapsed:.3f}s"
+    assert len(solids) == 1 and len(solids[0].frames) == 12
+    assert all(box[0] >= 950 for box, _ in solids[0].frames.values())
+
+
 def test_legacy_solid_cache_is_rewritten_with_cropped_masks(tmp_path):
     import pickle
     from keepframe.analyze.pipeline import _pk
@@ -256,7 +286,8 @@ def _legacy_find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_mem
 
 @pytest.fixture(autouse=True)
 def compare_legacy_tracking(request, monkeypatch):
-    if request.node.name == "test_thirty_moving_blobs_at_720p_finish_under_ten_seconds":
+    if request.node.name in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
+                             "test_two_thousand_tiny_components_are_skipped_before_tracking"}:
         return
     from keepframe.analyze.solids import solid_props
     optimized = find_solids
