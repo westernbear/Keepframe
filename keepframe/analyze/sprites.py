@@ -3,6 +3,7 @@ import math
 from itertools import combinations
 import cv2, numpy as np
 from ..ir.tracks import affine_matrix, decompose_affine
+from .background import opacity_against_plate
 from .regions import Region
 from .tracking import ObjectTrack
 
@@ -87,10 +88,17 @@ def _refine_ecc(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.ndarra
     Tc = np.array([[1.0, 0.0, -x0], [0.0, 1.0, -y0], [0.0, 0.0, 1.0]])
     M_tex_to_crop = Tc @ affine_matrix(init) @ L
     img = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    scale = min(1.0, 384 / max(*img.shape, *tpl.shape))
     try:
+        if scale < 1.0:
+            # ponytail: one 384px ECC level; upgrade to coarse-to-fine fitting if quality gates require it.
+            img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            tpl = cv2.resize(tpl, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 60, 1e-5)
         init_crop_to_tex = np.linalg.inv(M_tex_to_crop)[:2].astype(np.float32)
+        init_crop_to_tex[:, 2] *= scale
         _, w_crop_to_tex = cv2.findTransformECC(img, tpl, init_crop_to_tex, cv2.MOTION_AFFINE, crit, None, 5)
+        w_crop_to_tex[:, 2] /= scale
         M2 = np.linalg.inv(Tc) @ np.linalg.inv(np.vstack([w_crop_to_tex, [0, 0, 1]]))
     except cv2.error:
         return init
@@ -116,9 +124,13 @@ def _refine_ecc_xy(frame: np.ndarray, region: Region, L: np.ndarray, tpl: np.nda
     return props
 
 
-def estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple) -> float:
+def estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple,
+                     plate: np.ndarray | None = None) -> float:
     x0, y0, x1, y1 = region.bbox
     px = frame[y0:y1, x0:x1][region.mask].astype(np.float32)
+    if plate is not None:
+        bg_px = plate[y0:y1, x0:x1][region.mask].astype(np.float32)
+        return opacity_against_plate(px, bg_px, canon_color)
     c = np.array(canon_color, np.float32) - np.array(bg_rgb, np.float32)
     n = float(np.dot(c, c))
     if n < 1e-6 or len(px) == 0:
@@ -152,7 +164,7 @@ def z_order(tracks: list[ObjectTrack], frames: np.ndarray, bg_rgb: tuple) -> dic
 
 
 def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int,
-                 use_ecc: bool = True) -> tuple[np.ndarray, np.ndarray, int]:
+                 use_ecc: bool = True, plate: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, int]:
     canon, cf = canonical_texture(track, frames)
     areas = [r.area for r in track.regions.values()]
     med_area = float(np.median(areas))
@@ -179,6 +191,6 @@ def sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames
             if prev_rot is not None:
                 p["rot"] = prev_rot + ((p["rot"] - prev_rot + 90) % 180 - 90)
         prev_rot = p["rot"]
-        p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb)
+        p["opacity"] = estimate_opacity(frames[f], r, canon_color, bg_rgb, plate=plate)
         raw[f - first_frame] = [p[c] for c in RAW_COLS]
     return raw, canon, cf

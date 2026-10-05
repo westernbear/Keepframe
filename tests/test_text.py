@@ -51,7 +51,8 @@ def test_rapidocr_passes_cuda_flags_when_ep_available(monkeypatch):
     fake.RapidOCR = FakeRapid
     monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", fake)
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: True)
-    RapidOcr()
+    ocr = RapidOcr()
+    assert ocr.workers == 1
     assert seen == dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
 
 
@@ -85,7 +86,7 @@ def test_rapidocr_stays_cpu_without_cuda_ep(monkeypatch):
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda", lambda: False)
     monkeypatch.setattr("keepframe.analyze.text.ocr_cuda_expected", lambda: False)
     RapidOcr()
-    assert seen == {}
+    assert seen == dict(intra_op_num_threads=1, inter_op_num_threads=1)
 
 
 @pytest.mark.ocr

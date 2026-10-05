@@ -53,6 +53,17 @@ def _region(frame_idx: int, frame: np.ndarray, comp_mask: np.ndarray, label: int
                   centroid=(float(xs.mean()), float(ys.mean())), mask=comp_mask[y0:y1, x0:x1].copy())
 
 
+def _region_crop(frame_idx: int, frame: np.ndarray, sub: np.ndarray, x0: int, y0: int, label: int) -> Region:
+    ys, xs = np.nonzero(sub)
+    window = frame[y0:y0 + sub.shape[0], x0:x0 + sub.shape[1]]
+    return Region(frame=frame_idx, label=label, color=tuple(float(v) for v in window[sub].mean(0)),
+                  bbox=(x0 + int(xs.min()), y0 + int(ys.min()), x0 + int(xs.max()) + 1, y0 + int(ys.max()) + 1),
+                  area=int(sub.sum()),
+                  # Average global integer coordinates to preserve the full-frame mean's exact rounding.
+                  centroid=(float((xs + x0).mean()), float((ys + y0).mean())),
+                  mask=sub[ys.min():ys.max() + 1, xs.min():xs.max() + 1].copy())
+
+
 def extract_regions(frame_idx: int, frame: np.ndarray, fg_mask: np.ndarray, palette_lab: np.ndarray, min_area: int = 30,
                     exclude_mask: np.ndarray | None = None,
                     overrides: list[tuple[np.ndarray, int]] | None = None) -> list[Region]:
@@ -68,8 +79,9 @@ def extract_regions(frame_idx: int, frame: np.ndarray, fg_mask: np.ndarray, pale
     for lab in np.unique(labels[labels >= 0]):
         n, comp, stats, _ = cv2.connectedComponentsWithStats((labels == lab).astype(np.uint8), connectivity=8)
         for c in range(1, n):
-            if stats[c, cv2.CC_STAT_AREA] >= min_area:
-                out.append(_region(frame_idx, frame, comp == c, int(lab)))
+            x, y, w, h, area = (int(v) for v in stats[c])
+            if area >= min_area:
+                out.append(_region_crop(frame_idx, frame, comp[y:y + h, x:x + w] == c, x, y, int(lab)))
     return out
 
 

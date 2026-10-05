@@ -98,7 +98,7 @@ def test_text_props_scores_tight_crop_and_keeps_measured_size(monkeypatch, candi
     assert font.family_guess == "sans-serif"
     assert (font.size_px, font.weight, cf, color) == (16.0, 400, 0, "#ffffff")
     assert canon.shape == (20, 30, 4)
-    np.testing.assert_array_equal(raw[0], [20, 13, 1, 1, 0, 0, 0, 1])
+    np.testing.assert_array_equal(raw[0], [20, 13, 1, 1, 0, 0, 0, 1, 1])
 
 
 def test_hangul_candidates_use_own_faces_and_distinct_renders():

@@ -112,7 +112,8 @@ def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
 
 def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
                   anchors: dict[str, tuple[float, float]], z: dict[str, int], iters: int = 200, lr: float = 0.02,
-                  scale: float = 0.5, device: str | None = None, checkpoint: bool | None = None) -> dict[str, np.ndarray]:
+                  scale: float = 0.5, device: str | None = None, checkpoint: bool | None = None,
+                  plate: np.ndarray | None = None) -> dict[str, np.ndarray]:
     if not torch_available():
         raise RuntimeError("torch is required for refine_affine (pip install 'keepframe[gpu]')")
     import torch
@@ -120,7 +121,7 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
     N, H, W = frames.shape[:3]
     h, w = int(round(H * scale)), int(round(W * scale))
     work = _downscale_cpu(frames, h, w)
-    consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W)
+    consts = _upload_consts(dev, bg_rgb, raws, textures, anchors, z, H, W, h, w, plate=plate)
     active_counts = _active_counts(raws, N)
     chunk, auto_ckpt = _frame_plan(N, h, w, active_counts, dev)
     if checkpoint is not None:
@@ -139,8 +140,9 @@ def refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray]
 
 
 def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray],
-                   anchors: dict[str, tuple[float, float]], z: dict[str, int], H: int, W: int) -> dict:
-    """Upload textures/anchor constants once for the whole refine; chunks reuse them."""
+                   anchors: dict[str, tuple[float, float]], z: dict[str, int], H: int, W: int,
+                   h: int, w: int, plate: np.ndarray | None = None) -> dict:
+    """Upload textures/background/anchor constants once; chunks reuse them."""
     import torch
     order = sorted(raws, key=lambda k: z[k])
     texs, tex_const = {}, {}
@@ -155,9 +157,14 @@ def _upload_consts(dev, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: di
             torch.tensor([ax * tw, ay * th], device=dev).view(1, 2, 1),
             torch.tensor([1.0 / tw - 1.0, 1.0 / th - 1.0], device=dev).view(1, 2, 1),
         )
+    if plate is not None:
+        work_plate = cv2.resize(plate, (w, h), interpolation=cv2.INTER_AREA)
+        bg = torch.tensor(work_plate, dtype=torch.float32, device=dev).permute(2, 0, 1).unsqueeze(0) / 255.0
+    else:
+        bg = torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1)
     return {
         "order": order,
-        "bg": torch.tensor(np.array(bg_rgb, np.float32) / 255.0, device=dev).view(1, 3, 1, 1),
+        "bg": bg,
         "s_scene": torch.tensor([[W / 2, 0.0], [0.0, H / 2]], device=dev),
         "texs": texs,
         "tex_const": tex_const,

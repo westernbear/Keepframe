@@ -81,14 +81,13 @@ def noisy_ocr_clip(tmp_path, monkeypatch):
     cv2.circle(frames[2], (112, 66), 12, (0, 80, 220), -1)
 
     class FakeOcr:
-        def __init__(self):
-            self.frame = 0
+        def __init__(self, max_side=None):
+            pass
 
         def __call__(self, frame):
             boxes = [("Sale", (6, 10, 66, 33), 0.95)]
-            if self.frame == 2:
+            if tuple(frame[66, 112]) == (0, 80, 220):
                 boxes.append(("O", (98, 52, 126, 80), 0.4))
-            self.frame += 1
             return boxes
 
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
@@ -179,7 +178,7 @@ def test_ocr_failure_message_still_reaches_report(tmp_path, monkeypatch, stage):
         analyze(tmp_path / "clip.mp4", 0, 2, root,
                 AnalyzeOptions(bg_override="#ffffff", ocr=False, refine=False, use_ecc=False))
 
-    def fail():
+    def fail(max_side=None):
         raise RuntimeError("OCR unavailable")
 
     monkeypatch.setattr("keepframe.analyze.text.RapidOcr", fail)
