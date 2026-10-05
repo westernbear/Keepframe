@@ -29,3 +29,29 @@ def test_agent_pairing_values_have_copy_buttons():
     assert 'data-copy-target="render-pairing-command"' in html
     assert "setTextIfChanged(renderPairingCodeEl" in js
     assert 'document.execCommand("copy")' in js
+
+
+def test_private_root_grants_the_sid_with_star_prefix(tmp_path):
+    calls = []
+    root = connector.ensure_private_root(
+        tmp_path / "bridge",
+        sid_provider=lambda: "S-1-5-21-1-2-3-1001",
+        acl_runner=lambda argv, **kw: calls.append(argv),
+        windows=lambda: True,
+    )
+    assert root == tmp_path / "bridge"
+    grant = calls[1]
+    assert grant[0].lower().endswith("icacls.exe")
+    assert "*S-1-5-21-1-2-3-1001:(OI)(CI)F" in grant
+
+
+def test_private_root_failure_includes_icacls_detail(tmp_path):
+    import subprocess
+    import pytest
+
+    def fail(argv, **kw):
+        raise subprocess.CalledProcessError(1, argv, stderr="No mapping between account names and security IDs was done.")
+
+    with pytest.raises(connector.PreflightError) as err:
+        connector.ensure_private_root(tmp_path / "b", sid_provider=lambda: "S-1-5-21-1", acl_runner=fail, windows=lambda: True)
+    assert "No mapping between account names" in str(err.value)

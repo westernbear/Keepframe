@@ -259,7 +259,7 @@ def test_preflight_is_windows_only_and_validates_panel_ffmpeg_and_url(monkeypatc
         sid_provider=lambda: "S-1-5-21-1234",
     )
     assert result.ae_version == "24.1.0"
-    assert calls and calls[0][0][0] == "icacls" and calls[0][1] is False
+    assert calls and calls[0][0][0].lower().endswith("icacls.exe") and calls[0][1] is False
 
     with pytest.raises(connector.PreflightError):
         connector.preflight(

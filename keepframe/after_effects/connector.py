@@ -462,14 +462,16 @@ def ensure_private_root(
     sid = (sid_provider or current_user_sid)()
     if not isinstance(sid, str) or not re.fullmatch(r"S-1-[0-9-]+", sid):
         raise PreflightError("current-user SID is invalid")
+    # icacls treats a bare "S-1-..." as an account name; a raw SID needs the "*" prefix.
+    icacls = str(Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32" / "icacls.exe")
     commands = [
-        ["icacls", str(root_path), "/reset", "/T", "/C"],
+        [icacls, str(root_path), "/reset", "/T", "/C"],
         [
-            "icacls",
+            icacls,
             str(root_path),
             "/inheritance:r",
             "/grant:r",
-            f"{sid}:(OI)(CI)F",
+            f"*{sid}:(OI)(CI)F",
             "/T",
             "/C",
         ],
@@ -486,8 +488,13 @@ def ensure_private_root(
                 text=True,
                 env=build_child_env(),
             )
+    except subprocess.CalledProcessError as exc:
+        detail = " ".join(str(exc.stderr or exc.stdout or "").split())[:160]
+        raise PreflightError(
+            "private connector ACL could not be applied" + (f": {detail}" if detail else "")
+        ) from exc
     except (OSError, subprocess.SubprocessError) as exc:
-        raise PreflightError("private connector ACL could not be applied") from exc
+        raise PreflightError(f"private connector ACL could not be applied: {type(exc).__name__}") from exc
     except Exception as exc:  # noqa: BLE001 - ACL failures fail closed
         raise PreflightError("private connector ACL could not be applied") from exc
     return root_path
