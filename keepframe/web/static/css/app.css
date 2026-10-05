@@ -617,6 +617,7 @@ a { color: inherit; text-decoration: none; }
   font-size: var(--fs-body-sm); font-weight: 600;
 }
 .render-pairing__command { white-space: normal !important; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; }
+.render-card__facts--pairing strong { white-space: normal; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; user-select: all; }
 .render-card__section { margin-top: 10px; }
 .render-card__section h3 {
   margin: 0 0 6px; color: var(--muted); font-size: var(--fs-micro); text-transform: uppercase;
