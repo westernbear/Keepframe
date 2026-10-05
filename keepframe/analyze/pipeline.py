@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Background, Canonical, Element, Keyframe, Project, Scene, Track, UIModel, Version
+from ..ir.schema import Background, Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
@@ -16,8 +16,8 @@ from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import element_confidence, reconstruction_error, write_report
 from .semantics import assign_roles, group_by_motion
-from .sprites import RAW_COLS, sprite_props, z_order
-from .text import Ocr, apply_copy, ocr_frames, split_junk_text, text_exclusion_mask, text_props, track_text
+from .sprites import sprite_props, z_order
+from .text import Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -91,7 +91,7 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 log.info("%s", msg)
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)
-            tracks = track_text(boxes)
+            tracks = merge_reveals(track_text(boxes))
             if opts.copy:
                 apply_copy(tracks, opts.copy)
             tracks, shape_tracks, n = split_junk_text(tracks)
@@ -103,7 +103,8 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, shape_tracks, msg
 
 
-def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
+def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None):
+    reveal_boxes = reveal_exclusion_boxes(text_tracks or [])
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     fg = np.stack([foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames])
     pal = build_palette(frames, fg)
@@ -117,7 +118,7 @@ def _stage_regions(frames, bg, boxes, opts, sd, plate=None):
     for i in range(n):
         if i == 0 or i + 1 == n or (i + 1) % max(1, n // 10) == 0:
             report_stage("regions", f"{i + 1}/{n}")
-        rbf.append(merge_adjacent_regions(i, frames[i], extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape),
+        rbf.append(merge_adjacent_regions(i, frames[i], extract_regions(i, frames[i], fg[i], pal, min_area=opts.min_area, exclude_mask=text_exclusion_mask(boxes[i], fg[i].shape, extra_boxes=reveal_boxes.get(i, [])),
                                    overrides=ov_by_frame.get(i))))
     log.info("regions frames=%s labels=%s", n, sum(len(r) for r in rbf))
     return _pk(sd, "regions", rbf)
@@ -179,6 +180,14 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     for a, b in ov.get("merge", []):   # merge object b into a (element ids resolved via ids.json at correction time)
         if a in props and b in props:
             pa, pb = props[a], props[b]
+            width = max(pa["raw"].shape[1], pb["raw"].shape[1])
+            for p in (pa, pb):
+                raw = p["raw"]
+                if raw.shape[1] < width:
+                    expanded = np.full((len(raw), width), np.nan)
+                    expanded[:, :raw.shape[1]] = raw
+                    expanded[~np.isnan(raw[:, 0]), raw.shape[1]:] = [DEFAULTS[prop] for prop in PROPS[raw.shape[1]:width]]
+                    p["raw"] = expanded
             m = np.isnan(pa["raw"][:, 0]) & ~np.isnan(pb["raw"][:, 0])
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
@@ -231,7 +240,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         tracks, fe = tracks_from_raw(raw_full[first:last + 1], first)
         (sd / "assets").mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(sd / "assets" / f"{eid}.png"), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA))
-        np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(RAW_COLS))
+        np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]]))
         h, w = p["canon"].shape[:2]
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
                               text=p.get("text"), font=p.get("font"), color=p.get("color"))
@@ -367,7 +376,7 @@ def analyze_scene_frames(
     report_stage("text")
     boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
     report_stage("regions")
-    rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
+    rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
@@ -542,7 +551,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         shape_tracks = text.get("shape_tracks", [])
     if boundary <= STAGES.index("regions"):
         report_stage("regions")
-        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate)
+        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks)
     else:
         rbf = _pk(sd, "regions")
     if boundary <= STAGES.index("tracking"):

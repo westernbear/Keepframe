@@ -158,6 +158,7 @@ class TextTrack:
     id: int
     boxes: dict[int, TextBox] = field(default_factory=dict)
     text: str = ""
+    reveal: bool = False
 
     @property
     def first(self) -> int:
@@ -195,12 +196,81 @@ def _iou(a, b) -> float:
     return inter / ua if ua > 0 else 0.0
 
 
+def _containment(a, b) -> float:
+    inter = max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    area = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return inter / area if area > 0 else 0.0
+
+
 def _centre(b) -> tuple[float, float]:
     return ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
 
 
 def _sim(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def _compact(text: str) -> str:
+    return "".join(text.split()).casefold()
+
+
+def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
+    # The shorter box sets the tolerance, so a zoom cannot relax alignment.
+    height = min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1])
+    return height > 0 and abs(a.bbox[0] - b.bbox[0]) <= 0.25 * height and abs(a.bbox[3] - b.bbox[3]) <= 0.3 * height
+
+
+def _widest_box(track: TextTrack) -> TextBox:
+    return max(track.boxes.values(), key=lambda box: box.bbox[2] - box.bbox[0])
+
+
+def merge_reveals(tracks: list[TextTrack], max_gap: int = 3) -> list[TextTrack]:
+    """Fold aligned prefixes into the later track, retaining each frame's OCR box."""
+    # ponytail: left-to-right reveals only; right/centre reveals stay separate tracks
+    # Upgrade path: infer the reveal direction and expose it in the IR.
+    for track in tracks:
+        full = _widest_box(track)
+        full_text = _compact(full.text)
+        if any(box.frame < full.frame and _compact(box.text) and _compact(box.text) != full_text
+               and full_text.startswith(_compact(box.text)) and _reveal_aligned(box, full)
+               for box in track.boxes.values()):
+            track.reveal = True
+            track.text = full.text
+    remaining = sorted(tracks, key=lambda track: track.first)
+    while True:
+        merged = False
+        for i, earlier in enumerate(remaining):
+            prefix = _compact(earlier.text)
+            for later in remaining[i + 1:]:
+                text = _compact(later.text)
+                if not prefix or prefix == text or not text.startswith(prefix):
+                    continue
+                if abs(earlier.last - later.first) > max_gap:
+                    continue
+                if not _reveal_aligned(earlier.boxes[earlier.last], later.boxes[later.first]):
+                    continue
+                later.boxes = {**earlier.boxes, **later.boxes}
+                later.reveal = True
+                later.text = _widest_box(later).text
+                remaining.remove(earlier)
+                remaining.sort(key=lambda track: track.first)
+                merged = True
+                break
+            if merged:
+                break
+        if not merged:
+            return remaining
+
+
+def reveal_exclusion_boxes(tracks: list[TextTrack]) -> dict[int, list[tuple[int, int, int, int]]]:
+    """Exclude the full reveal box throughout its interval, including OCR gaps."""
+    boxes: dict[int, list[tuple[int, int, int, int]]] = {}
+    for track in tracks:
+        if getattr(track, "reveal", False):
+            full = _widest_box(track).bbox
+            for frame in range(track.first, track.last + 1):
+                boxes.setdefault(frame, []).append(full)
+    return boxes
 
 
 def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_thr: float = 0.3,
@@ -217,8 +287,11 @@ def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_th
                 if t.id in used:
                     continue
                 last = t.boxes[t.last]
-                geo = max(_iou(last.bbox, box.bbox), 1 - math.dist(_centre(last.bbox), _centre(box.bbox)) / max_dist)
-                if geo < iou_thr or _sim(last.text, box.text) < 0.5:
+                geo = max(_iou(last.bbox, box.bbox), _containment(last.bbox, box.bbox),
+                          1 - math.dist(_centre(last.bbox), _centre(box.bbox)) / max_dist)
+                a, b = _compact(last.text), _compact(box.text)
+                prefix = bool(a and b) and (a.startswith(b) or b.startswith(a))
+                if geo < iou_thr or (_sim(last.text, box.text) < 0.5 and not prefix):
                     continue
                 if geo > best_s:
                     best, best_s = t, geo
@@ -242,10 +315,10 @@ def apply_copy(tracks: list[TextTrack], copy: list[str]) -> None:
             t.text = copy[best_k]; j = best_k + 1
 
 
-def text_exclusion_mask(boxes: list[TextBox], shape: tuple[int, int], pad: int = 2) -> np.ndarray:
+def text_exclusion_mask(boxes: list[TextBox], shape: tuple[int, int], pad: int = 2, *,
+                        extra_boxes: list[tuple[int, int, int, int]] | None = None) -> np.ndarray:
     m = np.zeros(shape, bool)
-    for b in boxes:
-        x0, y0, x1, y1 = b.bbox
+    for x0, y0, x1, y1 in [b.bbox for b in boxes] + (extra_boxes or []):
         m[max(0, y0 - pad):y1 + pad, max(0, x0 - pad):x1 + pad] = True
     return m
 
@@ -266,7 +339,11 @@ def stroke_mask(frame: np.ndarray, bbox, bg_rgb: tuple, thr: float = 12.0,
 
 def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
                infer_font: bool = True, plate: np.ndarray | None = None):
-    cf = max(track.boxes, key=lambda f: (track.boxes[f].bbox[2] - track.boxes[f].bbox[0]) * (track.boxes[f].bbox[3] - track.boxes[f].bbox[1]))
+    reveal = getattr(track, "reveal", False)
+    if reveal:
+        cf = _widest_box(track).frame
+    else:
+        cf = max(track.boxes, key=lambda f: (track.boxes[f].bbox[2] - track.boxes[f].bbox[0]) * (track.boxes[f].bbox[3] - track.boxes[f].bbox[1]))
     cb = track.boxes[cf].bbox
     frame_h, frame_w = frames[cf].shape[:2]
     cx0, cy0, cx1, cy1 = max(0, cb[0]), max(0, cb[1]), min(frame_w, cb[2]), min(frame_h, cb[3])
@@ -279,7 +356,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     col = np.median(stroke_px, axis=0)
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
-    raw = np.full((n_frames, 8), np.nan)
+    raw = np.full((n_frames, 9), np.nan)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
         fh, fw = frames[f].shape[:2]
@@ -291,7 +368,11 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         else:
             bg_px = plate[cy0:cy1, cx0:cx1][m].astype(np.float32)
             opacity = opacity_against_plate(px, bg_px, col)
-        raw[f - first_frame] = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / cw, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity]
+        # A reveal clips the full texture; shrinking sx too would clip twice.
+        x = x0 + cw / 2 if reveal else (x0 + x1) / 2
+        sx = 1.0 if reveal else (x1 - x0) / cw
+        fraction = float(np.clip((x1 - cb[0]) / cw, 0, 1)) if reveal else 1.0
+        raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None
     ys, xs = np.nonzero(sm)
