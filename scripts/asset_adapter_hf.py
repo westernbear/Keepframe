@@ -101,9 +101,7 @@ def _input_image(body: Any) -> bytes:
     return data
 
 
-def _downloaded_glb(path: Path, directory: Path) -> bytes | None:
-    if path.suffix.lower() != ".glb":
-        return None
+def _downloaded_file(path: Path, directory: Path, limit: int) -> bytes | None:
     try:
         root = directory.resolve(strict=True)
         relative = path.absolute().relative_to(root)
@@ -124,10 +122,16 @@ def _downloaded_glb(path: Path, directory: Path) -> bytes | None:
                                  dir_fd=parent)
             with os.fdopen(descriptor, "rb") as stream:
                 if stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    return stream.read(MAX_GLB + 1)
+                    return stream.read(limit + 1)
     except (OSError, ValueError, RuntimeError):
         pass  # Ignore missing, outside, symlinked or otherwise unsafe results.
     return None
+
+
+def _downloaded_glb(path: Path, directory: Path) -> bytes | None:
+    if path.suffix.lower() != ".glb":
+        return None
+    return _downloaded_file(path, directory, MAX_GLB)
 
 
 def _glb_outputs(value: Any, directory: Path):
@@ -221,7 +225,15 @@ class HFAdapter:
                         processed = invoke("/preprocess_image")
                         if isinstance(processed, dict):
                             processed = processed.get("path")
-                        image_file = self.file_handler(processed)
+                        data = (_downloaded_file(Path(processed), Path(directory), MAX_2D)
+                                if isinstance(processed, (str, Path)) else None)
+                        if data is None or len(data) > MAX_2D:
+                            raise AdapterError("Space returned an unsafe preprocess image")
+                        # Upload a trusted copy of the securely opened download so
+                        # replacing the returned path cannot change what is uploaded.
+                        with tempfile.NamedTemporaryFile(dir=directory, suffix=".png", delete=False) as prepared:
+                            prepared.write(data)
+                        image_file = self.file_handler(prepared.name)
                 result = invoke(endpoint)
                 if endpoint == "/generation_all" and isinstance(result, (tuple, list)) and len(result) >= 2:
                     # Hunyuan returns shape-only, then textured mesh. Prefer the

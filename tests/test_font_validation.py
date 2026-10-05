@@ -106,54 +106,38 @@ def test_api_correct_rejects_invalid_family_without_new_version(font_project, fa
     _assert_unchanged(root, scene, project_before, scenes_before)
 
 
-def _wait_for_job(store, job_id):
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        job = store.get(job_id)
-        if job.status in {"done", "error"}:
-            return job
-        time.sleep(0.01)
-    pytest.fail("correction job did not finish")
-
-
-def _agent_correction(root, monkeypatch, args):
+def test_agent_job_callback_rejects_correct_without_new_version(font_project, monkeypatch):
+    root, scene = font_project
+    project_before, scenes_before = (root / "project.json").read_bytes(), _scene_files(root)
     store = JobStore(runner=ThreadRunner())
+    submitted = []
+    original_submit = store.submit
+    def track_submit(*args, **kwargs):
+        submitted.append(args[0])
+        return original_submit(*args, **kwargs)
+    monkeypatch.setattr(store, "submit", track_submit)
     monkeypatch.setattr("keepframe.web.server.JOBS", store)
     monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
 
     def submit_correction(_self, ctx, _message, _history):
-        # Exercise the retained queue callback directly; the correct tool is preview-only.
-        job = ctx.submit_job("correct", {"op": "text", "args": args}, "correct")
+        # Even a future agent wiring error cannot bypass browser confirmation.
+        job = ctx.submit_job("correct", {"op": "text", "args": {"element_id": "e1", "text": "Changed"}}, "correct")
         return SessionTurn(reply="submitted", results=[{"payload": {"job": job}}])
 
     monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", submit_correction)
     srv = start(root.parent)
     try:
         code, body = _post(srv, "/api/agent", {"project": "p1", "scene": "s1", "message": "correct"})
-        assert code == 200, body
-        job = _wait_for_job(store, body["results"][0]["payload"]["job"]["id"])
-        code, _, payload = get(srv, f"/api/jobs/{job.id}")
-        assert code == 200
-        return json.loads(payload)
     finally:
         srv.shutdown()
         srv.server_close()
 
-
-@pytest.mark.parametrize("family", INVALID_INPUT_FAMILIES)
-def test_agent_correction_job_fails_invalid_family_without_new_version(font_project, monkeypatch, family):
-    root, scene = font_project
-    project_before, scenes_before = (root / "project.json").read_bytes(), _scene_files(root)
-    job = _agent_correction(root, monkeypatch, {
-        "element_id": "e1", "text": "Changed", "font": {"family_guess": family},
-    })
-    assert job["status"] == "error"
-    assert "font family" in job["error"]
-    assert job["result"] is None
+    assert code == 400 and "unknown job kind 'correct'" in body["error"]
+    assert submitted == []
     _assert_unchanged(root, scene, project_before, scenes_before)
 
 
-@pytest.mark.parametrize("path", ["cli", "api", "agent_job"])
+@pytest.mark.parametrize("path", ["cli", "api"])
 @pytest.mark.parametrize("font, expected", [
     ({"family_guess": " \tNoto Sans\n ", "weight": 700}, FontGuess(family_guess="Noto Sans", weight=700)),
     ({"weight": 700}, FontGuess(weight=700)),
@@ -167,10 +151,6 @@ def test_correction_paths_accept_valid_partial_and_text_only_input(font_project,
     if path == "cli":
         result = _cli_correct(root, args)
         assert result.returncode == 0, result.stderr
-    elif path == "agent_job":
-        job = _agent_correction(root, monkeypatch, args)
-        assert job["status"] == "done", job["error"]
-        assert job["result"]["version"]["id"] == "v2"
     else:
         srv = start(root.parent)
         try:

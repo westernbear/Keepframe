@@ -94,6 +94,42 @@ def test_rerun_preserves_choices_and_defaults_new_predicates(tmp_path):
     assert flags[new_motion.pred] is True
 
 
+@pytest.fixture
+def reanalysis_project(tmp_path):
+    gold = make_synthetic_scene(tmp_path / "gold", seed=3, with_text=False, frames=12)
+    video = render_scene_video(gold, tmp_path / "gold", tmp_path / "g.mp4")
+    root = tmp_path / "proj"
+    options = AnalyzeOptions(ocr=False, refine=False, generate_3d=False)
+    analyze(video, 0, 11, root, options)
+    scene, version = current_scene(root, "s1")
+    assert version.id == "v1"
+    return root, video, options, scene
+
+
+def test_full_reanalysis_preserves_user_disabled_keep(reanalysis_project):
+    root, video, options, scene = reanalysis_project
+    motion = next(c for c in scene.constraints if c.keep and c.pred.startswith("type("))
+    motion.keep = False
+    new_version(root, "s1", scene, note="disable v1 motion keep", auto=False)
+    analyze(video, 0, 11, root, options)
+    updated, version = current_scene(root, "s1")
+    assert version.id == "v3"
+    assert next(c.keep for c in updated.constraints if c.pred == motion.pred) is False
+
+
+def test_full_reanalysis_defaults_new_predicates(reanalysis_project):
+    root, video, options, scene = reanalysis_project
+    motion = next(c for c in scene.constraints if c.pred.startswith("dur("))
+    layout = next(c for c in scene.constraints if c.pred.startswith(SPATIAL))
+    scene.constraints = [c for c in scene.constraints if c.pred not in {motion.pred, layout.pred}]
+    new_version(root, "s1", scene, note="predicates absent from prior scene", auto=False)
+    analyze(video, 0, 11, root, options)
+    updated, _ = current_scene(root, "s1")
+    flags = {c.pred: c.keep for c in updated.constraints}
+    assert flags[motion.pred] is True
+    assert flags[layout.pred] is False
+
+
 def test_keep_api_applies_presets_then_individual_changes(tmp_path):
     from tests.test_web_review import _post
     from tests.test_web_server import start

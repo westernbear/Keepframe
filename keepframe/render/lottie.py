@@ -29,7 +29,7 @@ def preflight_lottie(scene: Scene) -> None:
     for element in scene.elements:
         if element.kind == "3d" and not element.canonical.texture:
             raise PlanConflict(f"Lottie 3D element {element.id} requires a canonical texture fallback")
-        if element.kind != "3d" and element.canonical.model:
+        if element.kind != "3d" and element.canonical.model and not element.canonical.texture:
             raise PlanConflict(f"Lottie does not support 3D element {element.id}")
         if any(abs(key.v) > 1e-9 for prop in ("skx", "sky") for key in (element.tracks[prop].keys if prop in element.tracks else ())):
             raise PlanConflict(f"Lottie does not support skew on element {element.id}")

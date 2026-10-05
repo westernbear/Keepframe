@@ -129,7 +129,8 @@ def test_reused_glbs_do_not_spend_generation_budget(tmp_path, reused, requests):
     assert not any("상한" in m for m in messages)
 
 
-def test_quota_skipped_solids_keep_whole_stills(tmp_path, monkeypatch):
+@pytest.mark.parametrize("still, choice", [(0.1, "fragments"), (0.015, "still")])
+def test_quota_skipped_solids_obey_fidelity_guard(tmp_path, monkeypatch, still, choice):
     from keepframe.analyze.solid_assets import finish_solid_assets
 
     scene = pending_scene(tmp_path, count=5)
@@ -140,10 +141,10 @@ def test_quota_skipped_solids_keep_whole_stills(tmp_path, monkeypatch):
         ids[key] = el.id
         raw = np.full((12, 11), np.nan)
         raw[:, :8] = (20 + i * 50, 40, 1, 1, 0, 0, 0, 1)
-        props[key] = dict(first=0, raw=raw, canon=np.zeros((24, 32, 4), np.uint8), fragments={})
-    # Unattempted solids must remain whole stills even if fragments score better.
+        fragment = dict(first=0, raw=raw.copy(), canon=np.full((24, 32, 4), 255, np.uint8), kind="sprite")
+        props[key] = dict(first=0, raw=raw, canon=fragment["canon"], fragments={f"fragment{i + 1}": fragment})
     monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
-                        lambda _f, _b, _p, glb: {"fragments": 0.01, "still": 0.1, "model": 0.0 if glb else None})
+                        lambda _f, _b, _p, glb: {"fragments": 0.01, "still": still, "model": 0.0 if glb else None})
     messages = []
     with asset_server() as (url, calls):
         monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
@@ -153,7 +154,9 @@ def test_quota_skipped_solids_keep_whole_stills(tmp_path, monkeypatch):
     assert len(scene.elements) == 5
     assert sum(e.kind == "3d" for e in scene.elements) == 2
     assert sum(e.kind == "sprite" and e.pending_asset == "3d" for e in scene.elements) == 3
-    assert [r["choice"] for r in reports] == ["model", "model", "still", "still", "still"]
+    assert [r["choice"] for r in reports] == ["model", "model", choice, choice, choice]
+    if choice == "fragments":
+        assert all(ids[f"fragment{i}"] in {e.id for e in scene.elements} for i in (3, 4, 5))
     assert messages.count("3D 생성 상한 도달: 3개는 검수의 '3D 생성' 버튼으로 생성하세요") == 1
 
 
@@ -276,6 +279,36 @@ def test_guard_restores_fragments_and_marks_largest(tmp_path, monkeypatch):
     assert json.loads((sd / "report.json").read_text())["solids"][0]["choice"] == "fragments"
 
 
+@pytest.mark.parametrize("choice", ["still", "fragments"])
+def test_rejected_generated_model_is_detached_but_reused_by_signature(tmp_path, monkeypatch, choice):
+    from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
+    from keepframe.ir.synth import make_spinning_sphere_video
+    from keepframe.render.lottie import preflight_lottie
+
+    monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
+                        lambda *_a, **_k: {"fragments": 0.01 if choice == "fragments" else 0.2,
+                                           "still": 0.1, "model": 0.8})
+    frames = make_spinning_sphere_video(frames=12)
+    opts = AnalyzeOptions(bg_override="#101418", ocr=False, refine=False, use_ecc=False)
+    with asset_server() as (url, calls):
+        monkeypatch.setenv("KEEPFRAME_ASSET_API_URL", url)
+        scene = analyze_scene_frames(frames, 30, tmp_path, "s1", opts)
+        assert len(calls) == 1
+        assert all(e.kind == "sprite" and e.canonical.model is None for e in scene.elements)
+        preflight_lottie(scene)
+        sd = tmp_path / "scenes/s1"
+        models = list((sd / "assets").glob("*.glb"))
+        assert len(models) == 1 and models[0].read_bytes() == _triangle_glb()
+        assert (sd / f"assets/{models[0].name}.solid.json").is_file()
+        calls.clear()
+        rebuilt = analyze_scene_frames(frames, 30, tmp_path, "s1", opts)
+        assert calls == []
+        assert all(e.canonical.model is None for e in rebuilt.elements)
+        report = json.loads((sd / "report.json").read_text())
+        assert any("3D 재사용" in message for message in report["messages"])
+        assert report["solids"][0]["choice"] == choice
+
+
 @pytest.mark.browser
 def test_different_colour_glb_is_rejected_and_browser_displays_fallback(tmp_path, monkeypatch):
     from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
@@ -295,6 +328,9 @@ def test_different_colour_glb_is_rejected_and_browser_displays_fallback(tmp_path
     assert guard["choice"] in ("still", "fragments")
     assert guard["model"] > min(guard["still"], guard["fragments"]) + 0.005
     assert all(e.kind == "sprite" for e in scene.elements)
+    assert all(e.canonical.model is None for e in scene.elements)
+    from keepframe.render.lottie import preflight_lottie
+    preflight_lottie(scene)
     assert any(e.pending_asset == "3d" for e in scene.elements)
     html = compose(scene, sd, sd / "fallback.html")
     result = render(html, scene, sd / "fallback-render", frames=[0])
@@ -356,7 +392,8 @@ def test_reference_edit_of_solid_obeys_fidelity_guard(tmp_path, monkeypatch):
     edited, _ = current_scene(tmp_path, "s1")
     el = edited.element(target.id)
     assert el.kind == "sprite" and el.pending_asset == "3d"
-    assert el.canonical.model.endswith(".model1.glb")
+    assert el.canonical.model is None
+    assert len(list((tmp_path / "scenes/s1/assets").glob("*.model1.glb"))) == 1
     assert any("model=0.800000" in m and "still" in m for m in result.messages)
     report = json.loads((tmp_path / "scenes/s1/report.json").read_text())
     assert report["solids"][0]["choice"] == "still" and report["solids"][0]["model"] == 0.8
@@ -386,13 +423,18 @@ def test_regenerated_fragment_model_survives_repeated_reruns(tmp_path, monkeypat
                       choices={"keep_violation": "release_keep"})
         assert result.status == "done" and len(calls) == 1
         edited, _ = current_scene(tmp_path, "s1")
-        path = edited.element(target.id).canonical.model
-        assert path and (tmp_path / "scenes/s1" / path).exists()
+        assert edited.element(target.id).canonical.model is None
+        paths = list((tmp_path / "scenes/s1/assets").glob("*.model1.glb"))
+        assert len(paths) == 1
+        path = paths[0]
         calls.clear()
         for _ in range(2):
             rerun(tmp_path, "s1", "keyframes", "reuse rejected reference model")
             rebuilt, _ = current_scene(tmp_path, "s1")
-            assert rebuilt.element(target.id).canonical.model == path
+            assert rebuilt.element(target.id).canonical.model is None
+            assert path.exists()
+            report = json.loads((tmp_path / "scenes/s1/report.json").read_text())
+            assert any("3D 재사용" in message for message in report["messages"])
         assert calls == []
 
 
@@ -501,6 +543,8 @@ def test_solid_reference_edit_uses_whole_crop_and_preserves_current_state(tmp_pa
     assert "model_props" not in measured[-1]
     edited, _ = current_scene(tmp_path, "s1")
     el = edited.element(target.id) if initial == "fragments" or choice != "fragments" else next(e for e in edited.elements if e.pending_asset)
+    if choice != "model":
+        assert all(e.kind == "sprite" and e.canonical.model is None for e in edited.elements)
     assert (el.role, el.label, el.caption, el.confidence) == ("primary", "manual label", "manual caption", 0.73)
     assert el.canonical.color == "#abcdef"
     if choice == "model" or (initial == "fragments" and choice == "still"):

@@ -104,8 +104,9 @@ def _mark_largest(elements, p, ids, model):
         return
     largest = max(p["fragments"], key=lambda k: np.count_nonzero(p["fragments"][k]["canon"][..., 3]))
     pending = next(e for e in elements if e.id == ids[largest])
+    pending.kind = "sprite"
     pending.pending_asset = "3d"
-    pending.canonical.model = model.canonical.model
+    pending.canonical.model = None
     pending.provenance = model.provenance
 
 
@@ -251,11 +252,12 @@ def finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=
         model_path = sd / el.canonical.model if el.canonical.model else None
         errors = solid_errors(frames, plate, {**p, "fps": scene.fps}, model_path)
         _render_failure(messages, eid, model_path, errors)
-        choice = "still" if eid in generation_skipped else choose_solid(errors)
+        choice = choose_solid(errors)
         reports.append({"element": eid, **errors, "choice": choice})
         messages.append(_fidelity_message(eid, errors, choice))
         if choice == "still":
             el.kind, el.pending_asset = "sprite", "3d"
+            el.canonical.model = None
         elif choice == "fragments":
             restored, fragment_raws = _elements_from_props(p["fragments"], sd, ids)
             scene.elements = [e for e in scene.elements if e.id != eid] + restored
@@ -280,8 +282,9 @@ def guard_reference_edit(edited, source_dir, candidate_dir, eid, previous=None):
     frames = np.load(stages / "frames.npy", mmap_mode="r")
     plate = _plate(edited, candidate_dir)
     model = edited.element(eid)
+    model_path = candidate_dir / model.canonical.model
     measured = {**p, "fps": edited.fps}
-    errors = solid_errors(frames, plate, measured, candidate_dir / model.canonical.model)
+    errors = solid_errors(frames, plate, measured, model_path)
     choice = choose_solid(errors)
     _record_model(candidate_dir, model.canonical.model, _props_signature(p))
     related = {ids.get(key), *(ids.get(k) for k in p["fragments"])}
@@ -303,9 +306,10 @@ def guard_reference_edit(edited, source_dir, candidate_dir, eid, previous=None):
         edited.elements = [e for e in edited.elements if e.id not in related or e.id == eid]
         if choice == "still":
             model.kind, model.pending_asset = "sprite", "3d"
+            model.canonical.model = None
     else:
-        if eid != ids[key]:
-            model.kind, model.pending_asset = "sprite", "3d"
+        model.kind, model.pending_asset = "sprite", "3d"
+        model.canonical.model = None
         existing = {e.id: e for e in edited.elements}
         old = {e.id: e for e in previous.elements} if previous is not None else {}
         missing = {}
@@ -328,7 +332,7 @@ def guard_reference_edit(edited, source_dir, candidate_dir, eid, previous=None):
         edited.elements = [e for e in edited.elements if e.id not in related] + restored
         _mark_largest(restored, p, ids, model)
     messages = []
-    _render_failure(messages, ids[key], candidate_dir / model.canonical.model, errors)
+    _render_failure(messages, ids[key], model_path, errors)
     messages.append(_fidelity_message(ids[key], errors, choice))
     return edited, [{"element": ids[key], **errors, "choice": choice}], messages, ids
 

@@ -30,6 +30,12 @@ exported key; the existing `AssetClient` sends it as `Authorization: Bearer
 export KEEPFRAME_ASSET_API_URL=http://127.0.0.1:8790
 ```
 
+Generation is automatic whenever `KEEPFRAME_ASSET_API_URL` is configured:
+object crops are sent to the public Hugging Face Space under your account
+and use its ZeroGPU quota, with at most 2 requests per analysis. On
+quota exhaustion or failures, the fidelity guard chooses between still images
+and fragments, with a report message explaining the fallback.
+
 Missing or incorrect bearer authentication returns HTTP 401. Any `Origin`
 header (including an empty value or `null`) returns HTTP 403, and requests
 whose `Content-Type` is not `application/json` return HTTP 415. These checks

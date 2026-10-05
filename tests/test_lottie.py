@@ -61,3 +61,25 @@ def test_lottie_preflight_rejects_unrepresentable_tracks(tmp_path):
     element = scene.elements[0].model_copy(update={"z": Track(keys=[Keyframe(t=0, v=0), Keyframe(t=1, v=1)])})
     with pytest.raises(PlanConflict, match="dynamic z"):
         preflight_lottie(scene.model_copy(update={"elements": [element, *scene.elements[1:]]}))
+
+
+def test_lottie_exports_envato_shaped_sprite_with_stale_model_as_texture(tmp_path):
+    scene, scene_dir = _scene(tmp_path)
+    sprite = next(e for e in scene.elements if e.kind == "sprite")
+    # envato1's rejected e46 retains a texture and a stale generated GLB path.
+    sprite.id = "e46"
+    sprite.canonical.model = "assets/e1.model1.glb"
+    preflight_lottie(scene)
+    animation = json.loads(write_lottie(scene, scene_dir, tmp_path / "animation.json").read_text())
+    layer = next(layer for layer in animation["layers"] if layer["nm"] == sprite.id)
+    assert layer["ty"] == 2
+    asset = next(asset for asset in animation["assets"] if asset["id"] == layer["refId"])
+    assert asset["p"].startswith("data:image/png;base64,")
+
+
+def test_lottie_rejects_sprite_model_without_texture(tmp_path):
+    scene, _ = _scene(tmp_path)
+    sprite = next(e for e in scene.elements if e.kind == "sprite")
+    sprite.canonical.model, sprite.canonical.texture = "assets/e1.model1.glb", None
+    with pytest.raises(PlanConflict, match="3D element"):
+        preflight_lottie(scene)

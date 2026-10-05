@@ -14,7 +14,7 @@ from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
 from .regions import build_palette, extract_regions, merge_adjacent_regions
-from .report import element_confidence, reconstruction_error, write_report
+from .report import write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props

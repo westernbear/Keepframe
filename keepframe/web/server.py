@@ -2518,34 +2518,6 @@ def make_server(
                         job = JOBS.submit("analyze", spec=spec, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="frames")
                     elif kind in ("render", "export"):
                         raise ValueError("render/export plans require browser approval")
-                    elif kind == "correct":
-                        op = (args or {}).get("op")
-                        cargs = (args or {}).get("args", {})
-
-                        def work():
-                            if op == "reassign":
-                                v = corrections.reassign_id(root, resolved_scene_id, tuple(cargs["frames"]), cargs["from_id"], cargs["to_id"], note=cargs.get("note", "reassign id"))
-                            elif op == "mask":
-                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t:
-                                    t.write(base64.b64decode(cargs["mask_png_base64"]))
-                                    tmp = Path(t.name)
-                                try:
-                                    v = corrections.set_region_mask(root, resolved_scene_id, int(cargs["frame"]), tmp, cargs["object_id"], note=cargs.get("note", "set region mask"))
-                                finally:
-                                    tmp.unlink(missing_ok=True)
-                            elif op == "bbox":
-                                v = corrections.add_bbox_prompt(root, resolved_scene_id, int(cargs["frame"]), tuple(int(x) for x in cargs["bbox"]), cargs["object_id"], note=cargs.get("note", "bbox prompt"))
-                            else:
-                                font_data = cargs.get("font")
-                                if font_data and "family_guess" in font_data:
-                                    font_data = {**font_data, "family_guess": validate_font_family(font_data["family_guess"])}
-                                font = FontGuess(**font_data) if font_data else None
-                                v = corrections.edit_text(root, resolved_scene_id, cargs["element_id"], text=cargs.get("text"),
-                                                            font=font,
-                                                            note=cargs.get("note", "edit text"))
-                            return {"version": v.model_dump()}
-
-                        job = JOBS.submit("correct", fn=work, project_id=resolved_project_id, scene_id=resolved_scene_id, stage="correct")
                     else:
                         raise ValueError(f"unknown job kind {kind!r}")
                     return job.to_json()

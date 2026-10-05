@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import cv2
 import numpy as np
+import pytest
 
 from keepframe.edit.agent import edit
 from keepframe.edit.apply import apply_edit
@@ -7,6 +10,52 @@ from keepframe.edit.intent import Target
 from keepframe.ir.schema import Background, Canonical, Element, Scene
 from keepframe.ir.store import init_project
 from keepframe.ir.synth import make_synthetic_scene
+
+
+@pytest.mark.parametrize("via", ["edit", "api"])
+def test_server_attachment_path_string_is_rejected_without_read_or_version(tmp_path, monkeypatch, via):
+    from keepframe.ir.store import current_scene, load_project
+    from tests.test_chat_attachments import _project
+    from tests.test_web_edit import _post
+    from tests.test_web_server import start
+
+    root, scene = _project(tmp_path)
+    reads = []
+    original = Path.read_bytes
+    def track_read(path):
+        if path == Path("/etc/hostname"):
+            reads.append(path)
+        return original(path)
+    monkeypatch.setattr(Path, "read_bytes", track_read)
+    intent = {"targets": [{"element": "e1", "property": "texture", "value": "attachment"}]}
+    if via == "edit":
+        result = edit(root, "s1", "replace image", confirm=True,
+                      attachment="/etc/hostname", intent=intent).to_json()
+    else:
+        srv = start(root.parent)
+        try:
+            code, result = _post(srv, "/api/edit", {
+                "project": "p1", "scene": "s1", "v": "v1", "prompt": "replace image",
+                "confirm": True, "attachment": "/etc/hostname", "intent": intent,
+            })
+            assert 400 <= code < 500
+        finally:
+            srv.shutdown()
+            srv.server_close()
+    assert result["status"] == "failed" and result["error"] == "invalid_attachment"
+    assert result["version"] is None
+    assert reads == []
+    assert current_scene(root, "s1")[0] == scene
+    assert [v.id for v in load_project(root).versions] == ["v1"]
+
+
+def test_cli_attachment_path_object_still_loads_png(tmp_path):
+    path = tmp_path / "input.png"
+    path.write_bytes(_png(20, 40))
+    scene = Scene(id="s1", size=(200, 100), fps=30, frames=10, background=Background(),
+                  elements=[Element(id="e1", kind="sprite", canonical=Canonical(width=40, height=20), visible=(0, 9))])
+    out = apply_edit(scene, tmp_path, [Target(element="e1", property="texture", value="attachment")], {}, path)
+    assert (tmp_path / out.element("e1").canonical.texture).read_bytes().startswith(b"\x89PNG")
 
 
 def _png(h, w):

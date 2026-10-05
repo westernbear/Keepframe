@@ -286,14 +286,66 @@ def test_hunyuan_prefers_textured_glb_over_shape_only_glb(tmp_path):
 
 @pytest.mark.parametrize("endpoint,preparation", [("/run_button", ["/requires_bg_remove"]),("/generate_and_extract_glb", ["/start_session","/preprocess_image"])])
 def test_space_session_preparation_precedes_one_generation(output, tmp_path, endpoint, preparation):
-    fake = FakeClient(str(output), endpoint=endpoint)
+    fake = FakeClient(str(output), endpoint=endpoint, download_files=endpoint != "/generate_and_extract_glb")
     prepared = tmp_path / "prepared.png"
     prepared.write_bytes(png())
     for name in preparation:
         fake.api["named_endpoints"][name] = {"parameters": [] if name == "/start_session" else [parameter("image","Image",optional=False)]}
         fake.outputs[name] = str(prepared) if name == "/preprocess_image" else None
-    assert adapter(fake).generate(request()) == glb()
-    assert [call["api_name"] for call in fake.calls] == preparation + [endpoint]
+    if "/preprocess_image" in preparation:
+        with pytest.raises(AdapterError) as error:
+            adapter(fake).generate(request())
+        assert error.value.code == "asset_api_unavailable" and error.value.status == 503
+        assert [call["api_name"] for call in fake.calls] == preparation
+    else:
+        assert adapter(fake).generate(request()) == glb()
+        assert [call["api_name"] for call in fake.calls] == preparation + [endpoint]
+
+
+def test_preprocess_uploads_only_a_request_download(output, tmp_path):
+    prepared = tmp_path / "prepared.png"
+    prepared.write_bytes(png())
+    fake = FakeClient(str(output), endpoint="/generate_and_extract_glb")
+    fake.api["named_endpoints"]["/preprocess_image"] = {"parameters": [parameter("image", "Image", optional=False)]}
+    fake.outputs["/preprocess_image"] = {"path": str(prepared)}
+    handled = []
+    instance = adapter(fake)
+    instance.file_handler = lambda path: handled.append(Path(path)) or path
+    assert instance.generate(request()) == glb()
+    assert len(handled) == 2
+    assert all(path.is_relative_to(fake.directory) for path in handled)
+    assert [call["api_name"] for call in fake.calls] == ["/preprocess_image", "/generate_and_extract_glb"]
+
+
+@pytest.mark.parametrize("target", ["outside", "file_symlink", "directory_symlink"])
+def test_unsafe_preprocess_path_is_never_passed_to_file_handler(tmp_path, target):
+    outside = tmp_path / "private.png"
+    outside.write_bytes(png())
+    clients, handled = [], []
+    def factory(*args, directory, **kwargs):
+        root = Path(directory)
+        if target == "outside":
+            unsafe = outside
+        else:
+            folder = root / "downloaded"
+            folder.mkdir()
+            prepared = folder / "prepared.png"
+            prepared.write_bytes(png())
+            link = root / ("link.png" if target == "file_symlink" else "linked")
+            link.symlink_to(prepared if target == "file_symlink" else folder,
+                            target_is_directory=target == "directory_symlink")
+            unsafe = link if target == "file_symlink" else link / "prepared.png"
+        fake = FakeClient(glb(), endpoint="/generate_and_extract_glb", download_files=False)
+        fake.api["named_endpoints"]["/preprocess_image"] = {"parameters": [parameter("image", "Image", optional=False)]}
+        fake.outputs["/preprocess_image"] = {"path": str(unsafe)}
+        clients.append(fake)
+        return fake
+    instance = HFAdapter(client_factory=factory, file_handler=lambda path: handled.append(Path(path)) or path, token=False)
+    with pytest.raises(AdapterError) as error:
+        instance.generate(request())
+    assert error.value.code == "asset_api_unavailable" and error.value.status == 503
+    assert [path.name for path in handled] == ["input.png"]
+    assert [call["api_name"] for call in clients[0].calls] == ["/preprocess_image"]
 
 
 def test_token_lookup_prefers_environment_and_falls_back_to_cache(monkeypatch):

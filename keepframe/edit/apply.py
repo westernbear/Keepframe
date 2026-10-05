@@ -78,14 +78,10 @@ def _attachment_data(src: str | Path | bytes) -> bytes:
     try:
         if isinstance(src, Path):
             return src.read_bytes()
-        m = _DATA_URL.match(src.strip())
-        if m:
-            return base64.b64decode(m.group(1), validate=True)
-        if src.strip().startswith("data:"):
-            raise AssetAPIError("invalid_attachment")
-        p = Path(src)
-        if p.is_file():
-            return p.read_bytes()
+        if isinstance(src, str):
+            m = _DATA_URL.match(src.strip())
+            if m:
+                return base64.b64decode(m.group(1), validate=True)
     except (ValueError, OSError) as exc:
         raise AssetAPIError("invalid_attachment") from exc
     raise AssetAPIError("invalid_attachment")
