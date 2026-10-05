@@ -11,6 +11,7 @@ STAGES = (
     "text",
     "regions",
     "tracking",
+    "solids",
     "sprites",
     "keyframes",
     "semantics",

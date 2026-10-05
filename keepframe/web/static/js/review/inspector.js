@@ -1,9 +1,9 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261005c";
+import { objectColor } from "/static/js/review/colors.js?v=20261005d";
 import {
   fetchReviewState,
   postApprove,
-} from "/static/js/api.js?v=20261005c";
-import { T, Tf } from "/static/js/i18n.js?v=20261005c";
+} from "/static/js/api.js?v=20261005d";
+import { T, Tf } from "/static/js/i18n.js?v=20261005d";
 import {
   LOADING_PCT_START,
   LOADING_PCT_LIST_BASE,
@@ -12,7 +12,7 @@ import {
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20261005c";
+} from "/static/js/review/workspace.js?v=20261005d";
 
 export function attachInspector(ws) {
   const { dom } = ws;
@@ -316,6 +316,15 @@ export function attachInspector(ws) {
       badge.dataset.i18n = "review.pending3d";
       badge.textContent = T(badge.dataset.i18n);
       dom.objectDetail.append(badge);
+      const generate = document.createElement("button");
+      generate.type = "button";
+      generate.className = "btn btn--secondary";
+      generate.dataset.i18n = "review.generate3d";
+      generate.textContent = T(generate.dataset.i18n);
+      generate.disabled = ws.versionId !== ws.state.project.versions.at(-1)?.id;
+      generate.title = generate.disabled ? T("review.latestOnly") : "";
+      generate.addEventListener("click", () => ws.previewReference3d(item.id));
+      dom.objectDetail.append(generate);
     }
   }
 

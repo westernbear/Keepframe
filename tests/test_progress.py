@@ -6,7 +6,7 @@ from keepframe.progress import STAGES, bind_stage, remaining_eta, report_stage, 
 
 def test_remaining_eta_shrinks_with_stage():
     assert remaining_eta("frames", 100) == 100
-    assert remaining_eta("report", 100) == 10
+    assert remaining_eta("report", 100) == 9  # report is the last of 11 stages, including solids
     assert remaining_eta("unknown", 100) == 100
 
 

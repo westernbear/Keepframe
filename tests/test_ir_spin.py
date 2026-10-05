@@ -171,13 +171,15 @@ def test_inspector_pending_3d_badge_is_bilingual_and_only_for_candidates(tmp_pat
     script.write_text('''import assert from 'node:assert/strict';
 import vm from 'node:vm';
 class Node {
-  constructor(tag) { this.tagName=tag; this.children=[]; this.dataset={}; }
+  constructor(tag) { this.tagName=tag; this.children=[]; this.dataset={}; this.events={}; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children=[...children]; }
+  addEventListener(name, fn) { this.events[name]=fn; }
 }
 const item={id:'candidate',kind:'sprite',pending_asset:'3d',canonical:{},visible:[0,10]};
 const root=new Node('section');
-const ws={dom:{objectDetail:root},selectedId:item.id,state:{scene:{elements:[item]}}};
+const ws={dom:{objectDetail:root},selectedId:item.id,versionId:'v1',
+  state:{scene:{elements:[item]},project:{versions:[{id:'v1'}]}}};
 const context=vm.createContext({document:{createElement:tag=>new Node(tag)},T:key=>key,ws});
 vm.runInContext(''' + json.dumps(source) + '''+'\\nattachInspector(ws);',context);
 const badges=()=>root.children.filter(child=>child.className?.includes('badge'));

@@ -177,6 +177,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             dest = _next_model(scene_dir, el.id)
             dest.write_bytes(data)
             el.kind = "3d"
+            el.pending_asset = None
             el.canonical.model = f"assets/{dest.name}"
         el.provenance = "manual"
     return out
