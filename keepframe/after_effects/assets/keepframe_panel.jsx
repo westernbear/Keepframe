@@ -194,7 +194,7 @@
             "ADBE Skew": "number",
             "ADBE Skew Axis": "number",
             "ADBE Anchor Point": "vec2",
-            "ADBE Opacity": "number",
+            "ADBE Opacity": "number"
         };
     }
 
@@ -1086,7 +1086,7 @@
         if (typeof value !== "string" || value.length > 4096) {
             throw new Error(label + " must be a bounded string");
         }
-        if (/^(https?|file|javascript|data):/i.test(value) || /^(\/|\\|\.\/|\.\.\/)/.test(value) || /^[A-Za-z]:[\\/]/.test(value) || value.indexOf("\\") >= 0 || value.indexOf("/../") >= 0) {
+        if (/^(https?|file|javascript|data):/i.test(value) || /^(\/|\\|\.\/|\.\.\/)/.test(value) || /^[A-Za-z]:[\\\/]/.test(value) || value.indexOf("\\") >= 0 || value.indexOf("/../") >= 0) {
             throw new Error(label + " must not contain a path or URL");
         }
     }
