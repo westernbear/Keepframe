@@ -4005,6 +4005,14 @@ def run_connector(
     project: str | None = None,
 ) -> int:
     """Run the Windows connector until its caller's process is stopped."""
+    import faulthandler
+
+    # Native calls (GDI font scan, DPAPI) that crash kill Python without a traceback;
+    # this prints the Python stack at the crash instead of exiting silently.
+    try:
+        faulthandler.enable()
+    except (OSError, ValueError, AttributeError):  # stderr without a real file descriptor
+        pass
     try:
         if project is not None:
             project = _safe_id(project, "project")
@@ -4020,11 +4028,13 @@ def run_connector(
         deployment_token = os.environ.get("KEEPFRAME_AE_RELAY_TOKEN")
         if not deployment_token:
             raise PreflightError("deployment credential is unavailable")
+        _progress("checking the After Effects panel, ffmpeg and installed fonts")
         checked = preflight(
             url,
             deployment_token=deployment_token,
             panel_heartbeat=_probe_panel_with_mcp,
         )
+        _progress(f"After Effects {getattr(checked, 'ae_version', '')} panel is ready; {'pairing' if code is not None else 'connecting'}")
         project_root = Path(checked.private_root) / "projects" / project
         _reject_reparse_components(project_root)
         project_root.mkdir(parents=True, exist_ok=True)
@@ -4083,6 +4093,10 @@ def run_connector(
     except ConnectorError as exc:
         print(f"ae-connect failed: {_connector_failure_text(exc)}", file=sys.stderr, flush=True)
         return 1
+
+
+def _progress(text: str) -> None:
+    print(f"ae-connect: {text}…", flush=True)
 
 
 _FAILURE_HINTS = (
