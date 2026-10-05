@@ -76,7 +76,7 @@ def _ocr_gpu_mem_limit() -> int:
 
 
 class RapidOcr:
-    def __init__(self, max_side: int | None = 1280):
+    def __init__(self, max_side: int | None = None):
         if max_side is not None and max_side <= 0:
             raise ValueError("max_side must be positive or None")
         self.max_side = max_side
@@ -231,9 +231,18 @@ def merge_reveals(tracks: list[TextTrack], max_gap: int = 3) -> list[TextTrack]:
     for track in tracks:
         full = _widest_box(track)
         full_text = _compact(full.text)
-        if any(box.frame < full.frame and _compact(box.text) and _compact(box.text) != full_text
-               and full_text.startswith(_compact(box.text)) and _reveal_aligned(box, full)
-               for box in track.boxes.values()):
+        boxes = sorted(track.boxes.values(), key=lambda box: box.frame)
+        widths = np.array([box.bbox[2] - box.bbox[0] for box in boxes])
+        full_width = full.bbox[2] - full.bbox[0]
+        tolerance = 0.05 * full_width
+        # Include repeated widest observations so narrow/full OCR flicker cannot look like growth.
+        growing_widths = widths[:np.flatnonzero(widths == full_width)[-1] + 1]
+        monotonic = np.all(growing_widths[1:] >= np.maximum.accumulate(growing_widths)[:-1] - tolerance)
+        narrower = [box for box, width in zip(boxes, widths) if width < full_width]
+        if (widths[0] < full_width and monotonic
+                and all(_compact(box.text) and full_text.startswith(_compact(box.text)) for box in narrower)
+                and any(box.frame < full.frame and _compact(box.text) != full_text and _reveal_aligned(box, full)
+                        for box in narrower)):
             track.reveal = True
             track.text = full.text
     remaining = sorted(tracks, key=lambda track: track.first)

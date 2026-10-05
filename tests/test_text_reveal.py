@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.pipeline import AnalyzeOptions, analyze, analyze_scene_frames, rerun
+from keepframe.analyze.pipeline import AnalyzeOptions, _pk, _stage_regions, analyze, analyze_scene_frames, rerun
 from keepframe.analyze import text as text_module
 from keepframe.analyze.text import TextBox, TextTrack
 from keepframe.ir.store import current_scene, scene_dir
@@ -51,6 +51,58 @@ def test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments(tmp_pa
 def _track(tid, text, first, last, bbox):
     return TextTrack(id=tid, text=text,
                      boxes={f: TextBox(f, text, bbox, 0.6) for f in range(first, last + 1)})
+
+
+@pytest.mark.parametrize("middle_width,expected_reveal", [(100, True), (90, True), (89, False)])
+def test_intra_track_reveal_requires_monotonic_width_with_five_percent_tolerance(middle_width, expected_reveal):
+    readings = [("Y", 20), ("You", 100), ("You", middle_width), ("You just", 200)]
+    # Out-of-order insertion and an OCR gap must still use chronological growth.
+    boxes = {f * 2: TextBox(f * 2, text, (20, 20, 20 + width, 50), 0.6)
+             for f, (text, width) in reversed(list(enumerate(readings)))}
+    track = TextTrack(id=1, boxes=boxes, text="You")
+    merged, = text_module.merge_reveals([track])
+    assert merged.reveal is expected_reveal
+    frames = np.zeros((7, 80, 260, 3), np.uint8)
+    raw, _, _, _, _ = text_module.text_props(merged, frames, (255, 255, 255), 7, 0, infer_font=False)
+    expected = [0.1, 0.5, middle_width / 200, 1.0] if expected_reveal else [1.0] * 4
+    np.testing.assert_allclose(raw[[0, 2, 4, 6], 8], expected)
+    assert np.isnan(raw[[1, 3, 5]]).all()
+
+
+def test_intra_track_reveal_accepts_growth_smaller_than_backward_jitter_tolerance():
+    track = TextTrack(id=1, text="Buy now", boxes={
+        0: TextBox(0, "Buy", (20, 20, 215, 50), 0.95),
+        1: TextBox(1, "Buy now", (20, 20, 220, 50), 0.95),
+    })
+    merged, = text_module.merge_reveals([track])
+    assert merged.reveal
+    raw, _, _, _, _ = text_module.text_props(merged, np.zeros((2, 80, 260, 3), np.uint8),
+                                           (255, 255, 255), 2, 0, infer_font=False)
+    np.testing.assert_allclose(raw[:, 8], [0.975, 1.0])
+
+
+@pytest.mark.parametrize("widths", [(200, 200, 200, 200), (60, 200, 60, 200)])
+def test_static_line_ocr_prefix_flicker_is_not_a_reveal(widths):
+    boxes = [[TextBox(f, text, (20, 20, 20 + width, 50), 0.95)]
+             for f, (text, width) in enumerate(zip(["Buy", "Buy now"] * 2, widths))]
+    tracked, = text_module.track_text(boxes)
+    merged, = text_module.merge_reveals([tracked])
+    assert not merged.reveal
+    frames = np.zeros((4, 80, 260, 3), np.uint8)
+    raw, _, _, _, _ = text_module.text_props(merged, frames, (255, 255, 255), 4, 0, infer_font=False)
+    np.testing.assert_array_equal(raw[:, 8], [1.0] * 4)
+
+
+def test_intra_track_reveal_requires_every_narrower_reading_to_prefix_full_text():
+    readings = [("Y", 20), ("Yes", 60), ("You ju", 120), ("You just", 200)]
+    track = TextTrack(id=1, text="You just",
+                      boxes={f: TextBox(f, text, (20, 20, 20 + width, 50), 0.6)
+                             for f, (text, width) in enumerate(readings)})
+    merged, = text_module.merge_reveals([track])
+    assert not merged.reveal
+    raw, _, _, _, _ = text_module.text_props(merged, np.zeros((4, 80, 260, 3), np.uint8),
+                                           (255, 255, 255), 4, 0, infer_font=False)
+    np.testing.assert_array_equal(raw[:, 8], [1.0] * 4)
 
 
 def test_fragmented_prefix_tracks_fold_repeatedly_into_later_track_and_keep_boxes():
@@ -186,6 +238,37 @@ def test_region_rerun_keeps_full_reveal_exclusion_during_ocr_gaps(tmp_path, monk
     after, _ = current_scene(root, "s1")
     assert [(element.id, element.kind) for element in after.elements] == [(element.id, element.kind) for element in before.elements]
     assert (sd / "stages/text.pkl").read_bytes() == cached_text
+    assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(0.1)
+
+
+def test_reclassified_shape_reveal_excludes_fragments_on_analysis_and_region_rerun(tmp_path, monkeypatch):
+    # Two OCR observations form a reveal, then the short track is reclassified as a shape.
+    frames = np.full((3, 80, 260, 3), 255, np.uint8)
+    frames[:2, 20:50, 20:40] = 0
+    frames[:2, 30:40, 50:60] = 0  # Half-revealed glyph outside the narrow OCR box, including the gap.
+    frames[2, 20:50, 20:220] = 0
+    readings = iter([[("Y", (20, 20, 40, 50), 0.6)], [], [("You just", (20, 20, 220, 50), 0.6)]])
+    monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
+    root = tmp_path / "project"
+    analyze(tmp_path / "clip.mp4", 0, 2, root,
+            AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=lambda frame: next(readings))
+    sd = scene_dir(root, "s1")
+    cached = _pk(sd, "text")
+    assert cached["tracks"] == []
+    shape, = cached["shape_tracks"]
+    assert shape.reveal
+    before, _ = current_scene(root, "s1")
+    assert len(before.elements) == 1 and before.elements[0].kind == "sprite"
+    assert all(regions == [] for regions in _pk(sd, "regions"))
+    assert eval_props(before.elements[0], 0)["reveal"] == pytest.approx(0.1)
+
+    # Restore cached fragment regions to prove the rerun rebuilds exclusions from shape tracks.
+    _stage_regions(frames, (255, 255, 255), cached["boxes"], AnalyzeOptions(), sd)
+    assert any(_pk(sd, "regions"))
+    rerun(root, "s1", "regions", note="shape reveal exclusion regression")
+    after, _ = current_scene(root, "s1")
+    assert [(element.id, element.kind) for element in after.elements] == [(before.elements[0].id, "sprite")]
+    assert all(regions == [] for regions in _pk(sd, "regions"))
     assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(0.1)
 
 

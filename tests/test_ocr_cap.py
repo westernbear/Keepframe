@@ -83,9 +83,10 @@ def test_cap_restores_boxes_and_recognizes_original_resolution_crops(fake_engine
     np.testing.assert_array_equal(crop, frame[120:240, 240:560, ::-1])
 
 
-def test_none_preserves_original_engine_call_and_coordinates(fake_engine):
+@pytest.mark.parametrize("options", [{}, {"max_side": None}])
+def test_default_and_none_preserve_original_engine_call_and_coordinates(fake_engine, options):
     frame = np.full((1080, 1920, 3), (21, 42, 84), np.uint8)
-    ocr = RapidOcr(max_side=None)
+    ocr = RapidOcr(**options)
     assert ocr(frame) == [("Original text", (240, 120, 880, 240), 0.98)]
     bgr, use_cls, use_rec = ocr._ocr.calls[0]
     np.testing.assert_array_equal(bgr, frame[..., ::-1])
@@ -93,8 +94,8 @@ def test_none_preserves_original_engine_call_and_coordinates(fake_engine):
     assert ocr._ocr.kwargs == {}
 
 
-def test_default_cap_is_1280_and_empty_detection_skips_recognition(fake_engine):
-    ocr = RapidOcr()
+def test_explicit_cap_and_empty_detection_skip_recognition(fake_engine):
+    ocr = RapidOcr(max_side=1280)
     ocr._ocr.empty = True
     assert ocr(np.zeros((1080, 1920, 3), np.uint8)) == []
     assert max(ocr._ocr.calls[0][0].shape[:2]) == 1280
@@ -136,7 +137,8 @@ def test_missing_staged_api_uses_full_frame_and_warns_once(fake_engine, monkeypa
     assert "max_side ignored" in warnings[0].getMessage()
 
 
-def test_pipeline_constructs_ocr_with_configured_cap(fake_engine, tmp_path):
+@pytest.mark.parametrize("cap", [None, 640])
+def test_pipeline_constructs_ocr_with_default_or_configured_cap(fake_engine, tmp_path, cap):
     (tmp_path / "stages").mkdir()
     constructed = []
     module = sys.modules["rapidocr_onnxruntime"]
@@ -148,10 +150,10 @@ def test_pipeline_constructs_ocr_with_configured_cap(fake_engine, tmp_path):
         return engine
 
     module.RapidOCR = create
-    opts = AnalyzeOptions(ocr_max_side=640)
+    opts = AnalyzeOptions() if cap is None else AnalyzeOptions(ocr_max_side=cap)
     _stage_text(np.zeros((1, 1080, 1920, 3), np.uint8), (0, 0, 0), opts, None, tmp_path)
-    assert max(constructed[0].calls[0][0].shape[:2]) == 640
-    assert AnalyzeOptions().ocr_max_side == 1280
+    assert max(constructed[0].calls[0][0].shape[:2]) == (1920 if cap is None else cap)
+    assert AnalyzeOptions().ocr_max_side is None
 
 
 @pytest.mark.parametrize("cap", [None, 768])
@@ -169,7 +171,18 @@ def test_cli_passes_default_or_requested_cap(monkeypatch, tmp_path, cap):
     if cap is not None:
         args += ["--ocr-max-side", str(cap)]
     assert main(args) == 0
-    assert captured[0].ocr_max_side == (1280 if cap is None else cap)
+    assert captured[0].ocr_max_side == cap
+
+
+def test_cli_cap_help_explains_opt_in_speed_accuracy_tradeoff(capsys):
+    from keepframe.cli import main
+
+    with pytest.raises(SystemExit) as exited:
+        main(["analyze", "--help"])
+    assert exited.value.code == 0
+    help_text = capsys.readouterr().out.lower()
+    assert "speed/accuracy trade-off" in help_text
+    assert "default: off" in help_text
 
 
 @pytest.mark.ocr

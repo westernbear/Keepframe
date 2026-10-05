@@ -35,7 +35,7 @@ class AnalyzeOptions:
     min_area: int = 30
     use_ecc: bool = True
     ui: bool = False
-    ocr_max_side: int = 1280
+    ocr_max_side: int | None = None
 
 
 def _hex(rgb) -> str:
@@ -103,8 +103,8 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, shape_tracks, msg
 
 
-def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None):
-    reveal_boxes = reveal_exclusion_boxes(text_tracks or [])
+def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, shape_tracks=None):
+    reveal_boxes = reveal_exclusion_boxes((text_tracks or []) + (shape_tracks or []))
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     fg = np.stack([foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames])
     pal = build_palette(frames, fg)
@@ -376,7 +376,7 @@ def analyze_scene_frames(
     report_stage("text")
     boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
     report_stage("regions")
-    rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks)
+    rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     report_stage("sprites")
@@ -551,7 +551,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         shape_tracks = text.get("shape_tracks", [])
     if boundary <= STAGES.index("regions"):
         report_stage("regions")
-        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks)
+        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
     else:
         rbf = _pk(sd, "regions")
     if boundary <= STAGES.index("tracking"):

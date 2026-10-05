@@ -73,7 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--no-ocr", action="store_true"); an.add_argument("--no-refine", action="store_true"); an.add_argument("--bg", default=None)
     an.add_argument("--ui", action="store_true")
     an.add_argument("--no-captions", action="store_true")
-    an.add_argument("--ocr-max-side", type=int, default=1280)
+    an.add_argument("--ocr-max-side", type=int, default=None,
+                    help="cap OCR detection's longest side in pixels (speed/accuracy trade-off; default: off)")
     co = sub.add_parser("correct"); co.add_argument("--root", required=True); co.add_argument("--scene", default="s1")
     co.add_argument("--op", required=True, choices=["reassign", "mask", "bbox", "text"]); co.add_argument("--args", required=True)
     g2 = sub.add_parser("gate-m2"); g2.add_argument("--out", required=True); g2.add_argument("--n", type=int, default=20)
