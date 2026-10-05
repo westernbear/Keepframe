@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 import numpy as np
 import pytest
 from keepframe.ir.synth import make_synthetic_scene
-from keepframe.ir.store import current_scene, init_project, init_project_scenes, load_project, scene_dir
+from keepframe.ir.store import current_scene, init_project, init_project_scenes, load_project, new_version, scene_dir
 from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
 from tests.test_corrections import ocr_shape_project
@@ -40,6 +40,17 @@ def _post(srv, path, payload):
         return e.code, json.loads(e.read())
 
 
+def test_review_scene_exposes_current_font_for_correction_preview(tmp_path):
+    from keepframe.web.server import _slim_scene
+
+    scene = make_synthetic_scene(tmp_path / "gold", seed=11, frames=4)
+    text = next(el for el in scene.elements if el.kind == "text")
+    slim = next(el for el in _slim_scene(scene)["elements"] if el["id"] == text.id)
+    assert slim["canonical"]["font"] == text.canonical.font.model_dump(
+        include={"family_guess", "weight", "size_px"},
+    )
+
+
 @pytest.mark.parametrize("family", ["x;color:red", "Noto_Sans.Regular", "x,y"])
 def test_text_correction_api_rejects_invalid_family(tmp_path, monkeypatch, family):
     root = tmp_path / "ws" / "p1"
@@ -61,6 +72,45 @@ def test_text_correction_api_rejects_invalid_family(tmp_path, monkeypatch, famil
     assert calls == []
     assert len(load_project(root).versions) == 1
     assert current_scene(root, scene.id)[0] == scene
+
+
+@pytest.mark.parametrize("op,field", [
+    ("text", "element_id"), ("mask", "object_id"), ("bbox", "object_id"),
+    ("reassign", "from_id"), ("reassign", "to_id"),
+])
+def test_correction_api_checks_ids_in_requested_scene_version(tmp_path, monkeypatch, op, field):
+    root = tmp_path / "ws" / "p1"
+    scene = make_synthetic_scene(root / "gold", seed=11, frames=4)
+    init_project(root, {"file": "ref.mp4"}, scene)
+    old_id = scene.elements[0].id
+    latest = scene.model_copy(deep=True)
+    latest.elements[0].id = "latest-only"
+    new_version(root, scene.id, latest, note="different elements")
+    calls = []
+    monkeypatch.setattr("keepframe.web.server.ReviewState.run_correction", lambda *args: calls.append(args))
+    before = (root / "project.json").read_bytes()
+    srv = start(tmp_path / "ws")
+    try:
+        for version, missing in [("v1", "latest-only"), ("v2", old_id)]:
+            args = {"version": version, field: missing}
+            code, body = _post(srv, "/api/correct", {
+                "project": "p1", "scene": scene.id, "op": op, "args": args,
+            })
+            assert code == 400, body
+            assert missing in body["error"] and "unknown" in body["error"]
+        # A valid historical ID reaches the existing stale-version conflict, even
+        # though that ID no longer exists in the latest scene.
+        code, body = _post(srv, "/api/correct", {
+            "project": "p1", "scene": scene.id, "op": op,
+            "args": {"version": "v1", field: old_id},
+        })
+        assert code == 409, body
+        assert calls == []
+        assert json.loads(get(srv, f"/api/state?project=p1&scene={scene.id}")[2])["job"]["status"] == "idle"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert (root / "project.json").read_bytes() == before
 
 
 @pytest.mark.parametrize("op", ["mask", "bbox", "reassign_from", "reassign_to"])

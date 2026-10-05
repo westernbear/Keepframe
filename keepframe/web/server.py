@@ -515,7 +515,12 @@ def _slim_scene(scene) -> dict:
         el.pop("confidence", None)
         can = el.get("canonical") or {}
         tex = can.get("texture") or ""
-        el["canonical"] = {"text": can.get("text"), "texture": tex.split("/")[-1] if tex else None}
+        font = can.get("font")
+        el["canonical"] = {
+            "text": can.get("text"),
+            "texture": tex.split("/")[-1] if tex else None,
+            "font": {key: font[key] for key in ("family_guess", "weight", "size_px")} if font else None,
+        }
     return data
 
 
@@ -2592,6 +2597,19 @@ def make_server(
                 if op not in CORRECTION_OPS:
                     return self._json(400, {"error": f"unknown op {op!r}; expected one of {sorted(CORRECTION_OPS)}"})
                 args = data.get("args", {})
+                if not isinstance(args, dict):
+                    return self._json(400, {"error": "correction args must be an object"})
+                requested_version = args.get("version")
+                if requested_version is not None and not isinstance(requested_version, str):
+                    return self._json(400, {"error": "correction version must be a string"})
+                try:
+                    requested_scene, _ = state.scene(requested_version)
+                except StopIteration:
+                    return self._json(400, {"error": "unknown correction scene version"})
+                element_ids = {element.id for element in requested_scene.elements}
+                for field in ("element_id", "object_id", "from_id", "to_id"):
+                    if field in args and (not isinstance(args[field], str) or args[field] not in element_ids):
+                        return self._json(400, {"error": f"unknown correction {field}: {args[field]!r}"})
                 if args.get("version") and args["version"] != state.scene()[1].id:
                     return self._json(409, {"error": "Select the latest version to make corrections."})
                 try:

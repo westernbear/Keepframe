@@ -17,13 +17,13 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261005b";
-import { T, Tf } from "/static/js/i18n.js?v=20261005b";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261005b";
+} from "/static/js/api.js?v=20261005c";
+import { T, Tf } from "/static/js/i18n.js?v=20261005c";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261005c";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261005b";
+} from "/static/js/playback.js?v=20261005c";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -779,7 +779,10 @@ function appendToolCall(name, args, result) {
   head.append(nameEl, status);
   const argsEl = document.createElement("div");
   argsEl.className = "toolcall__args";
-  argsEl.textContent = JSON.stringify(args || {}, null, 0);
+  const logArgs = name === "correct" && args && args.args && typeof args.args === "object" && "mask_png_base64" in args.args
+    ? { ...args, args: { ...args.args, mask_png_base64: T("agent.correctionMaskHidden") } }
+    : args;
+  argsEl.textContent = JSON.stringify(logArgs || {}, null, 0);
   const msgEl = document.createElement("div");
   msgEl.className = "toolcall__msg";
   msgEl.textContent = result.message || "";
@@ -868,6 +871,165 @@ function payloadOf(results, key) {
   return hit && hit.payload ? hit.payload[key] : null;
 }
 
+const ALLOWED = {
+  text: ["element_id", "text", "font"],
+  reassign: ["from_id", "to_id", "frames"],
+  mask: ["object_id", "frame", "mask_png_base64"],
+  bbox: ["object_id", "frame", "bbox"],
+};
+const REQUIRED = {
+  text: ["element_id"],
+  reassign: ["from_id", "to_id", "frames"],
+  mask: ALLOWED.mask,
+  bbox: ALLOWED.bbox,
+};
+const FONT_FIELDS = ["family_guess", "weight", "size_px"];
+
+function pick(args, allowed) {
+  if (!args || typeof args !== "object" || Array.isArray(args)
+      || Object.keys(args).some((key) => !allowed.includes(key))) {
+    throw new Error(T("agent.correctionInvalid"));
+  }
+  return Object.fromEntries(allowed.filter((key) => Object.hasOwn(args, key)).map((key) => {
+    const value = key === "font" ? pick(args[key], FONT_FIELDS) : args[key];
+    return [key, Array.isArray(value) ? [...value] : value];
+  }));
+}
+
+function correctionElement(scene, id) {
+  const element = (scene.elements || []).find((el) => el.id === id);
+  if (typeof id !== "string" || !element) throw new Error(T("agent.correctionInvalid"));
+  return element;
+}
+
+function validateShownCorrection(op, shown, scene) {
+  if (REQUIRED[op].some((key) => !Object.hasOwn(shown, key))) throw new Error(T("agent.correctionInvalid"));
+  const validFrame = (value) => Number.isInteger(value) && value >= 0 && value < scene.frames;
+  for (const key of ["element_id", "object_id", "from_id", "to_id"]) {
+    if (Object.hasOwn(shown, key)) correctionElement(scene, shown[key]);
+  }
+  if (op === "text") {
+    if ((!Object.hasOwn(shown, "text") && !Object.hasOwn(shown, "font"))
+        || (Object.hasOwn(shown, "text") && typeof shown.text !== "string")) {
+      throw new Error(T("agent.correctionInvalid"));
+    }
+    if (shown.font) {
+      const font = shown.font;
+      if (!Object.keys(font).length
+          || (Object.hasOwn(font, "family_guess") && (typeof font.family_guess !== "string"
+            || !/^[A-Za-z0-9 \-가-힣]{1,64}$/.test(font.family_guess.trim())))
+          || (Object.hasOwn(font, "weight") && !Number.isInteger(font.weight))
+          || (Object.hasOwn(font, "size_px") && (!Number.isFinite(font.size_px) || font.size_px <= 0))) {
+        throw new Error(T("agent.correctionInvalid"));
+      }
+    }
+  } else if (op === "reassign") {
+    if (!Array.isArray(shown.frames) || shown.frames.length !== 2
+        || !shown.frames.every(validFrame) || shown.frames[0] > shown.frames[1]) {
+      throw new Error(T("agent.correctionInvalid"));
+    }
+  } else {
+    if (!validFrame(shown.frame)) throw new Error(T("agent.correctionInvalid"));
+    if (op === "mask") {
+      if (typeof shown.mask_png_base64 !== "string" || !shown.mask_png_base64.startsWith("iVBORw0KGgo")) {
+        throw new Error(T("agent.correctionInvalid"));
+      }
+    } else {
+      const box = shown.bbox;
+      if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isInteger)
+          || box[0] < 0 || box[1] < 0 || box[2] > scene.size[0] || box[3] > scene.size[1]
+          || box[0] >= box[2] || box[1] >= box[3]) {
+        throw new Error(T("agent.correctionInvalid"));
+      }
+    }
+  }
+}
+
+async function summarizeCorrectionMask(base64, scene) {
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error(T("agent.correctionInvalid")));
+    img.src = `data:image/png;base64,${base64}`;
+  });
+  const width = img.naturalWidth;
+  const height = img.naturalHeight;
+  if (width !== scene.size[0] || height !== scene.size[1]) throw new Error(T("agent.correctionInvalid"));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, width, height);
+  let x0 = width, y0 = height, x1 = 0, y1 = 0, pixels = 0;
+  for (let offset = 0; offset < data.length; offset += 4) {
+    // Opaque grayscale masks have identical canvas/OpenCV samples. The server
+    // selects pixels >127; reject color/alpha masks rather than misstate them.
+    if (data[offset] !== data[offset + 1] || data[offset] !== data[offset + 2] || data[offset + 3] !== 255) {
+      throw new Error(T("agent.correctionInvalid"));
+    }
+    if (data[offset] <= 127) continue;
+    const x = (offset / 4) % width;
+    const y = Math.floor(offset / 4 / width);
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1);
+    pixels += 1;
+  }
+  if (!pixels) throw new Error(T("agent.correctionInvalid"));
+  return { bbox: [x0, y0, x1, y1], pixels };
+}
+
+function correctionPreviewLines(op, shown, scene) {
+  const lines = [Tf("agent.correctionPreview", { op })];
+  for (const key of ["element_id", "object_id", "from_id", "to_id"]) {
+    if (!Object.hasOwn(shown, key)) continue;
+    const element = correctionElement(scene, shown[key]);
+    lines.push(Tf("agent.correctionElement", {
+      field: key, id: element.id, current: element.canonical?.text ?? element.label ?? element.kind ?? "—",
+    }));
+  }
+  if (Object.hasOwn(shown, "text")) {
+    lines.push(Tf("agent.correctionText", {
+      old: correctionElement(scene, shown.element_id).canonical?.text ?? "—", next: shown.text,
+    }));
+  }
+  if (shown.font) {
+    const old = correctionElement(scene, shown.element_id).canonical?.font || {};
+    // FontGuess replaces the entire font, including defaults for omitted fields.
+    const next = { family_guess: "sans-serif", weight: 400, size_px: 32, ...shown.font };
+    next.family_guess = next.family_guess.trim();
+    const labels = ["agent.correctionFontFamily", "agent.correctionFontWeight", "agent.correctionFontSize"];
+    FONT_FIELDS.forEach((field, index) => {
+      lines.push(Tf("agent.correctionFont", { field: T(labels[index]), old: old[field] ?? "—", next: next[field] }));
+    });
+  }
+  if (shown.frames) lines.push(Tf("agent.correctionFrames", { start: shown.frames[0], end: shown.frames[1] }));
+  if (Object.hasOwn(shown, "frame")) lines.push(Tf("agent.correctionFrame", { frame: shown.frame }));
+  if (shown.bbox) lines.push(Tf("agent.correctionBbox", { bbox: `[${shown.bbox.join(", ")}]` }));
+  return lines;
+}
+
+async function paintCorrection(correction) {
+  try {
+    const { op, args } = correction;
+    if (!Object.hasOwn(ALLOWED, op)) throw new Error(T("agent.correctionInvalid"));
+    const shown = pick(args, ALLOWED[op]);
+    const scene = state.scene;
+    const previewVersion = versionId;
+    const previewSceneId = sceneId;
+    validateShownCorrection(op, shown, scene);
+    const lines = correctionPreviewLines(op, shown, scene);
+    if (op === "mask") {
+      const summary = await summarizeCorrectionMask(shown.mask_png_base64, scene);
+      lines.push(Tf("agent.correctionMask", { bbox: `[${summary.bbox.join(", ")}]`, pixels: summary.pixels }));
+    }
+    appendAgent(lines.join("\n"));
+    appendConfirmButton(() => confirmCorrection(op, shown, previewVersion, previewSceneId));
+  } catch (err) {
+    setBanner(T("agent.correctionInvalid"), true);
+  }
+}
+
 function appendConfirmButton(onConfirm = () => runConfirm(false)) {
   const confirm = document.createElement("button");
   confirm.className = "btn btn--primary";
@@ -941,10 +1103,7 @@ function paintPending(turn) {
   }
   const correction = payloadOf(turn.results, "correction");
   if (correction) {
-    const previewVersion = versionId;
-    appendAgent(Tf("agent.correctionPreview", { op: correction.op }));
-    appendConfirmButton(() => confirmCorrection(correction, previewVersion));
-    return;
+    return paintCorrection(correction);
   }
   pendingIntent = payloadOf(turn.results, "intent");
   const plan = payloadOf(turn.results, "plan");
@@ -967,9 +1126,9 @@ async function confirmKeepChange(keepChange, changes) {
   }
 }
 
-async function pollCorrection() {
+async function pollCorrection(previewSceneId) {
   while (true) {
-    const job = await fetchReviewJob(projectId, sceneId);
+    const job = await fetchReviewJob(projectId, previewSceneId);
     if (job.status === "done" && job.version) return job;
     if (job.status === "error") throw new Error(job.error || T("review.error"));
     if (!["running", "queued"].includes(job.status)) throw new Error(T("agent.failed"));
@@ -977,11 +1136,12 @@ async function pollCorrection() {
   }
 }
 
-async function confirmCorrection(correction, previewVersion) {
-  setBanner(Tf("review.running", { op: correction.op }));
+async function confirmCorrection(op, shown, previewVersion, previewSceneId) {
+  setBanner(Tf("review.running", { op }));
   try {
-    await postCorrect(projectId, sceneId, correction.op, { ...correction.args, version: previewVersion });
-    const job = await pollCorrection();
+    if (sceneId !== previewSceneId) throw new Error(T("agent.correctionInvalid"));
+    await postCorrect(projectId, sceneId, op, { ...shown, version: previewVersion });
+    const job = await pollCorrection(previewSceneId);
     await refreshAfterEdit(job.version);
     setBanner("");
     appendAgent(T("agent.applied"));

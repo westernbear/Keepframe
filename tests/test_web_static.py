@@ -274,7 +274,11 @@ def test_agent_keep_and_correction_copy_is_bilingual():
     ko, en = static_src("js/i18n.js").split("en: {", 1)
     for key in ("agent.keepPresetPreview", "agent.keepOnPreview", "agent.keepOffPreview",
                 "agent.keepExamplesPreview", "agent.keepChangeNote", "agent.keepPreviewChanged",
-                "agent.correctionPreview", "agent.applied"):
+                "agent.correctionPreview", "agent.correctionInvalid", "agent.correctionElement",
+                "agent.correctionText", "agent.correctionFont", "agent.correctionFontFamily",
+                "agent.correctionFontWeight", "agent.correctionFontSize", "agent.correctionFrames",
+                "agent.correctionFrame", "agent.correctionBbox", "agent.correctionMask",
+                "agent.correctionMaskHidden", "agent.applied"):
         assert f'"{key}":' in ko
         assert f'"{key}":' in en
     assert '"agent.keepChangeNote": "에이전트 keep 변경"' in ko
@@ -316,7 +320,7 @@ const snapshots = [
 ];
 const context = vm.createContext({
   projectId:'p1', sceneId:'s1', versionId:'v1', pendingIntent:null,
-  state:{scene:{constraints}}, CORRECTION_POLL_INTERVAL_MS:800,
+  state:{scene:{constraints, elements:[{id:'e1', canonical:{text:'Before'}}]}}, CORRECTION_POLL_INTERVAL_MS:800,
   document:{createElement:() => new Element()},
   logEl:{appendChild:el => buttons.push(el), scrollTop:0, scrollHeight:1},
   T:key => key, Tf:(key, vars) => key + JSON.stringify(vars),
@@ -348,7 +352,7 @@ const context = vm.createContext({
 vm.runInContext(''' + json.dumps(pending) + ''', context);
 const isCorrect = scenario.startsWith('correct');
 const payload = isCorrect
-  ? {correction:{op:'text', args:{element_id:'e1', text:'Hello', version:'untrusted'}}}
+  ? {correction:{op:'text', args:{element_id:'e1', text:'Hello'}}}
   : {keep_change:scenario === 'keep_preset'
       ? {preset:'all'}
       : {targets:['e1', 'left(e1,e2)', 'e1'], on:scenario === 'keep_on',
@@ -386,7 +390,7 @@ if (scenario === 'keep_mismatch' || malformed) {
     assert.equal(args[2], 'text');
     assert.equal(args[3].element_id, 'e1');
     assert.equal(args[3].text, 'Hello');
-    assert.equal(args[3].version, 'v1', 'use the preview version, overriding model args');
+    assert.equal(args[3].version, 'v1', 'use the displayed preview version');
   } else {
     assert.equal(args[3], 'agent.keepChangeNote', 'agent-confirmed keep changes need their own version note');
     if (scenario === 'keep_preset') {
@@ -418,11 +422,169 @@ if (scenario === 'keep_mismatch' || malformed) {
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_agent_correction_contract_picks_fields_and_renders_only_text():
+    js = static_src("js/agent.js")
+    pending = js[js.index("function payloadOf("):js.index("\nfunction confirmEditBody(")]
+    assert "shown = pick(args, ALLOWED[op])" in pending
+    assert "{ ...shown, version: previewVersion }" in pending
+    assert "...correction.args" not in pending
+    assert "innerHTML" not in pending
+    append = js[js.index("function appendAgent("):js.index("function appendChoices(")]
+    assert "body.textContent = text" in append
+    assert "innerHTML" not in append
+
+
+@pytest.mark.parametrize("scenario", [
+    "text", "font", "font_partial", "reassign", "bbox", "mask",
+    "extra_text", "extra_font", "extra_reassign", "extra_bbox", "extra_mask", "model_version",
+    "missing_text", "missing_reassign", "missing_bbox", "missing_mask", "unknown_id",
+    "invalid_op", "invalid_font", "invalid_bbox", "invalid_mask", "empty_mask",
+    "invalid_mask_color", "invalid_mask_alpha", "invalid_mask_size",
+    "invalid_args_string", "invalid_args_null", "invalid_args_array",
+    "missing_element", "missing_mask_frame", "missing_bbox_frame", "missing_reassign_frames",
+])
+def test_agent_correction_preview_matches_confirmed_fields(tmp_path, scenario):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    js = static_src("js/agent.js")
+    pending = js[js.index("function payloadOf("):js.index("\nfunction confirmEditBody(")]
+    append = js[js.index("function appendAgent("):js.index("function appendChoices(")]
+    tool = js[js.index("function appendToolCall("):js.index("function appendVerify(")]
+    script = tmp_path / "correction-preview.mjs"
+    script.write_text('''import assert from 'node:assert/strict';
+import vm from 'node:vm';
+const scenario = ''' + json.dumps(scenario) + ''';
+const nodes = [], requests = [], banners = [], imageSources = [];
+class Element {
+  constructor(tag) { this.tag = tag; this.children = []; this.listeners = {}; this.textContent = ''; }
+  set innerHTML(value) { throw new Error('preview values must only be rendered as text'); }
+  append(...children) { this.children.push(...children); }
+  addEventListener(event, handler) { this.listeners[event] = handler; }
+  click() { return this.listeners.click(); }
+  getContext() {
+    return {drawImage:() => {}, getImageData:() => {
+      const data = new Uint8ClampedArray(4 * 3 * 4);
+      for (let i = 3; i < data.length; i += 4) data[i] = 255;
+      data[0] = data[1] = data[2] = 127;
+      if (scenario !== 'empty_mask') for (const index of [5, 6, 9]) {
+        data[index * 4] = data[index * 4 + 1] = data[index * 4 + 2] = index === 5 ? 128 : 255;
+      }
+      if (scenario === 'invalid_mask_color') data[0] = 255;
+      if (scenario === 'invalid_mask_alpha') data[3] = 0;
+      return {data};
+    }};
+  }
+}
+class Image {
+  constructor() { this.naturalWidth = scenario === 'invalid_mask_size' ? 5 : 4; this.naturalHeight = 3; }
+  set src(value) {
+    imageSources.push(value);
+    queueMicrotask(() => scenario === 'invalid_mask' ? this.onerror() : this.onload());
+  }
+}
+const old = '<img src=x onerror=alert(1)>OLD';
+const changed = '<svg onload=alert(2)>NEW';
+const font = {family_guess:'Noto Sans', weight:700, size_px:48};
+const scene = {frames:12, size:[4, 3], elements:[
+  {id:'e1', label:old, canonical:{text:old, font:{family_guess:'Arial', weight:300, size_px:20}}},
+  {id:'e2', label:'Target label', canonical:{}},
+]};
+const context = vm.createContext({
+  projectId:'p1', sceneId:'s1', versionId:'v1', state:{scene}, pendingIntent:null,
+  CORRECTION_POLL_INTERVAL_MS:800, Image, Uint8ClampedArray,
+  document:{createElement:tag => new Element(tag)},
+  logEl:{appendChild:node => nodes.push(node)}, hideEmpty:() => {},
+  T:key => key, Tf:(key, vars) => key + JSON.stringify(vars),
+  setBanner:(message, failure=false) => banners.push({message, failure}),
+  postCorrect:async (...args) => { requests.push(args); return {job:{status:'running'}}; },
+  fetchReviewJob:async () => ({status:'done', version:'v2'}),
+  refreshAfterEdit:async () => {},
+});
+vm.runInContext(''' + json.dumps(append + tool + pending) + ''', context);
+const mask = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAD';
+let op = scenario.includes('reassign') ? 'reassign'
+  : scenario.includes('bbox') ? 'bbox' : scenario.includes('mask') ? 'mask' : 'text';
+let args = op === 'reassign' ? {from_id:'e1', to_id:'e2', frames:[2, 4]}
+  : op === 'bbox' ? {object_id:'e1', frame:3, bbox:[1, 1, 3, 3]}
+  : op === 'mask' ? {object_id:'e1', frame:3, mask_png_base64:mask}
+  : {element_id:'e1', text:changed};
+if (scenario === 'font') args.font = {...font};
+if (scenario === 'font_partial') { delete args.text; args.font = {weight:700}; }
+if (scenario.startsWith('extra_')) args.note = 'hidden instruction';
+if (scenario === 'extra_font') { delete args.note; args.font = {...font, candidates:['hidden']}; }
+if (scenario === 'model_version') args.version = 'v999';
+if (scenario === 'missing_text') delete args.text;
+if (scenario === 'missing_reassign') delete args.to_id;
+if (scenario === 'missing_bbox') delete args.bbox;
+if (scenario === 'missing_mask') delete args.mask_png_base64;
+if (scenario === 'missing_element') delete args.element_id;
+if (scenario === 'missing_mask_frame' || scenario === 'missing_bbox_frame') delete args.frame;
+if (scenario === 'missing_reassign_frames') delete args.frames;
+if (scenario === 'unknown_id') args.element_id = 'absent';
+if (scenario === 'invalid_op') op = 'toString';
+if (scenario === 'invalid_font') args.font = null;
+if (scenario === 'invalid_bbox') args.bbox = [1, 2, '<bad>', 4];
+if (scenario === 'invalid_args_string') args = 'e1';
+if (scenario === 'invalid_args_null') args = null;
+if (scenario === 'invalid_args_array') args = [];
+const invalid = scenario.startsWith('extra_') || scenario.startsWith('missing_')
+  || scenario.startsWith('invalid_') || ['model_version', 'unknown_id', 'empty_mask'].includes(scenario);
+const expected = JSON.parse(JSON.stringify(args));
+context.appendToolCall('correct', {op, args}, {ok:true});
+const textOf = node => [node.textContent, ...node.children.map(textOf)].join('\\n');
+if (op === 'mask') assert.ok(!nodes.map(textOf).join('\\n').includes(mask), 'never print mask base64 in tool logs');
+nodes.length = 0;
+await context.paintPending({results:[{ok:true, payload:{correction:{op, args}}}], needs_confirm:true});
+assert.equal(requests.length, 0, 'rendering a preview cannot submit');
+const buttons = nodes.filter(node => node.tag === 'button');
+if (invalid) {
+  assert.equal(buttons.length, 0, 'invalid or undisclosed fields must block confirmation');
+  assert.equal(banners.at(-1).message, 'agent.correctionInvalid');
+  assert.equal(banners.at(-1).failure, true);
+} else {
+  assert.equal(buttons.length, 1);
+  const preview = nodes.map(textOf).join('\\n');
+  assert.ok(preview.includes('e1') && preview.includes(old), 'show ID and current scene content as literal text');
+  if (op === 'text') {
+    if (args.text !== undefined) assert.ok(preview.includes(changed) && preview.includes('agent.correctionText'));
+    if (args.font) {
+      for (const value of ['Arial', '300', '20', '700']) assert.ok(preview.includes(value));
+      if (scenario === 'font_partial') for (const value of ['sans-serif', '32']) assert.ok(preview.includes(value));
+    }
+  } else if (op === 'reassign') {
+    for (const value of ['e2', 'Target label', 'agent.correctionFrames', '2', '4']) assert.ok(preview.includes(value));
+  } else {
+    assert.ok(preview.includes('agent.correctionFrame') && preview.includes('3'));
+    assert.ok(preview.includes(op === 'mask' ? 'agent.correctionMask' : 'agent.correctionBbox'));
+    if (op === 'mask') {
+      assert.ok(preview.includes('[1, 1, 3, 3]'), 'mask bbox is computed from decoded pixels');
+      assert.ok(preview.includes('"pixels":3'), 'mask count follows the server threshold >127');
+      assert.ok(!preview.includes(mask));
+      assert.equal(imageSources.length, 1);
+    }
+  }
+  // Changing the model payload after display cannot change the confirmed snapshot.
+  args.text = 'unseen';
+  if (args.font) args.font.weight = 100;
+  if (args.frames) args.frames[0] = 9;
+  if (args.bbox) args.bbox[0] = 9;
+  args.note = 'unseen';
+  context.versionId = 'v99';
+  await buttons[0].click();
+  assert.equal(requests.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), ['p1', 's1', op, {...expected, version:'v1'}]);
+}
+''')
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261005b"}
+    assert stamps == {"20261005c"}
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):
