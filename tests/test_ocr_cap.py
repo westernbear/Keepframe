@@ -91,7 +91,7 @@ def test_default_and_none_preserve_original_engine_call_and_coordinates(fake_eng
     bgr, use_cls, use_rec = ocr._ocr.calls[0]
     np.testing.assert_array_equal(bgr, frame[..., ::-1])
     assert use_cls is None and use_rec is None
-    assert ocr._ocr.kwargs == {}
+    assert ocr._ocr.kwargs == dict(intra_op_num_threads=1, inter_op_num_threads=1)
 
 
 def test_explicit_cap_and_empty_detection_skip_recognition(fake_engine):
@@ -108,6 +108,15 @@ def test_smaller_frames_are_passed_at_original_resolution(fake_engine):
     ocr._ocr.frame_shape = frame.shape[:2]
     ocr(frame)
     np.testing.assert_array_equal(ocr._ocr.calls[0][0], frame[..., ::-1])
+
+
+def test_rapidocr_fork_preserves_opt_in_cap_and_engine_options(fake_engine):
+    original = RapidOcr(max_side=640)
+    forked = original.fork()
+    assert forked.max_side == 640
+    assert forked._ocr is not original._ocr
+    assert forked._ocr.kwargs == original._ocr.kwargs
+    assert forked._engine_kwargs is not original._engine_kwargs
 
 
 @pytest.mark.parametrize("missing", [

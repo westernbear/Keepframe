@@ -11,6 +11,16 @@ from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.review.corrections import reassign_id
 
 
+def _pixel_ocr(frames, readings):
+    """Model deterministic OCR: equal pixels must produce equal detections."""
+    detections = {}
+    for frame, result in zip(frames, readings):
+        key = frame.tobytes()
+        assert key not in detections or detections[key] == result
+        detections[key] = result
+    return lambda frame: detections[frame.tobytes()]
+
+
 def test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments(tmp_path):
     readings = [("Y", 20)] * 4 + [("You", 60)] * 3 + [("You ju", 120)] * 2 + [("You just", 200)] * 3
     frames = np.full((len(readings), 80, 260, 3), 255, np.uint8)
@@ -22,11 +32,7 @@ def test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments(tmp_pa
         if width < 200:
             # The next partly visible letter falls outside OCR's partial box.
             frames[f, 30:40, 24 + width:32 + width] = 0
-    detections = iter(readings)
-
-    def fake_ocr(frame):
-        text, width = next(detections)
-        return [(text, (20, 20, 20 + width, 50), 0.6)]
+    fake_ocr = _pixel_ocr(frames, [[(text, (20, 20, 20 + width, 50), 0.6)] for text, width in readings])
 
     scene = analyze_scene_frames(frames, 30.0, tmp_path, "s1",
                                  AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), fake_ocr)
@@ -177,10 +183,10 @@ def test_two_title_lines_remain_two_text_elements(tmp_path):
     frames = np.full((6, 100, 260, 3), 255, np.uint8)
     for f, (_, (x0, y0, x1, y1)) in enumerate(readings):
         frames[f, y0:y1, x0:x1] = 0
-    detections = iter(readings)
+    fake_ocr = _pixel_ocr(frames, [[(text, bbox, 0.95)] for text, bbox in readings])
     scene = analyze_scene_frames(frames, 30.0, tmp_path, "s1",
                                  AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False),
-                                 lambda frame: [(*next(detections), 0.95)])
+                                 fake_ocr)
     assert [element.canonical.text for element in scene.elements if element.kind == "text"] == ["B", "Build"]
     assert all("reveal" not in element.tracks for element in scene.elements)
 
@@ -223,11 +229,13 @@ def test_region_rerun_keeps_full_reveal_exclusion_during_ocr_gaps(tmp_path, monk
     frames[:3, 20:50, 20:40] = 0
     frames[:3, 30:40, 50:60] = 0  # A partial next letter outside OCR's first box.
     frames[3:, 20:50, 20:220] = 0
-    readings = iter([[("Y", (20, 20, 40, 50), 0.6)], [], []]
-                    + [[("You just", (20, 20, 220, 50), 0.6)]] * 4)
+    # A sub-threshold pixel change distinguishes simulated OCR-gap frames.
+    frames[:, 0, 0, 0] -= np.arange(len(frames), dtype=np.uint8)
+    fake_ocr = _pixel_ocr(frames, [[("Y", (20, 20, 40, 50), 0.6)], [], []]
+                         + [[("You just", (20, 20, 220, 50), 0.6)]] * 4)
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
     options = AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False)
-    analyze(tmp_path / "clip.mp4", 0, 6, tmp_path / "project", options, ocr=lambda frame: next(readings))
+    analyze(tmp_path / "clip.mp4", 0, 6, tmp_path / "project", options, ocr=fake_ocr)
     root = tmp_path / "project"
     sd = scene_dir(root, "s1")
     cached_text = (sd / "stages/text.pkl").read_bytes()
@@ -247,11 +255,12 @@ def test_reclassified_shape_reveal_excludes_fragments_on_analysis_and_region_rer
     frames[:2, 20:50, 20:40] = 0
     frames[:2, 30:40, 50:60] = 0  # Half-revealed glyph outside the narrow OCR box, including the gap.
     frames[2, 20:50, 20:220] = 0
-    readings = iter([[("Y", (20, 20, 40, 50), 0.6)], [], [("You just", (20, 20, 220, 50), 0.6)]])
+    frames[1, 0, 0, 0] = 254  # Distinguish the simulated OCR gap from its identical-looking neighbour.
+    fake_ocr = _pixel_ocr(frames, [[("Y", (20, 20, 40, 50), 0.6)], [], [("You just", (20, 20, 220, 50), 0.6)]])
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
     root = tmp_path / "project"
     analyze(tmp_path / "clip.mp4", 0, 2, root,
-            AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=lambda frame: next(readings))
+            AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=fake_ocr)
     sd = scene_dir(root, "s1")
     cached = _pk(sd, "text")
     assert cached["tracks"] == []
@@ -277,11 +286,11 @@ def test_whole_range_sprite_corrections_accept_mixed_raw_widths(tmp_path, monkey
     frames = np.full((6, 80, 180, 3), 255, np.uint8)
     frames[:3, 30:60, 10:40] = 0
     frames[3:, 30:60, 90:120] = 0
-    readings = iter([[], [], []] + [[("O", (90, 30, 120, 60), 0.4)]] * 3)
+    fake_ocr = _pixel_ocr(frames, [[], [], []] + [[("O", (90, 30, 120, 60), 0.4)]] * 3)
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
     root = tmp_path / "project"
     analyze(tmp_path / "clip.mp4", 0, 5, root,
-            AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=lambda frame: next(readings))
+            AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=fake_ocr)
     scene, _ = current_scene(root, "s1")
     sprite, shape = sorted(scene.elements, key=lambda element: element.visible[0])
     source, target = (sprite, shape) if shape_is_target else (shape, sprite)

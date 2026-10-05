@@ -1,7 +1,10 @@
 from __future__ import annotations
-import difflib, math
+import difflib, math, os
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
+from threading import Lock, local
 from typing import Protocol
 import cv2, numpy as np
 from ..ir.schema import FontGuess
@@ -85,11 +88,14 @@ class RapidOcr:
         from rapidocr_onnxruntime import RapidOCR  # lazy import
         use_cuda = ocr_cuda()
         if use_cuda:
+            self.workers = 1
             limit = _ocr_gpu_mem_limit()
             _cap_ort_cuda_arena(limit)
             log.info("ocr device=cuda gpu_mem_limit=%s", limit)
             kw = dict(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
         else:
+            # ponytail: four-worker ceiling; tune CPU/memory budgets for larger hosts.
+            self.workers = min(4, os.cpu_count() or 1)
             if ocr_cuda_expected():
                 log.warning(
                     "ocr on cpu: CUDAExecutionProvider missing "
@@ -97,12 +103,23 @@ class RapidOcr:
                 )
             else:
                 log.info("ocr device=cpu")
-            kw = {}
+            # One inference thread per frame worker avoids oversubscribing the CPU.
+            # RapidOCR propagates these global parameters to all three ORT sessions.
+            kw = dict(intra_op_num_threads=1, inter_op_num_threads=1)
         if max_side is not None:
             # RapidOCR 1.4.4 ignores det_limit_side_len for limit_type="max".
             # Prevent detector upscaling; cap its input explicitly below.
             kw["det_limit_type"] = "max"
+        self._engine_kwargs = kw
         self._ocr = RapidOCR(**kw)
+
+    def fork(self) -> RapidOcr:
+        """Give each frame worker its own mutable RapidOCR pipeline and sessions."""
+        worker = RapidOcr.__new__(RapidOcr)
+        worker.max_side, worker.workers = self.max_side, self.workers
+        worker._engine_kwargs = self._engine_kwargs.copy()
+        worker._ocr = type(self._ocr)(**worker._engine_kwargs)
+        return worker
 
     def __call__(self, frame_rgb: np.ndarray):
         global _warned_ocr_cap_unavailable
@@ -141,15 +158,61 @@ class RapidOcr:
         return out
 
 
-def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1) -> list[list[TextBox]]:
+def ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1, *,
+               workers: int | None = None) -> list[list[TextBox]]:
+    """Reuse exact consecutive samples; consume concurrent results in frame order.
+
+    Engines with ``fork`` get an independent instance per worker. Other callables
+    stay sequential by default and must be thread safe when requesting workers.
+    """
     from keepframe.progress import report_stage
+    workers = getattr(ocr, "workers", 1) if workers is None else workers
+    if workers < 1:
+        raise ValueError("workers must be positive")
     out: list[list[TextBox]] = []
     n = len(frames)
     mark = max(1, n // 10)
-    for i, f in enumerate(frames):
+
+    def progress(i):
         if i == 0 or i + 1 == n or (i + 1) % mark == 0:
             report_stage("text", f"{i + 1}/{n}")
-        out.append([TextBox(i, t, b, c) for t, b, c in ocr(f)] if i % step == 0 else [])
+
+    worker = local()
+    first_engine = [ocr]
+    engine_lock = Lock()
+
+    def start_worker():
+        # RapidOCR's detector mutates preprocess_op: never share it across workers.
+        with engine_lock:
+            engine = first_engine.pop() if first_engine else None
+        worker.ocr = engine if engine is not None else getattr(ocr, "fork", lambda: ocr)()
+
+    def evaluate(frame):
+        return worker.ocr(frame)
+
+    with ExitStack() as stack:
+        pool = None
+        if workers > 1 and n:
+            pool = stack.enter_context(ThreadPoolExecutor(max_workers=workers, initializer=start_worker))
+        pending = []
+        previous_frame, previous_result = None, None
+        for i, frame in enumerate(frames):
+            if pool is None:
+                progress(i)
+            result = None
+            if i % step == 0:
+                # No tolerance: even a one-channel, one-pixel change runs the engine.
+                if previous_frame is None or not np.array_equal(frame, previous_frame):
+                    previous_frame = frame
+                    previous_result = pool.submit(evaluate, frame) if pool is not None else ocr(frame)
+                result = previous_result
+            if pool is None:
+                out.append([TextBox(i, t, b, c) for t, b, c in result] if result is not None else [])
+            else:
+                pending.append(result)
+        for i, future in enumerate(pending):
+            progress(i)
+            out.append([TextBox(i, t, b, c) for t, b, c in future.result()] if future is not None else [])
     return out
 
 

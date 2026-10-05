@@ -17,14 +17,10 @@ def ocr_shape_project(tmp_path, monkeypatch):
     cv2.circle(frames[2], (112, 66), 12, (0, 80, 220), -1)
 
     class FakeOcr:
-        def __init__(self):
-            self.frame = 0
-
         def __call__(self, frame):
             boxes = [("Sale", (6, 10, 66, 33), 0.95)]
-            if self.frame == 2:
+            if tuple(frame[66, 112]) == (0, 80, 220):
                 boxes.append(("O", (98, 52, 126, 80), 0.4))
-            self.frame += 1
             return boxes
 
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))

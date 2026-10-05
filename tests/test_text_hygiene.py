@@ -82,13 +82,12 @@ def noisy_ocr_clip(tmp_path, monkeypatch):
 
     class FakeOcr:
         def __init__(self, max_side=None):
-            self.frame = 0
+            pass
 
         def __call__(self, frame):
             boxes = [("Sale", (6, 10, 66, 33), 0.95)]
-            if self.frame == 2:
+            if tuple(frame[66, 112]) == (0, 80, 220):
                 boxes.append(("O", (98, 52, 126, 80), 0.4))
-            self.frame += 1
             return boxes
 
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
