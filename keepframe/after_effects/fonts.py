@@ -249,6 +249,9 @@ def _load_win32_api() -> _Win32API | None:
             ("ftCreationTime", FILETIME),
             ("ftLastAccessTime", FILETIME),
             ("ftLastWriteTime", FILETIME),
+            # Missing this field made the struct 48 bytes instead of 52; Windows wrote past it
+            # and corrupted the heap (access violation in the next allocation).
+            ("dwVolumeSerialNumber", wintypes.DWORD),
             ("nFileSizeHigh", wintypes.DWORD),
             ("nFileSizeLow", wintypes.DWORD),
             ("nNumberOfLinks", wintypes.DWORD),

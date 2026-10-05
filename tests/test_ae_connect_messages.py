@@ -153,3 +153,28 @@ def test_mcp_tool_failure_reports_the_chained_root_cause_from_server_stderr():
     )
     assert connector._stderr_tail(log) == "keepframe.after_effects.bridge.BridgeBusy: one bridge command is already in flight"
     log.close()
+
+
+def test_win32_struct_sizes_match_the_windows_abi(monkeypatch):
+    import ctypes
+    import types
+
+    from keepframe.after_effects import fonts
+
+    class FakeDLL:
+        def __getattr__(self, name):
+            function = types.SimpleNamespace()
+            setattr(self, name, function)
+            return function
+
+    monkeypatch.setattr(fonts.os, "name", "nt")
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **k: FakeDLL(), raising=False)
+    monkeypatch.setattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE, raising=False)
+    api = fonts._load_win32_api()
+    from ctypes import wintypes
+
+    # BY_HANDLE_FILE_INFORMATION is 13 DWORDs (52 bytes on Windows); one missing field corrupted the heap.
+    assert ctypes.sizeof(api.file_info_type) == 13 * ctypes.sizeof(wintypes.DWORD)
+    gdi = fonts._load_gdi_api()
+    # LOGFONTW: 5 LONGs, 8 BYTEs, WCHAR[32] (92 bytes on Windows).
+    assert ctypes.sizeof(gdi._logfont_type) == 5 * ctypes.sizeof(ctypes.c_long) + 8 + 32 * ctypes.sizeof(ctypes.c_wchar)
