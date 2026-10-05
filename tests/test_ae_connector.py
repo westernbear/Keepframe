@@ -12,6 +12,7 @@ import http.client
 import json
 import socket
 import ssl
+import os
 import sys
 import urllib.error
 import zipfile
@@ -789,8 +790,9 @@ def test_mcp_import_is_lazy_and_child_environment_is_allowlisted(monkeypatch):
     }
     env = connector.build_child_env(source)
     assert env == {"SystemRoot": "C:\\Windows"}
+    in_posix_venv = os.name != "nt" and sys.prefix != sys.base_prefix
     assert client.child_argv() == [
-        str(Path(sys.executable).resolve()),
+        sys.executable if in_posix_venv else str(Path(sys.executable).resolve()),
         "-E",
         "-P",
         "-m",
@@ -830,7 +832,7 @@ def test_mcp_child_uses_trusted_cwd_and_same_isolated_argv(monkeypatch, tmp_path
         ClientSession = FakeSession
 
     class FakeStdio:
-        def __call__(self, parameters):
+        def __call__(self, parameters, errlog=None):
             self.parameters = parameters
             return self
 

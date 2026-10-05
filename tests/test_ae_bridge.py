@@ -384,3 +384,24 @@ def test_mcp_apply_requires_bounds_and_scope_fields():
         }
         with pytest.raises(ValueError, match="safe identifier"):
             registry["apply_operation_batch"](envelope)
+
+
+def test_abandoned_heartbeat_does_not_block_the_bridge_forever(tmp_path):
+    import os
+    import time
+
+    bridge = Bridge(tmp_path / "bridge")
+    bridge.write_command("capability_heartbeat", {}, command_id="old", nonce="n-old")
+    with pytest.raises(BridgeBusy):  # a fresh heartbeat may still be answered
+        bridge.write_command("capability_heartbeat", {}, command_id="new", nonce="n-new")
+    stale = time.time() - 120
+    os.utime(bridge.root / bridge.command_filename, (stale, stale))
+    assert bridge.write_command("capability_heartbeat", {}, command_id="new", nonce="n-new").command_id == "new"
+
+    os.utime(bridge.root / bridge.command_filename, (stale, stale))
+    bridge.write_result("new", "n-new", {"ok": True})
+    bridge.acknowledge("new", "n-new")
+    bridge.write_command("save_checkpoint", {}, command_id="work", nonce="n-work")
+    os.utime(bridge.root / bridge.command_filename, (stale, stale))
+    with pytest.raises(BridgeBusy):  # only read-only heartbeats are ever dropped
+        bridge.write_command("capability_heartbeat", {}, command_id="hb", nonce="n-hb")

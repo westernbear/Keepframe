@@ -3780,6 +3780,10 @@ def _resolve_mcp_interpreter(value: str | None) -> str:
     _reject_reparse_components(resolved)
     if not resolved.is_file():
         raise MCPError("MCP interpreter is unavailable")
+    # A POSIX venv's bin/python is a symlink to the base interpreter; running the target would
+    # drop the venv's site-packages (no keepframe, no mcp), so keep the venv's own path.
+    if value is None and os.name != "nt" and sys.prefix != sys.base_prefix and candidate.parent.parent == Path(sys.prefix):
+        return str(candidate)
     return str(resolved)
 
 
@@ -3831,13 +3835,23 @@ class MCPStdioClient:
         return [self.python, "-E", "-P", "-m", "keepframe.after_effects.mcp_server"]
 
     @staticmethod
+    def _tool_failed(result: Any) -> MCPError:
+        content = result.get("content") if isinstance(result, Mapping) else getattr(result, "content", None)
+        texts = [
+            item.get("text") if isinstance(item, Mapping) else getattr(item, "text", None)
+            for item in (content if isinstance(content, (list, tuple)) else ())
+        ]
+        detail = " ".join(" ".join(t for t in texts if isinstance(t, str)).split())[:240]
+        return MCPError("MCP tool failed" + (f": {detail}" if detail else ""))
+
+    @staticmethod
     def _result(result: Any) -> dict[str, Any]:
         if isinstance(result, Mapping):
             error_flag = result.get("is_error", result.get("isError"))
             if error_flag is not None and not isinstance(error_flag, bool):
                 raise MCPError("MCP tool error flag is invalid")
             if error_flag:
-                raise MCPError("MCP tool failed")
+                raise MCPStdioClient._tool_failed(result)
             structured = result.get("structured_content")
             if structured is None:
                 structured = result.get("structuredContent")
@@ -3871,7 +3885,7 @@ class MCPStdioClient:
         if error_flag is not None and not isinstance(error_flag, bool):
             raise MCPError("MCP tool error flag is invalid")
         if error_flag:
-            raise MCPError("MCP tool failed")
+            raise MCPStdioClient._tool_failed(result)
         structured = getattr(result, "structured_content", None)
         if structured is None:
             structured = getattr(result, "structuredContent", None)
@@ -3903,6 +3917,9 @@ class MCPStdioClient:
             stdio_module = self._import_module("mcp.client.stdio")
             self._stdio_client = stdio_module.stdio_client
         mcp = self._import_module("mcp")
+        # The child's stderr (an import error, a traceback) is the only real failure reason;
+        # a console handle is not reliably inherited on Windows, so collect it in a file.
+        errlog = tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace")
         try:
             argv = self.child_argv()
             params = mcp.StdioServerParameters(
@@ -3911,16 +3928,25 @@ class MCPStdioClient:
                 env=dict(self.environment),
                 cwd=str(self.cwd),
             )
-            async with self._stdio_client(params) as (read_stream, write_stream):
+            async with self._stdio_client(params, errlog=errlog) as (read_stream, write_stream):
                 async with mcp.ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     result = await session.call_tool(tool, arguments=dict(payload))
                     return self._result(result)
-        except ConnectorError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - optional SDK internals; report the class and a short message
-            detail = " ".join(str(exc).split())[:160]
-            raise MCPError(f"MCP stdio command failed: {type(exc).__name__}" + (f": {detail}" if detail else "")) from exc
+        except Exception as exc:  # noqa: BLE001 - optional SDK internals; report the root cause
+            leaves = _exception_leaves(exc)  # anyio task groups wrap our own errors too
+            leaf = next((e for e in leaves if isinstance(e, ConnectorError)), leaves[0])
+            said = _stderr_tail(errlog)
+            if isinstance(leaf, ConnectorError) and not (said and isinstance(leaf, MCPError)):
+                if leaf is exc:
+                    raise
+                raise leaf from exc
+            text = str(leaf) if isinstance(leaf, MCPError) else (
+                "MCP stdio command failed: " + " ".join(f"{type(leaf).__name__}: {leaf}".split())[:160]
+            )
+            raise MCPError(text + (f"; MCP server said: {said}" if said else "")) from exc
+        finally:
+            errlog.close()
 
     def call_tool(self, tool: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         if tool not in MCP_TOOL_NAMES:
@@ -3936,6 +3962,27 @@ class MCPStdioClient:
 
 
 
+
+
+_EXCEPTION_LINE = re.compile(r"^(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*: \S")
+
+
+def _stderr_tail(log: Any) -> str:
+    """The MCP child's root-cause exception line (the first one of a chained traceback; the
+    SDK's own wrapper comes last), else its last non-empty stderr line."""
+    try:
+        log.seek(0)
+        lines = [line.rstrip() for line in log.read()[-65536:].splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return ""
+    cause = next((line for line in lines if _EXCEPTION_LINE.match(line)), lines[-1] if lines else "")
+    return cause.strip()[:240]
+
+
+def _exception_leaves(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        return [leaf for sub in exc.exceptions for leaf in _exception_leaves(sub)]
+    return [exc]
 
 
 def _probe_panel_with_mcp(root: Path) -> dict[str, Any]:

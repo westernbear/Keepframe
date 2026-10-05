@@ -56,6 +56,8 @@ BridgeKind = Literal[
 ]
 
 
+HEARTBEAT_STALE_SECONDS = 30.0  # the default dispatch timeout
+
 class BridgeError(RuntimeError):
     """Base error for invalid or unavailable bridge records."""
 
@@ -631,6 +633,16 @@ class Bridge:
                     self._path(self.command_filename).unlink(missing_ok=True)
                     self._path(self.result_filename).unlink(missing_ok=True)
                     active = None
+                if active is not None and active.kind == "capability_heartbeat" and active.command_id != command.command_id:
+                    # ponytail: a heartbeat nobody answered within the dispatch timeout was abandoned
+                    # (panel closed); it is read-only, so it must not block the bridge forever.
+                    try:
+                        age = time.time() - self._path(self.command_filename).stat(follow_symlinks=False).st_mtime
+                    except OSError:
+                        age = 0.0
+                    if age > HEARTBEAT_STALE_SECONDS:
+                        self._path(self.command_filename).unlink(missing_ok=True)
+                        active = None
                 if active is not None:
                     if active.command_id == command.command_id and active.nonce == command.nonce:
                         if active.kind != command.kind or active.payload_digest != command.payload_digest:
