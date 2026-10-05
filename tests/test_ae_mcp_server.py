@@ -128,3 +128,21 @@ def test_mcp_apply_requires_native_layer_id_map():
 
     with pytest.raises(ValueError, match="layer_native_ids"):
         mcp_server.fixed_tool_registry(_Bridge())["apply_operation_batch"](envelope)
+
+
+def test_bridge_failures_reach_the_client_as_tool_errors():
+    import inspect
+
+    from keepframe.after_effects import mcp_server
+
+    class ToolError(Exception):
+        pass
+
+    def forward(envelope=None, **kwargs):
+        raise TimeoutError("timed out waiting for the AE panel")
+
+    wrapped = mcp_server._reporting(forward, ToolError)
+    assert inspect.signature(wrapped) == inspect.signature(forward)
+    with pytest.raises(ToolError, match="^TimeoutError: timed out waiting for the AE panel$"):
+        wrapped({"command_id": "c", "nonce": "n", "payload": {}})
+    assert mcp_server._reporting(forward, None) is forward

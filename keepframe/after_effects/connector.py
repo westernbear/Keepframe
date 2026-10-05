@@ -3937,7 +3937,7 @@ class MCPStdioClient:
             leaves = _exception_leaves(exc)  # anyio task groups wrap our own errors too
             leaf = next((e for e in leaves if isinstance(e, ConnectorError)), leaves[0])
             said = _stderr_tail(errlog)
-            if isinstance(leaf, ConnectorError) and not (said and isinstance(leaf, MCPError)):
+            if isinstance(leaf, ConnectorError) and not (said and str(leaf) == "MCP tool failed"):
                 if leaf is exc:
                     raise
                 raise leaf from exc
@@ -3975,6 +3975,7 @@ def _stderr_tail(log: Any) -> str:
         lines = [line.rstrip() for line in log.read()[-65536:].splitlines() if line.strip()]
     except (OSError, ValueError):
         return ""
+    lines = [line.strip() for line in lines]  # log handlers indent the traceback
     cause = next((line for line in lines if _EXCEPTION_LINE.match(line)), lines[-1] if lines else "")
     return cause.strip()[:240]
 

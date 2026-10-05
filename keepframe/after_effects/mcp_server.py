@@ -6,6 +6,7 @@ The MCP SDK is optional.  Importing this module is intentionally side-effect
 free so native Keepframe deployments do not need the optional dependency.
 """
 import asyncio
+import functools
 import importlib
 import os
 import re
@@ -245,6 +246,36 @@ def _patch_direct_payload(server: Any, name: str) -> None:
         pass
 
 
+def _tool_error_class() -> type[Exception] | None:
+    for module_name in ("mcp.server.mcpserver.exceptions", "mcp.server.fastmcp.exceptions"):
+        try:
+            candidate = getattr(importlib.import_module(module_name), "ToolError", None)
+        except ImportError:
+            continue
+        if isinstance(candidate, type) and issubclass(candidate, Exception):
+            return candidate
+    return None
+
+
+def _reporting(function: ToolForwarder, tool_error: type[Exception] | None) -> ToolForwarder:
+    """Bridge failures (panel timeout, busy bridge) are anticipated: raise them as the SDK's
+    ToolError so their text reaches the connector; any other exception becomes a bare
+    'Error executing tool <name>'."""
+    if tool_error is None:
+        return function
+
+    @functools.wraps(function)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except tool_error:
+            raise
+        except Exception as exc:  # noqa: BLE001 - our own bridge/validation errors, no secrets
+            raise tool_error(f"{type(exc).__name__}: {exc}") from exc
+
+    return run
+
+
 def _register(server: Any, name: str, function: ToolForwarder) -> None:
     add_tool = getattr(server, "add_tool", None)
     if callable(add_tool):
@@ -285,8 +316,9 @@ def create_server(
         server = server_class("keepframe-after-effects")
     except TypeError:
         server = server_class(name="keepframe-after-effects")
+    tool_error = _tool_error_class()
     for name, function in fixed_tool_registry(bridge).items():
-        _register(server, name, function)
+        _register(server, name, _reporting(function, tool_error))
     return server
 
 
