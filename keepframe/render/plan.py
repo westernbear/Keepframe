@@ -906,7 +906,7 @@ def create_render_plan(
         try:
             artifact = dict(artifact_contract) if artifact_contract is not None else {
                 "mode": mode,
-                "outputs": ["animation"] if backend == "lottie" else (["frames", "mp4"] if mode == "preview" else ["mp4", "project"]),
+                "outputs": ["animation", "report"] if backend == "lottie" else (["frames", "mp4"] if mode == "preview" else ["mp4", "project"]),
             }
             plan_without_digest = {
                 "id": plan_id,

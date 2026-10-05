@@ -27,7 +27,9 @@ def preflight_lottie(scene: Scene) -> None:
     if scene.background.kind not in {"color", "image"}:
         raise PlanConflict(f"Lottie does not support background kind {scene.background.kind}")
     for element in scene.elements:
-        if element.kind == "3d" or element.canonical.model:
+        if element.kind == "3d" and not element.canonical.texture:
+            raise PlanConflict(f"Lottie 3D element {element.id} requires a canonical texture fallback")
+        if element.kind != "3d" and element.canonical.model:
             raise PlanConflict(f"Lottie does not support 3D element {element.id}")
         if any(abs(key.v) > 1e-9 for prop in ("skx", "sky") for key in (element.tracks[prop].keys if prop in element.tracks else ())):
             raise PlanConflict(f"Lottie does not support skew on element {element.id}")
@@ -115,6 +117,7 @@ def _vector(
 
 
 def _transform(element: Element) -> dict:
+    # Sprites ignore rx/ry; 3D elements export the canonical static texture.
     tracks = element.tracks
     anchor = element.canonical.anchor
     return {
@@ -126,6 +129,41 @@ def _transform(element: Element) -> dict:
     }
 
 
+def _reveal_mask(element: Element) -> dict | None:
+    track = element.tracks.get("reveal")
+    if track is None or all(key.v == 1 for key in track.keys):
+        return None
+    c = element.canonical
+
+    def rectangle(value: float) -> dict:
+        width = c.width * max(0.0, min(1.0, value))
+        # Lottie text is positioned at its baseline, with glyphs above zero.
+        top = -c.height if element.kind == "text" else 0
+        return {"i": [[0, 0]] * 4, "o": [[0, 0]] * 4,
+                "v": [[0, top], [width, top], [width, c.height], [0, c.height]], "c": True}
+
+    if len(track.keys) == 1:
+        path = {"a": 0, "k": rectangle(track.keys[0].v)}
+    else:
+        keys = []
+        for index, key in enumerate(track.keys):
+            item = {"t": key.t, "s": [rectangle(key.v)]}
+            if index + 1 < len(track.keys):
+                item["e"] = [rectangle(track.keys[index + 1].v)]
+                x1, y1, x2, y2 = key.ease or (0, 0, 1, 1)
+                item.update(o={"x": [x1], "y": [y1]}, i={"x": [x2], "y": [y2]})
+            keys.append(item)
+        path = {"a": 1, "k": keys}
+    return {"inv": False, "mode": "a", "pt": path, "o": {"a": 0, "k": 100}, "x": {"a": 0, "k": 0}}
+
+
+def _export_report(scene: Scene) -> dict:
+    # ponytail: Lottie supports static 3D texture previews; preserve animated
+    # models through the native Three.js backend until a 3D export path exists.
+    return {"warnings": [f"3D element {element.id} exported as a static canonical texture; rx/ry rotation is not rendered."
+                         for element in scene.elements if element.kind == "3d"]}
+
+
 def _text_layer(index: int, text: str, x: float, y: float, size: float, color: str, frames: int, font: str = "sans-serif") -> dict:
     return {
         "ddd": 0, "ind": index, "ty": 5, "nm": f"text-{index}", "sr": 1,
@@ -134,7 +172,7 @@ def _text_layer(index: int, text: str, x: float, y: float, size: float, color: s
             "p": {"a": 0, "k": [x, y, 0]}, "a": {"a": 0, "k": [0, 0, 0]},
             "s": {"a": 0, "k": [100, 100, 100]},
         },
-        "t": {"a": [], "p": {}, "d": {"k": [{"s": {"f": font, "s": size, "t": text, "j": 0, "tr": 0, "lh": size * 1.2, "fc": _hex(color)}, "t": 0}]}},
+        "t": {"a": [], "p": {}, "m": {"g": 1, "a": {"a": 0, "k": [0, 0]}}, "d": {"k": [{"s": {"f": font, "s": size, "t": text, "j": 0, "tr": 0, "lh": size * 1.2, "fc": _hex(color)}, "t": 0}]}},
         "ip": 0, "op": frames, "st": 0, "bm": 0,
     }
 
@@ -199,12 +237,15 @@ def animation_from_scene(scene: Scene, resolve_asset: AssetResolver) -> dict:
             "ddd": 0, "ind": index, "nm": element.id, "sr": 1, "ks": _transform(element),
             "ip": element.visible[0], "op": element.visible[1] + 1, "st": 0, "bm": 0,
         }
+        mask = _reveal_mask(element)
+        if mask is not None:
+            common.update(hasMask=True, masksProperties=[mask])
         canonical = element.canonical
         if element.kind == "text" and canonical.text is not None:
             font = canonical.font.family_guess if canonical.font else "sans-serif"
             fonts.add(font)
             size = canonical.font.size_px if canonical.font else 32
-            layers.append({**common, "ty": 5, "t": {"a": [], "p": {}, "d": {"k": [{"s": {"f": font, "s": size, "t": canonical.text, "j": 0, "tr": 0, "lh": canonical.height, "fc": _hex(canonical.color)}, "t": 0}]}}})
+            layers.append({**common, "ty": 5, "t": {"a": [], "p": {}, "m": {"g": 1, "a": {"a": 0, "k": [0, 0]}}, "d": {"k": [{"s": {"f": font, "s": size, "t": canonical.text, "j": 0, "tr": 0, "lh": canonical.height, "fc": _hex(canonical.color)}, "t": 0}]}}})
         elif element.kind == "ui":
             components = [] if scene.ui is None else [component for component in scene.ui.components if component.id == element.id]
             asset_id = f"ui-{element.id}"
@@ -218,7 +259,10 @@ def animation_from_scene(scene: Scene, resolve_asset: AssetResolver) -> dict:
     return {
         "v": "5.12.2", "fr": scene.fps, "ip": 0, "op": scene.frames,
         "w": scene.size[0], "h": scene.size[1], "nm": scene.id, "ddd": 0,
-        "assets": assets, "fonts": {"list": [{"fName": font, "fFamily": font, "fStyle": "Regular"} for font in sorted(fonts)]},
+        # ponytail: normalized ascent keeps local-font text finite in lottie-web;
+        # export exact per-font metrics when the IR carries them.
+        "assets": assets, "fonts": {"list": [{"fName": font, "fFamily": font, "fStyle": "Regular", "ascent": 75} for font in sorted(fonts)]},
+        "meta": _export_report(scene),
         "layers": list(reversed(layers)),
     }
 
@@ -233,6 +277,7 @@ def write_lottie(scene: Scene, scene_dir: Path, output: Path) -> Path:
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(animation_from_scene(scene, resolve), ensure_ascii=False, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    output.with_suffix(".report.json").write_text(json.dumps(_export_report(scene), ensure_ascii=False, indent=2), encoding="utf-8")
     return output
 
 
@@ -282,7 +327,9 @@ def export_lottie_plan(root: Path, plan_id: str, execution_id: str) -> dict[str,
     temporary = output.with_suffix(".tmp")
     temporary.write_text(json.dumps(animation_from_scene(scene, _plan_resolver(root, plan)), ensure_ascii=False, sort_keys=True, separators=(",", ":")), encoding="utf-8")
     os.replace(temporary, output)
-    return {"animation": str(output)}
+    report = output.with_suffix(".report.json")
+    report.write_text(json.dumps(_export_report(scene), ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"animation": str(output), "report": str(report)}
 
 
 __all__ = ["animation_from_scene", "compose_lottie_player", "export_lottie_plan", "preflight_lottie", "prepare_lottie_job", "write_lottie"]

@@ -3,7 +3,7 @@ import numpy as np
 from ..ir.tracks import PRESET_EASES, bezier_y, eval_track
 from ..ir.schema import DEFAULTS, Ease, FitError, Keyframe, PROPS, Track
 
-ERR = {"x": 2.0, "y": 2.0, "sx": 0.01, "sy": 0.01, "rot": 1.0, "skx": 1.0, "sky": 1.0, "opacity": 0.02}
+ERR = {"x": 2.0, "y": 2.0, "sx": 0.01, "sy": 0.01, "rot": 1.0, "skx": 1.0, "sky": 1.0, "opacity": 0.02, "reveal": 0.01, "rx": 1.0, "ry": 1.0}
 
 
 def _segment_error(values: np.ndarray, ease: Ease | None) -> float:
@@ -53,11 +53,10 @@ def reduce_curve(values: np.ndarray, t0: int, max_err: float) -> tuple[list[Keyf
 
 def fill_gaps(raw_full: np.ndarray) -> np.ndarray:
     out = raw_full.copy()
-    valid = ~np.isnan(out[:, 0])
-    if valid.sum() < 2:
-        return out
-    idx = np.flatnonzero(valid)
     for col in range(out.shape[1]):
+        idx = np.flatnonzero(~np.isnan(out[:, col]))
+        if len(idx) < 2:
+            continue  # all-NaN columns remain absent/default
         interior = np.arange(idx[0], idx[-1] + 1)
         out[interior, col] = np.interp(interior, idx, out[idx, col])
     return out
@@ -67,8 +66,10 @@ def tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitE
     tracks: dict[str, Track] = {}
     max_px, max_frames = 0.0, 0
     over_tolerance = np.zeros(len(raw), dtype=bool)
-    for i, prop in enumerate(PROPS):
+    for i, prop in enumerate(PROPS[:raw.shape[1]]):
         col = raw[:, i]
+        if np.isnan(col).all():
+            continue
         if np.abs(col - DEFAULTS[prop]).max() <= ERR[prop]:
             continue
         keys, err = reduce_curve(col, first, ERR[prop])

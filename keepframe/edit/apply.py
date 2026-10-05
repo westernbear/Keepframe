@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
-import shutil
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
@@ -12,9 +13,10 @@ from ..ir.schema import Background, Element, FontGuess, Scene
 from ..ir.synth import make_text_texture
 from ..assets import validate_glb
 from .retime import apply_timing
+from .svgraster import rasterize_svg
 from .textraster import measure as _measure, render_lines
 
-_DATA_URL = re.compile(r"^data:image/[^;]+;base64,(.+)$", re.S)
+_DATA_URL = re.compile(r"^data:(?:image/[^;]+|model/gltf-binary|application/octet-stream);base64,(.+)$", re.S)
 
 
 def measure_text(text: str, size_px: float, family: str = "sans-serif") -> tuple[int, int]:
@@ -70,23 +72,34 @@ def write_text_texture(path: Path, text: str, size_px: float, color: tuple[int, 
     return w, h
 
 
-def save_attachment(src: str | Path | bytes, dest: Path) -> Path:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(src, Path):
-        shutil.copy2(src, dest)
-        return dest
+def _attachment_data(src: str | Path | bytes) -> bytes:
     if isinstance(src, bytes):
-        dest.write_bytes(src)
-        return dest
+        return src
+    if isinstance(src, Path):
+        return src.read_bytes()
     m = _DATA_URL.match(src.strip())
     if m:
-        dest.write_bytes(base64.b64decode(m.group(1)))
-        return dest
+        return base64.b64decode(m.group(1), validate=True)
+    if src.strip().startswith("data:"):
+        raise ValueError("attachment must be a base64 image or GLB data URL")
     p = Path(src)
     if p.is_file():
-        shutil.copy2(p, dest)
-        return dest
-    raise ValueError("attachment must be a data URL or image path")
+        return p.read_bytes()
+    raise ValueError("attachment must be a data URL or asset path")
+
+
+def save_attachment(src: str | Path | bytes, dest: Path) -> Path:
+    data = _attachment_data(src)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
+def _is_svg(data: bytes) -> bool:
+    try:
+        return ET.fromstring(data).tag.rsplit("}", 1)[-1].lower() == "svg"
+    except ET.ParseError:
+        return False
 
 
 def _next_asset(scene_dir: Path, eid: str, suffix: str) -> Path:
@@ -136,24 +149,27 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
         elif t.property == "texture":
             if attachment is None:
                 raise ValueError("texture edit needs an attachment")
+            original = scene_dir / "assets" / f"{el.id}.png"
+            crop = cv2.imread(str(original), cv2.IMREAD_UNCHANGED) if original.is_file() else None
+            box_w, box_h = (crop.shape[1], crop.shape[0]) if crop is not None else (el.canonical.width, el.canonical.height)
+            data = _attachment_data(attachment)
+            if _is_svg(data):
+                data = rasterize_svg(data, math.ceil(box_w), math.ceil(box_h))
             dest = _next_asset(scene_dir, el.id, "tex")
-            save_attachment(attachment, dest)
+            save_attachment(data, dest)
             img = cv2.imread(str(dest), cv2.IMREAD_UNCHANGED)
             if img is None:
                 raise ValueError("could not read attachment image")
             el.canonical.texture = f"assets/{dest.name}"
             h, w = img.shape[:2]
-            original = scene_dir / "assets" / f"{el.id}.png"
-            crop = cv2.imread(str(original), cv2.IMREAD_UNCHANGED) if original.is_file() else None
-            box_w, box_h = (crop.shape[1], crop.shape[0]) if crop is not None else (el.canonical.width, el.canonical.height)
             scale = min(box_w / w, box_h / h)
             el.canonical.width, el.canonical.height = float(w * scale), float(h * scale)
         elif t.property == "model":
             if attachment is None:
                 raise ValueError("3D edit needs a GLB attachment")
-            data = attachment if isinstance(attachment, bytes) else Path(attachment).read_bytes()
+            data = validate_glb(_attachment_data(attachment))
             dest = _next_model(scene_dir, el.id)
-            dest.write_bytes(validate_glb(data))
+            dest.write_bytes(data)
             el.kind = "3d"
             el.canonical.model = f"assets/{dest.name}"
         el.provenance = "manual"
