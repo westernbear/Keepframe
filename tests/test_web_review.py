@@ -47,8 +47,66 @@ def test_review_scene_exposes_current_font_for_correction_preview(tmp_path):
     text = next(el for el in scene.elements if el.kind == "text")
     slim = next(el for el in _slim_scene(scene)["elements"] if el["id"] == text.id)
     assert slim["canonical"]["font"] == text.canonical.font.model_dump(
-        include={"family_guess", "weight", "size_px"},
+        include={"family_guess", "weight", "size_px", "candidates"},
     )
+
+
+@pytest.fixture
+def font_candidates_project(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+
+    root = tmp_path / "ws" / "p1"
+    sd = scene_dir(root, "synth11")
+    scene = make_synthetic_scene(sd, seed=11, frames=4)
+    text = next(el for el in scene.elements if el.kind == "text")
+    text.canonical.font.candidates = ["sans-serif", "Noto Sans", "Arial"]
+    init_project(root, {"file": "ref.mp4"}, scene)
+    (root / "meta.json").write_text(json.dumps({"id": "p1", "status": "review"}))
+    stages = sd / "stages"
+    stages.mkdir()
+    cache = {}
+    frames = np.stack([
+        (composite_scene(scene, sd, f, cache) * 255).round().clip(0, 255).astype(np.uint8)
+        for f in range(scene.frames)
+    ])
+    np.save(stages / "frames.npy", frames)
+    return root, scene, text
+
+
+def test_state_exposes_text_font_candidates(font_candidates_project):
+    root, scene, text = font_candidates_project
+    srv = start(root.parent)
+    try:
+        code, _, body = get(srv, f"/api/state?project=p1&scene={scene.id}")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert code == 200
+    state = json.loads(body)
+    element = next(el for el in state["scene"]["elements"] if el["id"] == text.id)
+    assert element["canonical"]["font"]["candidates"] == ["sans-serif", "Noto Sans", "Arial"]
+
+
+@pytest.mark.parametrize("candidates,expected", [
+    (["Arial", None, 42, {}, ["serif"], True, "Noto Sans", "serif", "extra"],
+     ["Arial", "Noto Sans", "serif"]),
+    ("Arial", []),
+    ({"family": "Arial"}, []),
+    (None, []),
+])
+def test_review_scene_limits_font_candidates_to_three_strings(candidates, expected):
+    from types import SimpleNamespace
+    from keepframe.web.server import _slim_scene
+
+    # Exercise the serialized boundary, including malformed candidate metadata.
+    scene = SimpleNamespace(model_dump=lambda **kwargs: {"elements": [{"canonical": {"font": {
+        "family_guess": "Arial", "weight": 400, "size_px": 32,
+        "candidates": candidates, "confidence": 0.9,
+    }}}]})
+    font = _slim_scene(scene)["elements"][0]["canonical"]["font"]
+    assert font == {
+        "family_guess": "Arial", "weight": 400, "size_px": 32, "candidates": expected,
+    }
 
 
 @pytest.mark.parametrize("family", ["x;color:red", "Noto_Sans.Regular", "x,y"])
@@ -453,6 +511,45 @@ def test_review_frame_has_cache_control(tmp_path):
     finally:
         srv.shutdown()
     assert cache and "max-age" in cache
+
+
+@pytest.mark.browser
+def test_review_font_picker_applies_candidate_to_new_version(font_candidates_project):
+    pytest.importorskip("playwright")
+    from playwright.sync_api import expect, sync_playwright
+
+    root, scene, text = font_candidates_project
+    srv = start(root.parent)
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(args=["--no-sandbox"], chromium_sandbox=False)
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"{base}/review?project=p1&scene={scene.id}")
+            page.wait_for_function("() => document.getElementById('review-root').getAttribute('aria-busy') === 'false'")
+            page.locator(f'.element-row[data-id="{text.id}"]').click()
+            picker = page.locator("#font-candidate-family")
+            expect(picker).to_be_visible()
+            expect(picker.locator("option")).to_have_text(["sans-serif", "Noto Sans", "Arial"])
+            assert picker.locator("option").evaluate_all("opts => opts.map(o => o.value)") == ["sans-serif", "Noto Sans", "Arial"]
+            expect(picker).to_have_value("sans-serif")
+            picker.select_option("Noto Sans")
+            with page.expect_response(lambda response: response.url == f"{base}/api/correct"
+                                      and response.request.method == "POST") as response:
+                page.locator('#font-candidates [data-i18n="review.applyFont"]').click()
+            assert response.value.status == 202
+            expect(page.locator("#version-select")).to_have_value("v2", timeout=15000)
+            expect(page.locator("#font-candidate-family")).to_have_value("Noto Sans")
+            updated, version = current_scene(root, scene.id)
+            assert version.id == "v2" and version.parent == "v1"
+            assert updated.element(text.id).canonical.font.family_guess == "Noto Sans"
+            assert updated.element(text.id).canonical.font.candidates == ["sans-serif", "Noto Sans", "Arial"]
+            assert updated.element(text.id).canonical.text == text.canonical.text
+            assert len(load_project(root).versions) == 2
+            browser.close()
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 @pytest.mark.browser

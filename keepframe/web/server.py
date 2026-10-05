@@ -516,10 +516,18 @@ def _slim_scene(scene) -> dict:
         can = el.get("canonical") or {}
         tex = can.get("texture") or ""
         font = can.get("font")
+        slim_font = None
+        if font:
+            slim_font = {key: font[key] for key in ("family_guess", "weight", "size_px")}
+            candidates = font.get("candidates")
+            slim_font["candidates"] = (
+                [family for family in candidates if isinstance(family, str)][:3]
+                if isinstance(candidates, list) else []
+            )
         el["canonical"] = {
             "text": can.get("text"),
             "texture": tex.split("/")[-1] if tex else None,
-            "font": {key: font[key] for key in ("family_guess", "weight", "size_px")} if font else None,
+            "font": slim_font,
         }
     return data
 
