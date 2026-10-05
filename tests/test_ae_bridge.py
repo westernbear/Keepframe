@@ -405,3 +405,19 @@ def test_abandoned_heartbeat_does_not_block_the_bridge_forever(tmp_path):
     os.utime(bridge.root / bridge.command_filename, (stale, stale))
     with pytest.raises(BridgeBusy):  # only read-only heartbeats are ever dropped
         bridge.write_command("capability_heartbeat", {}, command_id="hb", nonce="n-hb")
+
+
+def test_file_errors_under_the_lock_are_not_reported_as_lock_failures(tmp_path, monkeypatch):
+    bridge = Bridge(tmp_path / "bridge")
+
+    def denied(self, *args, **kwargs):
+        raise PermissionError(13, "Access is denied", str(self))
+
+    monkeypatch.setattr(Path, "unlink", denied)
+    with pytest.raises(BridgeUnavailable, match="bridge file operation failed: .*Access is denied") as caught:
+        with bridge._exclusive_process_lock():
+            (bridge.root / "command.json").unlink()
+    assert "cannot lock" not in str(caught.value)
+    monkeypatch.undo()
+    with bridge._exclusive_process_lock():  # the lock was released
+        pass

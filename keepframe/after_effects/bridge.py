@@ -361,24 +361,31 @@ class Bridge:
                 import msvcrt
 
                 os.lseek(fd, 0, os.SEEK_SET)
-                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-                try:
-                    yield
-                finally:
-                    os.lseek(fd, 0, os.SEEK_SET)
-                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)  # retries for ~10 s, then EDEADLOCK
             else:
                 import fcntl
 
                 fcntl.flock(fd, fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
         except OSError as exc:
-            raise BridgeUnavailable("cannot lock bridge root") from exc
-        finally:
             if fd is not None:
+                os.close(fd)
+            raise BridgeUnavailable(f"cannot lock bridge root: {exc}") from exc
+        try:
+            yield
+        except OSError as exc:  # a file operation under the lock, not the lock itself
+            raise BridgeUnavailable(f"bridge file operation failed: {exc}") from exc
+        finally:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
                 os.close(fd)
 
     def _read_bytes(self, path: Path) -> bytes | None:
@@ -641,8 +648,11 @@ class Bridge:
                     except OSError:
                         age = 0.0
                     if age > HEARTBEAT_STALE_SECONDS:
-                        self._path(self.command_filename).unlink(missing_ok=True)
-                        active = None
+                        try:
+                            self._path(self.command_filename).unlink(missing_ok=True)
+                            active = None
+                        except PermissionError:  # the panel has it open right now; stay busy
+                            pass
                 if active is not None:
                     if active.command_id == command.command_id and active.nonce == command.nonce:
                         if active.kind != command.kind or active.payload_digest != command.payload_digest:
