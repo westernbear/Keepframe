@@ -17,13 +17,13 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261005a";
-import { T, Tf } from "/static/js/i18n.js?v=20261005a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261005a";
+} from "/static/js/api.js?v=20261005b";
+import { T, Tf } from "/static/js/i18n.js?v=20261005b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261005b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261005a";
+} from "/static/js/playback.js?v=20261005b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;

@@ -21,7 +21,7 @@
 <script>
 const SCENE = {{SCENE_JSON}};
 const FPS = SCENE.fps;
-const DEFAULTS = {x:0,y:0,sx:1,sy:1,rot:0,skx:0,sky:0,opacity:1};
+const DEFAULTS = {x:0,y:0,sx:1,sy:1,rot:0,skx:0,sky:0,opacity:1,reveal:1,rx:0,ry:0};
 gsap.registerPlugin(CustomEase);
 const tl = gsap.timeline({paused:true});
 const appliers = [];
@@ -30,6 +30,7 @@ const uiStates = [...document.querySelectorAll('[data-ui-states]')].map(node => 
   return [node, label, JSON.parse(node.dataset.uiStates || '[]'), label?.textContent || '', node.style.backgroundColor, node.style.color];
 });
 const modelRenders = [];
+const modelObjects = new Map();
 const modelPromises = [...document.querySelectorAll('.model-canvas')].map(canvas => new Promise((resolve, reject) => {
   const renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:false, preserveDrawingBuffer:true});
   renderer.setPixelRatio(1);
@@ -43,24 +44,35 @@ const modelPromises = [...document.querySelectorAll('.model-canvas')].map(canvas
   world.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
   const light = new THREE.DirectionalLight(0xffffff, 0.8); light.position.set(2, 3, 4); world.add(light);
   new THREE.GLTFLoader().load(canvas.dataset.model, gltf => {
-    const object = gltf.scene;
-    const box = new THREE.Box3().setFromObject(object);
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
     const size = new THREE.Vector3(); const center = new THREE.Vector3();
     box.getSize(size); box.getCenter(center);
-    object.position.sub(center);
+    model.position.sub(center);
+    // A centered parent keeps imported node rotations and animated pivots separate.
+    const object = new THREE.Group();
+    object.add(model);
     const extent = Math.max(size.x / aspect, size.y, size.z, 1e-6);
     object.scale.setScalar(1.8 / extent);
     world.add(object);
+    modelObjects.set(canvas, object);
     const draw = () => renderer.render(world, camera);
     modelRenders.push(draw); draw(); resolve();
   }, undefined, reject);
 }));
 for (const el of SCENE.elements) {
   const node = document.getElementById('el-' + el.id);
+  const canvas = node.querySelector('.model-canvas');
   const st = Object.assign({}, DEFAULTS);
   const apply = () => {
     node.style.transform = `translate(${st.x}px, ${st.y}px) rotate(${st.rot}deg) skewX(${st.skx}deg) scale(${st.sx}, ${st.sy})`;
     node.style.opacity = String(st.opacity);
+    const reveal = Math.max(0, Math.min(1, st.reveal));
+    // clip-path preserves getBoundingClientRect and the layer probe.
+    node.style.clipPath = reveal === 1 ? '' : `inset(0 ${(1-reveal)*100}% 0 0)`;
+    // rx/ry apply only to kind "3d"; sprites ignore these tracks.
+    const object = el.kind === '3d' ? modelObjects.get(canvas) : null;
+    if (object) object.rotation.set(st.rx * Math.PI / 180, st.ry * Math.PI / 180, 0);
   };
   for (const [prop, track] of Object.entries(el.tracks)) {
     const keys = track.keys;

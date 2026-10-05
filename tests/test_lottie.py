@@ -52,7 +52,8 @@ def test_lottie_final_plan_exports_once_approved(tmp_path):
     result = run_job(prepare_lottie_job(root, plan.id))
     exported = json.loads(open(result["animation"], encoding="utf-8").read())
     assert exported["nm"] == "s1"
-    assert plan.artifact_contract["outputs"] == ["animation"]
+    assert plan.artifact_contract["outputs"] == ["animation", "report"]
+    assert json.loads(open(result["report"], encoding="utf-8").read()) == {"warnings": []}
 
 
 def test_lottie_preflight_rejects_unrepresentable_tracks(tmp_path):
