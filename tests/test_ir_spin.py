@@ -124,13 +124,11 @@ def test_lottie_final_3d_export_includes_warning_report(tmp_path):
 
 
 @pytest.mark.parametrize("prop", ["rx", "ry"])
-def test_spin_motion_constraints_brief_and_ae_compatibility(tmp_path, prop):
-    from keepframe.after_effects.compatibility import analyze_ae_compatibility
+def test_spin_motion_constraints_and_brief(tmp_path, prop):
     from keepframe.analyze.constraints import apply_keep_preset, extract_constraints
     from keepframe.session.brief import scene_brief
     from keepframe.verify.matrix import extract_motions
     from keepframe.verify.predicates import build_context, eval_pred
-    from tests.test_ae_compatibility import _capabilities
     scene = spin_scene(tmp_path, prop)
     element = scene.elements[0]
     element.pending_asset = "3d"
@@ -140,9 +138,6 @@ def test_spin_motion_constraints_brief_and_ae_compatibility(tmp_path, prop):
     assert all(c.keep and eval_pred(c.pred, build_context(scene)) for c in apply_keep_preset(extract_constraints(scene), "content_only"))
     assert "spins 360°" in scene_brief(scene) and "(3D 후보)" in scene_brief(scene)
     assert 'sprites ignore' in scene_brief(scene)
-    issues = analyze_ae_compatibility(scene, _capabilities())
-    assert "3d" in {issue.semantic_key for issue in issues}
-    assert {"3d", prop} <= {semantic for issue in issues for semantic in issue.lost_semantics}
     element.kind = "sprite"
     element.canonical.model = None
     assert extract_motions(scene) == []

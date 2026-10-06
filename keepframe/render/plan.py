@@ -13,22 +13,18 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..ir.schema import Scene, load_scene_json
 from ..ir.store import load_project, load_scene
 
-RenderBackend = Literal["native", "after_effects", "lottie"]
+RenderBackend = Literal["native", "lottie"]
 RenderMode = Literal["preview", "final"]
 RenderPlanStatus = Literal["awaiting_approval", "approved", "running", "paused", "done", "failed"]
-_MAX_AE_FINAL_FRAMES = 100_000
-_MAX_AE_FINAL_DIMENSION = 16_384
-_MAX_AE_FINAL_PIXELS = 10_000_000_000
 
 
 class PlanConflict(RuntimeError):
     """Raised when an immutable plan or its approval state no longer matches."""
-
 
 
 _PROCESS_LOCKS: dict[str, threading.RLock] = {}
@@ -107,16 +103,9 @@ class RenderPlan(BaseModel):
     assets: tuple[PlanAsset, ...] = ()
     locked_targets: tuple[str, ...] = ()
     permitted_operations: tuple[dict[str, Any], ...] = ()
-    effect_schemas: tuple[dict[str, Any], ...] = ()
-    capability_hash: str | None = None
-    capability_manifest: dict[str, Any] | None = None
     substitutions: tuple[dict[str, Any], ...] = ()
     substitutions_acknowledged: bool = False
     artifact_contract: dict[str, Any] = Field(default_factory=dict)
-    predecessor_id: str | None = None
-    predecessor_digest: str | None = None
-    predecessor_checkpoint: int | None = None
-    predecessor_checkpoint_digest: str | None = None
     digest: str
 
     @field_validator("id", "project_id", "scene_id", "version_id")
@@ -141,24 +130,13 @@ class RenderPlan(BaseModel):
             raise ValueError("direction is too long")
         return value
 
-    @field_validator(
-        "scene_sha256",
-        "capability_hash",
-        "predecessor_digest",
-        "predecessor_checkpoint_digest",
-    )
+    @field_validator("scene_sha256")
     @classmethod
-    def _optional_sha256(cls, value: str | None) -> str | None:
-        if value is not None and not re.fullmatch(r"[0-9a-f]{64}", value):
+    def _scene_sha256(cls, value: str) -> str:
+        if not re.fullmatch(r"[0-9a-f]{64}", value):
             raise ValueError("digest fields must be lowercase SHA-256 digests")
         return value
 
-    @field_validator("predecessor_checkpoint")
-    @classmethod
-    def _checkpoint_index(cls, value: int | None) -> int | None:
-        if value is not None and (isinstance(value, bool) or value < 0):
-            raise ValueError("predecessor checkpoint must be a non-negative integer")
-        return value
 
     @field_validator("digest")
     @classmethod
@@ -173,47 +151,6 @@ class RenderPlan(BaseModel):
         if any(not item for item in value):
             raise ValueError("locked target identifiers must not be empty")
         return value
-
-    @model_validator(mode="after")
-    def _capability_binding(self) -> "RenderPlan":
-        if (self.predecessor_id is None) != (self.predecessor_digest is None):
-            raise ValueError("predecessor id and digest must be supplied together")
-        checkpoint_bound = (
-            self.predecessor_checkpoint is not None
-            or self.predecessor_checkpoint_digest is not None
-        )
-        if checkpoint_bound and (
-            self.predecessor_checkpoint is None
-            or self.predecessor_checkpoint_digest is None
-        ):
-            raise ValueError("predecessor checkpoint index and digest must be supplied together")
-        if self.mode == "preview" and checkpoint_bound:
-            raise ValueError("preview plans cannot bind a predecessor checkpoint")
-        if self.backend == "after_effects" and self.mode == "final" and (
-            self.predecessor_id is None or self.predecessor_digest is None
-        ):
-            raise ValueError("final AE plans require a preview predecessor")
-        if (
-            self.backend == "after_effects"
-            and self.mode == "final"
-            and not checkpoint_bound
-        ):
-            raise ValueError("final AE plans require a predecessor checkpoint")
-        if self.backend != "after_effects":
-            return self
-        if self.capability_hash is None or self.capability_manifest is None:
-            raise ValueError(
-                "after_effects plans require a capability hash and manifest"
-            )
-        try:
-            manifest_hash = hashlib.sha256(
-                _canonical_payload(self.capability_manifest)
-            ).hexdigest()
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError("capability manifest is invalid") from exc
-        if manifest_hash != self.capability_hash:
-            raise ValueError("capability manifest does not match capability hash")
-        return self
 
 
 class RenderPlanState(BaseModel):
@@ -456,8 +393,6 @@ def _copy_immutable(source: Path, destination: Path, expected_sha: str, expected
 
 def _substitution_asset_paths(
     substitutions: Sequence[Mapping[str, Any]],
-    *,
-    include_nested_footage: bool,
 ) -> Iterable[tuple[str, Literal["texture", "substitution"]]]:
     for substitution in substitutions:
         for key in ("asset", "asset_path", "project_path", "texture", "raw"):
@@ -469,16 +404,6 @@ def _substitution_asset_paths(
             for value in values:
                 if isinstance(value, str):
                     yield value, "substitution"
-        if not include_nested_footage:
-            continue
-        layers = substitution.get("proposed_layers")
-        if isinstance(layers, (list, tuple)):
-            for layer in layers:
-                if not isinstance(layer, Mapping) or layer.get("layer_type") != "footage":
-                    continue
-                texture = layer.get("texture")
-                if isinstance(texture, str):
-                    yield texture, "texture"
 
 
 def _validate_authoritative_file(root: Path, path: Path, label: str) -> None:
@@ -571,9 +496,6 @@ def _final_gate(meta: dict[str, Any] | None, scene_id: str, version_id: str) -> 
 
 def _normalize_locked_targets(
     locked_targets: Sequence[str],
-    *,
-    backend: RenderBackend,
-    scene,
 ) -> tuple[str, ...]:
     if isinstance(locked_targets, (str, bytes, bytearray)):
         raise PlanConflict("locked targets must be a sequence of identifiers")
@@ -584,44 +506,16 @@ def _normalize_locked_targets(
     if any(not isinstance(value, str) or not value for value in values):
         raise PlanConflict("locked target identifiers must be non-empty strings")
     normalized = tuple(sorted(set(values)))
-    if backend == "after_effects":
-        valid = {element.id for element in scene.elements}
-        valid.update(group.id for group in scene.groups)
-        unknown = set(normalized) - valid
-        if unknown:
-            raise PlanConflict(
-                f"AE locked target is not a scene element or group: {sorted(unknown)!r}"
-            )
     return normalized
 
 
 def _normalize_substitutions(
     substitutions: Sequence[Any],
     *,
-    backend: RenderBackend,
     substitutions_acknowledged: bool,
 ) -> tuple[dict[str, Any], ...]:
     normalized: list[dict[str, Any]] = []
     for item in substitutions:
-        if backend == "after_effects":
-            from ..after_effects.models import AESubstitution
-
-            try:
-                if isinstance(item, AESubstitution):
-                    parsed = item
-                else:
-                    raw = dict(item) if isinstance(item, Mapping) else item
-                    if isinstance(raw, dict):
-                        for field in ("proposed_layers", "proposed_effects", "lost_semantics"):
-                            if isinstance(raw.get(field), list):
-                                raw[field] = tuple(raw[field])
-                    parsed = AESubstitution.model_validate(raw)
-            except (TypeError, ValueError) as exc:
-                raise PlanConflict("AE substitution has an invalid shape") from exc
-            if not parsed.acknowledged:
-                raise PlanConflict("AE substitution acknowledgement is required")
-            normalized.append(parsed.model_dump(mode="json"))
-            continue
         try:
             raw = dict(item)
             normalized.append(
@@ -629,57 +523,9 @@ def _normalize_substitutions(
             )
         except (TypeError, ValueError, OverflowError) as exc:
             raise PlanConflict("substitution is not finite canonical JSON") from exc
-    if normalized and (
-        substitutions_acknowledged is not True
-        if backend == "after_effects"
-        else not substitutions_acknowledged
-    ):
+    if normalized and not substitutions_acknowledged:
         raise PlanConflict("substitution acknowledgement is required")
     return tuple(normalized)
-
-def _validate_successor_contract(
-    predecessor: RenderPlan,
-    *,
-    project_id: str,
-    scene_id: str,
-    version_id: str,
-    direction: str | None,
-    scene_sha256: str,
-    assets: Sequence[PlanAsset],
-    locked_targets: Sequence[str],
-    permitted_operations: Sequence[Mapping[str, Any]],
-    effect_schemas: Sequence[Mapping[str, Any]],
-    capability_hash: str | None,
-    capability_manifest: Mapping[str, Any] | None,
-    substitutions: Sequence[Mapping[str, Any]],
-    substitutions_acknowledged: bool,
-) -> None:
-    if (
-        predecessor.mode != "preview"
-        or predecessor.backend != "after_effects"
-        or predecessor.project_id != project_id
-        or predecessor.scene_id != scene_id
-        or predecessor.version_id != version_id
-    ):
-        raise PlanConflict("predecessor does not match the authoritative AE preview")
-    if predecessor.scene_sha256 != scene_sha256:
-        raise PlanConflict("predecessor scene hash changed")
-    if predecessor.assets != tuple(assets):
-        raise PlanConflict("predecessor asset manifest changed")
-    if predecessor.locked_targets != tuple(locked_targets):
-        raise PlanConflict("predecessor lock contract changed")
-    if predecessor.permitted_operations != tuple(dict(item) for item in permitted_operations):
-        raise PlanConflict("predecessor operation contract changed")
-    if predecessor.effect_schemas != tuple(dict(item) for item in effect_schemas):
-        raise PlanConflict("predecessor effect contract changed")
-    if predecessor.capability_hash != capability_hash or predecessor.capability_manifest != capability_manifest:
-        raise PlanConflict("predecessor capability binding changed")
-    if predecessor.substitutions != tuple(dict(item) for item in substitutions):
-        raise PlanConflict("predecessor substitutions changed")
-    if predecessor.substitutions_acknowledged != substitutions_acknowledged:
-        raise PlanConflict("predecessor substitution acknowledgement changed")
-    if predecessor.direction != direction:
-        raise PlanConflict("predecessor direction changed")
 
 
 def create_render_plan(
@@ -693,20 +539,12 @@ def create_render_plan(
     direction: str | None = None,
     locked_targets: Sequence[str] = (),
     permitted_operations: Sequence[Mapping[str, Any]] = (),
-    effect_schemas: Sequence[Mapping[str, Any]] = (),
-    capability_hash: str | None = None,
-    capability_manifest: Mapping[str, Any] | None = None,
     substitutions: Sequence[Mapping[str, Any]] = (),
     substitutions_acknowledged: bool = False,
     artifact_contract: Mapping[str, Any] | None = None,
-    predecessor_id: str | None = None,
-    predecessor_digest: str | None = None,
-    predecessor_checkpoint: int | None = None,
-    predecessor_checkpoint_digest: str | None = None,
-    _predecessor_plan: RenderPlan | None = None,
 ) -> RenderPlan:
     """Resolve authoritative project data, pin assets, and publish one plan."""
-    if backend not in ("native", "after_effects", "lottie"):
+    if backend not in ("native", "lottie"):
         raise ValueError(f"unknown render backend {backend!r}")
     if mode not in ("preview", "final"):
         raise ValueError(f"unknown render mode {mode!r}")
@@ -714,59 +552,8 @@ def create_render_plan(
         raise PlanConflict("Lottie is a final-only render backend")
     if direction is not None and not isinstance(direction, str):
         raise TypeError("direction must be a string or None")
-    if predecessor_digest is not None and not re.fullmatch(
-        r"[0-9a-f]{64}", predecessor_digest
-    ):
-        raise PlanConflict("predecessor digest is invalid")
-    if predecessor_checkpoint is not None and (
-        isinstance(predecessor_checkpoint, bool)
-        or not isinstance(predecessor_checkpoint, int)
-        or predecessor_checkpoint < 0
-    ):
-        raise PlanConflict("predecessor checkpoint must be a non-negative integer")
-    checkpoint_bound = (
-        predecessor_checkpoint is not None
-        or predecessor_checkpoint_digest is not None
-    )
-    if checkpoint_bound and (
-        predecessor_checkpoint is None
-        or predecessor_checkpoint_digest is None
-    ):
-        raise PlanConflict("predecessor checkpoint index and digest must be supplied together")
-    if predecessor_checkpoint_digest is not None and not re.fullmatch(
-        r"[0-9a-f]{64}", predecessor_checkpoint_digest
-    ):
-        raise PlanConflict("predecessor checkpoint digest is invalid")
-    if mode == "preview" and checkpoint_bound:
-        raise PlanConflict("preview plans cannot bind a predecessor checkpoint")
-    if backend == "after_effects" and mode == "final" and predecessor_id is None:
-        raise PlanConflict("final AE plans require a preview predecessor")
-    if backend == "after_effects" and mode == "final" and not checkpoint_bound:
-        raise PlanConflict("final AE plans require a predecessor checkpoint")
-    if backend == "after_effects" and (
-        not capability_hash or capability_manifest is None
-    ):
-        raise PlanConflict(
-            "after_effects plans require a capability hash and manifest"
-        )
-    if capability_manifest is not None:
-        if not isinstance(capability_manifest, Mapping):
-            raise TypeError("capability manifest must be a mapping or None")
-        try:
-            capability_manifest = json.loads(
-                _canonical_payload(dict(capability_manifest)).decode("utf-8")
-            )
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise PlanConflict("capability manifest is invalid") from exc
-        if backend == "after_effects" and capability_hash:
-            manifest_hash = hashlib.sha256(
-                _canonical_payload(capability_manifest)
-            ).hexdigest()
-            if manifest_hash != capability_hash:
-                raise PlanConflict("capability manifest does not match capability hash")
     substitutions = _normalize_substitutions(
         substitutions,
-        backend=backend,
         substitutions_acknowledged=substitutions_acknowledged,
     )
 
@@ -777,22 +564,6 @@ def create_render_plan(
     meta, version, scene_path = _resolve_version(root, project_id, scene_id, version_id)
     if mode == "final":
         _final_gate(meta, scene_id, version.id)
-    if backend == "after_effects" and mode == "final":
-        if _predecessor_plan is None:
-            try:
-                _predecessor_plan = load_render_plan(root, predecessor_id)
-            except (PlanConflict, TypeError) as exc:
-                raise PlanConflict("predecessor render plan is unavailable") from exc
-        if (
-            _predecessor_plan.id != predecessor_id
-            or _predecessor_plan.digest != predecessor_digest
-            or _predecessor_plan.project_id != project_id
-            or _predecessor_plan.scene_id != scene_id
-            or _predecessor_plan.version_id != version.id
-            or _predecessor_plan.backend != "after_effects"
-            or _predecessor_plan.mode != "preview"
-        ):
-            raise PlanConflict("predecessor does not match the authoritative AE preview")
     try:
         scene = load_scene(scene_path)
     except Exception as exc:  # noqa: BLE001 - malformed source cannot be rendered
@@ -803,23 +574,9 @@ def create_render_plan(
         from .lottie import preflight_lottie
 
         preflight_lottie(scene)
-    if backend == "after_effects" and mode == "final":
-        width, height = scene.size
-        if (
-            width % 2
-            or height % 2
-            or scene.frames > _MAX_AE_FINAL_FRAMES
-            or scene.fps > 99
-            or width > _MAX_AE_FINAL_DIMENSION
-            or height > _MAX_AE_FINAL_DIMENSION
-            or scene.frames * width * height > _MAX_AE_FINAL_PIXELS
-        ):
-            raise PlanConflict("final AE scene exceeds the render resource budget")
 
     locked_targets = _normalize_locked_targets(
         locked_targets,
-        backend=backend,
-        scene=scene,
     )
 
     scene_sha256, scene_length = _hash_file(scene_path)
@@ -838,7 +595,6 @@ def create_render_plan(
     refs.extend(
         _substitution_asset_paths(
             substitutions,
-            include_nested_footage=backend == "after_effects",
         )
     )
 
@@ -866,23 +622,6 @@ def create_render_plan(
             )
         )
 
-    if _predecessor_plan is not None:
-        _validate_successor_contract(
-            _predecessor_plan,
-            project_id=project_id,
-            scene_id=scene_id,
-            version_id=version.id,
-            direction=direction,
-            scene_sha256=scene_sha256,
-            assets=assets,
-            locked_targets=locked_targets,
-            permitted_operations=permitted_operations,
-            effect_schemas=effect_schemas,
-            capability_hash=capability_hash,
-            capability_manifest=capability_manifest,
-            substitutions=substitutions,
-            substitutions_acknowledged=substitutions_acknowledged,
-        )
 
     # A random id avoids reusing mutable output paths. The staging directory is
     # published as one rename after every immutable file has been fsynced.
@@ -931,16 +670,9 @@ def create_render_plan(
                 ],
                 "locked_targets": list(locked_targets),
                 "permitted_operations": [dict(item) for item in permitted_operations],
-                "effect_schemas": [dict(item) for item in effect_schemas],
-                "capability_hash": capability_hash,
-                "capability_manifest": capability_manifest,
                 "substitutions": list(substitutions),
                 "substitutions_acknowledged": substitutions_acknowledged,
                 "artifact_contract": artifact,
-                "predecessor_id": predecessor_id,
-                "predecessor_digest": predecessor_digest,
-                "predecessor_checkpoint": predecessor_checkpoint,
-                "predecessor_checkpoint_digest": predecessor_checkpoint_digest,
             }
             digest = hashlib.sha256(_canonical_payload(plan_without_digest)).hexdigest()
             plan = RenderPlan.model_validate_json(
@@ -1000,10 +732,32 @@ def load_render_plan(root: Path, plan_id: str) -> RenderPlan:
     path = plan_dir / "plan.json"
     _ensure_project_path(Path(root), path, "render plan file", kind="file")
     try:
-        plan = RenderPlan.model_validate_json(path.read_bytes())
+        data = json.loads(path.read_bytes())
+        if data.get("backend") not in ("native", "lottie"):
+            raise FileNotFoundError(plan_id)
+        # Existing local plans included empty metadata for the retired backend.
+        # Verify the complete stored contract before discarding those defaults.
+        stored_digest = _plan_digest(data)
+        retired_defaults = {
+            "effect_schemas": [],
+            "capability_hash": None,
+            "capability_manifest": None,
+            "predecessor_id": None,
+            "predecessor_digest": None,
+            "predecessor_checkpoint": None,
+            "predecessor_checkpoint_digest": None,
+        }
+        for key, empty in retired_defaults.items():
+            if key in data and data[key] == empty:
+                del data[key]
+        plan = RenderPlan.model_validate_json(json.dumps(data, allow_nan=False))
+        if _plan_digest(data) != _plan_digest(plan):
+            raise PlanConflict("render plan digest mismatch")
+    except FileNotFoundError:
+        raise
     except Exception as exc:  # noqa: BLE001 - callers receive one conflict type
         raise PlanConflict("render plan is invalid") from exc
-    if plan.id != plan_id or _plan_digest(plan) != plan.digest:
+    if plan.id != plan_id or stored_digest != plan.digest:
         raise PlanConflict("render plan digest mismatch")
     for asset in plan.assets:
         _validate_pinned_asset(Path(root), plan, asset)
@@ -1180,8 +934,6 @@ def approve_render_plan(root: Path, plan_id: str, *, digest: str, revision: int)
         )
         _atomic_write(state_path, _canonical_json(approved.model_dump(mode="json")))
         return approved
-
-
 
 
 __all__ = [

@@ -22,6 +22,7 @@ from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
+from keepframe.ae.api import AERoutes
 from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
@@ -53,16 +54,7 @@ from keepframe.session import (
     validate_ui_context,
 )
 from keepframe.session.store import MAX_HISTORY_BYTES
-from keepframe.after_effects.workflow import AEWorkflowService
-from keepframe.after_effects.auth import (
-    AEAuthError,
-    AEControllerAuthorizationError,
-    AEProjectAuth,
-    controller_cookie_name,
-)
-from keepframe.after_effects.coordinator import AECoordinator, CoordinatorConflict
 from keepframe.session.provider import load_llm_settings
-from keepframe.after_effects.planning import AERenderDraft, prepare_ae_render_plan
 from keepframe.web.workspace import (
     create_project,
     create_rejected_project,
@@ -77,7 +69,6 @@ log = get("keepframe.web")
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 
 JOBS = JobStore()
-_FINAL_PLAN_LOCK = threading.RLock()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RENDER_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 
@@ -183,40 +174,8 @@ def _local_artifacts(root: Path, plan, job: Job | None) -> list[dict[str, str]]:
     return _native_artifacts(root, plan, job)
 
 
-def _ae_execution_plan(root: Path, plan):
-    if plan.mode != "final":
-        return plan
-    if plan.predecessor_id is None or plan.predecessor_digest is None:
-        raise PlanConflict("final AE plan is missing its preview predecessor")
-    predecessor = load_render_plan(root, plan.predecessor_id)
-    if (
-        predecessor.digest != plan.predecessor_digest
-        or predecessor.project_id != plan.project_id
-        or predecessor.backend != "after_effects"
-        or predecessor.mode != "preview"
-    ):
-        raise PlanConflict("final AE plan predecessor is invalid")
-    return predecessor
-
-
 def _render_state_payload(root: Path, plan) -> dict:
     state = load_render_plan_state(root, plan.id)
-    if plan.backend == "after_effects":
-        execution_plan = _ae_execution_plan(root, plan)
-        session = None
-        try:
-            session = AECoordinator.cached(root, execution_plan.id).state()
-        except CoordinatorConflict as exc:
-            if "has not started" not in str(exc):
-                raise
-            session = None
-        return {
-            "plan": plan.model_dump(mode="json"),
-            "state": state.model_dump(mode="json"),
-            "session": session.model_dump(mode="json") if session is not None else None,
-            "job": None,
-            "status": session.status if session is not None else _render_status(state, None),
-        }
     job_id = (
         _native_execution_job_id(plan.id, plan.digest, state.execution_id)
         if state.execution_id
@@ -230,170 +189,6 @@ def _render_state_payload(root: Path, plan) -> dict:
         "status": _render_status(state, job),
         "artifacts": _local_artifacts(root, plan, job),
     }
-
-
-def _equivalent_ae_successor(
-    candidate,
-    predecessor,
-    *,
-    checkpoint: int,
-    checkpoint_digest: str,
-) -> bool:
-    return (
-        candidate.backend == "after_effects"
-        and candidate.mode == "final"
-        and candidate.project_id == predecessor.project_id
-        and candidate.scene_id == predecessor.scene_id
-        and candidate.version_id == predecessor.version_id
-        and candidate.direction == predecessor.direction
-        and candidate.scene_sha256 == predecessor.scene_sha256
-        and candidate.assets == predecessor.assets
-        and candidate.locked_targets == predecessor.locked_targets
-        and candidate.permitted_operations == predecessor.permitted_operations
-        and candidate.effect_schemas == predecessor.effect_schemas
-        and candidate.capability_hash == predecessor.capability_hash
-        and candidate.capability_manifest == predecessor.capability_manifest
-        and candidate.substitutions == predecessor.substitutions
-        and candidate.substitutions_acknowledged
-        == predecessor.substitutions_acknowledged
-        and candidate.predecessor_id == predecessor.id
-        and candidate.predecessor_digest == predecessor.digest
-        and candidate.predecessor_checkpoint == checkpoint
-        and candidate.predecessor_checkpoint_digest == checkpoint_digest
-    )
-
-
-def prepare_ae_final_successor(
-    root: Path,
-    *,
-    project_id: str,
-    scene_id: str,
-    version_id: str,
-    predecessor_id: str,
-    predecessor_digest: str,
-    predecessor_checkpoint: int,
-    predecessor_checkpoint_digest: str | None = None,
-    direction: str | None = None,
-    capabilities,
-):
-    """Create or reuse one final AE plan for a selected preview checkpoint."""
-    if (
-        not isinstance(predecessor_checkpoint, int)
-        or isinstance(predecessor_checkpoint, bool)
-        or predecessor_checkpoint < 0
-    ):
-        raise PlanConflict("predecessor checkpoint is invalid")
-    root = Path(root)
-    with _FINAL_PLAN_LOCK:
-        predecessor = load_render_plan(root, predecessor_id)
-        if (
-            predecessor.project_id != project_id
-            or predecessor.scene_id != scene_id
-            or predecessor.version_id != version_id
-            or predecessor.backend != "after_effects"
-            or predecessor.mode != "preview"
-            or predecessor.digest != predecessor_digest
-        ):
-            raise PlanConflict("predecessor does not match the authoritative AE preview")
-        if direction is not None and direction != predecessor.direction:
-            raise PlanConflict("predecessor direction changed")
-        meta = load_meta(root.parent, project_id)
-        if (
-            not isinstance(meta, dict)
-            or meta.get("status") != "approved"
-            or meta.get("version") != version_id
-        ):
-            raise PlanConflict("final render requires the approved version")
-        try:
-            predecessor_coordinator = AECoordinator.cached(root, predecessor.id)
-            predecessor_session = predecessor_coordinator.state()
-        except CoordinatorConflict as exc:
-            raise PlanConflict("predecessor coordinator is unavailable") from exc
-        if not predecessor_session.baseline_complete:
-            raise PlanConflict("predecessor baseline is incomplete")
-        if predecessor_session.selected_checkpoint != predecessor_checkpoint:
-            raise PlanConflict("predecessor checkpoint is not selected")
-        checkpoint = next(
-            (
-                item
-                for item in predecessor_session.checkpoints
-                if item.index == predecessor_checkpoint
-            ),
-            None,
-        )
-        if checkpoint is None or not checkpoint.passed or not checkpoint.lineage_valid:
-            raise PlanConflict("predecessor checkpoint did not pass current lineage verification")
-        context_digest = checkpoint.context_digest
-        if not isinstance(context_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", context_digest):
-            raise PlanConflict("predecessor checkpoint context is unavailable")
-        if (
-            predecessor_checkpoint_digest is not None
-            and predecessor_checkpoint_digest != context_digest
-        ):
-            raise PlanConflict("predecessor checkpoint context digest does not match")
-        if capabilities is None:
-            raise PlanConflict("active published AE capabilities are required")
-        try:
-            from keepframe.after_effects.models import AECapabilities
-
-            if not isinstance(capabilities, AECapabilities):
-                capabilities = AECapabilities.model_validate(capabilities)
-        except (TypeError, ValueError) as exc:
-            raise PlanConflict("AE capabilities are invalid") from exc
-        if (
-            capabilities.capability_hash != predecessor.capability_hash
-            or capabilities.model_dump(
-                mode="json",
-                exclude={"capability_hash", "project_open", "timestamp"},
-            )
-            != predecessor.capability_manifest
-        ):
-            raise PlanConflict("AE capabilities changed since predecessor preview")
-
-        renders = root / "renders"
-        if renders.is_dir() and not renders.is_symlink():
-            for candidate_dir in renders.iterdir():
-                if (
-                    candidate_dir.is_symlink()
-                    or not candidate_dir.is_dir()
-                    or not _RENDER_PLAN_ID_RE.fullmatch(candidate_dir.name)
-                ):
-                    continue
-                try:
-                    candidate = load_render_plan(root, candidate_dir.name)
-                except PlanConflict:
-                    continue
-                if _equivalent_ae_successor(
-                    candidate,
-                    predecessor,
-                    checkpoint=predecessor_checkpoint,
-                    checkpoint_digest=context_digest,
-                ):
-                    return candidate
-
-        return create_render_plan(
-            root,
-            project_id=project_id,
-            scene_id=scene_id,
-            version_id=version_id,
-            backend="after_effects",
-            mode="final",
-            direction=predecessor.direction,
-            locked_targets=predecessor.locked_targets,
-            permitted_operations=predecessor.permitted_operations,
-            effect_schemas=predecessor.effect_schemas,
-            capability_hash=predecessor.capability_hash,
-            capability_manifest=predecessor.capability_manifest,
-            substitutions=predecessor.substitutions,
-            substitutions_acknowledged=predecessor.substitutions_acknowledged,
-            predecessor_id=predecessor.id,
-            predecessor_digest=predecessor.digest,
-            predecessor_checkpoint=predecessor_checkpoint,
-            predecessor_checkpoint_digest=context_digest,
-            _predecessor_plan=predecessor,
-        )
-
-
 
 
 def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
@@ -726,30 +521,6 @@ def _read_frame_jpeg(video: Path, index: int) -> bytes | None:
     ok, buf = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
     return buf.tobytes() if ok else None
 
-def _detach_project_device(root: Path, device_id: str, *, reason: str) -> bool:
-    renders = root / "renders"
-    if not renders.exists():
-        return True
-    if renders.is_symlink() or not renders.is_dir():
-        raise CoordinatorConflict("render workspace is unsafe")
-    settled = True
-    for plan_dir in renders.iterdir():
-        if (
-            plan_dir.is_symlink()
-            or not plan_dir.is_dir()
-            or not _RENDER_PLAN_ID_RE.fullmatch(plan_dir.name)
-            or not (plan_dir / "ae" / "session.json").exists()
-        ):
-            continue
-        coordinator = AECoordinator.cached(root, plan_dir.name)
-        session = coordinator.state()
-        if session.device_id != device_id:
-            continue
-        session = coordinator.detach_device(device_id, reason=reason)
-        if session.device_id == device_id and session.status not in {"done", "failed"}:
-            settled = False
-    return settled
-
 
 def _authority(value: str) -> tuple[str, int | None] | None:
     try:
@@ -769,8 +540,6 @@ def _authority(value: str) -> tuple[str, int | None] | None:
     return parsed.hostname.lower(), port
 
 
-
-
 def make_server(
     workspace: Path,
     port: int = 8765,
@@ -778,17 +547,15 @@ def make_server(
     admin: bool = False,
     admin_svc=None,
     admin_auth=None,
-    ae_relay_url: str | None = None,
-    workflow: AEWorkflowService | None = None,
 ) -> ThreadingHTTPServer:
     configure()
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     review_states: dict[tuple[str, str], ReviewState] = {}
-    allowed_ae_hosts = {"127.0.0.1", "localhost", "::1"}
+    allowed_hosts = {"127.0.0.1", "localhost", "::1"}
     configured_host = host.strip("[]").lower()
     if configured_host not in {"0.0.0.0", "::", ""}:
-        allowed_ae_hosts.add(configured_host)
+        allowed_hosts.add(configured_host)
 
     def agent_llm():
         if admin_svc is not None:
@@ -806,10 +573,6 @@ def make_server(
             return client
         saved = load_llm_settings(workspace)
         return make_llm(saved, workspace) if saved is not None else make_llm()
-    ae_workflow = workflow if workflow is not None else AEWorkflowService(
-        workspace,
-        agent_llm,
-    )
 
     admin_routes = None
     if admin and admin_svc is not None and admin_auth is not None:
@@ -894,13 +657,13 @@ def make_server(
                 return None
             return value
 
-        def _same_origin(self) -> bool:
+        def _host_allowed(self) -> bool:
             host_values = self.headers.get_all("Host") or []
             if len(host_values) != 1:
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
             authority = _authority(host_values[0])
-            if authority is None or authority[0] not in allowed_ae_hosts:
+            if authority is None or authority[0] not in allowed_hosts:
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
             server_address = self.server.server_address
@@ -908,9 +671,16 @@ def make_server(
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
             server_port = int(server_address[1])
-            if authority[1] is not None and authority[1] != server_port:
+            if (80 if authority[1] is None else authority[1]) != server_port:
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
+            return True
+
+        def _same_origin(self) -> bool:
+            if not self._host_allowed():
+                return False
+            authority = _authority(self.headers["Host"])
+            server_port = int(self.server.server_address[1])
             origin_values = self.headers.get_all("Origin") or []
             source: str | None = None
             if len(origin_values) == 1:
@@ -954,58 +724,11 @@ def make_server(
                 return False
             return True
 
-        def _controller_token(self, project_id: str) -> str | None:
-            values = self.headers.get_all("Cookie") or []
-            if len(values) != 1:
-                return None
-            try:
-                prefix = controller_cookie_name(project_id) + "="
-            except AEAuthError:
-                return None
-            # Not SimpleCookie: one foreign cookie it cannot parse (a JSON value set by another
-            # app on this host, any port) makes it silently drop every cookie after it.
-            found = [part.strip()[len(prefix):] for part in values[0].split(";") if part.strip().startswith(prefix)]
-            return found[0] if len(found) == 1 else None
-
-        def _authorize_ae_browser(
-            self,
-            project_id: str,
-            *,
-            origin_checked: bool = False,
-        ) -> bool:
-            if not origin_checked and not self._same_origin():
-                return False
-            try:
-                auth = AEProjectAuth(workspace / project_id, project_id)
-                authorized = auth.authenticate_controller(
-                    self._controller_token(project_id)
-                )
-            except AEAuthError:
-                authorized = False
-            if not authorized:
-                self._json(401, {"error": "controller authorization failed"})
-                return False
-            return True
-
-        def _controller_cookie(
-            self,
-            project_id: str,
-            token: str,
-            *,
-            clear: bool = False,
-        ) -> str:
-            # Persistent: a session cookie dies with the browser and locks the project to a controller
-            # nobody holds any more.
-            value = f"{controller_cookie_name(project_id)}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={365 * 86400}"
-            origin = self.headers.get("Origin") or ""
-            if urlparse(origin).scheme == "https":
-                value += "; Secure"
-            if clear:
-                value = value.replace(f"Max-Age={365 * 86400}", "Max-Age=0")
-            return value
 
         def do_GET(self):
             u = urlparse(self.path)
+            if ae_routes.handle_get(self, u):
+                return
             if u.path in ("/admin", "/admin/") and not admin:
                 return self._json(404, ADMIN_OFF)
             if admin_routes and admin_routes.handle_get(self, u):
@@ -1138,47 +861,6 @@ def make_server(
                         "version": version.model_dump(mode="json"),
                     },
                 )
-            if u.path == "/api/ae/status":
-                if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
-                    return self._json(400, {"error": "project is required"})
-                try:
-                    root = _safe_render_project(workspace, pid)
-                    auth = AEProjectAuth(root, pid)
-                    device_id = auth.active_device_id()
-                except FileNotFoundError:
-                    return self._json(404, {"error": "not found"})
-                if device_id is None:
-                    return self._json(
-                        200,
-                        {
-                            "relay_configured": ae_relay_url is not None,
-                            "paired": False,
-                            "device_id": None,
-                            "capability_hash": None,
-                            "ae_version": None,
-                            "ae_ready": False,
-                            "project_open": False,
-                        },
-                    )
-                if not self._authorize_ae_browser(pid):
-                    return
-                snapshot = auth.read_capabilities(device_id)
-                return self._json(
-                    200,
-                    {
-                        "relay_configured": ae_relay_url is not None,
-                        "paired": True,
-                        "device_id": device_id,
-                        "capability_hash": (
-                            snapshot.capability_hash if snapshot is not None else None
-                        ),
-                        "ae_version": snapshot.version if snapshot is not None else None,
-                        "ae_ready": snapshot.ready if snapshot is not None else False,
-                        "project_open": (
-                            snapshot.project_open if snapshot is not None else False
-                        ),
-                    },
-                )
 
             if u.path == "/api/render-plans":
                 version_id = q.get("version", [ver])[0]
@@ -1200,14 +882,6 @@ def make_server(
                     return self._json(400, {"error": str(exc)})
                 except FileNotFoundError:
                     return self._json(404, {"error": "not found"})
-                ae_authorized = False
-                try:
-                    with AEProjectAuth(root, pid).authorize_controller_with_capabilities(
-                        self._controller_token(pid)
-                    ):
-                        ae_authorized = True
-                except (AEAuthError, FileNotFoundError):
-                    ae_authorized = False
                 records: list[tuple[int, dict]] = []
                 renders = root / "renders"
                 if renders.is_dir() and not renders.is_symlink():
@@ -1226,7 +900,6 @@ def make_server(
                                 plan.project_id != pid
                                 or plan.scene_id != sid
                                 or plan.version_id != version_id
-                                or (plan.backend == "after_effects" and not ae_authorized)
                             ):
                                 continue
                             payload = _render_state_payload(root, plan)
@@ -1235,7 +908,6 @@ def make_server(
                             FileNotFoundError,
                             OSError,
                             PlanConflict,
-                            CoordinatorConflict,
                         ):
                             continue
                         records.append((modified, payload))
@@ -1331,65 +1003,6 @@ def make_server(
                     stream.close()
                 return
 
-            artifact_match = re.fullmatch(
-                r"/api/ae/artifacts/([A-Za-z0-9_-]{8,128})",
-                u.path,
-            )
-            if artifact_match:
-                artifact_id = artifact_match.group(1)
-                plan_id = q.get("plan", [None])[0]
-                if (
-                    not isinstance(pid, str)
-                    or not _PROJECT_ID_RE.fullmatch(pid)
-                    or not isinstance(plan_id, str)
-                    or not _RENDER_PLAN_ID_RE.fullmatch(plan_id)
-                ):
-                    return self._json(
-                        400,
-                        {"error": "project and plan are required"},
-                    )
-                if not self._authorize_ae_browser(pid):
-                    return
-                try:
-                    root = _safe_render_project(workspace, pid)
-                    plan = load_render_plan(root, plan_id)
-                    if plan.project_id != pid or plan.backend != "after_effects":
-                        return self._json(404, {"error": "not found"})
-                    execution_plan = _ae_execution_plan(root, plan)
-                    reservation, stream = AECoordinator.cached(
-                        root,
-                        execution_plan.id,
-                    ).open_artifact(artifact_id)
-                except (FileNotFoundError, PlanConflict, CoordinatorConflict):
-                    return self._json(404, {"error": "not found"})
-                content_types = {
-                    "png": "image/png",
-                    "mp4": "video/mp4",
-                    "zip": "application/zip",
-                    "aep": "application/octet-stream",
-                }
-                try:
-                    self.send_response(200)
-                    self.send_header(
-                        "content-type",
-                        content_types[reservation.kind],
-                    )
-                    self.send_header("content-length", str(reservation.length))
-                    self.send_header("cache-control", "no-store")
-                    self.send_header("x-content-type-options", "nosniff")
-                    self.send_header(
-                        "content-disposition",
-                        f'attachment; filename="keepframe-{artifact_id}.{reservation.kind}"',
-                    )
-                    self.end_headers()
-                    while chunk := stream.read(1024 * 1024):
-                        self.wfile.write(chunk)
-                except (BrokenPipeError, ConnectionResetError):
-                    return
-                finally:
-                    stream.close()
-                return
-
             if u.path == "/api/render-state":
                 plan_id = q.get("plan", [None])[0]
                 if not pid or not plan_id:
@@ -1409,11 +1022,11 @@ def make_server(
                     plan = load_render_plan(root, plan_id)
                     if plan.project_id != pid:
                         return self._json(404, {"error": "not found"})
-                    if plan.backend == "after_effects" and not self._authorize_ae_browser(pid):
-                        return
                     payload = _render_state_payload(root, plan)
                     return self._json(200, payload)
-                except (PlanConflict, CoordinatorConflict) as exc:
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
 
 
@@ -1530,82 +1143,10 @@ def make_server(
 
         def do_POST(self):
             u = urlparse(self.path)
+            if ae_routes.handle_post(self, u):
+                return
             if admin_routes and admin_routes.handle_post(self, u):
                 return
-            if u.path == "/api/ae/pairings":
-                if not self._same_origin():
-                    return
-                if ae_relay_url is None:
-                    return self._json(503, {"error": "AE relay is not configured"})
-                data = self._bounded_json()
-                if data is None:
-                    return
-                if set(data) - {"project", "capability_request"}:
-                    return self._json(400, {"error": "pairing payload is invalid"})
-                project_id = data.get("project")
-                capability_request = data.get("capability_request", {})
-                if (
-                    not isinstance(project_id, str)
-                    or not _PROJECT_ID_RE.fullmatch(project_id)
-                    or not isinstance(capability_request, dict)
-                ):
-                    return self._json(400, {"error": "pairing payload is invalid"})
-                try:
-                    root = _safe_render_project(workspace, project_id)
-                    auth = AEProjectAuth(root, project_id)
-                    grant = auth.create_pairing(
-                        self._controller_token(project_id),
-                        capability_request,
-                    )
-                    active_device = auth.active_device_id()
-                    if active_device is not None and not _detach_project_device(
-                        root,
-                        active_device,
-                        reason="replacement",
-                    ):
-                        return self._json(
-                            409,
-                            {"error": "connector replacement is waiting for the active command"},
-                            headers=(
-                                ("Cache-Control", "no-store"),
-                                (
-                                    "Set-Cookie",
-                                    self._controller_cookie(
-                                        project_id,
-                                        grant.controller_token,
-                                    ),
-                                ),
-                            ),
-                        )
-                except ValueError as exc:
-                    return self._json(400, {"error": str(exc)})
-                except FileNotFoundError:
-                    return self._json(404, {"error": "not found"})
-                except AEControllerAuthorizationError:
-                    return self._json(
-                        401,
-                        {"error": "controller authorization failed"},
-                    )
-                except (AEAuthError, CoordinatorConflict) as exc:
-                    return self._json(409, {"error": str(exc)})
-                return self._json(
-                    201,
-                    {
-                        "code": grant.code,
-                        "expires_at": grant.expires_at,
-                        "relay_url": ae_relay_url,
-                    },
-                    headers=(
-                        ("Cache-Control", "no-store"),
-                        (
-                            "Set-Cookie",
-                            self._controller_cookie(
-                                project_id,
-                                grant.controller_token,
-                            ),
-                        ),
-                    ),
-                )
 
             if u.path == "/api/render-plans":
                 if not self._same_origin():
@@ -1620,13 +1161,6 @@ def make_server(
                     "backend",
                     "mode",
                     "direction",
-                    "predecessor_id",
-                    "predecessor_digest",
-                    "predecessor_checkpoint",
-                    "predecessor_checkpoint_digest",
-                    "substitutions",
-                    "substitutions_acknowledged",
-                    "compatibility_issues",
                 }
                 if set(data) - allowed:
                     return self._json(400, {"error": "render plan payload is invalid"})
@@ -1636,7 +1170,7 @@ def make_server(
                 if (
                     not isinstance(project_id, str)
                     or not _PROJECT_ID_RE.fullmatch(project_id)
-                    or backend not in {"native", "after_effects", "lottie"}
+                    or backend not in {"native", "lottie"}
                     or mode not in {"preview", "final"}
                 ):
                     return self._json(400, {"error": "render plan payload is invalid"})
@@ -1659,105 +1193,27 @@ def make_server(
                 direction = data.get("direction")
                 if direction is not None and not isinstance(direction, str):
                     return self._json(400, {"error": "direction must be a string or None"})
-                predecessor_id = data.get("predecessor_id")
-                predecessor_digest = data.get("predecessor_digest")
-                predecessor_checkpoint = data.get("predecessor_checkpoint")
-                predecessor_checkpoint_digest = data.get("predecessor_checkpoint_digest")
-                if backend == "after_effects" and not self._authorize_ae_browser(
-                    project_id,
-                    origin_checked=True,
-                ):
-                    return
                 try:
-                    before = {
-                        item.name
-                        for item in (root / "renders").iterdir()
-                        if item.is_dir() and not item.is_symlink()
-                    } if (root / "renders").is_dir() and not (root / "renders").is_symlink() else set()
-                    if backend == "after_effects":
-                        auth = AEProjectAuth(root, project_id)
-                        snapshot = auth.read_capabilities()
-                        if mode == "final":
-                            if (
-                                not isinstance(predecessor_id, str)
-                                or not isinstance(predecessor_digest, str)
-                                or not isinstance(predecessor_checkpoint, int)
-                                or isinstance(predecessor_checkpoint, bool)
-                            ):
-                                raise PlanConflict(
-                                    "final AE plans require a preview predecessor checkpoint"
-                                )
-                            with _FINAL_PLAN_LOCK:
-                                before = {
-                                    item.name
-                                    for item in (root / "renders").iterdir()
-                                    if item.is_dir() and not item.is_symlink()
-                                } if (root / "renders").is_dir() and not (root / "renders").is_symlink() else set()
-                                plan = prepare_ae_final_successor(
-                                    root,
-                                    project_id=project_id,
-                                    scene_id=scene_id,
-                                    version_id=version_id,
-                                    predecessor_id=predecessor_id,
-                                    predecessor_digest=predecessor_digest,
-                                    predecessor_checkpoint=predecessor_checkpoint,
-                                    predecessor_checkpoint_digest=predecessor_checkpoint_digest,
-                                    direction=direction,
-                                    capabilities=snapshot,
-                                )
-                        else:
-                            candidate = prepare_ae_render_plan(
-                                root,
-                                project_id=project_id,
-                                scene_id=scene_id,
-                                version_id=version_id,
-                                mode=mode,
-                                direction=direction,
-                                capabilities=snapshot,
-                                client=agent_llm(),
-                                substitutions=data.get("substitutions"),
-                                substitutions_acknowledged=data.get(
-                                    "substitutions_acknowledged",
-                                    False,
-                                ),
-                                compatibility_issues=data.get("compatibility_issues"),
-                                predecessor_id=predecessor_id,
-                                predecessor_digest=predecessor_digest,
-                                predecessor_checkpoint=predecessor_checkpoint,
-                                predecessor_checkpoint_digest=predecessor_checkpoint_digest,
-                            )
-                            if isinstance(candidate, AERenderDraft):
-                                return self._json(
-                                    200,
-                                    {
-                                        "draft": candidate.model_dump(mode="json"),
-                                        "status": "awaiting_substitution_acknowledgement",
-                                    },
-                                )
-                            plan = candidate
-                    else:
-                        plan = create_render_plan(
-                            root,
-                            project_id=project_id,
-                            scene_id=scene_id,
-                            version_id=version_id,
-                            backend=backend,
-                            mode=mode,
-                            direction=direction,
-                            predecessor_id=predecessor_id,
-                            predecessor_digest=predecessor_digest,
-                            predecessor_checkpoint=predecessor_checkpoint,
-                            predecessor_checkpoint_digest=predecessor_checkpoint_digest,
-                        )
+                    plan = create_render_plan(
+                        root,
+                        project_id=project_id,
+                        scene_id=scene_id,
+                        version_id=version_id,
+                        backend=backend,
+                        mode=mode,
+                        direction=direction,
+                    )
                     state = load_render_plan_state(root, plan.id)
                     return self._json(
-                        200 if plan.id in before else 201,
+                        201,
                         {
                             "plan": plan.model_dump(mode="json"),
                             "state": state.model_dump(mode="json"),
                         },
                     )
-                except (PlanConflict, CoordinatorConflict) as exc:
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
                 except (TypeError, ValueError) as exc:
                     return self._json(400, {"error": str(exc)})
@@ -1787,15 +1243,12 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 try:
                     plan = load_render_plan(root, plan_id)
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
                 except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
                 if plan.project_id != project_id:
                     return self._json(404, {"error": "not found"})
-                if plan.backend == "after_effects" and not self._authorize_ae_browser(
-                    project_id,
-                    origin_checked=True,
-                ):
-                    return
                 digest = data.get("digest")
                 revision = data.get("revision")
                 if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -1803,50 +1256,6 @@ def make_server(
                 if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
                     return self._json(400, {"error": "revision is invalid"})
                 try:
-                    if plan.backend == "after_effects":
-                        pending_state = load_render_plan_state(root, plan.id)
-                        if pending_state.status != "approved":
-                            auth = AEProjectAuth(root, project_id)
-                            with auth.authorize_controller_with_capabilities(
-                                self._controller_token(project_id)
-                            ) as snapshot:
-                                pending_state = load_render_plan_state(root, plan.id)
-                                if (
-                                    pending_state.status == "awaiting_approval"
-                                    and pending_state.revision == revision
-                                    and digest == plan.digest
-                                ):
-                                    if snapshot is None:
-                                        return self._json(
-                                            409,
-                                            {
-                                                "error": (
-                                                    "active published AE capabilities "
-                                                    "are required"
-                                                )
-                                            },
-                                        )
-                                    manifest = snapshot.model_dump(
-                                        mode="json",
-                                        exclude={
-                                            "capability_hash",
-                                            "project_open",
-                                            "timestamp",
-                                        },
-                                    )
-                                    if (
-                                        snapshot.capability_hash != plan.capability_hash
-                                        or manifest != plan.capability_manifest
-                                    ):
-                                        return self._json(
-                                            409,
-                                            {
-                                                "error": (
-                                                    "AE capabilities changed since "
-                                                    "plan creation"
-                                                )
-                                            },
-                                        )
                     state = approve_render_plan(
                         root,
                         plan.id,
@@ -1855,28 +1264,6 @@ def make_server(
                     )
                     if not state.execution_id:
                         raise PlanConflict("approved render plan has no execution id")
-                    if plan.backend == "after_effects":
-                        if plan.mode == "final":
-                            if not plan.predecessor_id:
-                                raise PlanConflict("final AE plan has no preview predecessor")
-                            session = AECoordinator.cached(
-                                root,
-                                plan.predecessor_id,
-                            ).state()
-                        else:
-                            session = AECoordinator.cached(root, plan.id).start(
-                                state.execution_id
-                            )
-                        return self._json(
-                            202,
-                            {
-                                "plan": plan.model_dump(mode="json"),
-                                "state": state.model_dump(mode="json"),
-                                "session": session.model_dump(mode="json"),
-                                "job": None,
-                                "status": session.status,
-                            },
-                        )
                     job_id = _native_execution_job_id(plan.id, plan.digest, state.execution_id)
                     job = JOBS.find(job_id)
                     if job is None:
@@ -1899,137 +1286,11 @@ def make_server(
                             "artifacts": _local_artifacts(root, plan, job),
                         },
                     )
-                except AEControllerAuthorizationError as exc:
-                    return self._json(401, {"error": str(exc)})
-                except AEAuthError as exc:
-                    return self._json(409, {"error": str(exc)})
-                except (PlanConflict, CoordinatorConflict) as exc:
-                    return self._json(409, {"error": str(exc)})
-
-
-            m = re.fullmatch(
-                r"/api/ae/sessions/([A-Za-z0-9][A-Za-z0-9_.:-]{7,255})/"
-                r"(stop|continue|begin-manual|sync-manual|select-checkpoint|finalize)",
-                u.path,
-            )
-            if m:
-                session_id, action = m.groups()
-                if not self._same_origin():
-                    return
-                data = self._bounded_json()
-                if data is None:
-                    return
-                project_id = data.get("project")
-                plan_id = data.get("plan")
-                revision = data.get("revision")
-                if not isinstance(project_id, str) or not _PROJECT_ID_RE.fullmatch(project_id):
-                    return self._json(400, {"error": "project id is invalid"})
-                if not isinstance(plan_id, str) or not _RENDER_PLAN_ID_RE.fullmatch(plan_id):
-                    return self._json(400, {"error": "plan id is invalid"})
-                if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
-                    return self._json(400, {"error": "revision is invalid"})
-                allowed_keys = {"project", "plan", "revision", "checkpoint"}
-                if action == "finalize":
-                    allowed_keys.update({"final_plan_id", "execution_id"})
-                if any(key not in allowed_keys for key in data):
-                    return self._json(400, {"error": "plan or control payload is invalid"})
-                if not self._authorize_ae_browser(
-                    project_id,
-                    origin_checked=True,
-                ):
-                    return
-                try:
-                    root = _safe_render_project(workspace, project_id)
-                except ValueError as exc:
-                    return self._json(400, {"error": str(exc)})
                 except FileNotFoundError:
                     return self._json(404, {"error": "not found"})
-                plan_path = root / "renders" / plan_id / "plan.json"
-                if not plan_path.exists() and not plan_path.is_symlink():
-                    return self._json(404, {"error": "not found"})
-                try:
-                    plan = load_render_plan(root, plan_id)
-                    if plan.project_id != project_id or plan.backend != "after_effects":
-                        return self._json(404, {"error": "not found"})
-                    session_path = root / "renders" / plan_id / "ae" / "session.json"
-                    if not session_path.exists() and not session_path.is_symlink():
-                        return self._json(404, {"error": "not found"})
-                    coordinator = AECoordinator.cached(root, plan_id)
-                    current = coordinator.state()
-                    if current.id != session_id:
-                        return self._json(404, {"error": "not found"})
-                    queued_command = None
-                    if action == "select-checkpoint":
-                        checkpoint = data.get("checkpoint")
-                        if (
-                            not isinstance(checkpoint, int)
-                            or isinstance(checkpoint, bool)
-                            or checkpoint < 0
-                        ):
-                            return self._json(400, {"error": "checkpoint is invalid"})
-                        current = coordinator.select_checkpoint(checkpoint, revision)
-                    elif action == "sync-manual":
-                        if current.revision != revision:
-                            return self._json(409, {"error": "revision is stale"})
-                        queued_command = ae_workflow.manual_sync(coordinator)
-                        current = coordinator.state()
-                    else:
-                        if action == "stop":
-                            event = "stop"
-                        elif action == "continue":
-                            event = "continue"
-                        elif action == "begin-manual":
-                            event = "begin_manual"
-                        else:
-                            event = "finalize"
-                        selected = None
-                        if action == "finalize" and data.get("checkpoint") is not None:
-                            selected = data["checkpoint"]
-                            if (
-                                not isinstance(selected, int)
-                                or isinstance(selected, bool)
-                                or selected < 0
-                            ):
-                                return self._json(400, {"error": "checkpoint is invalid"})
-                        if action == "finalize":
-                            final_plan_id = data.get("final_plan_id")
-                            execution_id = data.get("execution_id")
-                            if (
-                                not isinstance(final_plan_id, str)
-                                or not _RENDER_PLAN_ID_RE.fullmatch(final_plan_id)
-                            ):
-                                return self._json(400, {"error": "final plan id is invalid"})
-                            if (
-                                not isinstance(execution_id, str)
-                                or not re.fullmatch(r"ex-[0-9a-f]{32}", execution_id)
-                            ):
-                                return self._json(400, {"error": "execution id is invalid"})
-                            transition_data = {
-                                "final_plan_id": final_plan_id,
-                                "execution_id": execution_id,
-                            }
-                            if selected is not None:
-                                transition_data["selected_checkpoint"] = selected
-                            current = coordinator.transition(
-                                event,
-                                revision,
-                                **transition_data,
-                            )
-                        else:
-                            current = coordinator.transition(event, revision)
-                    render_state = load_render_plan_state(root, plan_id)
-                    response = {
-                        "plan": plan.model_dump(mode="json"),
-                        "state": render_state.model_dump(mode="json"),
-                        "session": current.model_dump(mode="json"),
-                        "job": None,
-                        "status": current.status,
-                    }
-                    if queued_command is not None:
-                        response["command"] = queued_command.model_dump(mode="json")
-                    return self._json(200, response)
-                except (PlanConflict, CoordinatorConflict) as exc:
+                except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
+
 
             if u.path == "/api/estimate":
                 body = self._read_body()
@@ -2374,21 +1635,6 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 if meta.get("id") is not None and meta.get("id") != project_id:
                     return self._json(404, {"error": "not found"})
-                agent_auth = AEProjectAuth(root, project_id)
-                agent_controller_token = self._controller_token(project_id)
-                try:
-                    controller_required = agent_auth.controller_configured()
-                    controller_authorized = agent_auth.authenticate_controller(
-                        agent_controller_token
-                    )
-                except AEAuthError:
-                    controller_required = True
-                    controller_authorized = False
-                if controller_required and not controller_authorized:
-                    return self._json(
-                        401,
-                        {"error": "controller authorization failed"},
-                    )
                 try:
                     project = load_project(root)
                     scene_id = requested_scene_id
@@ -2408,92 +1654,8 @@ def make_server(
                 resolved_version = version
                 client = agent_llm()
 
-                def _latest_ae_preview(capability_hash: str, direction: str | None):
-                    renders = root / "renders"
-                    candidates = []
-                    if not renders.is_dir() or renders.is_symlink():
-                        return None
-                    for plan_dir in renders.iterdir():
-                        if (
-                            plan_dir.is_symlink()
-                            or not plan_dir.is_dir()
-                            or not _RENDER_PLAN_ID_RE.fullmatch(plan_dir.name)
-                        ):
-                            continue
-                        try:
-                            candidate = load_render_plan(root, plan_dir.name)
-                            if (
-                                candidate.backend != "after_effects"
-                                or candidate.mode != "preview"
-                                or candidate.scene_id != resolved_scene_id
-                                or candidate.version_id != resolved_version
-                                or candidate.capability_hash != capability_hash
-                                or (direction is not None and candidate.direction != direction)
-                            ):
-                                continue
-                            session = AECoordinator.cached(root, candidate.id).state()
-                        except (PlanConflict, CoordinatorConflict):
-                            continue
-                        checkpoint = next(
-                            (
-                                item
-                                for item in session.checkpoints
-                                if item.index == session.selected_checkpoint
-                            ),
-                            None,
-                        )
-                        if (
-                            session.baseline_complete
-                            and checkpoint is not None
-                            and checkpoint.passed
-                            and checkpoint.lineage_valid
-                            and checkpoint.context_digest is not None
-                        ):
-                            candidates.append((session.updated_at, candidate, session))
-                    return max(candidates, key=lambda item: item[0]) if candidates else None
 
                 def prepare_agent_render(mode: str, backend: str, direction: str | None):
-                    if (
-                        backend == "after_effects"
-                        and not agent_auth.authenticate_controller(agent_controller_token)
-                    ):
-                        raise AEControllerAuthorizationError(
-                            "controller authorization failed"
-                        )
-                    if backend == "after_effects":
-                        snapshot = agent_auth.read_capabilities()
-                        if snapshot is None:
-                            raise PlanConflict(
-                                "active published AE capabilities are required"
-                            )
-                        if mode == "final":
-                            preview = _latest_ae_preview(snapshot.capability_hash, direction)
-                            if preview is None:
-                                raise PlanConflict(
-                                    "final AE plans require a selected preview checkpoint"
-                                )
-                            _, predecessor, session = preview
-                            return prepare_ae_final_successor(
-                                root,
-                                project_id=resolved_project_id,
-                                scene_id=resolved_scene_id,
-                                version_id=resolved_version,
-                                predecessor_id=predecessor.id,
-                                predecessor_digest=predecessor.digest,
-                                predecessor_checkpoint=session.selected_checkpoint,
-                                direction=direction,
-                                capabilities=snapshot,
-                            )
-                        return prepare_ae_render_plan(
-                            root,
-                            project_id=resolved_project_id,
-                            scene_id=resolved_scene_id,
-                            version_id=resolved_version,
-                            mode=mode,
-                            direction=direction,
-                            capabilities=snapshot,
-                            client=client,
-                        )
                     return create_render_plan(
                         root,
                         project_id=resolved_project_id,
@@ -2502,8 +1664,6 @@ def make_server(
                         backend=backend,
                         mode=mode,
                         direction=direction,
-                        capability_hash=None,
-                        capability_manifest=None,
                     )
 
                 def submit_agent_job(kind: str, args: dict, stage: str) -> dict:
@@ -2547,11 +1707,6 @@ def make_server(
                             else agent.turn(ctx, message, history)
                         )
                         append_turn(root, resolved_scene_id, message, turn)
-                except AEControllerAuthorizationError:
-                    return self._json(
-                        401,
-                        {"error": "controller authorization failed"},
-                    )
                 except Exception as e:
                     log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
                     return self._json(400, {"error": f"{type(e).__name__}: {e}"})
@@ -2606,51 +1761,33 @@ def make_server(
 
         def do_DELETE(self):
             u = urlparse(self.path)
+            if ae_routes.handle_delete(self, u):
+                return
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
-            match = re.fullmatch(r"/api/ae/pairings/([A-Za-z0-9_-]{1,128})", u.path)
-            if match:
-                project_id = match.group(1)
-                if not self._authorize_ae_browser(project_id):
-                    return
-                token = self._controller_token(project_id)
-                try:
-                    root = _safe_render_project(workspace, project_id)
-                    auth = AEProjectAuth(root, project_id)
-                    device_id = auth.begin_unpair(token)
-                    if device_id is not None and not _detach_project_device(
-                        root,
-                        device_id,
-                        reason="unpair",
-                    ):
-                        return self._json(
-                            409,
-                            {"error": "connector unpair is waiting for the active command"},
-                            headers=(("Cache-Control", "no-store"),),
-                        )
-                    auth.finish_unpair(token, device_id)
-                except FileNotFoundError:
-                    return self._json(401, {"error": "controller authorization failed"})
-                except (AEAuthError, CoordinatorConflict) as exc:
-                    return self._json(409, {"error": str(exc)})
-                return self._json(
-                    200,
-                    {"unpaired": True},
-                    headers=(
-                        ("Cache-Control", "no-store"),
-                        (
-                            "Set-Cookie",
-                            self._controller_cookie(project_id, "", clear=True),
-                        ),
-                    ),
-                )
             return self._json(404, {"error": "not found"})
         def do_PUT(self):
+            u = urlparse(self.path)
+            if ae_routes.handle_put(self, u):
+                return
             return self._json(404, {"error": "not found"})
 
         def do_PATCH(self):
             return self._json(404, {"error": "not found"})
 
-    server = ThreadingHTTPServer((host, port), H)
-    server.ae_workflow = ae_workflow
+    class Server(ThreadingHTTPServer):
+        def server_close(self):
+            try:
+                super().server_close()
+            finally:
+                if hasattr(self, "ae_routes"):
+                    self.ae_routes.close()
+
+    server = Server((host, port), H)
+    try:
+        ae_routes = AERoutes(workspace)
+    except Exception:
+        server.server_close()
+        raise
+    server.ae_routes = ae_routes
     return server

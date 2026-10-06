@@ -1,29 +1,26 @@
 import {
-  aeArtifactUrl,
   nativeArtifactUrl,
   lottieArtifactUrl,
   approveRenderPlan,
-  fetchAeStatus,
   fetchAgentHistory,
-  postAePairing,
   fetchRenderPlans,
   fetchRenderState,
   fetchReviewJob,
   fetchReviewState,
-  postAeControl,
   postAgent,
   postCorrect,
   postEdit,
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261005e";
-import { T, Tf } from "/static/js/i18n.js?v=20261005e";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261005e";
+} from "/static/js/api.js?v=20261006g";
+import { T, Tf } from "/static/js/i18n.js?v=20261006g";
+import { initAECard } from "/static/js/ae.js?v=20261006g";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261006g";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261005e";
+} from "/static/js/playback.js?v=20261006g";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -56,12 +53,8 @@ let pendingAttachment = null;
 let pendingAttachmentFile = null;
 
 let renderPayload = null;
-let renderDraft = null;
 let renderPlans = [];
-let pairingDetails = null;
-let aeStatus = null;
 let renderPoll = null;
-let aeStatusPoll = null;
 let renderBusy = false;
 const logEl = document.getElementById("agent-log");
 const inputEl = document.getElementById("agent-input");
@@ -83,35 +76,15 @@ const sceneSelect = document.getElementById("agent-scene-select");
 const modelEl = document.getElementById("agent-model");
 const renderModeEl = document.getElementById("render-mode");
 const renderBackendEl = document.getElementById("render-backend");
-const renderDirectionEl = document.getElementById("render-direction");
 const renderPlanSelectorEl = document.getElementById("render-plan-selector");
 const renderCreateBtn = document.getElementById("render-create");
-const renderPairBtn = document.getElementById("render-pair");
 const renderApproveBtn = document.getElementById("render-approve");
-const renderPairingEl = document.getElementById("render-pairing");
-const renderPairingCodeEl = document.getElementById("render-pairing-code");
-const renderPairingExpiryEl = document.getElementById("render-pairing-expiry");
-const renderPairingRelayEl = document.getElementById("render-pairing-relay");
-const renderPairingCommandEl = document.getElementById("render-pairing-command");
 const renderStatusEl = document.getElementById("render-status");
 const renderLockEl = document.getElementById("render-lock");
-const renderConnectorEl = document.getElementById("render-connector");
-const renderAeEl = document.getElementById("render-ae");
-const renderCapabilityEl = document.getElementById("render-capability");
 const renderOutputsEl = document.getElementById("render-outputs");
 const renderStateEl = document.getElementById("render-state");
 const renderReasonEl = document.getElementById("render-reason");
-const renderSubstitutionsEl = document.getElementById("render-substitutions");
-const renderSubstitutionRowsEl = document.getElementById("render-substitution-rows");
-const renderSubstitutionAckEl = document.getElementById("render-substitution-ack");
-const renderCheckpointsEl = document.getElementById("render-checkpoints");
-const renderIterationEl = document.getElementById("render-iteration");
 const renderArtifactsEl = document.getElementById("render-artifacts");
-const renderStopBtn = document.getElementById("render-stop");
-const renderContinueBtn = document.getElementById("render-continue");
-const renderManualBtn = document.getElementById("render-manual");
-const renderSyncBtn = document.getElementById("render-sync");
-const renderFinalizeBtn = document.getElementById("render-finalize");
 
 function setBanner(msg, isError = false) {
   bannerEl.hidden = !msg;
@@ -214,24 +187,13 @@ function shortDigest(value) {
   return value ? `${value.slice(0, 10)}…` : "—";
 }
 
-function isPaused(status) {
-  return typeof status === "string" && status.startsWith("paused:");
-}
 
 function shouldPollRender(payload) {
-  if (!payload || !payload.plan) return false;
-  if (payload.plan.backend !== "after_effects") {
-    return ["queued", "running"].includes(payload.status);
-  }
-  return !isPaused(payload.status) && !["done", "failed", "awaiting_approval", "approved"].includes(payload.status);
+  return Boolean(payload && payload.plan && ["queued", "running"].includes(payload.status));
 }
 
 function renderPayloadStatus(payload) {
-  return (payload && (
-    payload.status
-    || (payload.session && payload.session.status)
-    || (payload.state && payload.state.status)
-  )) || "—";
+  return (payload && (payload.status || (payload.state && payload.state.status))) || "—";
 }
 
 function upsertRenderPlan(payload) {
@@ -246,13 +208,13 @@ function paintPlanSelector() {
   renderPlanSelectorEl.replaceChildren();
   const current = document.createElement("option");
   current.value = "";
-  current.textContent = renderDraft ? "AE · draft" : (renderPlans.length ? "계획 선택" : "계획 없음");
+  current.textContent = renderPlans.length ? T("agent.renderSelectPlan") : T("agent.renderNoPlan");
   current.selected = !currentId;
   renderPlanSelectorEl.appendChild(current);
   renderPlans.forEach((payload) => {
     const plan = payload.plan;
     const option = document.createElement("option");
-    const backend = plan.backend === "after_effects" ? "AE" : (plan.backend === "lottie" ? "Lottie" : "Native");
+    const backend = plan.backend === "lottie" ? "Lottie" : "Native";
     option.value = plan.id;
     option.textContent = `${backend} · ${plan.mode} · ${renderPayloadStatus(payload)} · ${shortDigest(plan.id)}`;
     option.selected = plan.id === currentId;
@@ -262,153 +224,25 @@ function paintPlanSelector() {
 
 function renderStatusClass(status) {
   renderStatusEl.className = "render-card__status";
-  if (status === "failed" || isPaused(status)) renderStatusEl.classList.add("render-card__status--failed");
+  if (status === "failed") renderStatusEl.classList.add("render-card__status--failed");
   else if (status && !["awaiting_approval", "approved"].includes(status)) renderStatusEl.classList.add("render-card__status--active");
 }
 
-function paintConnectorStatus() {
-  if (!aeStatus) {
-    renderConnectorEl.textContent = "미연결";
-    renderAeEl.textContent = "—";
-    renderCapabilityEl.textContent = "—";
-    return;
-  }
-  renderConnectorEl.textContent = aeStatus.paired ? "연결됨" : "미연결";
-  const aeLabel = aeStatus.ae_ready ? (aeStatus.ae_version || "AE") : "준비 안 됨";
-  renderAeEl.textContent = `${aeLabel} · ${aeStatus.project_open ? "project open" : "project closed"}`;
-  renderCapabilityEl.textContent = shortDigest(aeStatus.capability_hash);
-}
 
-function paintPairingDetails() {
-  renderPairBtn.textContent = (aeStatus && aeStatus.paired) || pairingDetails ? "Re-pair" : "Pair";
-  renderPairingEl.hidden = !pairingDetails;
-  if (!pairingDetails) return;
-  const relay = pairingDetails.relay_url;
-  // Repaint only on change: the status poll would otherwise wipe a text selection before Ctrl+C.
-  setTextIfChanged(renderPairingCodeEl, pairingDetails.code || "—");
-  setTextIfChanged(renderPairingExpiryEl, pairingDetails.expires_at || "—");
-  setTextIfChanged(renderPairingRelayEl, relay || "—");
-  setTextIfChanged(renderPairingCommandEl, relay ? `keepframe ae-connect --url ${relay}` : "—");
-}
-
-function setTextIfChanged(el, text) {
-  if (el.textContent !== text) el.textContent = text;
-}
-
-async function copyText(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  // Plain-HTTP pages (e.g. a tailnet host) have no async clipboard API.
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.opacity = "0";
-  document.body.appendChild(area);
-  area.select();
-  const ok = document.execCommand("copy");
-  area.remove();
-  if (!ok) throw new Error(T("agent.copyFailed"));
-}
-
-document.querySelectorAll("[data-copy-target]").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const source = document.getElementById(btn.dataset.copyTarget);
-    const text = source ? source.textContent.trim() : "";
-    if (!text || text === "—") return;
-    try {
-      await copyText(text);
-      btn.textContent = T("agent.copied");
-      setTimeout(() => { btn.textContent = T("agent.copy"); }, 1500);
-    } catch (err) {
-      setBanner(err.message || T("agent.copyFailed"), true);
-    }
-  });
-});
-
-
-function expectedOutputs(plan, draft) {
-  if (draft && Array.isArray(draft.expected_outputs)) return draft.expected_outputs;
+function expectedOutputs(plan) {
   const outputs = plan && plan.artifact_contract && plan.artifact_contract.outputs;
   return Array.isArray(outputs) ? outputs : [];
 }
 
-function substitutionText(value) {
-  if (!Array.isArray(value) || !value.length) return "—";
-  return value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(", ");
-}
 
-function paintSubstitutions() {
-  const draft = renderBackendEl.value === "after_effects" ? renderDraft : null;
-  const plan = renderPayload && renderPayload.plan;
-  const selectedPlan = renderBackendEl.value === "after_effects" ? plan : null;
-  const substitutions = draft ? draft.substitutions : ((selectedPlan && selectedPlan.substitutions) || []);
-  const issues = draft ? draft.compatibility_issues : [];
-  renderSubstitutionRowsEl.replaceChildren();
-  substitutions.forEach((substitution) => {
-    const issue = issues.find((item) => item.source_element_id === substitution.source_element_id);
-    const row = document.createElement("tr");
-    [substitution.source_element_id, (issue && issue.reason) || substitution.reason || "—", `${substitutionText(substitution.proposed_layers)} / ${substitutionText(substitution.proposed_effects)}`]
-      .forEach((text) => {
-        const cell = document.createElement("td");
-        cell.textContent = text;
-        row.appendChild(cell);
-      });
-    renderSubstitutionRowsEl.appendChild(row);
-  });
-  renderSubstitutionsEl.hidden = substitutions.length === 0;
-  renderSubstitutionAckEl.disabled = !draft;
-  if (!draft) renderSubstitutionAckEl.checked = Boolean(selectedPlan && selectedPlan.substitutions_acknowledged);
-}
-
-function paintCheckpoints(session) {
-  renderCheckpointsEl.replaceChildren();
-  const checkpoints = (session && session.checkpoints) || [];
-  if (!checkpoints.length) {
-    const empty = document.createElement("span");
-    empty.className = "muted";
-    empty.textContent = "없음";
-    renderCheckpointsEl.appendChild(empty);
-    return;
-  }
-  checkpoints.forEach((checkpoint) => {
-    const label = document.createElement("label");
-    label.className = `render-checkpoint${checkpoint.passed && checkpoint.lineage_valid ? "" : " render-checkpoint--failed"}`;
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "render-checkpoint";
-    input.value = String(checkpoint.index);
-    input.checked = session.selected_checkpoint === checkpoint.index;
-    input.disabled = renderBusy || !isPaused(session.status) || !checkpoint.passed || !checkpoint.lineage_valid;
-    input.addEventListener("change", () => selectCheckpoint(checkpoint.index));
-    const text = document.createElement("span");
-    text.textContent = `#${checkpoint.index} ${checkpoint.provenance} · ${checkpoint.passed ? "PASS" : "FAIL"}`;
-    label.append(input, text);
-    renderCheckpointsEl.appendChild(label);
-  });
-}
-
-function paintArtifacts(plan, session, payload) {
+function paintArtifacts(plan, payload) {
   renderArtifactsEl.replaceChildren();
   if (!plan) return;
-  if (plan.backend !== "after_effects") {
-    (payload && payload.artifacts || []).forEach((artifact) => {
-      if (!artifact || !artifact.kind) return;
-      const link = document.createElement("a");
-      link.href = plan.backend === "lottie" ? lottieArtifactUrl(plan.id, projectId) : nativeArtifactUrl(plan.id, artifact.kind, projectId);
-      link.textContent = artifact.label || `${artifact.kind.toUpperCase()} 다운로드`;
-      link.rel = "noopener";
-      renderArtifactsEl.appendChild(link);
-    });
-    return;
-  }
-  if (!session) return;
-  Object.entries(session.final_artifact_ids || {}).forEach(([kind, artifactId]) => {
+  (payload && payload.artifacts || []).forEach((artifact) => {
+    if (!artifact || !artifact.kind) return;
     const link = document.createElement("a");
-    link.href = aeArtifactUrl(artifactId, projectId, plan.id);
-    link.textContent = `${kind.toUpperCase()} 다운로드`;
+    link.href = plan.backend === "lottie" ? lottieArtifactUrl(plan.id, projectId) : nativeArtifactUrl(plan.id, artifact.kind, projectId);
+    link.textContent = artifact.label || Tf("agent.renderDownload", { kind: artifact.kind.toUpperCase() });
     link.rel = "noopener";
     renderArtifactsEl.appendChild(link);
   });
@@ -418,104 +252,37 @@ function paintArtifacts(plan, session, payload) {
 function updateRenderControls() {
   const plan = renderPayload && renderPayload.plan;
   const planState = renderPayload && renderPayload.state;
-  const session = renderPayload && renderPayload.session;
-  const aeReady = Boolean(
-    aeStatus
-    && aeStatus.relay_configured
-    && aeStatus.paired
-    && aeStatus.ae_ready
-    && aeStatus.capability_hash
-  );
-  const planCompatible = aeReady
-    && (!plan || plan.backend !== "after_effects" || plan.capability_hash === aeStatus.capability_hash);
-  const creationCapabilityHash = renderDraft
-    ? renderDraft.capability_hash
-    : (
-      renderModeEl.value === "final"
-      && plan
-      && plan.backend === "after_effects"
-        ? plan.capability_hash
-        : null
-    );
-  const aeCreateReady = aeReady
-    && (!creationCapabilityHash || creationCapabilityHash === aeStatus.capability_hash);
-  const finalDraftBlocked = renderModeEl.value === "final" && (!state || state.status !== "approved");
-  const finalPlanReady = Boolean(
-    plan
-    && plan.backend === "after_effects"
-    && plan.mode === "final"
-    && planState
-    && planState.status === "approved"
-    && planState.execution_id
-    && session
-    && isPaused(session.status)
-    && session.selected_checkpoint != null
-    && plan.predecessor_id
-    && plan.predecessor_checkpoint === session.selected_checkpoint
-  );
-  renderDirectionEl.disabled = renderBusy || renderBackendEl.value !== "after_effects";
-  renderPlanSelectorEl.disabled = renderBusy || (!renderPlans.length && !renderDraft);
-  renderPairBtn.disabled = renderBusy || !projectId || Boolean(aeStatus && !aeStatus.relay_configured);
+  const finalBlocked = renderModeEl.value === "final" && (!state || state.status !== "approved");
+  renderPlanSelectorEl.disabled = renderBusy || !renderPlans.length;
   renderCreateBtn.disabled = renderBusy
-    || finalDraftBlocked
-    || (renderBackendEl.value === "lottie" && renderModeEl.value !== "final")
-    || (renderBackendEl.value === "after_effects" && !aeCreateReady)
-    || (renderBackendEl.value === "after_effects" && Boolean(renderDraft) && !renderSubstitutionAckEl.checked);
+    || finalBlocked
+    || (renderBackendEl.value === "lottie" && renderModeEl.value !== "final");
   renderApproveBtn.disabled = renderBusy
     || !plan
     || !planState
-    || planState.status !== "awaiting_approval"
-    || (plan.backend === "after_effects" && !planCompatible)
-    || ((plan.substitutions || []).length > 0 && !plan.substitutions_acknowledged);
-  renderStopBtn.disabled = renderBusy || !session || !["baseline", "iterating"].includes(session.status);
-  renderContinueBtn.disabled = renderBusy || !session || !isPaused(session.status);
-  renderManualBtn.disabled = renderBusy || !session || !isPaused(session.status);
-  renderSyncBtn.disabled = renderBusy || !session || session.status !== "manual_edit";
-  renderFinalizeBtn.disabled = renderBusy || !finalPlanReady;
+    || planState.status !== "awaiting_approval";
 }
 
 function paintRenderCard() {
   const plan = renderPayload && renderPayload.plan;
   const planState = renderPayload && renderPayload.state;
-  const session = renderPayload && renderPayload.session;
-  const locked = plan || renderDraft;
-  const status = renderPayload
-    ? renderPayloadStatus(renderPayload)
-    : (renderDraft ? "awaiting_substitution_acknowledgement" : "계획 없음");
+  const status = renderPayload ? renderPayloadStatus(renderPayload) : T("agent.renderNoPlan");
   const jobError = renderPayload && renderPayload.job && renderPayload.job.error;
-  const lockedProject = (locked && locked.project_id) || projectId || "—";
-  const lockedScene = (locked && locked.scene_id) || sceneId;
-  const lockedVersion = (locked && locked.version_id) || versionId || "—";
+  const lockedProject = (plan && plan.project_id) || projectId || "—";
+  const lockedScene = (plan && plan.scene_id) || sceneId;
+  const lockedVersion = (plan && plan.version_id) || versionId || "—";
   renderLockEl.textContent = `${lockedProject} / ${lockedScene} / ${lockedVersion}${plan ? ` · ${plan.mode} · ${plan.backend}` : ""}`;
   renderStatusEl.textContent = status;
   renderStatusClass(status);
-  renderStateEl.textContent = planState
-    ? `${session ? session.status : status} / r${session ? session.revision : planState.revision}`
-    : status;
-  renderIterationEl.textContent = `iteration ${session ? Math.max(0, session.checkpoints.length - 1) : "—"}`;
-  renderReasonEl.textContent = (
-    jobError
-    || (session && session.pause_detail)
-    || (session && session.reason)
-    || (renderPayload && renderPayload.error)
-    || "—"
-  );
+  renderStateEl.textContent = planState ? `${status} / r${planState.revision}` : status;
+  renderReasonEl.textContent = jobError || (renderPayload && renderPayload.error) || "—";
   if (plan) {
     renderBackendEl.value = plan.backend;
     renderModeEl.value = plan.mode;
-    renderDirectionEl.value = plan.direction || "";
-  } else if (renderDraft) {
-    renderBackendEl.value = "after_effects";
-    renderModeEl.value = renderDraft.mode;
-    renderDirectionEl.value = renderDraft.direction || "";
   }
-  renderOutputsEl.textContent = expectedOutputs(plan, renderBackendEl.value === "after_effects" ? renderDraft : null).join(", ") || "—";
-  paintConnectorStatus();
-  paintPairingDetails();
+  renderOutputsEl.textContent = expectedOutputs(plan).join(", ") || "—";
   paintPlanSelector();
-  paintSubstitutions();
-  paintCheckpoints(session);
-  paintArtifacts(plan, session, renderPayload);
+  paintArtifacts(plan, renderPayload);
   updateRenderControls();
 }
 
@@ -535,30 +302,9 @@ function scheduleRenderPoll() {
   }, 1500);
 }
 
-function scheduleAeStatusPoll() {
-  if (aeStatusPoll !== null) window.clearTimeout(aeStatusPoll);
-  aeStatusPoll = null;
-  const pairingPending = pairingDetails
-    && Number(pairingDetails.expires_at) * 1000 > Date.now();
-  if (
-    !(pairingPending || (aeStatus && aeStatus.paired))
-    || (aeStatus && aeStatus.paired && aeStatus.ae_ready)
-  ) return;
-  aeStatusPoll = window.setTimeout(async () => {
-    aeStatusPoll = null;
-    try {
-      aeStatus = await fetchAeStatus(projectId);
-      paintRenderCard();
-    } catch (err) {
-      // The pairing code remains visible; retry until it expires.
-    }
-    scheduleAeStatusPoll();
-  }, 1500);
-}
 
 function setRenderPayload(payload) {
   renderPayload = payload;
-  renderDraft = null;
   upsertRenderPlan(payload);
   paintRenderCard();
   scheduleRenderPoll();
@@ -584,36 +330,10 @@ async function selectRenderPlan(plan) {
 }
 
 async function loadRenderCard() {
-  try {
-    aeStatus = await fetchAeStatus(projectId);
-  } catch (err) {
-    aeStatus = null;
-  }
   const response = await fetchRenderPlans(projectId, sceneId, versionId);
   renderPlans = response.plans || [];
-  let selected = null;
-  for (let index = renderPlans.length - 1; index >= 0; index -= 1) {
-    const candidate = renderPlans[index];
-    const status = renderPayloadStatus(candidate);
-    if (
-      candidate.plan
-      && candidate.plan.backend === "after_effects"
-      && candidate.session
-      && !["done", "failed"].includes(status)
-    ) {
-      selected = candidate;
-      break;
-    }
-  }
-  if (!selected) selected = renderPlans[renderPlans.length - 1] || null;
-  if (selected) setRenderPayload(selected);
-  else if (renderDraft) {
-    paintRenderCard();
-  } else {
-    renderPayload = null;
-    paintRenderCard();
-  }
-  scheduleAeStatusPoll();
+  const selected = renderPlans[renderPlans.length - 1] || null;
+  setRenderPayload(selected);
 }
 
 function setRenderBusy(value) {
@@ -621,43 +341,15 @@ function setRenderBusy(value) {
   updateRenderControls();
 }
 
-function selectedPreviewPayload() {
-  if (!renderPayload || !renderPayload.plan) return null;
-  if (renderPayload.plan.backend !== "after_effects") return null;
-  return renderPayload;
-}
 
 function planRequest() {
-  const backend = renderBackendEl.value;
-  const mode = renderModeEl.value;
-  const request = {
+  return {
     project: projectId,
     scene: sceneId,
     version: versionId,
-    backend,
-    mode,
-    direction: backend === "after_effects" ? (renderDirectionEl.value.trim() || null) : null,
+    backend: renderBackendEl.value,
+    mode: renderModeEl.value,
   };
-  if (backend === "after_effects" && mode === "final") {
-    const preview = selectedPreviewPayload();
-    const checkpoint = preview && preview.session && preview.session.selected_checkpoint;
-    const record = preview && preview.session && preview.session.checkpoints.find((item) => item.index === checkpoint);
-    if (!preview || preview.plan.mode !== "preview" || checkpoint == null || !record || !record.context_digest) {
-      throw new Error("선택된 PASS 미리보기 체크포인트가 필요합니다.");
-    }
-    Object.assign(request, {
-      predecessor_id: preview.plan.id,
-      predecessor_digest: preview.plan.digest,
-      predecessor_checkpoint: checkpoint,
-      predecessor_checkpoint_digest: record.context_digest,
-    });
-  }
-  if (backend === "after_effects" && renderDraft && renderSubstitutionAckEl.checked) {
-    request.substitutions = renderDraft.substitutions;
-    request.compatibility_issues = renderDraft.compatibility_issues;
-    request.substitutions_acknowledged = true;
-  }
-  return request;
 }
 
 async function createRenderPlan() {
@@ -665,10 +357,6 @@ async function createRenderPlan() {
   setBanner("");
   try {
     const response = await postRenderPlan(planRequest());
-    if (response.draft) {
-      showRenderDraft(response.draft);
-      return;
-    }
     setRenderPayload(response);
   } catch (err) {
     setBanner(err.message || T("agent.failed"), true);
@@ -677,24 +365,6 @@ async function createRenderPlan() {
   }
 }
 
-async function pairAe() {
-  setRenderBusy(true);
-  setBanner("");
-  try {
-    pairingDetails = await postAePairing(projectId, {});
-    const draft = renderDraft;
-    await loadRenderCard();
-    if (draft && (!renderPayload || renderPayload.plan.backend !== "after_effects")) {
-      renderPayload = null;
-      renderDraft = draft;
-      paintRenderCard();
-    }
-  } catch (err) {
-    setBanner(err.message || T("agent.failed"), true);
-  } finally {
-    setRenderBusy(false);
-  }
-}
 
 async function approveCurrentPlan() {
   if (!renderPayload) return;
@@ -713,78 +383,6 @@ async function approveCurrentPlan() {
   }
 }
 
-async function controlAe(action, extra = {}) {
-  if (!renderPayload || !renderPayload.session) return null;
-  const body = {
-    project: projectId,
-    plan: renderPayload.plan.mode === "final"
-      ? renderPayload.plan.predecessor_id
-      : renderPayload.plan.id,
-    revision: renderPayload.session.revision,
-    ...extra,
-  };
-  const response = await postAeControl(renderPayload.session.id, action, body);
-  setRenderPayload(response);
-  return response;
-}
-
-async function runAeControl(action, extra = {}) {
-  setRenderBusy(true);
-  setBanner("");
-  try {
-    await controlAe(action, extra);
-  } catch (err) {
-    setBanner(err.message || T("agent.failed"), true);
-  } finally {
-    setRenderBusy(false);
-  }
-}
-
-async function selectCheckpoint(checkpoint) {
-  return runAeControl("select-checkpoint", { checkpoint });
-}
-
-async function finalizeCheckpoint() {
-  const plan = renderPayload && renderPayload.plan;
-  const planState = renderPayload && renderPayload.state;
-  const session = renderPayload && renderPayload.session;
-  if (
-    !plan
-    || plan.backend !== "after_effects"
-    || plan.mode !== "final"
-    || !planState
-    || planState.status !== "approved"
-    || !planState.execution_id
-    || !session
-    || !isPaused(session.status)
-    || session.selected_checkpoint == null
-    || plan.predecessor_checkpoint !== session.selected_checkpoint
-    || !plan.predecessor_id
-  ) return;
-  const finalPlanId = plan.id;
-  const finalPlanDigest = plan.digest;
-  setRenderBusy(true);
-  setBanner("");
-  try {
-    await postAeControl(session.id, "finalize", {
-      project: projectId,
-      plan: plan.predecessor_id,
-      revision: session.revision,
-      checkpoint: session.selected_checkpoint,
-      final_plan_id: finalPlanId,
-      execution_id: planState.execution_id,
-    });
-    const finalized = await fetchRenderState(projectId, finalPlanId);
-    if (!finalized.plan || finalized.plan.digest !== finalPlanDigest) {
-      throw new Error("최종 계획이 변경되었습니다.");
-    }
-    setRenderPayload(finalized);
-  } catch (err) {
-    setBanner(err.message || T("agent.failed"), true);
-  } finally {
-    setRenderBusy(false);
-  }
-}
 
 function appendUser(text) {
   hideEmpty();
@@ -1080,34 +678,10 @@ function appendConfirmButton(onConfirm = () => runConfirm(false)) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function isRenderDraftShape(value) {
-  return Boolean(
-    value
-    && (
-      !value.id
-      || Object.prototype.hasOwnProperty.call(value, "compatibility_issues")
-      || (
-        Object.prototype.hasOwnProperty.call(value, "substitutions")
-        && !value.digest
-      )
-    )
-  );
-}
-
-function showRenderDraft(draft) {
-  renderPayload = null;
-  renderDraft = draft;
-  renderSubstitutionAckEl.checked = false;
-  paintRenderCard();
-}
 
 function paintPending(turn) {
   const preparedRender = payloadOf(turn.results, "render_plan");
   if (preparedRender) {
-    if (isRenderDraftShape(preparedRender)) {
-      showRenderDraft(preparedRender);
-      return;
-    }
     selectRenderPlan(preparedRender).catch((err) => {
       setBanner(err.message || T("agent.failed"), true);
     });
@@ -1243,8 +817,8 @@ async function runConfirmWithChoices() {
 
 async function refreshAfterEdit(version) {
   versionId = version;
-  renderDraft = null;
   await loadState();
+  await aeCard.refresh();
   await loadRenderCard();
 }
 
@@ -1423,11 +997,9 @@ document.querySelectorAll("#agent-tools .tool").forEach((btn) => {
 });
 renderBackendEl.addEventListener("change", () => {
   if (renderBackendEl.value === "lottie") renderModeEl.value = "final";
-  paintSubstitutions();
   updateRenderControls();
 });
 renderModeEl.addEventListener("change", updateRenderControls);
-renderSubstitutionAckEl.addEventListener("change", updateRenderControls);
 renderPlanSelectorEl.addEventListener("change", () => {
   const selected = renderPlans.find((payload) => payload.plan && payload.plan.id === renderPlanSelectorEl.value);
   if (!selected) {
@@ -1440,24 +1012,22 @@ renderPlanSelectorEl.addEventListener("change", () => {
     setBanner(err.message || T("agent.failed"), true);
   });
 });
-renderPairBtn.addEventListener("click", pairAe);
 renderCreateBtn.addEventListener("click", createRenderPlan);
 renderApproveBtn.addEventListener("click", approveCurrentPlan);
-renderStopBtn.addEventListener("click", () => runAeControl("stop"));
-renderContinueBtn.addEventListener("click", () => runAeControl("continue"));
-renderManualBtn.addEventListener("click", () => runAeControl("begin-manual"));
-renderSyncBtn.addEventListener("click", () => runAeControl("sync-manual"));
-renderFinalizeBtn.addEventListener("click", finalizeCheckpoint);
 playBtn.addEventListener("click", () => setPlaying(!transport.isPlaying()));
 document.getElementById("agent-prev").addEventListener("click", () => { setPlaying(false); setFrame(frame - 1); });
 document.getElementById("agent-next").addEventListener("click", () => { setPlaying(false); setFrame(frame + 1); });
 window.addEventListener("keepframe:lang", () => {
   if (state) renderElements();
+  paintRenderCard();
 });
+
+const aeCard = initAECard({projectId, getSceneId: () => sceneId, getVersionId: () => versionId});
 
 if (!projectId) showMissingProject();
 else {
   loadState()
+    .then(() => aeCard.refresh())
     .then(loadHistory)
     .then(loadRenderCard)
     .catch((err) => {

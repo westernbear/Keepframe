@@ -157,7 +157,7 @@ maps to an AE model layer when AE ≥ 24.1 reports `model_layers`; otherwise a
 substitution is proposed. AE verification extracts reveal/spin motions with
 matching ids. The panel's ES3 regex character-class parse issue is fixed.
 
-The kit and [live AE checklist](ae-live-check.md) are ready. Access uses
+The kit and checklist (superseded by the AE extension rebuild) are ready. Access uses
 Tailscale: UI on the tailnet IP, relay through `tailscale serve` HTTPS.
 **The user has not completed the live AE check; it remains open.** A
 Higgsfield-style CEP extension (one install, no Python connector) is planned

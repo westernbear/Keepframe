@@ -140,19 +140,6 @@ async function fetchRenderState(project, plan) {
   return api(withQuery("/api/render-state", { project, plan }));
 }
 
-async function fetchAeStatus(project) {
-  return api(withQuery("/api/ae/status", { project }));
-}
-
-async function postAePairing(project, capabilityRequest = {}) {
-  return api("/api/ae/pairings", {
-    method: "POST",
-    body: JSON.stringify({
-      project,
-      capability_request: capabilityRequest,
-    }),
-  });
-}
 
 async function postRenderPlan(body) {
   return api("/api/render-plans", {
@@ -168,22 +155,7 @@ async function approveRenderPlan(planId, body) {
   });
 }
 
-async function postAeControl(sessionId, action, body) {
-  return api(
-    `/api/ae/sessions/${encodeURIComponent(sessionId)}/${encodeURIComponent(action)}`,
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-  );
-}
 
-function aeArtifactUrl(artifactId, project, plan) {
-  return withQuery(`/api/ae/artifacts/${encodeURIComponent(artifactId)}`, {
-    project,
-    plan,
-  });
-}
 function nativeArtifactUrl(planId, kind, project) {
   return withQuery(
     `/api/native/artifacts/${encodeURIComponent(planId)}/${encodeURIComponent(kind)}`,
@@ -233,12 +205,8 @@ export {
   postCorrect,
   fetchRenderPlans,
   fetchRenderState,
-  fetchAeStatus,
-  postAePairing,
   postRenderPlan,
   approveRenderPlan,
-  postAeControl,
-  aeArtifactUrl,
   nativeArtifactUrl,
   lottieArtifactUrl,
   reviewFrameUrl,

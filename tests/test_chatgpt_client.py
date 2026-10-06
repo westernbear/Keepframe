@@ -11,6 +11,7 @@ from uuid import UUID
 import pytest
 
 from keepframe.session.chatgpt_client import ChatGPTClient
+from tests.test_web_agent import capture_agent_client
 from keepframe.session.chatgpt_oauth import refresh_chatgpt_token
 from keepframe.session.llm import AssistantReply, LiteLLMClient, OpenAICompatibleClient, make_llm, vision_llm
 from keepframe.session.provider import ProviderConfig, load_llm_settings, save_llm_settings
@@ -320,21 +321,16 @@ def test_server_factory_persists_refresh_and_updates_admin(config, backend, monk
         admin.set_llm_settings(config, "test")
     else:
         save_llm_settings(tmp_path, config)
-    factories = []
-    def workflow(workspace, factory):
-        factories.append(factory)
-        return object()
     calls = []
     def refresh(token):
         calls.append(token)
         return {"access_token": "server-access", "refresh_token": "server-refresh",
                 "id_token": "server-id", "expires_in": 3600}
-    monkeypatch.setattr("keepframe.web.server.AEWorkflowService", workflow)
     monkeypatch.setattr("keepframe.session.chatgpt_client.refresh_chatgpt_token", refresh)
     server = make_server(tmp_path, port=0, admin_svc=admin)
     try:
         for _ in range(2):
-            client = factories[0]()
+            client = capture_agent_client(server, tmp_path, monkeypatch)
             client.base_url = backend["url"]
             assert client.complete([], []).content == "pong"
     finally:
@@ -422,10 +418,9 @@ def test_401_reuses_tokens_refreshed_by_another_client(config, backend, monkeypa
 
 
 def test_all_real_tool_schemas_opt_out_of_strict(config, backend):
-    from keepframe.after_effects.vision import VISION_TOOLS
     from keepframe.session.tools import TOOL_SCHEMAS
 
-    tools = TOOL_SCHEMAS + VISION_TOOLS
+    tools = TOOL_SCHEMAS
     ChatGPTClient(config, base_url=backend["url"]).complete([], tools)
     converted = backend["requests"][0]["body"]["tools"]
     assert len(converted) == len(tools)
