@@ -10,21 +10,42 @@ stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
 cp -r "$root/extension/." "$stage"  # ZXPSignCmd writes into its input dir
 
 docker build -q -t keepframe-zxpsign "$root/scripts/zxp" >/dev/null
+# Run ZXPSignCmd in the container. Output goes to $log; the command line (which holds the password) is never printed.
+log=$(mktemp)
 zxp() { docker run --rm -u "$(id -u):$(id -g)" --tmpfs "/tmp:uid=$(id -u),gid=$(id -g)" -e HOME=/tmp -e XDG_RUNTIME_DIR=/tmp \
-  -v "$stage:/ext" -v "$out:/out" -v "$cfg:/cfg" keepframe-zxpsign "$@" 2>&1 | { grep -v -e '^error: XDG_RUNTIME_DIR' -e '^wine: created' || true; }; }
+  -v "$stage:/ext" -v "$out:/out" -v "$cfg:/cfg" keepframe-zxpsign "$@" >"$log" 2>&1; }
+# step <name> <zxpsigncmd args...>: on failure print the step name and its output, then exit.
+step() { local n=$1; shift; zxp "$@" || { echo "FAILED: $n" >&2; grep -v -e '^error: XDG_RUNTIME_DIR' -e '^wine: created' "$log" >&2 || true; exit 1; }; }
 
 if [ ! -f "$cfg/zxp-cert.p12" ] || [ ! -f "$cfg/zxp-cert.pass" ]; then
   umask 077
   head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$cfg/zxp-cert.pass"
-  zxp -selfSignedCert US CA Keepframe Keepframe "$(cat "$cfg/zxp-cert.pass")" /cfg/zxp-cert.p12 >/dev/null
+  step "create certificate" -selfSignedCert US CA Keepframe Keepframe "$(cat "$cfg/zxp-cert.pass")" /cfg/zxp-cert.p12 -validityDays 3650
   echo "created self-signed cert in $cfg"
 fi
 chmod 600 "$cfg/zxp-cert.p12" "$cfg/zxp-cert.pass"
 pass=$(cat "$cfg/zxp-cert.pass")
 
+# Cert expiry: never regenerate silently (a new cert changes the publisher identity).
+certpem() { openssl pkcs12 -in "$cfg/zxp-cert.p12" -passin "pass:$pass" -nokeys -clcerts -legacy 2>/dev/null \
+  || openssl pkcs12 -in "$cfg/zxp-cert.p12" -passin "pass:$pass" -nokeys -clcerts 2>/dev/null; }
+if ! command -v openssl >/dev/null; then
+  echo "note: openssl not found; skipping the cert expiry check"
+elif ! pem=$(certpem) || [ -z "$pem" ]; then
+  echo "note: could not read the cert with openssl; skipping the expiry check"
+elif ! openssl x509 -noout -checkend $((30*86400)) <<<"$pem" >/dev/null; then
+  echo "ERROR: signing cert expired or expires within 30 days ($(openssl x509 -noout -enddate <<<"$pem"))." >&2
+  echo "Delete $cfg/zxp-cert.* and rerun to create a new one (this changes the publisher identity)." >&2
+  exit 1
+fi
+
 rm -f "$out/keepframe.zxp"
-# No -tsa: ZXPSignCmd crashes under Wine when it contacts a timestamp server (checked with digicert).
-zxp -sign /ext /out/keepframe.zxp /cfg/zxp-cert.p12 "$pass" >/dev/null
-zxp -verify /out/keepframe.zxp | tee /dev/stderr | grep -q 'Signature verified successfully' \
-  || { echo "verify FAILED" >&2; exit 1; }
+if ! zxp -sign /ext /out/keepframe.zxp /cfg/zxp-cert.p12 "$pass" -tsa http://timestamp.digicert.com || [ ! -s "$out/keepframe.zxp" ]; then
+  echo "note: timestamp server unavailable under this signer; signed without a timestamp"
+  rm -f "$out/keepframe.zxp"
+  step "sign" -sign /ext /out/keepframe.zxp /cfg/zxp-cert.p12 "$pass"
+fi
+step "verify" -verify /out/keepframe.zxp
+grep -q 'Signature verified successfully' "$log" || { echo "FAILED: verify" >&2; cat "$log" >&2; exit 1; }
+cat "$log" | grep -v '^wine: created' | grep -v '^error: XDG' || true
 echo "built $out/keepframe.zxp"
