@@ -617,6 +617,10 @@ a { color: inherit; text-decoration: none; }
 .render-artifacts a { color: var(--accent); font-size: var(--fs-body-sm); }
 .render-card [hidden] { display: none; }
 .render-card button:disabled, .render-card select:disabled { opacity: 0.45; cursor: not-allowed; }
+.ae-card .btn { padding: 6px 12px; min-height: 32px; }
+.ae-card .ae-card__destructive { color: var(--error); border-color: var(--error); }
+.ae-card button:disabled { opacity: 1; color: var(--muted); background: var(--surface-2); border: 1px solid var(--hairline); }
+.ae-card__reason { color: var(--muted); font-size: var(--fs-caption); align-self: center; }
 .ae-card__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ae-card__install { display: grid; gap: 6px; margin-top: 8px; }
 .ae-card__command, .ae-card__code {

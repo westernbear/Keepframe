@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006b";
-import { T, Tf } from "/static/js/i18n.js?v=20261006b";
+import { api } from "/static/js/api.js?v=20261006c";
+import { T, Tf } from "/static/js/i18n.js?v=20261006c";
 
 export function initAECard({projectId, getSceneId, getVersionId}) {
   const el = (id) => document.getElementById(`ae-${id}`);
@@ -9,10 +9,18 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   let stateTimer, deviceTimer, countdownTimer;
   let refreshing = false, refreshAgain = false;
   let devicesPainted = "", jobsPainted = "", hadDevices = false;
+  let stateDelay = 15000, deviceDelay = 2000, pollError = false;
 
-  function error(err) {
+  function error(err, fromPoll = false) {
+    pollError = fromPoll;
     el("error").textContent = err.message || T("ae.failedRequest");
     el("error").hidden = false;
+  }
+
+  function clearError() {
+    pollError = false;
+    el("error").textContent = "";
+    el("error").hidden = true;
   }
 
   function relative(time) {
@@ -31,8 +39,8 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     return value;
   }
 
-  function button(key, click) {
-    const value = node("button", T(key), "btn btn--inline");
+  function button(key, click, destructive = false) {
+    const value = node("button", T(key), `btn btn--secondary btn--inline${destructive ? " ae-card__destructive" : ""}`);
     value.type = "button";
     value.disabled = busy;
     value.addEventListener("click", click);
@@ -45,6 +53,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
 
   function clearCode(message = "") {
     pairing = null;
+    deviceDelay = 2000;
     clearTimeout(deviceTimer);
     clearTimeout(countdownTimer);
     el("code").value = "";
@@ -78,9 +87,14 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
       const data = await api("/api/ae/devices");
       acceptDevices(data.devices);
       paint();
+      deviceDelay = 2000;
+      if (pollError) clearError();
       if (!pairing) await refresh();
-    } catch (err) { error(err); }
-    if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, 2000);
+    } catch (err) {
+      deviceDelay = Math.min(deviceDelay * 2, 60000);
+      error(err, true);
+    }
+    if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, deviceDelay);
   }
 
   function paint() {
@@ -93,6 +107,8 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("status").classList.toggle("render-card__status--active", Boolean(connected));
     el("connect").disabled = busy;
     el("send").disabled = busy || !connected || !projectId || !getSceneId() || !getVersionId();
+    el("send-reason").hidden = Boolean(connected);
+    el("overwrite-reason").hidden = Boolean(connected);
     if (Boolean(devices.length) !== hadDevices) el("install").open = !devices.length;
     hadDevices = Boolean(devices.length);
     el("pair-message").textContent = pairMessage ? T(pairMessage) : "";
@@ -119,8 +135,8 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
             button("ae.yes", () => action(async () => {
               await api(`/api/ae/devices/${encodeURIComponent(device.id)}`, {method: "DELETE"});
               disconnectId = null;
-            })), button("ae.no", () => { disconnectId = null; paint(); focusDevice(device.id); }));
-        } else row.append(button("ae.disconnect", () => { disconnectId = device.id; paint(); focusDevice(device.id); }));
+            }), true), button("ae.no", () => { disconnectId = null; paint(); focusDevice(device.id); }));
+        } else row.append(button("ae.disconnect", () => { disconnectId = device.id; paint(); focusDevice(device.id); }, true));
         return row;
       }));
     }
@@ -185,16 +201,21 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
         snapshot = {jobs: [], last_synced: {}, progress: {}, ...data};
         acceptDevices(data.devices);
         paint();
-      } catch (err) { error(err); }
+        stateDelay = snapshot.jobs.some((job) => ["queued", "running"].includes(job.state)) ? 2000 : 15000;
+        if (pollError) clearError();
+      } catch (err) {
+        stateDelay = Math.min(stateDelay * 2, 60000);
+        error(err, true);
+      }
     } while (refreshAgain && !document.hidden);
     refreshing = false;
-    if (!document.hidden) stateTimer = setTimeout(refresh, snapshot.jobs.some((job) => ["queued", "running"].includes(job.state)) ? 2000 : 15000);
+    if (!document.hidden) stateTimer = setTimeout(refresh, stateDelay);
   }
 
   async function action(work) {
     if (busy) return;
     busy = true;
-    el("error").hidden = true;
+    clearError();
     el("copy-status").textContent = "";
     paint();
     try { await work(); } catch (err) { error(err); }

@@ -62,6 +62,46 @@ def connect(page, server):
     return paired["device_id"], headers
 
 
+def assert_button_styles(page):
+    """Check rendered contrast, including opacity, against a bare browser button."""
+    measurements = page.locator("#ae-card").evaluate("""card => {
+      const rgb = value => value.match(/[\\d.]+/g).map(Number);
+      const blend = (front, back, alpha) => back.map((v, i) => front[i] * alpha + v * (1 - alpha));
+      const luminance = color => color.map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+        .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+      const cardBackground = rgb(getComputedStyle(card).backgroundColor).slice(0, 3);
+      const buttons = [...card.querySelectorAll('button')];
+      const bare = document.createElement('button');
+      document.body.append(bare);
+      const result = [];
+      for (const button of buttons) {
+        const original = button.disabled;
+        for (const disabled of [false, true]) {
+          button.disabled = bare.disabled = disabled;
+          const css = getComputedStyle(button), ua = getComputedStyle(bare);
+          const background = rgb(css.backgroundColor), text = rgb(css.color), opacity = Number(css.opacity);
+          const surface = blend(background, cardBackground, background[3] ?? 1);
+          const paintedBackground = blend(surface, cardBackground, opacity);
+          const paintedText = blend(blend(text, surface, text[3] ?? 1), cardBackground, opacity);
+          const a = luminance(paintedText), b = luminance(paintedBackground);
+          result.push({id: button.id || button.textContent, disabled, opacity,
+            styled: css.backgroundColor !== ua.backgroundColor ||
+              [css.borderStyle, css.borderWidth, css.borderColor].join() !== [ua.borderStyle, ua.borderWidth, ua.borderColor].join(),
+            contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05)});
+        }
+        button.disabled = original;
+      }
+      bare.remove();
+      return result;
+    }""")
+    assert measurements
+    for value in measurements:
+        assert value["styled"], value
+        assert value["contrast"] >= 4.5, value
+        if value["disabled"]:
+            assert value["opacity"] >= .7, value
+
+
 def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
     from playwright.sync_api import expect
 
@@ -70,6 +110,7 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
     expect(page.get_by_role("link", name="확장 다운로드")).to_be_visible()
     expect(page.locator("#ae-send")).to_be_disabled()
     expect(page.locator("#ae-install")).to_have_attribute("open", "")
+    assert_button_styles(page)
     device, headers = connect(page, server)
     expect(page.locator("#ae-status")).to_have_text("연결됨 · AE 25.0 · Example.aep")
     expect(page.locator("#ae-send")).to_be_enabled()
@@ -88,12 +129,14 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
     expect(page.locator("#ae-hand-edits")).to_be_visible(timeout=6000)
     expect(page.locator("#ae-hand-edits")).to_contain_text("2개 레이어")
     expect(page.locator("#ae-hand-edits")).to_contain_text("kf:title, kf:logo")
+    assert_button_styles(page)
     page.locator("#ae-jobs summary").click()
     expect(page.locator("#ae-jobs details")).to_contain_text("<img src=x onerror=alert(1)>")
     assert page.locator("#ae-jobs img").count() == 0
     page.locator("#ae-overwrite").click()
     expect(page.locator("#ae-overwrite-confirm")).to_be_visible()
     expect(page.locator("#ae-overwrite-yes")).to_be_focused()
+    assert_button_styles(page)
     assert len(server.ae_routes.jobs.state("p1", "s1")["jobs"]) == 1
     with page.expect_request("**/api/ae/send") as sent:
         page.locator("#ae-overwrite-confirm").get_by_role("button", name="예", exact=True).click()
@@ -129,6 +172,7 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     page.locator("#ae-devices").get_by_role("button", name="연결 해제", exact=True).click()
     expect(page.locator("#ae-devices")).to_contain_text("이 AE의 연결을 해제할까요?")
     expect(page.locator("#ae-devices").get_by_role("button", name="예", exact=True)).to_be_focused()
+    assert_button_styles(page)
     page.locator("#ae-devices").get_by_role("button", name="아니요", exact=True).click()
     assert len(server.ae_routes.devices.list()) == 1
     page.locator("#ae-devices").get_by_role("button", name="연결 해제", exact=True).click()
@@ -146,6 +190,93 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     expect(page.locator("#ae-status")).to_have_text("Not connected")
     expect(page.locator("#ae-pair-message")).to_have_text("Code expired — press Connect AE again")
     expect(page.get_by_role("link", name="Download extension")).to_be_visible()
+    assert not errors
+
+
+def test_ae_disabled_actions_explain_connection(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    reason = "AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요"
+    expect(page.locator("#ae-send-reason")).to_have_text(reason)
+    device, _ = connect(page, server)
+    jobs = server.ae_routes.jobs
+    jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    jobs.finish(jobs.next(device, wait=0).id, True, {"applied": False, "hand_edited": ["kf:title", "kf:logo"]})
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-hand-edits")).to_be_visible()
+    expect(page.locator("#ae-send-reason")).to_be_hidden()
+    expect(page.locator("#ae-overwrite-reason")).to_be_hidden()
+    expect(page.locator("#ae-overwrite")).to_be_enabled()
+    server.ae_routes.devices.seen(device, now=0)
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-send")).to_be_disabled()
+    expect(page.locator("#ae-overwrite")).to_be_disabled()
+    for action in ["send", "overwrite"]:
+        expect(page.locator(f"#ae-{action}-reason")).to_be_visible()
+        expect(page.locator(f"#ae-{action}-reason")).to_have_text(reason)
+        expect(page.locator(f"#ae-{action}")).to_have_attribute("aria-describedby", f"ae-{action}-reason")
+    assert_button_styles(page)
+    page.locator("[data-lang-toggle]").click()
+    for action in ["send", "overwrite"]:
+        expect(page.locator(f"#ae-{action}-reason")).to_have_text(
+            "AE is not connected — open the Keepframe panel in After Effects")
+    assert not errors
+
+
+@pytest.mark.parametrize("route_name,active", [("state", False), ("state", True), ("devices", False)])
+def test_ae_poll_error_backoff_and_recovery(ae_page, route_name, active):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    page.clock.install()
+    page.clock.pause_at(page.evaluate("Date.now() / 1000"))
+    mode = {"fail": False}
+    requests = []
+    pattern = "**/api/ae/state?*" if route_name == "state" else "**/api/ae/devices"
+    data = {"devices": [], "jobs": [{"id": "pending", "kind": "sync", "state": "queued", "version": "v1",
+                                    "created": time.time()}] if active else [], "last_synced": {}, "progress": {}}
+
+    def respond(route):
+        requests.append(page.evaluate("Date.now()"))
+        route.fulfill(status=503 if mode["fail"] else 200, content_type="application/json",
+                      body=json.dumps({"error": "Temporary AE poll failure"} if mode["fail"] else data))
+
+    page.route(pattern, respond)
+    # Isolate device retries from successful state polls when pairing is in progress.
+    if route_name == "devices":
+        page.route("**/api/ae/state?*", lambda route: route.fulfill(
+            status=503 if mode["fail"] else 200, content_type="application/json",
+            body=json.dumps({"error": "Temporary AE poll failure"} if mode["fail"] else data)))
+    page.reload()
+    expect(page.locator("#render-lock")).to_contain_text("v1")
+    if route_name == "devices":
+        page.locator("#ae-connect").click()
+        expect(page.locator("#ae-code-field")).to_be_visible()
+    page.wait_for_timeout(100)
+    base = 2000 if active or route_name == "devices" else 15000
+    mode["fail"] = True
+
+    def advance_poll(delay, failing):
+        before = len(requests)
+        page.clock.fast_forward(delay - 1)
+        page.wait_for_timeout(50)
+        assert len(requests) == before
+        page.clock.fast_forward(1)
+        page.wait_for_timeout(100)
+        assert len(requests) == before + 1
+        expect(page.locator("#ae-error")).to_be_visible() if failing else expect(page.locator("#ae-error")).to_be_hidden()
+        if not failing:
+            expect(page.locator("#ae-error")).to_have_text("")
+
+    advance_poll(base, True)
+    delay = base
+    for _ in range(6):
+        delay = min(delay * 2, 60000)
+        advance_poll(delay, True)
+    mode["fail"] = False
+    advance_poll(60000, False)
+    advance_poll(base, False)
     assert not errors
 
 

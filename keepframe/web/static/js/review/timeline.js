@@ -1,10 +1,10 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261006b";
-import { T } from "/static/js/i18n.js?v=20261006b";
+import { objectColor } from "/static/js/review/colors.js?v=20261006c";
+import { T } from "/static/js/i18n.js?v=20261006c";
 import {
   LIST_CHUNK,
   TIMELINE_HEIGHT_PX,
   trackGutterPx,
-} from "/static/js/review/workspace.js?v=20261006b";
+} from "/static/js/review/workspace.js?v=20261006c";
 
 export function attachTimeline(ws) {
   const { dom } = ws;

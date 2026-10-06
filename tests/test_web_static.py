@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261006b"}
+    assert stamps == {"20261006c"}
 
 
 def test_ae_card_static_contract():
@@ -595,7 +595,7 @@ def test_ae_card_static_contract():
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261006b"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261006c"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh
