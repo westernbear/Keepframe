@@ -5,7 +5,18 @@
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
     const EXTENSION_VERSION = '1.0.0';
+    const HOST_TIMEOUT_MS = 10 * 60 * 1000;
     const NOT_PAIRED = 'Not paired: enter a new code from the Keepframe web page';
+
+    function localAddress(address) {
+        const ip = address.split('.').map(Number);
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(address) && ip.every(n => n >= 0 && n <= 255))
+            return ip[0] === 127 || (ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127);
+        try {
+            const host = new URL('http://[' + address + ']').hostname.toLowerCase();
+            return host === '[::1]' || host.startsWith('[fd7a:115c:a1e0:');
+        } catch (_) { return false; }
+    }
 
     function validateServerUrl(value) {
         if (typeof value !== 'string') return {ok: false, error: 'Enter a server URL'};
@@ -18,11 +29,8 @@
             if (url.username || url.password || value.includes('@'))
                 return {ok: false, error: 'URL credentials are not allowed'};
             const host = url.hostname.toLowerCase();
-            const ip = host.split('.').map(Number);
-            const ipv4 = ip.length === 4 && ip.every(n => Number.isInteger(n) && n >= 0 && n <= 255);
-            if (url.protocol === 'http:' && !(host === 'localhost' || host === '[::1]' ||
-                host.endsWith('.ts.net') || (ipv4 && (ip[0] === 127 ||
-                (ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127)))))
+            if (url.protocol === 'http:' && !(host === 'localhost' || host.endsWith('.ts.net') ||
+                localAddress(host.replace(/^\[|\]$/g, ''))))
                 return {ok: false, error: 'HTTP requires loopback or Tailscale; otherwise use HTTPS'};
             return {ok: true, url: url.origin};
         } catch (_) { return {ok: false, error: 'Invalid server URL'}; }
@@ -53,11 +61,22 @@
         return failure(reasons[error.code] || 'Network request failed', {network: true});
     }
 
-    function request(context, method, route, body, extraHeaders, file) {
+    async function request(context, method, route, body, extraHeaders, file) {
         const deps = context.deps;
+        const url = new URL(context.serverUrl + route), host = url.host;
+        if (url.protocol === 'http:') {
+            const address = await new Promise((resolve, reject) => {
+                deps.dns.lookup(url.hostname.replace(/^\[|\]$/g, ''), {}, (error, address) => {
+                    if (error) reject(networkError(error)); else resolve(address);
+                });
+            });
+            if (!localAddress(address)) throw failure(
+                'Not connected: http is only allowed to this machine or your Tailscale network (got ' + address + ')');
+            url.hostname = address.includes(':') ? '[' + address + ']' : address;
+        }
         return new Promise((resolve, reject) => {
-            const url = new URL(context.serverUrl + route);
             const headers = Object.assign({'X-Keepframe-Extension': EXTENSION_VERSION}, extraHeaders);
+            if (url.protocol === 'http:') headers.Host = host;
             if (context.token) headers.Authorization = 'Bearer ' + context.token;
             const data = body === undefined ? undefined : JSON.stringify(body);
             if (data !== undefined) {
@@ -86,23 +105,41 @@
                     res.on('aborted', () => finish(networkError({code: 'ECONNRESET'})));
                     if (file && res.statusCode === 200) {
                         const hash = deps.crypto.createHash('sha256');
-                        output = deps.fs.createWriteStream(file, {flags: 'w'});
+                        let received = 0;
+                        output = deps.fs.createWriteStream(file.path, {flags: 'w'});
                         output.on('error', error => finish(failure(safeError(error, context.secrets))));
-                        res.on('data', chunk => hash.update(chunk));
+                        res.on('data', chunk => {
+                            if (settled) return;
+                            received += chunk.length;
+                            if (received > file.bytes) return finish(failure('Asset exceeds declared byte count (' + file.bytes + ')'));
+                            hash.update(chunk);
+                            if (!output.write(chunk)) res.pause();
+                        });
+                        output.on('drain', () => { if (!settled) res.resume(); });
+                        res.on('end', () => {
+                            if (settled) return;
+                            if (received !== file.bytes) return finish(failure(
+                                'Asset byte count mismatch (expected ' + file.bytes + ', received ' + received + ')'));
+                            output.end();
+                        });
                         // Wait for close, so Windows permits renaming/removing the file.
                         output.on('close', () => {
                             if (!settled) finish(null, {status: res.statusCode, headers: res.headers, sha256: hash.digest('hex')});
                         });
-                        res.pipe(output);
                         return;
                     }
                     const chunks = []; let size = 0;
                     res.on('data', chunk => {
+                        if (settled) return;
                         size += chunk.length;
-                        if (size > 8 * 1024 * 1024) finish(failure('Server response is too large'));
+                        if (size > 32 * 1024 * 1024) {
+                            chunks.length = 0;
+                            finish(failure('Server JSON response exceeds 32 MiB'));
+                        }
                         else chunks.push(chunk);
                     });
                     res.on('end', () => {
+                        if (settled) return;
                         if (res.statusCode < 200 || res.statusCode >= 300) {
                             // Do not reflect server error bodies: a pair response may echo credentials.
                             const message = res.statusCode === 401 ? NOT_PAIRED : res.statusCode === 426 ?
@@ -126,10 +163,23 @@
         catch (_) { throw failure(label + ': ' + redact(text, secrets).slice(0, 300)); }
     }
 
-    function hostCall(deps, script, secrets) {
+    function hostCall(context, script) {
+        const deps = context.deps, secrets = context.secrets;
+        const timeout = script === 'kfInfo()' ? 30000 : HOST_TIMEOUT_MS;
         return new Promise((resolve, reject) => {
-            try { deps.evalScript(script, resolve); }
-            catch (error) { reject(failure(safeError(error, secrets))); }
+            let settled = false;
+            const finish = (error, raw) => {
+                if (settled) return;
+                settled = true;
+                deps.clearTimeout(timer);
+                context.abortHost = undefined;
+                if (error) reject(error); else resolve(raw);
+            };
+            const timer = deps.setTimeout(() => finish(failure('After Effects did not respond within ' +
+                (timeout / 60000) + ' min (a dialog may be open in AE)', {hostTimeout: true})), timeout);
+            context.abortHost = error => finish(error);
+            try { deps.evalScript(script, raw => finish(null, raw)); }
+            catch (error) { finish(failure(safeError(error, secrets))); }
         }).then(raw => {
             const result = parseJson(String(raw), 'Invalid AE response', secrets);
             if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean')
@@ -154,7 +204,7 @@
 
     async function pair(options, deps) {
         const context = contextFor(options, deps);
-        const info = await hostCall(deps, 'kfInfo()', context.secrets);
+        const info = await hostCall(context, 'kfInfo()');
         let response;
         try { response = await request(context, 'POST', '/api/ae/pair', {code: options.code, info: deviceInfo(info, deps)}); }
         catch (error) {
@@ -178,6 +228,7 @@
         if (!asset || typeof asset.name !== 'string' || /[\/\\\x00-\x1f:]/.test(asset.name) ||
             asset.name.includes('..') || !/\.(png|glb)$/.test(asset.name)) throw failure('Invalid asset name or extension');
         if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256)) throw failure('Invalid asset SHA-256');
+        if (!Number.isSafeInteger(asset.bytes) || asset.bytes < 0) throw failure('Invalid asset byte count');
         const folder = path.resolve(documentsDir, 'Keepframe', project, 'assets');
         const destination = path.resolve(folder, asset.sha256 + path.extname(asset.name));
         if (path.dirname(destination) !== folder) throw failure('Invalid asset cache path');
@@ -195,7 +246,7 @@
 
     function createRunner(options, deps) {
         const context = contextFor(options, deps);
-        let running = false, promise, wakeStop, stopped, abortHost, backoff = 0, terminal = false, outcome = false;
+        let running = false, promise, wakeStop, stopped, backoff = 0, terminal = false, outcome = false;
         const log = message => deps.log(redact(message, context.secrets));
         const status = (message, details) => {
             const safeDetails = details && JSON.parse(JSON.stringify(details,
@@ -211,15 +262,15 @@
             if (error.status !== 401 && error.status !== 426) return false;
             if (terminal) return true;
             terminal = true;
-            if (abortHost) abortHost(error);
-            stop();
+            stop(error);
             status(error.message, error.status === 426 ? {downloadUrl: context.serverUrl + '/ae/keepframe.zxp'} : {});
             log(error.message);
             return true;
         }
         async function pause(error) {
             const seconds = Math.min(30, Math.pow(2, backoff++));
-            const message = 'Not connected: ' + safeError(error, context.secrets) + ' (retrying in ' + seconds + ' s)';
+            const message = 'Not connected: ' + safeError(error, context.secrets).replace(/^Not connected: /, '') +
+                ' (retrying in ' + seconds + ' s)';
             status(message); log(message);
             await wait(seconds * 1000, stopped);
         }
@@ -253,13 +304,15 @@
                     const temporary = destination + '.' + deps.crypto.randomBytes(8).toString('hex') + '.part';
                     try {
                         const downloaded = await send('GET', prefix + '/assets/' + encodeURIComponent(asset.name),
-                            undefined, undefined, temporary);
+                            undefined, undefined, {path: temporary, bytes: asset.bytes});
                         if (downloaded.sha256 !== asset.sha256 || downloaded.headers['x-keepframe-sha256'] !== asset.sha256)
                             throw failure('SHA-256 mismatch for ' + asset.name);
                         await deps.fs.promises.rename(temporary, destination);
                     } finally {
                         try { await deps.fs.promises.unlink(temporary); }
-                        catch (error) { if (error.code !== 'ENOENT') throw error; }
+                        catch (error) {
+                            if (error.code !== 'ENOENT') log('Could not remove temporary asset file: ' + (error.code || 'unknown error'));
+                        }
                     }
                 }
                 assets[asset.name] = destination;
@@ -269,11 +322,8 @@
             if (!running) throw failure('Disconnected before sync');
             // JSON literals only, including ES3-safe escapes for line/paragraph separators.
             const literal = value => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-            return new Promise((resolve, reject) => {
-                abortHost = reject;
-                hostCall(deps, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
-                    literal(job.params && job.params.force ? 'true' : 'false') + ')', context.secrets).then(resolve, reject);
-            }).finally(() => { abortHost = undefined; });
+            return hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
+                literal(job.params && job.params.force ? 'true' : 'false') + ')');
         }
 
         async function runJob(job) {
@@ -286,7 +336,7 @@
             const heartbeat = async () => {
                 while (!finished && !terminal) {
                     // Schedule independently of response latency, so a slow progress request cannot delay the next beat.
-                    send('POST', prefix + '/progress', Object.assign({}, progress)).catch(error => {
+                    request(context, 'POST', prefix + '/progress', Object.assign({}, progress)).catch(error => {
                         if (finished || stopFor(error)) return;
                         status('Not connected: ' + safeError(error, context.secrets) + ' (retrying in 15 s)', {job, progress});
                         log('Progress failed: ' + safeError(error, context.secrets));
@@ -303,6 +353,7 @@
                 payload = {ok: false, error: safeError(error, context.secrets)};
                 if (Number.isInteger(error.line)) payload.line = error.line;
                 stopFor(error);
+                if (error.hostTimeout || !running) { finished = true; finishHeartbeat(); await beating; }
             }
             try {
                 // Keep the result until acknowledged; do not drop a completed AE sync on transient network loss.
@@ -310,7 +361,13 @@
                     try { await send('POST', prefix + '/result', payload); break; }
                     catch (error) {
                         if (stopFor(error) || !running) return;
-                        if (!error.network) throw error;
+                        if (!error.network && error.status !== 429 && !(error.status >= 500 && error.status < 600)) {
+                            outcome = true;
+                            const message = error.status === 409 ? 'Result not posted: job already ended (HTTP 409)' :
+                                'Result not posted: ' + (error.status ? 'server returned HTTP ' + error.status : safeError(error, context.secrets));
+                            status(message, {job, finished: true}); log(message);
+                            return;
+                        }
                         await pause(error);
                     }
                 }
@@ -333,7 +390,7 @@
             let announced = false;
             while (running) {
                 try {
-                    const info = await hostCall(deps, 'kfInfo()', context.secrets);
+                    const info = await hostCall(context, 'kfInfo()');
                     if (!running) break;
                     if (!announced) {
                         await send('POST', '/api/ae/info', {info: deviceInfo(info, deps)});
@@ -364,13 +421,14 @@
             promise = loop().finally(() => { running = false; });
             return promise;
         }
-        function stop() {
+        function stop(error) {
             running = false;
+            if (context.abortHost) context.abortHost(error || failure('Disconnected before After Effects responded'));
             if (wakeStop) wakeStop();
             context.requests.forEach(req => req.destroy());
         }
         return {start, stop};
     }
 
-    return {EXTENSION_VERSION, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
+    return {EXTENSION_VERSION, HOST_TIMEOUT_MS, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
 }));

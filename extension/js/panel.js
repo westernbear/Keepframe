@@ -60,7 +60,7 @@
     el('current-job').textContent = table.idle;
     el('status').textContent = table.disconnected;
     const secrets = [], ring = core.createLog(Date.now, secrets);
-    let activeRunner, activePromise, generation = 0, token = '';
+    let activeRunner, generation = 0, token = '';
 
     function translate(message) {
         const key = Object.keys(strings.en).find(name => strings.en[name] === message);
@@ -113,9 +113,10 @@
     try {
         if (environmentError) throw new Error(table.unavailable);
         const os = require('os'), path = require('path');
-        deps = {http: require('http'), https: require('https'), fs: require('fs'), path,
+        deps = {http: require('http'), https: require('https'), dns: require('dns'), fs: require('fs'), path,
             crypto: require('crypto'), os, documentsDir: path.join(os.homedir(), 'Documents'),
             evalScript: (script, callback) => cep.evalScript(script, callback), now: Date.now, log, setStatus,
+            setTimeout, clearTimeout,
             sleep: ms => {
                 let timer;
                 const promise = new Promise(resolve => { timer = setTimeout(resolve, ms); });
@@ -132,24 +133,22 @@
         const instance = core.createRunner({serverUrl, token}, Object.assign({}, deps, {
             setStatus: (message, details) => { if (activeRunner === instance) setStatus(message, details); }}));
         activeRunner = instance;
-        activePromise = instance.start().catch(showError);
+        instance.start().catch(error => { if (activeRunner === instance) showError(error); });
     }
     function stop() {
-        const pending = activePromise;
         const previous = activeRunner;
         activeRunner = undefined;
         if (previous) previous.stop();
-        return pending || Promise.resolve();
     }
     el('settings').addEventListener('submit', async event => {
         event.preventDefault();
-        const current = ++generation, pending = stop();
+        const current = ++generation;
+        stop();
         const code = el('pairing-code').value.trim(), serverUrl = el('server-url').value;
         secrets.push(code);
         el('pair').disabled = true;
         setStatus(table.pairing);
         try {
-            await pending;
             if (current !== generation) return;
             const paired = await core.pair({serverUrl, code}, deps);
             if (current !== generation) return;
