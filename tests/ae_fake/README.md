@@ -1,9 +1,9 @@
 # Fake After Effects
 
-`createAE({state, documents})` returns `{context, serialize, counters}`; JSX executes in a Node `vm` context with `JSON` deleted.
+`createAE({state, documents})` returns `{context, serialize, counters}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
 Unknown host members and unknown property/effect match names throw `fake AE: unsupported <Type>.<name>`; host internals are private.
-Native arrays, strings, and numbers remain ordinary JavaScript values; font records, source rectangles, TextDocuments, and KeyframeEases are strict host objects.
-This models the Task 7 sync surface; it does not validate ES3 syntax or emulate all differences between Node and ExtendScript.
+Arrays, plain objects, and errors returned to JSX belong to its VM realm; host objects and methods cross through strict proxies. Font records, source rectangles, TextDocuments, and KeyframeEases are strict host objects.
+This models the Task 7 sync surface; the runner checks the listed ES3 syntax gaps, and broader engine differences remain outside its scope.
 
 ## Running
 
@@ -15,6 +15,9 @@ node tests/ae_fake/run.js state.json script.jsx entry arg1 arg2 --documents /tmp
 
 `run.js` creates an empty project when the state file is missing, invokes the named entry with string arguments, atomically replaces state on success, and emits one JSON line `{result, undo_groups, writes}`.
 An exception emits `{error, line}` and exits 1; JSX stack locations supply the line, or 0 if unavailable; unsuccessful runs leave persisted state untouched.
+`run.js` discards all mutations from a run that throws; real AE keeps partial mutations made before an error.
+`checkES3Syntax(source)` runs before JSX execution and rejects `let`/`const` declarations, arrow functions, template literals, classes, trailing commas in object/array literals, and getter/setter literal syntax; errors name the line and use the same `{error, line}` payload.
+The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/reduce/reduceRight/some/every`, `Array.isArray`, `Object.keys/create/defineProperty/defineProperties/getPrototypeOf/freeze/assign/entries/values`, `String.prototype.trim/trimStart/trimEnd/startsWith/endsWith/includes/padStart/padEnd/repeat`, `Function.prototype.bind`, `Date.now`, `Number.isFinite/isNaN`, and the globals `JSON/Promise/Map/Set/Symbol/Proxy/Reflect`; the fake uses host built-ins internally.
 `run_jsx(state_path, script_path, entry, *args, documents=None)` returns the CLI payload, adds `value` when `result` parses as JSON, and skips via `pytest.skip` if Node is absent.
 `index.js` loads `fake.test.js` because Node 25 treats the explicit test directory as a module path.
 
@@ -50,7 +53,7 @@ An exception emits `{error, line}` and exits 1; JSX stack locations supply the l
 - `layer.remove()`: removes the layer; removing an already removed layer throws.
 - `layer.moveBefore(layer)` / `moveAfter(layer)` / `moveToBeginning()` / `moveToEnd()`: move within the same comp and update all indices.
 - `layer.sourceRectAtTime(t,includeExtents)`: text has width `0.6*fontSize*text.length`, height `fontSize`, left 0, top `-0.8*fontSize`; models are 200×200; other layers use source dimensions.
-- `layer.property(nameOrMatchName)`: returns a supported group by display name or match name; 1-based numeric lookup is also supported.
+- `layer.property(nameOrMatchName)`: returns a supported group by display name or match name; 1-based numeric lookup is also supported; an unknown match name throws where real AE may return null (also applies to PropertyGroup.property).
 - `layer.Effects` / `layer.Masks`: aliases for `ADBE Effect Parade` / `ADBE Mask Parade` groups.
 - `PropertyGroup.property(nameOrMatchName)` / `numProperties`: child lookup and count, including 1-based numeric property lookup.
 - `PropertyGroup.name` / `matchName`: settable display name and read-only match name.
@@ -59,17 +62,17 @@ An exception emits `{error, line}` and exits 1; JSX stack locations supply the l
 - `Masks.addProperty("ADBE Mask Atom")`: creates an empty mask group with a settable display name; mask attributes are unsupported.
 - `effect.remove()` / `mask.remove()`: remove the group from its parent; a repeated removal throws.
 - `ADBE Transform Group`: exposes `ADBE Anchor Point`, `ADBE Position`, `ADBE Scale`, `ADBE Rotate Z`, and `ADBE Opacity`.
-- `ADBE Anchor Point`: 2D source center, or [0,0] for text; `ADBE Position`: 2D comp center; `ADBE Scale`: [100,100]; rotation: 0; opacity: 100.
-- `ADBE Position.dimensionsSeparated`: settable boolean; true exposes scalar `ADBE Position_0` / `ADBE Position_1`; toggling transfers values/keys and joined reads combine the followers.
-- `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation`: available for 3D layers, default 0 / 0 / [0,0,0]; anchor, position and scale remain 2D for the binding Task 7 surface.
+- `ADBE Anchor Point`: source center, or [0,0] for text; `ADBE Position`: comp center; `ADBE Scale`: [100,100]; enabling 3D adds z=0 for anchor/position and z=100 for scale to values and keys; disabling 3D drops z; rotation: 0; opacity: 100.
+- `ADBE Position.dimensionsSeparated`: settable boolean; true exposes scalar `ADBE Position_0` / `ADBE Position_1`, plus `ADBE Position_2` for 3D; toggling transfers values/keys and joined reads combine the followers.
+- `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation`: available for 3D layers, default 0 / 0 / [0,0,0]; anchor, position and scale have three components, and GLB layers start in 3D.
 - `ADBE Text Properties` → `ADBE Text Document`: Source Text property containing a detached TextDocument copy.
 - `Property.value`: read-only copy sampled at time 0; evaluating an enabled expression throws.
-- `Property.setValue(v)`: assigns a static value; throws `fake AE: setValue on a keyframed property` if keys exist.
+- `Property.setValue(v)`: assigns a static value; throws `fake AE: setValue on a keyframed property` if keys exist; 3D vector writes require three values (`fake AE: <matchName> expects 3 values`, also for setValueAtTime).
 - `Property.setValueAtTime(t,v)`: adds a sorted key or replaces the value at an existing time, preserving that key's ease/interpolation metadata.
 - `Property.numKeys` / `keyTime(i)` / `keyValue(i)` / `removeKey(i)` / `nearestKeyIndex(t)`: 1-based key operations; invalid indices and nearest on an unkeyed property throw.
 - `Property.valueAtTime(t,preExpression)`: linearly interpolates scalars/vectors, honors outgoing HOLD, holds beyond endpoints, and holds TextDocuments between keys; BEZIER metadata is preserved but sampled linearly.
 - `Property.setInterpolationTypeAtKey(i,inType,outType)` / `keyInInterpolationType(i)` / `keyOutInterpolationType(i)`: store/read interpolation; omitted outType defaults to inType.
-- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; arrays must equal value dimensions; omitted outEases defaults to inEases.
+- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; spatial TwoD_SPATIAL/ThreeD_SPATIAL properties take one ease per side, non-spatial vectors take one per dimension, and scalars take one; omitted outEases defaults to inEases.
 - `Property.expression` / `expressionEnabled`: settable and serialized; assigning nonempty expression enables it, empty disables it; evaluation is unsupported, while `valueAtTime(t,true)` reads underlying animation.
 - `Property.canSetExpression` / `propertyValueType` / `matchName` / `name`: read-only property metadata.
 - `PropertyValueType`: symbolic `NO_VALUE`, `OneD`, `TwoD`, `TwoD_SPATIAL`, `ThreeD`, `ThreeD_SPATIAL`, `COLOR`, `TEXT_DOCUMENT` constants.

@@ -7,6 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 const { createAE } = require("./ae");
+const { checkES3Syntax } = require("./run");
 
 function fixture(options) {
   const ae = createAE(options);
@@ -96,10 +97,10 @@ test("keys replace, sort, interpolate, hold outside range, and remove", () => {
   const position = transform.property("ADBE Position");
   position.setValueAtTime(0, [0, 10]);
   position.setValueAtTime(2, [20, 30]);
-  assert.deepEqual(position.valueAtTime(1, true), [10, 20]);
+  assert.deepEqual(Array.from(position.valueAtTime(1, true)), [10, 20]);
   const copy = position.keyValue(1);
   copy[0] = 999;
-  assert.deepEqual(position.keyValue(1), [0, 10]);
+  assert.deepEqual(Array.from(position.keyValue(1)), [0, 10]);
 });
 
 test("ease dimension checks, interpolation, and influence boundaries", () => {
@@ -142,9 +143,9 @@ test("separated position exposes scalar X/Y and survives toggling", () => {
   x.setValueAtTime(2, 30);
   y.setValue(40);
   assert.equal(x.valueAtTime(1, false), 20);
-  assert.deepEqual(p.valueAtTime(1, false), [20, 40]);
+  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40]);
   p.dimensionsSeparated = false;
-  assert.deepEqual(p.valueAtTime(1, false), [20, 40]);
+  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40]);
   assert.throws(() => transform.property("ADBE Position_0"), /unsupported/);
   p.dimensionsSeparated = true;
   assert.equal(transform.property("ADBE Position_0").valueAtTime(1, false), 20);
@@ -200,7 +201,7 @@ test("project folders, footage replacement, source rectangles, 3D and text", () 
   assert.equal(modelLayer.threeDLayer, true);
   assert.equal(modelLayer.sourceRectAtTime(0, false).width, 200);
   assert.equal(modelLayer.sourceRectAtTime(0, false).height, 200);
-  assert.deepEqual(modelLayer.property("ADBE Transform Group").property("ADBE Orientation").value, [0, 0, 0]);
+  assert.deepEqual(Array.from(modelLayer.property("ADBE Transform Group").property("ADBE Orientation").value), [0, 0, 0]);
   const text = f.layer.property("ADBE Text Properties").property("ADBE Text Document");
   const doc = text.value;
   doc.fontSize = 10;
@@ -437,4 +438,243 @@ test("CLI rejects invalid state and return values and locates host errors in JSX
   assert.equal(result.status, 1);
   assert.equal(typeof JSON.parse(result.stdout).error, "string");
   assert.equal(fs.readFileSync(state, "utf8"), "invalid JSON");
+});
+
+test("JSX receives context-realm values, protected methods, and Error instances", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-realms-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, "file.txt"), "x");
+  const ae = createAE({ documents: dir, state: { app: { fonts: [[{ familyName: "Test" }]], env: { DATA: { x: [1] } } } } });
+  assert.equal(vm.runInContext(`
+    function check(ok, message) { if (!ok) throw Error(message); }
+    var comp = app.project.items.addComp("C", 640, 480, 1, 5, 30);
+    var layer = comp.layers.addText("Hi");
+    var p = layer.property("ADBE Transform Group").property("ADBE Position");
+    check(p.value instanceof Array, "value realm");
+    check(p.value.constructor.constructor("return typeof JSON")() === "undefined", "host JSON");
+    p.setValueAtTime(0, [1, 2]); p.setValueAtTime(2, [3, 4]);
+    check(p.keyValue(1) instanceof Array, "keyValue realm");
+    check(p.valueAtTime(1, true) instanceof Array, "sample realm");
+    p.setTemporalEaseAtKey(1, [new KeyframeEase(0, 33)], [new KeyframeEase(0, 33)]);
+    check(p.keyInTemporalEase(1) instanceof Array, "ease array realm");
+    check(File.prototype.constructor.constructor("return typeof JSON")() === "undefined", "constructor prototype realm");
+    var rect = layer.sourceRectAtTime(0, false);
+    check(rect instanceof Object, "rect realm");
+    check(app.project.items instanceof Object && comp.layers instanceof Object, "collection realm");
+    check(app.fonts.allFonts instanceof Array && app.fonts.allFonts[0] instanceof Array, "font array realm");
+    check(Folder.myDocuments.getFiles() instanceof Array, "file array realm");
+    check(comp.bgColor instanceof Array, "setting realm");
+    check(layer.property("Text").property("Source Text").value.fillColor instanceof Array, "document color realm");
+    check($.getenv("DATA") instanceof Object && $.getenv("DATA").x instanceof Array, "plain object realm");
+    var solid = comp.layers.addSolid([1, 0, 0], "S", 10, 10, 1, 5);
+    check(solid.source.mainSource.color instanceof Array, "solid color realm");
+    p.dimensionsSeparated = true;
+    check(p.value instanceof Array, "separated realm");
+    var calls = [
+      function() { app.bogus; }, function() { layer.label = 17; },
+      function() { comp.name = {}; comp.layers.add(null); },
+      function() { new KeyframeEase(0, 0); }, function() { p.keyValue(0); },
+      function() { new ImportOptions(null); }, function() { CompItem(); },
+      function() { comp.layers.length = 3; }, function() { app.bogus = 1; },
+      function() { delete app.project; }, function() { app.__proto__; },
+      function() { Folder("missing-folder").getFiles(); },
+      function() { File.prototype.bogus(); },
+      function() { app.beginUndoGroup.constructor("return JSON")(); },
+      function() { Object.getOwnPropertyDescriptor(p, "value").get.constructor("return JSON")(); }
+    ];
+    for (var i = 0; i < calls.length; i++) {
+      var caught = false;
+      try { calls[i](); } catch (e) {
+        caught = true; check(e instanceof Error, "error realm " + i);
+        check(e.constructor.constructor("return typeof JSON")() === "undefined", "error JSON");
+      }
+      check(caught, "expected error " + i);
+    }
+    check(layer instanceof TextLayer && layer instanceof AVLayer && comp instanceof CompItem, "AE instanceof");
+    "ok";
+  `, ae.context, { filename: "realm.jsx" }), "ok");
+});
+
+test("temporal ease dimensions follow spatial, scale, and scalar value types", () => {
+  const { context: c, layer, transform } = fixture();
+  const ease = new c.KeyframeEase(0, 33);
+  for (const threeD of [false, true]) {
+    layer.threeDLayer = threeD;
+    for (const match of ["ADBE Position", "ADBE Anchor Point", "ADBE Scale"]) {
+      const p = transform.property(match);
+      const spatial = match !== "ADBE Scale", size = spatial ? 1 : threeD ? 3 : 2;
+      assert.equal(p.propertyValueType, c.PropertyValueType[threeD ? spatial ? "ThreeD_SPATIAL" : "ThreeD" : spatial ? "TwoD_SPATIAL" : "TwoD"]);
+      p.setValueAtTime(0, p.value);
+      assert.equal(p.keyInTemporalEase(1).length, size);
+      assert.equal(p.keyOutTemporalEase(1).length, size);
+      const eases = Array(size).fill(ease);
+      p.setTemporalEaseAtKey(1, eases, eases);
+      assert.equal(p.keyInTemporalEase(1).length, size);
+      assert.equal(p.keyOutTemporalEase(1).length, size);
+      assert.throws(() => p.setTemporalEaseAtKey(1, Array(size + 1).fill(ease)), /dimensions/);
+    }
+    const position = transform.property("ADBE Position");
+    position.dimensionsSeparated = true;
+    for (let i = 0; i < (threeD ? 3 : 2); i++) {
+      const p = transform.property(`ADBE Position_${i}`);
+      assert.equal(p.propertyValueType, c.PropertyValueType.OneD);
+      p.setValueAtTime(0, p.value);
+      p.setTemporalEaseAtKey(1, [ease], [ease]);
+      assert.equal(p.keyInTemporalEase(1).length, 1);
+      assert.throws(() => p.setTemporalEaseAtKey(1, [ease, ease]), /dimensions/);
+    }
+    position.dimensionsSeparated = false;
+    assert.equal(position.keyInTemporalEase(1).length, 1);
+  }
+});
+
+test("3D transforms resize static values, keys, eases, and separated position", () => {
+  const { context: c, layer, transform, serialize } = fixture();
+  const matches = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale"];
+  matches.forEach((match) => {
+    const p = transform.property(match);
+    p.setValue([10, 20]); p.setValueAtTime(0, [10, 20]); p.setValueAtTime(2, [30, 40]);
+  });
+  layer.threeDLayer = true;
+  matches.forEach((match) => {
+    const p = transform.property(match), z = match === "ADBE Scale" ? 100 : 0;
+    assert.deepEqual(Array.from(p.value), [10, 20, z]);
+    assert.deepEqual(Array.from(p.keyValue(2)), [30, 40, z]);
+    assert.deepEqual(Array.from(p.valueAtTime(1, true)), [20, 30, z]);
+    assert.throws(() => p.setValueAtTime(3, [1, 2]), { message: `fake AE: ${match} expects 3 values` });
+    assert.equal(p.keyInTemporalEase(1).length, match === "ADBE Scale" ? 3 : 1);
+  });
+  const position = transform.property("ADBE Position");
+  position.dimensionsSeparated = true;
+  const z = transform.property("ADBE Position_2");
+  assert.equal(z.value, 0);
+  z.setValueAtTime(0, 5); z.setValueAtTime(2, 15);
+  assert.deepEqual(Array.from(position.valueAtTime(1, true)), [20, 30, 10]);
+  const state = serialize();
+  assert.deepEqual(createAE({ state }).serialize(), state);
+  position.dimensionsSeparated = false;
+  assert.deepEqual(Array.from(position.keyValue(2)), [30, 40, 15]);
+  layer.threeDLayer = false;
+  matches.forEach((match) => {
+    const p = transform.property(match);
+    assert.deepEqual(Array.from(p.keyValue(2)), [30, 40]);
+    assert.equal(p.keyInTemporalEase(1).length, match === "ADBE Scale" ? 2 : 1);
+  });
+  position.dimensionsSeparated = true;
+  assert.throws(() => transform.property("ADBE Position_2"), /unsupported/);
+  layer.threeDLayer = true;
+  assert.equal(transform.property("ADBE Position_2").value, 0);
+  assert.deepEqual(Array.from(position.value), [10, 20, 0]);
+  const model = c.app.project.importFile(new c.ImportOptions(new c.File("asset.glb")));
+  const modelLayer = c.app.project.items[1].layers.add(model);
+  assert.equal(modelLayer.threeDLayer, true);
+  const modelTransform = modelLayer.property("ADBE Transform Group");
+  matches.forEach((match) => {
+    const p = modelTransform.property(match);
+    assert.equal(p.value.length, 3);
+    assert.equal(p.value[2], match === "ADBE Scale" ? 100 : 0);
+    assert.throws(() => p.setValue([1, 2]), { message: `fake AE: ${match} expects 3 values` });
+  });
+  modelTransform.property("ADBE Position").dimensionsSeparated = true;
+  assert.equal(modelTransform.property("ADBE Position_2").value, 0);
+  modelLayer.threeDLayer = false;
+  matches.forEach((match) => assert.equal(modelTransform.property(match).value.length, 2));
+  assert.throws(() => modelTransform.property("ADBE Position_2"), /unsupported/);
+  modelLayer.threeDLayer = true;
+  matches.forEach((match) => {
+    const p = modelTransform.property(match);
+    assert.equal(p.value.length, 3);
+    assert.equal(p.value[2], match === "ADBE Scale" ? 100 : 0);
+  });
+});
+
+test("ES5+ built-ins are deleted only from the JSX context", () => {
+  const { context } = createAE();
+  const paths = [
+    ...["indexOf", "lastIndexOf", "forEach", "map", "filter", "reduce", "reduceRight", "some", "every"].map((n) => `Array.prototype.${n}`),
+    "Array.isArray",
+    ...["keys", "create", "defineProperty", "defineProperties", "getPrototypeOf", "freeze", "assign", "entries", "values"].map((n) => `Object.${n}`),
+    ...["trim", "trimStart", "trimEnd", "startsWith", "endsWith", "includes", "padStart", "padEnd", "repeat"].map((n) => `String.prototype.${n}`),
+    "Function.prototype.bind", "Date.now", "Number.isFinite", "Number.isNaN",
+    "JSON", "Promise", "Map", "Set", "Symbol", "Proxy", "Reflect",
+  ];
+  paths.forEach((name) => assert.equal(vm.runInContext(`typeof ${name}`, context), "undefined", name));
+  assert.equal(typeof Array.prototype.map, "function");
+  assert.equal(typeof Object.keys, "function");
+  assert.equal(typeof JSON, "object");
+});
+
+test("CLI rejects each requested ES3 syntax violation with its line before execution", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-syntax-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const script = path.join(dir, "syntax.jsx"), state = path.join(dir, "state.json");
+  const examples = [
+    ["let x = 1;", /let declaration/], ["const x = 1;", /const declaration/],
+    ["var f = (x) => x;", /arrow function/], ["var x = `hello`;", /template literal/],
+    ["class X {}", /class/], ["var x = { a: 1, };", /trailing comma.*object/],
+    ["var x = [1, ];", /trailing comma.*array/],
+    ["var x = { get a() { return 1; } };", /getter/],
+    ["var x = { set a(v) {} };", /setter/],
+    ["var x = { 'a': 1, /*comment*/ };", /trailing comma.*object/],
+    ["var x = { get 'a'() { return 1; } };", /getter/],
+    ["var x = { nested: { a: [1, 2,] } };", /trailing comma.*array/],
+    ["var x = { a: true ? 1 : { b: 2, } };", /trailing comma.*object/],
+    ["var x = 1 + { a: 1, };", /trailing comma.*object/],
+    ["var x = +{ get a() { return 1; } };", /getter/],
+    ["var x = 1; x += { a: 1, };", /trailing comma.*object/],
+    ["if (true) [1,];", /trailing comma.*array/],
+    ["{} [1,];", /trailing comma.*array/],
+    ["let 이름 = 1;", /let declaration/],
+    ["const \\u0061 = 1;", /const declaration/],
+    ["var f = function() {} / 2; let x = 1;", /let declaration/],
+    ["var f = function named() {} / 2; const x = 1;", /const declaration/],
+  ];
+  for (const [source, message] of examples) {
+    fs.writeFileSync(script, 'app.project.items.addFolder("must not execute");\n\n' + source + '\nfunction entry() { return "ok"; }\n');
+    const result = spawnSync(process.execPath, [path.join(__dirname, "run.js"), state, script, "entry"], { encoding: "utf8" });
+    assert.equal(result.status, 1, source);
+    const payload = JSON.parse(result.stdout);
+    assert.match(payload.error, message, source);
+    assert.match(payload.error, /line 3/, source);
+    assert.equal(payload.line, 3, source);
+    assert.equal(fs.existsSync(state), false, source);
+  }
+});
+
+test("ES3 syntax checking ignores comments, strings, regexes, and ordinary ES3 constructs", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-es3-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const script = path.join(dir, "es3.jsx"), state = path.join(dir, "state.json");
+  fs.writeFileSync(script, [
+    '// let x = 1; const y = 2; class X {}; => `template`',
+    '/* { get a() {} } [1,] {a: 1,} */',
+    'function entry() {',
+    '  var text = "let const class => ` { get a() {} } [1,]";',
+    '  var obj = { get: 1, set: 2, nested: { x: [1, 2] }, fn: function() { return 3; } };',
+    '  var rx = /let const class => ` \\/ [a,] /;',
+    '  if (true) /class =>/.test(text);',
+    '  if (false) {} else {} /class =>/.test(text);',
+    '  var n = 8 / 2 / 2;',
+    '  for (var i = 0; i < 1; i++) { obj.get += i; }',
+    '  return String(obj.fn() + n);',
+    '}',
+  ].join("\n"));
+  const result = spawnSync(process.execPath, [path.join(__dirname, "run.js"), state, script, "entry"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(result.stdout).result, "5");
+});
+
+test("ES3 checker reports multiline locations and preserves ordinary ES3 identifiers", () => {
+  const examples = [
+    ["// const ignored\r\n/* class ignored\r\n */\r\nlet x = 1;", "let declaration", 4],
+    ["var x = {\n a: 1,\n};", "trailing comma in object literal", 2],
+    ["var x = [\n 1,\n];", "trailing comma in array literal", 2],
+    ["var x = {\n get a() { return 1; }\n};", "getter literal syntax", 2],
+    ["var f = function() {} / 2;\nconst x = 1;", "const declaration", 2],
+  ];
+  for (const [source, rule, line] of examples) {
+    assert.throws(() => checkES3Syntax(source), { message: `fake AE: ES3 syntax: ${rule} at line ${line}`, line });
+  }
+  assert.doesNotThrow(() => checkES3Syntax('var let = 1; let += 2; var 이름 = 1; var \\u0061 = 2;'));
+  assert.doesNotThrow(() => checkES3Syntax('var f = function() {} / 2; function g() {} /class =>/.test("class");'));
 });

@@ -6,49 +6,93 @@ const path = require("node:path");
 // Keep implementation data outside proxies: JSX only sees the documented surface.
 const records = new WeakMap();
 const copy = (value) => JSON.parse(JSON.stringify(value));
-const unsupported = (type, name) => { throw Error(`fake AE: unsupported ${type}.${String(name)}`); };
-function host(type, target, record = {}, indexed) {
-  if (typeof target === "function") Object.defineProperty(target, Symbol.hasInstance, {
-    value: (value) => Function.prototype[Symbol.hasInstance].call(target, value),
-  });
-  const proxy = new Proxy(target, {
-    get(object, name) {
-      if (Object.hasOwn(object, name)) return Reflect.get(object, name);
-      if (indexed && typeof name === "string" && /^[1-9]\d*$/.test(name)) {
-        const value = indexed(Number(name));
-        if (value !== undefined) return value;
-      }
-      return unsupported(type, name);
-    },
-    set(object, name, value) {
-      const descriptor = Object.getOwnPropertyDescriptor(object, name);
-      if (!descriptor) return unsupported(type, name);
-      if (!descriptor.set) throw Error(`fake AE: read-only ${type}.${String(name)}`);
-      descriptor.set(value);
-      return true;
-    },
-    defineProperty(_object, name) { return unsupported(type, name); },
-    deleteProperty(_object, name) { return unsupported(type, name); },
-    setPrototypeOf() { return unsupported(type, "__proto__"); },
-  });
-  records.set(proxy, { type, ...record });
-  return proxy;
-}
 function field(target, name, get, set) {
   Object.defineProperty(target, name, { configurable: true, enumerable: true, get, set });
 }
-function finite(value, name) {
-  if (typeof value !== "number" || !Number.isFinite(value)) throw Error(`fake AE: invalid ${name}`);
-}
-function vector(value, size, name, color = false) {
-  if (!Array.isArray(value) || value.length !== size) throw Error(`fake AE: invalid ${name} dimensions`);
-  value.forEach((n) => {
-    finite(n, name);
-    if (color && (n < 0 || n > 1)) throw Error(`fake AE: invalid ${name} range`);
-  });
-}
 
 function createAE({ state = {}, documents = process.cwd() } = {}) {
+  const context = vm.createContext({});
+  const realm = vm.runInContext("({Array: Array, Object: Object, Error: Error, Function: Function})", context);
+  const Error = realm.Error;
+  // Delete in the VM only; implementation code keeps using host built-ins.
+  const removed = [
+    ["Array.prototype", "indexOf lastIndexOf forEach map filter reduce reduceRight some every"],
+    ["Array", "isArray"], ["Object", "keys create defineProperty defineProperties getPrototypeOf freeze assign entries values"],
+    ["String.prototype", "trim trimStart trimEnd startsWith endsWith includes padStart padEnd repeat"],
+    ["Function.prototype", "bind"], ["Date", "now"], ["Number", "isFinite isNaN"],
+    ["this", "JSON Promise Map Set Symbol Proxy Reflect"],
+  ];
+  vm.runInContext(removed.flatMap(([object, names]) => names.split(" ").map((name) => `delete ${object}.${name};`)).join("\n"), context);
+  const contextGlobal = vm.runInContext("this", context);
+  const functions = new WeakMap();
+  const unsupported = (type, name) => { throw Error(`fake AE: unsupported ${type}.${String(name)}`); };
+  function scriptValue(value) {
+    if (value === null || (typeof value !== "object" && typeof value !== "function") || records.has(value) || value === contextGlobal) return value;
+    if (typeof value === "function") return functions.get(value) || host("Function", value);
+    const result = Array.isArray(value) ? new realm.Array(value.length) : new realm.Object();
+    for (const name of Object.keys(value)) Object.defineProperty(result, name, {
+      value: scriptValue(value[name]), writable: true, enumerable: true, configurable: true,
+    });
+    return result;
+  }
+  function boundary(operation) {
+    try { return operation(); }
+    catch (error) {
+      if (!(error instanceof globalThis.Error)) throw error;
+      const converted = Error(error.message);
+      converted.name = error.name; converted.stack = error.stack;
+      throw converted;
+    }
+  }
+  function host(type, target, record = {}, indexed) {
+    if (typeof target === "function") Object.defineProperty(target, Symbol.hasInstance, {
+      configurable: true,
+      value: (value) => Function.prototype[Symbol.hasInstance].call(target, records.get(value)?.target || value),
+    });
+    const proxy = new Proxy(target, {
+      get(object, name) { return boundary(() => {
+        if (Object.hasOwn(object, name)) return scriptValue(Reflect.get(object, name));
+        if (indexed && typeof name === "string" && /^[1-9]\d*$/.test(name)) {
+          const value = indexed(Number(name));
+          if (value !== undefined) return scriptValue(value);
+        }
+        return unsupported(type, name);
+      }); },
+      set(object, name, value) { return boundary(() => {
+        const descriptor = Object.getOwnPropertyDescriptor(object, name);
+        if (!descriptor) return unsupported(type, name);
+        if (!descriptor.set) throw Error(`fake AE: read-only ${type}.${String(name)}`);
+        descriptor.set(value);
+        return true;
+      }); },
+      apply(fn, receiver, args) { return boundary(() => scriptValue(Reflect.apply(fn, receiver, args))); },
+      construct(fn, args) { return boundary(() => scriptValue(Reflect.construct(fn, args))); },
+      getPrototypeOf() { return typeof target === "function" ? realm.Function.prototype : realm.Object.prototype; },
+      getOwnPropertyDescriptor(object, name) { return boundary(() => {
+        const descriptor = Object.getOwnPropertyDescriptor(object, name);
+        if (!descriptor) return undefined;
+        for (const key of ["value", "get", "set"]) if (key in descriptor) descriptor[key] = scriptValue(descriptor[key]);
+        return descriptor;
+      }); },
+      defineProperty(_object, name) { return unsupported(type, name); },
+      deleteProperty(_object, name) { return unsupported(type, name); },
+      setPrototypeOf() { return unsupported(type, "__proto__"); },
+      preventExtensions() { return unsupported(type, "preventExtensions"); },
+    });
+    records.set(proxy, { type, target, ...record });
+    if (typeof target === "function") functions.set(target, proxy);
+    return proxy;
+  }
+  function finite(value, name) {
+    if (typeof value !== "number" || !Number.isFinite(value)) throw Error(`fake AE: invalid ${name}`);
+  }
+  function vector(value, size, name, color = false) {
+    if (!Array.isArray(value) || value.length !== size) throw Error(`fake AE: invalid ${name} dimensions`);
+    for (let i = 0; i < value.length; i++) {
+      finite(value[i], name);
+      if (color && (value[i] < 0 || value[i] > 1)) throw Error(`fake AE: invalid ${name} range`);
+    }
+  }
   const counters = { undoGroups: 0, writes: 0 };
   const changed = () => { counters.writes++; };
   const env = copy(state.app?.env ?? state.env ?? {});
@@ -156,9 +200,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
 
   // Properties: data is JSON-safe; TextDocuments/eases cross the API as copies.
   function property(matchName, name, value, valueType, saved) {
-    const dimensions = Array.isArray(value) ? value.length : 1;
     const data = saved ? copy(saved) : { matchName, name, value: copy(value), keys: [],
-      expression: "", expressionEnabled: false, propertyValueType: valueType || (dimensions === 2 ? "TwoD" : "OneD") };
+      expression: "", expressionEnabled: false, propertyValueType: valueType || (Array.isArray(value) ? value.length === 3 ? "ThreeD" : "TwoD" : "OneD") };
+    const easeDimensions = () => /_SPATIAL$/.test(data.propertyValueType) || !Array.isArray(data.value) ? 1 : data.value.length;
     const api = {};
     const key = (i) => {
       if (!Number.isInteger(i) || i < 1 || i > data.keys.length) throw Error("fake AE: invalid key index");
@@ -169,7 +213,10 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         if (records.get(v)?.type !== "TextDocument") throw Error("fake AE: expected TextDocument");
         return copy(records.get(v).values);
       }
-      if (Array.isArray(data.value)) vector(v, data.value.length, name);
+      if (Array.isArray(data.value)) {
+        if (data.value.length === 3 && (!Array.isArray(v) || v.length !== 3)) throw Error(`fake AE: ${matchName} expects 3 values`);
+        vector(v, data.value.length, name);
+      }
       else finite(v, name);
       return copy(v);
     };
@@ -212,7 +259,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       const encoded = encode(v), existing = data.keys.find((k) => k.time === t);
       if (existing) existing.value = encoded;
       else {
-        const ease = () => Array.from({ length: dimensions }, () => ({ speed: 0, influence: 33.33333333333333 }));
+        const ease = () => Array.from({ length: easeDimensions() }, () => ({ speed: 0, influence: 33.33333333333333 }));
         data.keys.push({ time: t, value: encoded, inInterpolation: "LINEAR", outInterpolation: "LINEAR", inEases: ease(), outEases: ease() });
         data.keys.sort((a, b) => a.time - b.time);
       }
@@ -242,8 +289,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     api.setTemporalEaseAtKey = (i, incoming, outgoing = incoming) => {
       const k = key(i);
       const encodeEases = (eases) => {
-        if (!Array.isArray(eases) || eases.length !== dimensions) throw Error("fake AE: temporal ease dimensions must match value dimensions");
-        return eases.map((e) => {
+        if (!Array.isArray(eases) || eases.length !== easeDimensions()) throw Error("fake AE: temporal ease dimensions must match property dimensions");
+        return Array.prototype.map.call(eases, (e) => {
           if (records.get(e)?.type !== "KeyframeEase") throw Error("fake AE: expected KeyframeEase");
           return copy(records.get(e).values);
         });
@@ -317,17 +364,19 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       ["ADBE Opacity", "Opacity", 100], ["ADBE Rotate X", "X Rotation", 0],
       ["ADBE Rotate Y", "Y Rotation", 0], ["ADBE Orientation", "Orientation", [0, 0, 0], "ThreeD"],
       ["ADBE Position_0", "X Position", comp.width / 2], ["ADBE Position_1", "Y Position", comp.height / 2],
+      ["ADBE Position_2", "Z Position", 0],
     ];
     const children = definitions.map(([match, name, value, valueType]) => {
       const old = saved?.properties.find((p) => p.matchName === match);
       return property(match, name, value, valueType, old);
     });
     const g = group("ADBE Transform Group", saved?.name || "Transform", children);
-    const position = children[1], x = children[8], y = children[9];
-    const r = records.get(position), xr = records.get(x), yr = records.get(y);
+    const position = children[1], r = records.get(position);
+    const followers = () => children.slice(8, layerValues.threeDLayer ? 11 : 10);
     r.data.dimensionsSeparated ??= false;
     const sample = r.api.valueAtTime, setValue = r.api.setValue, setValueAtTime = r.api.setValueAtTime;
-    const visible = () => children.filter((p, i) => (i < 5 || (i < 8 && layerValues.threeDLayer) || (i >= 8 && r.data.dimensionsSeparated)));
+    const visible = () => children.filter((p, i) => (i < 5 || (i < 8 && layerValues.threeDLayer)
+      || (i >= 8 && r.data.dimensionsSeparated && (i < 10 || layerValues.threeDLayer))));
     records.get(g).api.property = (query) => {
       const list = visible();
       const result = typeof query === "number" ? list[query - 1] : list.find((p) => p.matchName === query || p.name === query);
@@ -338,28 +387,28 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (typeof value !== "boolean") throw Error("fake AE: invalid dimensionsSeparated");
       if (value !== r.data.dimensionsSeparated) {
         if (value) {
-          [xr, yr].forEach((follower, dimension) => {
+          followers().forEach((p, dimension) => {
+            const follower = records.get(p);
             follower.data.value = r.data.value[dimension];
             follower.data.keys = r.data.keys.map((k) => ({ ...copy(k), value: k.value[dimension],
-              inEases: [copy(k.inEases[dimension])], outEases: [copy(k.outEases[dimension])] }));
+              inEases: [copy(k.inEases[0])], outEases: [copy(k.outEases[0])] }));
           });
           r.data.keys = [];
         } else {
-          r.data.value = [xr.data.value, yr.data.value];
-          const times = [...new Set([...xr.data.keys, ...yr.data.keys].map((k) => k.time))].sort((a, b) => a - b);
+          const active = followers(), data = active.map((p) => records.get(p).data);
+          r.data.value = data.map((d) => d.value);
+          const times = [...new Set(data.flatMap((d) => d.keys.map((k) => k.time)))].sort((a, b) => a - b);
           r.data.keys = times.map((t) => {
-            const a = xr.data.keys.find((k) => k.time === t), b = yr.data.keys.find((k) => k.time === t);
-            const base = a || b, fallback = { speed: 0, influence: 33.33333333333333 };
-            return { ...copy(base), value: [x.valueAtTime(t, true), y.valueAtTime(t, true)],
-              inEases: [copy(a?.inEases[0] || fallback), copy(b?.inEases[0] || fallback)],
-              outEases: [copy(a?.outEases[0] || fallback), copy(b?.outEases[0] || fallback)] };
+            const base = data.map((d) => d.keys.find((k) => k.time === t)).find(Boolean);
+            return { ...copy(base), value: active.map((p) => p.valueAtTime(t, true)),
+              inEases: [copy(base.inEases[0])], outEases: [copy(base.outEases[0])] };
           });
         }
         r.data.dimensionsSeparated = value;
       }
       changed();
     });
-    r.api.valueAtTime = (t, pre) => r.data.dimensionsSeparated ? [x.valueAtTime(t, pre), y.valueAtTime(t, pre)] : sample(t, pre);
+    r.api.valueAtTime = (t, pre) => r.data.dimensionsSeparated ? followers().map((p) => p.valueAtTime(t, pre)) : sample(t, pre);
     field(r.api, "value", () => r.api.valueAtTime(0, false));
     r.api.setValue = (value) => {
       if (r.data.dimensionsSeparated) throw Error("fake AE: setValue on separated position");
@@ -369,6 +418,28 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (r.data.dimensionsSeparated) throw Error("fake AE: setValueAtTime on separated position");
       setValueAtTime(t, value);
     };
+    records.get(g).resize = () => {
+      const size = layerValues.threeDLayer ? 3 : 2;
+      children.slice(0, 3).forEach((p, i) => {
+        const data = records.get(p).data, z = i === 2 ? 100 : 0;
+        const resize = (v) => v.slice(0, size).concat(v.length < size ? [z] : []);
+        data.value = resize(data.value);
+        data.propertyValueType = (size === 3 ? "ThreeD" : "TwoD") + (i < 2 ? "_SPATIAL" : "");
+        data.keys.forEach((k) => {
+          k.value = resize(k.value);
+          for (const side of ["inEases", "outEases"]) {
+            const count = i < 2 ? 1 : size;
+            k[side] = k[side].slice(0, count);
+            while (k[side].length < count) k[side].push({ speed: 0, influence: 33.33333333333333 });
+          }
+        });
+      });
+      if (size === 2) {
+        const z = records.get(children[10]).data;
+        z.value = 0; z.keys = [];
+      }
+    };
+    records.get(g).resize();
     return g;
   }
 
@@ -476,7 +547,6 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     for (const name of ["name", "comment"]) setting(api, values, name);
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
     for (const name of ["inPoint", "outPoint", "startTime"]) setting(api, values, name, (v) => finite(v, name));
-    setting(api, values, "threeDLayer", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid threeDLayer"); });
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
     field(api, "source", () => source || null);
@@ -484,6 +554,10 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const groups = [transformGroup(values, comp, source, findGroup("ADBE Transform Group")),
       group("ADBE Effect Parade", "Effects", [], Object.keys(effectDefinitions), findGroup("ADBE Effect Parade")),
       group("ADBE Mask Parade", "Masks", [], ["ADBE Mask Atom"], findGroup("ADBE Mask Parade"))];
+    field(api, "threeDLayer", () => values.threeDLayer, (v) => {
+      if (typeof v !== "boolean") throw Error("fake AE: invalid threeDLayer");
+      values.threeDLayer = v; records.get(groups[0]).resize(); changed();
+    });
     if (type === "TextLayer") {
       const savedText = findGroup("ADBE Text Properties");
       groups.push(savedText ? restoreProperty(savedText) : group("ADBE Text Properties", "Text", [
@@ -514,7 +588,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         rect = { width: 0.6 * doc.fontSize * doc.text.length, height: doc.fontSize, left: 0, top: -0.8 * doc.fontSize };
       } else rect = { width: source && records.get(source).values.isModel ? 200 : source?.width || 0,
         height: source && records.get(source).values.isModel ? 200 : source?.height || 0, left: 0, top: 0 };
-      return host("SourceRect", rect);
+      return host("SourceRect", scriptValue(rect));
     };
     const proxy = host(type, api, { values, groups, source });
     return proxy;
@@ -564,9 +638,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     KeyframeInterpolationType, ParagraphJustification, PropertyValueType };
   const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0 };
   sandbox.$ = host("$", dollar);
-  const context = vm.createContext(sandbox);
-  dollar.global = vm.runInContext("this", context);
-  vm.runInContext("delete JSON;", context);
+  Object.assign(context, sandbox);
+  dollar.global = contextGlobal;
 
   function serialize() {
     const reference = (object) => object === root || !object ? null : items.indexOf(object) + 1;
