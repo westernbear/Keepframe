@@ -1,10 +1,33 @@
-import { api } from "/static/js/api.js?v=20261006c";
-import { T, Tf } from "/static/js/i18n.js?v=20261006c";
+import { api } from "/static/js/api.js?v=20261006d";
+import { T, Tf } from "/static/js/i18n.js?v=20261006d";
+
+async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+  }
+  const focused = document.activeElement;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.cssText = "position:fixed;left:-9999px;top:0";
+  document.body.append(textarea);
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } catch { return false; }
+  finally {
+    textarea.remove();
+    focused?.focus({preventScroll: true});
+  }
+}
 
 export function initAECard({projectId, getSceneId, getVersionId}) {
   const el = (id) => document.getElementById(`ae-${id}`);
   let snapshot = {devices: [], jobs: [], last_synced: {}, progress: {}};
-  let pairing = null, pairMessage = "", busy = false, disconnectId = null;
+  let pairing = null, pairMessage = "", copyMessage = "", busy = false, disconnectId = null;
   let handJobId = null, overwriteConfirmed = false;
   let stateTimer, deviceTimer, countdownTimer;
   let refreshing = false, refreshAgain = false;
@@ -112,7 +135,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (Boolean(devices.length) !== hadDevices) el("install").open = !devices.length;
     hadDevices = Boolean(devices.length);
     el("pair-message").textContent = pairMessage ? T(pairMessage) : "";
-    if (el("copy-status").textContent) el("copy-status").textContent = T("ae.copied");
+    el("copy-status").textContent = copyMessage ? T(copyMessage) : "";
     const synced = devices[0] && snapshot.last_synced[devices[0].id];
     el("synced").textContent = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
 
@@ -216,7 +239,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (busy) return;
     busy = true;
     clearError();
-    el("copy-status").textContent = "";
+    copyMessage = "";
     paint();
     try { await work(); } catch (err) { error(err); }
     finally { busy = false; paint(); await refresh(); }
@@ -228,11 +251,14 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     })});
   }
 
-  async function copy(value) {
-    try {
-      await navigator.clipboard.writeText(value);
-      el("copy-status").textContent = T("ae.copied");
-    } catch (err) { error(err); }
+  async function copy(field) {
+    const copied = await copyText(field.value);
+    if (!copied) {
+      field.focus();
+      field.select();
+    }
+    copyMessage = copied ? "ae.copied" : "ae.copyFailed";
+    el("copy-status").textContent = T(copyMessage);
   }
 
   el("connect").addEventListener("click", () => action(async () => {
@@ -249,10 +275,10 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   el("overwrite-yes").addEventListener("click", () => {
     if (handJobId && overwriteConfirmed) action(() => send(true));
   });
-  el("install-copy").addEventListener("click", () => copy(el("install-command").value));
+  el("install-copy").addEventListener("click", () => copy(el("install-command")));
   el("code-copy").addEventListener("click", () => {
     tickCode();
-    if (pairing) copy(pairing.code);
+    if (pairing) copy(el("code"));
   });
   window.addEventListener("keepframe:lang", paint);
   document.addEventListener("visibilitychange", () => {

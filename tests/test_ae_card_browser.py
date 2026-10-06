@@ -193,6 +193,73 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     assert not errors
 
 
+@pytest.mark.parametrize("secure,clipboard_available,copy_result", [
+    (False, False, True),
+    (False, True, True),
+    (True, True, True),
+    (True, True, False),
+    (True, True, "throw"),
+], ids=["http-no-clipboard", "http-with-clipboard", "clipboard-rejected", "both-fail", "both-throw"])
+def test_ae_copy_fallback(ae_page, secure, clipboard_available, copy_result):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    page.add_init_script("""
+      const [secure, clipboardAvailable, copyResult] = __SETUP__;
+      Object.defineProperty(window, 'isSecureContext', {value: secure});
+      window.clipboardCalls = 0;
+      Object.defineProperty(navigator, 'clipboard', {value: clipboardAvailable ? {
+        writeText: async () => {
+          window.clipboardCalls++;
+          throw new Error('Clipboard denied');
+        },
+      } : undefined});
+      window.copyAttempts = [];
+      document.execCommand = command => {
+        const field = document.activeElement;
+        window.copyAttempts.push({command,
+          text: field.value.slice(field.selectionStart, field.selectionEnd),
+          readonly: field.readOnly, textarea: field.tagName === 'TEXTAREA',
+          offscreen: field.getBoundingClientRect().right < 0});
+        if (copyResult === 'throw') throw new Error('Copy denied');
+        return copyResult;
+      };
+    """.replace("__SETUP__", json.dumps([secure, clipboard_available, copy_result])))
+    page.reload()
+    assert page.evaluate("window.isSecureContext") is secure
+    assert page.evaluate("Boolean(navigator.clipboard)") is clipboard_available
+    textarea_count = page.locator("textarea").count()
+    page.locator("#ae-connect").click()
+    expect(page.locator("#ae-code-field")).to_be_visible()
+    copied = copy_result is True
+    ko = "복사됨" if copied else "복사 실패 — 텍스트가 선택되었습니다. Ctrl+C를 누르세요"
+    en = "Copied" if copied else "Copy failed — the text is selected; press Ctrl+C"
+    for count, (button_id, field_id) in enumerate([
+        ("ae-install-copy", "ae-install-command"), ("ae-code-copy", "ae-code"),
+    ], start=1):
+        button, field = page.locator(f"#{button_id}"), page.locator(f"#{field_id}")
+        button.click()
+        expect(page.locator("#ae-copy-status")).to_have_text(ko)
+        expect(button if copied else field).to_be_focused()
+        if not copied:
+            assert field.evaluate("field => field.value.length > 0 && field.selectionStart === 0 && field.selectionEnd === field.value.length")
+        # Compare inside the page so pairing credentials never enter assertion output.
+        assert page.evaluate("""id => {
+          const attempt = window.copyAttempts.at(-1);
+          return attempt.command === 'copy' && attempt.text === document.getElementById(id).value
+            && attempt.readonly && attempt.textarea && attempt.offscreen;
+        }""", field_id)
+        assert page.evaluate("window.copyAttempts.length") == count
+        assert page.evaluate("window.clipboardCalls") == (count if secure and clipboard_available else 0)
+        expect(page.locator("textarea")).to_have_count(textarea_count)
+        expect(page.locator("#ae-error")).to_be_hidden()
+        page.locator("[data-lang-toggle]").click()
+        expect(page.locator("#ae-copy-status")).to_have_text(en)
+        page.locator("[data-lang-toggle]").click()
+        expect(page.locator("#ae-copy-status")).to_have_text(ko)
+    assert not errors
+
+
 def test_ae_disabled_actions_explain_connection(ae_page):
     from playwright.sync_api import expect
 
