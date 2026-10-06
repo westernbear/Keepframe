@@ -35,6 +35,24 @@ function stackLayers(comp) {
   return Array.from({length: comp.layers.length}, (_, i) => comp.layers[i + 1]);
 }
 
+test("fix8: font metrics and layer enabled survive persistence", () => {
+  const f = fixture();
+  const text = f.layer.property("ADBE Text Properties").property("ADBE Text Document");
+  const doc = text.value;
+  doc.font = "Example"; doc.fontSize = 20; text.setValue(doc);
+  const wide = f.layer.sourceRectAtTime(0, false).width;
+  doc.font = "ArialMT"; text.setValue(doc);
+  assert.ok(f.layer.sourceRectAtTime(0, false).width < wide);
+  doc.fontSize = 10; text.setValue(doc);
+  assert.equal(f.layer.sourceRectAtTime(0, false).height, 10);
+  f.layer.enabled = false;
+  const restored = createAE({state: f.serialize()}).context.app.project.items[1].layers[1];
+  assert.equal(restored.enabled, false);
+  restored.enabled = true;
+  assert.equal(restored.enabled, true);
+  assert.throws(() => { restored.enabled = 1; }, /enabled/);
+});
+
 for (const probe of ["user-moved bottom pair", "changed order with trailing pair"]) {
   test(`fix2: order probe ${probe} converges in one sync`, () => {
     const desired = probe === "user-moved bottom pair" ? ["d", "c", "b", "a", "bg"] : ["r0", "r1", "r2", "t0", "t1"];
@@ -541,7 +559,7 @@ test("project folders, footage replacement, source rectangles, 3D and text", () 
   doc.text = "not committed";
   assert.equal(text.value.text, "Hello");
   const tr = f.layer.sourceRectAtTime(0, false);
-  assert.equal(tr.width, 30);
+  assert.equal(tr.width, 25);
   assert.equal(tr.height, 10);
   assert.equal(tr.top, -8);
   assert.throws(() => { f.layer.label = 17; }, /label/);

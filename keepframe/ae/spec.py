@@ -5,10 +5,11 @@ import json
 import math
 import re
 import struct
+import zlib
 from pathlib import Path
 
 from ..ir.paths import scene_asset_path
-from ..ir.schema import DEFAULTS, Element, Keyframe, Scene, Track
+from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
 from ..ir.tracks import eval_track, eval_z
 
 
@@ -45,6 +46,74 @@ def png_size(path: Path) -> tuple[int, int]:
     if not width or not height:
         raise ValueError(f"{path.name} has invalid PNG dimensions")
     return width, height
+
+
+def png_mean_color(path: Path) -> str:
+    """Mean of opaque pixels in 8-bit RGB/RGBA PNGs; unsupported forms are white."""
+    try:
+        width, height = png_size(path)
+        data = path.read_bytes()
+        depth, color, compression, filtering, interlace = data[24:29]
+        if depth != 8 or color not in (2, 6) or compression or filtering or interlace:
+            return "#ffffff"
+        compressed, offset, ended, transparent = bytearray(), 8, False, None
+        while offset + 12 <= len(data):
+            length = struct.unpack_from(">I", data, offset)[0]
+            end = offset + 12 + length
+            if end > len(data):
+                return "#ffffff"
+            kind, payload = data[offset + 4:offset + 8], data[offset + 8:end - 4]
+            if zlib.crc32(kind + payload) != struct.unpack_from(">I", data, end - 4)[0]:
+                return "#ffffff"
+            if kind == b"IDAT":
+                compressed.extend(payload)
+            elif kind == b"tRNS":
+                if color != 2 or length != 6:
+                    return "#ffffff"
+                transparent = struct.unpack(">HHH", payload)
+            elif kind == b"IEND":
+                ended = length == 0
+                break
+            offset = end
+        channels = 3 if color == 2 else 4
+        stride = width * channels
+        expected = (stride + 1) * height
+        decoder = zlib.decompressobj()
+        pixels = decoder.decompress(compressed, expected + 1)
+        if not ended or len(pixels) != expected or not decoder.eof or decoder.unused_data:
+            return "#ffffff"
+        previous, totals, count = bytes(stride), [0, 0, 0], 0
+        for offset in range(0, expected, stride + 1):
+            filter_type = pixels[offset]
+            if filter_type > 4:
+                return "#ffffff"
+            row = bytearray(pixels[offset + 1:offset + 1 + stride])
+            for i, value in enumerate(row):
+                left = row[i - channels] if i >= channels else 0
+                up = previous[i]
+                corner = previous[i - channels] if i >= channels else 0
+                predictor = 0
+                if filter_type == 1:
+                    predictor = left
+                elif filter_type == 2:
+                    predictor = up
+                elif filter_type == 3:
+                    predictor = (left + up) // 2
+                elif filter_type == 4:
+                    p = left + up - corner
+                    predictor = min((left, up, corner), key=lambda v: abs(p - v))
+                row[i] = (value + predictor) & 255
+            for i in range(0, stride, channels):
+                rgb = tuple(row[i:i + 3])
+                if (channels == 4 and row[i + 3] < 128) or rgb == transparent:
+                    continue
+                count += 1
+                for j in range(3):
+                    totals[j] += rgb[j]
+            previous = row
+        return "#" + "".join(f"{round(total / count):02x}" for total in totals) if count else "#ffffff"
+    except (OSError, ValueError, struct.error, zlib.error):
+        return "#ffffff"
 
 
 def _color(value: str) -> str:
@@ -116,7 +185,7 @@ def _effects(tracks, fps, warnings, eid):
     return effects
 
 
-def _font(guess, fonts, warnings):
+def _font(guess, fonts, warnings, text):
     if fonts is None:
         return {"postscript": None, "family": guess.family_guess, "style": None, "substituted": False}
 
@@ -129,15 +198,26 @@ def _font(guess, fonts, warnings):
         weight = next((weight for name, weight in weights if name == weight_style), 400)
         return abs(weight - guess.weight), "italic" in style or "oblique" in style
 
+    malgun = [font for font in fonts if font["family"].casefold() == "malgun gothic"] if re.search(
+        r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]", text) else []
     for family in [guess.family_guess, *guess.candidates]:
         matches = [font for font in fonts if font["family"].casefold() == family.casefold()]
         if matches:
             font = min(matches, key=rank)
             return {"postscript": font["postscript"], "family": font["family"],
                     "style": font["style"], "substituted": False}
-    postscript, style = ("Arial-BoldMT", "Bold") if guess.weight >= 600 else ("ArialMT", "Regular")
-    warnings.append(f"font {guess.family_guess} not installed; using Arial {style}")
-    return {"postscript": postscript, "family": "Arial", "style": style, "substituted": True}
+        if malgun:
+            break  # A missing detected family needs Hangul coverage before other candidates.
+    bold = guess.weight >= 600
+    postscript, style = ("Arial-BoldMT", "Bold") if bold else ("ArialMT", "Regular")
+    family = "Arial"
+    if malgun:
+        family, postscript = "Malgun Gothic", "MalgunGothicBold" if bold else "MalgunGothic"
+        matching_style = next((font for font in malgun if (font["style"] or "Regular").casefold() == style.casefold()), None)
+        if matching_style and matching_style["postscript"]:
+            postscript = matching_style["postscript"]
+    warnings.append(f"font {guess.family_guess} not installed; using {family} {style}")
+    return {"postscript": postscript, "family": family, "style": style, "substituted": True}
 
 
 def _asset(path, name, assets):
@@ -193,9 +273,9 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
     if el.kind == "text" and canonical.font is not None:
         kind, anchor = "text", None
         guess = canonical.font
-        source = {"text": canonical.text or "", "font": _font(guess, fonts, warnings),
+        source = {"text": canonical.text or "", "font": _font(guess, fonts, warnings, canonical.text or ""),
                   "size_px": guess.size_px, "color": _color(canonical.color or "#000"),
-                  "anchor_fraction": list(canonical.anchor)}
+                  "anchor_fraction": list(canonical.anchor), "box": [canonical.width, canonical.height]}
     elif el.kind == "3d" and canonical.model:
         kind = "model"
         source = {"asset": _asset(*_asset_source(canonical.model, sid, scene_dir, "glb"), assets),
@@ -209,6 +289,7 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
                                     canonical.anchor, scene_dir, assets)
             fix = source["scale_fix"]
             if el.kind == "text":
+                source["text"] = canonical.text or ""
                 warnings.append(f"text {sid} kept as an image (no font detected)")
         else:
             warnings.append(f"{el.id} has no image; not drawn in AE")
@@ -245,10 +326,22 @@ def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, ver
             labels.setdefault(member, (i % 16) + 1)
     layers = [_background(scene, scene_dir, assets)]
     ordered = sorted(scene.elements, key=lambda el: eval_z(el, el.visible[0]))
-    for order, el in enumerate(ordered, 1):
+    for el in ordered:
         layer = _layer(el, scene_dir, assets, scene.fps, fonts, labels.get(el.id))
-        layer["order"] = order
         layers.append(layer)
+        if el.kind == "text" and el.canonical.font is None and layer["kind"] == "image":
+            canonical = el.canonical.model_copy(update={
+                "font": FontGuess(family_guess="Malgun Gothic" if re.search(
+                    r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]", el.canonical.text or "") else "Arial",
+                    size_px=el.canonical.height * 0.8),
+                "color": png_mean_color(scene_asset_path(scene_dir, el.canonical.texture)),
+            })
+            companion = _layer(el.model_copy(update={"canonical": canonical}), scene_dir, assets,
+                               scene.fps, fonts, labels.get(el.id))
+            companion.update(id=f"kf:{el.id}~text", name=f"{layer['name']} · editable text", hidden=True)
+            layers.append(companion)
+    for order, layer in enumerate(layers):
+        layer["order"] = order
     for el in scene.elements:
         first_z = eval_z(el, el.visible[0])
         if any(el.visible[0] < key.t <= el.visible[1] and int(key.v) != first_z for key in el.z.keys):

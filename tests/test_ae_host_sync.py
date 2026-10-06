@@ -147,7 +147,7 @@ def test_create_from_empty(tmp_path, full_spec):
     assert document == {"text": "Hello 한", "font": "Example", "fontSize": 20,
                         "fillColor": [1, struct.unpack("f", struct.pack("f", 136 / 255))[0], 0],
                         "applyFill": True, "justification": "LEFT_JUSTIFY"}
-    assert prop(text, "ADBE Anchor Point")["value"] == [42, -1, 0]
+    assert prop(text, "ADBE Anchor Point")["value"] == [5, -4.5, 0]
     model = actual["kf:model"]
     assert model["threeDLayer"] is True
     assert prop(model, "ADBE Anchor Point")["value"] == [100, -100, 0]
@@ -1122,6 +1122,92 @@ def test_fix2_ae_24_0_empty_project_supports_models(tmp_path, full_spec):
     assert response["value"]["ok"] and response["value"]["applied"], response
     assert comp(read_state(path))["renderer"] == "ADBE Calder"
     assert sync(path, spec, assets)["writes"] == 0
+
+
+@pytest.mark.parametrize("anchor_fraction", [(0, 0), (0.25, 0.75), (0.5, 0.5), (1, 1)])
+def test_fix8_narrow_fallback_keeps_composer_box_left_and_vertical_centre(tmp_path, anchor_fraction):
+    spec, _ = spec_for(tmp_path, element(kind="text", text="Title", anchor=anchor_fraction,
+                                       font=FontGuess(family_guess="Example", size_px=20),
+                                       tracks={"x": track((0, 200)), "y": track((0, 100))}))
+    source = spec["layers"][1]["source"]
+    source["box"] = [160, 80]
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    first = prop(layers(read_state(path))["kf:e1"], "ADBE Anchor Point")["value"]
+    source["font"] = {"postscript": "ArialMT", "family": "Arial", "style": "Regular", "substituted": True}
+    response = sync(path, spec)
+    assert response["value"]["updated"] == ["kf:e1"]
+    actual = layers(read_state(path))["kf:e1"]
+    anchor = prop(actual, "ADBE Anchor Point")["value"]
+    assert anchor == first == [anchor_fraction[0] * 160, -6 + (anchor_fraction[1] - 0.5) * 80, 0]
+    assert 200 - anchor[0] == 200 - anchor_fraction[0] * 160
+    assert 100 - anchor[1] - 16 + 10 == 100 + (0.5 - anchor_fraction[1]) * 80
+    assert prop(actual, "ADBE Text Document")["value"]["justification"] == "LEFT_JUSTIFY"
+    assert sync(path, spec)["writes"] == 0
+
+
+def test_fix8_fontless_companions_visibility_updates_and_deletion(tmp_path):
+    png(tmp_path / "glyphs.png")
+    el = element(kind="text", text="Original", texture="glyphs.png", anchor=(0.25, 0.75),
+                 tracks={"x": track((0, 10), (30, 100)), "reveal": track((0, 0), (30, 1)), "skx": track((0, 10))})
+    spec, assets = spec_for(tmp_path, el, element("above", kind="group"))
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"], response
+    state = read_state(path)
+    actual = layers(state)
+    assert "kf:e1~text" in actual
+    image, text = actual["kf:e1"], actual["kf:e1~text"]
+    assert text["type"] == "TextLayer" and text["enabled"] is False and image["enabled"] is True
+    assert stack_ids(state) == ["kf:above", "kf:e1~text", "kf:e1", "kf:background"]
+    assert prop(text, "ADBE Anchor Point")["value"] == pytest.approx([2.5, 0.06, 0])
+    assert prop(text, "ADBE Text Document")["value"]["text"] == "Original"
+    assert [effect["name"] for effect in effects(text)] == [effect["name"] for effect in effects(image)]
+    assert prop(text, "ADBE Position_0")["keys"] == prop(image, "ADBE Position_0")["keys"]
+    text["enabled"], image["enabled"] = True, False
+    save_state(path, state)
+    for force in (False, True):
+        response = sync(path, spec, assets, force=force)
+        assert response["value"]["applied"] and "hand_edited" not in response["value"]
+        assert response["writes"] == 0 and read_state(path) == state
+    el.canonical.text = "Changed"
+    changed, assets = spec_for(tmp_path, el, element("above", kind="group"))
+    response = sync(path, changed, assets)
+    assert response["value"]["updated"] == ["kf:e1", "kf:e1~text"]
+    actual = layers(read_state(path))
+    assert actual["kf:e1~text"]["enabled"] is True and actual["kf:e1"]["enabled"] is False
+    assert prop(actual["kf:e1~text"], "ADBE Text Document")["value"]["text"] == "Changed"
+    assert sync(path, changed, assets)["writes"] == 0
+    removed, _ = spec_for(tmp_path, element("above", kind="group"))
+    response = sync(path, removed)
+    assert set(response["value"]["deleted"]) == {"kf:e1", "kf:e1~text"}
+    assert set(layers(read_state(path))) == {"kf:background", "kf:above"}
+
+
+def test_fix8_companion_added_to_existing_image_is_directly_above_it(tmp_path):
+    png(tmp_path / "glyphs.png")
+    spec, assets = spec_for(tmp_path, element(kind="text", text="Title", texture="glyphs.png"),
+                            element("above", kind="group"))
+    image_only = copy.deepcopy(spec)
+    image_only["layers"] = [item for item in image_only["layers"] if item["id"] != "kf:e1~text"]
+    path = tmp_path / "ae.json"
+    assert sync(path, image_only, assets)["value"]["ok"]
+    state = read_state(path)
+    comp(state)["layers"].insert(1, user_copy(layers(state)["kf:e1"], "USER"))
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"]["created"] == ["kf:e1~text"]
+    assert stack_ids(read_state(path)) == ["kf:above", "USER", "kf:e1~text", "kf:e1", "kf:background"]
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+@pytest.mark.parametrize("box", [None, [], [10], [0, 6], [10, -1], ["10", 6]])
+def test_fix8_invalid_text_box_refuses_before_writes(tmp_path, box):
+    spec, _ = spec_for(tmp_path, element(kind="text", text="Title", font=FontGuess()))
+    spec["layers"][1]["source"]["box"] = box
+    response = sync(tmp_path / "ae.json", spec)
+    assert response["value"]["ok"] is False
+    assert response["writes"] == response["undo_groups"] == 0
 
 
 def test_fix2_force_resets_owned_effect_unwritten_parameters(tmp_path, full_spec):

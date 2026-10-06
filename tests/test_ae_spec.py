@@ -219,7 +219,7 @@ def test_text_anchor_font_deferred_color_default_and_name(tmp_path):
     assert result["name"] == "e1 · 제목"
     assert result["source"] == {"text": "안녕", "font": {"postscript": None, "family": "Example", "style": None,
                                                        "substituted": False},
-                                "size_px": 20.1235, "color": "#000000", "anchor_fraction": [0.25, 0.75]}
+                                "size_px": 20.1235, "color": "#000000", "anchor_fraction": [0.25, 0.75], "box": [10, 6]}
     assert "rotation_x" not in result["props"] and "rotation_y" not in result["props"]
     assert spec["assets"] == [] and result["warnings"] == []
 
@@ -236,7 +236,7 @@ def test_text_without_font_keeps_texture_anchor_scale_and_effects(tmp_path):
                          "reveal": track((0, 0), (30, 1)), "skx": track((0, 10))})
     result = layer(describe(scene(el), tmp_path, fonts=[]))
     assert result["kind"] == "image"
-    assert result["source"] == {"asset": "e1.png", "scale_fix": [0.5, 0.5]}
+    assert result["source"] == {"asset": "e1.png", "scale_fix": [0.5, 0.5], "text": "Reveal 한"}
     assert result["anchor"] == [5, 9]
     assert result["props"]["scale"] == [[0, [100, 150], None, None]]
     assert result["effects"] == layer(describe(scene(el.model_copy(update={"kind": "sprite"})), tmp_path))["effects"]
@@ -400,6 +400,114 @@ def test_png_size_reads_ihdr_without_imaging_dependencies(tmp_path):
     assert png_size(tmp_path / "one.png") == (1, 1)
     png(tmp_path / "large.png", 257, 129)
     assert png_size(tmp_path / "large.png") == (257, 129)
+
+
+def test_fix8_text_source_carries_canonical_box(tmp_path):
+    el = element(kind="text", text="Title", font=FontGuess(), anchor=(0.25, 0.75))
+    assert layer(describe(scene(el), tmp_path))["source"]["box"] == [10, 6]
+
+
+@pytest.mark.parametrize("text", ["가을 여행", "\u1100\u1161", "\u3131\u314f"])
+@pytest.mark.parametrize("weight,style,default_ps", [
+    (400, "Regular", "MalgunGothic"), (599, "Regular", "MalgunGothic"),
+    (600, "Bold", "MalgunGothicBold"), (700, "Bold", "MalgunGothicBold"),
+])
+def test_fix8_hangul_fallback_uses_device_malgun_style(tmp_path, text, weight, style, default_ps):
+    fonts = [{"family": "Malgun Gothic", "style": "Regular", "postscript": "DeviceMalgun-Regular"},
+             {"family": "Malgun Gothic", "style": "Bold", "postscript": "DeviceMalgun-Bold"}]
+    el = element(kind="text", text=text, font=FontGuess(family_guess="Absent", weight=weight))
+    result = layer(describe(scene(el), tmp_path, fonts=fonts))
+    assert result["source"]["font"] == {"postscript": f"DeviceMalgun-{style}",
+        "family": "Malgun Gothic", "style": style, "substituted": True}
+    assert result["warnings"] == [f"font Absent not installed; using Malgun Gothic {style}"]
+    for font in fonts:
+        font["postscript"] = None
+    assert layer(describe(scene(el), tmp_path, fonts=fonts))["source"]["font"]["postscript"] == default_ps
+    assert layer(describe(scene(el), tmp_path, fonts=[]))["source"]["font"]["family"] == "Arial"
+    el.canonical.text = "Autumn trip"
+    assert layer(describe(scene(el), tmp_path, fonts=fonts))["source"]["font"]["family"] == "Arial"
+
+
+def test_fix8_hangul_prefers_malgun_to_arial_candidate_but_preserves_installed_family(tmp_path):
+    fonts = [{"family": "Arial", "style": "Bold", "postscript": "Arial-BoldMT"},
+             {"family": "Malgun Gothic", "style": "Bold", "postscript": "MalgunGothicBold"}]
+    el = element(kind="text", text="가을 여행", font=FontGuess(family_guess="Absent", weight=700, candidates=["Arial"]))
+    assert layer(describe(scene(el), tmp_path, fonts=fonts))["source"]["font"]["family"] == "Malgun Gothic"
+    fonts.append({"family": "Absent", "style": "Bold", "postscript": "Detected-Bold"})
+    result = layer(describe(scene(el), tmp_path, fonts=fonts))
+    assert result["source"]["font"]["postscript"] == "Detected-Bold" and result["warnings"] == []
+
+
+def test_fix8_fontless_text_emits_image_and_hidden_editable_companion(tmp_path):
+    png(tmp_path / "glyphs.png")
+    el = element(kind="text", text="Reveal 한", texture="glyphs.png", anchor=(0.25, 0.75),
+                 tracks={"sx": track((0, 2)), "sy": track((0, 3)), "x": track((0, 10), (30, 100)),
+                         "reveal": track((0, 0), (30, 1)), "skx": track((0, 10))})
+    spec = describe(scene(el), tmp_path, fonts=[])
+    assert [item["id"] for item in spec["layers"]] == ["kf:background", "kf:e1", "kf:e1~text"]
+    image, text = layer(spec), layer(spec, "e1~text")
+    assert image["kind"] == "image" and not image.get("hidden", False)
+    assert image["source"]["text"] == text["source"]["text"] == "Reveal 한"
+    assert text["kind"] == "text" and text["hidden"] is True and text["anchor"] is None
+    assert text["source"]["size_px"] == 4.8 and text["source"]["color"] == "#ff0000"
+    assert text["source"]["box"] == [10, 6] and text["source"]["anchor_fraction"] == [0.25, 0.75]
+    for field in ("in", "out", "effects", "label"):
+        assert text[field] == image[field]
+    for name in ("position_x", "position_y", "rotation", "opacity"):
+        assert text["props"][name] == image["props"][name]
+    # Text uses canonical pixels; footage scale keys also correct for texture dimensions.
+    assert text["props"]["scale"] == [[0, [200, 300], None, None]]
+    assert text["order"] == image["order"] + 1
+
+
+@pytest.mark.parametrize("channels", [3, 4])
+@pytest.mark.parametrize("filter_type", range(5))
+def test_fix8_png_mean_reconstructs_filters_and_ignores_transparent_pixels(tmp_path, channels, filter_type):
+    from keepframe.ae.spec import png_mean_color
+
+    rows = [bytes([20, 40, 60, 255, 200, 100, 0, 128, 255, 255, 255, 127]),
+            bytes([100, 80, 60, 255, 0, 0, 0, 0, 255, 255, 255, 1])]
+    if channels == 3:
+        rows = [bytes(v for i, v in enumerate(row) if i % 4 != 3) for row in rows]
+    encoded = bytearray()
+    previous = bytes(len(rows[0]))
+    for row in rows:
+        encoded.append(filter_type)
+        for i, value in enumerate(row):
+            left = row[i - channels] if i >= channels else 0
+            up = previous[i]
+            corner = previous[i - channels] if i >= channels else 0
+            p = left + up - corner
+            paeth = min((left, up, corner), key=lambda v: abs(p - v))
+            predictor = (0, left, up, (left + up) // 2, paeth)[filter_type]
+            encoded.append((value - predictor) % 256)
+        previous = row
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    path = tmp_path / "filtered.png"
+    compressed = zlib.compress(encoded)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", 3, 2, 8, 2 if channels == 3 else 6, 0, 0, 0))
+                     + chunk(b"IDAT", compressed[:5]) + chunk(b"IDAT", compressed[5:]) + chunk(b"IEND", b""))
+    assert png_mean_color(path) == ("#8a7a69" if channels == 3 else "#6b4928")
+
+
+@pytest.mark.parametrize("form", ["palette", "16bit", "interlaced", "invalid_filter", "truncated", "transparent"])
+def test_fix8_png_mean_unsupported_or_empty_is_white(tmp_path, form):
+    from keepframe.ae.spec import png_mean_color
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    path = tmp_path / "glyphs.png"
+    header = struct.pack(">IIBBBBB", 1, 1, 16 if form == "16bit" else 8,
+                         3 if form == "palette" else 6, 0, 0, int(form == "interlaced"))
+    pixels = bytes([5 if form == "invalid_filter" else 0, 10, 20, 30, 0 if form == "transparent" else 255])
+    data = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
+    path.write_bytes(data[:-15] if form == "truncated" else data)
+    assert png_mean_color(path) == "#ffffff"
 
 
 @pytest.mark.parametrize("data", [b"JPEG bytes", b"\x89PNG\r\n\x1a\n", b"\x89PNG\r\n\x1a\n" + b"\0" * 25])

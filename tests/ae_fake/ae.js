@@ -610,10 +610,11 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   // Layers: collections store stack order, so index is always computed live.
   function layer(comp, type, saved, source) {
     const values = { name: "", comment: "", label: 0, inPoint: 0, outPoint: comp.duration,
-      startTime: 0, threeDLayer: Boolean(source && records.get(source).values.isModel), ...copy(saved) };
+      startTime: 0, enabled: true, threeDLayer: Boolean(source && records.get(source).values.isModel), ...copy(saved) };
     values.parent = null; values.trackMatteLayer = null;
     const api = Object.create((type === "TextLayer" ? TextLayer : AVLayer).prototype);
     for (const name of ["name", "comment"]) setting(api, values, name);
+    setting(api, values, "enabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid enabled"); });
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
     for (const name of ["inPoint", "outPoint", "startTime"]) setting(api, values, name, (v) => finite(v, name));
     const stack = records.get(comp).layers;
@@ -688,7 +689,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       let rect;
       if (type === "TextLayer") {
         const doc = groups[3].property("ADBE Text Document").valueAtTime(t, false);
-        rect = { width: 0.6 * doc.fontSize * doc.text.length, height: doc.fontSize, left: 0, top: -0.8 * doc.fontSize };
+        const advance = /^Arial/.test(doc.font) ? 0.5 : 0.6;
+        rect = { width: advance * doc.fontSize * doc.text.length, height: doc.fontSize, left: 0, top: -0.8 * doc.fontSize };
       } else if (source && records.get(source).values.isModel) {
         rect = { width: 200, height: 200, left: 0, top: -200 };
       } else rect = { width: source?.width || 0, height: source?.height || 0, left: 0, top: 0 };
@@ -766,7 +768,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
           frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), renderer: v.renderer, renderers: copy(v.renderers), layers: r.layers.map((l) => {
             const lr = records.get(l), lv = lr.values;
             return { type: lr.type, name: lv.name, comment: lv.comment, label: lv.label, inPoint: lv.inPoint,
-              outPoint: lv.outPoint, startTime: lv.startTime, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
+              outPoint: lv.outPoint, startTime: lv.startTime, enabled: lv.enabled, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
               ...(lv.parent ? {parent: r.layers.indexOf(lv.parent) + 1} : {}),
               ...(lv.trackMatteLayer ? {trackMatteLayer: r.layers.indexOf(lv.trackMatteLayer) + 1} : {}),
               properties: lr.groups.map(serializeProperty) };

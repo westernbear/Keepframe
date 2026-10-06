@@ -210,7 +210,7 @@ def test_sync_builds_comp_effects_model_and_downloaded_assets(extension):
         assert item["mainSource"]["file"] == str(downloaded)
 
 
-def test_reveal_text_without_font_downloads_as_image_with_effects(isolated_server, tmp_path):
+def test_reveal_text_without_font_downloads_image_and_editable_companion(isolated_server, tmp_path):
     root = isolated_server.ae_routes.workspace / "p1"
     directory = scene_dir(root, "s1")
     glyphs = png(directory / "assets" / "title.png", 40, 24)
@@ -235,10 +235,32 @@ def test_reveal_text_without_font_downloads_as_image_with_effects(isolated_serve
         footage = state["project"]["items"][actual["source"] - 1]
         assert footage["name"] == "title.png"
         assert Path(footage["mainSource"]["file"]).read_bytes() == glyphs
+        editable = layers(state)["kf:title~text"]
+        assert editable["type"] == "TextLayer" and editable["enabled"] is False
+        assert actual["enabled"] is True
+        stack = comp(state)["layers"]
+        assert stack.index(editable) + 1 == stack.index(actual)
+        doc = prop(editable, "ADBE Text Document")["value"]
+        assert (doc["text"], doc["fontSize"], doc["fillColor"]) == ("Reveal 한", 4.8, [1, 0, 0])
+        assert prop(editable, "ADBE Position_0")["keys"] == prop(actual, "ADBE Position_0")["keys"]
+        edit(ext, """
+    for (i = 1; i <= comp.layers.length; i += 1) {
+        if (comp.layers[i].comment.indexOf("keepframe:kf:title~text;") === 0) { comp.layers[i].enabled = true; }
+        if (comp.layers[i].comment.indexOf("keepframe:kf:title;") === 0) { comp.layers[i].enabled = false; }
+    }
+""")
         before = ext.state.read_bytes()
         output, job = sync(ext, version=version.id)
-        assert job["result"]["unchanged"] == 4 and output["writes"] == 0
+        assert job["result"]["unchanged"] == 5 and output["writes"] == 0
+        assert "hand_edited" not in job["result"]
         assert ext.state.read_bytes() == before
+        title.canonical.text = "Changed 한"
+        changed = new_version(root, "s1", value, "update fontless text")
+        _, job = sync(ext, version=changed.id)
+        assert job["result"]["updated"] == ["kf:title", "kf:title~text"]
+        actual = layers(read_state(ext.state))
+        assert actual["kf:title"]["enabled"] is False and actual["kf:title~text"]["enabled"] is True
+        assert prop(actual["kf:title~text"], "ADBE Text Document")["value"]["text"] == "Changed 한"
 
 
 def test_resend_same_version_is_zero_write_noop(extension):

@@ -142,6 +142,7 @@ if (typeof JSON !== "object" || JSON === null) {
             requireValue(s && typeof s.id === "string" && s.id !== "" && !own(ids, "$" + s.id), "invalid layer id");
             ids["$" + s.id] = true;
             requireValue(/^(text|solid|null|image|model)$/.test(s.kind) && typeof s.name === "string"
+                && (s.hidden === undefined || typeof s.hidden === "boolean")
                 && number(s.order) && number(s["in"]) && number(s.out) && s.out >= s["in"]
                 && (s.label === null || (number(s.label) && s.label >= 0 && s.label <= 16
                     && Math.floor(s.label) === s.label)), "invalid layer settings");
@@ -154,6 +155,9 @@ if (typeof JSON !== "object" || JSON === null) {
                     && typeof s.source.font.family === "string"
                     && (s.source.font.postscript === null || typeof s.source.font.postscript === "string")
                     && number(s.source.size_px) && s.source.size_px > 0
+                    && array(s.source.box) && s.source.box.length === 2
+                    && number(s.source.box[0]) && s.source.box[0] > 0
+                    && number(s.source.box[1]) && s.source.box[1] > 0
                     && array(s.source.anchor_fraction) && s.source.anchor_fraction.length === 2
                     && number(s.source.anchor_fraction[0]) && number(s.source.anchor_fraction[1]), "invalid text source");
                 rgb(s.source.color);
@@ -449,7 +453,8 @@ if (typeof JSON !== "object" || JSON === null) {
             doc.justification = ParagraphJustification.LEFT_JUSTIFY;
             staticValue(layer.property("ADBE Text Properties").property("ADBE Text Document"), doc);
             rect = layer.sourceRectAtTime(s["in"] / fps, false);
-            anchor = [rect.left + s.source.anchor_fraction[0] * rect.width, rect.top + s.source.anchor_fraction[1] * rect.height];
+            anchor = [rect.left + s.source.anchor_fraction[0] * s.source.box[0],
+                rect.top + rect.height / 2 + (s.source.anchor_fraction[1] - 0.5) * s.source.box[1]];
         }
         if (layer.threeDLayer) {
             rect = layer.sourceRectAtTime(0, false);
@@ -525,6 +530,8 @@ if (typeof JSON !== "object" || JSON === null) {
         } else { layer = comp.layers.add(assets["$" + s.source.asset]); }
         // Claim immediately: errors after creation must leave a recoverable tagged layer.
         layer.comment = "keepframe:" + s.id;
+        // Visibility belongs to the user after creation, including the glyph-image layer.
+        if (s.hidden === true) { layer.enabled = false; }
         if (s.kind === "solid" || s.kind === "null") { layer.source.parentFolder = comp.parentFolder; }
         return layer;
     }
@@ -638,6 +645,13 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function placeNew(layer, s, ordered, existing) {
         var i, j, neighbour;
+        if (s.kind === "text" && s.hidden === true && /~text$/.test(s.id)) {
+            neighbour = existing["$" + s.id.slice(0, -5)];
+            if (neighbour) {
+                if (layer.index + 1 !== neighbour.layer.index) { layer.moveBefore(neighbour.layer); }
+                return;
+            }
+        }
         for (i = 0; i < ordered.length; i += 1) { if (ordered[i].id === s.id) { break; } }
         for (j = i - 1; j >= 0; j -= 1) {
             neighbour = existing["$" + ordered[j].id];

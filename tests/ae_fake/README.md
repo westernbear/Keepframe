@@ -51,7 +51,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `comp.layers.addSolid(color,name,w,h,pixelAspect,duration)`: creates solid footage and an AVLayer, at the top.
 - `comp.layers.addNull(duration)`: creates white 100×100 footage and an AVLayer named Null, at the top.
 - `CompItem` / `FootageItem` / `FolderItem` / `AVLayer` / `TextLayer`: constructors exposed for `instanceof`; direct construction throws; TextLayer also satisfies `instanceof AVLayer`.
-- `layer.name` / `comment` / `label` / `inPoint` / `outPoint` / `startTime` / `threeDLayer`: settable; label range is 0–16.
+- `layer.name` / `comment` / `label` / `inPoint` / `outPoint` / `startTime` / `threeDLayer` / `enabled`: settable; label range is 0–16; `enabled` is a boolean, defaults to true and survives serialization.
 - `layer.index`: read-only live stack index, updated after every move/removal.
 - `layer.source`: read-only source item or null for text.
 - `layer.nullLayer`: read-only boolean; true for layers created by `addNull`, preserved in state.
@@ -60,7 +60,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `AVLayer.replaceSource(item,false)`: replaces footage/comp source, preserving transforms, effects, masks and stack position; text and expression-fixing mode are unmodeled and throw.
 - `layer.remove()`: removes the layer; removing an already removed layer throws.
 - `layer.moveBefore(layer)` / `moveAfter(layer)` / `moveToBeginning()` / `moveToEnd()`: move within the same comp and update all indices.
-- `layer.sourceRectAtTime(t,includeExtents)`: text has width `0.6*fontSize*text.length`, height `fontSize`, left 0, top `-0.8*fontSize`; models are 200×200 with left 0 and top -200; other layers use source dimensions.
+- `layer.sourceRectAtTime(t,includeExtents)`: text has width `advance*fontSize*text.length` (advance 0.5 for Arial fonts, 0.6 otherwise), height `fontSize`, left 0, top `-0.8*fontSize`; models are 200×200 with left 0 and top -200; other layers use source dimensions.
 - `layer.property(nameOrMatchName)`: returns a supported group by display name or match name; 1-based numeric lookup is also supported; an unknown match name throws where real AE may return null (also applies to PropertyGroup.property).
 - `layer.Effects` / `layer.Masks`: aliases for `ADBE Effect Parade` / `ADBE Mask Parade` groups.
 - `PropertyGroup.property(nameOrMatchName)` / `numProperties`: child lookup and count, including 1-based numeric property lookup.
