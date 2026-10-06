@@ -1,3 +1,43 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Keepframe</title></head>
-<body><p>Keepframe: hello from the panel.</p></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keepframe</title>
+  <link rel="stylesheet" href="css/panel.css">
+  <script src="js/core.js" defer></script>
+  <script src="js/panel.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><h1>Keepframe</h1><span><span data-i18n="version">Extension version</span> <span id="version"></span></span></header>
+    <form id="settings">
+      <label for="server-url" data-i18n="server">Server URL</label>
+      <input id="server-url" type="url" placeholder="https://studio.example.ts.net" required spellcheck="false" autocomplete="url">
+      <label for="pairing-code" data-i18n="code">Pairing code</label>
+      <input id="pairing-code" type="text" placeholder="KF-XXXX-XXXX" required spellcheck="false" autocomplete="off">
+      <div class="buttons">
+        <button id="pair" type="submit" data-i18n="pair">Pair</button>
+        <button id="disconnect" type="button" data-i18n="disconnect">Disconnect</button>
+      </div>
+    </form>
+    <section aria-labelledby="status-label">
+      <h2 id="status-label" data-i18n="status">Status</h2>
+      <p id="status" role="status" aria-live="polite"></p>
+      <a id="update-link" hidden target="_blank" rel="noopener noreferrer" data-i18n="download">Download extension</a>
+    </section>
+    <section aria-labelledby="job-label">
+      <h2 id="job-label" data-i18n="current">Current job</h2>
+      <p id="current-job"></p>
+    </section>
+    <section class="log-section" aria-labelledby="log-label">
+      <div class="log-heading">
+        <label id="log-label" for="log" data-i18n="log">Log</label>
+        <button id="copy-log" type="button" data-i18n="copy">Copy log</button>
+      </div>
+      <textarea id="log" readonly spellcheck="false" rows="3"></textarea>
+      <span id="copy-notice" role="status" aria-live="polite"></span>
+    </section>
+  </main>
+</body>
+</html>
