@@ -234,6 +234,18 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function property(matchName, name, value, valueType, saved) {
     const data = saved ? copy(saved) : { matchName, name, value: copy(value), keys: [],
       expression: "", expressionEnabled: false, propertyValueType: valueType || (Array.isArray(value) ? value.length === 3 ? "ThreeD" : "TwoD" : "OneD") };
+    const avVector = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale"].includes(matchName);
+    const pad = (v) => avVector && Array.isArray(v) && v.length === 2 ? [...v, matchName === "ADBE Scale" ? 100 : 0] : v;
+    if (avVector) {
+      data.propertyValueType = valueType;
+      data.value = pad(data.value);
+      data.keys.forEach((k) => {
+        k.value = pad(k.value);
+        for (const side of ["inEases", "outEases"]) {
+          if (matchName === "ADBE Scale" && k[side].length === 2) k[side].push(copy(k[side][0]));
+        }
+      });
+    }
     const easeDimensions = () => /_SPATIAL$/.test(data.propertyValueType) || !Array.isArray(data.value) ? 1 : data.value.length;
     const api = {};
     const key = (i) => {
@@ -245,8 +257,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         if (records.get(v)?.type !== "TextDocument") throw Error("fake AE: expected TextDocument");
         return copy(records.get(v).values);
       }
+      v = pad(v);
       if (Array.isArray(data.value)) {
-        if (data.value.length === 3 && (!Array.isArray(v) || v.length !== 3)) throw Error(`fake AE: ${matchName} expects 3 values`);
         vector(v, data.value.length, name);
       }
       else finite(v, name);
@@ -409,9 +421,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   // Layer transforms, including scalar followers for separated position.
   function transformGroup(layerValues, comp, source, saved) {
     const definitions = [
-      ["ADBE Anchor Point", "Anchor Point", source ? [source.width / 2, source.height / 2] : [0, 0], "TwoD_SPATIAL"],
-      ["ADBE Position", "Position", [comp.width / 2, comp.height / 2], "TwoD_SPATIAL"],
-      ["ADBE Scale", "Scale", [100, 100], "TwoD"], ["ADBE Rotate Z", "Rotation", 0],
+      ["ADBE Anchor Point", "Anchor Point", source ? [source.width / 2, source.height / 2, 0] : [0, 0, 0], "ThreeD_SPATIAL"],
+      ["ADBE Position", "Position", [comp.width / 2, comp.height / 2, 0], "ThreeD_SPATIAL"],
+      ["ADBE Scale", "Scale", [100, 100, 100], "ThreeD"], ["ADBE Rotate Z", "Rotation", 0],
       ["ADBE Opacity", "Opacity", 100], ["ADBE Rotate X", "X Rotation", 0],
       ["ADBE Rotate Y", "Y Rotation", 0], ["ADBE Orientation", "Orientation", [0, 0, 0], "ThreeD"],
       ["ADBE Position_0", "X Position", comp.width / 2], ["ADBE Position_1", "Y Position", comp.height / 2],
@@ -423,11 +435,11 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     });
     const g = group("ADBE Transform Group", saved?.name || "Transform", children);
     const position = children[1], r = records.get(position);
-    const followers = () => children.slice(8, layerValues.threeDLayer ? 11 : 10);
+    const followers = () => children.slice(8, 11);
     r.data.dimensionsSeparated ??= false;
     const sample = r.api.valueAtTime, setValue = r.api.setValue, setValueAtTime = r.api.setValueAtTime;
     const visible = () => children.filter((p, i) => (i < 5 || (i < 8 && layerValues.threeDLayer)
-      || (i >= 8 && r.data.dimensionsSeparated && (i < 10 || layerValues.threeDLayer))));
+      || (i >= 8 && r.data.dimensionsSeparated)));
     records.get(g).api.property = (query) => {
       const list = visible();
       const result = typeof query === "number" ? list[query - 1] : list.find((p) => p.matchName === query || p.name === query);
@@ -469,28 +481,6 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (r.data.dimensionsSeparated) throw Error("fake AE: setValueAtTime on separated position");
       setValueAtTime(t, value);
     };
-    records.get(g).resize = () => {
-      const size = layerValues.threeDLayer ? 3 : 2;
-      children.slice(0, 3).forEach((p, i) => {
-        const data = records.get(p).data, z = i === 2 ? 100 : 0;
-        const resize = (v) => v.slice(0, size).concat(v.length < size ? [z] : []);
-        data.value = resize(data.value);
-        data.propertyValueType = (size === 3 ? "ThreeD" : "TwoD") + (i < 2 ? "_SPATIAL" : "");
-        data.keys.forEach((k) => {
-          k.value = resize(k.value);
-          for (const side of ["inEases", "outEases"]) {
-            const count = i < 2 ? 1 : size;
-            k[side] = k[side].slice(0, count);
-            while (k[side].length < count) k[side].push({ speed: 0, influence: 33.33333333333333 });
-          }
-        });
-      });
-      if (size === 2) {
-        const z = records.get(children[10]).data;
-        z.value = 0; z.keys = [];
-      }
-    };
-    records.get(g).resize();
     return g;
   }
 
@@ -650,7 +640,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       group("ADBE Mask Parade", "Masks", [], ["ADBE Mask Atom"], findGroup("ADBE Mask Parade"))];
     field(api, "threeDLayer", () => values.threeDLayer, (v) => {
       if (typeof v !== "boolean") throw Error("fake AE: invalid threeDLayer");
-      values.threeDLayer = v; records.get(groups[0]).resize(); changed();
+      values.threeDLayer = v; changed();
     });
     if (type === "TextLayer") {
       const savedText = findGroup("ADBE Text Properties");

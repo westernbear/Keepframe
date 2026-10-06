@@ -210,8 +210,7 @@ if (typeof JSON !== "object" || JSON === null) {
         var t = transform(layer), result = [t.property("ADBE Anchor Point")], i, j, effect, child;
         var position = t.property("ADBE Position");
         if (position.dimensionsSeparated) {
-            result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"));
-            if (layer.threeDLayer) { result.push(t.property("ADBE Position_2")); }
+            result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"), t.property("ADBE Position_2"));
         } else { result.push(position); }
         result.push(t.property("ADBE Scale"), t.property("ADBE Rotate Z"), t.property("ADBE Opacity"));
         if (layer.threeDLayer) { result.push(t.property("ADBE Rotate X"), t.property("ADBE Rotate Y")); }
@@ -255,22 +254,43 @@ if (typeof JSON !== "object" || JSON === null) {
         return true;
     }
 
-    function propertyValue(p, value) {
+    function propertyDimensions(p, temporal) {
+        var type = p.propertyValueType;
+        if (type === PropertyValueType.ThreeD || (!temporal && type === PropertyValueType.ThreeD_SPATIAL)) { return 3; }
+        if (type === PropertyValueType.TwoD || (!temporal && type === PropertyValueType.TwoD_SPATIAL)) { return 2; }
+        return 1;
+    }
+
+    function paddedValue(p, value, modelScale) {
+        var dimensions = propertyDimensions(p, false), result;
+        if (dimensions === 1 || !array(value)) { return value; }
+        result = value.slice(0, dimensions);
+        while (result.length < dimensions) {
+            result.push(p.matchName === "ADBE Scale" ? (modelScale ? value[0] : 100) : 0);
+        }
+        return result;
+    }
+
+    function propertyValue(p, value, modelScale) {
         if (p.propertyValueType === PropertyValueType.TEXT_DOCUMENT) {
             return [value.text, value.font, rounded(value.fontSize), colorValue(value.fillColor), value.applyFill, String(value.justification)];
         }
-        return p.propertyValueType === PropertyValueType.COLOR ? colorValue(value) : rounded(value);
+        return p.propertyValueType === PropertyValueType.COLOR ? colorValue(value) : rounded(paddedValue(p, value, modelScale));
     }
 
-    function easeValues(eases) {
-        var values = [], i;
-        for (i = 0; i < eases.length; i += 1) { values.push(rounded([eases[i].influence, eases[i].speed])); }
+    function easeValues(p, eases) {
+        var values = [], i, ease;
+        for (i = 0; i < propertyDimensions(p, true); i += 1) {
+            ease = eases[i < eases.length ? i : 0];
+            values.push(rounded([ease.influence, ease.speed]));
+        }
         return values;
     }
 
     function fingerprint(layer, fps) {
         var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
         var position = transform(layer).property("ADBE Position");
+        var modelScale = kind(layer) === "model";
         // FPS is managed context: changing it changes how every frame-based property must be written.
         data.push(rounded(fps), layer.name, layer.label, Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
             position.expressionEnabled, position.expression);
@@ -283,10 +303,10 @@ if (typeof JSON !== "object" || JSON === null) {
             p = props[i];
             keys = [];
             for (k = 1; k <= p.numKeys; k += 1) {
-                keys.push([Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k)), String(p.keyInInterpolationType(k)),
-                    String(p.keyOutInterpolationType(k)), easeValues(p.keyInTemporalEase(k)), easeValues(p.keyOutTemporalEase(k))]);
+                keys.push([Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(p.keyInInterpolationType(k)),
+                    String(p.keyOutInterpolationType(k)), easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k))]);
             }
-            data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true)),
+            data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale),
                 p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
         }
         effects = layer.property("ADBE Effect Parade");
@@ -314,30 +334,29 @@ if (typeof JSON !== "object" || JSON === null) {
         for (i = p.numKeys; i >= 1; i -= 1) { p.removeKey(i); }
     }
 
-    function staticValue(p, value) { clear(p); p.setValue(value); }
+    function staticValue(p, value) { clear(p); p.setValue(paddedValue(p, value, false)); }
 
-    function eases(values, dimensions, factor, modelScale) {
+    function eases(values, dimensions, factor) {
         var result = [], i, value;
         for (i = 0; i < dimensions; i += 1) {
-            value = values ? values[modelScale && i === 2 ? 0 : i] : [33.33333333333333, 0];
+            value = values ? values[i < values.length ? i : 0] : [33.33333333333333, 0];
             result.push(new KeyframeEase(value[1] * factor, value[0]));
         }
         return result;
     }
 
     function writeKeys(p, keys, fps, factor, modelScale) {
-        var i, k, value, dimensions = 1;
+        var i, k, value, dimensions = propertyDimensions(p, true);
         clear(p);
-        if (p.propertyValueType === PropertyValueType.TwoD) { dimensions = 2; }
-        if (p.propertyValueType === PropertyValueType.ThreeD) { dimensions = 3; }
         for (i = 0; i < keys.length; i += 1) {
             k = keys[i];
             value = k[1];
-            if (modelScale) { value = [value[0] * factor, value[1] * factor, value[0] * factor]; }
+            if (modelScale) { value = [value[0] * factor, value[1] * factor]; }
+            value = paddedValue(p, value, modelScale);
             if (keys.length === 1) { p.setValue(value); }
             else {
                 p.setValueAtTime(k[0] / fps, value);
-                p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor, modelScale), eases(k[2], dimensions, factor, modelScale));
+                p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor), eases(k[2], dimensions, factor));
                 p.setInterpolationTypeAtKey(i + 1, k[3] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR,
                     k[2] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR);
             }
@@ -410,6 +429,7 @@ if (typeof JSON !== "object" || JSON === null) {
         if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
         // The leader can also carry an expression after separation.
         if (t.property("ADBE Position").expressionEnabled) { t.property("ADBE Position").expressionEnabled = false; }
+        staticValue(t.property("ADBE Position_2"), 0);
         if (s.kind === "text") {
             doc = layer.property("ADBE Text Properties").property("ADBE Text Document").valueAtTime(0, true);
             doc.text = s.source.text;
@@ -426,8 +446,6 @@ if (typeof JSON !== "object" || JSON === null) {
             rect = layer.sourceRectAtTime(0, false);
             requireValue(rect.width > 0 && rect.height > 0, "model has an empty source rectangle");
             factor = Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
-            anchor = [anchor[0], anchor[1], 0];
-            staticValue(t.property("ADBE Position_2"), 0);
             writeKeys(t.property("ADBE Rotate X"), s.props.rotation_x, fps, 1, false);
             writeKeys(t.property("ADBE Rotate Y"), s.props.rotation_y, fps, 1, false);
         }

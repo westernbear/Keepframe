@@ -130,9 +130,9 @@ def test_create_from_empty(tmp_path, full_spec):
     assert x["keys"][0]["outEases"] == [{"speed": 200, "influence": 25}]
     assert x["keys"][1]["inEases"] == [{"speed": 200, "influence": 25}]
     scale = prop(image, "ADBE Scale")
-    assert [k["value"] for k in scale["keys"]] == [[50, 100], [150, 200]]
-    assert scale["keys"][0]["outEases"] == [{"speed": 200, "influence": 25}] * 2
-    assert prop(image, "ADBE Anchor Point")["value"] == [5, 9]
+    assert [k["value"] for k in scale["keys"]] == [[50, 100, 100], [150, 200, 100]]
+    assert scale["keys"][0]["outEases"] == [{"speed": 200, "influence": 25}] * 3
+    assert prop(image, "ADBE Anchor Point")["value"] == [5, 9, 0]
     assert prop(image, "ADBE Opacity")["keys"][0]["value"] == 20
     assert [effect["name"] for effect in effects(image)] == ["Keepframe Reveal", "Keepframe Skew"]
     assert prop(image, "ADBE Linear Wipe-0002")["value"] == 270
@@ -147,7 +147,7 @@ def test_create_from_empty(tmp_path, full_spec):
     assert document == {"text": "Hello 한", "font": "Example", "fontSize": 20,
                         "fillColor": [1, struct.unpack("f", struct.pack("f", 136 / 255))[0], 0],
                         "applyFill": True, "justification": "LEFT_JUSTIFY"}
-    assert prop(text, "ADBE Anchor Point")["value"] == [42, -1]
+    assert prop(text, "ADBE Anchor Point")["value"] == [42, -1, 0]
     model = actual["kf:model"]
     assert model["threeDLayer"] is True
     assert prop(model, "ADBE Anchor Point")["value"] == [5, 3, 0]
@@ -179,6 +179,54 @@ def test_sync_twice_is_a_no_op(tmp_path, full_spec):
     assert response["undo_groups"] in (0, 1)
     assert response["value"]["unchanged"] == 5
     assert response["value"]["created"] == response["value"]["updated"] == response["value"]["deleted"] == []
+    assert read_state(path) == before
+
+
+@pytest.mark.parametrize("eid,expected,factor", [
+    ("kf:image", [[50, 100, 100], [150, 200, 100]], 1),
+    ("kf:model", [[3, 6, 3], [9, 15, 9]], 0.03),
+])
+@pytest.mark.parametrize("animated", [True, False])
+def test_av_scale_pads_values_and_eases_and_resyncs_without_writes(
+        tmp_path, full_spec, eid, expected, factor, animated):
+    spec, assets = full_spec
+    spec["layers"] = [s for s in spec["layers"] if s["id"] == eid]
+    keys = spec["layers"][0]["props"]["scale"]
+    keys[0][2] = [[25, 200], [45, 300]]
+    keys[1][3] = [[35, 400], [55, 500]]
+    if not animated:
+        spec["layers"][0]["props"]["scale"] = [keys[0]]
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    before = read_state(path)
+    item = layers(before)[eid]
+    assert item["threeDLayer"] is (eid == "kf:model")
+    scale = prop(item, "ADBE Scale")
+    assert scale["propertyValueType"] == "ThreeD"
+    if animated:
+        assert [k["value"] for k in scale["keys"]] == expected
+        assert scale["keys"][0]["outEases"] == [
+            {"speed": 200 * factor, "influence": 25},
+            {"speed": 300 * factor, "influence": 45},
+            {"speed": 200 * factor, "influence": 25}]
+        assert scale["keys"][1]["inEases"] == [
+            {"speed": 400 * factor, "influence": 35},
+            {"speed": 500 * factor, "influence": 55},
+            {"speed": 400 * factor, "influence": 35}]
+    else:
+        assert scale["keys"] == []
+        assert scale["value"] == expected[0]
+    anchor = prop(item, "ADBE Anchor Point")
+    assert anchor["propertyValueType"] == "ThreeD_SPATIAL"
+    assert anchor["value"] == [*spec["layers"][0]["anchor"], 0]
+    assert prop(item, "ADBE Position")["propertyValueType"] == "ThreeD_SPATIAL"
+    assert prop(item, "ADBE Position_2")["value"] == 0
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"]
+    assert "hand_edited" not in response["value"]
+    assert response["value"]["unchanged"] == 1
+    assert response["writes"] == 0
     assert read_state(path) == before
 
 
@@ -395,7 +443,7 @@ def test_fingerprint_covers_managed_state(tmp_path, full_spec, change):
     elif change == "out_interpolation":
         x["keys"][0]["outInterpolation"] = "HOLD"
     elif change == "static":
-        prop(item, "ADBE Anchor Point")["value"] = [99, 99]
+        prop(item, "ADBE Anchor Point")["value"] = [99, 99, 0]
     elif change in ("inPoint", "outPoint"):
         item[change] += 0.1
     elif change == "label":
@@ -713,7 +761,7 @@ def test_review_fractional_fps_and_float32_colors_are_clean(tmp_path, full_spec,
         assert response["writes"] == 0
     # Force a rewrite, then read back using the same spec FPS.
     state = read_state(path)
-    prop(layers(state)["kf:image"], "ADBE Anchor Point")["value"] = [99, 99]
+    prop(layers(state)["kf:image"], "ADBE Anchor Point")["value"] = [99, 99, 0]
     save_state(path, state)
     assert sync(path, spec, assets, force=True)["value"]["updated"] == ["kf:image"]
     assert sync(path, spec, assets)["writes"] == 0

@@ -72,17 +72,17 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `Masks.addProperty("ADBE Mask Atom")`: creates an empty mask group with a settable display name; mask attributes are unsupported.
 - `effect.remove()` / `mask.remove()`: remove the group from its parent; a repeated removal throws.
 - `ADBE Transform Group`: exposes `ADBE Anchor Point`, `ADBE Position`, `ADBE Scale`, `ADBE Rotate Z`, and `ADBE Opacity`.
-- `ADBE Anchor Point`: source center, or [0,0] for text; `ADBE Position`: comp center; `ADBE Scale`: [100,100]; enabling 3D adds z=0 for anchor/position and z=100 for scale to values and keys; disabling 3D drops z; rotation: 0; opacity: 100.
-- `ADBE Position.dimensionsSeparated`: settable boolean; true exposes scalar `ADBE Position_0` / `ADBE Position_1`, plus `ADBE Position_2` for 3D; toggling transfers values/keys and joined reads combine the followers.
-- `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation`: available for 3D layers, default 0 / 0 / [0,0,0]; anchor, position and scale have three components, and GLB layers start in 3D.
+- `ADBE Anchor Point` / `ADBE Position`: `ThreeD_SPATIAL` on every AV layer, including 2D layers; defaults are source center (or [0,0,0] for text) and comp center, with z=0. `ADBE Scale`: `ThreeD`, default [100,100,100]; rotation: 0; opacity: 100. Toggling `threeDLayer` preserves all three components of values, keys and eases.
+- `ADBE Position.dimensionsSeparated`: settable boolean; true exposes scalar `ADBE Position_0` / `ADBE Position_1` / `ADBE Position_2` on every AV layer; toggling transfers values/keys and joined reads combine all three followers.
+- `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation`: available for 3D layers, default 0 / 0 / [0,0,0]; GLB layers start in 3D.
 - `ADBE Text Properties` → `ADBE Text Document`: Source Text property containing a detached TextDocument copy.
 - `Property.value`: read-only copy sampled at time 0; evaluating an enabled expression throws.
-- `Property.setValue(v)`: assigns a static value; throws `fake AE: setValue on a keyframed property` if keys exist; 3D vector writes require three values (`fake AE: <matchName> expects 3 values`, also for setValueAtTime).
+- `Property.setValue(v)`: assigns a static value; throws `fake AE: setValue on a keyframed property` if keys exist. AV anchor/position/scale accept two components and pad z=0/0/100, or three components to set z explicitly; reads always return three (also for setValueAtTime).
 - `Property.setValueAtTime(t,v)`: adds a sorted key or replaces the value at an existing time, preserving that key's ease/interpolation metadata.
 - `Property.numKeys` / `keyTime(i)` / `keyValue(i)` / `removeKey(i)` / `nearestKeyIndex(t)`: 1-based key operations; invalid indices and nearest on an unkeyed property throw.
 - `Property.valueAtTime(t,preExpression)`: linearly interpolates scalars/vectors, honors outgoing HOLD, holds beyond endpoints, and holds TextDocuments between keys; BEZIER metadata is preserved but sampled linearly.
 - `Property.setInterpolationTypeAtKey(i,inType,outType)` / `keyInInterpolationType(i)` / `keyOutInterpolationType(i)`: store/read interpolation; omitted outType defaults to inType.
-- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; spatial TwoD_SPATIAL/ThreeD_SPATIAL properties take one ease per side, non-spatial vectors take one per dimension, and scalars take one; omitted outEases defaults to inEases; setting ease switches LINEAR sides to BEZIER, so interpolation must be assigned afterward.
+- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; unseparated AV anchor/position require exactly one ease per side, and AV scale requires exactly three even on 2D layers. Other spatial properties take one, non-spatial vectors one per dimension, and scalars one; omitted outEases defaults to inEases; setting ease switches LINEAR sides to BEZIER, so interpolation must be assigned afterward.
 - `Property.expression` / `expressionEnabled`: settable and serialized; assigning nonempty expression enables it, empty disables it; evaluation is unsupported, while `valueAtTime(t,true)` reads underlying animation.
 - `Property.canSetExpression` / `propertyValueType` / `matchName` / `name`: read-only property metadata.
 - `PropertyValueType`: symbolic `NO_VALUE`, `OneD`, `TwoD`, `TwoD_SPATIAL`, `ThreeD`, `ThreeD_SPATIAL`, `COLOR`, `TEXT_DOCUMENT` constants.

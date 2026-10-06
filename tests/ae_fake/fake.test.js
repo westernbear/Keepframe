@@ -379,10 +379,10 @@ test("keys replace, sort, interpolate, hold outside range, and remove", () => {
   const position = transform.property("ADBE Position");
   position.setValueAtTime(0, [0, 10]);
   position.setValueAtTime(2, [20, 30]);
-  assert.deepEqual(Array.from(position.valueAtTime(1, true)), [10, 20]);
+  assert.deepEqual(Array.from(position.valueAtTime(1, true)), [10, 20, 0]);
   const copy = position.keyValue(1);
   copy[0] = 999;
-  assert.deepEqual(Array.from(position.keyValue(1)), [0, 10]);
+  assert.deepEqual(Array.from(position.keyValue(1)), [0, 10, 0]);
 });
 
 test("ease dimension checks, interpolation, and influence boundaries", () => {
@@ -397,7 +397,8 @@ test("ease dimension checks, interpolation, and influence boundaries", () => {
   const p = transform.property("ADBE Scale");
   p.setValueAtTime(0, [100, 100]);
   assert.throws(() => p.setTemporalEaseAtKey(1, [ease], [ease]), /dimensions/);
-  p.setTemporalEaseAtKey(1, [ease, ease], [ease, ease]);
+  assert.throws(() => p.setTemporalEaseAtKey(1, [ease, ease], [ease, ease]), /dimensions/);
+  p.setTemporalEaseAtKey(1, [ease, ease, ease], [ease, ease, ease]);
   assert.equal(p.keyInTemporalEase(1)[0].speed, 4);
   assert.equal(p.keyOutTemporalEase(1)[1].influence, 33);
   ease.speed = 99;
@@ -408,26 +409,29 @@ test("ease dimension checks, interpolation, and influence boundaries", () => {
   opacity.setValueAtTime(0, 100);
   opacity.setTemporalEaseAtKey(1, [ease], [ease]);
   assert.equal(opacity.keyOutTemporalEase(1).length, 1);
-  assert.equal(p.propertyValueType, context.PropertyValueType.TwoD);
+  assert.equal(p.propertyValueType, context.PropertyValueType.ThreeD);
   assert.throws(() => p.setValueAtTime(1, [100]), /dimensions/);
 });
 
-test("separated position exposes scalar X/Y and survives toggling", () => {
+test("separated position exposes scalar X/Y/Z on 2D layers and survives toggling", () => {
   const { transform } = fixture();
   const p = transform.property("ADBE Position");
   p.setValue([10, 20]);
   p.dimensionsSeparated = true;
   const x = transform.property("ADBE Position_0");
   const y = transform.property("ADBE Position_1");
+  const z = transform.property("ADBE Position_2");
   assert.equal(x.value, 10);
   assert.equal(y.value, 20);
+  assert.equal(z.value, 0);
   x.setValueAtTime(0, 10);
   x.setValueAtTime(2, 30);
   y.setValue(40);
+  z.setValue(50);
   assert.equal(x.valueAtTime(1, false), 20);
-  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40]);
+  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40, 50]);
   p.dimensionsSeparated = false;
-  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40]);
+  assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40, 50]);
   assert.throws(() => transform.property("ADBE Position_0"), /unsupported/);
   p.dimensionsSeparated = true;
   assert.equal(transform.property("ADBE Position_0").valueAtTime(1, false), 20);
@@ -784,8 +788,8 @@ test("temporal ease dimensions follow spatial, scale, and scalar value types", (
     layer.threeDLayer = threeD;
     for (const match of ["ADBE Position", "ADBE Anchor Point", "ADBE Scale"]) {
       const p = transform.property(match);
-      const spatial = match !== "ADBE Scale", size = spatial ? 1 : threeD ? 3 : 2;
-      assert.equal(p.propertyValueType, c.PropertyValueType[threeD ? spatial ? "ThreeD_SPATIAL" : "ThreeD" : spatial ? "TwoD_SPATIAL" : "TwoD"]);
+      const spatial = match !== "ADBE Scale", size = spatial ? 1 : 3;
+      assert.equal(p.propertyValueType, c.PropertyValueType[spatial ? "ThreeD_SPATIAL" : "ThreeD"]);
       p.setValueAtTime(0, p.value);
       assert.equal(p.keyInTemporalEase(1).length, size);
       assert.equal(p.keyOutTemporalEase(1).length, size);
@@ -794,10 +798,11 @@ test("temporal ease dimensions follow spatial, scale, and scalar value types", (
       assert.equal(p.keyInTemporalEase(1).length, size);
       assert.equal(p.keyOutTemporalEase(1).length, size);
       assert.throws(() => p.setTemporalEaseAtKey(1, Array(size + 1).fill(ease)), /dimensions/);
+      assert.throws(() => p.setTemporalEaseAtKey(1, Array(size - 1).fill(ease)), /dimensions/);
     }
     const position = transform.property("ADBE Position");
     position.dimensionsSeparated = true;
-    for (let i = 0; i < (threeD ? 3 : 2); i++) {
+    for (let i = 0; i < 3; i++) {
       const p = transform.property(`ADBE Position_${i}`);
       assert.equal(p.propertyValueType, c.PropertyValueType.OneD);
       p.setValueAtTime(0, p.value);
@@ -810,64 +815,60 @@ test("temporal ease dimensions follow spatial, scale, and scalar value types", (
   }
 });
 
-test("3D transforms resize static values, keys, eases, and separated position", () => {
-  const { context: c, layer, transform, serialize } = fixture();
+test("all AV transforms pad two-component writes and preserve z when toggling 3D", () => {
+  const { context: c, comp, layer, serialize } = fixture();
   const matches = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale"];
-  matches.forEach((match) => {
-    const p = transform.property(match);
-    p.setValue([10, 20]); p.setValueAtTime(0, [10, 20]); p.setValueAtTime(2, [30, 40]);
-  });
-  layer.threeDLayer = true;
-  matches.forEach((match) => {
-    const p = transform.property(match), z = match === "ADBE Scale" ? 100 : 0;
-    assert.deepEqual(Array.from(p.value), [10, 20, z]);
-    assert.deepEqual(Array.from(p.keyValue(2)), [30, 40, z]);
-    assert.deepEqual(Array.from(p.valueAtTime(1, true)), [20, 30, z]);
-    assert.throws(() => p.setValueAtTime(3, [1, 2]), { message: `fake AE: ${match} expects 3 values` });
-    assert.equal(p.keyInTemporalEase(1).length, match === "ADBE Scale" ? 3 : 1);
-  });
-  const position = transform.property("ADBE Position");
-  position.dimensionsSeparated = true;
-  const z = transform.property("ADBE Position_2");
-  assert.equal(z.value, 0);
-  z.setValueAtTime(0, 5); z.setValueAtTime(2, 15);
-  assert.deepEqual(Array.from(position.valueAtTime(1, true)), [20, 30, 10]);
+  const image = c.app.project.importFile(new c.ImportOptions(new c.File("asset.png")));
+  const model = c.app.project.importFile(new c.ImportOptions(new c.File("asset.glb")));
+  const nested = c.app.project.items.addComp("Nested", 320, 180, 1, 5, 30);
+  const layers = [layer, comp.layers.addNull(5), comp.layers.addSolid([1, 0, 0], "S", 20, 30, 1, 5),
+    comp.layers.add(image), comp.layers.add(nested), comp.layers.add(model)];
+  assert.equal(layers[5].threeDLayer, true);
+  for (const av of layers) {
+    const transform = av.property("ADBE Transform Group");
+    matches.forEach((match) => {
+      const p = transform.property(match), scale = match === "ADBE Scale", z = scale ? 100 : 0;
+      assert.equal(p.propertyValueType, c.PropertyValueType[scale ? "ThreeD" : "ThreeD_SPATIAL"]);
+      assert.equal(p.value.length, 3);
+      assert.equal(p.value[2], z);
+      p.setValue([1, 2, 7]);
+      assert.deepEqual(Array.from(p.value), [1, 2, 7]);
+      p.setValue([10, 20]);
+      assert.deepEqual(Array.from(p.value), [10, 20, z]);
+      p.setValueAtTime(0, [10, 20]); p.setValueAtTime(2, [30, 40, 8]);
+      assert.deepEqual(Array.from(p.keyValue(1)), [10, 20, z]);
+      assert.deepEqual(Array.from(p.keyValue(2)), [30, 40, 8]);
+      assert.deepEqual(Array.from(p.valueAtTime(1, true)), [20, 30, (z + 8) / 2]);
+      p.setValueAtTime(2, [30, 40]);
+      assert.deepEqual(Array.from(p.keyValue(2)), [30, 40, z]);
+      for (const bad of [[1], [1, 2, 3, 4], [1, 2, NaN]]) {
+        assert.throws(() => p.setValueAtTime(3, bad), /invalid/);
+      }
+      assert.equal(p.keyInTemporalEase(1).length, scale ? 3 : 1);
+    });
+    const position = transform.property("ADBE Position");
+    position.dimensionsSeparated = true;
+    const z = transform.property("ADBE Position_2");
+    z.setValueAtTime(0, 5); z.setValueAtTime(2, 15);
+    for (const threeD of [false, true, false]) {
+      av.threeDLayer = threeD;
+      assert.deepEqual(Array.from(position.valueAtTime(1, true)), [20, 30, 10]);
+      assert.equal(transform.property("ADBE Position_2").keyValue(2), 15);
+      for (const match of ["ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation"]) {
+        if (threeD) assert.ok(transform.property(match));
+        else assert.throws(() => transform.property(match), /unsupported/);
+      }
+      matches.slice(0, 1).concat(matches.slice(2)).forEach((match) => {
+        const p = transform.property(match), scale = match === "ADBE Scale";
+        assert.deepEqual(Array.from(p.keyValue(2)), [30, 40, scale ? 100 : 0]);
+        assert.equal(p.keyInTemporalEase(1).length, scale ? 3 : 1);
+      });
+    }
+    position.dimensionsSeparated = false;
+    assert.deepEqual(Array.from(position.keyValue(2)), [30, 40, 15]);
+  }
   const state = serialize();
   assert.deepEqual(createAE({ state }).serialize(), state);
-  position.dimensionsSeparated = false;
-  assert.deepEqual(Array.from(position.keyValue(2)), [30, 40, 15]);
-  layer.threeDLayer = false;
-  matches.forEach((match) => {
-    const p = transform.property(match);
-    assert.deepEqual(Array.from(p.keyValue(2)), [30, 40]);
-    assert.equal(p.keyInTemporalEase(1).length, match === "ADBE Scale" ? 2 : 1);
-  });
-  position.dimensionsSeparated = true;
-  assert.throws(() => transform.property("ADBE Position_2"), /unsupported/);
-  layer.threeDLayer = true;
-  assert.equal(transform.property("ADBE Position_2").value, 0);
-  assert.deepEqual(Array.from(position.value), [10, 20, 0]);
-  const model = c.app.project.importFile(new c.ImportOptions(new c.File("asset.glb")));
-  const modelLayer = c.app.project.items[1].layers.add(model);
-  assert.equal(modelLayer.threeDLayer, true);
-  const modelTransform = modelLayer.property("ADBE Transform Group");
-  matches.forEach((match) => {
-    const p = modelTransform.property(match);
-    assert.equal(p.value.length, 3);
-    assert.equal(p.value[2], match === "ADBE Scale" ? 100 : 0);
-    assert.throws(() => p.setValue([1, 2]), { message: `fake AE: ${match} expects 3 values` });
-  });
-  modelTransform.property("ADBE Position").dimensionsSeparated = true;
-  assert.equal(modelTransform.property("ADBE Position_2").value, 0);
-  modelLayer.threeDLayer = false;
-  matches.forEach((match) => assert.equal(modelTransform.property(match).value.length, 2));
-  assert.throws(() => modelTransform.property("ADBE Position_2"), /unsupported/);
-  modelLayer.threeDLayer = true;
-  matches.forEach((match) => {
-    const p = modelTransform.property(match);
-    assert.equal(p.value.length, 3);
-    assert.equal(p.value[2], match === "ADBE Scale" ? 100 : 0);
-  });
 });
 
 test("ES5+ built-ins are deleted only from the JSX context", () => {
