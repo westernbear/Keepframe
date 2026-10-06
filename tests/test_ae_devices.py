@@ -45,6 +45,7 @@ def test_empty_store_and_unknown_devices_are_safe_noops(store, tmp_path):
     assert store.fonts("unknown") is None
     assert store.revoke("unknown") is False
     store.touch("unknown", {"project_name": None, "project_saved": False})
+    store.seen("unknown")
     store.update_info("unknown", info())
     assert not (tmp_path / ".ae" / "devices.json").exists()
 
@@ -115,7 +116,7 @@ def test_expired_codes_do_not_count_towards_limit(store, tmp_path):
     assert store.pair(new, info(), now=1600) is not None
 
 
-@pytest.mark.parametrize("operation", ["create_code", "pair", "authenticate", "touch",
+@pytest.mark.parametrize("operation", ["create_code", "pair", "authenticate", "touch", "seen",
                                       "update_info", "fonts", "list", "revoke", "restart"])
 def test_every_call_purges_expired_codes(store, tmp_path, clock, operation):
     device_id, token = paired(store)
@@ -126,6 +127,7 @@ def test_every_call_purges_expired_codes(store, tmp_path, clock, operation):
         "pair": lambda: store.pair("incorrect", info()),
         "authenticate": lambda: store.authenticate(token),
         "touch": lambda: store.touch(device_id, {"project_name": None, "project_saved": False}),
+        "seen": lambda: store.seen(device_id),
         "update_info": lambda: store.update_info(device_id, info()),
         "fonts": lambda: store.fonts(device_id),
         "list": lambda: store.list(),
@@ -321,6 +323,28 @@ def test_touch_never_writes_file_and_restart_clears_connection(store, tmp_path, 
     restarted = Devices(tmp_path).list(now=1002)[0]
     assert restarted["last_seen"] is None and restarted["connected"] is False
     assert restarted["project_name"] is None and restarted["project_saved"] is False
+
+
+def test_seen_refreshes_in_memory_without_overwriting_status(store, tmp_path, clock, monkeypatch):
+    device_id, token = paired(store)
+    status = {"project_name": "Project.aep", "project_saved": True}
+    store.touch(device_id, status, now=1001)
+    path = tmp_path / ".ae" / "devices.json"
+    before = path.read_bytes()
+
+    def forbidden_write(*args):
+        pytest.fail("seen must not write devices.json")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ae_devices.os, "replace", forbidden_write)
+        store.seen(device_id, now=1002)
+        assert store.authenticate(token).last_seen == 1002
+        clock[0] = 1003
+        store.seen(device_id)
+    device = store.authenticate(token)
+    assert device.last_seen == 1003 and device.status == status
+    assert path.read_bytes() == before
+    assert Devices(tmp_path).authenticate(token).last_seen is None
 
 
 @pytest.mark.parametrize("operation", ["create_code", "pair", "update_info", "revoke"])

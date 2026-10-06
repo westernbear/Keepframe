@@ -1,5 +1,6 @@
 """Browser and paired-extension routes on Keepframe's existing HTTP server."""
 
+import errno
 import json
 import math
 import mimetypes
@@ -20,6 +21,7 @@ from ..ir.store import load_project, load_scene, scene_dir
 
 
 EXTENSION_PROTOCOL_MAJOR = 1
+UPLOAD_IDLE_TIMEOUT = 60
 STATIC = Path(__file__).resolve().parent / "static"
 _BROWSER = {"/api/ae/codes", "/api/ae/devices", "/api/ae/send", "/api/ae/state"}
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -69,8 +71,7 @@ def _read_json(handler, cap=1024 * 1024):
         if len(body) != length or not isinstance(value, dict):
             raise ValueError
     except (ValueError, RecursionError, OSError):
-        _error(handler, 400, "bad json")
-        return None
+        raise ValueError("bad json") from None
     return value
 
 
@@ -83,6 +84,7 @@ class AERoutes:
         self._progress_lock = threading.Lock()
         self._upload_lock = threading.Lock()
         self._uploaded = {}
+        self._uploading = {}
         self._stop = threading.Event()
         self._sweeper = threading.Thread(target=self._sweep, name="keepframe-ae-sweeper", daemon=True)
         self._sweeper.start()
@@ -95,6 +97,9 @@ class AERoutes:
                                               if row["last_seen"] is not None})
                     for job in failed:
                         self._progress.pop(job.id, None)
+                        with self._upload_lock:
+                            self._uploaded.pop(job.id, None)
+                            self._uploading.pop(job.id, None)
             except (OSError, ValueError):
                 log.exception("After Effects job sweep failed")
 
@@ -115,6 +120,7 @@ class AERoutes:
         if device is None:
             _error(handler, 401, "device is not paired; pair again from the Keepframe web page")
             return None
+        self.devices.seen(device.id)
         return device.id
 
     def _handle(self, handler, u, dispatch):
@@ -135,6 +141,7 @@ class AERoutes:
         except ValueError as exc:
             _error(handler, 400, str(exc))
         except Exception:
+            log.exception("After Effects request failed")
             _error(handler, 500, "After Effects request failed")
         return True
 
@@ -256,7 +263,13 @@ class AERoutes:
         match = re.fullmatch(r"/api/ae/jobs/([^/]+)/(result|progress)", u.path)
         if match:
             job = self._job(match[1], device)
-            data = _read_json(handler)
+            invalid = None
+            try:
+                data = _read_json(handler)
+            except ValueError as exc:
+                if match[2] != "result":
+                    raise
+                data, invalid = {}, str(exc)
             if data is None:
                 return
             with self._progress_lock:
@@ -271,20 +284,30 @@ class AERoutes:
                     self._progress[job.id] = {"stage": stage, "done": done, "total": total}
                     handler._send(204, b"", "application/json")
                 else:
-                    error = data.get("error")
-                    if "line" in data:
-                        if not isinstance(error, str) or type(data["line"]) is not int:
-                            raise ValueError("invalid error or line")
-                        error = f'{error} (line {data["line"]})'
                     try:
+                        if invalid is not None:
+                            raise ValueError(invalid)
+                        error = data.get("error")
+                        if data.get("line") is not None:
+                            if not isinstance(error, str) or type(data["line"]) is not int:
+                                raise ValueError("invalid error or line")
+                            error = f'{error} (line {data["line"]})'[:2000]
                         job = self.jobs.finish(job.id, data.get("ok"), data.get("result"), error)
                     except ValueError as exc:
                         if str(exc) == "job must be running":
                             _error(handler, 409, str(exc))
                             return
-                        raise
+                        invalid = str(exc)
+                        job = self.jobs.finish(job.id, False, error=(
+                            "invalid result from the extension: " + invalid)[:2000])
                     self._progress.pop(job.id, None)
-                    handler._json(200, {"job": job.to_dict()})
+                    with self._upload_lock:
+                        self._uploaded.pop(job.id, None)
+                        self._uploading.pop(job.id, None)
+                    if invalid is not None:
+                        _error(handler, 400, invalid)
+                    else:
+                        handler._json(200, {"job": job.to_dict()})
             return
         if u.path not in {"/api/ae/pair", "/api/ae/info", "/api/ae/send"}:
             _error(handler, 404, "not found")
@@ -304,7 +327,7 @@ class AERoutes:
         else:
             _, _, version = self._scene(data.get("project"), data.get("scene"), data.get("version"))
             devices = self.devices.list()
-            if "device" in data:
+            if data.get("device") is not None:
                 device = next((row["id"] for row in devices if row["id"] == data["device"]), None)
                 if device is None:
                     raise FileNotFoundError
@@ -337,41 +360,74 @@ class AERoutes:
         directory = self.workspace / job.project / "ae" / job.scene / job.version
         if not directory.resolve().is_relative_to((self.workspace / job.project).resolve()):
             raise FileNotFoundError
-        # ponytail: serialize uploads; use per-job reservations if multiple devices need throughput.
         with self._upload_lock:
             if self._job(job.id, device).state != "running":
                 _error(handler, 409, "job must be running")
                 return
-            uploaded = self._uploaded.setdefault(job.id, set())
-            if job.kind == "render_frames" and name not in uploaded and len(uploaded) >= 16:
+            uploaded = self._uploaded.get(job.id, set())
+            uploading = self._uploading.get(job.id, set())
+            if name in uploading:
+                _error(handler, 409, "file is already uploading")
+                return
+            if job.kind == "render_frames" and name not in uploaded and len(uploaded | uploading) >= 16:
                 _error(handler, 413, "at most 16 frames per job")
                 return
-            temporary = None
-            try:
-                directory.mkdir(parents=True, exist_ok=True)
-                fd, path = tempfile.mkstemp(dir=directory, prefix=f".{name}.part-")
-                temporary = Path(path)
-                with os.fdopen(fd, "wb") as stream:
+            self._uploading.setdefault(job.id, set()).add(name)
+        temporary = None
+        status = None
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            fd, path = tempfile.mkstemp(dir=directory, prefix=f".{name}.part-")
+            temporary = Path(path)
+            with os.fdopen(fd, "wb") as stream:
+                previous_timeout = handler.connection.gettimeout()
+                try:
+                    handler.connection.settimeout(UPLOAD_IDLE_TIMEOUT)
                     remaining = length
                     while remaining:
-                        chunk = handler.rfile.read(min(remaining, 1024 * 1024))
+                        try:
+                            # read1 returns arriving bytes even when a slow upload never fills a chunk.
+                            chunk = handler.rfile.read1(min(remaining, 1024 * 1024))
+                        except OSError as exc:
+                            raise ValueError("upload failed or incomplete") from exc
                         if not chunk:
                             raise ValueError("incomplete upload")
+                        self.devices.seen(device)
                         stream.write(chunk)
                         remaining -= len(chunk)
+                finally:
+                    handler.connection.settimeout(previous_timeout)
+            with self._progress_lock, self._upload_lock:
                 if self._job(job.id, device).state != "running":
                     raise ValueError("job must be running")
                 os.replace(temporary, directory / name)
-                uploaded.add(name)
-            except Exception:
+                self._uploaded.setdefault(job.id, set()).add(name)
+        except Exception as exc:
+            log.exception("After Effects upload failed")
+            try:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
-                try:
-                    _error(handler, 400, "upload failed or incomplete")
-                except OSError:
-                    pass  # The client may have closed the socket mid-upload.
-                return
-            handler._send(204, b"", "application/json")
+            except OSError as cleanup_error:
+                log.exception("After Effects upload cleanup failed")
+                exc = cleanup_error
+            status = 400 if isinstance(exc, ValueError) else 500
+            if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+                status = 507
+            message = f"upload failed: {exc}"
+        finally:
+            with self._upload_lock:
+                uploading = self._uploading.get(job.id)
+                if uploading is not None:
+                    uploading.discard(name)
+                    if not uploading:
+                        self._uploading.pop(job.id, None)
+        if status is not None:
+            try:
+                _error(handler, status, message)
+            except OSError:
+                pass  # The client may have closed the socket mid-upload.
+            return
+        handler._send(204, b"", "application/json")
 
     def _delete(self, handler, u, device):
         match = re.fullmatch(r"/api/ae/devices/([^/]+)", u.path)

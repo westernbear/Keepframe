@@ -2,7 +2,9 @@
 
 import http.client
 import hashlib
+import errno
 import json
+import queue
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -185,6 +187,14 @@ def test_send_uses_current_version_and_most_recent_connected_device(server, proj
     snapshot = state(server)
     assert set(snapshot) == {"jobs", "last_synced", "devices", "progress"}
     assert len(snapshot["jobs"]) == 2 and snapshot["last_synced"] == snapshot["progress"] == {}
+
+
+def test_send_with_null_device_auto_picks(server, project):
+    assert send(server, device=None) == (409, {"error": "no connected After Effects"})
+    device, headers = pair(server)
+    assert poll(server, headers)[0] == 204
+    status, value = send(server, device=None)
+    assert status == 202 and value["job"]["device"] == device
 
 
 def test_send_without_connected_device_and_unknown_identities(server, project):
@@ -378,12 +388,50 @@ def test_result_body_cap_invalid_json_and_invalid_progress(server, project):
     prefix = f'/api/ae/jobs/{job["id"]}'
     assert json_request(server, "POST", prefix + "/result", body=b"", headers=headers | {
         "Content-Length": str(1024 * 1024 + 1)})[0] == 413
-    assert json_request(server, "POST", prefix + "/result", body=b"{", headers=headers) == (400, {"error": "bad json"})
-    assert finish(server, headers, job, ok="yes")[0] == 400
     for value in ({}, {"stage": "sync", "done": -1, "total": 2}, {"stage": "sync", "done": 3, "total": 2},
                   {"stage": [], "done": 1, "total": 2}):
         status, error = json_request(server, "POST", prefix + "/progress", value, headers=headers)
         assert status == 400 and isinstance(error["error"], str)
+
+
+@pytest.mark.parametrize("data", [{"ok": True, "result": {"applied": True}, "line": None},
+                                  {"ok": False, "error": "AE failed", "line": None},
+                                  {"ok": False, "error": "x" * 2000, "line": 42}])
+def test_result_null_line_and_composed_error_limit(server, project, data):
+    _, headers, job = running_sync(server)
+    status, value = finish(server, headers, job, **data)
+    assert status == 200
+    expected = data.get("error")
+    if data["line"] is not None:
+        expected = f'{expected} (line {data["line"]})'[:2000]
+    assert value["job"]["error"] == expected
+    assert value["job"]["state"] == ("done" if data["ok"] else "failed")
+
+
+@pytest.mark.parametrize("data,reason", [
+    ({"ok": "yes"}, "invalid ok: expected a boolean"),
+    ({"ok": True, "result": []}, "invalid result: expected a JSON dictionary"),
+    ({"ok": False, "error": ""}, "invalid error: required, at most 2000 characters"),
+    ({"ok": False, "error": "x" * 2001}, "invalid error: required, at most 2000 characters"),
+    ({"ok": False, "error": "AE failed", "line": "42"}, "invalid error or line"),
+    (None, "bad json"),
+])
+def test_invalid_result_finishes_job_and_frees_device(server, project, data, reason):
+    device, headers, job = running_sync(server)
+    prefix = f'/api/ae/jobs/{job["id"]}'
+    assert json_request(server, "POST", prefix + "/progress", {"stage": "sync", "done": 1, "total": 2},
+                        headers=headers)[0] == 204
+    queued = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    if data is None:
+        status, error = json_request(server, "POST", prefix + "/result", body=b"{", headers=headers)
+    else:
+        status, error = finish(server, headers, job, **data)
+    assert status == 400 and error == {"error": reason}
+    failed = server.ae_routes.jobs.get(job["id"])
+    assert failed.state == "failed" and failed.error == "invalid result from the extension: " + reason
+    assert job["id"] not in server.ae_routes._progress
+    status, value = poll(server, headers)
+    assert status == 200 and value["job"]["id"] == queued.id
 
 
 @pytest.mark.parametrize("kind,name,cap", [("render_frames", "frame_0001.png", 25 * 1024 * 1024),
@@ -412,7 +460,10 @@ def test_upload_allowlist_length_caps_and_success(server, project, tmp_path, kin
     assert (directory / name).read_bytes() == data
     assert not list(directory.glob(".*.part-*"))
     assert finish(server, headers, job, ok=True)[0] == 200
-    assert json_request(server, "PUT", prefix + name, headers=headers, body=data)[0] == 409
+    assert job["id"] not in server.ae_routes._uploaded
+    # A completed job must reject before reading; avoid racing a large send with the early response.
+    assert json_request(server, "PUT", prefix + name, headers=headers | {
+        "Content-Length": str(len(data))}, body=b"")[0] == 409
     assert json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=headers)[0] == 404
 
 
@@ -460,7 +511,8 @@ def test_partial_upload_is_discarded(server, project, tmp_path):
     assert json_request(server, "PUT", path, headers=headers, body=b"complete")[0] == 204
 
 
-def test_upload_replace_failure_discards_temp_and_keeps_existing_file(server, project, tmp_path, monkeypatch):
+@pytest.mark.parametrize("code,status", [(errno.ENOSPC, 507), (errno.EACCES, 500), (None, 500)])
+def test_upload_replace_failure_discards_temp_and_keeps_existing_file(server, project, tmp_path, monkeypatch, caplog, code, status):
     from keepframe.ae import api
     headers, job = running_upload_job(server, "package")
     path = f'/api/ae/jobs/{job["id"]}/files/project.zip'
@@ -469,15 +521,18 @@ def test_upload_replace_failure_discards_temp_and_keeps_existing_file(server, pr
 
     def fail_upload(source, destination):
         if ".part-" in str(source):
-            raise OSError("simulated disk error")
+            raise OSError(code, "simulated disk error")
         original(source, destination)
 
     monkeypatch.setattr(api.os, "replace", fail_upload)
-    status, error = json_request(server, "PUT", path, headers=headers, body=b"replacement")
-    assert status == 400 and isinstance(error["error"], str)
+    response_status, error = json_request(server, "PUT", path, headers=headers, body=b"replacement")
+    assert response_status == status and "simulated disk error" in error["error"]
     directory = tmp_path / "p1" / "ae" / "s1" / "v1"
     assert (directory / "project.zip").read_bytes() == b"original"
     assert list(directory.iterdir()) == [directory / "project.zip"]
+    assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)
+    assert headers["Authorization"] not in caplog.text
+    assert headers["Host"] not in caplog.text
 
 
 def test_assets_are_also_available_to_the_owning_render_job(server, project):
@@ -492,3 +547,226 @@ def test_request_logs_do_not_include_credentials(server, caplog):
     assert headers["Authorization"] not in caplog.text
     assert headers["Authorization"][7:] not in caplog.text
     assert json_request(server, "DELETE", f"/api/ae/devices/{device}", browser=True)[0] == 204
+
+
+def start_stalled_upload(server, headers, path, directory):
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=2)
+    conn.request("PUT", path, body=b"short", headers=headers | {"Content-Length": "100"})
+    deadline = time.monotonic() + 1
+    while not list(directory.glob(".*.part-*")) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert list(directory.glob(".*.part-*"))
+    return conn
+
+
+def test_stalled_upload_does_not_block_other_upload_and_discards_temp(server, project, tmp_path, monkeypatch):
+    from keepframe.ae import api
+    monkeypatch.setattr(api, "UPLOAD_IDLE_TIMEOUT", 0.3, raising=False)
+    original_setup = server.RequestHandlerClass.setup
+    original_finish = server.RequestHandlerClass.finish
+    restored = queue.Queue()
+
+    def setup(handler):
+        original_setup(handler)
+        handler.connection.settimeout(1.5)
+
+    def finished(handler):
+        if getattr(handler, "command", None) == "PUT":
+            restored.put(handler.connection.gettimeout())
+        original_finish(handler)
+
+    monkeypatch.setattr(server.RequestHandlerClass, "setup", setup)
+    monkeypatch.setattr(server.RequestHandlerClass, "finish", finished)
+    headers, job = running_upload_job(server, "render_frames")
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+    prefix = f'/api/ae/jobs/{job["id"]}/files/'
+    conn = start_stalled_upload(server, headers, prefix + "frame_0001.png", directory)
+    try:
+        started = time.monotonic()
+        assert json_request(server, "PUT", prefix + "frame_0002.png", headers=headers, body=b"complete")[0] == 204
+        assert time.monotonic() - started < 0.2
+        response = conn.getresponse()
+        assert response.status == 400 and isinstance(json.loads(response.read())["error"], str)
+        assert not list(directory.glob(".*.part-*"))
+        assert not (directory / "frame_0001.png").exists()
+        assert (directory / "frame_0002.png").read_bytes() == b"complete"
+        assert restored.get(timeout=1) == restored.get(timeout=1) == 1.5
+    finally:
+        conn.close()
+
+
+def test_concurrent_upload_reserves_name_and_frame_slot_and_releases_on_failure(server, project, tmp_path, monkeypatch):
+    from keepframe.ae import api
+    monkeypatch.setattr(api, "UPLOAD_IDLE_TIMEOUT", 0.5, raising=False)
+    headers, job = running_upload_job(server, "render_frames")
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+    prefix = f'/api/ae/jobs/{job["id"]}/files/'
+    for index in range(15):
+        assert json_request(server, "PUT", prefix + f"frame_{index:04d}.png", headers=headers, body=b"png")[0] == 204
+    conn = start_stalled_upload(server, headers, prefix + "frame_0015.png", directory)
+    try:
+        assert json_request(server, "PUT", prefix + "frame_0015.png", headers=headers, body=b"other")[0] == 409
+        assert json_request(server, "PUT", prefix + "frame_0016.png", headers=headers, body=b"png")[0] == 413
+        response = conn.getresponse()
+        assert response.status == 400
+        response.read()
+    finally:
+        conn.close()
+    assert json_request(server, "PUT", prefix + "frame_0016.png", headers=headers, body=b"png")[0] == 204
+    assert not list(directory.glob(".*.part-*"))
+
+
+def test_authenticated_requests_refresh_seen_and_preserve_status_without_polling(server, project, monkeypatch):
+    from keepframe.ae import devices
+    headers, job = running_upload_job(server, "render_frames")
+    current = [time.time()]
+    monkeypatch.setattr(devices.time, "time", lambda: current[0])
+    routes = server.ae_routes
+    status = {"project_name": "Open.aep", "project_saved": True}
+    routes.devices.touch(job["device"], status)
+    prefix = f'/api/ae/jobs/{job["id"]}'
+    calls = [("POST", prefix + "/progress", {"stage": "render", "done": 1, "total": 2}, None, 204),
+             ("PUT", prefix + "/files/frame_0001.png", None, b"png", 204),
+             ("GET", prefix + "/assets/e1.png", None, None, 200),
+             ("GET", prefix + "/spec", None, None, 404),
+             ("POST", "/api/ae/info", {"info": INFO}, None, 204),
+             ("GET", "/api/ae/unknown", None, None, 404),
+             ("POST", prefix + "/result", {"ok": True}, None, 200)]
+    for method, path, data, body, expected in calls:
+        current[0] += 65
+        assert request(server, method, path, data, body=body, headers=headers)[0] == expected
+        row = routes.devices.list()[0]
+        assert row["last_seen"] == current[0]
+        assert {key: row[key] for key in status} == status
+        assert routes.jobs.sweep({row["id"]: row["last_seen"]}, now=current[0]) == []
+        assert routes.jobs.get(job["id"]).state == ("done" if path.endswith("/result") else "running")
+
+
+def test_upload_refreshes_seen_as_slow_body_arrives_for_over_sweep_threshold(server, project, tmp_path, monkeypatch):
+    from keepframe.ae import devices
+    headers, job = running_upload_job(server, "render_frames")
+    current = [time.time()]
+    monkeypatch.setattr(devices.time, "time", lambda: current[0])
+    routes = server.ae_routes
+    seen = queue.Queue()
+    original = routes.devices.seen
+
+    def record_seen(device_id, now=None):
+        original(device_id, now)
+        seen.put(current[0])
+
+    monkeypatch.setattr(routes.devices, "seen", record_seen)
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+    path = f'/api/ae/jobs/{job["id"]}/files/frame_0001.png'
+    conn = start_stalled_upload(server, headers, path, directory)
+    try:
+        assert seen.get(timeout=1) == current[0]  # Authentication.
+        assert seen.get(timeout=1) == current[0]  # The initial five bytes.
+        for _ in range(7):
+            current[0] += 10
+            conn.send(b"x")
+            assert seen.get(timeout=1) == current[0]
+            row = routes.devices.list()[0]
+            assert routes.jobs.sweep({row["id"]: row["last_seen"]}, now=current[0]) == []
+        assert routes.jobs.get(job["id"]).state == "running"
+        conn.send(b"z" * 88)
+        response = conn.getresponse()
+        assert response.status == 204
+        response.read()
+    finally:
+        conn.close()
+    assert (directory / "frame_0001.png").read_bytes() == b"short" + b"x" * 7 + b"z" * 88
+
+
+def test_sweep_prunes_progress_and_upload_bookkeeping(server, project, monkeypatch):
+    from keepframe.ae import devices
+    headers, job = running_upload_job(server, "render_frames")
+    routes = server.ae_routes
+    prefix = f'/api/ae/jobs/{job["id"]}'
+    assert json_request(server, "POST", prefix + "/progress", {"stage": "render", "done": 1, "total": 2},
+                        headers=headers)[0] == 204
+    assert json_request(server, "PUT", prefix + "/files/frame_0001.png", headers=headers, body=b"png")[0] == 204
+    assert job["id"] in routes._progress and job["id"] in routes._uploaded
+    current = routes.devices.list()[0]["last_seen"] + 60
+    monkeypatch.setattr(devices.time, "time", lambda: current)
+    waits = iter((False, True))
+    with monkeypatch.context() as patch:
+        patch.setattr(routes._stop, "wait", lambda seconds: next(waits))
+        routes._sweep()
+    assert routes.jobs.get(job["id"]).state == "failed"
+    assert job["id"] not in routes._progress and job["id"] not in routes._uploaded
+
+
+def test_invalid_result_prunes_uploads_and_prevents_inflight_upload_from_replacing(server, project, tmp_path):
+    headers, job = running_upload_job(server, "render_frames")
+    routes = server.ae_routes
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+    prefix = f'/api/ae/jobs/{job["id"]}/files/'
+    assert json_request(server, "PUT", prefix + "frame_0001.png", headers=headers, body=b"png")[0] == 204
+    conn = start_stalled_upload(server, headers, prefix + "frame_0002.png", directory)
+    try:
+        assert finish(server, headers, job, ok="yes")[0] == 400
+        assert job["id"] not in routes._uploaded and job["id"] not in routes._uploading
+        conn.send(b"x" * 95)
+        response = conn.getresponse()
+        assert response.status == 400
+        response.read()
+    finally:
+        conn.close()
+    assert not list(directory.glob(".*.part-*"))
+    assert not (directory / "frame_0002.png").exists()
+    assert job["id"] not in routes._uploaded and job["id"] not in routes._uploading
+
+
+def test_server_request_failure_is_logged_without_headers(server, monkeypatch, caplog):
+    _, headers = pair(server)
+
+    def fail(*args):
+        raise RuntimeError("simulated request error")
+
+    monkeypatch.setattr(server.ae_routes.devices, "update_info", fail)
+    assert json_request(server, "POST", "/api/ae/info", {"info": INFO}, headers=headers) == (
+        500, {"error": "After Effects request failed"})
+    assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)
+    assert headers["Authorization"] not in caplog.text
+    assert headers["Host"] not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["mkdir", "write"])
+def test_server_upload_failure_is_not_a_client_error(server, project, tmp_path, monkeypatch, caplog, operation):
+    from keepframe.ae import api
+    headers, job = running_upload_job(server, "render_frames")
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+    if operation == "mkdir":
+        original = api.Path.mkdir
+
+        def mkdir(path, *args, **kwargs):
+            if path == directory:
+                raise PermissionError(errno.EACCES, "simulated permission error")
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(api.Path, "mkdir", mkdir)
+        expected = 500
+    else:
+        original = api.os.fdopen
+
+        class FullDisk:
+            def __init__(self, fd):
+                self.stream = original(fd, "wb")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def write(self, chunk):
+                raise OSError(errno.ENOSPC, "simulated full disk")
+
+        monkeypatch.setattr(api.os, "fdopen", lambda fd, mode: FullDisk(fd) if mode == "wb" else original(fd, mode))
+        expected = 507
+    status, error = json_request(server, "PUT", f'/api/ae/jobs/{job["id"]}/files/frame_0001.png',
+                                 headers=headers, body=b"png")
+    assert status == expected and isinstance(error["error"], str)
+    assert not list(directory.glob(".*.part-*")) and not (directory / "frame_0001.png").exists()
+    assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)

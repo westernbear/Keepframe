@@ -183,6 +183,13 @@ class Devices:
             if device is not None:
                 device.last_seen, device.status = now, clean
 
+    def seen(self, device_id, now=None):
+        with self._lock:
+            now = self._purge(now)
+            _, device = self._find(device_id)
+            if device is not None:
+                device.last_seen = now
+
     def update_info(self, device_id, info):
         with self._lock:
             self._purge()
