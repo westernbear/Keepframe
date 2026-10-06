@@ -231,7 +231,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   }
 
   // Properties: data is JSON-safe; TextDocuments/eases cross the API as copies.
-  function property(matchName, name, value, valueType, saved) {
+  function property(matchName, name, value, valueType, saved, isHidden = () => false) {
     const data = saved ? copy(saved) : { matchName, name, value: copy(value), keys: [],
       expression: "", expressionEnabled: false, propertyValueType: valueType || (Array.isArray(value) ? value.length === 3 ? "ThreeD" : "TwoD" : "OneD") };
     const avVector = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale"].includes(matchName);
@@ -247,6 +247,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       });
     }
     const easeDimensions = () => /_SPATIAL$/.test(data.propertyValueType) || !Array.isArray(data.value) ? 1 : data.value.length;
+    const writable = () => {
+      if (isHidden()) throw Error('After Effects error: Can\'t "set value" on this property because the property or a parent property is hidden.');
+    };
     const api = {};
     const key = (i) => {
       if (!Number.isInteger(i) || i < 1 || i > data.keys.length) throw Error("fake AE: invalid key index");
@@ -296,11 +299,13 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     });
     setting(api, data, "expressionEnabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid expressionEnabled"); });
     api.setValue = (v) => {
+      writable();
       fault("write", matchName);
       if (data.keys.length) throw Error("fake AE: setValue on a keyframed property");
       data.value = encode(v); changed();
     };
     api.setValueAtTime = (t, v) => {
+      writable();
       fault("write", matchName);
       finite(t, "key time");
       const encoded = encode(v), existing = data.keys.find((k) => k.time === t);
@@ -314,7 +319,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     };
     api.keyTime = (i) => key(i).time;
     api.keyValue = (i) => { fault("read", matchName); return decode(key(i).value); };
-    api.removeKey = (i) => { const removed = key(i); data.value = copy(removed.value); data.keys.splice(i - 1, 1); changed(); };
+    api.removeKey = (i) => { writable(); const removed = key(i); data.value = copy(removed.value); data.keys.splice(i - 1, 1); changed(); };
     api.nearestKeyIndex = (t) => {
       finite(t, "key time");
       if (!data.keys.length) throw Error("fake AE: nearestKeyIndex on an unkeyed property");
@@ -328,6 +333,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       return decode(sample(t));
     };
     api.setInterpolationTypeAtKey = (i, incoming, outgoing = incoming) => {
+      writable();
       const k = key(i);
       for (const v of [incoming, outgoing]) if (!["LINEAR", "BEZIER", "HOLD"].includes(v)) throw Error("fake AE: invalid interpolation type");
       k.inInterpolation = incoming; k.outInterpolation = outgoing; changed();
@@ -336,6 +342,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     api.keyInInterpolationType = (i) => key(i).inInterpolation;
     api.keyOutInterpolationType = (i) => key(i).outInterpolation;
     api.setTemporalEaseAtKey = (i, incoming, outgoing = incoming) => {
+      writable();
       const k = key(i);
       const encodeEases = (eases) => {
         if (!Array.isArray(eases) || eases.length !== easeDimensions()) throw Error("fake AE: temporal ease dimensions must match property dimensions");
@@ -431,7 +438,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     ];
     const children = definitions.map(([match, name, value, valueType]) => {
       const old = saved?.properties.find((p) => p.matchName === match);
-      return property(match, name, value, valueType, old);
+      const threeDOnly = ["ADBE Position_2", "ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation"].includes(match);
+      return property(match, name, value, valueType, old, () => threeDOnly && !layerValues.threeDLayer);
     });
     const g = group("ADBE Transform Group", saved?.name || "Transform", children);
     const position = children[1], r = records.get(position);
@@ -439,9 +447,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     r.data.dimensionsSeparated ??= false;
     const sample = r.api.valueAtTime, setValue = r.api.setValue, setValueAtTime = r.api.setValueAtTime;
     const visible = () => children.filter((p, i) => (i < 5 || (i < 8 && layerValues.threeDLayer)
-      || (i >= 8 && r.data.dimensionsSeparated)));
+      || (i >= 8 && r.data.dimensionsSeparated && (i < 10 || layerValues.threeDLayer))));
     records.get(g).api.property = (query) => {
-      const list = visible();
+      const list = typeof query === "number" ? visible() : children.filter((p, i) => i < 8 || r.data.dimensionsSeparated);
       const result = typeof query === "number" ? list[query - 1] : list.find((p) => p.matchName === query || p.name === query);
       return result ?? unsupported("PropertyGroup", query);
     };

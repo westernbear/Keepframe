@@ -413,8 +413,8 @@ test("ease dimension checks, interpolation, and influence boundaries", () => {
   assert.throws(() => p.setValueAtTime(1, [100]), /dimensions/);
 });
 
-test("separated position exposes scalar X/Y/Z on 2D layers and survives toggling", () => {
-  const { transform } = fixture();
+test("separated position exposes readable scalar X/Y/Z on 2D layers and survives toggling", () => {
+  const { transform, layer } = fixture();
   const p = transform.property("ADBE Position");
   p.setValue([10, 20]);
   p.dimensionsSeparated = true;
@@ -427,7 +427,9 @@ test("separated position exposes scalar X/Y/Z on 2D layers and survives toggling
   x.setValueAtTime(0, 10);
   x.setValueAtTime(2, 30);
   y.setValue(40);
+  layer.threeDLayer = true;
   z.setValue(50);
+  layer.threeDLayer = false;
   assert.equal(x.valueAtTime(1, false), 20);
   assert.deepEqual(Array.from(p.valueAtTime(1, false)), [20, 40, 50]);
   p.dimensionsSeparated = false;
@@ -437,6 +439,46 @@ test("separated position exposes scalar X/Y/Z on 2D layers and survives toggling
   assert.equal(transform.property("ADBE Position_0").valueAtTime(1, false), 20);
   assert.throws(() => p.setValue([0, 0]), /separated position/);
 });
+
+for (const match of ["ADBE Position_2", "ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation"]) {
+  test(`hidden 2D property ${match} permits reads and rejects all five mutations until 3D`, () => {
+    const f = fixture(), c = f.context;
+    f.transform.property("ADBE Position").dimensionsSeparated = true;
+    const p = f.transform.property(match), value = match === "ADBE Orientation" ? [7, 8, 9] : 7;
+    const eases = Array(match === "ADBE Orientation" ? 3 : 1).fill(new c.KeyframeEase(2, 40));
+    const error = {message: 'After Effects error: Can\'t "set value" on this property because the property or a parent property is hidden.'};
+    assert.deepEqual(JSON.parse(JSON.stringify(p.value)), match === "ADBE Orientation" ? [0, 0, 0] : 0);
+    assert.throws(() => p.setValue(value), error);
+    f.layer.threeDLayer = true;
+    p.setValue(value); p.setValueAtTime(0, value);
+    p.setTemporalEaseAtKey(1, eases);
+    p.setInterpolationTypeAtKey(1, c.KeyframeInterpolationType.HOLD);
+    f.layer.threeDLayer = false;
+    const before = f.serialize(), writes = f.counters.writes;
+    assert.deepEqual(JSON.parse(JSON.stringify(p.valueAtTime(0, true))), value);
+    assert.deepEqual(JSON.parse(JSON.stringify(p.keyValue(1))), value);
+    assert.equal(p.numKeys, 1); assert.equal(p.keyTime(1), 0); assert.equal(p.nearestKeyIndex(0), 1);
+    assert.equal(p.keyInTemporalEase(1)[0].speed, 2);
+    assert.equal(p.keyOutTemporalEase(1)[0].influence, 40);
+    assert.equal(p.keyInInterpolationType(1), "HOLD"); assert.equal(p.keyOutInterpolationType(1), "HOLD");
+    assert.ok(!Array.from({length: f.transform.numProperties}, (_, i) => f.transform.property(i + 1).matchName).includes(match));
+    for (const operation of [() => p.setValue(value), () => p.setValueAtTime(1, value), () => p.removeKey(1),
+      () => p.setTemporalEaseAtKey(1, eases), () => p.setInterpolationTypeAtKey(1, c.KeyframeInterpolationType.LINEAR)]) {
+      assert.throws(operation, error);
+    }
+    assert.equal(f.counters.writes, writes);
+    assert.deepEqual(f.serialize(), before);
+    const restored = createAE({state: before}), layer = restored.context.app.project.items[1].layers[1];
+    const hidden = layer.property("ADBE Transform Group").property(match);
+    assert.deepEqual(JSON.parse(JSON.stringify(hidden.keyValue(1))), value);
+    assert.throws(() => hidden.removeKey(1), error);
+    layer.threeDLayer = true;
+    hidden.removeKey(1); hidden.setValue(value); hidden.setValueAtTime(1, value);
+    hidden.setTemporalEaseAtKey(1, Array(eases.length).fill(new restored.context.KeyframeEase(0, 33)));
+    hidden.setInterpolationTypeAtKey(1, restored.context.KeyframeInterpolationType.LINEAR);
+    assert.equal(hidden.numKeys, 1);
+  });
+}
 
 test("layers add on top; all moves and removal update indices", () => {
   const { comp, layer: a } = fixture();
@@ -802,7 +844,7 @@ test("temporal ease dimensions follow spatial, scale, and scalar value types", (
     }
     const position = transform.property("ADBE Position");
     position.dimensionsSeparated = true;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (threeD ? 3 : 2); i++) {
       const p = transform.property(`ADBE Position_${i}`);
       assert.equal(p.propertyValueType, c.PropertyValueType.OneD);
       p.setValueAtTime(0, p.value);
@@ -849,14 +891,14 @@ test("all AV transforms pad two-component writes and preserve z when toggling 3D
     const position = transform.property("ADBE Position");
     position.dimensionsSeparated = true;
     const z = transform.property("ADBE Position_2");
+    av.threeDLayer = true;
     z.setValueAtTime(0, 5); z.setValueAtTime(2, 15);
     for (const threeD of [false, true, false]) {
       av.threeDLayer = threeD;
       assert.deepEqual(Array.from(position.valueAtTime(1, true)), [20, 30, 10]);
       assert.equal(transform.property("ADBE Position_2").keyValue(2), 15);
       for (const match of ["ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation"]) {
-        if (threeD) assert.ok(transform.property(match));
-        else assert.throws(() => transform.property(match), /unsupported/);
+        assert.ok(transform.property(match));
       }
       matches.slice(0, 1).concat(matches.slice(2)).forEach((match) => {
         const p = transform.property(match), scale = match === "ADBE Scale";

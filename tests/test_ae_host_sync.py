@@ -182,6 +182,80 @@ def test_sync_twice_is_a_no_op(tmp_path, full_spec):
     assert read_state(path) == before
 
 
+def test_2d_sync_preserves_hidden_3d_properties_and_ignores_them_in_fingerprints(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    save_state(path, {"app": {"version": "26.5"}})
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    state = read_state(path)
+    actual = layers(state)
+    hidden = ("ADBE Position_2", "ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation")
+    before = {}
+    for eid in ("kf:background", "kf:image", "kf:text", "kf:null"):
+        item = actual[eid]
+        assert item["threeDLayer"] is False
+        for match in hidden:
+            p = prop(item, match)
+            assert p["value"] == ([0, 0, 0] if match == "ADBE Orientation" else 0)
+            assert p["keys"] == []
+            value = [7, 8, 9] if match == "ADBE Orientation" else 7
+            keys = copy.deepcopy(prop(actual["kf:model"], "ADBE Rotate X")["keys"])
+            for key in keys:
+                key["value"] = value
+                for side in ("inEases", "outEases"):
+                    key[side] *= 3 if match == "ADBE Orientation" else 1
+            p.update(value=value, keys=keys, expression="value", expressionEnabled=True)
+        before[eid] = [copy.deepcopy(prop(item, match)) for match in hidden]
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    assert response["value"]["unchanged"] == len(spec["layers"])
+    assert response["writes"] == 0
+    assert read_state(path) == state
+    for layer_spec in spec["layers"]:
+        if layer_spec["kind"] != "model":
+            layer_spec["props"]["rotation"][0][1] += 15
+    response = sync(path, spec, assets, force=True)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    assert set(response["value"]["updated"]) == set(before)
+    actual = layers(read_state(path))
+    for eid, properties in before.items():
+        assert [prop(actual[eid], match) for match in hidden] == properties
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+@pytest.mark.parametrize("match", ["ADBE Position_2", "ADBE Rotate X", "ADBE Rotate Y", "ADBE Orientation"])
+def test_model_sync_manages_3d_properties_and_force_clears_them(tmp_path, full_spec, match):
+    spec, assets = full_spec
+    spec["layers"] = [s for s in spec["layers"] if s["kind"] == "model"]
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    state = read_state(path)
+    model = layers(state)["kf:model"]
+    keys = copy.deepcopy(prop(model, "ADBE Rotate X")["keys"])
+    for key in keys:
+        key["value"] = [7, 8, 9] if match == "ADBE Orientation" else 7
+        for side in ("inEases", "outEases"):
+            key[side] *= 3 if match == "ADBE Orientation" else 1
+    prop(model, match).update(keys=keys, expression="value", expressionEnabled=True)
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:model"]}
+    assert response["writes"] == 0
+    response = sync(path, spec, assets, force=True)
+    assert response["value"]["ok"] and response["value"]["updated"] == ["kf:model"], response
+    model = layers(read_state(path))["kf:model"]
+    assert model["threeDLayer"] is True
+    for name, value in (("ADBE Position_2", 0), ("ADBE Rotate Y", -20), ("ADBE Orientation", [0, 0, 0])):
+        assert prop(model, name)["keys"] == []
+        assert prop(model, name)["value"] == value
+    assert [k["value"] for k in prop(model, "ADBE Rotate X")["keys"]] == [10, 90]
+    assert prop(model, match)["expressionEnabled"] is False
+    assert sync(path, spec, assets)["writes"] == 0
+
+
 @pytest.mark.parametrize("eid,expected,factor", [
     ("kf:image", [[50, 100, 100], [150, 200, 100]], 1),
     ("kf:model", [[3, 6, 3], [9, 15, 9]], 0.03),

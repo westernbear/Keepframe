@@ -211,10 +211,13 @@ if (typeof JSON !== "object" || JSON === null) {
         var t = transform(layer), result = [t.property("ADBE Anchor Point")], i, j, effect, child;
         var position = t.property("ADBE Position");
         if (position.dimensionsSeparated) {
-            result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"), t.property("ADBE Position_2"));
+            result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"));
+            if (layer.threeDLayer) { result.push(t.property("ADBE Position_2")); }
         } else { result.push(position); }
         result.push(t.property("ADBE Scale"), t.property("ADBE Rotate Z"), t.property("ADBE Opacity"));
-        if (layer.threeDLayer) { result.push(t.property("ADBE Rotate X"), t.property("ADBE Rotate Y")); }
+        if (layer.threeDLayer) {
+            result.push(t.property("ADBE Rotate X"), t.property("ADBE Rotate Y"), t.property("ADBE Orientation"));
+        }
         if (layer instanceof TextLayer) {
             result.push(layer.property("ADBE Text Properties").property("ADBE Text Document"));
         }
@@ -430,7 +433,10 @@ if (typeof JSON !== "object" || JSON === null) {
         if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
         // The leader can also carry an expression after separation.
         if (t.property("ADBE Position").expressionEnabled) { t.property("ADBE Position").expressionEnabled = false; }
-        staticValue(t.property("ADBE Position_2"), 0);
+        if (layer.threeDLayer) {
+            staticValue(t.property("ADBE Position_2"), 0);
+            staticValue(t.property("ADBE Orientation"), [0, 0, 0]);
+        }
         if (s.kind === "text") {
             doc = layer.property("ADBE Text Properties").property("ADBE Text Document").valueAtTime(0, true);
             doc.text = s.source.text;
@@ -443,7 +449,7 @@ if (typeof JSON !== "object" || JSON === null) {
             rect = layer.sourceRectAtTime(s["in"] / fps, false);
             anchor = [rect.left + s.source.anchor_fraction[0] * rect.width, rect.top + s.source.anchor_fraction[1] * rect.height];
         }
-        if (s.kind === "model") {
+        if (layer.threeDLayer) {
             rect = layer.sourceRectAtTime(0, false);
             requireValue(rect.width > 0 && rect.height > 0, "model has an empty source rectangle");
             factor = Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
