@@ -133,6 +133,7 @@ if (typeof JSON !== "object" || JSON === null) {
             requireValue(a && typeof a.name === "string" && /^[0-9a-f]{64}$/.test(a.sha256), "invalid asset");
             requireValue(own(assets, a.name) && typeof assets[a.name] === "string" && assets[a.name] !== "",
                 "asset " + a.name + " was not downloaded");
+            requireValue(new File(assets[a.name]).exists, "asset " + a.name + " file does not exist");
             names["$" + a.name] = true;
         }
         for (i = 0; i < spec.layers.length; i += 1) {
@@ -199,7 +200,7 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function managed(layer) {
-        var t = transform(layer), result = [t.property("ADBE Anchor Point")], i, j, effect;
+        var t = transform(layer), result = [t.property("ADBE Anchor Point")], i, j, effect, child;
         var position = t.property("ADBE Position");
         if (position.dimensionsSeparated) {
             result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"));
@@ -214,22 +215,49 @@ if (typeof JSON !== "object" || JSON === null) {
         for (i = 1; i <= effects.numProperties; i += 1) {
             effect = effects.property(i);
             if (owned(effect)) {
-                for (j = 1; j <= effect.numProperties; j += 1) { result.push(effect.property(j)); }
+                for (j = 1; j <= effect.numProperties; j += 1) {
+                    child = effect.property(j);
+                    if (child.propertyType === PropertyType.PROPERTY
+                        && child.propertyValueType !== PropertyValueType.NO_VALUE) { result.push(child); }
+                }
             }
         }
         return result;
     }
 
-    function propertyValue(p, value) {
-        if (p.propertyValueType === PropertyValueType.TEXT_DOCUMENT) {
-            return [value.text, value.font, value.fontSize, value.fillColor, value.applyFill, String(value.justification)];
+    function rounded(value) {
+        var result, i;
+        if (typeof value === "number") { return Math.round(value * 10000) / 10000; }
+        if (array(value)) {
+            result = [];
+            for (i = 0; i < value.length; i += 1) { result.push(rounded(value[i])); }
+            return result;
         }
         return value;
     }
 
+    function colorValue(value) {
+        var result = [], i;
+        for (i = 0; i < value.length; i += 1) { result.push(Math.round(value[i] * 255)); }
+        return result;
+    }
+
+    function sameColor(a, b) {
+        var i;
+        for (i = 0; i < a.length; i += 1) { if (Math.abs(a[i] - b[i]) > 0.5 / 255) { return false; } }
+        return true;
+    }
+
+    function propertyValue(p, value) {
+        if (p.propertyValueType === PropertyValueType.TEXT_DOCUMENT) {
+            return [value.text, value.font, rounded(value.fontSize), colorValue(value.fillColor), value.applyFill, String(value.justification)];
+        }
+        return p.propertyValueType === PropertyValueType.COLOR ? colorValue(value) : rounded(value);
+    }
+
     function easeValues(eases) {
         var values = [], i;
-        for (i = 0; i < eases.length; i += 1) { values.push([eases[i].influence, eases[i].speed]); }
+        for (i = 0; i < eases.length; i += 1) { values.push(rounded([eases[i].influence, eases[i].speed])); }
         return values;
     }
 
@@ -237,15 +265,18 @@ if (typeof JSON !== "object" || JSON === null) {
         var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
         var position = transform(layer).property("ADBE Position");
         // FPS is managed context: changing it changes how every frame-based property must be written.
-        data.push(fps, layer.name, layer.label, layer.inPoint, layer.outPoint, layer.threeDLayer, position.dimensionsSeparated,
+        data.push(rounded(fps), layer.name, layer.label, Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
             position.expressionEnabled, position.expression);
+        if (kind(layer) === "solid") {
+            data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
+        } else if (layer.source) { data.push(layer.source.id); }
         // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
         if (kind(layer) === "model") { data.push(layer.source.comment); }
         for (i = 0; i < props.length; i += 1) {
             p = props[i];
             keys = [];
             for (k = 1; k <= p.numKeys; k += 1) {
-                keys.push([p.keyTime(k), propertyValue(p, p.keyValue(k)), String(p.keyInInterpolationType(k)),
+                keys.push([Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k)), String(p.keyInInterpolationType(k)),
                     String(p.keyOutInterpolationType(k)), easeValues(p.keyInTemporalEase(k)), easeValues(p.keyOutTemporalEase(k))]);
             }
             data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true)),
@@ -254,10 +285,14 @@ if (typeof JSON !== "object" || JSON === null) {
         effects = layer.property("ADBE Effect Parade");
         for (i = 1; i <= effects.numProperties; i += 1) {
             effect = effects.property(i);
-            if (owned(effect)) { effectNames.push([effect.matchName, effect.name]); }
+            if (owned(effect)) { effectNames.push([effect.matchName, effect.name, effect.enabled]); }
         }
         data.push(effectNames);
         return hash(JSON.stringify(data));
+    }
+
+    function readFingerprint(layer, fps) {
+        try { return fingerprint(layer, fps); } catch (e) { return null; }
     }
 
     function keyCount(layer) {
@@ -295,24 +330,37 @@ if (typeof JSON !== "object" || JSON === null) {
             if (keys.length === 1) { p.setValue(value); }
             else {
                 p.setValueAtTime(k[0] / fps, value);
+                p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor, modelScale), eases(k[2], dimensions, factor, modelScale));
                 p.setInterpolationTypeAtKey(i + 1, k[3] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR,
                     k[2] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR);
-                p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor, modelScale), eases(k[2], dimensions, factor, modelScale));
             }
         }
     }
 
     function addEffect(layer, name, match) {
-        var effect = layer.property("ADBE Effect Parade").addProperty(match);
+        var effects = layer.property("ADBE Effect Parade"), effect, i, child;
+        for (i = 1; i <= effects.numProperties; i += 1) {
+            effect = effects.property(i);
+            if (effect.name === name && effect.matchName === match) {
+                for (i = 1; i <= effect.numProperties; i += 1) {
+                    child = effect.property(i);
+                    if (child.propertyType === PropertyType.PROPERTY
+                        && child.propertyValueType !== PropertyValueType.NO_VALUE) { clear(child); }
+                }
+                return effect;
+            }
+        }
+        effect = effects.addProperty(match);
         effect.name = name;
         return effect;
     }
 
     function writeEffects(layer, s, fps, anchor) {
         var effects = layer.property("ADBE Effect Parade"), i, effect;
-        // Rebuilding our effects also resets keys/expressions on their default parameters.
         for (i = effects.numProperties; i >= 1; i -= 1) {
-            if (owned(effects.property(i))) { effects.property(i).remove(); }
+            effect = effects.property(i);
+            if (owned(effect) && ((effect.name === "Keepframe Reveal" && s.effects.reveal === null)
+                || (effect.name === "Keepframe Skew" && s.effects.skew === null))) { effect.remove(); }
         }
         if (s.effects.reveal !== null) {
             effect = addEffect(layer, "Keepframe Reveal", "ADBE Linear Wipe");
@@ -337,7 +385,8 @@ if (typeof JSON !== "object" || JSON === null) {
         // The leader can also carry an expression after separation.
         if (t.property("ADBE Position").expressionEnabled) { t.property("ADBE Position").expressionEnabled = false; }
         if (s.kind === "text") {
-            doc = new TextDocument(s.source.text);
+            doc = layer.property("ADBE Text Properties").property("ADBE Text Document").valueAtTime(0, true);
+            doc.text = s.source.text;
             doc.font = s.source.font.postscript !== null ? s.source.font.postscript : s.source.font.family;
             doc.fontSize = s.source.size_px;
             doc.fillColor = rgb(s.source.color);
@@ -366,7 +415,7 @@ if (typeof JSON !== "object" || JSON === null) {
         layer.outPoint = (s.out + 1) / fps;
         layer.label = s.label === null ? 0 : s.label;
         layer.name = s.name;
-        layer.comment = "keepframe:" + s.id + ";spec=" + hash(JSON.stringify(s)) + ";fp=" + fingerprint(layer, fps);
+        layer.comment = "keepframe:" + s.id + ";spec=" + hash(JSON.stringify(s)) + ";fp=" + (readFingerprint(layer, fps) || "00000000");
     }
 
     function folder(name, parent) {
@@ -374,7 +423,7 @@ if (typeof JSON !== "object" || JSON === null) {
         for (i = 1; i <= items.length; i += 1) {
             item = items[i];
             if (item instanceof FolderItem && item.name === name
-                && item.parentFolder === (parent || app.project.rootFolder)) { return item; }
+                && item.parentFolder.id === (parent || app.project.rootFolder).id) { return item; }
         }
         item = items.addFolder(name);
         if (parent) { item.parentFolder = parent; }
@@ -415,28 +464,28 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function createLayer(comp, s, assets) {
         var layer;
-        if (s.kind === "text") { return comp.layers.addText(s.source.text); }
-        if (s.kind === "solid" || s.kind === "null") {
+        if (s.kind === "text") { layer = comp.layers.addText(s.source.text); }
+        else if (s.kind === "solid" || s.kind === "null") {
             layer = s.kind === "solid" ? comp.layers.addSolid(rgb(s.source.color), s.name, comp.width, comp.height, 1, comp.duration)
                 : comp.layers.addNull(comp.duration);
-            layer.source.parentFolder = comp.parentFolder;
-            return layer;
-        }
-        return comp.layers.add(assets["$" + s.source.asset]);
+        } else { layer = comp.layers.add(assets["$" + s.source.asset]); }
+        // Claim immediately: errors after creation must leave a recoverable tagged layer.
+        layer.comment = "keepframe:" + s.id;
+        if (s.kind === "solid" || s.kind === "null") { layer.source.parentFolder = comp.parentFolder; }
+        return layer;
     }
 
     function updateSource(layer, comp, s, assets) {
         var temporary;
-        if ((s.kind === "image" || s.kind === "model") && layer.source !== assets["$" + s.source.asset]) {
+        if ((s.kind === "image" || s.kind === "model") && layer.source.id !== assets["$" + s.source.asset].id) {
             layer.replaceSource(assets["$" + s.source.asset], false);
             return true;
         }
         if (s.kind === "solid" && (layer.source.width !== comp.width || layer.source.height !== comp.height
-            || JSON.stringify(layer.source.mainSource.color) !== JSON.stringify(rgb(s.source.color)))) {
+            || !sameColor(layer.source.mainSource.color, rgb(s.source.color)))) {
             // A new solid source avoids changing another layer that shares the old, untagged footage.
             temporary = createLayer(comp, s, assets);
-            layer.replaceSource(temporary.source, false);
-            temporary.remove();
+            try { layer.replaceSource(temporary.source, false); } finally { temporary.remove(); }
             return true;
         }
         return false;
@@ -444,7 +493,9 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function tag(layer) {
         var match = /^keepframe:([\s\S]*);spec=([0-9a-f]{8});fp=([0-9a-f]{8})$/.exec(layer.comment);
-        return match ? {id: match[1], spec: match[2], fp: match[3], layer: layer} : null;
+        if (match) { return {id: match[1], spec: match[2], fp: match[3], layer: layer}; }
+        match = /^keepframe:([\s\S]+)$/.exec(layer.comment);
+        return match ? {id: match[1], spec: null, fp: null, layer: layer} : null;
     }
 
     function tagged(comp) {
@@ -486,22 +537,88 @@ if (typeof JSON !== "object" || JSON === null) {
         return false;
     }
 
+    function hasUserDependents(comp, target) {
+        var i, layer;
+        for (i = 1; i <= comp.layers.length; i += 1) {
+            layer = comp.layers[i];
+            if (!tag(layer) && ((layer.parent && layer.parent.index === target.index)
+                || (layer.trackMatteLayer && layer.trackMatteLayer.index === target.index))) { return true; }
+        }
+        return false;
+    }
+
+    function modelRenderer(comp) {
+        var available, i, version;
+        if (!comp) {
+            // AE exposes renderers only on comps. Advanced 3D ships from AE 24.1;
+            // an empty project is version-checked before creating its first comp.
+            for (i = 1; i <= app.project.items.length; i += 1) {
+                if (app.project.items[i] instanceof CompItem) { comp = app.project.items[i]; break; }
+            }
+            if (!comp) {
+                version = parseFloat(app.version);
+                if (version >= 24.1) { return "ADBE Calder"; }
+                throw new Error("this After Effects has no Advanced 3D renderer (needed for 3D models)");
+            }
+        }
+        available = comp.renderers;
+        for (i = 0; i < available.length; i += 1) {
+            if (available[i] === "ADBE Calder") { return available[i]; }
+        }
+        throw new Error("this After Effects has no Advanced 3D renderer (needed for 3D models)");
+    }
+
     function updateComp(comp, s, parent) {
         var names = ["name", "width", "height", "pixelAspect", "frameRate", "duration"], i;
         var values = [s.name, s.width, s.height, 1, s.fps, s.frames / s.fps];
         for (i = 0; i < names.length; i += 1) {
-            if (comp[names[i]] !== values[i]) { comp[names[i]] = values[i]; }
+            if (names[i] === "frameRate") {
+                if (Math.abs(comp.frameRate - s.fps) > 0.0001) { comp.frameRate = s.fps; }
+            } else if (names[i] === "duration") {
+                if (Math.round(comp.duration * s.fps) !== s.frames) { comp.duration = values[i]; }
+            } else if (comp[names[i]] !== values[i]) { comp[names[i]] = values[i]; }
         }
-        if (comp.parentFolder !== parent) { comp.parentFolder = parent; }
+        if (comp.parentFolder.id !== parent.id) { comp.parentFolder = parent; }
+    }
+
+    function placeNew(layer, s, ordered, existing) {
+        var i, j, neighbour;
+        for (i = 0; i < ordered.length; i += 1) { if (ordered[i].id === s.id) { break; } }
+        for (j = i - 1; j >= 0; j -= 1) {
+            neighbour = existing["$" + ordered[j].id];
+            if (neighbour) {
+                if (layer.index !== neighbour.layer.index + 1) { layer.moveAfter(neighbour.layer); }
+                return;
+            }
+        }
+        for (j = i + 1; j < ordered.length; j += 1) {
+            neighbour = existing["$" + ordered[j].id];
+            if (neighbour) {
+                if (layer.index + 1 !== neighbour.layer.index) { layer.moveBefore(neighbour.layer); }
+                return;
+            }
+        }
     }
 
     function orderLayers(comp, desired) {
-        var i, current;
-        desired.sort(function (a, b) { return b.order - a.order; });
-        // ponytail: O(n squared) stack scans; keep a working stack if large scenes make this slow.
-        for (i = 0; i < desired.length; i += 1) {
-            current = tagged(comp);
-            if (current[i].layer !== desired[i].layer) { desired[i].layer.moveBefore(current[i].layer); }
+        var current = tagged(comp), rank = {}, length = [], previous = [], keep = {}, i, j, best = -1;
+        desired.sort(function (a, b) { return b.order - a.order || a.sequence - b.sequence; });
+        for (i = 0; i < desired.length; i += 1) { rank["$" + desired[i].id] = i; }
+        // ponytail: O(n squared) LIS; use binary-search tails if large scenes make ordering slow.
+        for (i = 0; i < current.length; i += 1) {
+            length[i] = 1; previous[i] = -1;
+            for (j = 0; j < i; j += 1) {
+                if (rank["$" + current[j].id] < rank["$" + current[i].id] && length[j] + 1 > length[i]) {
+                    length[i] = length[j] + 1; previous[i] = j;
+                }
+            }
+            if (best === -1 || length[i] > length[best]) { best = i; }
+        }
+        while (best !== -1) { keep["$" + current[best].id] = true; best = previous[best]; }
+        for (i = desired.length - 1; i >= 0; i -= 1) {
+            if (own(keep, "$" + desired[i].id)) { continue; }
+            if (i + 1 < desired.length) { desired[i].layer.moveBefore(desired[i + 1].layer); }
+            else { desired[i].layer.moveAfter(desired[i - 1].layer); }
         }
     }
 
@@ -518,7 +635,7 @@ if (typeof JSON !== "object" || JSON === null) {
                     fonts.push({family: font.familyName, style: font.styleName, postscript: font.postScriptName});
                 }
             }
-            return JSON.stringify({ok: true, ae_version: app.version, project_name: app.project.file ? app.project.file.name : null,
+            return JSON.stringify({ok: true, ae_version: app.version, project_name: app.project.file ? decodeURI(app.project.file.name) : null,
                 project_saved: app.project.file !== null, fonts: fonts});
         } catch (e) { return errorResult(e); }
     };
@@ -526,7 +643,7 @@ if (typeof JSON !== "object" || JSON === null) {
     global.kfSync = function (specJson, assetsJson, force) {
         try {
             var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
-            var existing = {}, wanted = {}, records, s, newHash, edits = [], desired = [], sourceChanged;
+            var existing = {}, wanted = {}, records, s, newHash, edits = [], desired = [], renderer = null, ordered;
             validate(spec, paths, force);
             var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
                 keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version};
@@ -534,13 +651,26 @@ if (typeof JSON !== "object" || JSON === null) {
             records = tagged(comp);
             for (i = 0; i < spec.layers.length; i += 1) { wanted["$" + spec.layers[i].id] = spec.layers[i]; }
             for (i = 0; i < records.length; i += 1) {
-                record = records[i]; s = wanted["$" + record.id];
-                requireValue(!own(existing, "$" + record.id), "duplicate tagged layer " + record.id);
+                record = records[i];
+                requireValue(!own(existing, "$" + record.id), "two layers are tagged " + record.id
+                    + "; delete the duplicate (Edit > Undo or remove the copy) and send again");
                 existing["$" + record.id] = record;
-                record.current = fingerprint(record.layer, comp.frameRate);
+            }
+            for (i = 0; i < spec.layers.length; i += 1) {
+                if (spec.layers[i].kind === "model") { renderer = modelRenderer(comp); break; }
+            }
+            for (i = 0; i < records.length; i += 1) {
+                record = records[i]; s = wanted["$" + record.id];
+                record.current = readFingerprint(record.layer, Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001
+                    ? spec.comp.fps : rounded(comp.frameRate));
                 record.kind = kind(record.layer);
-                if (force !== "true" && (record.current !== record.fp || hasExpression(record.layer)
-                    || ((!s || s.kind !== record.kind) && hasExtras(record.layer)))) { edits.push(record.id); }
+                if (force !== "true") {
+                    try {
+                        if (record.current === null || record.current !== record.fp || hasExpression(record.layer)
+                            || ((!s || s.kind !== record.kind) && (hasExtras(record.layer)
+                                || hasUserDependents(comp, record.layer)))) { edits.push(record.id); }
+                    } catch (readError) { edits.push(record.id); }
+                }
             }
             if (edits.length) { return JSON.stringify({ok: true, applied: false, hand_edited: edits}); }
             app.beginUndoGroup("Keepframe sync");
@@ -553,6 +683,10 @@ if (typeof JSON !== "object" || JSON === null) {
                     comp.parentFolder = parent;
                 }
                 updateComp(comp, spec.comp, parent);
+                if (renderer) {
+                    renderer = modelRenderer(comp);
+                    if (comp.renderer !== renderer) { comp.renderer = renderer; }
+                }
                 assets = syncAssets(spec, paths, parent);
                 for (i = 0; i < records.length; i += 1) {
                     record = records[i]; s = wanted["$" + record.id];
@@ -561,13 +695,21 @@ if (typeof JSON !== "object" || JSON === null) {
                         delete existing["$" + record.id];
                     }
                 }
+                ordered = spec.layers.slice(0);
+                ordered.sort(function (a, b) { return b.order - a.order; });
+                // Settle existing order first, so each insertion needs only its neighbour move.
+                for (i = 0; i < spec.layers.length; i += 1) {
+                    s = spec.layers[i]; record = existing["$" + s.id];
+                    if (record) { desired.push({id: s.id, layer: record.layer, order: s.order, sequence: i}); }
+                }
+                orderLayers(comp, desired);
+                desired = [];
                 for (i = 0; i < spec.layers.length; i += 1) {
                     s = spec.layers[i]; record = existing["$" + s.id];
                     newHash = hash(JSON.stringify(s));
-                    if (s.kind === "model" && comp.renderer !== "ADBE Advanced 3d") { comp.renderer = "ADBE Advanced 3d"; }
-                    if (record) { record.current = fingerprint(record.layer, comp.frameRate); }
-                    sourceChanged = record && record.kind === s.kind ? updateSource(record.layer, comp, s, assets) : false;
-                    if (record && record.spec === newHash && record.fp === record.current && !sourceChanged) {
+                    if (record) { record.current = readFingerprint(record.layer, spec.comp.fps); }
+                    if (record && record.spec === newHash && record.current !== null && record.fp === record.current
+                        && (s.kind !== "solid" || (record.layer.source.width === comp.width && record.layer.source.height === comp.height))) {
                         layer = record.layer; result.unchanged += 1;
                     } else {
                         if (record && record.kind !== s.kind) {
@@ -576,13 +718,18 @@ if (typeof JSON !== "object" || JSON === null) {
                             if (layer.index + 1 !== record.layer.index) { layer.moveBefore(record.layer); }
                             record.layer.remove(); result.deleted.push(s.id);
                             record = null;
-                        } else { layer = record ? record.layer : createLayer(comp, s, assets); }
+                        } else {
+                            layer = record ? record.layer : createLayer(comp, s, assets);
+                            if (record) { updateSource(layer, comp, s, assets); }
+                            else { placeNew(layer, s, ordered, existing); }
+                        }
                         writeLayer(layer, s, spec.comp.fps);
                         (record ? result.updated : result.created).push(s.id);
                     }
                     result.keys[s.id] = keyCount(layer);
                     result.warnings = result.warnings.concat(s.warnings);
-                    desired.push({layer: layer, order: s.order});
+                    existing["$" + s.id] = {layer: layer};
+                    desired.push({id: s.id, layer: layer, order: s.order, sequence: i});
                 }
                 orderLayers(comp, desired);
             } finally { app.endUndoGroup(); }

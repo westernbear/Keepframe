@@ -17,12 +17,152 @@ function fixture(options) {
   return { ...ae, comp, layer, transform, opacity: transform.property("ADBE Opacity") };
 }
 
+test("review: AE stores settings and colors in single precision", () => {
+  const f = fixture();
+  f.comp.frameRate = 29.97; f.comp.duration = 60 / 29.97;
+  assert.equal(f.comp.frameRate, Math.fround(29.97));
+  assert.equal(f.comp.duration, Math.fround(60 / 29.97));
+  const solid = f.comp.layers.addSolid([17 / 255, 34 / 255, 51 / 255], "S", 10, 10, 1, 1);
+  assert.deepEqual(Array.from(solid.source.mainSource.color), [17 / 255, 34 / 255, 51 / 255].map(Math.fround));
+  const p = f.layer.property("Text").property("Source Text"), doc = p.value;
+  doc.fillColor = [17 / 255, 34 / 255, 51 / 255]; p.setValue(doc);
+  assert.equal(p.value.fillColor[0], Math.fround(17 / 255));
+});
+
+test("review: renderer availability is read-only and assignments must be listed", () => {
+  const f = fixture();
+  assert.equal(f.comp.renderer, "ADBE Advanced 3d");
+  assert.deepEqual(Array.from(f.comp.renderers), ["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"]);
+  f.comp.renderer = "ADBE Calder";
+  assert.throws(() => { f.comp.renderer = "ADBE Classic 3d"; }, /invalid renderer/);
+  assert.throws(() => { f.comp.renderers = []; }, /read-only/);
+});
+
+test("review: effects have compositing groups and enabled state", () => {
+  const f = fixture(), effect = f.layer.Effects.addProperty("ADBE Linear Wipe");
+  const group = effect.property("ADBE Effect Built In Params");
+  assert.equal(group.propertyType, f.context.PropertyType.NAMED_GROUP);
+  assert.equal(effect.property(1).propertyType, f.context.PropertyType.PROPERTY);
+  assert.throws(() => group.numKeys, /unsupported/);
+  assert.throws(() => group.valueAtTime, /unsupported/);
+  assert.equal(group.property("ADBE Effect Mask Opacity").value, 100);
+  assert.equal(effect.enabled, true); effect.enabled = false;
+  assert.equal(createAE({state: f.serialize()}).context.app.project.items[1].layers[1].Effects.property(1).enabled, false);
+});
+
+test("review: parenting and matte references detach when a layer is removed", () => {
+  const f = fixture(), target = f.comp.layers.addNull();
+  f.layer.parent = target; f.layer.setTrackMatte(target, f.context.TrackMatteType.ALPHA);
+  assert.equal(f.layer.parent.index, target.index);
+  assert.equal(f.layer.trackMatteLayer.index, target.index);
+  assert.throws(() => { target.parent = f.layer; }, /cyclic/);
+  assert.throws(() => { f.layer.trackMatteLayer = target; }, /read-only/);
+  const restored = createAE({state: f.serialize()}).context.app.project.items[1];
+  assert.equal(restored.layers[2].parent.index, 1);
+  assert.equal(restored.layers[2].trackMatteLayer.index, 1);
+  target.remove();
+  assert.equal(f.layer.parent, null); assert.equal(f.layer.trackMatteLayer, null);
+});
+
+test("review: item and layer wrappers are fresh but preserve stable identity", () => {
+  const f = fixture(), project = f.context.app.project;
+  assert.notEqual(project.items[1], project.items[1]);
+  assert.equal(project.items[1].id, f.comp.id);
+  assert.notEqual(project.rootFolder, project.rootFolder);
+  assert.equal(project.rootFolder.id, f.comp.parentFolder.id);
+  assert.notEqual(f.comp.layers[1], f.comp.layers[1]);
+  assert.equal(f.comp.layers[1].index, f.layer.index);
+  const folder = project.items.addFolder("F"); f.comp.parentFolder = folder;
+  assert.equal(folder.items[1].id, f.comp.id);
+  const state = f.serialize();
+  assert.equal(createAE({state}).context.app.project.items[1].id, f.comp.id);
+  assert.throws(() => f.layer.moveBefore(f.comp.layers[1]), /itself/);
+});
+
+test("review: ease can switch linear interpolation; host must set interpolation last", () => {
+  const f = fixture(); f.opacity.setValueAtTime(0, 10);
+  f.opacity.setTemporalEaseAtKey(1, [new f.context.KeyframeEase(0, 33)]);
+  assert.equal(f.opacity.keyInInterpolationType(1), "BEZIER");
+  const hostSource = fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8");
+  vm.runInContext(hostSource, f.context);
+  const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C", width: 640,
+    height: 480, fps: 30, frames: 60}, assets: [], warnings: [], layers: [{id: "x", kind: "null", name: "x",
+    label: null, order: 0, in: 0, out: 59, source: null, anchor: [0, 0], warnings: [],
+    props: {position_x: [[0, 0, null, null], [30, 100, null, null]], position_y: [[0, 0, null, null]],
+      scale: [[0, [100, 100], null, null]], rotation: [[0, 0, null, null]], opacity: [[0, 100, null, null]]},
+    effects: {reveal: null, skew: null}}]};
+  assert.equal(JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false")).ok, true);
+  const temporal = f.calls.filter((call) => ["ease", "interpolation"].includes(call.operation));
+  assert.deepEqual(temporal.slice(-4).map((call) => call.operation), ["ease", "interpolation", "ease", "interpolation"]);
+});
+
+test("review: File names are URI encoded and display names are decoded", () => {
+  const f = createAE(), file = new f.context.File("/tmp/한글 project.aep");
+  assert.equal(file.name, encodeURI("한글 project.aep"));
+  assert.equal(file.displayName, "한글 project.aep");
+});
+
+test("review: TextDocument exposes detached unmanaged styling", () => {
+  const f = fixture(), p = f.layer.property("Text").property("Source Text"), doc = p.value;
+  doc.tracking = 42; doc.applyStroke = true; doc.strokeColor = [1, 0, 0]; p.setValue(doc);
+  const again = p.value;
+  assert.equal(again.tracking, 42); assert.equal(again.applyStroke, true);
+  again.tracking = 0; assert.equal(p.value.tracking, 42);
+});
+
+test("review: fault hooks throw before mutation and on property reads", () => {
+  const f = fixture({state: {testHooks: {writeProperty: "ADBE Opacity", readProperty: "ADBE Scale"}}});
+  const before = f.counters.writes;
+  assert.throws(() => f.opacity.setValue(5), /injected write/);
+  assert.equal(f.counters.writes, before);
+  assert.throws(() => f.transform.property("ADBE Scale").valueAtTime(0, true), /injected read/);
+});
+
+test("review: hydration of an empty saved project never reuses the root item id", () => {
+  const seed = createAE().serialize(), f = createAE({state: seed});
+  const folder = f.context.app.project.items.addFolder("Keepframe");
+  assert.notEqual(folder.id, f.context.app.project.rootFolder.id);
+  assert.deepEqual(createAE({state: f.serialize()}).serialize(), f.serialize());
+});
+
+test("review: host insertion and reordering move only new layers or layers outside the existing LIS", () => {
+  const hostSource = fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8");
+  const layerSpec = (id, order) => ({id, order, kind: "null", name: id, label: null, in: 0, out: 59,
+    source: null, anchor: [0, 0], warnings: [], effects: {reveal: null, skew: null},
+    props: {position_x: [[0, 0, null, null]], position_y: [[0, 0, null, null]],
+      scale: [[0, [100, 100], null, null]], rotation: [[0, 0, null, null]], opacity: [[0, 100, null, null]]}});
+  for (const change of ["ordered", "insert", "decrease", "swap", "combined"]) {
+    const f = createAE(); vm.runInContext(hostSource, f.context);
+    const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C",
+      width: 640, height: 480, fps: 30, frames: 60}, assets: [], warnings: [],
+      layers: [layerSpec("background", 0), layerSpec("a", 1), layerSpec("b", 2), layerSpec("d", 3)]};
+    const sync = () => JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false"));
+    assert.equal(sync().ok, true);
+    const comp = f.context.app.project.items[3], user = comp.layers.addText("USER-TOP");
+    user.name = "USER-TOP"; f.calls.length = 0;
+    if (change === "insert") spec.layers.push(layerSpec("c", 1.5));
+    if (change === "decrease") spec.layers[3].order = -1;
+    if (change === "swap") { spec.layers[1].order = 2; spec.layers[2].order = 1; }
+    if (change === "combined") {
+      // Existing [d,b,a,bg] => [a,d,b,bg], LIS d/b/bg must all stay.
+      spec.layers[1].order = 4; spec.layers.push(layerSpec("c", 3.5));
+    }
+    assert.equal(sync().ok, true);
+    const moves = f.calls.filter((call) => /^move/.test(call.operation));
+    const expected = {ordered: [], insert: ["c"], decrease: ["d"], swap: ["a"], combined: ["a", "c"]}[change];
+    assert.deepEqual(moves.map((call) => call.comment.split(";")[0].replace(/^keepframe:/, "")), expected, change);
+    for (const move of moves) assert.notEqual(move.name, move.target);
+    f.calls.length = 0; assert.equal(sync().ok, true);
+    assert.deepEqual(f.calls, [], change);
+  }
+});
+
 test("sync kind detection and renderer are strict, serialized AE attributes", () => {
   const f = fixture();
-  assert.equal(f.comp.renderer, "ADBE Classic 3d");
-  assert.equal(f.comp.parentFolder, f.context.app.project.rootFolder);
+  assert.equal(f.comp.renderer, "ADBE Advanced 3d");
+  assert.equal(f.comp.parentFolder.id, f.context.app.project.rootFolder.id);
   assert.throws(() => { f.context.app.project.rootFolder = null; }, /read-only/);
-  f.comp.renderer = "ADBE Advanced 3d";
+  f.comp.renderer = "ADBE Calder";
   assert.throws(() => { f.comp.renderer = "bogus"; }, /invalid renderer/);
   const nul = f.comp.layers.addNull();
   const solid = f.comp.layers.addSolid([1, 0, 0], "Solid", 10, 10, 1, 1);
@@ -38,7 +178,7 @@ test("sync kind detection and renderer are strict, serialized AE attributes", ()
   assert.throws(() => { footage.file = null; }, /read-only/);
   const state = f.serialize();
   const restored = createAE({ state });
-  assert.equal(restored.context.app.project.items[1].renderer, "ADBE Advanced 3d");
+  assert.equal(restored.context.app.project.items[1].renderer, "ADBE Calder");
   assert.equal(restored.context.app.project.items[1].layers[2].nullLayer, true);
 });
 
@@ -50,7 +190,7 @@ test("replaceSource updates footage and rectangles without touching layer proper
   mask.name = "User mask";
   solid.property("ADBE Transform Group").property("ADBE Opacity").setValue(55);
   solid.replaceSource(other.source, false);
-  assert.equal(solid.source, other.source);
+  assert.equal(solid.source.id, other.source.id);
   assert.equal(solid.sourceRectAtTime(0, false).width, 40);
   assert.equal(solid.Masks.property(1).name, "User mask");
   assert.equal(solid.property("ADBE Transform Group").property("ADBE Opacity").value, 55);
@@ -203,7 +343,7 @@ test("layers add on top; all moves and removal update indices", () => {
   const order = (expected) => {
     assert.equal(comp.layers.length, expected.length);
     expected.forEach((layer, i) => {
-      assert.equal(comp.layers[i + 1], layer);
+      assert.equal(comp.layers[i + 1].index, layer.index);
       assert.equal(layer.index, i + 1);
     });
   };
@@ -225,7 +365,7 @@ test("project folders, footage replacement, source rectangles, 3D and text", () 
   const image = c.app.project.importFile(new c.ImportOptions(new c.File("image.png")));
   image.parentFolder = folder;
   assert.equal(folder.items.length, 1);
-  assert.equal(folder.items[1], image);
+  assert.equal(folder.items[1].id, image.id);
   assert.ok(image instanceof c.FootageItem);
   assert.ok(folder instanceof c.FolderItem);
   assert.ok(f.comp instanceof c.CompItem);
@@ -268,7 +408,7 @@ test("effect match names, enumeration, names and removal; masks", () => {
   assert.equal(layer.Masks, layer.property("ADBE Mask Parade"));
   const wipe = layer.Effects.addProperty("ADBE Linear Wipe");
   assert.equal(wipe.matchName, "ADBE Linear Wipe");
-  assert.equal(wipe.numProperties, 3);
+  assert.equal(wipe.numProperties, 4);
   for (let i = 1; i <= 3; i++) {
     assert.equal(wipe.property(i).matchName, `ADBE Linear Wipe-000${i}`);
   }
@@ -371,8 +511,8 @@ test("serialize -> JSON -> createAE preserves the whole model and source referen
   assert.deepEqual(restored.serialize(), state);
   assert.deepEqual(restored.counters, { undoGroups: 0, writes: 0 });
   const comp = restored.context.app.project.items[1];
-  assert.equal(comp.layers[1].source, restored.context.app.project.items[6]);
-  assert.equal(comp.parentFolder.items[1], comp);
+  assert.equal(comp.layers[1].source.id, restored.context.app.project.items[6].id);
+  assert.equal(comp.parentFolder.items[1].id, comp.id);
   assert.equal(restored.context.app.project.file.name, "example.aep");
   const restoredText = comp.layers[5];
   const effect = restoredText.Effects.property("ADBE Geometry2");
@@ -403,13 +543,13 @@ test("FolderItem ItemCollection creates children with one counted write", () => 
   let before = counters.writes;
   const child = folder.items.addFolder("Child");
   assert.equal(counters.writes, before + 1);
-  assert.equal(child.parentFolder, folder);
+  assert.equal(child.parentFolder.id, folder.id);
   before = counters.writes;
   const comp = child.items.addComp("Comp", 10, 20, 1, 5, 30);
   assert.equal(counters.writes, before + 1);
-  assert.equal(comp.parentFolder, child);
-  assert.equal(folder.items[1], child);
-  assert.equal(child.items[1], comp);
+  assert.equal(comp.parentFolder.id, child.id);
+  assert.equal(folder.items[1].id, child.id);
+  assert.equal(child.items[1].id, comp.id);
   assert.equal(c.app.project.items.length, 3);
   assert.deepEqual(createAE({ state: serialize() }).serialize(), serialize());
 });

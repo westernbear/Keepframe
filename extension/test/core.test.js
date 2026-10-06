@@ -292,7 +292,7 @@ test('unsupported job kinds post readable failures', async t => {
 async function until(check) {
     for (let i = 0; i < 1000; i++) {
         if (check()) return;
-        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setTimeout(resolve, 1));
     }
     assert.fail('condition never became true');
 }

@@ -107,7 +107,7 @@ def test_create_from_empty(tmp_path, full_spec):
     assert composition["comment"] == "keepframe:demo/s1"
     assert (composition["width"], composition["height"], composition["pixelAspect"],
             composition["frameRate"], composition["duration"]) == (320, 180, 1, 30, 2)
-    assert composition["renderer"] == "ADBE Advanced 3d"
+    assert composition["renderer"] == "ADBE Calder"
     for asset in spec["assets"]:
         footage = next(item for item in items if item["comment"] == "keepframe-asset:" + asset["sha256"])
         assert footage["name"] == asset["name"]
@@ -145,7 +145,8 @@ def test_create_from_empty(tmp_path, full_spec):
     text = actual["kf:text"]
     document = prop(text, "ADBE Text Document")["value"]
     assert document == {"text": "Hello 한", "font": "Example", "fontSize": 20,
-                        "fillColor": [1, 136 / 255, 0], "applyFill": True, "justification": "LEFT_JUSTIFY"}
+                        "fillColor": [1, struct.unpack("f", struct.pack("f", 136 / 255))[0], 0],
+                        "applyFill": True, "justification": "LEFT_JUSTIFY"}
     assert prop(text, "ADBE Anchor Point")["value"] == [42, -1]
     model = actual["kf:model"]
     assert model["threeDLayer"] is True
@@ -159,7 +160,7 @@ def test_create_from_empty(tmp_path, full_spec):
     assert prop(model, "ADBE Rotate Y")["value"] == -20
     assert actual["kf:null"]["nullLayer"] is True
     solid = items[actual["kf:background"]["source"] - 1]
-    assert solid["mainSource"]["color"] == [170 / 255, 187 / 255, 204 / 255]
+    assert solid["mainSource"]["color"] == [struct.unpack("f", struct.pack("f", v / 255))[0] for v in (170, 187, 204)]
     assert (solid["width"], solid["height"]) == (320, 180)
     assert result["keys"]["kf:image"] == 10
     assert result["keys"]["kf:model"] == 4
@@ -522,11 +523,13 @@ def test_untagged_project_items_are_not_claimed_by_name(tmp_path, full_spec):
     # Put an unowned collision in the correct project folder and a comp with the same name at root.
     owned = next(i for i in state["project"]["items"] if i["name"] == "image.png")
     user = copy.deepcopy(owned)
+    user["id"] = max(i["id"] for i in state["project"]["items"]) + 1
     user["comment"] = "User footage"
     user["mainSource"]["file"] = str(tmp_path / "user.png")
     owned["name"] = "old-image.png"
     state["project"]["items"].append(user)
     user_comp = copy.deepcopy(comp(state))
+    user_comp["id"] = user["id"] + 1
     user_comp.update(comment="User comp", parentFolder=None, layers=[])
     state["project"]["items"].append(user_comp)
     save_state(path, state)
@@ -557,7 +560,7 @@ def test_solid_source_color_updates_without_destroying_layer_extras(tmp_path):
     assert prop(item, "ADBE Mask Parade")["properties"] == [mask]
     assert state["project"]["items"][old_source - 1] == old_footage
     source = state["project"]["items"][item["source"] - 1]
-    assert source["mainSource"]["color"] == [17 / 255, 34 / 255, 51 / 255]
+    assert source["mainSource"]["color"] == [struct.unpack("f", struct.pack("f", v / 255))[0] for v in (17, 34, 51)]
     assert source["parentFolder"] == comp(state)["parentFolder"]
     assert sync(path, spec, assets)["writes"] == 0
 
@@ -631,3 +634,293 @@ def test_spec_tag_hashes_the_parsed_layer_and_warnings_are_combined(tmp_path):
         for unit in struct.unpack("<" + "H" * (len(units) // 2), units):
             expected = ((expected ^ unit) * 16777619) & 0xFFFFFFFF
         assert f";spec={expected:08x};" in layers(read_state(path))[layer_spec["id"]]["comment"]
+
+
+def stack_ids(state):
+    return [item["comment"].split(";")[0].removeprefix("keepframe:")
+            if item["comment"].startswith("keepframe:") else item["name"]
+            for item in comp(state)["layers"]]
+
+
+def user_copy(item, name="USER-TOP"):
+    item = copy.deepcopy(item)
+    item.update(comment="User layer", name=name)
+    return item
+
+
+@pytest.mark.parametrize("change", ["insert", "decrease", "swap", "ordered"])
+def test_review_order_preserves_users_and_moves_only_outside_lis(tmp_path, change):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"),
+                       element("b", kind="text", text="B"))
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    comp(state)["layers"].insert(0, user_copy(layers(state)["kf:a"]))
+    comp(state)["layers"].insert(2, user_copy(layers(state)["kf:a"], "USER-MIDDLE"))
+    save_state(path, state)
+    if change == "insert":
+        extra, _ = spec_for(tmp_path, element("c", kind="text", text="C"))
+        extra["layers"][1]["order"] = 1.5
+        spec["layers"].append(extra["layers"][1])
+        expected = ["USER-TOP", "kf:b", "kf:c", "USER-MIDDLE", "kf:a", "kf:background"]
+    elif change == "decrease":
+        spec["layers"][2]["order"] = -1
+        expected = ["USER-TOP", "USER-MIDDLE", "kf:a", "kf:background", "kf:b"]
+    elif change == "swap":
+        spec["layers"][1]["order"], spec["layers"][2]["order"] = 2, 1
+        # Either length-2 LIS is legal; this implementation retains b/background.
+        expected = ["USER-TOP", "kf:a", "kf:b", "USER-MIDDLE", "kf:background"]
+    else:
+        expected = stack_ids(state)
+    response = sync(path, spec)
+    assert response["value"]["ok"], response
+    assert stack_ids(read_state(path)) == expected
+    if change == "ordered":
+        assert response["writes"] == 0
+    # Repeating the new order must never move again.
+    assert sync(path, spec)["writes"] == 0
+
+
+@pytest.mark.parametrize("fps", [29.97, 23.976])
+def test_review_fractional_fps_and_float32_colors_are_clean(tmp_path, full_spec, fps):
+    spec, assets = full_spec
+    spec["comp"]["fps"] = fps
+    path = tmp_path / "ae.json"
+    assert sync(path, spec, assets)["value"]["ok"]
+    initial = read_state(path)
+    assert comp(initial)["frameRate"] == struct.unpack("f", struct.pack("f", fps))[0]
+    for force in (False, True, False):
+        response = sync(path, spec, assets, force=force)
+        assert response["value"]["applied"], response
+        assert response["writes"] == 0
+    # Force a rewrite, then read back using the same spec FPS.
+    state = read_state(path)
+    prop(layers(state)["kf:image"], "ADBE Anchor Point")["value"] = [99, 99]
+    save_state(path, state)
+    assert sync(path, spec, assets, force=True)["value"]["updated"] == ["kf:image"]
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+@pytest.mark.parametrize("edit", ["footage", "solid_color", "solid_size"])
+def test_review_changed_source_is_a_hand_edit(tmp_path, full_spec, edit):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    state = read_state(path)
+    eid = "kf:image" if edit == "footage" else "kf:background"
+    item = layers(state)[eid]
+    if edit == "footage":
+        other = copy.deepcopy(state["project"]["items"][item["source"] - 1])
+        other.pop("id", None)
+        other.update(name="USER FOOTAGE", comment="User footage")
+        state["project"]["items"].append(other)
+        item["source"] = len(state["project"]["items"])
+    elif edit == "solid_color":
+        state["project"]["items"][item["source"] - 1]["mainSource"]["color"] = [0.1, 0.1, 0.1]
+    else:
+        state["project"]["items"][item["source"] - 1]["width"] = 100
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
+    assert response["writes"] == response["undo_groups"] == 0
+    assert sync(path, spec, assets, force=True)["value"]["applied"]
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_review_sub_tolerance_ae_reads_do_not_cause_edits_or_new_solids(tmp_path):
+    spec, _ = spec_for(tmp_path, element(kind="text", text="T", color="#112233"))
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    state = read_state(path)
+    prop(layers(state)["kf:e1"], "ADBE Opacity")["value"] += 0.00001
+    solid = state["project"]["items"][layers(state)["kf:background"]["source"] - 1]
+    solid["mainSource"]["color"][0] += 0.1 / 255
+    comp(state)["duration"] += 0.01 / spec["comp"]["fps"]
+    save_state(path, state)
+    response = sync(path, spec)
+    assert response["value"]["applied"], response
+    assert response["writes"] == 0
+    assert len(read_state(path)["project"]["items"]) == len(state["project"]["items"])
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_review_model_renderer_unavailable_refuses_before_changes(tmp_path, full_spec, existing):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    if existing:
+        assert sync(path, spec, assets)["value"]["ok"]
+        state = read_state(path)
+        comp(state)["renderers"] = ["ADBE Advanced 3d", "ADBE Ernst"]
+        comp(state)["renderer"] = "ADBE Advanced 3d"
+    else:
+        state = {"app": {"version": "24.0"}}
+    save_state(path, state)
+    response = sync(path, spec, assets, force=True)
+    assert response["value"]["ok"] is False
+    assert response["value"]["error"] == "this After Effects has no Advanced 3D renderer (needed for 3D models)"
+    assert response["writes"] == response["undo_groups"] == 0
+
+
+def test_review_effect_compositing_groups_are_not_managed_properties(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"], response
+    item = layers(read_state(path))["kf:image"]
+    assert prop(item, "ADBE Effect Built In Params") is not None
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+@pytest.mark.parametrize("relation", ["parent", "trackMatteLayer"])
+@pytest.mark.parametrize("action", ["delete", "recreate"])
+def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relation, action):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    state = read_state(path)
+    user = user_copy(layers(state)["kf:a"])
+    comp(state)["layers"].append(user)
+    user[relation] = 1  # a is top, background below.
+    save_state(path, state)
+    if action == "delete":
+        spec["layers"].pop(1)
+    else:
+        replacement, _ = spec_for(tmp_path, element("a", kind="group"))
+        spec["layers"][1] = replacement["layers"][1]
+    response = sync(path, spec)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["writes"] == response["undo_groups"] == 0
+    assert sync(path, spec, force=True)["value"]["applied"]
+
+
+def test_review_partial_failure_tags_new_layer_and_retry_has_no_duplicate(tmp_path):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    path = tmp_path / "ae.json"
+    # Fail after layer creation, before final spec/fingerprint stamping.
+    save_state(path, {"testHooks": {"writeProperty": "ADBE Anchor Point"}})
+    response = sync(path, spec)
+    assert response["value"]["ok"] is False
+    state = read_state(path)
+    assert comp(state)["layers"]
+    assert all(item["comment"].startswith("keepframe:") for item in comp(state)["layers"])
+    state.pop("testHooks")
+    save_state(path, state)
+    response = sync(path, spec, force=True)
+    assert response["value"]["ok"], response
+    assert len(comp(read_state(path))["layers"]) == len(spec["layers"])
+    assert sync(path, spec)["writes"] == 0
+
+
+def test_review_missing_asset_file_refuses_before_writes(tmp_path, full_spec):
+    spec, assets = full_spec
+    Path(assets["model.glb"]).unlink()
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] is False
+    assert "model.glb" in response["value"]["error"]
+    assert response["writes"] == response["undo_groups"] == 0
+    assert read_state(path)["project"]["items"] == []
+
+
+def test_review_owned_effect_updates_preserve_user_order_and_enabled_state(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    assert sync(path, spec, assets)["value"]["ok"]
+    state = read_state(path)
+    owned = effects(layers(state)["kf:image"])
+    user = copy.deepcopy(owned[0]); user["name"] = "User effect"
+    owned.insert(1, user)
+    save_state(path, state)
+    spec["layers"][1]["effects"]["skew"]["axis"] = 90
+    response = sync(path, spec, assets)
+    assert response["value"]["updated"] == ["kf:image"]
+    assert [e["name"] for e in effects(layers(read_state(path))["kf:image"])] == [
+        "Keepframe Reveal", "User effect", "Keepframe Skew"]
+    state = read_state(path)
+    effects(layers(state)["kf:image"])[0]["enabled"] = False
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+    assert response["writes"] == 0
+    spec["layers"][1]["props"]["rotation"] = [[0, 15, None, None]]
+    assert sync(path, spec, assets, force=True)["value"]["updated"] == ["kf:image"]
+    assert effects(layers(read_state(path))["kf:image"])[0]["enabled"] is False
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_review_text_update_preserves_unmanaged_styling(tmp_path):
+    spec, _ = spec_for(tmp_path, element(kind="text", text="T"))
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    state = read_state(path)
+    prop(layers(state)["kf:e1"], "ADBE Text Document")["value"].update(
+        tracking=37, applyStroke=True, strokeColor=[1, 0, 0])
+    save_state(path, state)
+    spec["layers"][1]["source"]["text"] = "Updated"
+    assert sync(path, spec)["value"]["updated"] == ["kf:e1"]
+    doc = prop(layers(read_state(path))["kf:e1"], "ADBE Text Document")["value"]
+    assert (doc["tracking"], doc["applyStroke"], doc["strokeColor"]) == (37, True, [1, 0, 0])
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_review_duplicate_tag_refuses_even_with_force(tmp_path, force):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    state = read_state(path)
+    comp(state)["layers"].insert(0, copy.deepcopy(layers(state)["kf:a"]))
+    save_state(path, state)
+    response = sync(path, spec, force=force)
+    assert response["value"]["ok"] is False
+    assert response["value"]["error"] == "two layers are tagged kf:a; delete the duplicate (Edit > Undo or remove the copy) and send again"
+    assert response["writes"] == response["undo_groups"] == 0
+
+
+def test_review_fingerprint_read_failure_is_hand_edit_and_force_does_not_throw(tmp_path):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    state = read_state(path)
+    state["testHooks"] = {"readProperty": "ADBE Text Document"}
+    save_state(path, state)
+    response = sync(path, spec)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["writes"] == response["undo_groups"] == 0
+    # Transform reads can fail persistently without preventing a forced write.
+    state["testHooks"] = {"readProperty": "ADBE Scale"}
+    save_state(path, state)
+    response = sync(path, spec, force=True)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+
+
+def test_review_info_decodes_project_display_name(tmp_path):
+    path = tmp_path / "ae.json"
+    save_state(path, {"project": {"file": str(tmp_path / "한글 project.aep")}})
+    assert run_jsx(path, HOST, "kfInfo")["value"]["project_name"] == "한글 project.aep"
+
+
+def test_review_fresh_wrappers_do_not_create_folders_replace_sources_or_self_move(tmp_path):
+    png(tmp_path / "image.png")
+    spec, assets = spec_for(tmp_path, element("image", texture="image.png"))
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"], response
+    before = read_state(path)
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"], response
+    assert response["writes"] == 0
+    assert len([i for i in read_state(path)["project"]["items"] if i["name"] == "Keepframe"]) == 1
+    assert read_state(path) == before
+
+
+def test_review_comp_resize_updates_the_solid_source_once(tmp_path):
+    spec, _ = spec_for(tmp_path)
+    path = tmp_path / "ae.json"
+    sync(path, spec)
+    spec["comp"].update(width=640, height=360)
+    response = sync(path, spec)
+    assert response["value"]["updated"] == ["kf:background"]
+    state = read_state(path)
+    source = state["project"]["items"][layers(state)["kf:background"]["source"] - 1]
+    assert (source["width"], source["height"]) == (640, 360)
+    assert sync(path, spec)["writes"] == 0

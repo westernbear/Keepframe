@@ -1,6 +1,6 @@
 # Fake After Effects
 
-`createAE({state, documents})` returns `{context, serialize, counters}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
+`createAE({state, documents})` returns `{context, serialize, counters, calls}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
 Unknown host members and unknown property/effect match names throw `fake AE: unsupported <Type>.<name>`; host internals are private.
 Arrays, plain objects, and errors returned to JSX belong to its VM realm; host objects and methods cross through strict proxies. Font records, source rectangles, TextDocuments, and KeyframeEases are strict host objects.
 This models the Task 7 sync surface; the runner checks the listed ES3 syntax gaps, and broader engine differences remain outside its scope.
@@ -26,6 +26,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `app.version`: read-only string, default `24.6.0x45`, initialized from `state.app.version`.
 - `app.project`: the Project host object.
 - `app.project.rootFolder`: read-only root FolderItem, also the parent of top-level items.
+- Item/folder/layer accesses return fresh wrappers; item/folder `.id` is read-only and persistent, and layer `.index` is live. Mutations resolve wrappers to the same underlying object.
 - `app.beginUndoGroup(name)` / `app.endUndoGroup()`: begin increments `counters.undoGroups`; neither increments project writes.
 - `app.fonts.allFonts`: native arrays of arrays of strict Font records from `state.app.fonts`.
 - `Font.familyName` / `styleName` / `postScriptName`: read-only strings, default empty when unspecified.
@@ -42,8 +43,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `SolidSource.color`: read-only RGB array for generated solid/null footage.
 - `FootageItem.replace(file)`: replaces the source File and updates the internal model flag.
 - `CompItem.name` / `comment` / `parentFolder`: settable item metadata.
-- `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1.
-- `CompItem.renderer`: settable renderer match name; models `ADBE Classic 3d` (default) and `ADBE Advanced 3d`, rejects other renderers.
+- `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1; frameRate, duration and colours store `Math.fround` values.
+- `CompItem.renderer` / `renderers`: renderer defaults to Classic 3D's `ADBE Advanced 3d`; the read-only available list defaults to `["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"]`; assignments must be listed. Comp state can seed a shorter available list.
 - `CompItem.layers`: LayerCollection with `.length` and 1-based `[i]`; index 1 is the top of the stack.
 - `comp.layers.add(item)`: adds AVLayer sourced by a FootageItem or CompItem, at the top.
 - `comp.layers.addText(text)`: adds TextLayer with null source, at the top.
@@ -54,6 +55,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `layer.index`: read-only live stack index, updated after every move/removal.
 - `layer.source`: read-only source item or null for text.
 - `layer.nullLayer`: read-only boolean; true for layers created by `addNull`, preserved in state.
+- `layer.parent`: settable layer/null, requires the same comp and rejects cycles; deletion detaches children, with references serialized as layer indices.
+- `layer.trackMatteLayer` / `setTrackMatte(layer,TrackMatteType.ALPHA)`: AE 24's read-only matte reference and minimal assignment API; requires a different layer in the same comp, deletion detaches it, serialized as a layer index.
 - `AVLayer.replaceSource(item,false)`: replaces footage/comp source, preserving transforms, effects, masks and stack position; text and expression-fixing mode are unmodeled and throw.
 - `layer.remove()`: removes the layer; removing an already removed layer throws.
 - `layer.moveBefore(layer)` / `moveAfter(layer)` / `moveToBeginning()` / `moveToEnd()`: move within the same comp and update all indices.
@@ -62,6 +65,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `layer.Effects` / `layer.Masks`: aliases for `ADBE Effect Parade` / `ADBE Mask Parade` groups.
 - `PropertyGroup.property(nameOrMatchName)` / `numProperties`: child lookup and count, including 1-based numeric property lookup.
 - `PropertyGroup.name` / `matchName`: settable display name and read-only match name.
+- Effects have a settable boolean `enabled` (default true), and an `ADBE Effect Built In Params` Compositing Options group containing `ADBE Effect Mask Opacity`; groups have no key/value APIs.
+- `PropertyType`: `PROPERTY`, `INDEXED_GROUP`, `NAMED_GROUP`; leaf properties and groups expose read-only `propertyType`, and `PropertyValueType.NO_VALUE` is available for leaf filtering.
 - `Effects.addProperty("ADBE Linear Wipe")`: effect with `ADBE Linear Wipe-0001` Transition Completion (0), `-0002` Wipe Angle (90), `-0003` Feather (0).
 - `Effects.addProperty("ADBE Geometry2")`: effect with `ADBE Geometry2-0001` Anchor Point ([0,0]), `-0002` Position ([0,0]), `-0003` Scale Height (100), `-0004` Scale Width (100), `-0005` Skew (0), `-0006` Skew Axis (0), `-0007` Rotation (0), `-0008` Opacity (100), `-0011` Uniform Scale (1).
 - `Masks.addProperty("ADBE Mask Atom")`: creates an empty mask group with a settable display name; mask attributes are unsupported.
@@ -77,28 +82,30 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `Property.numKeys` / `keyTime(i)` / `keyValue(i)` / `removeKey(i)` / `nearestKeyIndex(t)`: 1-based key operations; invalid indices and nearest on an unkeyed property throw.
 - `Property.valueAtTime(t,preExpression)`: linearly interpolates scalars/vectors, honors outgoing HOLD, holds beyond endpoints, and holds TextDocuments between keys; BEZIER metadata is preserved but sampled linearly.
 - `Property.setInterpolationTypeAtKey(i,inType,outType)` / `keyInInterpolationType(i)` / `keyOutInterpolationType(i)`: store/read interpolation; omitted outType defaults to inType.
-- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; spatial TwoD_SPATIAL/ThreeD_SPATIAL properties take one ease per side, non-spatial vectors take one per dimension, and scalars take one; omitted outEases defaults to inEases.
+- `Property.setTemporalEaseAtKey(i,inEases,outEases)` / `keyInTemporalEase(i)` / `keyOutTemporalEase(i)`: store/read detached ease copies; spatial TwoD_SPATIAL/ThreeD_SPATIAL properties take one ease per side, non-spatial vectors take one per dimension, and scalars take one; omitted outEases defaults to inEases; setting ease switches LINEAR sides to BEZIER, so interpolation must be assigned afterward.
 - `Property.expression` / `expressionEnabled`: settable and serialized; assigning nonempty expression enables it, empty disables it; evaluation is unsupported, while `valueAtTime(t,true)` reads underlying animation.
 - `Property.canSetExpression` / `propertyValueType` / `matchName` / `name`: read-only property metadata.
 - `PropertyValueType`: symbolic `NO_VALUE`, `OneD`, `TwoD`, `TwoD_SPATIAL`, `ThreeD`, `ThreeD_SPATIAL`, `COLOR`, `TEXT_DOCUMENT` constants.
 - `KeyframeEase(speed,influence)`: detached value with settable finite speed/influence; influence must be 0.1–100 inclusive.
 - `KeyframeInterpolationType`: symbolic `LINEAR`, `BEZIER`, `HOLD` constants.
 - `TextDocument(text)`: detached value with settable text, font (default ArialMT), fontSize (36), fillColor ([1,1,1]), applyFill (true), justification (LEFT_JUSTIFY).
+- `TextDocument.tracking` / `applyStroke` / `strokeColor`: detached unmanaged styling preserved through property assignment; fill colour stores float32 channels.
 - `ParagraphJustification`: symbolic `LEFT_JUSTIFY`, `CENTER_JUSTIFY`, `RIGHT_JUSTIFY` constants.
 - `$.getenv(name)` / `$.global` / `$.line`: environment from `state.app.env` (missing → null), the VM global object, and fixed line 0.
-- `File(path)` / `Folder(path)`: callable with or without `new`; read-only absolute `fsName`, `name`, dynamic `exists`, and path string conversion.
+- `File(path)` / `Folder(path)`: callable with or without `new`; read-only absolute `fsName`, `name`, dynamic `exists`, and path string conversion; File `name` is URI encoded and `displayName` is decoded.
 - `File.encoding`: settable label, default BINARY; the port reads/writes UTF-8 text regardless of this label.
 - `File.open("r"|"w")` / `read()` / `write(text)` / `close()`: buffered text access; failed read open returns false; close flushes write mode.
 - `File.remove()` / `rename(name)`: filesystem operations returning success booleans; rename refuses to overwrite and updates name/fsName.
 - `Folder.create()` / `getFiles()`: recursive directory creation and unfiltered File/Folder listing.
 - `Folder.myDocuments` / `Folder.userData`: documents argument and LOCALAPPDATA (falling back to documents).
 - `counters.undoGroups` / `counters.writes`: begin calls and project mutations; same-value assignments count, failed mutations/read operations/hydration/serialization/detached value edits/file I/O do not.
+- `createAE().calls`: test-only traces for neighbour moves, source replacements and ease/interpolation call order; not exposed to JSX. Optional `state.testHooks.readProperty` / `writeProperty` inject persistent errors for a match name on property value reads/writes (writes throw before mutation); also not AE APIs or JSX members.
 
 ## State
 
 `serialize()` returns plain `{app:{version,fonts,env}, project:{file,rootFolder,items}}`; counters are reset on each `createAE`.
 `project.items` is project order; item `parentFolder` and layer `source` are 1-based item references, or null for root/no source.
-Items contain type/name/comment and type-specific settings; CompItem layers are stored top-to-bottom; each layer contains all property groups, effects and masks.
+Items contain persistent id/type/name/comment and type-specific settings; CompItem layers are stored top-to-bottom; each layer contains all property groups, effects and masks.
 Property records contain value, sorted keys with time/value/inEases/outEases/inInterpolation/outInterpolation, expression metadata, matchName/name/propertyValueType, and position separation state.
 TextDocuments and KeyframeEases serialize to plain field objects; fonts/env can also be supplied as top-level seed fields.
 RenderQueue, ShapeLayer, scheduling, project saving, other effects/mask attributes, media decoding, and expression evaluation fail when requested or remain outside this modeled surface.

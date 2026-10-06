@@ -25,9 +25,17 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   vm.runInContext(removed.flatMap(([object, names]) => names.split(" ").map((name) => `delete ${object}.${name};`)).join("\n"), context);
   const contextGlobal = vm.runInContext("this", context);
   const functions = new WeakMap();
+  const canonical = (value) => records.get(value)?.canonical || value;
   const unsupported = (type, name) => { throw Error(`fake AE: unsupported ${type}.${String(name)}`); };
   function scriptValue(value) {
-    if (value === null || (typeof value !== "object" && typeof value !== "function") || records.has(value) || value === contextGlobal) return value;
+    if (records.has(value)) {
+      const r = records.get(value);
+      if (["CompItem", "FootageItem", "FolderItem", "AVLayer", "TextLayer"].includes(r.type) && typeof r.target !== "function") {
+        return host(r.type, r.target, { ...r, canonical: canonical(value) });
+      }
+      return value;
+    }
+    if (value === null || (typeof value !== "object" && typeof value !== "function") || value === contextGlobal) return value;
     if (typeof value === "function") return functions.get(value) || host("Function", value);
     const result = Array.isArray(value) ? new realm.Array(value.length) : new realm.Object();
     for (const name of Object.keys(value)) Object.defineProperty(result, name, {
@@ -94,13 +102,18 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     }
   }
   const counters = { undoGroups: 0, writes: 0 };
+  const calls = [];
+  const testHooks = copy(state.testHooks || {});
+  const fault = (operation, matchName) => {
+    if (testHooks[`${operation}Property`] === matchName) throw Error(`fake AE: injected ${operation} ${matchName}`);
+  };
   const changed = () => { counters.writes++; };
   const env = copy(state.app?.env ?? state.env ?? {});
   const fonts = copy(state.app?.fonts ?? state.fonts ?? []);
-  function setting(target, values, name, validate = () => {}, count = true) {
+  function setting(target, values, name, validate = () => {}, count = true, store = (v) => v) {
     field(target, name, () => Array.isArray(values[name]) ? copy(values[name]) : values[name], (value) => {
       validate(value);
-      values[name] = Array.isArray(value) ? copy(value) : value;
+      values[name] = store(Array.isArray(value) ? copy(value) : value);
       if (count) changed();
     });
   }
@@ -109,6 +122,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   const ParagraphJustification = enumObject("ParagraphJustification", ["LEFT_JUSTIFY", "CENTER_JUSTIFY", "RIGHT_JUSTIFY"]);
   const PropertyValueType = enumObject("PropertyValueType", ["NO_VALUE", "OneD", "TwoD", "TwoD_SPATIAL",
     "ThreeD", "ThreeD_SPATIAL", "COLOR", "TEXT_DOCUMENT"]);
+  const PropertyType = enumObject("PropertyType", ["PROPERTY", "INDEXED_GROUP", "NAMED_GROUP"]);
+  const TrackMatteType = enumObject("TrackMatteType", ["ALPHA"]);
 
   // File/Folder: ported from 2c1c8d1:tests/ae_panel_host.js, with strict surfaces.
   function File(p) {
@@ -116,7 +131,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     let mode = null, buffer = "", encoding = "BINARY";
     const api = Object.create(File.prototype);
     field(api, "fsName", () => filename);
-    field(api, "name", () => path.basename(filename));
+    field(api, "name", () => encodeURI(path.basename(filename)));
+    field(api, "displayName", () => path.basename(filename));
     field(api, "encoding", () => encoding, (value) => { encoding = String(value); });
     field(api, "exists", () => { try { return fs.statSync(filename).isFile(); } catch { return false; } });
     api.toString = () => filename;
@@ -180,7 +196,17 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const api = Object.create(TextDocument.prototype);
     for (const name of ["text", "font", "applyFill"]) setting(api, values, name, () => {}, false);
     setting(api, values, "fontSize", (v) => { finite(v, "fontSize"); if (v <= 0) throw Error("fake AE: invalid fontSize"); }, false);
-    setting(api, values, "fillColor", (v) => vector(v, 3, "fillColor", true), false);
+    values.fillColor = values.fillColor.map(Math.fround);
+    setting(api, values, "fillColor", (v) => vector(v, 3, "fillColor", true), false, (v) => v.map(Math.fround));
+    // These are real TextDocument fields; preserve them when only managed styling changes.
+    for (const [name, initial] of Object.entries({ tracking: 0, applyStroke: false, strokeColor: [0, 0, 0] })) {
+      field(api, name, () => copy(values[name] ?? initial), (v) => {
+        if (name === "tracking") finite(v, name);
+        if (name === "applyStroke" && typeof v !== "boolean") throw Error("fake AE: invalid applyStroke");
+        if (name === "strokeColor") vector(v, 3, name, true);
+        values[name] = copy(v);
+      });
+    }
     setting(api, values, "justification", (v) => {
       if (!["LEFT_JUSTIFY", "CENTER_JUSTIFY", "RIGHT_JUSTIFY"].includes(v)) throw Error("fake AE: invalid justification");
     }, false);
@@ -244,6 +270,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     field(api, "matchName", () => data.matchName);
     field(api, "name", () => data.name);
     field(api, "propertyValueType", () => data.propertyValueType);
+    field(api, "propertyType", () => "PROPERTY");
     field(api, "canSetExpression", () => true);
     field(api, "expression", () => data.expression, (v) => {
       if (typeof v !== "string") throw Error("fake AE: expression must be a string");
@@ -251,10 +278,12 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     });
     setting(api, data, "expressionEnabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid expressionEnabled"); });
     api.setValue = (v) => {
+      fault("write", matchName);
       if (data.keys.length) throw Error("fake AE: setValue on a keyframed property");
       data.value = encode(v); changed();
     };
     api.setValueAtTime = (t, v) => {
+      fault("write", matchName);
       finite(t, "key time");
       const encoded = encode(v), existing = data.keys.find((k) => k.time === t);
       if (existing) existing.value = encoded;
@@ -266,7 +295,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       changed();
     };
     api.keyTime = (i) => key(i).time;
-    api.keyValue = (i) => decode(key(i).value);
+    api.keyValue = (i) => { fault("read", matchName); return decode(key(i).value); };
     api.removeKey = (i) => { const removed = key(i); data.value = copy(removed.value); data.keys.splice(i - 1, 1); changed(); };
     api.nearestKeyIndex = (t) => {
       finite(t, "key time");
@@ -276,6 +305,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       return nearest + 1;
     };
     api.valueAtTime = (t, preExpression) => {
+      fault("read", matchName);
       if (data.expressionEnabled && !preExpression) return unsupported("Property", "expression evaluation");
       return decode(sample(t));
     };
@@ -283,6 +313,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       const k = key(i);
       for (const v of [incoming, outgoing]) if (!["LINEAR", "BEZIER", "HOLD"].includes(v)) throw Error("fake AE: invalid interpolation type");
       k.inInterpolation = incoming; k.outInterpolation = outgoing; changed();
+      calls.push({operation: "interpolation", matchName, key: i});
     };
     api.keyInInterpolationType = (i) => key(i).inInterpolation;
     api.keyOutInterpolationType = (i) => key(i).outInterpolation;
@@ -297,6 +328,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       };
       const inEases = encodeEases(incoming), outEases = encodeEases(outgoing);
       k.inEases = inEases; k.outEases = outEases; changed();
+      if (k.inInterpolation === "LINEAR") k.inInterpolation = "BEZIER";
+      if (k.outInterpolation === "LINEAR") k.outInterpolation = "BEZIER";
+      calls.push({operation: "ease", matchName, key: i});
     };
     const decodeEases = (eases) => eases.map((e) => KeyframeEase(e.speed, e.influence));
     api.keyInTemporalEase = (i) => decodeEases(key(i).inEases);
@@ -314,6 +348,11 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function group(matchName, name, children = [], additions, saved) {
     const values = { name: saved?.name ?? name }, api = {};
     field(api, "matchName", () => matchName);
+    field(api, "propertyType", () => additions ? "INDEXED_GROUP" : "NAMED_GROUP");
+    if (effectDefinitions[matchName]) {
+      values.enabled = saved?.enabled ?? true;
+      setting(api, values, "enabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid enabled"); });
+    }
     setting(api, values, "name", (v) => { if (typeof v !== "string") throw Error("fake AE: invalid name"); });
     field(api, "numProperties", () => children.length);
     api.property = (query) => {
@@ -336,6 +375,11 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         children.push(child);
       }
     }
+    if (effectDefinitions[matchName] && !children.some((p) => p.matchName === "ADBE Effect Built In Params")) {
+      children.push(group("ADBE Effect Built In Params", "Compositing Options", [
+        property("ADBE Effect Mask Opacity", "Effect Opacity", 100),
+      ]));
+    }
     return proxy;
     function removable(child) {
       records.get(child).api.remove = () => {
@@ -352,7 +396,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function serializeProperty(p) {
     const r = records.get(p);
     if (r.type === "Property") return copy(r.data);
-    return { matchName: r.matchName, name: r.values.name, properties: r.children.map(serializeProperty) };
+    return { matchName: r.matchName, name: r.values.name,
+      ...(r.values.enabled !== undefined ? {enabled: r.values.enabled} : {}), properties: r.children.map(serializeProperty) };
   }
 
   // Layer transforms, including scalar followers for separated position.
@@ -451,6 +496,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function TextLayer() { return unsupported("TextLayer", "constructor"); }
   Object.setPrototypeOf(TextLayer.prototype, AVLayer.prototype);
   const items = [];
+  let nextId = Math.max(0, ...(state.project?.items || []).map((v) => v.id || 0)) + 1;
+  const ids = new Set();
   let root;
   const constructors = { CompItem, FootageItem, FolderItem };
   function collection(type, list, methods = {}) {
@@ -464,7 +511,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       records.get(created).values.parentFolder = parent || root;
       items.push(created); changed(); return created;
     };
-    return collection("ItemCollection", () => parent ? items.filter((child) => child.parentFolder === parent) : items, {
+    return collection("ItemCollection", () => parent ? items.filter((child) => canonical(child.parentFolder) === canonical(parent)) : items, {
       addComp(name, width, height, pixelAspect, duration, frameRate) {
         return add("CompItem", { name, width, height, pixelAspect, duration, frameRate });
       },
@@ -474,13 +521,17 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function item(type, saved) {
     const values = { name: "", comment: "", ...copy(saved), parentFolder: root || null };
     const api = Object.create(constructors[type].prototype);
+    values.id = saved.id && !ids.has(saved.id) ? saved.id : nextId++;
+    ids.add(values.id);
+    nextId = Math.max(nextId, values.id + 1);
+    field(api, "id", () => values.id);
     setting(api, values, "name"); setting(api, values, "comment");
     field(api, "parentFolder", () => values.parentFolder, (folder) => {
       if (records.get(folder)?.type !== "FolderItem") throw Error("fake AE: parentFolder must be a FolderItem");
       for (let ancestor = folder; ancestor; ancestor = ancestor.parentFolder) {
-        if (ancestor === proxy) throw Error("fake AE: cyclic parentFolder");
+        if (canonical(ancestor) === proxy) throw Error("fake AE: cyclic parentFolder");
       }
-      values.parentFolder = folder; changed();
+      values.parentFolder = canonical(folder); changed();
     });
     const proxy = host(type, api, { values, api });
     if (type === "FolderItem") {
@@ -495,6 +546,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         const source = saved.mainSource || { file: null };
         values.isModel = Boolean(saved.isModel);
         values.mainSource = { ...copy(source), file: source.file ? File(source.file) : null };
+        if (source.color) values.mainSource.color = copy(source.color).map(Math.fround);
         const sourceAPI = {};
         field(sourceAPI, "file", () => values.mainSource.file);
         if (source.color) field(sourceAPI, "color", () => copy(values.mainSource.color));
@@ -508,18 +560,25 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         };
       } else {
         values.frameRate ??= 30; values.duration ??= 5; values.pixelAspect ??= 1; values.bgColor ??= [0, 0, 0];
-        values.renderer ??= "ADBE Classic 3d";
+        values.renderer ??= "ADBE Advanced 3d";
+        values.renderers ??= state.renderers || ["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"];
+        field(api, "renderers", () => copy(values.renderers));
         setting(api, values, "renderer", (v) => {
-          if (!["ADBE Classic 3d", "ADBE Advanced 3d"].includes(v)) throw Error("fake AE: invalid renderer");
+          if (!values.renderers.includes(v)) throw Error("fake AE: invalid renderer");
         });
-        for (const name of ["frameRate", "duration", "pixelAspect"]) setting(api, values, name, (v) => {
-          finite(v, name); if (v <= 0) throw Error(`fake AE: invalid ${name}`);
-        });
-        setting(api, values, "bgColor", (v) => vector(v, 3, "bgColor", true));
+        for (const name of ["frameRate", "duration", "pixelAspect"]) {
+          const store = name === "pixelAspect" ? (v) => v : Math.fround;
+          values[name] = store(values[name]);
+          setting(api, values, name, (v) => {
+            finite(v, name); if (v <= 0) throw Error(`fake AE: invalid ${name}`);
+          }, true, store);
+        }
+        values.bgColor = values.bgColor.map(Math.fround);
+        setting(api, values, "bgColor", (v) => vector(v, 3, "bgColor", true), true, (v) => v.map(Math.fround));
         const layers = [];
         records.get(proxy).layers = layers;
         const addLayer = (layerType, sourceItem, name, duration, text, nullLayer = false) => {
-          const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text, nullLayer }, sourceItem);
+          const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text, nullLayer }, canonical(sourceItem));
           layers.unshift(l); changed(); return l;
         };
         const solid = (color, name, w, h) => {
@@ -548,6 +607,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   function layer(comp, type, saved, source) {
     const values = { name: "", comment: "", label: 0, inPoint: 0, outPoint: comp.duration,
       startTime: 0, threeDLayer: Boolean(source && records.get(source).values.isModel), ...copy(saved) };
+    values.parent = null; values.trackMatteLayer = null;
     const api = Object.create((type === "TextLayer" ? TextLayer : AVLayer).prototype);
     for (const name of ["name", "comment"]) setting(api, values, name);
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
@@ -555,12 +615,27 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
     field(api, "source", () => source || null);
+    field(api, "parent", () => values.parent, (v) => {
+      v = canonical(v);
+      if (v && !stack.includes(v)) throw Error("fake AE: parent must be in the same comp");
+      for (let ancestor = v; ancestor; ancestor = canonical(ancestor.parent)) {
+        if (ancestor === proxy) throw Error("fake AE: cyclic parent");
+      }
+      values.parent = v; changed();
+    });
+    field(api, "trackMatteLayer", () => values.trackMatteLayer);
+    api.setTrackMatte = (v, matteType) => {
+      v = canonical(v);
+      if (v === proxy || !stack.includes(v) || matteType !== "ALPHA") throw Error("fake AE: invalid track matte");
+      values.trackMatteLayer = v; changed();
+    };
     field(api, "nullLayer", () => Boolean(values.nullLayer));
     api.replaceSource = (sourceItem, fixExpressions) => {
       if (type === "TextLayer" || fixExpressions !== false) return unsupported(type, "replaceSource");
       if (!["FootageItem", "CompItem"].includes(records.get(sourceItem)?.type)) throw Error("fake AE: replaceSource requires footage or comp");
-      source = sourceItem;
-      records.get(proxy).source = sourceItem;
+      source = canonical(sourceItem);
+      records.get(proxy).source = source;
+      calls.push({operation: "replaceSource", index: api.index});
       changed();
     };
     const findGroup = (match) => saved.properties?.find((p) => p.matchName === match);
@@ -585,11 +660,22 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const attached = () => { if (!stack.includes(proxy)) throw Error("fake AE: removed layer"); };
     const move = (target, offset) => {
       attached();
+      target = canonical(target);
       if (!stack.includes(target)) throw Error("fake AE: move target must be in the same comp");
-      if (target !== proxy) { stack.splice(stack.indexOf(proxy), 1); stack.splice(stack.indexOf(target) + offset, 0, proxy); }
+      if (target === proxy) throw Error("fake AE: cannot move a layer before or after itself");
+      calls.push({operation: offset ? "moveAfter" : "moveBefore", name: values.name, comment: values.comment, target: target.name});
+      stack.splice(stack.indexOf(proxy), 1); stack.splice(stack.indexOf(target) + offset, 0, proxy);
       changed();
     };
-    api.remove = () => { attached(); stack.splice(stack.indexOf(proxy), 1); changed(); };
+    api.remove = () => {
+      attached();
+      for (const l of stack) {
+        const v = records.get(l).values;
+        if (v.parent === proxy) v.parent = null;
+        if (v.trackMatteLayer === proxy) v.trackMatteLayer = null;
+      }
+      stack.splice(stack.indexOf(proxy), 1); changed();
+    };
     api.moveBefore = (target) => move(target, 0);
     api.moveAfter = (target) => move(target, 1);
     api.moveToBeginning = () => { attached(); stack.splice(stack.indexOf(proxy), 1); stack.unshift(proxy); changed(); };
@@ -634,6 +720,11 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         if (!["AVLayer", "TextLayer"].includes(l.type)) throw Error(`fake AE: unsupported state layer ${l.type}`);
         records.get(current).layers.push(layer(current, l.type, l, l.source ? items[l.source - 1] : null));
       }
+      (saved.layers || []).forEach((l, j) => {
+        const stack = records.get(current).layers, v = records.get(stack[j]).values;
+        v.parent = l.parent ? stack[l.parent - 1] : null;
+        v.trackMatteLayer = l.trackMatteLayer ? stack[l.trackMatteLayer - 1] : null;
+      });
     }
   });
   const appAPI = {
@@ -649,33 +740,36 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     CompItem: host("CompItem", CompItem), FootageItem: host("FootageItem", FootageItem), FolderItem: host("FolderItem", FolderItem),
     AVLayer: host("AVLayer", AVLayer), TextLayer: host("TextLayer", TextLayer),
     TextDocument: host("TextDocument", TextDocument), KeyframeEase: host("KeyframeEase", KeyframeEase),
-    KeyframeInterpolationType, ParagraphJustification, PropertyValueType };
+    KeyframeInterpolationType, ParagraphJustification, PropertyValueType, PropertyType, TrackMatteType };
   const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0 };
   sandbox.$ = host("$", dollar);
   Object.assign(context, sandbox);
   dollar.global = contextGlobal;
 
   function serialize() {
-    const reference = (object) => object === root || !object ? null : items.indexOf(object) + 1;
+    const reference = (object) => canonical(object) === root || !object ? null : items.indexOf(canonical(object)) + 1;
     return { app: { version: appAPI.version, fonts: copy(fonts), env: copy(env) },
+      ...(Object.keys(testHooks).length ? {testHooks: copy(testHooks)} : {}),
       project: { file: projectFile?.fsName || null,
-        rootFolder: { name: root.name, comment: root.comment }, items: items.map((current) => {
+        rootFolder: { id: root.id, name: root.name, comment: root.comment }, items: items.map((current) => {
         const r = records.get(current), v = r.values;
-        const result = { type: r.type, name: v.name, comment: v.comment, parentFolder: reference(v.parentFolder) };
+        const result = { type: r.type, id: v.id, name: v.name, comment: v.comment, parentFolder: reference(v.parentFolder) };
         if (r.type === "FootageItem") Object.assign(result, { width: v.width, height: v.height, isModel: v.isModel,
           mainSource: { ...v.mainSource, file: v.mainSource.file?.fsName || null,
             ...(v.mainSource.color ? { color: copy(v.mainSource.color) } : {}) } });
         if (r.type === "CompItem") Object.assign(result, { width: v.width, height: v.height, pixelAspect: v.pixelAspect,
-          frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), renderer: v.renderer, layers: r.layers.map((l) => {
+          frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), renderer: v.renderer, renderers: copy(v.renderers), layers: r.layers.map((l) => {
             const lr = records.get(l), lv = lr.values;
             return { type: lr.type, name: lv.name, comment: lv.comment, label: lv.label, inPoint: lv.inPoint,
               outPoint: lv.outPoint, startTime: lv.startTime, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
+              ...(lv.parent ? {parent: r.layers.indexOf(lv.parent) + 1} : {}),
+              ...(lv.trackMatteLayer ? {trackMatteLayer: r.layers.indexOf(lv.trackMatteLayer) + 1} : {}),
               properties: lr.groups.map(serializeProperty) };
           }) });
         return result;
       }) } };
   }
-  return { context, serialize, counters };
+  return { context, serialize, counters, calls };
 }
 
 module.exports = { createAE };
