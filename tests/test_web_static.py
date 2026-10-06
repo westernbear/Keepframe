@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261006d"}
+    assert stamps == {"20261006e"}
 
 
 def test_ae_card_static_contract():
@@ -592,10 +592,13 @@ def test_ae_card_static_contract():
     assert re.search(r'</section>\s*<section class="render-card ae-card" id="ae-card" aria-labelledby="ae-card-title">', html)
     assert html.index('id="render-card"') < html.index('id="ae-card"') < html.index('class="agent-transport"')
     assert '<a href="/ae/keepframe.zxp" download' in html
+    assert r'value="&amp; &quot;C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe&quot; /install &quot;$env:USERPROFILE\Downloads\keepframe.zxp&quot;"' in html
+    assert 'aria-describedby="ae-install-path-hint"' in html
+    assert 'data-i18n="ae.installPathHint"' in html
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261006d"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261006e"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh

@@ -161,9 +161,12 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
 
     page, server, errors = ae_page
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    command = r'& "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$env:USERPROFILE\Downloads\keepframe.zxp"'
+    expect(page.locator("#ae-install-command")).to_have_value(command)
+    expect(page.locator("#ae-install-path-hint")).to_have_text("PowerShell. 다른 곳에 저장했다면 마지막 경로를 바꾸세요.")
     page.locator("#ae-install-copy").click()
     expect(page.locator("#ae-copy-status")).to_have_text("복사됨")
-    assert "UnifiedPluginInstallerAgent.exe" in page.evaluate("navigator.clipboard.readText()")
+    assert page.evaluate("navigator.clipboard.readText()") == command
     device, _ = connect(page, server)
     # Simulate the device going offline after the last state snapshot: send's 409 must be visible.
     server.ae_routes.devices.seen(device, now=0)
@@ -190,6 +193,7 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     expect(page.locator("#ae-status")).to_have_text("Not connected")
     expect(page.locator("#ae-pair-message")).to_have_text("Code expired — press Connect AE again")
     expect(page.get_by_role("link", name="Download extension")).to_be_visible()
+    expect(page.locator("#ae-install-path-hint")).to_have_text("PowerShell. If you saved the file elsewhere, change the last path.")
     assert not errors
 
 

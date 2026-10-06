@@ -40,13 +40,16 @@ Verify, final render, package, and live agent control arrive in later slices.
 
 1. Open the test project's agent page in Keepframe.
    In the **After Effects** card, open **Install / reinstall** (설치 / 재설치).
-   Click **Download extension** (확장 다운로드). Save `keepframe.zxp`.
-2. Close AE. Open Windows Command Prompt in the download folder.
+   Click **Download extension** (확장 다운로드). Save `keepframe.zxp` in Downloads.
+2. Close AE. Open PowerShell (as administrator if required).
    Run the card's exact Adobe UPIA command:
 
-   ```cmd
-   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install keepframe.zxp
+   ```powershell
+   & "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$env:USERPROFILE\Downloads\keepframe.zxp"
    ```
+
+   PowerShell. If you saved the file elsewhere, change the last path.
+   Status `-160` means the file path is wrong; check that it points to the saved ZXP.
 
    Alternatively, install that file with the aescripts ZXP Installer.
 3. Restart AE. Open **Window > Extensions > Keepframe** (창 > 확장 > Keepframe).

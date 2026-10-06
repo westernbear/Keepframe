@@ -1,6 +1,6 @@
-import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20261006d";
-import { T, Tf } from "/static/js/i18n.js?v=20261006d";
-import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20261006d";
+import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20261006e";
+import { T, Tf } from "/static/js/i18n.js?v=20261006e";
+import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20261006e";
 
 export function attachJob(ws) {
   const { dom } = ws;

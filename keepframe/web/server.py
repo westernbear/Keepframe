@@ -657,7 +657,7 @@ def make_server(
                 return None
             return value
 
-        def _same_origin(self) -> bool:
+        def _host_allowed(self) -> bool:
             host_values = self.headers.get_all("Host") or []
             if len(host_values) != 1:
                 self._json(403, {"error": "browser origin is not allowed"})
@@ -671,9 +671,16 @@ def make_server(
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
             server_port = int(server_address[1])
-            if authority[1] is not None and authority[1] != server_port:
+            if (80 if authority[1] is None else authority[1]) != server_port:
                 self._json(403, {"error": "browser origin is not allowed"})
                 return False
+            return True
+
+        def _same_origin(self) -> bool:
+            if not self._host_allowed():
+                return False
+            authority = _authority(self.headers["Host"])
+            server_port = int(self.server.server_address[1])
             origin_values = self.headers.get_all("Origin") or []
             source: str | None = None
             if len(origin_values) == 1:

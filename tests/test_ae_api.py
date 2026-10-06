@@ -83,13 +83,51 @@ def pair(server):
 
 
 @pytest.mark.parametrize("method,path", [
-    ("POST", "/api/ae/codes"), ("GET", "/api/ae/devices"),
+    ("POST", "/api/ae/codes"),
     ("DELETE", "/api/ae/devices/missing"), ("POST", "/api/ae/send"),
-    ("GET", "/api/ae/state?project=p1&scene=s1"),
 ])
 def test_browser_routes_reject_cross_origin_first(server, method, path):
     status, error = json_request(server, method, path, headers={"Origin": "https://evil.example"})
     assert status == 403 and isinstance(error["error"], str)
+
+
+@pytest.mark.parametrize("path", ["/api/ae/devices", "/api/ae/state?project=p1&scene=s1"])
+def test_browser_get_routes_require_allowed_host_only(server, project, path):
+    port = server.server_address[1]
+    for headers, expected in (
+        ({"Host": f"localhost:{port}"}, 200),
+        ({"Host": f"localhost:{port}", "Origin": "https://evil.example"}, 200),
+        ({"Host": f"evil.example:{port}"}, 403),
+        ({"Host": "localhost:1"}, 403),
+        ({"Host": "localhost:0"}, 403),
+        ({"Host": "localhost"}, 403),
+    ):
+        status, response_headers, body = request(server, "GET", path, headers=headers)
+        assert status == expected
+        assert not any(key.lower().startswith("access-control-") for key in response_headers)
+        if expected == 403:
+            assert json.loads(body) == {"error": "browser origin is not allowed"}
+    for hosts in ([], [f"localhost:{port}", f"localhost:{port}"]):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        try:
+            conn.putrequest("GET", path, skip_host=True)
+            for host in hosts:
+                conn.putheader("Host", host)
+            conn.endheaders()
+            response = conn.getresponse()
+            assert response.status == 403
+            assert json.loads(response.read()) == {"error": "browser origin is not allowed"}
+        finally:
+            conn.close()
+
+
+@pytest.mark.parametrize("method,path", [
+    ("POST", "/api/ae/codes"), ("POST", "/api/ae/send"),
+    ("DELETE", "/api/ae/devices/missing"),
+])
+def test_browser_mutations_require_origin(server, method, path):
+    status, error = json_request(server, method, path, data={})
+    assert status == 403 and error == {"error": "browser origin is not allowed"}
 
 
 def test_pairing_and_same_origin_device_routes(server):

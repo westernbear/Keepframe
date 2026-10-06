@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006d";
-import { T, Tf } from "/static/js/i18n.js?v=20261006d";
+import { api } from "/static/js/api.js?v=20261006e";
+import { T, Tf } from "/static/js/i18n.js?v=20261006e";
 
 async function copyText(text) {
   if (window.isSecureContext && navigator.clipboard) {

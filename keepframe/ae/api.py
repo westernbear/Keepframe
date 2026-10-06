@@ -129,7 +129,11 @@ class AERoutes:
         try:
             device = None
             if u.path in _BROWSER or u.path.startswith("/api/ae/devices/"):
-                if not handler._same_origin():
+                # Read-only browser GETs use the Host guard; responses have no CORS headers.
+                if handler.command == "GET" and u.path in {"/api/ae/devices", "/api/ae/state"}:
+                    if not handler._host_allowed():
+                        return True
+                elif not handler._same_origin():
                     return True
             elif u.path != "/ae/keepframe.zxp":
                 device = self._extension(handler, pair=u.path == "/api/ae/pair")
