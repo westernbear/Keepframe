@@ -3,7 +3,8 @@
     const strings = {
         en: {
             server: 'Server URL', code: 'Pairing code', pair: 'Pair', disconnect: 'Disconnect',
-            status: 'Status', current: 'Current job', log: 'Log', copy: 'Copy log', version: 'Extension version',
+            status: 'Status', current: 'Current job', log: 'Log', copy: 'Copy log', version: 'Extension',
+            build: '{version} · build {build}',
             idle: 'No current job', disconnected: 'Not connected: enter a code from the Keepframe web page',
             pairing: 'Pairing…', paired: 'Paired with {host}', forgotten: 'Disconnected: stored pairing forgotten',
             unavailable: 'Open this panel in After Effects with CEP enabled', copied: 'Log copied',
@@ -24,7 +25,8 @@
         },
         ko: {
             server: '서버 URL', code: '페어링 코드', pair: '페어링', disconnect: '연결 해제',
-            status: '연결 상태', current: '현재 작업', log: '로그', copy: '로그 복사', version: '확장 버전',
+            status: '연결 상태', current: '현재 작업', log: '로그', copy: '로그 복사', version: '확장',
+            build: '{version} · 빌드 {build}',
             idle: '진행 중인 작업 없음', disconnected: '연결 안 됨: Keepframe 웹 페이지의 코드를 입력하세요',
             pairing: '페어링 중…', paired: '{host}에 페어링됨', forgotten: '연결 해제됨: 저장된 페어링 삭제',
             unavailable: 'CEP가 활성화된 After Effects에서 이 패널을 여세요', copied: '로그 복사됨',
@@ -56,7 +58,7 @@
     const t = (key, values) => table[key].replace(/\{(\w+)\}/g, (match, name) => values[name]);
     document.documentElement.lang = locale;
     document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = table[node.dataset.i18n]; });
-    el('version').textContent = core.EXTENSION_VERSION;
+    el('version').textContent = t('build', {version: core.EXTENSION_VERSION, build: core.HOST_BUILD});
     el('current-job').textContent = table.idle;
     el('status').textContent = table.disconnected;
     const secrets = [], ring = core.createLog(Date.now, secrets);

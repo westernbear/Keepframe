@@ -67,6 +67,7 @@ if (typeof JSON !== "object" || JSON === null) {
 }(JSON));
 
 (function (global) {
+    var HOST_BUILD = "dev";
     var PROP_NAMES = ["position_x", "position_y", "scale", "rotation", "opacity"];
     var PROP_MATCHES = ["ADBE Position_0", "ADBE Position_1", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
 
@@ -688,7 +689,7 @@ if (typeof JSON !== "object" || JSON === null) {
                 }
             }
             return JSON.stringify({ok: true, ae_version: app.version, project_name: app.project.file ? decodeURI(app.project.file.name) : null,
-                project_saved: app.project.file !== null, fonts: fonts});
+                project_saved: app.project.file !== null, fonts: fonts, host_build: HOST_BUILD});
         } catch (e) { return errorResult(e); }
     };
 

@@ -45,13 +45,13 @@ def ae_page(tmp_path):
         server.server_close()
 
 
-def connect(page, server):
+def connect(page, server, info=INFO):
     from playwright.sync_api import expect
 
     page.locator("#ae-connect").click()
     expect(page.locator("#ae-code")).to_have_value(re.compile(r"KF-[A-Z0-9]{4}-[A-Z0-9]{4}"))
     code = page.locator("#ae-code").input_value()
-    status, paired = json_request(server, "POST", "/api/ae/pair", {"code": code, "info": INFO}, headers=EXTENSION)
+    status, paired = json_request(server, "POST", "/api/ae/pair", {"code": code, "info": info}, headers=EXTENSION)
     assert status == 200
     headers = EXTENSION | {"Authorization": "Bearer " + paired["token"],
                            "X-Keepframe-Project": quote("Example.aep"), "X-Keepframe-Project-Saved": "1"}
@@ -60,6 +60,21 @@ def connect(page, server):
     expect(page.locator("#ae-code")).to_have_value("")
     assert "KF-" not in page.locator("#ae-card").inner_text()
     return paired["device_id"], headers
+
+
+@pytest.mark.parametrize("builds", [{}, {"host_build": "123-abc1234", "panel_build": "123-abc1234"},
+                                    {"host_build": "123-oldsha", "panel_build": "124-newsha-dirty"}])
+def test_ae_device_rows_show_panel_and_host_builds_in_both_languages(ae_page, builds):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    connect(page, server, INFO | builds)
+    expect(page.locator("#ae-devices")).to_contain_text("빌드 " + builds.get("panel_build", "알 수 없음"))
+    expect(page.locator("#ae-devices")).to_contain_text("AE 스크립트 " + builds.get("host_build", "알 수 없음"))
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-devices")).to_contain_text("build " + builds.get("panel_build", "unknown"))
+    expect(page.locator("#ae-devices")).to_contain_text("AE script " + builds.get("host_build", "unknown"))
+    assert not errors
 
 
 def assert_button_styles(page):

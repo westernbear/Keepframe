@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006e";
-import { T, Tf } from "/static/js/i18n.js?v=20261006e";
+import { api } from "/static/js/api.js?v=20261006f";
+import { T, Tf } from "/static/js/i18n.js?v=20261006f";
 
 async function copyText(text) {
   if (window.isSecureContext && navigator.clipboard) {
@@ -142,7 +142,8 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {
       version: device.ae_version, os: device.os, project: device.project_name || T("ae.noProject"),
       status: T(device.connected ? "ae.connected" : "ae.notConnected"), seen: relative(device.last_seen),
-    })}));
+    }) + " · " + Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
+      host: device.host_build || T("ae.unknownBuild")})}));
     const deviceSignature = JSON.stringify([rows.map(({device, text}) => [device.id, text]), disconnectId, busy]);
     if (deviceSignature !== devicesPainted) {
       devicesPainted = deviceSignature;

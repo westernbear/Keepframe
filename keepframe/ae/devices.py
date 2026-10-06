@@ -39,6 +39,9 @@ def _info(info):
         raise ValueError("invalid info")
     result = {name: _string(info.get(name), name, limit)
               for name, limit in (("ae_version", 32), ("extension_version", 32), ("os", 64))}
+    for name in ("host_build", "panel_build"):
+        if name in info:
+            result[name] = _string(info[name], name, 64)
     fonts = info.get("fonts")
     if not isinstance(fonts, list) or len(fonts) > 5000:
         raise ValueError("invalid fonts")
@@ -209,6 +212,7 @@ class Devices:
             now = self._purge(now)
             return [{"id": device.id, "created": device.created, "last_seen": device.last_seen,
                      "ae_version": device.info["ae_version"], "extension_version": device.info["extension_version"],
+                     "host_build": device.info.get("host_build"), "panel_build": device.info.get("panel_build"),
                      "os": device.info["os"], **device.status,
                      "connected": device.last_seen is not None and now - device.last_seen < 40}
                     for device in sorted(self._devices.values(), key=lambda device: device.created)]

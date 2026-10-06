@@ -136,6 +136,7 @@ def test_pairing_and_same_origin_device_routes(server):
     status, listed = json_request(server, "GET", "/api/ae/devices", browser=True)
     assert status == 200 and listed["devices"][0]["id"] == device
     assert listed["devices"][0]["connected"] is False
+    assert listed["devices"][0]["host_build"] is listed["devices"][0]["panel_build"] is None
     status, _ = json_request(server, "POST", "/api/ae/info", {"info": INFO | {"ae_version": "26.0"}},
                              headers=headers)
     assert status == 204
@@ -145,6 +146,28 @@ def test_pairing_and_same_origin_device_routes(server):
     status, error = json_request(server, "POST", "/api/ae/info", {"info": INFO}, headers=headers)
     assert status == 401
     assert error == {"error": "device is not paired; pair again from the Keepframe web page"}
+
+
+def test_pair_and_info_return_build_ids_in_device_rows(server):
+    builds = {"host_build": "123-abc1234", "panel_build": "124-def5678-dirty"}
+    _, code = json_request(server, "POST", "/api/ae/codes", browser=True)
+    status, paired = json_request(server, "POST", "/api/ae/pair", {"code": code["code"], "info": INFO | builds},
+                                  headers=EXTENSION)
+    assert status == 200
+    headers = EXTENSION | {"Authorization": "Bearer " + paired["token"]}
+    status, listed = json_request(server, "GET", "/api/ae/devices", browser=True)
+    assert status == 200
+    assert all(listed["devices"][0][key] == value for key, value in builds.items())
+    builds = {"host_build": "dev", "panel_build": "dev"}
+    assert json_request(server, "POST", "/api/ae/info", {"info": INFO | builds}, headers=headers)[0] == 204
+    _, listed = json_request(server, "GET", "/api/ae/devices", browser=True)
+    assert all(listed["devices"][0][key] == value for key, value in builds.items())
+    for field in builds:
+        assert json_request(server, "POST", "/api/ae/info", {"info": INFO | {field: "x" * 65}}, headers=headers) == (
+            400, {"error": f"invalid {field}"})
+    assert json_request(server, "POST", "/api/ae/info", {"info": INFO}, headers=headers)[0] == 204
+    _, listed = json_request(server, "GET", "/api/ae/devices", browser=True)
+    assert listed["devices"][0]["host_build"] is listed["devices"][0]["panel_build"] is None
 
 
 @pytest.mark.parametrize("version", [None, "0.9.0", "2.0.0", "bad"])

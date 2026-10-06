@@ -16,7 +16,7 @@ const TOKEN = 'private-device-token-123456';
 const CODE = 'KF-ABCD-1234';
 const bytes = Buffer.from('test asset bytes');
 const sha = crypto.createHash('sha256').update(bytes).digest('hex');
-const info = {ok: true, ae_version: '25.0', project_name: '한글 Project.aep',
+const info = {ok: true, host_build: 'dev', ae_version: '25.0', project_name: '한글 Project.aep',
     project_saved: true, fonts: [{family: 'Arial', style: 'Regular', postscript: 'ArialMT'}]};
 const job = {id: 'j1', kind: 'sync', project: 'demo', scene: 's1', version: 'v7', params: {force: true}};
 const spec = {schema: 'keepframe.ae-comp/1', project: 'demo', scene: 's1', version: 'v7',
@@ -113,6 +113,7 @@ test('URL policy table and normalization', () => {
 test('manifest bundle and extension versions equal EXTENSION_VERSION', () => {
     const xml = fs.readFileSync(path.join(__dirname, '../CSXS/manifest.xml'), 'utf8');
     assert.equal(core.EXTENSION_VERSION, '1.0.0');
+    assert.equal(core.HOST_BUILD, 'dev');
     assert.equal(xml.match(/ExtensionBundleVersion="([^"]+)"/)[1], core.EXTENSION_VERSION);
     assert.equal(xml.match(/<Extension Id="com.keepframe.ae.panel" Version="([^"]+)"/)[1], core.EXTENSION_VERSION);
     const browser = {window: {}, module: {exports: {}}}; // CEP mixed context also exposes Node globals.
@@ -131,7 +132,8 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers['content-type'], 'application/json');
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
-        extension_version: '1.0.0', os: os.platform() + ' ' + os.release(), fonts: info.fonts}});
+        extension_version: '1.0.0', host_build: 'dev', panel_build: 'dev',
+        os: os.platform() + ' ' + os.release(), fonts: info.fonts}});
     assert.deepEqual(f.scripts, ['kfInfo()']);
     assertPrivate(f);
 });
@@ -250,8 +252,45 @@ test('backoff sequence caps at 30 seconds and resets after success', async t => 
     assert.equal(poll.headers['x-keepframe-project-saved'], '1');
     assert.equal(poll.headers.authorization, 'Bearer ' + TOKEN);
     assert.deepEqual(f.requests[0].body.info, {ae_version: info.ae_version, extension_version: '1.0.0',
-        os: os.platform() + ' ' + os.release(), fonts: info.fonts});
+        host_build: 'dev', panel_build: 'dev', os: os.platform() + ' ' + os.release(), fonts: info.fonts});
     assertPrivate(f);
+});
+
+test('mismatched or untagged AE builds reject jobs and keep the restart status through idle polls', async t => {
+    for (const hostBuild of ['123-oldsha', undefined]) {
+        const message = 'The AE script (build ' + (hostBuild || 'unknown') +
+            ') does not match the panel (build dev) — fully quit and restart After Effects';
+        let polls = 0, r;
+        const f = await fixture(t, (req, reply) => {
+            if (!req.path.startsWith('/api/ae/next')) return;
+            if (polls++ === 0) reply(200, {job});
+            else if (polls === 2) reply(204);
+            else { r.stop(); reply(204); }
+            return true;
+        });
+        f.deps.evalScript = (script, callback) => {
+            f.scripts.push(script);
+            assert.equal(script, 'kfInfo()', 'a stale host must never receive a sync');
+            callback(JSON.stringify(Object.assign({}, info, {host_build: hostBuild})));
+        };
+        r = runner(f);
+        await r.start();
+        assert.deepEqual(f.requests.find(req => req.path.endsWith('/result')).body, {ok: false, error: message});
+        assert.equal(f.statuses.at(-1).message, message);
+        assert.ok(f.statuses.every(s => s.message === message));
+        assert.equal(f.requests.some(req => /\/(spec|assets|progress)(\/|$)/.test(req.path)), false);
+        assert.deepEqual(fs.readdirSync(f.documentsDir), []);
+        const announced = f.requests.find(req => req.path === '/api/ae/info').body.info;
+        assert.equal(announced.host_build, hostBuild);
+        assert.equal(announced.panel_build, 'dev');
+    }
+});
+
+test('matching AE and panel builds run the job', async t => {
+    const f = await oneJob(t);
+    assert.equal(f.result.ok, true);
+    assert.equal(f.scripts.filter(script => script.startsWith('kfSync(')).length, 1);
+    assert.ok(f.statuses.some(s => s.message.startsWith('Synced v7:')));
 });
 
 test('401 and 426 stop at either info or next with actionable status', async t => {
@@ -817,6 +856,7 @@ test('panel glue restores pairing, translates status, pairs, forgets credentials
         assert.equal(p.runs.length, 1);
         assert.equal(p.runs[0].options.token, TOKEN);
         assert.equal(p.browser.document.documentElement.lang, locale.startsWith('ko') ? 'ko' : 'en');
+        assert.equal(p.nodes.version.textContent, locale.startsWith('ko') ? '1.0.0 · 빌드 dev' : '1.0.0 · build dev');
         p.runs[0].deps.setStatus('Connected · studio.example.ts.net');
         assert.equal(p.nodes.status.textContent, locale.startsWith('ko') ?
             '연결됨 · studio.example.ts.net' : 'Connected · studio.example.ts.net');

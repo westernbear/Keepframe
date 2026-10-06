@@ -5,6 +5,7 @@
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
     const EXTENSION_VERSION = '1.0.0';
+    const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
     const NOT_PAIRED = 'Not paired: enter a new code from the Keepframe web page';
 
@@ -192,7 +193,8 @@
 
     function deviceInfo(info, deps) {
         return {ae_version: info.ae_version, extension_version: EXTENSION_VERSION,
-            os: deps.os.platform() + ' ' + deps.os.release(), fonts: info.fonts};
+            os: deps.os.platform() + ' ' + deps.os.release(), fonts: info.fonts,
+            host_build: info.host_build, panel_build: HOST_BUILD};
     }
 
     function contextFor(options, deps) {
@@ -326,12 +328,12 @@
                 literal(job.params && job.params.force ? 'true' : 'false') + ')');
         }
 
-        async function runJob(job) {
+        async function runJob(job, mismatch) {
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
             const progress = {stage: 'syncing', done: 0, total: 0};
             let finished = false, finishHeartbeat;
             const ended = new Promise(resolve => { finishHeartbeat = resolve; });
-            const message = 'Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…';
+            const message = mismatch || 'Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…';
             status(message, {job, progress}); log(message);
             const heartbeat = async () => {
                 while (!finished && !terminal) {
@@ -344,9 +346,10 @@
                     await wait(15000, ended);
                 }
             };
-            const beating = heartbeat();
+            const beating = mismatch ? Promise.resolve() : heartbeat();
             let payload;
             try {
+                if (mismatch) throw failure(mismatch);
                 if (job.kind !== 'sync') throw failure(job.kind + ' is not supported by this extension version');
                 payload = {ok: true, result: await sync(job, progress)};
             } catch (error) {
@@ -374,7 +377,7 @@
                 if (terminal) return;
                 outcome = true;
                 let text;
-                if (!payload.ok) text = 'Sync failed: ' + payload.error + (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
+                if (!payload.ok) text = mismatch || 'Sync failed: ' + payload.error + (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
                 else if (payload.result.applied === false) text = 'AE layers were edited by hand: ' +
                     (payload.result.hand_edited || []).join(', ') + ' — overwrite from the web page';
                 else {
@@ -392,12 +395,16 @@
                 try {
                     const info = await hostCall(context, 'kfInfo()');
                     if (!running) break;
+                    const mismatch = info.host_build === HOST_BUILD ? '' :
+                        'The AE script (build ' + (info.host_build || 'unknown') + ') does not match the panel (build ' +
+                        HOST_BUILD + ') — fully quit and restart After Effects';
+                    if (mismatch) status(mismatch);
                     if (!announced) {
                         await send('POST', '/api/ae/info', {info: deviceInfo(info, deps)});
                         announced = true;
                         continue;
                     }
-                    if (!outcome) status('Connected · ' + new URL(context.serverUrl).host);
+                    if (!outcome && !mismatch) status('Connected · ' + new URL(context.serverUrl).host);
                     const response = await send('GET', '/api/ae/next?wait=25', undefined, {
                         'X-Keepframe-Project': encodeURIComponent(info.project_name || ''),
                         'X-Keepframe-Project-Saved': info.project_saved ? '1' : '0'});
@@ -406,7 +413,7 @@
                     const value = parseJson(response.text, 'Invalid job response', context.secrets);
                     if (response.status !== 200 || !value || !value.job || typeof value.job.id !== 'string')
                         throw failure('Invalid job response');
-                    await runJob(value.job);
+                    await runJob(value.job, mismatch);
                 } catch (error) {
                     if (!running || stopFor(error)) break;
                     outcome = false;
@@ -430,5 +437,5 @@
         return {start, stop};
     }
 
-    return {EXTENSION_VERSION, HOST_TIMEOUT_MS, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
+    return {EXTENSION_VERSION, HOST_BUILD, HOST_TIMEOUT_MS, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
 }));

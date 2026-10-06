@@ -196,6 +196,34 @@ def test_codes_survive_restart_until_used(store, tmp_path):
     assert Devices(tmp_path).pair(code, info()) is None
 
 
+def test_build_ids_survive_pair_update_and_restart(store, tmp_path):
+    builds = {"host_build": "123-abc1234", "panel_build": "124-def5678-dirty"}
+    device_id, token = paired(store, info(**builds))
+    assert store.authenticate(token).info == info(**builds)
+    assert all(store.list()[0][key] == value for key, value in builds.items())
+    assert Devices(tmp_path).authenticate(token).info == info(**builds)
+    builds = {"host_build": "dev", "panel_build": "dev"}
+    store.update_info(device_id, info(**builds))
+    assert Devices(tmp_path).authenticate(token).info == info(**builds)
+    # Older panels and stored records still load without build fields.
+    store.update_info(device_id, info())
+    assert Devices(tmp_path).authenticate(token).info == info()
+    assert store.list()[0]["host_build"] is store.list()[0]["panel_build"] is None
+
+
+@pytest.mark.parametrize("field", ["host_build", "panel_build"])
+@pytest.mark.parametrize("bad", [None, 1, [], {}, "x" * 65])
+def test_build_ids_are_short_strings_and_invalid_updates_preserve_info(store, field, bad):
+    code, _ = store.create_code()
+    with pytest.raises(ValueError, match=field):
+        store.pair(code, info(**{field: bad}))
+    device_id, token = store.pair(code, info(**{field: "x" * 64}))
+    before = store.authenticate(token).info
+    with pytest.raises(ValueError, match=field):
+        store.update_info(device_id, info(**{field: bad}))
+    assert store.authenticate(token).info == before
+
+
 def test_revoke_removes_device_and_token_persistently(store, tmp_path):
     device_id, token = paired(store)
     assert store.revoke(device_id) is True
@@ -401,6 +429,7 @@ def test_list_is_sorted_and_contains_only_public_summary_fields(store):
     rows = store.list(now=1004)
     assert [row["id"] for row in rows] == [older, newer]
     assert rows[0] == {"id": older, "ae_version": "24.1", "extension_version": "1.0.0",
+                       "host_build": None, "panel_build": None,
                        "os": "Windows", "project_name": "Project.aep", "project_saved": True,
                        "connected": True, "last_seen": 1003, "created": 1000}
     assert set(rows[1]) == set(rows[0])

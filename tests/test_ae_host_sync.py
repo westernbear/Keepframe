@@ -483,7 +483,7 @@ def test_info_maps_fonts_and_project_with_no_builtin_json(tmp_path, saved):
         [{"familyName": "한글", "styleName": "Regular", "postScriptName": "Hangul"}]]},
         "project": {"file": str(tmp_path / "Demo.aep") if saved else None}})
     response = run_jsx(path, HOST, "kfInfo")
-    assert response["value"] == {"ok": True, "ae_version": "25.4", "project_name": "Demo.aep" if saved else None,
+    assert response["value"] == {"ok": True, "host_build": "dev", "ae_version": "25.4", "project_name": "Demo.aep" if saved else None,
         "project_saved": saved, "fonts": [
             {"family": "Example", "style": "Regular", "postscript": "Example-Regular"},
             {"family": "Example", "style": "Bold", "postscript": "Example-Bold"},
