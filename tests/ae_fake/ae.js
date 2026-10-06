@@ -197,7 +197,13 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     for (const name of ["text", "font", "applyFill"]) setting(api, values, name, () => {}, false);
     setting(api, values, "fontSize", (v) => { finite(v, "fontSize"); if (v <= 0) throw Error("fake AE: invalid fontSize"); }, false);
     values.fillColor = values.fillColor.map(Math.fround);
-    setting(api, values, "fillColor", (v) => vector(v, 3, "fillColor", true), false, (v) => v.map(Math.fround));
+    field(api, "fillColor", () => {
+      if (!values.applyFill) throw Error("fake AE: text fill is disabled");
+      return copy(values.fillColor);
+    }, (v) => {
+      if (!values.applyFill) throw Error("fake AE: text fill is disabled");
+      vector(v, 3, "fillColor", true); values.fillColor = copy(v).map(Math.fround);
+    });
     // These are real TextDocument fields; preserve them when only managed styling changes.
     for (const [name, initial] of Object.entries({ tracking: 0, applyStroke: false, strokeColor: [0, 0, 0] })) {
       field(api, name, () => copy(values[name] ?? initial), (v) => {

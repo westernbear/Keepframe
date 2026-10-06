@@ -17,6 +17,104 @@ function fixture(options) {
   return { ...ae, comp, layer, transform, opacity: transform.property("ADBE Opacity") };
 }
 
+function syncFixture(desired) {
+  const f = createAE();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8"), f.context);
+  const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C",
+    width: 640, height: 480, fps: 30, frames: 60}, assets: [], warnings: [],
+    layers: desired.map((id, i) => ({id, order: desired.length - i, kind: "null", name: id, label: null,
+      in: 0, out: 59, source: null, anchor: [0, 0], warnings: [], effects: {reveal: null, skew: null},
+      props: {position_x: [[0, 0, null, null]], position_y: [[0, 0, null, null]],
+        scale: [[0, [100, 100], null, null]], rotation: [[0, 0, null, null]], opacity: [[0, 100, null, null]]}}))};
+  const sync = () => JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false"));
+  assert.equal(sync().ok, true);
+  return {...f, spec, sync, comp: f.context.app.project.items[3]};
+}
+
+function stackLayers(comp) {
+  return Array.from({length: comp.layers.length}, (_, i) => comp.layers[i + 1]);
+}
+
+for (const probe of ["user-moved bottom pair", "changed order with trailing pair"]) {
+  test(`fix2: order probe ${probe} converges in one sync`, () => {
+    const desired = probe === "user-moved bottom pair" ? ["d", "c", "b", "a", "bg"] : ["r0", "r1", "r2", "t0", "t1"];
+    const f = syncFixture(probe === "user-moved bottom pair" ? desired : ["t1", "t0", "r0", "r1", "r2"]);
+    if (probe === "user-moved bottom pair") {
+      f.comp.layers[5].moveToBeginning(); f.comp.layers[5].moveToBeginning();
+      assert.deepEqual(stackLayers(f.comp).map((l) => l.name), ["a", "bg", "d", "c", "b"]);
+    } else {
+      for (const s of f.spec.layers) s.order = desired.length - desired.indexOf(s.id);
+    }
+    f.calls.length = 0;
+    assert.equal(f.sync().applied, true);
+    assert.deepEqual(stackLayers(f.comp).map((l) => l.name), desired);
+    assert.deepEqual(f.calls.filter((c) => /^move/.test(c.operation)).map((c) => c.name), desired.slice(-2));
+    const writes = f.counters.writes;
+    assert.equal(f.sync().applied, true);
+    assert.equal(f.counters.writes - writes, 0);
+  });
+}
+
+test("fix2: random tagged permutations preserve users and kept anchors, then write zero", () => {
+  let seed = 0x8ae2;
+  const random = (limit) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % limit; };
+  for (let n = 3; n <= 7; n++) for (let users = 0; users <= 3; users++) for (let trial = 0; trial < 20; trial++) {
+    const desired = Array.from({length: n}, (_, i) => `t${i}`), f = syncFixture(desired);
+    const shuffled = stackLayers(f.comp);
+    for (let i = n - 1; i > 0; i--) { const j = random(i + 1); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+    for (let i = 0; i < users; i++) {
+      const user = f.comp.layers.addText(`USER${i}`); user.name = `USER${i}`;
+      shuffled.splice(random(shuffled.length + 1), 0, user);
+    }
+    for (const l of shuffled.slice().reverse()) l.moveToBeginning();
+    const before = shuffled.map((l) => l.name), current = before.filter((name) => desired.includes(name));
+    const userState = f.serialize().project.items.find((i) => i.type === "CompItem").layers.filter((l) => !l.comment);
+    // Independent exhaustive subsequence oracle (at most 128 subsets for these small stacks).
+    let longest = 0;
+    for (let mask = 0; mask < 1 << n; mask++) {
+      const ranks = current.flatMap((name, i) => mask & (1 << i) ? [desired.indexOf(name)] : []);
+      if (ranks.every((r, i) => !i || ranks[i - 1] < r)) longest = Math.max(longest, ranks.length);
+    }
+    f.calls.length = 0;
+    const response = f.sync(), scenario = JSON.stringify({n, users, trial, before});
+    assert.equal(response.applied, true, scenario);
+    const after = stackLayers(f.comp).map((l) => l.name);
+    assert.deepEqual(after.filter((name) => desired.includes(name)), desired, scenario);
+    const moves = f.calls.filter((c) => /^move/.test(c.operation)), moved = moves.map((c) => c.name);
+    assert.equal(moved.length, n - longest, scenario);
+    assert.equal(new Set(moved).size, moved.length, scenario);
+    const kept = desired.filter((id) => !moved.includes(id)), placed = new Set(kept);
+    for (const move of moves) {
+      assert.ok(placed.has(move.target), `neighbour must already be placed: ${scenario}`);
+      assert.equal(desired.indexOf(move.target), desired.indexOf(move.name) + (move.operation === "moveBefore" ? 1 : -1), scenario);
+      placed.add(move.name);
+    }
+    const userNames = before.filter((name) => !desired.includes(name));
+    assert.deepEqual(after.filter((name) => userNames.includes(name)), userNames, scenario);
+    for (const user of userNames) for (const anchor of kept) {
+      assert.equal(before.indexOf(user) < before.indexOf(anchor), after.indexOf(user) < after.indexOf(anchor), scenario);
+    }
+    assert.deepEqual(f.serialize().project.items.find((i) => i.type === "CompItem").layers.filter((l) => !l.comment), userState, scenario);
+    const writes = f.counters.writes;
+    assert.equal(f.sync().applied, true, scenario);
+    assert.equal(f.counters.writes - writes, 0, scenario);
+  }
+});
+
+test("fix2: TextDocument fillColor throws on read and write while fill is disabled", () => {
+  const f = fixture(), p = f.layer.property("Text").property("Source Text"), doc = p.value;
+  doc.applyFill = false;
+  assert.throws(() => doc.fillColor, /fill.*disabled/);
+  assert.throws(() => { doc.fillColor = [1, 0, 0]; }, /fill.*disabled/);
+  p.setValue(doc);
+  const restored = createAE({state: f.serialize()}).context.app.project.items[1].layers[1].property("Text").property("Source Text").value;
+  assert.equal(restored.applyFill, false);
+  assert.throws(() => restored.fillColor, /fill.*disabled/);
+  assert.throws(() => { restored.fillColor = [1, 0, 0]; }, /fill.*disabled/);
+  restored.applyFill = true; restored.fillColor = [1, 0, 0];
+  assert.deepEqual(Array.from(restored.fillColor), [1, 0, 0]);
+});
+
 test("review: AE stores settings and colors in single precision", () => {
   const f = fixture();
   f.comp.frameRate = 29.97; f.comp.duration = 60 / 29.97;

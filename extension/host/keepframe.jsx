@@ -337,15 +337,34 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
-    function addEffect(layer, name, match) {
-        var effects = layer.property("ADBE Effect Parade"), effect, i, child;
+    function addEffect(layer, name, match, force) {
+        var effects = layer.property("ADBE Effect Parade"), effect, i, j, child, defaults;
         for (i = 1; i <= effects.numProperties; i += 1) {
             effect = effects.property(i);
             if (effect.name === name && effect.matchName === match) {
-                for (i = 1; i <= effect.numProperties; i += 1) {
-                    child = effect.property(i);
+                if (force) {
+                    // Read this AE build's defaults without replacing the owned effect.
+                    defaults = {};
+                    effect = effects.addProperty(match);
+                    try {
+                        for (j = 1; j <= effect.numProperties; j += 1) {
+                            child = effect.property(j);
+                            if (child.propertyType === PropertyType.PROPERTY
+                                && child.propertyValueType !== PropertyValueType.NO_VALUE) {
+                                defaults["$" + child.matchName] = child.valueAtTime(0, true);
+                            }
+                        }
+                    } finally { effect.remove(); }
+                    // Adding/removing an indexed property invalidates earlier AE references.
+                    effect = effects.property(i);
+                }
+                for (j = 1; j <= effect.numProperties; j += 1) {
+                    child = effect.property(j);
                     if (child.propertyType === PropertyType.PROPERTY
-                        && child.propertyValueType !== PropertyValueType.NO_VALUE) { clear(child); }
+                        && child.propertyValueType !== PropertyValueType.NO_VALUE) {
+                        clear(child);
+                        if (force) { child.setValue(defaults["$" + child.matchName]); }
+                    }
                 }
                 return effect;
             }
@@ -355,7 +374,7 @@ if (typeof JSON !== "object" || JSON === null) {
         return effect;
     }
 
-    function writeEffects(layer, s, fps, anchor) {
+    function writeEffects(layer, s, fps, anchor, force) {
         var effects = layer.property("ADBE Effect Parade"), i, effect;
         for (i = effects.numProperties; i >= 1; i -= 1) {
             effect = effects.property(i);
@@ -363,13 +382,13 @@ if (typeof JSON !== "object" || JSON === null) {
                 || (effect.name === "Keepframe Skew" && s.effects.skew === null))) { effect.remove(); }
         }
         if (s.effects.reveal !== null) {
-            effect = addEffect(layer, "Keepframe Reveal", "ADBE Linear Wipe");
+            effect = addEffect(layer, "Keepframe Reveal", "ADBE Linear Wipe", force);
             writeKeys(effect.property("ADBE Linear Wipe-0001"), s.effects.reveal.completion, fps, 1, false);
             staticValue(effect.property("ADBE Linear Wipe-0002"), s.effects.reveal.angle);
             staticValue(effect.property("ADBE Linear Wipe-0003"), s.effects.reveal.feather);
         }
         if (s.effects.skew !== null) {
-            effect = addEffect(layer, "Keepframe Skew", "ADBE Geometry2");
+            effect = addEffect(layer, "Keepframe Skew", "ADBE Geometry2", force);
             writeKeys(effect.property("ADBE Geometry2-0005"), s.effects.skew.skew, fps, 1, false);
             staticValue(effect.property("ADBE Geometry2-0006"), s.effects.skew.axis);
             staticValue(effect.property("ADBE Geometry2-0001"), [anchor[0], anchor[1]]);
@@ -377,7 +396,7 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
-    function writeLayer(layer, s, fps) {
+    function writeLayer(layer, s, fps, force) {
         var t, rect, anchor = s.anchor, doc, i, factor = 1;
         if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
         t = transform(layer);
@@ -389,8 +408,8 @@ if (typeof JSON !== "object" || JSON === null) {
             doc.text = s.source.text;
             doc.font = s.source.font.postscript !== null ? s.source.font.postscript : s.source.font.family;
             doc.fontSize = s.source.size_px;
-            doc.fillColor = rgb(s.source.color);
             doc.applyFill = true;
+            doc.fillColor = rgb(s.source.color);
             doc.justification = ParagraphJustification.LEFT_JUSTIFY;
             staticValue(layer.property("ADBE Text Properties").property("ADBE Text Document"), doc);
             rect = layer.sourceRectAtTime(s["in"] / fps, false);
@@ -410,7 +429,7 @@ if (typeof JSON !== "object" || JSON === null) {
             writeKeys(t.property(PROP_MATCHES[i]), s.props[PROP_NAMES[i]], fps,
                 i === 2 ? factor : 1, i === 2 && s.kind === "model");
         }
-        writeEffects(layer, s, fps, anchor);
+        writeEffects(layer, s, fps, anchor, force);
         layer.inPoint = s["in"] / fps;
         layer.outPoint = (s.out + 1) / fps;
         layer.label = s.label === null ? 0 : s.label;
@@ -494,8 +513,8 @@ if (typeof JSON !== "object" || JSON === null) {
     function tag(layer) {
         var match = /^keepframe:([\s\S]*);spec=([0-9a-f]{8});fp=([0-9a-f]{8})$/.exec(layer.comment);
         if (match) { return {id: match[1], spec: match[2], fp: match[3], layer: layer}; }
-        match = /^keepframe:([\s\S]+)$/.exec(layer.comment);
-        return match ? {id: match[1], spec: null, fp: null, layer: layer} : null;
+        match = /^keepframe:([\s\S]+?)(?:;spec=([0-9a-f]{8}))?$/.exec(layer.comment);
+        return match ? {id: match[1], spec: match[2] || null, fp: null, layer: layer} : null;
     }
 
     function tagged(comp) {
@@ -530,7 +549,8 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function hasExtras(layer) {
         var effects = layer.property("ADBE Effect Parade"), i;
-        if (layer.property("ADBE Mask Parade").numProperties > 0 || hasExpression(layer)) { return true; }
+        if (layer.parent || layer.trackMatteLayer
+            || layer.property("ADBE Mask Parade").numProperties > 0 || hasExpression(layer)) { return true; }
         for (i = 1; i <= effects.numProperties; i += 1) {
             if (!owned(effects.property(i))) { return true; }
         }
@@ -550,14 +570,14 @@ if (typeof JSON !== "object" || JSON === null) {
     function modelRenderer(comp) {
         var available, i, version;
         if (!comp) {
-            // AE exposes renderers only on comps. Advanced 3D ships from AE 24.1;
+            // AE exposes renderers only on comps. Advanced 3D ships from AE 24.0;
             // an empty project is version-checked before creating its first comp.
             for (i = 1; i <= app.project.items.length; i += 1) {
                 if (app.project.items[i] instanceof CompItem) { comp = app.project.items[i]; break; }
             }
             if (!comp) {
                 version = parseFloat(app.version);
-                if (version >= 24.1) { return "ADBE Calder"; }
+                if (version >= 24.0) { return "ADBE Calder"; }
                 throw new Error("this After Effects has no Advanced 3D renderer (needed for 3D models)");
             }
         }
@@ -601,7 +621,7 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function orderLayers(comp, desired) {
-        var current = tagged(comp), rank = {}, length = [], previous = [], keep = {}, i, j, best = -1;
+        var current = tagged(comp), rank = {}, length = [], previous = [], keep = {}, i, j, best = -1, anchor = -1;
         desired.sort(function (a, b) { return b.order - a.order || a.sequence - b.sequence; });
         for (i = 0; i < desired.length; i += 1) { rank["$" + desired[i].id] = i; }
         // ponytail: O(n squared) LIS; use binary-search tails if large scenes make ordering slow.
@@ -614,11 +634,18 @@ if (typeof JSON !== "object" || JSON === null) {
             }
             if (best === -1 || length[i] > length[best]) { best = i; }
         }
-        while (best !== -1) { keep["$" + current[best].id] = true; best = previous[best]; }
-        for (i = desired.length - 1; i >= 0; i -= 1) {
+        while (best !== -1) {
+            keep["$" + current[best].id] = true;
+            anchor = Math.max(anchor, rank["$" + current[best].id]);
+            best = previous[best];
+        }
+        // Work outward from the lowest kept anchor: each neighbour is already placed.
+        for (i = anchor - 1; i >= 0; i -= 1) {
             if (own(keep, "$" + desired[i].id)) { continue; }
-            if (i + 1 < desired.length) { desired[i].layer.moveBefore(desired[i + 1].layer); }
-            else { desired[i].layer.moveAfter(desired[i - 1].layer); }
+            desired[i].layer.moveBefore(desired[i + 1].layer);
+        }
+        for (i = anchor + 1; i < desired.length; i += 1) {
+            desired[i].layer.moveAfter(desired[i - 1].layer);
         }
     }
 
@@ -643,7 +670,7 @@ if (typeof JSON !== "object" || JSON === null) {
     global.kfSync = function (specJson, assetsJson, force) {
         try {
             var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
-            var existing = {}, wanted = {}, records, s, newHash, edits = [], desired = [], renderer = null, ordered;
+            var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered;
             validate(spec, paths, force);
             var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
                 keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version};
@@ -665,6 +692,7 @@ if (typeof JSON !== "object" || JSON === null) {
                     ? spec.comp.fps : rounded(comp.frameRate));
                 record.kind = kind(record.layer);
                 if (force !== "true") {
+                    if (record.fp === null) { interrupted.push(record.id); }
                     try {
                         if (record.current === null || record.current !== record.fp || hasExpression(record.layer)
                             || ((!s || s.kind !== record.kind) && (hasExtras(record.layer)
@@ -672,7 +700,11 @@ if (typeof JSON !== "object" || JSON === null) {
                     } catch (readError) { edits.push(record.id); }
                 }
             }
-            if (edits.length) { return JSON.stringify({ok: true, applied: false, hand_edited: edits}); }
+            if (edits.length) {
+                result = {ok: true, applied: false, hand_edited: edits};
+                if (interrupted.length) { result.interrupted = interrupted; }
+                return JSON.stringify(result);
+            }
             app.beginUndoGroup("Keepframe sync");
             try {
                 parent = folder(spec.project, folder("Keepframe", null));
@@ -723,7 +755,7 @@ if (typeof JSON !== "object" || JSON === null) {
                             if (record) { updateSource(layer, comp, s, assets); }
                             else { placeNew(layer, s, ordered, existing); }
                         }
-                        writeLayer(layer, s, spec.comp.fps);
+                        writeLayer(layer, s, spec.comp.fps, force === "true");
                         (record ? result.updated : result.created).push(s.id);
                     }
                     result.keys[s.id] = keyCount(layer);

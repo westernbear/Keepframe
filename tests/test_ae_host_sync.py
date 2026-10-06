@@ -753,7 +753,7 @@ def test_review_model_renderer_unavailable_refuses_before_changes(tmp_path, full
         comp(state)["renderers"] = ["ADBE Advanced 3d", "ADBE Ernst"]
         comp(state)["renderer"] = "ADBE Advanced 3d"
     else:
-        state = {"app": {"version": "24.0"}}
+        state = {"app": {"version": "23.6"}}
     save_state(path, state)
     response = sync(path, spec, assets, force=True)
     assert response["value"]["ok"] is False
@@ -805,6 +805,11 @@ def test_review_partial_failure_tags_new_layer_and_retry_has_no_duplicate(tmp_pa
     assert all(item["comment"].startswith("keepframe:") for item in comp(state)["layers"])
     state.pop("testHooks")
     save_state(path, state)
+    interrupted = stack_ids(state)
+    response = sync(path, spec)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": interrupted,
+                                 "interrupted": interrupted}
+    assert response["writes"] == response["undo_groups"] == 0
     response = sync(path, spec, force=True)
     assert response["value"]["ok"], response
     assert len(comp(read_state(path))["layers"]) == len(spec["layers"])
@@ -923,4 +928,107 @@ def test_review_comp_resize_updates_the_solid_source_once(tmp_path):
     state = read_state(path)
     source = state["project"]["items"][layers(state)["kf:background"]["source"] - 1]
     assert (source["width"], source["height"]) == (640, 360)
+    assert sync(path, spec)["writes"] == 0
+
+
+def test_fix2_ae_24_0_empty_project_supports_models(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    save_state(path, {"app": {"version": "24.0"}})
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    assert comp(read_state(path))["renderer"] == "ADBE Calder"
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_fix2_force_resets_owned_effect_unwritten_parameters(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    assert sync(path, spec, assets)["value"]["ok"]
+    state = read_state(path)
+    skew = effects(layers(state)["kf:image"])[1]
+    defaults = {p["matchName"]: copy.deepcopy(p["value"]) for p in skew["properties"]
+                if p["matchName"] in ("ADBE Geometry2-0003", "ADBE Geometry2-0004",
+                                      "ADBE Geometry2-0007", "ADBE Geometry2-0008", "ADBE Geometry2-0011")}
+    for match in defaults:
+        prop(skew, match)["value"] = 50
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+    assert response["writes"] == response["undo_groups"] == 0
+    response = sync(path, spec, assets, force=True)
+    assert response["value"]["updated"] == ["kf:image"], response
+    skew = effects(layers(read_state(path))["kf:image"])[1]
+    assert {match: prop(skew, match)["value"] for match in defaults} == defaults
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_fix2_force_enables_user_disabled_text_fill(tmp_path):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", color="#112233"))
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    doc = prop(layers(state)["kf:a"], "ADBE Text Document")["value"]
+    doc.update(applyFill=False, tracking=37, applyStroke=True, strokeColor=[1, 0, 0])
+    save_state(path, state)
+    response = sync(path, spec)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["writes"] == response["undo_groups"] == 0
+    response = sync(path, spec, force=True)
+    assert response["value"]["ok"] and response["value"]["updated"] == ["kf:a"], response
+    doc = prop(layers(read_state(path))["kf:a"], "ADBE Text Document")["value"]
+    assert doc["applyFill"] is True
+    assert doc["fillColor"] == [struct.unpack("f", struct.pack("f", v / 255))[0] for v in (17, 34, 51)]
+    assert (doc["tracking"], doc["applyStroke"], doc["strokeColor"]) == (37, True, [1, 0, 0])
+    assert sync(path, spec)["writes"] == 0
+
+
+@pytest.mark.parametrize("partial", ["id", "spec"])
+def test_fix2_partial_tags_report_interrupted_ids(tmp_path, partial):
+    spec, _ = spec_for(tmp_path, element("a", kind="group"))
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    for item in comp(state)["layers"]:
+        item["comment"] = item["comment"].split(";fp=")[0] if partial == "spec" else item["comment"].split(";")[0]
+    save_state(path, state)
+    response = sync(path, spec)
+    ids = ["kf:a", "kf:background"]
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ids, "interrupted": ids}
+    assert response["writes"] == response["undo_groups"] == 0
+    assert sync(path, spec, force=True)["value"]["applied"]
+    assert len(comp(read_state(path))["layers"]) == len(spec["layers"])
+    assert sync(path, spec)["writes"] == 0
+
+
+@pytest.mark.parametrize("relation", ["parent", "trackMatteLayer"])
+@pytest.mark.parametrize("action", ["update", "delete", "recreate"])
+def test_fix2_tagged_layer_user_relationships_are_extras(tmp_path, relation, action):
+    spec, _ = spec_for(tmp_path, element("a", kind="group"))
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    user = user_copy(layers(state)["kf:a"], "USER")
+    comp(state)["layers"].append(user)
+    layers(state)["kf:a"][relation] = len(comp(state)["layers"])
+    save_state(path, state)
+    if action == "update":
+        spec["layers"][1]["props"]["rotation"] = [[0, 30, None, None]]
+    elif action == "delete":
+        spec["layers"].pop(1)
+    else:
+        replacement, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+        spec["layers"][1] = replacement["layers"][1]
+    response = sync(path, spec)
+    if action == "update":
+        assert response["value"]["updated"] == ["kf:a"], response
+        assert layers(read_state(path))["kf:a"][relation] == len(comp(read_state(path))["layers"])
+    else:
+        assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+        assert response["writes"] == response["undo_groups"] == 0
+        assert read_state(path) == state
+        assert sync(path, spec, force=True)["value"]["applied"]
+        if action == "recreate":
+            assert relation not in layers(read_state(path))["kf:a"]
+    assert comp(read_state(path))["layers"][-1] == user
     assert sync(path, spec)["writes"] == 0

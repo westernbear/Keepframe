@@ -88,7 +88,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `PropertyValueType`: symbolic `NO_VALUE`, `OneD`, `TwoD`, `TwoD_SPATIAL`, `ThreeD`, `ThreeD_SPATIAL`, `COLOR`, `TEXT_DOCUMENT` constants.
 - `KeyframeEase(speed,influence)`: detached value with settable finite speed/influence; influence must be 0.1–100 inclusive.
 - `KeyframeInterpolationType`: symbolic `LINEAR`, `BEZIER`, `HOLD` constants.
-- `TextDocument(text)`: detached value with settable text, font (default ArialMT), fontSize (36), fillColor ([1,1,1]), applyFill (true), justification (LEFT_JUSTIFY).
+- `TextDocument(text)`: detached value with settable text, font (default ArialMT), fontSize (36), fillColor ([1,1,1]), applyFill (true), justification (LEFT_JUSTIFY); fillColor reads/writes throw while applyFill is false, including after state restoration.
 - `TextDocument.tracking` / `applyStroke` / `strokeColor`: detached unmanaged styling preserved through property assignment; fill colour stores float32 channels.
 - `ParagraphJustification`: symbolic `LEFT_JUSTIFY`, `CENTER_JUSTIFY`, `RIGHT_JUSTIFY` constants.
 - `$.getenv(name)` / `$.global` / `$.line`: environment from `state.app.env` (missing → null), the VM global object, and fixed line 0.
