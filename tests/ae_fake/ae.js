@@ -499,6 +499,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         field(sourceAPI, "file", () => values.mainSource.file);
         if (source.color) field(sourceAPI, "color", () => copy(values.mainSource.color));
         api.mainSource = host(source.color ? "SolidSource" : "FileSource", sourceAPI);
+        field(api, "file", () => values.mainSource.file);
         api.replace = (file) => {
           if (records.get(file)?.type !== "File") throw Error("fake AE: replace requires a File");
           values.mainSource.file = file;
@@ -507,14 +508,18 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         };
       } else {
         values.frameRate ??= 30; values.duration ??= 5; values.pixelAspect ??= 1; values.bgColor ??= [0, 0, 0];
+        values.renderer ??= "ADBE Classic 3d";
+        setting(api, values, "renderer", (v) => {
+          if (!["ADBE Classic 3d", "ADBE Advanced 3d"].includes(v)) throw Error("fake AE: invalid renderer");
+        });
         for (const name of ["frameRate", "duration", "pixelAspect"]) setting(api, values, name, (v) => {
           finite(v, name); if (v <= 0) throw Error(`fake AE: invalid ${name}`);
         });
         setting(api, values, "bgColor", (v) => vector(v, 3, "bgColor", true));
         const layers = [];
         records.get(proxy).layers = layers;
-        const addLayer = (layerType, sourceItem, name, duration, text) => {
-          const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text }, sourceItem);
+        const addLayer = (layerType, sourceItem, name, duration, text, nullLayer = false) => {
+          const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text, nullLayer }, sourceItem);
           layers.unshift(l); changed(); return l;
         };
         const solid = (color, name, w, h) => {
@@ -531,7 +536,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
           addSolid(color, name, w, h, pixelAspect, duration) {
             return addLayer("AVLayer", solid(color, name, w, h), name, duration);
           },
-          addNull(duration) { return addLayer("AVLayer", solid([1, 1, 1], "Null", 100, 100), "Null", duration); },
+          addNull(duration) { return addLayer("AVLayer", solid([1, 1, 1], "Null", 100, 100), "Null", duration, undefined, true); },
         });
       }
     }
@@ -550,6 +555,14 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
     field(api, "source", () => source || null);
+    field(api, "nullLayer", () => Boolean(values.nullLayer));
+    api.replaceSource = (sourceItem, fixExpressions) => {
+      if (type === "TextLayer" || fixExpressions !== false) return unsupported(type, "replaceSource");
+      if (!["FootageItem", "CompItem"].includes(records.get(sourceItem)?.type)) throw Error("fake AE: replaceSource requires footage or comp");
+      source = sourceItem;
+      records.get(proxy).source = sourceItem;
+      changed();
+    };
     const findGroup = (match) => saved.properties?.find((p) => p.matchName === match);
     const groups = [transformGroup(values, comp, source, findGroup("ADBE Transform Group")),
       group("ADBE Effect Parade", "Effects", [], Object.keys(effectDefinitions), findGroup("ADBE Effect Parade")),
@@ -595,6 +608,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
   }
 
   const projectAPI = {};
+  field(projectAPI, "rootFolder", () => root);
   projectAPI.items = itemCollection();
   projectAPI.importFile = (options) => {
     if (records.get(options)?.type !== "ImportOptions") throw Error("fake AE: expected ImportOptions");
@@ -652,10 +666,10 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
           mainSource: { ...v.mainSource, file: v.mainSource.file?.fsName || null,
             ...(v.mainSource.color ? { color: copy(v.mainSource.color) } : {}) } });
         if (r.type === "CompItem") Object.assign(result, { width: v.width, height: v.height, pixelAspect: v.pixelAspect,
-          frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), layers: r.layers.map((l) => {
+          frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), renderer: v.renderer, layers: r.layers.map((l) => {
             const lr = records.get(l), lv = lr.values;
             return { type: lr.type, name: lv.name, comment: lv.comment, label: lv.label, inPoint: lv.inPoint,
-              outPoint: lv.outPoint, startTime: lv.startTime, threeDLayer: lv.threeDLayer, source: reference(lr.source),
+              outPoint: lv.outPoint, startTime: lv.startTime, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
               properties: lr.groups.map(serializeProperty) };
           }) });
         return result;

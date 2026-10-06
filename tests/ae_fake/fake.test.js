@@ -17,6 +17,50 @@ function fixture(options) {
   return { ...ae, comp, layer, transform, opacity: transform.property("ADBE Opacity") };
 }
 
+test("sync kind detection and renderer are strict, serialized AE attributes", () => {
+  const f = fixture();
+  assert.equal(f.comp.renderer, "ADBE Classic 3d");
+  assert.equal(f.comp.parentFolder, f.context.app.project.rootFolder);
+  assert.throws(() => { f.context.app.project.rootFolder = null; }, /read-only/);
+  f.comp.renderer = "ADBE Advanced 3d";
+  assert.throws(() => { f.comp.renderer = "bogus"; }, /invalid renderer/);
+  const nul = f.comp.layers.addNull();
+  const solid = f.comp.layers.addSolid([1, 0, 0], "Solid", 10, 10, 1, 1);
+  assert.equal(nul.nullLayer, true);
+  assert.equal(solid.nullLayer, false);
+  assert.equal(f.layer.nullLayer, false);
+  assert.throws(() => { nul.nullLayer = false; }, /read-only/);
+  assert.equal(nul.source.file, null);
+  const footage = f.context.app.project.importFile(new f.context.ImportOptions(new f.context.File("x.png")));
+  assert.equal(footage.file.name, "x.png");
+  footage.replace(new f.context.File("new.png"));
+  assert.equal(footage.file.name, "new.png");
+  assert.throws(() => { footage.file = null; }, /read-only/);
+  const state = f.serialize();
+  const restored = createAE({ state });
+  assert.equal(restored.context.app.project.items[1].renderer, "ADBE Advanced 3d");
+  assert.equal(restored.context.app.project.items[1].layers[2].nullLayer, true);
+});
+
+test("replaceSource updates footage and rectangles without touching layer properties or extras", () => {
+  const f = fixture();
+  const solid = f.comp.layers.addSolid([1, 0, 0], "Solid", 20, 30, 1, 2);
+  const other = f.comp.layers.addSolid([0, 1, 0], "Other", 40, 60, 1, 2);
+  const mask = solid.Masks.addProperty("ADBE Mask Atom");
+  mask.name = "User mask";
+  solid.property("ADBE Transform Group").property("ADBE Opacity").setValue(55);
+  solid.replaceSource(other.source, false);
+  assert.equal(solid.source, other.source);
+  assert.equal(solid.sourceRectAtTime(0, false).width, 40);
+  assert.equal(solid.Masks.property(1).name, "User mask");
+  assert.equal(solid.property("ADBE Transform Group").property("ADBE Opacity").value, 55);
+  assert.throws(() => solid.replaceSource(null, false), /requires footage or comp/);
+  assert.throws(() => solid.replaceSource(other.source, true), /unsupported/);
+  assert.throws(() => f.layer.replaceSource(other.source, false), /unsupported/);
+  const state = f.serialize();
+  assert.equal(state.project.items[0].layers[1].source, state.project.items[0].layers[0].source);
+});
+
 test("VM has no JSON, shares $.global, and exposes state/version/fonts/env", () => {
   const ae = createAE({ state: { app: { version: "25.0", fonts: [[{
     familyName: "Arial", styleName: "Regular", postScriptName: "ArialMT",

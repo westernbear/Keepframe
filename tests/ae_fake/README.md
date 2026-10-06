@@ -25,6 +25,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 
 - `app.version`: read-only string, default `24.6.0x45`, initialized from `state.app.version`.
 - `app.project`: the Project host object.
+- `app.project.rootFolder`: read-only root FolderItem, also the parent of top-level items.
 - `app.beginUndoGroup(name)` / `app.endUndoGroup()`: begin increments `counters.undoGroups`; neither increments project writes.
 - `app.fonts.allFonts`: native arrays of arrays of strict Font records from `state.app.fonts`.
 - `Font.familyName` / `styleName` / `postScriptName`: read-only strings, default empty when unspecified.
@@ -37,10 +38,12 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `FootageItem.name` / `comment` / `parentFolder`: settable item metadata.
 - `FootageItem.width` / `height`: read-only dimensions from state; imports default to 1920×1080 without inspecting media.
 - `FootageItem.mainSource.file`: File or `null` for generated solid/null sources.
+- `FootageItem.file`: read-only File or `null` for generated solid/null sources; follows `replace`.
 - `SolidSource.color`: read-only RGB array for generated solid/null footage.
 - `FootageItem.replace(file)`: replaces the source File and updates the internal model flag.
 - `CompItem.name` / `comment` / `parentFolder`: settable item metadata.
 - `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1.
+- `CompItem.renderer`: settable renderer match name; models `ADBE Classic 3d` (default) and `ADBE Advanced 3d`, rejects other renderers.
 - `CompItem.layers`: LayerCollection with `.length` and 1-based `[i]`; index 1 is the top of the stack.
 - `comp.layers.add(item)`: adds AVLayer sourced by a FootageItem or CompItem, at the top.
 - `comp.layers.addText(text)`: adds TextLayer with null source, at the top.
@@ -50,6 +53,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `layer.name` / `comment` / `label` / `inPoint` / `outPoint` / `startTime` / `threeDLayer`: settable; label range is 0–16.
 - `layer.index`: read-only live stack index, updated after every move/removal.
 - `layer.source`: read-only source item or null for text.
+- `layer.nullLayer`: read-only boolean; true for layers created by `addNull`, preserved in state.
+- `AVLayer.replaceSource(item,false)`: replaces footage/comp source, preserving transforms, effects, masks and stack position; text and expression-fixing mode are unmodeled and throw.
 - `layer.remove()`: removes the layer; removing an already removed layer throws.
 - `layer.moveBefore(layer)` / `moveAfter(layer)` / `moveToBeginning()` / `moveToEnd()`: move within the same comp and update all indices.
 - `layer.sourceRectAtTime(t,includeExtents)`: text has width `0.6*fontSize*text.length`, height `fontSize`, left 0, top `-0.8*fontSize`; models are 200×200; other layers use source dimensions.

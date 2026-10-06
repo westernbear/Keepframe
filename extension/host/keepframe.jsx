@@ -1,1 +1,592 @@
-// Keepframe host script (ExtendScript); filled in by later tasks.
+/* Keepframe host: fixed entry points, JSON data only, ExtendScript ES3. */
+/* ExtendScript is ES3: there is no built-in JSON, and without it every bridge
+ * read fails quietly.  Minimal parse/stringify after json2.js (public domain),
+ * installed only when the host lacks them. */
+if (typeof JSON !== "object" || JSON === null) {
+    JSON = {};
+}
+(function (json) {
+    var ESCAPES = { "\"": "\\\"", "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+    var UNSAFE = /[\\"\u0000-\u001f\u007f-\u009f\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+    var DANGEROUS = /[\u0000\u00ad\u0600-\u0604\u070f\u17b4\u17b5\u200c-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufff0-\uffff]/g;
+    var STRUCTURE = /^[\],:{}\s]*$/;
+    var ESCAPE_SEQ = /\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4})/g;
+    var TOKENS = /"[^"\\\n\r]*"|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?/g;
+    var OPEN_BRACKETS = /(?:^|:|,)(?:\s*\[)+/g;
+
+    function hex(c) {
+        return "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4);
+    }
+
+    function quote(text) {
+        return "\"" + text.replace(UNSAFE, function (c) { return ESCAPES[c] || hex(c); }) + "\"";
+    }
+
+    function encode(value) {
+        var parts = [];
+        var key;
+        var index;
+        var item;
+        if (value === null) { return "null"; }
+        switch (typeof value) {
+            case "string": return quote(value);
+            case "number": return isFinite(value) ? String(value) : "null";
+            case "boolean": return String(value);
+            case "object":
+                if (Object.prototype.toString.call(value) === "[object Array]") {
+                    for (index = 0; index < value.length; index += 1) {
+                        item = encode(value[index]);
+                        parts.push(item === undefined ? "null" : item);
+                    }
+                    return "[" + parts.join(",") + "]";
+                }
+                for (key in value) {
+                    if (Object.prototype.hasOwnProperty.call(value, key)) {
+                        item = encode(value[key]);
+                        if (item !== undefined) { parts.push(quote(String(key)) + ":" + item); }
+                    }
+                }
+                return "{" + parts.join(",") + "}";
+            default:
+                return undefined;
+        }
+    }
+
+    if (typeof json.stringify !== "function") {
+        json.stringify = function (value) { return encode(value); };
+    }
+    if (typeof json.parse !== "function") {
+        json.parse = function (text) {
+            var source = String(text).replace(DANGEROUS, hex);
+            if (STRUCTURE.test(source.replace(ESCAPE_SEQ, "@").replace(TOKENS, "]").replace(OPEN_BRACKETS, ""))) {
+                return eval("(" + source + ")");
+            }
+            throw new SyntaxError("JSON.parse");
+        };
+    }
+}(JSON));
+
+(function (global) {
+    var PROP_NAMES = ["position_x", "position_y", "scale", "rotation", "opacity"];
+    var PROP_MATCHES = ["ADBE Position_0", "ADBE Position_1", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+
+    function own(object, key) {
+        return Object.prototype.hasOwnProperty.call(object, key);
+    }
+
+    function array(value) {
+        return Object.prototype.toString.call(value) === "[object Array]";
+    }
+
+    function requireValue(condition, message) {
+        if (!condition) { throw new Error(message); }
+    }
+
+    function number(value) {
+        return typeof value === "number" && isFinite(value);
+    }
+
+    function rgb(value) {
+        requireValue(typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value), "invalid RGB color");
+        return [parseInt(value.substr(1, 2), 16) / 255, parseInt(value.substr(3, 2), 16) / 255,
+            parseInt(value.substr(5, 2), 16) / 255];
+    }
+
+    function validateKeys(keys, dimensions) {
+        var i, j, k, side, value;
+        requireValue(array(keys) && keys.length > 0, "invalid property keys");
+        for (i = 0; i < keys.length; i += 1) {
+            k = keys[i];
+            requireValue(array(k) && k.length === 4 && number(k[0]) && k[0] >= 0
+                && (i === 0 || k[0] > keys[i - 1][0]), "invalid key frame");
+            value = dimensions === 1 ? [k[1]] : k[1];
+            requireValue(array(value) && value.length === dimensions, "invalid key dimensions");
+            for (j = 0; j < dimensions; j += 1) {
+                requireValue(number(value[j]), "invalid key value");
+            }
+            for (side = 2; side <= 3; side += 1) {
+                if (k[side] === null) { continue; }
+                requireValue(array(k[side]) && k[side].length === dimensions, "invalid ease dimensions");
+                for (j = 0; j < dimensions; j += 1) {
+                    value = k[side][j];
+                    requireValue(array(value) && value.length === 2 && number(value[0])
+                        && value[0] >= 0.1 && value[0] <= 100 && number(value[1]), "invalid temporal ease");
+                }
+            }
+        }
+    }
+
+    function validate(spec, assets, force) {
+        var i, j, s, a, ids = {}, names = {};
+        requireValue(spec && spec.schema === "keepframe.ae-comp/1" && spec.comp
+            && typeof spec.project === "string" && typeof spec.comp.tag === "string"
+            && typeof spec.comp.name === "string", "invalid comp spec");
+        requireValue(force === "true" || force === "false", "invalid force flag");
+        requireValue(assets && typeof assets === "object" && !array(assets), "invalid assets map");
+        requireValue(number(spec.comp.width) && spec.comp.width > 0 && Math.floor(spec.comp.width) === spec.comp.width
+            && number(spec.comp.height) && spec.comp.height > 0 && Math.floor(spec.comp.height) === spec.comp.height
+            && number(spec.comp.fps) && spec.comp.fps > 0
+            && number(spec.comp.frames) && spec.comp.frames > 0 && Math.floor(spec.comp.frames) === spec.comp.frames, "invalid comp settings");
+        requireValue(array(spec.assets) && array(spec.layers) && array(spec.warnings), "invalid spec lists");
+        for (i = 0; i < spec.assets.length; i += 1) {
+            a = spec.assets[i];
+            requireValue(a && typeof a.name === "string" && /^[0-9a-f]{64}$/.test(a.sha256), "invalid asset");
+            requireValue(own(assets, a.name) && typeof assets[a.name] === "string" && assets[a.name] !== "",
+                "asset " + a.name + " was not downloaded");
+            names["$" + a.name] = true;
+        }
+        for (i = 0; i < spec.layers.length; i += 1) {
+            s = spec.layers[i];
+            requireValue(s && typeof s.id === "string" && s.id !== "" && !own(ids, "$" + s.id), "invalid layer id");
+            ids["$" + s.id] = true;
+            requireValue(/^(text|solid|null|image|model)$/.test(s.kind) && typeof s.name === "string"
+                && number(s.order) && number(s["in"]) && number(s.out) && s.out >= s["in"]
+                && (s.label === null || (number(s.label) && s.label >= 0 && s.label <= 16
+                    && Math.floor(s.label) === s.label)), "invalid layer settings");
+            requireValue(s.props && s.effects && array(s.warnings), "invalid layer properties");
+            for (j = 0; j < PROP_NAMES.length; j += 1) {
+                validateKeys(s.props[PROP_NAMES[j]], j === 2 ? 2 : 1);
+            }
+            if (s.kind === "text") {
+                requireValue(s.source && typeof s.source.text === "string" && s.source.font
+                    && typeof s.source.font.family === "string"
+                    && (s.source.font.postscript === null || typeof s.source.font.postscript === "string")
+                    && number(s.source.size_px) && s.source.size_px > 0
+                    && array(s.source.anchor_fraction) && s.source.anchor_fraction.length === 2
+                    && number(s.source.anchor_fraction[0]) && number(s.source.anchor_fraction[1]), "invalid text source");
+                rgb(s.source.color);
+            } else {
+                requireValue(array(s.anchor) && s.anchor.length === 2
+                    && number(s.anchor[0]) && number(s.anchor[1]), "invalid layer anchor");
+            }
+            if (s.kind === "solid") { rgb(s.source.color); }
+            if (s.kind === "image" || s.kind === "model") {
+                requireValue(s.source && own(names, "$" + s.source.asset), "invalid layer asset");
+            }
+            if (s.kind === "model") {
+                requireValue(array(s.source.fit_box) && s.source.fit_box.length === 2
+                    && number(s.source.fit_box[0]) && s.source.fit_box[0] > 0
+                    && number(s.source.fit_box[1]) && s.source.fit_box[1] > 0, "invalid model fit box");
+                validateKeys(s.props.rotation_x, 1);
+                validateKeys(s.props.rotation_y, 1);
+            }
+            if (s.effects.reveal !== null) {
+                validateKeys(s.effects.reveal.completion, 1);
+                requireValue(number(s.effects.reveal.angle) && number(s.effects.reveal.feather), "invalid reveal effect");
+            }
+            if (s.effects.skew !== null) {
+                validateKeys(s.effects.skew.skew, 1);
+                requireValue(number(s.effects.skew.axis), "invalid skew effect");
+            }
+        }
+    }
+
+    function hash(text) {
+        var h = 2166136261, i;
+        for (i = 0; i < text.length; i += 1) {
+            h ^= text.charCodeAt(i);
+            // Shift/add keeps the FNV multiplication exact in ES3's doubles.
+            h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+        }
+        return ("00000000" + h.toString(16)).slice(-8);
+    }
+
+    function transform(layer) { return layer.property("ADBE Transform Group"); }
+
+    function owned(effect) {
+        return (effect.name === "Keepframe Reveal" && effect.matchName === "ADBE Linear Wipe")
+            || (effect.name === "Keepframe Skew" && effect.matchName === "ADBE Geometry2");
+    }
+
+    function managed(layer) {
+        var t = transform(layer), result = [t.property("ADBE Anchor Point")], i, j, effect;
+        var position = t.property("ADBE Position");
+        if (position.dimensionsSeparated) {
+            result.push(t.property("ADBE Position_0"), t.property("ADBE Position_1"));
+            if (layer.threeDLayer) { result.push(t.property("ADBE Position_2")); }
+        } else { result.push(position); }
+        result.push(t.property("ADBE Scale"), t.property("ADBE Rotate Z"), t.property("ADBE Opacity"));
+        if (layer.threeDLayer) { result.push(t.property("ADBE Rotate X"), t.property("ADBE Rotate Y")); }
+        if (layer instanceof TextLayer) {
+            result.push(layer.property("ADBE Text Properties").property("ADBE Text Document"));
+        }
+        var effects = layer.property("ADBE Effect Parade");
+        for (i = 1; i <= effects.numProperties; i += 1) {
+            effect = effects.property(i);
+            if (owned(effect)) {
+                for (j = 1; j <= effect.numProperties; j += 1) { result.push(effect.property(j)); }
+            }
+        }
+        return result;
+    }
+
+    function propertyValue(p, value) {
+        if (p.propertyValueType === PropertyValueType.TEXT_DOCUMENT) {
+            return [value.text, value.font, value.fontSize, value.fillColor, value.applyFill, String(value.justification)];
+        }
+        return value;
+    }
+
+    function easeValues(eases) {
+        var values = [], i;
+        for (i = 0; i < eases.length; i += 1) { values.push([eases[i].influence, eases[i].speed]); }
+        return values;
+    }
+
+    function fingerprint(layer, fps) {
+        var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
+        var position = transform(layer).property("ADBE Position");
+        // FPS is managed context: changing it changes how every frame-based property must be written.
+        data.push(fps, layer.name, layer.label, layer.inPoint, layer.outPoint, layer.threeDLayer, position.dimensionsSeparated,
+            position.expressionEnabled, position.expression);
+        // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
+        if (kind(layer) === "model") { data.push(layer.source.comment); }
+        for (i = 0; i < props.length; i += 1) {
+            p = props[i];
+            keys = [];
+            for (k = 1; k <= p.numKeys; k += 1) {
+                keys.push([p.keyTime(k), propertyValue(p, p.keyValue(k)), String(p.keyInInterpolationType(k)),
+                    String(p.keyOutInterpolationType(k)), easeValues(p.keyInTemporalEase(k)), easeValues(p.keyOutTemporalEase(k))]);
+            }
+            data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true)),
+                p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
+        }
+        effects = layer.property("ADBE Effect Parade");
+        for (i = 1; i <= effects.numProperties; i += 1) {
+            effect = effects.property(i);
+            if (owned(effect)) { effectNames.push([effect.matchName, effect.name]); }
+        }
+        data.push(effectNames);
+        return hash(JSON.stringify(data));
+    }
+
+    function keyCount(layer) {
+        var props = managed(layer), count = 0, i;
+        for (i = 0; i < props.length; i += 1) { count += props[i].numKeys; }
+        return count;
+    }
+
+    function clear(p) {
+        var i;
+        if (p.canSetExpression && p.expressionEnabled) { p.expressionEnabled = false; }
+        for (i = p.numKeys; i >= 1; i -= 1) { p.removeKey(i); }
+    }
+
+    function staticValue(p, value) { clear(p); p.setValue(value); }
+
+    function eases(values, dimensions, factor, modelScale) {
+        var result = [], i, value;
+        for (i = 0; i < dimensions; i += 1) {
+            value = values ? values[modelScale && i === 2 ? 0 : i] : [33.33333333333333, 0];
+            result.push(new KeyframeEase(value[1] * factor, value[0]));
+        }
+        return result;
+    }
+
+    function writeKeys(p, keys, fps, factor, modelScale) {
+        var i, k, value, dimensions = 1;
+        clear(p);
+        if (p.propertyValueType === PropertyValueType.TwoD) { dimensions = 2; }
+        if (p.propertyValueType === PropertyValueType.ThreeD) { dimensions = 3; }
+        for (i = 0; i < keys.length; i += 1) {
+            k = keys[i];
+            value = k[1];
+            if (modelScale) { value = [value[0] * factor, value[1] * factor, value[0] * factor]; }
+            if (keys.length === 1) { p.setValue(value); }
+            else {
+                p.setValueAtTime(k[0] / fps, value);
+                p.setInterpolationTypeAtKey(i + 1, k[3] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR,
+                    k[2] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR);
+                p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor, modelScale), eases(k[2], dimensions, factor, modelScale));
+            }
+        }
+    }
+
+    function addEffect(layer, name, match) {
+        var effect = layer.property("ADBE Effect Parade").addProperty(match);
+        effect.name = name;
+        return effect;
+    }
+
+    function writeEffects(layer, s, fps, anchor) {
+        var effects = layer.property("ADBE Effect Parade"), i, effect;
+        // Rebuilding our effects also resets keys/expressions on their default parameters.
+        for (i = effects.numProperties; i >= 1; i -= 1) {
+            if (owned(effects.property(i))) { effects.property(i).remove(); }
+        }
+        if (s.effects.reveal !== null) {
+            effect = addEffect(layer, "Keepframe Reveal", "ADBE Linear Wipe");
+            writeKeys(effect.property("ADBE Linear Wipe-0001"), s.effects.reveal.completion, fps, 1, false);
+            staticValue(effect.property("ADBE Linear Wipe-0002"), s.effects.reveal.angle);
+            staticValue(effect.property("ADBE Linear Wipe-0003"), s.effects.reveal.feather);
+        }
+        if (s.effects.skew !== null) {
+            effect = addEffect(layer, "Keepframe Skew", "ADBE Geometry2");
+            writeKeys(effect.property("ADBE Geometry2-0005"), s.effects.skew.skew, fps, 1, false);
+            staticValue(effect.property("ADBE Geometry2-0006"), s.effects.skew.axis);
+            staticValue(effect.property("ADBE Geometry2-0001"), [anchor[0], anchor[1]]);
+            staticValue(effect.property("ADBE Geometry2-0002"), [anchor[0], anchor[1]]);
+        }
+    }
+
+    function writeLayer(layer, s, fps) {
+        var t, rect, anchor = s.anchor, doc, i, factor = 1;
+        if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
+        t = transform(layer);
+        if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
+        // The leader can also carry an expression after separation.
+        if (t.property("ADBE Position").expressionEnabled) { t.property("ADBE Position").expressionEnabled = false; }
+        if (s.kind === "text") {
+            doc = new TextDocument(s.source.text);
+            doc.font = s.source.font.postscript !== null ? s.source.font.postscript : s.source.font.family;
+            doc.fontSize = s.source.size_px;
+            doc.fillColor = rgb(s.source.color);
+            doc.applyFill = true;
+            doc.justification = ParagraphJustification.LEFT_JUSTIFY;
+            staticValue(layer.property("ADBE Text Properties").property("ADBE Text Document"), doc);
+            rect = layer.sourceRectAtTime(s["in"] / fps, false);
+            anchor = [rect.left + s.source.anchor_fraction[0] * rect.width, rect.top + s.source.anchor_fraction[1] * rect.height];
+        }
+        if (s.kind === "model") {
+            rect = layer.sourceRectAtTime(0, false);
+            requireValue(rect.width > 0 && rect.height > 0, "model has an empty source rectangle");
+            factor = Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
+            anchor = [anchor[0], anchor[1], 0];
+            staticValue(t.property("ADBE Position_2"), 0);
+            writeKeys(t.property("ADBE Rotate X"), s.props.rotation_x, fps, 1, false);
+            writeKeys(t.property("ADBE Rotate Y"), s.props.rotation_y, fps, 1, false);
+        }
+        staticValue(t.property("ADBE Anchor Point"), anchor);
+        for (i = 0; i < PROP_NAMES.length; i += 1) {
+            writeKeys(t.property(PROP_MATCHES[i]), s.props[PROP_NAMES[i]], fps,
+                i === 2 ? factor : 1, i === 2 && s.kind === "model");
+        }
+        writeEffects(layer, s, fps, anchor);
+        layer.inPoint = s["in"] / fps;
+        layer.outPoint = (s.out + 1) / fps;
+        layer.label = s.label === null ? 0 : s.label;
+        layer.name = s.name;
+        layer.comment = "keepframe:" + s.id + ";spec=" + hash(JSON.stringify(s)) + ";fp=" + fingerprint(layer, fps);
+    }
+
+    function folder(name, parent) {
+        var items = app.project.items, i, item;
+        for (i = 1; i <= items.length; i += 1) {
+            item = items[i];
+            if (item instanceof FolderItem && item.name === name
+                && item.parentFolder === (parent || app.project.rootFolder)) { return item; }
+        }
+        item = items.addFolder(name);
+        if (parent) { item.parentFolder = parent; }
+        return item;
+    }
+
+    function findComp(tag) {
+        var items = app.project.items, i;
+        for (i = 1; i <= items.length; i += 1) {
+            if (items[i] instanceof CompItem && items[i].comment === tag) { return items[i]; }
+        }
+        return null;
+    }
+
+    function syncAssets(spec, paths, parent) {
+        var result = {}, i, j, asset, item, found, named;
+        for (i = 0; i < spec.assets.length; i += 1) {
+            asset = spec.assets[i]; found = null; named = null;
+            for (j = 1; j <= parent.items.length; j += 1) {
+                item = parent.items[j];
+                if (!(item instanceof FootageItem)) { continue; }
+                if (item.comment === "keepframe-asset:" + asset.sha256) { found = item; break; }
+                if (item.name === asset.name && /^keepframe-asset:[0-9a-f]{64}$/.test(item.comment)) { named = item; }
+            }
+            if (!found) {
+                if (named) { found = named; found.replace(new File(paths[asset.name])); }
+                else {
+                    found = app.project.importFile(new ImportOptions(new File(paths[asset.name])));
+                    found.name = asset.name;
+                    found.parentFolder = parent;
+                }
+                found.comment = "keepframe-asset:" + asset.sha256;
+            }
+            result["$" + asset.name] = found;
+        }
+        return result;
+    }
+
+    function createLayer(comp, s, assets) {
+        var layer;
+        if (s.kind === "text") { return comp.layers.addText(s.source.text); }
+        if (s.kind === "solid" || s.kind === "null") {
+            layer = s.kind === "solid" ? comp.layers.addSolid(rgb(s.source.color), s.name, comp.width, comp.height, 1, comp.duration)
+                : comp.layers.addNull(comp.duration);
+            layer.source.parentFolder = comp.parentFolder;
+            return layer;
+        }
+        return comp.layers.add(assets["$" + s.source.asset]);
+    }
+
+    function updateSource(layer, comp, s, assets) {
+        var temporary;
+        if ((s.kind === "image" || s.kind === "model") && layer.source !== assets["$" + s.source.asset]) {
+            layer.replaceSource(assets["$" + s.source.asset], false);
+            return true;
+        }
+        if (s.kind === "solid" && (layer.source.width !== comp.width || layer.source.height !== comp.height
+            || JSON.stringify(layer.source.mainSource.color) !== JSON.stringify(rgb(s.source.color)))) {
+            // A new solid source avoids changing another layer that shares the old, untagged footage.
+            temporary = createLayer(comp, s, assets);
+            layer.replaceSource(temporary.source, false);
+            temporary.remove();
+            return true;
+        }
+        return false;
+    }
+
+    function tag(layer) {
+        var match = /^keepframe:([\s\S]*);spec=([0-9a-f]{8});fp=([0-9a-f]{8})$/.exec(layer.comment);
+        return match ? {id: match[1], spec: match[2], fp: match[3], layer: layer} : null;
+    }
+
+    function tagged(comp) {
+        var result = [], i, record;
+        if (comp) {
+            for (i = 1; i <= comp.layers.length; i += 1) {
+                record = tag(comp.layers[i]);
+                if (record) { result.push(record); }
+            }
+        }
+        return result;
+    }
+
+    function kind(layer) {
+        if (layer instanceof TextLayer) { return "text"; }
+        if (layer.nullLayer) { return "null"; }
+        if (layer.source instanceof FootageItem) {
+            if (layer.source.file) { return /\.glb$/i.test(layer.source.file.name) ? "model" : "image"; }
+            return "solid";
+        }
+        return "unknown";
+    }
+
+    function hasExpression(layer) {
+        var props = managed(layer), i;
+        if (transform(layer).property("ADBE Position").expressionEnabled) { return true; }
+        for (i = 0; i < props.length; i += 1) {
+            if (props[i].canSetExpression && props[i].expressionEnabled) { return true; }
+        }
+        return false;
+    }
+
+    function hasExtras(layer) {
+        var effects = layer.property("ADBE Effect Parade"), i;
+        if (layer.property("ADBE Mask Parade").numProperties > 0 || hasExpression(layer)) { return true; }
+        for (i = 1; i <= effects.numProperties; i += 1) {
+            if (!owned(effects.property(i))) { return true; }
+        }
+        return false;
+    }
+
+    function updateComp(comp, s, parent) {
+        var names = ["name", "width", "height", "pixelAspect", "frameRate", "duration"], i;
+        var values = [s.name, s.width, s.height, 1, s.fps, s.frames / s.fps];
+        for (i = 0; i < names.length; i += 1) {
+            if (comp[names[i]] !== values[i]) { comp[names[i]] = values[i]; }
+        }
+        if (comp.parentFolder !== parent) { comp.parentFolder = parent; }
+    }
+
+    function orderLayers(comp, desired) {
+        var i, current;
+        desired.sort(function (a, b) { return b.order - a.order; });
+        // ponytail: O(n squared) stack scans; keep a working stack if large scenes make this slow.
+        for (i = 0; i < desired.length; i += 1) {
+            current = tagged(comp);
+            if (current[i].layer !== desired[i].layer) { desired[i].layer.moveBefore(current[i].layer); }
+        }
+    }
+
+    function errorResult(e) {
+        return JSON.stringify({ok: false, error: String(e.message || e), line: e.line || 0});
+    }
+
+    global.kfInfo = function () {
+        try {
+            var fonts = [], all = app.fonts.allFonts, i, j, font;
+            for (i = 0; i < all.length; i += 1) {
+                for (j = 0; j < all[i].length; j += 1) {
+                    font = all[i][j];
+                    fonts.push({family: font.familyName, style: font.styleName, postscript: font.postScriptName});
+                }
+            }
+            return JSON.stringify({ok: true, ae_version: app.version, project_name: app.project.file ? app.project.file.name : null,
+                project_saved: app.project.file !== null, fonts: fonts});
+        } catch (e) { return errorResult(e); }
+    };
+
+    global.kfSync = function (specJson, assetsJson, force) {
+        try {
+            var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
+            var existing = {}, wanted = {}, records, s, newHash, edits = [], desired = [], sourceChanged;
+            validate(spec, paths, force);
+            var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
+                keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version};
+            comp = findComp(spec.comp.tag);
+            records = tagged(comp);
+            for (i = 0; i < spec.layers.length; i += 1) { wanted["$" + spec.layers[i].id] = spec.layers[i]; }
+            for (i = 0; i < records.length; i += 1) {
+                record = records[i]; s = wanted["$" + record.id];
+                requireValue(!own(existing, "$" + record.id), "duplicate tagged layer " + record.id);
+                existing["$" + record.id] = record;
+                record.current = fingerprint(record.layer, comp.frameRate);
+                record.kind = kind(record.layer);
+                if (force !== "true" && (record.current !== record.fp || hasExpression(record.layer)
+                    || ((!s || s.kind !== record.kind) && hasExtras(record.layer)))) { edits.push(record.id); }
+            }
+            if (edits.length) { return JSON.stringify({ok: true, applied: false, hand_edited: edits}); }
+            app.beginUndoGroup("Keepframe sync");
+            try {
+                parent = folder(spec.project, folder("Keepframe", null));
+                if (!comp) {
+                    comp = app.project.items.addComp(spec.comp.name, spec.comp.width, spec.comp.height, 1,
+                        spec.comp.frames / spec.comp.fps, spec.comp.fps);
+                    comp.comment = spec.comp.tag;
+                    comp.parentFolder = parent;
+                }
+                updateComp(comp, spec.comp, parent);
+                assets = syncAssets(spec, paths, parent);
+                for (i = 0; i < records.length; i += 1) {
+                    record = records[i]; s = wanted["$" + record.id];
+                    if (!s) {
+                        record.layer.remove(); result.deleted.push(record.id);
+                        delete existing["$" + record.id];
+                    }
+                }
+                for (i = 0; i < spec.layers.length; i += 1) {
+                    s = spec.layers[i]; record = existing["$" + s.id];
+                    newHash = hash(JSON.stringify(s));
+                    if (s.kind === "model" && comp.renderer !== "ADBE Advanced 3d") { comp.renderer = "ADBE Advanced 3d"; }
+                    if (record) { record.current = fingerprint(record.layer, comp.frameRate); }
+                    sourceChanged = record && record.kind === s.kind ? updateSource(record.layer, comp, s, assets) : false;
+                    if (record && record.spec === newHash && record.fp === record.current && !sourceChanged) {
+                        layer = record.layer; result.unchanged += 1;
+                    } else {
+                        if (record && record.kind !== s.kind) {
+                            layer = createLayer(comp, s, assets);
+                            // Move against the old tagged layer before removing it: user neighbours retain their places.
+                            if (layer.index + 1 !== record.layer.index) { layer.moveBefore(record.layer); }
+                            record.layer.remove(); result.deleted.push(s.id);
+                            record = null;
+                        } else { layer = record ? record.layer : createLayer(comp, s, assets); }
+                        writeLayer(layer, s, spec.comp.fps);
+                        (record ? result.updated : result.created).push(s.id);
+                    }
+                    result.keys[s.id] = keyCount(layer);
+                    result.warnings = result.warnings.concat(s.warnings);
+                    desired.push({layer: layer, order: s.order});
+                }
+                orderLayers(comp, desired);
+            } finally { app.endUndoGroup(); }
+            return JSON.stringify(result);
+        } catch (e) { return errorResult(e); }
+    };
+}(this));
