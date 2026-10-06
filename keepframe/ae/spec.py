@@ -121,7 +121,7 @@ def _font(guess, fonts, warnings):
         return {"postscript": None, "family": guess.family_guess, "style": None, "substituted": False}
 
     def rank(font):
-        style = re.sub(r"[^a-z]", "", font["style"].casefold())
+        style = re.sub(r"[^a-z]", "", (font["style"] or "Regular").casefold())
         weights = (("thin", 100), ("extralight", 200), ("ultralight", 200),
                    ("light", 300), ("medium", 500), ("semibold", 600), ("demibold", 600),
                    ("extrabold", 800), ("ultrabold", 800), ("bold", 700), ("black", 900), ("heavy", 900))
@@ -148,18 +148,44 @@ def _asset(path, name, assets):
     return name
 
 
-def _image(value, sid, size, anchor, scene_dir, assets):
+def _asset_source(value, sid, scene_dir, extension=None):
     path = scene_asset_path(scene_dir, value)
+    sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
+    extension = extension or re.sub(r"[^A-Za-z0-9_-]", "_", path.suffix[1:]) or "png"
+    return path, f"{sid}.{extension}"
+
+
+def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
+    """Map only exported asset names to their scene-contained source files."""
+    sources = []
+    if scene.background.kind == "image":
+        sources.append((scene.background.value, "background", None))
+    for el in scene.elements:
+        if el.kind == "text":
+            continue
+        if el.kind == "3d" and el.canonical.model:
+            sources.append((el.canonical.model, el.id, "glb"))
+        elif el.canonical.texture:
+            sources.append((el.canonical.texture, el.id, None))
+    assets, paths = {}, {}
+    for value, sid, extension in sources:
+        path, name = _asset_source(value, sid, scene_dir, extension)
+        _asset(path, name, assets)  # Apply the spec's collision check too.
+        paths[name] = path
+    return paths
+
+
+def _image(value, sid, size, anchor, scene_dir, assets):
+    path, name = _asset_source(value, sid, scene_dir)
     width, height = png_size(path)
-    extension = re.sub(r"[^A-Za-z0-9_-]", "_", path.suffix[1:]) or "png"
-    name = _asset(path, f"{sid}.{extension}", assets)
+    name = _asset(path, name, assets)
     return ({"asset": name, "scale_fix": [size[0] / width, size[1] / height]},
             [anchor[0] * width, anchor[1] * height])
 
 
 def _layer(el: Element, scene_dir, assets, fps, fonts, label):
     canonical = el.canonical
-    sid = re.sub(r"[^A-Za-z0-9_-]", "_", el.id)
+    sid = el.id
     warnings = []
     kind, source, fix = "null", None, [1, 1]
     anchor = [canonical.anchor[0] * canonical.width, canonical.anchor[1] * canonical.height]
@@ -171,7 +197,7 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
                   "anchor_fraction": list(canonical.anchor)}
     elif el.kind == "3d" and canonical.model:
         kind = "model"
-        source = {"asset": _asset(scene_asset_path(scene_dir, canonical.model), f"{sid}.glb", assets),
+        source = {"asset": _asset(*_asset_source(canonical.model, sid, scene_dir, "glb"), assets),
                   "fit_box": [canonical.width, canonical.height]}
     else:
         if el.kind == "3d":

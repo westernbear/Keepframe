@@ -49,6 +49,20 @@ def test_empty_store_and_unknown_devices_are_safe_noops(store, tmp_path):
     assert not (tmp_path / ".ae" / "devices.json").exists()
 
 
+def test_lone_surrogate_code_and_token_are_wrong_credentials(store):
+    paired(store)
+    assert store.pair("\ud800", info()) is None
+    assert store.authenticate("\ud800") is None
+
+
+def test_existing_loose_directory_is_tightened(store, tmp_path):
+    directory = tmp_path / ".ae"
+    directory.mkdir(mode=0o755)
+    directory.chmod(0o755)
+    store.create_code()
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
 def test_codes_have_crockford_format_and_ten_minute_expiry(store):
     for _ in range(32):
         code, expires_at = store.create_code()

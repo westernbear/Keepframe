@@ -22,6 +22,7 @@ from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
+from keepframe.ae.api import AERoutes
 from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
@@ -719,6 +720,8 @@ def make_server(
 
         def do_GET(self):
             u = urlparse(self.path)
+            if ae_routes.handle_get(self, u):
+                return
             if u.path in ("/admin", "/admin/") and not admin:
                 return self._json(404, ADMIN_OFF)
             if admin_routes and admin_routes.handle_get(self, u):
@@ -1133,6 +1136,8 @@ def make_server(
 
         def do_POST(self):
             u = urlparse(self.path)
+            if ae_routes.handle_post(self, u):
+                return
             if admin_routes and admin_routes.handle_post(self, u):
                 return
 
@@ -1749,14 +1754,33 @@ def make_server(
 
         def do_DELETE(self):
             u = urlparse(self.path)
+            if ae_routes.handle_delete(self, u):
+                return
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
             return self._json(404, {"error": "not found"})
         def do_PUT(self):
+            u = urlparse(self.path)
+            if ae_routes.handle_put(self, u):
+                return
             return self._json(404, {"error": "not found"})
 
         def do_PATCH(self):
             return self._json(404, {"error": "not found"})
 
-    server = ThreadingHTTPServer((host, port), H)
+    class Server(ThreadingHTTPServer):
+        def server_close(self):
+            try:
+                super().server_close()
+            finally:
+                if hasattr(self, "ae_routes"):
+                    self.ae_routes.close()
+
+    server = Server((host, port), H)
+    try:
+        ae_routes = AERoutes(workspace)
+    except Exception:
+        server.server_close()
+        raise
+    server.ae_routes = ae_routes
     return server

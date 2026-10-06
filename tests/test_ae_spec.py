@@ -272,6 +272,29 @@ def test_font_missing_falls_back_to_arial(tmp_path):
     assert result["warnings"] == ["font Absent not installed; using Arial"]
 
 
+def test_font_null_style_ranks_as_regular_and_preserves_null_postscript(tmp_path):
+    fonts = [{"family": "Example", "style": "Bold", "postscript": "Bold"},
+             {"family": "Example", "style": None, "postscript": None}]
+    el = element(kind="text", text="A", font=FontGuess(family_guess="Example", weight=400))
+    assert layer(describe(scene(el), tmp_path, fonts=fonts))["source"]["font"] == {
+        "postscript": None, "family": "Example", "style": None, "substituted": False}
+
+
+def test_spec_asset_paths_share_spec_names_and_model_text_precedence(tmp_path):
+    from keepframe.ae.spec import spec_asset_paths
+    png(tmp_path / "deep" / "texture.png")
+    png(tmp_path / "background.png")
+    (tmp_path / "model.glb").write_bytes(b"GLB")
+    value = scene(element("a/b", texture="deep/texture.png"),
+                  element("model", kind="3d", model="model.glb", texture="unused.png"),
+                  element("text", kind="text", text="A", texture="unused.png"),
+                  background=Background(kind="image", value="background.png"))
+    paths = spec_asset_paths(value, tmp_path)
+    assert paths == {"a_b.png": tmp_path / "deep" / "texture.png", "model.glb": tmp_path / "model.glb",
+                     "background.png": tmp_path / "background.png"}
+    assert set(paths) == {asset["name"] for asset in describe(value, tmp_path)["assets"]}
+
+
 def test_unknown_style_does_not_match_weight_substrings(tmp_path):
     fonts = [{"family": "Example", "style": "Light", "postscript": "Light"},
              {"family": "Example", "style": "Highlight", "postscript": "Unknown"}]

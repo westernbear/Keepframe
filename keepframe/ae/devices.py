@@ -18,7 +18,7 @@ _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 def _hash(value):
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def _normalise(code):
@@ -120,6 +120,7 @@ class Devices:
             {"id": device.id, "created": device.created, "info": device.info, "token_hash": token_hash}
             for token_hash, device in devices.items()]}
         self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(self._path.parent, 0o700)
         fd, temporary = tempfile.mkstemp(dir=self._path.parent, prefix=".devices.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
