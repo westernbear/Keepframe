@@ -127,26 +127,31 @@ class AERoutes:
         if not u.path.startswith("/api/ae/") and u.path != "/ae/keepframe.zxp":
             return False
         try:
-            device = None
-            if u.path in _BROWSER or u.path.startswith("/api/ae/devices/"):
-                # Read-only browser GETs use the Host guard; responses have no CORS headers.
-                if handler.command == "GET" and u.path in {"/api/ae/devices", "/api/ae/state"}:
-                    if not handler._host_allowed():
+            try:
+                device = None
+                if u.path in _BROWSER or u.path.startswith("/api/ae/devices/"):
+                    # Read-only browser GETs use the Host guard; responses have no CORS headers.
+                    if handler.command == "GET" and u.path in {"/api/ae/devices", "/api/ae/state"}:
+                        if not handler._host_allowed():
+                            return True
+                    elif not handler._same_origin():
                         return True
-                elif not handler._same_origin():
-                    return True
-            elif u.path != "/ae/keepframe.zxp":
-                device = self._extension(handler, pair=u.path == "/api/ae/pair")
-                if device is None:
-                    return True
-            dispatch(handler, u, device)
-        except FileNotFoundError:
-            _error(handler, 404, "not found")
-        except ValueError as exc:
-            _error(handler, 400, str(exc))
-        except Exception:
-            log.exception("After Effects request failed")
-            _error(handler, 500, "After Effects request failed")
+                elif u.path != "/ae/keepframe.zxp":
+                    device = self._extension(handler, pair=u.path == "/api/ae/pair")
+                    if device is None:
+                        return True
+                dispatch(handler, u, device)
+            except FileNotFoundError:
+                _error(handler, 404, "not found")
+            except ValueError as exc:
+                _error(handler, 400, str(exc))
+            except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+                raise
+            except Exception:
+                log.exception("After Effects request failed")
+                _error(handler, 500, "After Effects request failed")
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            log.info("client closed the connection during %s %s", handler.command, u.path)
         return True
 
     def handle_get(self, handler, u) -> bool:
@@ -231,6 +236,13 @@ class AERoutes:
             name = handler.headers.get("X-Keepframe-Project")
             self.devices.touch(device, {"project_name": unquote(name) if name is not None else None,
                                         "project_saved": saved == "1"})
+            with self._progress_lock:
+                for abandoned in self.jobs.abandon(device, (
+                        "the Keepframe panel restarted before finishing this job; send again")):
+                    self._progress.pop(abandoned.id, None)
+                    with self._upload_lock:
+                        self._uploaded.pop(abandoned.id, None)
+                        self._uploading.pop(abandoned.id, None)
             job = self.jobs.next(device, wait)
             if job is None:
                 handler._send(204, b"", "application/json")
@@ -426,10 +438,7 @@ class AERoutes:
                     if not uploading:
                         self._uploading.pop(job.id, None)
         if status is not None:
-            try:
-                _error(handler, status, message)
-            except OSError:
-                pass  # The client may have closed the socket mid-upload.
+            _error(handler, status, message)
             return
         handler._send(204, b"", "application/json")
 

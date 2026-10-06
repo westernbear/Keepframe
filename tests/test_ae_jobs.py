@@ -153,7 +153,8 @@ def test_concurrent_pollers_cannot_start_two_jobs_for_one_device(queue):
     assert sum(job is not None for job in jobs) == 1
 
 
-def test_finish_wakes_poller_blocked_by_running_job(queue):
+@pytest.mark.parametrize("abandon", [False, True])
+def test_finishing_or_abandoning_wakes_poller_blocked_by_running_job(queue, abandon):
     first = enqueue(queue)
     queue.next("d_one", wait=0)
     second = enqueue(queue, scene="second")
@@ -169,7 +170,10 @@ def test_finish_wakes_poller_blocked_by_running_job(queue):
         time.sleep(0.03)
         assert not future.done()
         start = time.monotonic()
-        queue.finish(first.id, True, result={"applied": True})
+        if abandon:
+            queue.abandon("d_one", "panel restarted")
+        else:
+            queue.finish(first.id, True, result={"applied": True})
         assert future.result(timeout=0.2).id == second.id
         assert time.monotonic() - start < 0.2
 
@@ -337,6 +341,50 @@ def test_missing_device_fails_running_job_but_keeps_unrelated_queued_jobs(queue,
     assert queue.get(running.id).error == "AE disconnected"
     assert queue.get(queued.id).state == "queued"
     assert queue.next("d_one", wait=0).id == queued.id
+
+
+@pytest.mark.parametrize("kind", ["sync", "render_frames", "render_final", "package"])
+def test_abandon_only_fails_running_job_for_device(queue, clock, kind):
+    done = applied_sync(queue)
+    running = enqueue(queue, kind)
+    assert queue.next("d_one", wait=0).id == running.id
+    queued = enqueue(queue, scene="other")
+    other = enqueue(queue, device="d_two")
+    assert queue.next("d_two", wait=0).id == other.id
+    clock[0] += 1
+    failed = queue.abandon("d_one", "panel restarted")
+    assert [job.id for job in failed] == [running.id]
+    assert failed[0].state == "failed" and failed[0].error == "panel restarted"
+    assert failed[0].finished == clock[0] and failed[0].started == clock[0] - 1
+    assert queue.get(done.id).state == "done"
+    assert queue.get(queued.id).state == "queued"
+    assert queue.get(other.id).state == "running"
+    assert queue.abandon("d_one", "panel restarted") == []
+    failed[0].error = "changed snapshot"
+    assert queue.get(running.id).error == "panel restarted"
+    assert queue.next("d_one", wait=0).id == queued.id
+
+
+def test_abandon_sync_fails_dependents_and_persists(queue, tmp_path, clock):
+    dependent = enqueue(queue, "package")
+    running = queue.next("d_one", wait=0)
+    clock[0] += 1
+    failed = queue.abandon("d_one", "panel restarted")
+    assert [job.id for job in failed] == [running.id, dependent.id]
+    assert all(job.state == "failed" and job.finished == clock[0] for job in failed)
+    assert failed[1].error == "sync failed: panel restarted"
+    restarted = Jobs(tmp_path)
+    assert all(restarted.get(job.id) == job for job in failed)
+    assert restarted.next("d_one", wait=0) is None
+
+
+@pytest.mark.parametrize("reason", [None, "", " ", 7, [], "x" * 2001])
+def test_abandon_requires_readable_error_without_changing_job(queue, reason):
+    running = enqueue(queue)
+    queue.next("d_one", wait=0)
+    with pytest.raises(ValueError, match="error"):
+        queue.abandon("d_one", reason)
+    assert queue.get(running.id).state == "running"
 
 
 def test_state_has_last_ten_scene_jobs_newest_first_and_per_device_versions(queue, clock):

@@ -4,11 +4,12 @@ import http.client
 import hashlib
 import errno
 import json
+import logging
 import queue
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import pytest
 
@@ -289,6 +290,76 @@ def test_long_poll_times_out_and_wakes_immediately_when_browser_sends(server, pr
     assert status == 202 and status_poll == 200
     assert value["job"]["id"] == sent["job"]["id"] and value["job"]["state"] == "running"
     assert value["job"]["device"] == device
+
+
+@pytest.mark.parametrize("has_next", [False, True])
+def test_idle_poll_abandons_running_sync_and_continues(server, project, has_next):
+    device, headers = pair(server)
+    routes = server.ae_routes
+    dependent = routes.jobs.enqueue(device, "render_final", "p1", "s1", "v1")
+    status, value = poll(server, headers)
+    assert status == 200 and value["job"]["id"] == dependent.depends_on
+    running = value["job"]
+    assert json_request(server, "POST", f'/api/ae/jobs/{running["id"]}/progress',
+                        {"stage": "sync", "done": 1, "total": 2}, headers=headers)[0] == 204
+    queued = routes.jobs.enqueue(device, "sync", "p1", "s1", "v1") if has_next else None
+    assert json_request(server, "POST", "/api/ae/info", {"info": INFO}, headers=headers)[0] == 204
+    assert poll(server, headers, "bad")[0] == 400
+    assert routes.jobs.get(running["id"]).state == "running"
+    status, value = poll(server, headers)
+    reason = "the Keepframe panel restarted before finishing this job; send again"
+    failed = routes.jobs.get(running["id"])
+    assert failed.state == "failed" and failed.error == reason and failed.finished is not None
+    assert routes.jobs.get(dependent.id).state == "failed"
+    assert routes.jobs.get(dependent.id).error == "sync failed: " + reason
+    assert running["id"] not in routes._progress
+    if has_next:
+        assert status == 200 and value["job"]["id"] == queued.id and value["job"]["state"] == "running"
+    else:
+        assert (status, value) == (204, None)
+
+
+@pytest.mark.parametrize("exception", [ConnectionResetError, BrokenPipeError, ConnectionAbortedError])
+@pytest.mark.parametrize("path,status", [
+    ("/api/ae/next?wait=0.01", 204), ("/api/ae/next?wait=0.01", 200),
+    ("/api/ae/next?wait=bad", 400), ("/api/ae/jobs/missing/spec", 404),
+])
+def test_response_disconnect_logs_info_without_retry_or_escape(server, monkeypatch, caplog, exception, path, status):
+    device, headers = pair(server)
+    if status == 200:
+        server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    handler = object.__new__(server.RequestHandlerClass)
+    handler.server = server
+    handler.client_address = ("127.0.0.1", 0)
+    handler.command, handler.path, handler.request_version = "GET", path, "HTTP/1.1"
+    handler.requestline = f"GET {path} HTTP/1.1"
+    handler.headers = headers
+    responses = []
+    send_response = handler.send_response
+
+    def record_response(code, *args):
+        responses.append(code)
+        return send_response(code, *args)
+
+    class ClosedConnection:
+        def write(self, body):
+            if status == 200 and body.startswith(b"HTTP/"):
+                return len(body)
+            raise exception("client closed")
+
+    handler.wfile = ClosedConnection()
+    monkeypatch.setattr(handler, "send_response", record_response)
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        assert server.ae_routes.handle_get(handler, urlparse(path)) is True
+    assert responses == [status]
+    assert not any(record.levelno >= logging.ERROR or record.exc_info for record in caplog.records)
+    records = [record for record in caplog.records if record.name == "keepframe.ae"]
+    assert len(records) == 1 and records[0].levelno == logging.INFO
+    assert records[0].getMessage() == f"client closed the connection during GET {urlparse(path).path}"
+    assert headers["Authorization"] not in caplog.text
+    assert headers["Authorization"][7:] not in caplog.text
+    assert headers["Host"] not in caplog.text
 
 
 def test_next_updates_status_and_rejects_invalid_wait_or_status(server):
@@ -735,7 +806,8 @@ def test_sweep_prunes_progress_and_upload_bookkeeping(server, project, monkeypat
     assert job["id"] not in routes._progress and job["id"] not in routes._uploaded
 
 
-def test_invalid_result_prunes_uploads_and_prevents_inflight_upload_from_replacing(server, project, tmp_path):
+@pytest.mark.parametrize("abandon", [False, True])
+def test_failed_job_prunes_uploads_and_prevents_inflight_upload_from_replacing(server, project, tmp_path, abandon):
     headers, job = running_upload_job(server, "render_frames")
     routes = server.ae_routes
     directory = tmp_path / "p1" / "ae" / "s1" / "v1"
@@ -743,7 +815,10 @@ def test_invalid_result_prunes_uploads_and_prevents_inflight_upload_from_replaci
     assert json_request(server, "PUT", prefix + "frame_0001.png", headers=headers, body=b"png")[0] == 204
     conn = start_stalled_upload(server, headers, prefix + "frame_0002.png", directory)
     try:
-        assert finish(server, headers, job, ok="yes")[0] == 400
+        if abandon:
+            assert poll(server, headers) == (204, None)
+        else:
+            assert finish(server, headers, job, ok="yes")[0] == 400
         assert job["id"] not in routes._uploaded and job["id"] not in routes._uploading
         conn.send(b"x" * 95)
         response = conn.getresponse()

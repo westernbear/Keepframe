@@ -242,6 +242,19 @@ class Jobs:
             finally:
                 self._condition.notify_all()
 
+    def abandon(self, device, reason, now=None) -> list[Job]:
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
+            raise ValueError("invalid error: required, at most 2000 characters")
+        with self._condition:
+            now, failed = _timestamp(now), []
+            try:
+                for job in list(self._jobs.values()):
+                    if job.device == device and job.state == "running":
+                        failed.extend(self._end(job, False, None, reason, now))
+                return copy.deepcopy(failed)
+            finally:
+                self._condition.notify_all()
+
     def get(self, job_id) -> Job | None:
         with self._condition:
             return copy.deepcopy(self._jobs.get(job_id))
