@@ -7,7 +7,10 @@ out=$root/keepframe/ae/static
 mkdir -p "$out"; mkdir -p -m 700 "$cfg"; chmod 700 "$cfg"
 
 stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-cp -r "$root/extension/." "$stage"  # ZXPSignCmd writes into its input dir
+# Stage only runtime paths; ZXPSignCmd writes into its input dir.
+cp -r "$root/extension/"{CSXS,css,host,js,index.html} "$stage/"
+find "$stage" \( -name '.*' -o -name '*~' -o -name '*.sw[op]' -o -name 'Thumbs.db' -o -iname 'desktop.ini' \) \
+  -prune -exec rm -rf {} +
 
 docker build -q -t keepframe-zxpsign "$root/scripts/zxp" >/dev/null
 # Run ZXPSignCmd in the container. Output goes to $log; the command line (which holds the password) is never printed.
@@ -48,4 +51,10 @@ fi
 step "verify" -verify /out/keepframe.zxp
 grep -q 'Signature verified successfully' "$log" || { echo "FAILED: verify" >&2; cat "$log" >&2; exit 1; }
 cat "$log" | grep -v '^wine: created' | grep -v '^error: XDG' || true
+unzip -Z1 "$out/keepframe.zxp" >"$log" || { echo "FAILED: read ZXP contents" >&2; exit 1; }
+if grep -Eq '(^|[/\\])test[/\\]' "$log"; then
+  echo "FAILED: built ZXP contains test/ entries:" >&2
+  grep -E '(^|[/\\])test[/\\]' "$log" >&2
+  exit 1
+fi
 echo "built $out/keepframe.zxp"

@@ -100,9 +100,6 @@ local L1 on every 5th visible frame and keeps the best reconstruction. A
 generated GLB may therefore stay unused; no generated model won on the round-2
 clips. Results are in the [round-2 evaluation](docs/qa/round2/README.md).
 
-After Effects support is being rebuilt as a signed CEP extension. The design is
-in [the AE extension specification](docs/superpowers/specs/2026-10-06-keepframe-ae-extension-design.md).
-
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
 ```bash
@@ -133,6 +130,17 @@ python scripts/eval_prompts.py --project eval/out/final/ig2 --scene s1 --workspa
 ```
 
 Results: [core-flow evaluation](docs/qa/core-flow/README.md), [round-2 evaluation](docs/qa/round2/README.md).
+
+## After Effects
+
+Install the signed CEP extension once and pair once per server. **Send to AE**
+(AE로 보내기) builds an editable composition from the selected scene version.
+Keepframe owns the comp and warns before overwriting hand edits to its managed layers.
+User layers and user effects on retained layers survive updates.
+
+Target: AE 24.0+ on Windows. The current bundle's manifest requires AE 24.1+.
+See the [build, install, and live-check guide](docs/qa/ae-extension/live-check.md).
+AE verify, final render, package, and live agent control arrive in later slices.
 
 ## CLI
 
