@@ -689,8 +689,9 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (type === "TextLayer") {
         const doc = groups[3].property("ADBE Text Document").valueAtTime(t, false);
         rect = { width: 0.6 * doc.fontSize * doc.text.length, height: doc.fontSize, left: 0, top: -0.8 * doc.fontSize };
-      } else rect = { width: source && records.get(source).values.isModel ? 200 : source?.width || 0,
-        height: source && records.get(source).values.isModel ? 200 : source?.height || 0, left: 0, top: 0 };
+      } else if (source && records.get(source).values.isModel) {
+        rect = { width: 200, height: 200, left: 0, top: -200 };
+      } else rect = { width: source?.width || 0, height: source?.height || 0, left: 0, top: 0 };
       return host("SourceRect", scriptValue(rect));
     };
     const proxy = host(type, api, { values, groups, source });

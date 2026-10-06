@@ -8,7 +8,7 @@ import struct
 from pathlib import Path
 
 from ..ir.paths import scene_asset_path
-from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
+from ..ir.schema import DEFAULTS, Element, Keyframe, Scene, Track
 from ..ir.tracks import eval_track, eval_z
 
 
@@ -135,8 +135,9 @@ def _font(guess, fonts, warnings):
             font = min(matches, key=rank)
             return {"postscript": font["postscript"], "family": font["family"],
                     "style": font["style"], "substituted": False}
-    warnings.append(f"font {guess.family_guess} not installed; using Arial")
-    return {"postscript": "ArialMT", "family": "Arial", "style": "Regular", "substituted": True}
+    postscript, style = ("Arial-BoldMT", "Bold") if guess.weight >= 600 else ("ArialMT", "Regular")
+    warnings.append(f"font {guess.family_guess} not installed; using Arial {style}")
+    return {"postscript": postscript, "family": "Arial", "style": style, "substituted": True}
 
 
 def _asset(path, name, assets):
@@ -161,7 +162,7 @@ def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
     if scene.background.kind == "image":
         sources.append((scene.background.value, "background", None))
     for el in scene.elements:
-        if el.kind == "text":
+        if el.kind == "text" and el.canonical.font is not None:
             continue
         if el.kind == "3d" and el.canonical.model:
             sources.append((el.canonical.model, el.id, "glb"))
@@ -189,9 +190,9 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
     warnings = []
     kind, source, fix = "null", None, [1, 1]
     anchor = [canonical.anchor[0] * canonical.width, canonical.anchor[1] * canonical.height]
-    if el.kind == "text":
+    if el.kind == "text" and canonical.font is not None:
         kind, anchor = "text", None
-        guess = canonical.font or FontGuess()
+        guess = canonical.font
         source = {"text": canonical.text or "", "font": _font(guess, fonts, warnings),
                   "size_px": guess.size_px, "color": _color(canonical.color or "#000"),
                   "anchor_fraction": list(canonical.anchor)}
@@ -207,6 +208,8 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
             source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
                                     canonical.anchor, scene_dir, assets)
             fix = source["scale_fix"]
+            if el.kind == "text":
+                warnings.append(f"text {sid} kept as an image (no font detected)")
         else:
             warnings.append(f"{el.id} has no image; not drawn in AE")
     tracks = _tracks(el.tracks)

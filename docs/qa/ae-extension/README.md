@@ -33,4 +33,4 @@ Record each scene as pass, fail, or not run. Leave unrun results blank.
 
 ## Findings
 
--
+- Known renderer difference (AE 26.5): AE draws the dark back face of a single-sided triangle; Keepframe's Three.js renderer culls that face. This is a renderer difference, not a placement bug.

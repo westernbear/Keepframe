@@ -150,12 +150,12 @@ def test_create_from_empty(tmp_path, full_spec):
     assert prop(text, "ADBE Anchor Point")["value"] == [42, -1, 0]
     model = actual["kf:model"]
     assert model["threeDLayer"] is True
-    assert prop(model, "ADBE Anchor Point")["value"] == [5, 3, 0]
+    assert prop(model, "ADBE Anchor Point")["value"] == [100, -100, 0]
     assert prop(model, "ADBE Position_2")["value"] == 0
     model_scale = prop(model, "ADBE Scale")
-    assert [k["value"] for k in model_scale["keys"]] == [[3, 6, 3], [9, 15, 9]]
+    assert [k["value"] for k in model_scale["keys"]] == [[2.7, 5.4, 2.7], [8.1, 13.5, 8.1]]
     assert model_scale["keys"][0]["outEases"] == [
-        {"speed": 12, "influence": 25}, {"speed": 18, "influence": 25}, {"speed": 12, "influence": 25}]
+        {"speed": 10.8, "influence": 25}, {"speed": 16.2, "influence": 25}, {"speed": 10.8, "influence": 25}]
     assert [k["value"] for k in prop(model, "ADBE Rotate X")["keys"]] == [10, 90]
     assert prop(model, "ADBE Rotate Y")["value"] == -20
     assert actual["kf:null"]["nullLayer"] is True
@@ -166,6 +166,49 @@ def test_create_from_empty(tmp_path, full_spec):
     assert result["keys"]["kf:model"] == 4
     assert result["warnings"] == ["null has no image; not drawn in AE"]
     assert result["ae_version"] == "24.6.0x45"
+
+
+@pytest.mark.parametrize("fit_box,scale", [([10, 6], 2.7), ([4, 10], 1.8)])
+def test_model_centres_off_origin_bounds_and_fits_ninety_percent(tmp_path, full_spec, fit_box, scale):
+    spec, assets = full_spec
+    spec["layers"] = [s for s in spec["layers"] if s["kind"] == "model"]
+    spec["layers"][0]["source"]["fit_box"] = fit_box
+    spec["layers"][0]["props"]["scale"] = [[0, [100, 100], None, None]]
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    before = read_state(path)
+    model = layers(before)["kf:model"]
+    assert prop(model, "ADBE Anchor Point")["value"] == [100, -100, 0]
+    assert prop(model, "ADBE Scale")["value"] == pytest.approx([scale, scale, scale])
+    response = sync(path, spec, assets)
+    assert response["value"]["unchanged"] == 1 and response["writes"] == 0
+    assert read_state(path) == before
+
+
+def test_existing_model_gets_corrected_once_without_a_spec_change(tmp_path, full_spec):
+    spec, assets = full_spec
+    legacy = HOST.read_text().replace(
+        '        if (s.kind === "model") { content.model_fit = "bounds-center-0.9"; }\n', "")
+    legacy = legacy.replace(
+        "            anchor = [rect.left + rect.width / 2, rect.top + rect.height / 2, 0];\n", "")
+    legacy = legacy.replace("factor = 0.9 * Math.min(", "factor = Math.min(")
+    legacy_host = tmp_path / "legacy.jsx"
+    legacy_host.write_text(legacy)
+    path = tmp_path / "ae.json"
+    response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
+    assert response["value"]["ok"] and response["value"]["applied"], response
+    before = layers(read_state(path))
+    assert prop(before["kf:model"], "ADBE Anchor Point")["value"] == [5, 3, 0]
+    response = sync(path, spec, assets)
+    assert response["value"]["updated"] == ["kf:model"]
+    after = layers(read_state(path))
+    assert prop(after["kf:model"], "ADBE Anchor Point")["value"] == [100, -100, 0]
+    assert prop(after["kf:model"], "ADBE Scale")["keys"][0]["value"] == [2.7, 5.4, 2.7]
+    for eid in before:
+        if eid != "kf:model":
+            assert after[eid] == before[eid]
+    assert sync(path, spec, assets)["writes"] == 0
 
 
 def test_sync_twice_is_a_no_op(tmp_path, full_spec):
@@ -258,7 +301,7 @@ def test_model_sync_manages_3d_properties_and_force_clears_them(tmp_path, full_s
 
 @pytest.mark.parametrize("eid,expected,factor", [
     ("kf:image", [[50, 100, 100], [150, 200, 100]], 1),
-    ("kf:model", [[3, 6, 3], [9, 15, 9]], 0.03),
+    ("kf:model", [[2.7, 5.4, 2.7], [8.1, 13.5, 8.1]], 0.027),
 ])
 @pytest.mark.parametrize("animated", [True, False])
 def test_av_scale_pads_values_and_eases_and_resyncs_without_writes(
@@ -293,7 +336,7 @@ def test_av_scale_pads_values_and_eases_and_resyncs_without_writes(
         assert scale["value"] == expected[0]
     anchor = prop(item, "ADBE Anchor Point")
     assert anchor["propertyValueType"] == "ThreeD_SPATIAL"
-    assert anchor["value"] == [*spec["layers"][0]["anchor"], 0]
+    assert anchor["value"] == ([100, -100, 0] if eid == "kf:model" else [*spec["layers"][0]["anchor"], 0])
     assert prop(item, "ADBE Position")["propertyValueType"] == "ThreeD_SPATIAL"
     assert prop(item, "ADBE Position_2")["value"] == 0
     response = sync(path, spec, assets)
@@ -330,7 +373,7 @@ def test_kind_change_recreates(tmp_path, full_spec, kind):
     spec, assets = full_spec
     path = tmp_path / "ae.json"
     sync(path, spec, assets)
-    args = {"text": "Replacement"} if kind == "text" else {"model": "model.glb"} if kind == "3d" else {}
+    args = {"text": "Replacement", "font": FontGuess()} if kind == "text" else {"model": "model.glb"} if kind == "3d" else {}
     replacement, replacement_assets = spec_for(tmp_path, element("image", kind=kind, **args))
     changed = copy.deepcopy(spec)
     changed["layers"][1] = replacement["layers"][1]
@@ -422,7 +465,7 @@ def test_untagged_layers_are_never_touched(tmp_path, full_spec):
         assert stack[index + 2]["comment"].startswith("keepframe:kf:image;")
 
     assert sync(path, spec, assets)["writes"] == 0
-    extra, _ = spec_for(tmp_path, element("new", kind="text", text="New"))
+    extra, _ = spec_for(tmp_path, element("new", kind="text", text="New", font=FontGuess()))
     extra["layers"][1]["order"] = 5
     spec["layers"].append(extra["layers"][1])
     sync(path, spec, assets)
@@ -430,7 +473,7 @@ def test_untagged_layers_are_never_touched(tmp_path, full_spec):
     spec["layers"][2]["source"]["text"] = "Updated"
     sync(path, spec, assets)
     assert_users()
-    replacement, _ = spec_for(tmp_path, element("image", kind="text", text="Recreated"))
+    replacement, _ = spec_for(tmp_path, element("image", kind="text", text="Recreated", font=FontGuess()))
     spec["layers"][1] = replacement["layers"][1]
     sync(path, spec, assets)
     assert_users()
@@ -462,7 +505,7 @@ def test_user_extras_survive_updates_and_protect_destructive_changes(tmp_path, f
     elif action == "delete":
         spec["layers"].pop(1)
     else:
-        replacement, _ = spec_for(tmp_path, element("image", kind="text", text="Recreated"))
+        replacement, _ = spec_for(tmp_path, element("image", kind="text", text="Recreated", font=FontGuess()))
         spec["layers"][1] = replacement["layers"][1]
     response = sync(path, spec, assets)
     if action == "update":
@@ -718,7 +761,7 @@ def test_order_is_applied_from_order_field_and_is_stable(tmp_path, full_spec):
 
 
 def test_comp_updates_only_different_settings(tmp_path):
-    spec, assets = spec_for(tmp_path, element(kind="text", text="Text"))
+    spec, assets = spec_for(tmp_path, element(kind="text", text="Text", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec, assets)
     spec["comp"].update(name="Renamed", frames=90)
@@ -730,7 +773,7 @@ def test_comp_updates_only_different_settings(tmp_path):
 
 
 def test_fps_change_retimes_layers_even_when_layer_spec_hash_is_unchanged(tmp_path):
-    value = scene(element(kind="text", text="Text", tracks={"x": track((0, 0), (30, 100))}))
+    value = scene(element(kind="text", text="Text", tracks={"x": track((0, 0), (30, 100))}, font=FontGuess()))
     spec = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
     path = tmp_path / "ae.json"
     sync(path, spec)
@@ -790,8 +833,8 @@ def user_copy(item, name="USER-TOP"):
 
 @pytest.mark.parametrize("change", ["insert", "decrease", "swap", "ordered"])
 def test_review_order_preserves_users_and_moves_only_outside_lis(tmp_path, change):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"),
-                       element("b", kind="text", text="B"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()),
+                       element("b", kind="text", text="B", font=FontGuess()))
     path = tmp_path / "ae.json"
     assert sync(path, spec)["value"]["ok"]
     state = read_state(path)
@@ -799,7 +842,7 @@ def test_review_order_preserves_users_and_moves_only_outside_lis(tmp_path, chang
     comp(state)["layers"].insert(2, user_copy(layers(state)["kf:a"], "USER-MIDDLE"))
     save_state(path, state)
     if change == "insert":
-        extra, _ = spec_for(tmp_path, element("c", kind="text", text="C"))
+        extra, _ = spec_for(tmp_path, element("c", kind="text", text="C", font=FontGuess()))
         extra["layers"][1]["order"] = 1.5
         spec["layers"].append(extra["layers"][1])
         expected = ["USER-TOP", "kf:b", "kf:c", "USER-MIDDLE", "kf:a", "kf:background"]
@@ -868,7 +911,7 @@ def test_review_changed_source_is_a_hand_edit(tmp_path, full_spec, edit):
 
 
 def test_review_sub_tolerance_ae_reads_do_not_cause_edits_or_new_solids(tmp_path):
-    spec, _ = spec_for(tmp_path, element(kind="text", text="T", color="#112233"))
+    spec, _ = spec_for(tmp_path, element(kind="text", text="T", color="#112233", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
@@ -914,7 +957,7 @@ def test_review_effect_compositing_groups_are_not_managed_properties(tmp_path, f
 @pytest.mark.parametrize("relation", ["parent", "trackMatteLayer"])
 @pytest.mark.parametrize("action", ["delete", "recreate"])
 def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relation, action):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
@@ -934,7 +977,7 @@ def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relati
 
 
 def test_review_partial_failure_tags_new_layer_and_retry_has_no_duplicate(tmp_path):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
     path = tmp_path / "ae.json"
     # Fail after layer creation, before final spec/fingerprint stamping.
     save_state(path, {"testHooks": {"writeProperty": "ADBE Anchor Point"}})
@@ -994,7 +1037,7 @@ def test_review_owned_effect_updates_preserve_user_order_and_enabled_state(tmp_p
 
 
 def test_review_text_update_preserves_unmanaged_styling(tmp_path):
-    spec, _ = spec_for(tmp_path, element(kind="text", text="T"))
+    spec, _ = spec_for(tmp_path, element(kind="text", text="T", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
@@ -1009,7 +1052,7 @@ def test_review_text_update_preserves_unmanaged_styling(tmp_path):
 
 @pytest.mark.parametrize("force", [False, True])
 def test_review_duplicate_tag_refuses_even_with_force(tmp_path, force):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
@@ -1022,7 +1065,7 @@ def test_review_duplicate_tag_refuses_even_with_force(tmp_path, force):
 
 
 def test_review_fingerprint_read_failure_is_hand_edit_and_force_does_not_throw(tmp_path):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
@@ -1104,7 +1147,7 @@ def test_fix2_force_resets_owned_effect_unwritten_parameters(tmp_path, full_spec
 
 
 def test_fix2_force_enables_user_disabled_text_fill(tmp_path):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", color="#112233"))
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", color="#112233", font=FontGuess()))
     path = tmp_path / "ae.json"
     assert sync(path, spec)["value"]["ok"]
     state = read_state(path)
@@ -1157,7 +1200,7 @@ def test_fix2_tagged_layer_user_relationships_are_extras(tmp_path, relation, act
     elif action == "delete":
         spec["layers"].pop(1)
     else:
-        replacement, _ = spec_for(tmp_path, element("a", kind="text", text="A"))
+        replacement, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
         spec["layers"][1] = replacement["layers"][1]
     response = sync(path, spec)
     if action == "update":

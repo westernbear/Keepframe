@@ -210,6 +210,37 @@ def test_sync_builds_comp_effects_model_and_downloaded_assets(extension):
         assert item["mainSource"]["file"] == str(downloaded)
 
 
+def test_reveal_text_without_font_downloads_as_image_with_effects(isolated_server, tmp_path):
+    root = isolated_server.ae_routes.workspace / "p1"
+    directory = scene_dir(root, "s1")
+    glyphs = png(directory / "assets" / "title.png", 40, 24)
+    value = load_scene(directory / "scene.v1.json")
+    title = value.elements[0]
+    title.canonical.font = None
+    title.canonical.texture = "assets/title.png"
+    title.tracks["skx"] = track((0, 10))
+    version = new_version(root, "s1", value, "keep undetected font glyphs")
+    with paired(isolated_server, tmp_path / "panel") as ext:
+        _, job = sync(ext, version=version.id)
+        assert job["result"]["applied"] is True
+        assert "text title kept as an image (no font detected)" in job["result"]["warnings"]
+        state = read_state(ext.state)
+        actual = layers(state)["kf:title"]
+        assert actual["type"] == "AVLayer" and actual["nullLayer"] is False
+        assert [effect["name"] for effect in effects(actual)] == ["Keepframe Reveal", "Keepframe Skew"]
+        assert [key["value"] for key in prop(actual, "ADBE Linear Wipe-0001")["keys"]] == [100, 0]
+        assert prop(actual, "ADBE Linear Wipe-0002")["value"] == 270
+        assert prop(actual, "ADBE Anchor Point")["value"] == [20, 12, 0]
+        assert prop(actual, "ADBE Scale")["value"] == [25, 25, 100]
+        footage = state["project"]["items"][actual["source"] - 1]
+        assert footage["name"] == "title.png"
+        assert Path(footage["mainSource"]["file"]).read_bytes() == glyphs
+        before = ext.state.read_bytes()
+        output, job = sync(ext, version=version.id)
+        assert job["result"]["unchanged"] == 4 and output["writes"] == 0
+        assert ext.state.read_bytes() == before
+
+
 def test_resend_same_version_is_zero_write_noop(extension):
     sync(extension)
     before = extension.state.read_bytes()

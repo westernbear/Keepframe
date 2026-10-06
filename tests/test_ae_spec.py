@@ -184,7 +184,7 @@ def test_texture_kinds_and_3d_candidate(tmp_path, kind):
     assert result["warnings"] == (["3D candidate"] if kind == "3d" else [])
 
 
-@pytest.mark.parametrize("kind", ["sprite", "ui", "group"])
+@pytest.mark.parametrize("kind", ["sprite", "ui", "group", "text"])
 def test_missing_image_becomes_null_layer(tmp_path, kind):
     result = layer(describe(scene(element(kind=kind)), tmp_path))
     assert result["kind"] == "null"
@@ -229,6 +229,21 @@ def test_text_color_normalized(tmp_path):
     assert layer(describe(scene(el), tmp_path))["source"]["color"] == "#a0b1c2"
 
 
+def test_text_without_font_keeps_texture_anchor_scale_and_effects(tmp_path):
+    png(tmp_path / "glyphs.png")
+    el = element(kind="text", text="Reveal 한", texture="glyphs.png", anchor=(0.25, 0.75),
+                 tracks={"sx": track((0, 2)), "sy": track((0, 3)),
+                         "reveal": track((0, 0), (30, 1)), "skx": track((0, 10))})
+    result = layer(describe(scene(el), tmp_path, fonts=[]))
+    assert result["kind"] == "image"
+    assert result["source"] == {"asset": "e1.png", "scale_fix": [0.5, 0.5]}
+    assert result["anchor"] == [5, 9]
+    assert result["props"]["scale"] == [[0, [100, 150], None, None]]
+    assert result["effects"] == layer(describe(scene(el.model_copy(update={"kind": "sprite"})), tmp_path))["effects"]
+    assert result["effects"]["reveal"] is not None and result["effects"]["skew"] is not None
+    assert result["warnings"] == ["text e1 kept as an image (no font detected)"]
+
+
 @pytest.mark.parametrize("style,weight", [("Thin", 100), ("ExtraLight", 200), ("Ultra Light", 200),
     ("Light", 300), ("Regular", 400), ("Normal", 400), ("Book", 400), ("Roman", 400), ("Unknown", 400),
     ("Medium", 500), ("SemiBold", 600), ("Demi Bold", 600), ("Bold", 700), ("ExtraBold", 800),
@@ -264,12 +279,16 @@ def test_font_ties_prefer_nonitalic(tmp_path, italic):
     assert layer(describe(scene(el), tmp_path, fonts=fonts))["source"]["font"]["postscript"] == "Upright"
 
 
-def test_font_missing_falls_back_to_arial(tmp_path):
-    el = element(kind="text", text="A", font=FontGuess(family_guess="Absent"))
+@pytest.mark.parametrize("weight,postscript,style", [
+    (400, "ArialMT", "Regular"), (599, "ArialMT", "Regular"),
+    (600, "Arial-BoldMT", "Bold"), (700, "Arial-BoldMT", "Bold"),
+])
+def test_font_missing_falls_back_to_arial(tmp_path, weight, postscript, style):
+    el = element(kind="text", text="가을 여행", font=FontGuess(family_guess="Absent", weight=weight))
     result = layer(describe(scene(el), tmp_path, fonts=[]))
-    assert result["source"]["font"] == {"postscript": "ArialMT", "family": "Arial", "style": "Regular",
+    assert result["source"]["font"] == {"postscript": postscript, "family": "Arial", "style": style,
                                          "substituted": True}
-    assert result["warnings"] == ["font Absent not installed; using Arial"]
+    assert result["warnings"] == [f"font Absent not installed; using Arial {style}"]
 
 
 def test_font_null_style_ranks_as_regular_and_preserves_null_postscript(tmp_path):
@@ -287,11 +306,13 @@ def test_spec_asset_paths_share_spec_names_and_model_text_precedence(tmp_path):
     (tmp_path / "model.glb").write_bytes(b"GLB")
     value = scene(element("a/b", texture="deep/texture.png"),
                   element("model", kind="3d", model="model.glb", texture="unused.png"),
-                  element("text", kind="text", text="A", texture="unused.png"),
+                  element("text", kind="text", text="A", font=FontGuess(), texture="unused.png"),
+                  element("glyphs", kind="text", text="A", texture="deep/texture.png"),
+                  element("empty", kind="text"),
                   background=Background(kind="image", value="background.png"))
     paths = spec_asset_paths(value, tmp_path)
     assert paths == {"a_b.png": tmp_path / "deep" / "texture.png", "model.glb": tmp_path / "model.glb",
-                     "background.png": tmp_path / "background.png"}
+                     "background.png": tmp_path / "background.png", "glyphs.png": tmp_path / "deep" / "texture.png"}
     assert set(paths) == {asset["name"] for asset in describe(value, tmp_path)["assets"]}
 
 

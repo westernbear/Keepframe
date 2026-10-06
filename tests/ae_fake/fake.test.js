@@ -529,6 +529,8 @@ test("project folders, footage replacement, source rectangles, 3D and text", () 
   assert.equal(modelLayer.threeDLayer, true);
   assert.equal(modelLayer.sourceRectAtTime(0, false).width, 200);
   assert.equal(modelLayer.sourceRectAtTime(0, false).height, 200);
+  assert.equal(modelLayer.sourceRectAtTime(0, false).left, 0);
+  assert.equal(modelLayer.sourceRectAtTime(0, false).top, -200);
   assert.deepEqual(Array.from(modelLayer.property("ADBE Transform Group").property("ADBE Orientation").value), [0, 0, 0]);
   const text = f.layer.property("ADBE Text Properties").property("ADBE Text Document");
   const doc = text.value;

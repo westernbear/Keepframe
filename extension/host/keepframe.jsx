@@ -197,6 +197,8 @@ if (typeof JSON !== "object" || JSON === null) {
         var content = {}, key;
         // Stack order is handled separately; renumbering must not rewrite layer content.
         for (key in s) { if (own(s, key) && key !== "order") { content[key] = s[key]; } }
+        // Reapply model placement once to layers synced with the old origin/100% fit.
+        if (s.kind === "model") { content.model_fit = "bounds-center-0.9"; }
         return hash(JSON.stringify(content));
     }
 
@@ -452,7 +454,8 @@ if (typeof JSON !== "object" || JSON === null) {
         if (layer.threeDLayer) {
             rect = layer.sourceRectAtTime(0, false);
             requireValue(rect.width > 0 && rect.height > 0, "model has an empty source rectangle");
-            factor = Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
+            anchor = [rect.left + rect.width / 2, rect.top + rect.height / 2, 0];
+            factor = 0.9 * Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
             writeKeys(t.property("ADBE Rotate X"), s.props.rotation_x, fps, 1, false);
             writeKeys(t.property("ADBE Rotate Y"), s.props.rotation_y, fps, 1, false);
         }
