@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261005e"}
+    assert stamps == {"20261006a"}
 
 
 def test_pending_solid_button_uses_edit_preview_and_confirmation(tmp_path):

@@ -1,12 +1,11 @@
-import json
 from unittest.mock import Mock
 
 import pytest
 
 from keepframe.analyze.constraints import extract_constraints
 from keepframe.edit.agent import edit
-from keepframe.ir.schema import Background, Constraint, Element, Canonical, Scene
-from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
+from keepframe.ir.schema import Constraint
+from keepframe.ir.store import current_scene, init_project, load_project
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.session.tools import SessionContext, run_tool
 
@@ -287,17 +286,18 @@ def test_render_prepares_immutable_plan_without_submitting_job(tmp_path):
     res = run_tool(
         "render",
         ctx,
-        {"backend": "after_effects", "direction": "polish typography", "confirm": True},
+        {"backend": "native", "direction": "polish typography", "confirm": True},
     )
 
     assert res["ok"] is True
     assert res["needs_confirm"] is True
-    assert res["payload"]["render_plan"] == {"id": "rp1", "backend": "after_effects", "mode": "preview"}
-    assert prepared == [("preview", "after_effects", "polish typography")]
+    assert res["payload"]["render_plan"] == {"id": "rp1", "backend": "native", "mode": "preview"}
+    assert prepared == [("preview", "native", "polish typography")]
     assert submitted == []
 
 
-def test_export_prepares_final_plan_and_requires_explicit_backend(tmp_path):
+@pytest.mark.parametrize("backend", ["native", "lottie"])
+def test_export_prepares_final_plan_and_requires_explicit_backend(tmp_path, backend):
     prepared = []
     ctx = SessionContext(
         root=tmp_path,
@@ -307,9 +307,9 @@ def test_export_prepares_final_plan_and_requires_explicit_backend(tmp_path):
     )
 
     missing = run_tool("export", ctx, {})
-    final = run_tool("export", ctx, {"backend": "native"})
+    final = run_tool("export", ctx, {"backend": backend})
 
     assert missing["ok"] is False
     assert final["needs_confirm"] is True
     assert final["payload"]["render_plan"]["mode"] == "final"
-    assert prepared == [("final", "native", None)]
+    assert prepared == [("final", backend, None)]

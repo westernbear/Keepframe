@@ -153,8 +153,8 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 def _render(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     backend = args.get("backend")
-    if backend not in ("native", "after_effects"):
-        return _fail("render에는 backend가 필요합니다(native 또는 after_effects).")
+    if backend not in ("native",):
+        return _fail("render에는 backend가 필요합니다(native).")
     direction = args.get("direction")
     if direction is not None and not isinstance(direction, str):
         return _fail("direction은 문자열이어야 합니다.")
@@ -194,8 +194,8 @@ def _verify(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
 
 def _export(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     backend = args.get("backend")
-    if backend not in ("native", "after_effects", "lottie"):
-        return _fail("export에는 backend가 필요합니다(native, after_effects 또는 lottie).")
+    if backend not in ("native", "lottie"):
+        return _fail("export에는 backend가 필요합니다(native 또는 lottie).")
     direction = args.get("direction")
     if direction is not None and not isinstance(direction, str):
         return _fail("direction은 문자열이어야 합니다.")
@@ -302,7 +302,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "render",
         "backend를 지정해 렌더 계획만 준비한다. 실행은 브라우저의 명시적 승인으로만 이뤄진다.",
         {
-            "backend": {"type": "string", "enum": ["native", "after_effects"]},
+            "backend": {"type": "string", "enum": ["native"]},
             "direction": {"type": "string"},
             "confirm": {"type": "boolean", "description": "권한이 아니며 무시된다."},
         },
@@ -313,7 +313,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "export",
         "backend를 지정해 최종 내보내기 계획만 준비한다. 실행은 브라우저의 명시적 승인으로만 이뤄진다.",
         {
-            "backend": {"type": "string", "enum": ["native", "after_effects", "lottie"]},
+            "backend": {"type": "string", "enum": ["native", "lottie"]},
             "direction": {"type": "string"},
             "confirm": {"type": "boolean", "description": "권한이 아니며 무시된다."},
         },

@@ -100,66 +100,8 @@ local L1 on every 5th visible frame and keeps the best reconstruction. A
 generated GLB may therefore stay unused; no generated model won on the round-2
 clips. Results are in the [round-2 evaluation](docs/qa/round2/README.md).
 
-The optional After Effects relay is a second, connector-only listener. Set
-`KEEPFRAME_AE_RELAY_URL`, `KEEPFRAME_AE_RELAY_HOST`,
-`KEEPFRAME_AE_RELAY_PORT`, and `KEEPFRAME_AE_RELAY_TOKEN` together; partial
-configuration fails startup. Expose only that relay listener through an HTTPS
-reverse proxy. Plain HTTP relay URLs are accepted only for loopback hosts.
-
-The first same-origin pairing establishes a project-scoped, host-only controller
-cookie. Re-pairing and unpairing require that cookie. Replacement and unpair
-stop new connector leases, allow the active lease to settle, then rotate or
-revoke the hashed device credential. Browser artifact downloads require the
-same controller cookie and same-origin request.
-
-Install the optional Windows connector with `pip install 'keepframe[ae]'`.
-`keepframe ae-install [--ae-path ...]` installs the ScriptUI panel for After
-Effects 2022 or newer; restart After Effects, enable **Allow Scripts to Write
-Files and Access Network**, then open **Window > Keepframe Panel**. With
-`KEEPFRAME_AE_RELAY_TOKEN` set only in the connector environment, run
-`keepframe ae-connect --url https://relay.example`; the command prompts for the
-one-use pairing code without echoing it. `--code CODE` is available for
-non-interactive pairing. Later starts use
-`keepframe ae-connect --url https://relay.example --project PROJECT_ID` and the
-current-user DPAPI-protected device record. The MCP child receives neither
-relay credential.
-
-After Effects plans pin the active capability manifest, operation schemas, scene
-assets, source locks, and any acknowledged compatibility substitutions.
-Unsupported fonts or converter semantics produce a non-approvable draft until
-the proposed lost semantics are acknowledged; capability changes require a new
-successor plan.
-
-After Effects support:
-
-| Scene feature | AE mapping / requirement |
-| --- | --- |
-| Image background plate | Bottom footage layer |
-| `reveal` track | Linear Wipe; angle 270° awaits live confirmation |
-| `kind="3d"` model with `rx`/`ry` | Model layer on AE ≥ 24.1 when the capability manifest reports `model_layers` |
-| Unsupported model layers or other semantics | Substitution proposal; acknowledge lost semantics before approval |
-
-AE verification compares reveal/spin motions with matching element ids.
-The [live AE check kit and checklist](docs/qa/round2/ae-live-check.md) cover
-plate, reveal, and model layers. The user's live check is still open.
-
-Approved After Effects sessions first build and verify deterministic checkpoint
-0, then send at most 12 bounded preview frames to the configured LLM for typed
-polish operations. Every baseline, agent, and manual candidate retains its AEP,
-preview, frames, inspection, operations, model response, manifests, and verifier
-report. Failed candidates remain inspectable and roll back to the last passing
-checkpoint. The loop has no iteration cap; one no-op or two identical model
-plans pauses it as `no_progress`. Manual AE edits sync as new checkpoints and
-never modify Keepframe IR.
-
-Finalization is a separate approval-bound step for the selected passing
-checkpoint. The connector rematerializes and re-verifies that immutable AEP,
-renders a full-resolution PNG sequence through the After Effects Render Queue,
-and encodes `final.mp4` with fixed H.264/yuv420p settings. It retains
-`project.aep`, collected content-addressed media, and `dependencies.json`
-locally, uploads only to coordinator-reserved artifact slots, and publishes a
-ZIP containing exactly those package files. Font and plugin binaries are never
-collected.
+After Effects support is being rebuilt as a signed CEP extension. The design is
+in [the AE extension specification](docs/superpowers/specs/2026-10-06-keepframe-ae-extension-design.md).
 
 The five admin pages share the Korean/English toggle. Entity values and timestamps stay verbatim. The admin queue combines seeded examples with live jobs from the running server; its status and GPU counts reflect those rows.
 
@@ -202,8 +144,6 @@ Results: [core-flow evaluation](docs/qa/core-flow/README.md), [round-2 evaluatio
 | `render` | Chromium frames, optional MP4 |
 | `verify` | Schema, keep predicates, frame compare |
 | `correct` | Review ops on a scene |
-| `ae-install` | Windows-only After Effects ScriptUI panel installer |
-| `ae-connect` | Pair or resume the Windows connector and local MCP bridge |
 | `synth` | Synthetic scene |
 | `gate-m1` / `gate-m2` | Synthetic gates |
 | `gate-m2-real` | Real-clip evaluation; `--max-frames` defaults to 150 |
@@ -240,7 +180,6 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 - Zoomed/kinetic text fragments and title/second-text prompt ambiguity remain
 - Single-crop image→3D guesses unseen geometry and texture; the fidelity guard can retain fragments or a still
 - Refine-over-plate is unit-tested but unmeasured on real clips
-- After Effects work is unfrozen; live verification of plate/reveal/3D is pending. A CEP extension is planned after the live check
 - Demo thumbnail 404 is pre-existing
 
 ### Reference analysis review

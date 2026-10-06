@@ -131,13 +131,6 @@ def test_lottie_reveal_exports_animated_rectangle_with_track_easing(tmp_path):
     assert keys[0]["o"]["x"] == [0.5]
 
 
-def test_ae_reports_reveal_gap_until_mapping_lands(tmp_path):
-    from keepframe.after_effects.compatibility import analyze_ae_compatibility
-    from tests.test_ae_compatibility import _capabilities
-    scene = reveal_scene(tmp_path)
-    assert "reveal" in {issue.semantic_key for issue in analyze_ae_compatibility(scene, _capabilities())}
-    scene.elements[0].tracks["reveal"] = Track(keys=[Keyframe(t=0, v=1)])
-    assert "reveal" not in {issue.semantic_key for issue in analyze_ae_compatibility(scene, _capabilities())}
 
 
 def test_reveal_motion_constraints_content_only_and_scene_brief(tmp_path):

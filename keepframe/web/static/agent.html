@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261005e" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261006a" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261005e"></script>
-<script type="module" src="/static/js/api.js?v=20261005e"></script>
-<script type="module" src="/static/js/agent.js?v=20261005e"></script>
+<script type="module" src="/static/js/i18n.js?v=20261006a"></script>
+<script type="module" src="/static/js/api.js?v=20261006a"></script>
+<script type="module" src="/static/js/agent.js?v=20261006a"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -76,60 +76,32 @@
 <section class="render-card" id="render-card" aria-labelledby="render-card-title">
 <div class="render-card__head">
 <div>
-<h2 id="render-card-title">렌더 계획</h2>
+<h2 id="render-card-title" data-i18n="agent.renderTitle">렌더 계획</h2>
 <p id="render-lock" class="render-card__lock mono">—</p>
 </div>
 <div class="render-card__head-actions">
-<span id="render-status" class="render-card__status">계획 없음</span>
-<button class="btn render-card__pair" id="render-pair" type="button">Pair</button>
+<span id="render-status" class="render-card__status" data-i18n="agent.renderNoPlan">계획 없음</span>
 </div>
 </div>
 <div class="render-card__body">
 <div class="render-card__setup">
-<label>모드<select id="render-mode"><option value="preview">미리보기</option><option value="final">최종</option></select></label>
-<label>백엔드<select id="render-backend"><option value="native">Native</option><option value="after_effects">After Effects</option><option value="lottie">Lottie</option></select></label>
-<label class="render-card__direction">AE 방향<input id="render-direction" type="text" maxlength="4096" placeholder="선택 사항"/></label>
-<label>계획<select id="render-plan-selector"><option value="">계획 선택</option></select></label>
-<button class="btn btn--primary" id="render-create" type="button">계획 만들기</button>
+<label><span data-i18n="agent.renderMode">모드</span><select id="render-mode"><option value="preview" data-i18n="agent.renderPreview">미리보기</option><option value="final" data-i18n="agent.renderFinal">최종</option></select></label>
+<label><span data-i18n="agent.renderBackend">백엔드</span><select id="render-backend"><option value="native">Native</option><option value="lottie">Lottie</option></select></label>
+<label><span data-i18n="agent.renderPlan">계획</span><select id="render-plan-selector"><option value="" data-i18n="agent.renderSelectPlan">계획 선택</option></select></label>
+<button class="btn btn--primary" id="render-create" type="button" data-i18n="agent.renderCreate">계획 만들기</button>
 </div>
 <div class="render-card__facts">
-<div><span>Connector</span><strong id="render-connector">확인 중</strong></div>
-<div><span>AE</span><strong id="render-ae">—</strong></div>
-<div><span>Capability</span><strong id="render-capability" class="mono">—</strong></div>
-<div><span>출력</span><strong id="render-outputs">—</strong></div>
-</div>
-<div id="render-pairing" class="render-card__section render-pairing" data-ai-private hidden>
-<h3>Connector pairing</h3>
-<div class="render-card__facts render-card__facts--pairing">
-<div><span>Code</span><strong id="render-pairing-code" class="mono">—</strong><button type="button" class="btn btn--secondary btn--inline" data-copy-target="render-pairing-code" data-i18n="agent.copy">복사</button></div>
-<div><span>Expires</span><strong id="render-pairing-expiry" class="mono">—</strong></div>
-<div><span>Relay URL</span><strong id="render-pairing-relay" class="mono">—</strong></div>
-<div><span>Connect command</span><strong id="render-pairing-command" class="mono render-pairing__command">—</strong><button type="button" class="btn btn--secondary btn--inline" data-copy-target="render-pairing-command" data-i18n="agent.copy">복사</button></div>
-</div>
-</div>
-<div id="render-substitutions" class="render-card__section" hidden>
-<h3>대체 항목</h3>
-<table><thead><tr><th>대상</th><th>문제</th><th>대체</th></tr></thead><tbody id="render-substitution-rows"></tbody></table>
-<label class="render-card__ack"><input id="render-substitution-ack" type="checkbox"/> 위 대체를 확인하고 승인합니다.</label>
+<div><span data-i18n="agent.renderOutputs">출력</span><strong id="render-outputs">—</strong></div>
 </div>
 <div id="render-live-status" class="render-card__live-status" role="status" aria-live="polite" aria-atomic="true">
 <div class="render-card__state">
-<div><span>상태 / revision</span><strong id="render-state">—</strong></div>
-<div><span>실패 이유</span><strong id="render-reason">—</strong></div>
+<div><span data-i18n="agent.renderState">상태 / revision</span><strong id="render-state">—</strong></div>
+<div><span data-i18n="agent.renderReason">실패 이유</span><strong id="render-reason">—</strong></div>
 </div>
-<div id="render-artifacts" class="render-artifacts" aria-label="렌더 산출물"></div>
-</div>
-<div class="render-card__section">
-<h3>반복 / 체크포인트 <span id="render-iteration" class="mono">iteration —</span></h3>
-<div id="render-checkpoints" class="render-checkpoints"><span class="muted">없음</span></div>
+<div id="render-artifacts" class="render-artifacts" data-i18n-aria="agent.renderArtifacts" aria-label="렌더 산출물"></div>
 </div>
 <div class="render-card__actions">
-<button class="btn" id="render-approve" type="button" disabled>승인</button>
-<button class="btn" id="render-stop" type="button" disabled>Stop</button>
-<button class="btn" id="render-continue" type="button" disabled>Continue</button>
-<button class="btn" id="render-manual" type="button" disabled>수동 편집</button>
-<button class="btn" id="render-sync" type="button" disabled>수동 동기화</button>
-<button class="btn btn--primary" id="render-finalize" type="button" disabled>Finalize</button>
+<button class="btn" id="render-approve" type="button" data-i18n="agent.renderApprove" disabled>승인</button>
 </div>
 </div>
 </section>

@@ -31,6 +31,7 @@ from keepframe.session.tools import SessionContext, _json_payload, run_tool
 from keepframe.verify.verifier import verify
 from tests.test_background_plate import _gradient_clip
 from tests.test_web_server import start
+from tests.test_web_agent import capture_agent_client
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -306,13 +307,8 @@ def test_oauth_refresh_preserves_saved_admin_settings(tmp_path, monkeypatch, cap
     else:
         admin = MemoryAdmin(workspace=tmp_path)
         admin.set_llm_settings(config, "test")
-        factories = []
-        def workflow(workspace, factory):
-            factories.append(factory)
-            return object()
-        monkeypatch.setattr("keepframe.web.server.AEWorkflowService", workflow)
         server = make_server(tmp_path, port=0, admin_svc=admin)
-        client = factories[0]()
+        client = capture_agent_client(server, tmp_path, monkeypatch)
     provider = "openai" if change == "provider" else "chatgpt"
     model = "admin-selected-model"
     edited = config.model_copy(update={"provider": provider, "model": model, "base_url": "https://admin.example",
@@ -370,20 +366,15 @@ def test_oauth_refresh_admin_callback_handles_missing_saved_settings(tmp_path, m
                             refresh_token=uuid4().hex, account_id=uuid4().hex, oauth_expires_at=0)
     admin = MemoryAdmin(workspace=tmp_path)
     admin.set_llm_settings(config, "test")
-    factories = []
-    def workflow(workspace, factory):
-        factories.append(factory)
-        return object()
     def forbidden(*args):
         raise AssertionError("admin must not receive missing or stale settings")
-    monkeypatch.setattr("keepframe.web.server.AEWorkflowService", workflow)
     monkeypatch.setattr("keepframe.web.server.load_llm_settings", lambda workspace: None)
     monkeypatch.setattr("keepframe.session.chatgpt_client.refresh_chatgpt_token", lambda token: {
         "access_token": uuid4().hex, "refresh_token": uuid4().hex, "expires_in": 3600})
     monkeypatch.setattr(admin, "set_llm_settings", forbidden)
     server = make_server(tmp_path, port=0, admin_svc=admin)
     try:
-        factories[0]()._refresh()
+        capture_agent_client(server, tmp_path, monkeypatch)._refresh()
     finally:
         server.server_close()
 

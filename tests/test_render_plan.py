@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import keepframe.after_effects.operations as operations_module
 import keepframe.render.plan as render_plan_module
 
 from keepframe.ir.store import init_project, init_project_scenes, save_scene
@@ -19,7 +18,6 @@ from keepframe.render.plan import (
     load_render_plan,
     load_render_plan_scene,
 )
-from keepframe.after_effects.planning import current_operation_manifest
 
 
 def _project(tmp_path: Path, *, approved: bool = False):
@@ -52,7 +50,6 @@ def test_plan_is_canonical_immutable_and_pins_assets(tmp_path):
 
     stored = load_render_plan(root, plan.id)
     assert stored == plan
-    assert stored.capability_manifest is None
     assert stored.digest == plan.digest
     assert stored.scene_sha256
     assert stored.assets
@@ -64,7 +61,7 @@ def test_plan_is_canonical_immutable_and_pins_assets(tmp_path):
     with pytest.raises(ValidationError):
         RenderPlan.model_validate({**plan.model_dump(mode="json"), "backend": "unknown"})
     with pytest.raises(ValidationError):
-        plan.backend = "after_effects"
+        plan.backend = "lottie"
 
 
 def test_plan_loads_immutable_scene_snapshot_after_source_changes(tmp_path):
@@ -151,65 +148,9 @@ def test_approval_is_consume_once_and_idempotent(tmp_path):
         approve_render_plan(root, plan.id, digest=plan.digest, revision=9)
 
 
-def test_ae_plan_requires_bound_capabilities(tmp_path):
-    root, _ = _project(tmp_path)
-    with pytest.raises(PlanConflict, match="capabil"):
-        create_render_plan(
-            root,
-            project_id="p1",
-            scene_id="s1",
-            version_id="v1",
-            backend="after_effects",
-            mode="preview",
-        )
-
-
-def test_ae_plan_pins_capability_manifest_and_hash(tmp_path):
-    root, _ = _project(tmp_path)
-    manifest = {
-        "version": "24.1.0",
-        "major": 24,
-        "host": "after-effects",
-        "ready": True,
-        "capabilities": {
-            "font_names": ["Arial"],
-            "effect_names": ["ADBE Fill"],
-            "property_schemas": {"ADBE Opacity": "number"},
-            "plugin_versions": {"ADBE Fill": "1"},
-        },
-    }
-    capability_hash = hashlib.sha256(
-        render_plan_module._canonical_payload(manifest)
-    ).hexdigest()
-
-    plan = create_render_plan(
-        root,
-        project_id="p1",
-        scene_id="s1",
-        version_id="v1",
-        backend="after_effects",
-        mode="preview",
-        capability_hash=capability_hash,
-        capability_manifest=manifest,
-    )
-
-    stored = load_render_plan(root, plan.id)
-    assert stored.capability_hash == capability_hash
-    assert stored.capability_manifest == manifest
-    with pytest.raises(PlanConflict, match="manifest"):
-        create_render_plan(
-            root,
-            project_id="p1",
-            scene_id="s1",
-            version_id="v1",
-            backend="after_effects",
-            mode="preview",
-            capability_hash="a" * 64,
-            capability_manifest=manifest,
-        )
 def test_full_operation_manifest_is_pinned_by_plan_digest(tmp_path):
     root, _ = _project(tmp_path)
-    manifest = current_operation_manifest()
+    manifest = ({"name": "render", "schema": {"title": "Native render contract"}},)
     plan = create_render_plan(
         root,
         project_id="p1",
@@ -234,33 +175,6 @@ def test_full_operation_manifest_is_pinned_by_plan_digest(tmp_path):
     plan_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(PlanConflict, match="digest"):
         load_render_plan(root, plan.id)
-
-
-
-
-def test_operation_manifest_pins_installed_runtime_source_and_digest(tmp_path):
-    manifest = current_operation_manifest()
-    runtime_sha256 = hashlib.sha256(Path(operations_module.__file__).read_bytes()).hexdigest()
-    assert len(runtime_sha256) == 64
-    assert all(item["runtime_contract_sha256"] == runtime_sha256 for item in manifest)
-    assert manifest == current_operation_manifest()
-
-    root, _ = _project(tmp_path)
-    plan = create_render_plan(
-        root,
-        project_id="p1",
-        scene_id="s1",
-        version_id="v1",
-        backend="native",
-        mode="preview",
-        permitted_operations=manifest,
-    )
-
-    changed_manifest = json.loads(json.dumps(manifest))
-    changed_manifest[0]["runtime_contract_sha256"] = "0" * 64
-    assert _plan_digest(
-        plan.model_copy(update={"permitted_operations": tuple(changed_manifest)})
-    ) != plan.digest
 
 
 def test_substitution_assets_and_duplicate_aliases_remain_in_manifest(tmp_path):
@@ -348,37 +262,30 @@ def test_approval_fails_closed_without_platform_file_lock(tmp_path, monkeypatch)
         approve_render_plan(root, plan.id, digest=plan.digest, revision=0)
 
 
-def test_preview_plan_forbids_predecessor_checkpoint_binding(tmp_path):
-    root, _ = _project(tmp_path)
-    with pytest.raises(PlanConflict, match="checkpoint"):
-        create_render_plan(
-            root,
-            project_id="p1",
-            scene_id="s1",
-            version_id="v1",
-            backend="after_effects",
-            mode="preview",
-            capability_hash="0" * 64,
-            capability_manifest={},
-            predecessor_checkpoint=0,
-            predecessor_checkpoint_digest="1" * 64,
-        )
-
-
-def test_predecessor_checkpoint_binding_is_digest_material(tmp_path):
+@pytest.mark.parametrize("backend", ["native", "lottie"])
+def test_stored_local_plan_with_retired_empty_metadata_keeps_approval(tmp_path, backend):
     root, _ = _project(tmp_path, approved=True)
-    plan = create_render_plan(
-        root,
-        project_id="p1",
-        scene_id="s1",
-        version_id="v1",
-        backend="native",
-        mode="final",
-    )
-    changed = plan.model_copy(
-        update={
-            "predecessor_checkpoint": 0,
-            "predecessor_checkpoint_digest": "a" * 64,
-        }
-    )
-    assert _plan_digest(changed) != plan.digest
+    plan = create_render_plan(root, project_id="p1", scene_id="s1", version_id="v1",
+                              backend=backend, mode="final")
+    plan_path = root / "renders" / plan.id / "plan.json"
+    payload = json.loads(plan_path.read_text())
+    payload.update(effect_schemas=[], capability_hash=None, capability_manifest=None,
+                   predecessor_id=None, predecessor_digest=None, predecessor_checkpoint=None,
+                   predecessor_checkpoint_digest=None)
+    payload["digest"] = _plan_digest(payload)
+    plan_path.write_text(json.dumps(payload))
+    state_path = plan_path.with_name("state.json")
+    state = json.loads(state_path.read_text())
+    state["digest"] = payload["digest"]
+    state_path.write_text(json.dumps(state))
+
+    loaded = load_render_plan(root, plan.id)
+    assert loaded.backend == backend
+    assert loaded.digest == payload["digest"]
+    approved = approve_render_plan(root, plan.id, digest=loaded.digest, revision=0)
+    assert approved.status == "approved"
+    assert approved.execution_id
+    payload["direction"] = "unapproved change"
+    plan_path.write_text(json.dumps(payload))
+    with pytest.raises(PlanConflict, match="digest"):
+        load_render_plan(root, plan.id)

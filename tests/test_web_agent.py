@@ -1,10 +1,10 @@
 import json
+import threading
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
-from keepframe.after_effects.auth import AEProjectAuth, controller_cookie_name
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.store import init_project
 from keepframe.session.agent import SessionTurn
@@ -12,14 +12,12 @@ from keepframe.session.llm import NullClient
 from tests.test_web_server import start, get
 
 
-def _post(srv, path, payload, *, cookie=None, origin=None):
+def _post(srv, path, payload, *, origin=None):
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     headers = {
         "Content-Type": "application/json",
         "Origin": origin or base,
     }
-    if cookie is not None:
-        headers["Cookie"] = cookie
     req = Request(
         f"{base}{path}",
         data=json.dumps(payload).encode("utf-8"),
@@ -150,51 +148,6 @@ def test_agent_uses_workspace_llm_settings(tmp_path, monkeypatch):
     assert captured["workspace"] == ws
 
 
-def test_agent_api_requires_existing_controller_cookie(tmp_path, monkeypatch):
-    monkeypatch.setattr("keepframe.session.agent.make_llm", lambda: NullClient())
-    root, _ = _project(tmp_path)
-    pairing = AEProjectAuth(root, "p1").create_pairing(None, {})
-    srv = start(tmp_path / "ws")
-    payload = {"project": "p1", "scene": "synth11", "message": "안녕"}
-    try:
-        denied, _ = _post(srv, "/api/agent", payload)
-        allowed, _ = _post(
-            srv,
-            "/api/agent",
-            payload,
-            cookie=f"{controller_cookie_name('p1')}={pairing.controller_token}",
-        )
-    finally:
-        srv.shutdown()
-    assert denied == 401
-    assert allowed == 200
-
-
-def test_agent_cannot_prepare_ae_plan_before_pairing(tmp_path, monkeypatch):
-    _project(tmp_path)
-
-    def request_ae_plan(_self, ctx, _message, _history):
-        assert ctx.prepare_render is not None
-        ctx.prepare_render("preview", "after_effects", None)
-        raise AssertionError("AE plan preparation should require pairing")
-
-    monkeypatch.setattr(
-        "keepframe.web.server.SessionAgent.turn",
-        request_ae_plan,
-    )
-    srv = start(tmp_path / "ws")
-    try:
-        code, body = _post(
-            srv,
-            "/api/agent",
-            {"project": "p1", "scene": "synth11", "message": "render"},
-        )
-    finally:
-        srv.shutdown()
-    assert code == 401
-    assert body == {"error": "controller authorization failed"}
-
-
 def test_agent_rejects_cross_origin_and_oversized_bodies_before_work(tmp_path):
     _project(tmp_path)
     srv = start(tmp_path / "ws")
@@ -242,3 +195,33 @@ def test_agent_rejects_oversized_message_with_ui_context(tmp_path):
         srv.shutdown()
     assert code == 413
     assert body["error"] == "message is too large"
+
+
+def capture_agent_client(server, workspace, monkeypatch):
+    root = workspace / "client-project"
+    if not (root / "project.json").exists():
+        scene = make_synthetic_scene(root / "scenes" / "s1", seed=1, frames=12, with_text=False)
+        scene = scene.model_copy(update={"id": "s1"})
+        init_project(root, {"file": "ref.mp4", "fps": scene.fps, "size": list(scene.size),
+                            "mode": "range", "range": [0, 11]}, scene)
+        (root / "meta.json").write_text(json.dumps({"id": root.name, "scene": "s1", "version": "v1"}))
+    captured = []
+
+    class CaptureAgent:
+        def __init__(self, client):
+            captured.append(client)
+
+        def turn(self, *args, **kwargs):
+            return SessionTurn(reply="captured")
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    with monkeypatch.context() as patch:
+        patch.setattr("keepframe.web.server.SessionAgent", CaptureAgent)
+        thread.start()
+        try:
+            code, body = _post(server, "/api/agent", {"project": root.name, "scene": "s1", "message": "hello"})
+            assert code == 200, body
+        finally:
+            server.shutdown()
+            thread.join()
+    return captured[0]
