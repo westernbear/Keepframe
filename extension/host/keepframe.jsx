@@ -192,6 +192,13 @@ if (typeof JSON !== "object" || JSON === null) {
         return ("00000000" + h.toString(16)).slice(-8);
     }
 
+    function layerHash(s) {
+        var content = {}, key;
+        // Stack order is handled separately; renumbering must not rewrite layer content.
+        for (key in s) { if (own(s, key) && key !== "order") { content[key] = s[key]; } }
+        return hash(JSON.stringify(content));
+    }
+
     function transform(layer) { return layer.property("ADBE Transform Group"); }
 
     function owned(effect) {
@@ -434,7 +441,7 @@ if (typeof JSON !== "object" || JSON === null) {
         layer.outPoint = (s.out + 1) / fps;
         layer.label = s.label === null ? 0 : s.label;
         layer.name = s.name;
-        layer.comment = "keepframe:" + s.id + ";spec=" + hash(JSON.stringify(s)) + ";fp=" + (readFingerprint(layer, fps) || "00000000");
+        layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s) + ";fp=" + (readFingerprint(layer, fps) || "00000000");
     }
 
     function folder(name, parent) {
@@ -738,7 +745,7 @@ if (typeof JSON !== "object" || JSON === null) {
                 desired = [];
                 for (i = 0; i < spec.layers.length; i += 1) {
                     s = spec.layers[i]; record = existing["$" + s.id];
-                    newHash = hash(JSON.stringify(s));
+                    newHash = layerHash(s);
                     if (record) { record.current = readFingerprint(record.layer, spec.comp.fps); }
                     if (record && record.spec === newHash && record.current !== null && record.fp === record.current
                         && (s.kind !== "solid" || (record.layer.source.width === comp.width && record.layer.source.height === comp.height))) {

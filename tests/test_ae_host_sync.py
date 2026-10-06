@@ -239,6 +239,23 @@ def test_removed_element_deletes_its_layer(tmp_path, full_spec):
     assert layers(read_state(path)) == before
 
 
+def test_removal_renumbers_order_without_rewriting_survivors(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    before = layers(read_state(path))
+    spec["layers"].pop(1)
+    for order, item in enumerate(spec["layers"]):
+        item["order"] = order
+    response = sync(path, spec, assets)
+    assert response["value"]["created"] == response["value"]["updated"] == []
+    assert response["value"]["deleted"] == ["kf:image"]
+    assert response["value"]["unchanged"] == 4
+    assert response["writes"] == 1
+    before.pop("kf:image")
+    assert layers(read_state(path)) == before
+
+
 def test_hand_edit_refuses_before_any_write_and_force_applies(tmp_path, full_spec):
     spec, assets = full_spec
     path = tmp_path / "ae.json"
@@ -618,7 +635,7 @@ def test_invalid_comp_settings_fail_before_writes(tmp_path, field, value):
     assert response["writes"] == response["undo_groups"] == 0
 
 
-def test_spec_tag_hashes_the_parsed_layer_and_warnings_are_combined(tmp_path):
+def test_spec_tag_hashes_layer_content_and_warnings_are_combined(tmp_path):
     spec, assets = spec_for(tmp_path, element(kind="group"))
     spec["warnings"] = ["Comp warning"]
     path = tmp_path / "ae.json"
@@ -628,6 +645,7 @@ def test_spec_tag_hashes_the_parsed_layer_and_warnings_are_combined(tmp_path):
         # Independent FNV-1a multiplication over JavaScript UTF-16 code units.
         # JSON.stringify writes integral doubles as integers (100.0 becomes 100).
         normalized = json.loads(json.dumps(layer_spec), parse_float=lambda v: int(float(v)) if float(v).is_integer() else float(v))
+        normalized.pop("order")  # Stack order is managed independently of layer content.
         serialized = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
         units = serialized.encode("utf-16-le")
         expected = 2166136261
