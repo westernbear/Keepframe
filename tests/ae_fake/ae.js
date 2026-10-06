@@ -616,7 +616,10 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     for (const name of ["name", "comment"]) setting(api, values, name);
     setting(api, values, "enabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid enabled"); });
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
-    for (const name of ["inPoint", "outPoint", "startTime"]) setting(api, values, name, (v) => finite(v, name));
+    for (const name of ["inPoint", "outPoint", "startTime"]) setting(api, values, name, (v) => {
+      finite(v, name);
+      if (name === "inPoint" && v >= values.outPoint) throw Error("fake AE: inPoint must be below outPoint");
+    });
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
     field(api, "source", () => source || null);

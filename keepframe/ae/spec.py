@@ -8,6 +8,8 @@ import struct
 import zlib
 from pathlib import Path
 
+from PIL import Image
+
 from ..ir.paths import scene_asset_path
 from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
 from ..ir.tracks import eval_track, eval_z
@@ -232,8 +234,20 @@ def _asset(path, name, assets):
 def _asset_source(value, sid, scene_dir, extension=None):
     path = scene_asset_path(scene_dir, value)
     sid = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
-    extension = extension or re.sub(r"[^A-Za-z0-9_-]", "_", path.suffix[1:]) or "png"
+    extension = extension or image_format(path)
     return path, f"{sid}.{extension}"
+
+
+def image_format(path):
+    with path.open("rb") as stream:
+        header = stream.read(12)
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "webp"
+    raise ValueError(f"{path.name} is not a supported image (PNG, JPEG or WebP)")
 
 
 def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
@@ -258,7 +272,14 @@ def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
 
 def _image(value, sid, size, anchor, scene_dir, assets):
     path, name = _asset_source(value, sid, scene_dir)
-    width, height = png_size(path)
+    if name.endswith(".png"):
+        width, height = png_size(path)
+    else:
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{path.name} is not a valid image: {exc}") from None
     name = _asset(path, name, assets)
     return ({"asset": name, "scale_fix": [size[0] / width, size[1] / height]},
             [anchor[0] * width, anchor[1] * height])

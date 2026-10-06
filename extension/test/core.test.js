@@ -59,7 +59,7 @@ async function fixture(t, route) {
         log: message => logs.push(message), setStatus: (message, details) => statuses.push({message, details}),
         evalScript: (script, callback) => {
             scripts.push(script);
-            callback(JSON.stringify(script === 'kfInfo()' ? info : success));
+            callback(JSON.stringify(script.startsWith('kfInfo(') ? info : success));
         }};
     return {serverUrl: 'http://127.0.0.1:' + server.address().port,
         requests, statuses, logs, scripts, documentsDir, deps};
@@ -134,7 +134,7 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
         extension_version: '1.0.0', host_build: 'dev', panel_build: 'dev',
         os: os.platform() + ' ' + os.release(), fonts: info.fonts}});
-    assert.deepEqual(f.scripts, ['kfInfo()']);
+    assert.deepEqual(f.scripts, ['kfInfo("true")']);
     assertPrivate(f);
 });
 
@@ -270,7 +270,7 @@ test('mismatched or untagged AE builds reject jobs and keep the restart status t
         });
         f.deps.evalScript = (script, callback) => {
             f.scripts.push(script);
-            assert.equal(script, 'kfInfo()', 'a stale host must never receive a sync');
+            assert.ok(script.startsWith('kfInfo('), 'a stale host must never receive a sync');
             callback(JSON.stringify(Object.assign({}, info, {host_build: hostBuild})));
         };
         r = runner(f);
@@ -462,7 +462,7 @@ test('unlink EPERM is logged safely and cannot mask a download error or successf
 
 test('applied:false posts full successful result and surfaces hand edits', async t => {
     const result = {ok: true, applied: false, hand_edited: ['kf:a', 'kf:title']};
-    const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(JSON.stringify(script === 'kfInfo()' ? info : result))}});
+    const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(JSON.stringify(script.startsWith('kfInfo(') ? info : result))}});
     assert.deepEqual(f.result, {ok: true, result});
     assert.ok(f.statuses.some(s => s.message ===
         'AE layers were edited by hand: kf:a, kf:title — overwrite from the web page'));
@@ -471,7 +471,7 @@ test('applied:false posts full successful result and surfaces hand edits', async
 test('unparseable and failed evalScript results fail jobs with safe raw output and line', async t => {
     for (const raw of ['EvalScript error. ' + CODE + ' ' + TOKEN + 'x'.repeat(500),
         JSON.stringify({ok: false, error: 'AE failed ' + TOKEN, line: 42}), 'null', '{}']) {
-        const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(script === 'kfInfo()' ? JSON.stringify(info) : raw)}});
+        const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(script.startsWith('kfInfo(') ? JSON.stringify(info) : raw)}});
         assert.equal(f.result.ok, false);
         assertPrivate(f, f.result);
         if (raw.startsWith('EvalScript')) {
@@ -528,7 +528,7 @@ test('hung kfSync times out at ten minutes, stops heartbeats and posts failure',
     });
     const clock = fakeClock(f.deps);
     f.deps.evalScript = (script, cb) => {
-        if (script === 'kfInfo()') cb(JSON.stringify(info)); else lateCallback = cb;
+        if (script.startsWith('kfInfo(')) cb(JSON.stringify(info)); else lateCallback = cb;
     };
     const r = runner(f), running = r.start().then(() => { completed = true; });
     t.after(() => r.stop());
@@ -606,7 +606,7 @@ test('hung kfInfo has a thirty-second deadline during pairing and polling', asyn
 });
 
 test('stop immediately rejects either pending AE entry point and ignores late callbacks', async t => {
-    for (const entry of ['kfInfo()', 'kfSync']) {
+    for (const entry of ['kfInfo(', 'kfSync']) {
         let polls = 0, lateCallback, completed = false;
         const f = await fixture(t, (req, reply) => {
             if (req.path.startsWith('/api/ae/next') && polls++ === 0) { reply(200, {job}); return true; }
@@ -642,7 +642,7 @@ test('heartbeats continue every 15 seconds during a fake slow evalScript', async
     f.deps.now = () => time;
     f.deps.sleep = ms => new Promise(resolve => waits.push({at: time + ms, resolve}));
     f.deps.evalScript = (script, cb) => {
-        if (script === 'kfInfo()') cb(JSON.stringify(info)); else finishSync = cb;
+        if (script.startsWith('kfInfo(')) cb(JSON.stringify(info)); else finishSync = cb;
     };
     const running = runner(f).start();
     await until(() => finishSync && waits.length);
@@ -771,7 +771,7 @@ test('result 409 and other non-retryable 4xx are given up with a status line', a
         assert.equal(f.scripts.filter(s => s.startsWith('kfSync(')).length, 1);
         assert.deepEqual(sleeps, [], 'a discarded result must not trigger a polling retry');
         const message = status === 409 ? 'Result not posted: job already ended (HTTP 409)' :
-            'Result not posted: server returned HTTP ' + status;
+            'Result not posted: [redacted]';
         assert.ok(f.statuses.some(s => s.message === message));
         assert.ok(f.logs.includes(message));
         assertPrivate(f);
@@ -808,7 +808,7 @@ test('401/426 during a slow evalScript stops the runner without waiting for AE',
         });
         f.deps.sleep = () => new Promise(resolve => waits.push(resolve));
         f.deps.evalScript = (script, cb) => {
-            if (script === 'kfInfo()') cb(JSON.stringify(info)); else finishSync = cb;
+            if (script.startsWith('kfInfo(')) cb(JSON.stringify(info)); else finishSync = cb;
         };
         const running = runner(f).start().then(() => { completed = true; });
         await until(() => finishSync && waits.length);
@@ -899,4 +899,112 @@ test('disconnect then Pair never waits for the stopped runner or a late AE callb
     await pairing;
     finish();
     assert.equal(paired, true);
+});
+
+
+function realHost(fonts = []) {
+    const {createAE} = require('../../tests/ae_fake/ae');
+    const {execFileSync} = require('node:child_process');
+    const root = path.resolve(__dirname, '../..');
+    const ae = createAE({state: {app: {fonts: [fonts]}}});
+    vm.runInContext(fs.readFileSync(path.join(root, 'extension/host/keepframe.jsx'), 'utf8'), ae.context);
+    const produced = JSON.parse(execFileSync(path.join(root, '.venv/bin/python'), ['-c',
+        'import json; from pathlib import Path; from tests.test_ae_spec import scene, element; ' +
+        'from keepframe.ae.spec import comp_spec; ' +
+        'print(json.dumps(comp_spec(scene(element("a", kind="group"), element("b", kind="group")), ' +
+        'Path("/tmp"), project="demo", scene_id="s1", version="v7")))'], {cwd: root, encoding: 'utf8'}));
+    const sync = () => JSON.parse(ae.context.kfSync(JSON.stringify(produced), '{}', 'false'));
+    return {ae, produced, sync, info: () => JSON.parse(ae.context.kfInfo('true'))};
+}
+
+test('final: pairing sends stored previous device and caps real host font output', async t => {
+    const host = realHost(Array.from({length: 5002}, (_, i) => ({familyName: 'Font ' + i,
+        styleName: 'Regular', postScriptName: 'Font-' + i})));
+    const f = await fixture(t);
+    f.deps.evalScript = (script, cb) => { f.scripts.push(script); cb(JSON.stringify(host.info())); };
+    await core.pair({serverUrl: f.serverUrl, code: CODE, previousDeviceId: 'd_0123456789ab'}, f.deps);
+    assert.deepEqual(f.requests[0].body.info.fonts, host.info().fonts.slice(0, 5000));
+    assert.equal(f.requests[0].body.previous_device_id, 'd_0123456789ab');
+    assert.deepEqual(f.scripts, ['kfInfo("true")']);
+});
+
+test('final: panel sends its stored deviceId on re-pair', async () => {
+    const p = panelHarness('en_US');
+    p.nodes['pairing-code'].value = CODE;
+    await p.nodes.settings.handlers.submit({preventDefault: () => {}});
+    assert.equal(p.pairs[0].previousDeviceId, 'd1');
+    assert.equal(p.storage.deviceId, 'd2');
+});
+
+test('final: start-up requests fonts, later polls omit them', async t => {
+    const host = realHost();
+    const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(
+        vm.runInContext(script, host.ae.context))}, route: (req, reply) => {
+        if (req.path.endsWith('/spec')) { reply(200, host.produced); return true; }
+    }});
+    // oneJob records scripts only through the fixture callback, so observe calls explicitly below.
+    const calls = [];
+    const g = await fixture(t);
+    g.deps.evalScript = (script, cb) => { calls.push(script); cb(vm.runInContext(script, host.ae.context)); };
+    await runner(g).start();
+    assert.deepEqual(calls, ['kfInfo("true")', 'kfInfo("false")']);
+    assert.ok(g.requests.find(req => req.path === '/api/ae/info').body.info.fonts);
+    assert.equal(f.result.result.applied, true);
+});
+
+test('final: actual interrupted ids are distinct from actual hand edits in panel status', async t => {
+    const host = realHost();
+    assert.equal(host.sync().applied, true);
+    const comp = host.ae.context.app.project.items[3];
+    for (let i = 1; i <= comp.layers.length; i++) {
+        const layer = comp.layers[i];
+        if (layer.comment.startsWith('keepframe:kf:a;')) layer.comment = 'keepframe:kf:a';
+        if (layer.comment.startsWith('keepframe:kf:b;'))
+            layer.property('ADBE Transform Group').property('ADBE Opacity').setValue(83);
+    }
+    const actual = host.sync();
+    assert.deepEqual(actual.interrupted, ['kf:a']);
+    const f = await oneJob(t, {deps: {evalScript: (script, cb) => cb(JSON.stringify(
+        script.startsWith('kfInfo(') ? host.info() : actual))}});
+    assert.deepEqual(f.result.result, actual);
+    assert.ok(f.statuses.some(s => s.message.includes(
+        'a previous sync was interrupted — overwrite to finish it: kf:a')));
+    assert.ok(f.statuses.some(s => s.message.includes('edited by hand: kf:b')));
+    assert.equal(f.statuses.some(s => s.message.includes('edited by hand: kf:a')), false);
+});
+
+for (const suffix of ['/spec', '/assets/a.png']) {
+    test('final: job HTTP failures retain safe server JSON error ' + suffix, async t => {
+        const f = await oneJob(t, {route: (req, reply) => {
+            if (req.path.endsWith(suffix)) {
+                reply(404, {error: 'file not found: e1.tex1.png ' + TOKEN + ' ' + CODE + ' ' + 'x'.repeat(3000)});
+                return true;
+            }
+        }});
+        assert.equal(f.result.ok, false);
+        assert.ok(f.result.error.startsWith('file not found: e1.tex1.png [redacted] [redacted]'));
+        assert.ok(f.result.error.length <= 1800);
+        assert.ok(f.statuses.some(s => s.message.startsWith('Sync failed: file not found: e1.tex1.png')));
+        assertPrivate(f);
+    });
+}
+
+for (const route of ['/api/ae/info', '/api/ae/next?wait=25']) {
+    test('final: connection HTTP failures retain server JSON error ' + route, async t => {
+        const f = await fixture(t, (req, reply) => {
+            if (req.path === route) { reply(400, {error: 'invalid server data for ' + route}); return true; }
+        });
+        let r;
+        f.deps.sleep = () => { r.stop(); return Promise.resolve(); };
+        r = runner(f);
+        await r.start();
+        assert.ok(f.statuses.some(s => s.message.includes('invalid server data for ' + route)));
+    });
+}
+
+test('final: JPEG and WebP spec assets keep their real cache suffix', () => {
+    for (const name of ['a.jpg', 'a.webp']) {
+        const destination = core.assetCachePath('/tmp', 'demo', {...spec.assets[0], name}, path);
+        assert.equal(path.extname(destination), path.extname(name));
+    }
 });

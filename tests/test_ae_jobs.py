@@ -541,26 +541,29 @@ def test_atomic_write_failure_is_loud_and_preserves_existing_job(queue, tmp_path
 
 
 @pytest.mark.parametrize("contents", [b"{broken", b"\xff", b"[]", b"{}"])
-def test_corrupt_job_file_fails_loudly_without_overwriting(tmp_path, contents):
+def test_corrupt_job_file_is_quarantined_without_overwriting(tmp_path, contents, caplog):
     directory = tmp_path / ".ae" / "jobs"
     directory.mkdir(parents=True)
     path = directory / "j_0123456789abcdef.json"
     path.write_bytes(contents)
-    with pytest.raises(ValueError, match="corrupt"):
-        Jobs(tmp_path)
-    assert path.read_bytes() == contents
+    Jobs(tmp_path)
+    assert not path.exists()
+    assert path.with_suffix(".corrupt").read_bytes() == contents
+    assert "WARNING" in caplog.text and path.name in caplog.text
 
 
 @pytest.mark.parametrize("changes", [{"created": None}, {"depends_on": []},
                                     {"state": "unknown"}, {"created": float("nan")}])
-def test_invalid_stored_job_fields_fail_loudly(queue, tmp_path, changes):
+def test_invalid_stored_job_fields_are_quarantined(queue, tmp_path, changes, caplog):
     job = enqueue(queue)
     path = tmp_path / ".ae" / "jobs" / f"{job.id}.json"
     path.write_text(json.dumps(job.to_dict() | changes))
     before = path.read_bytes()
-    with pytest.raises(ValueError, match="corrupt"):
-        Jobs(tmp_path)
-    assert path.read_bytes() == before
+    restarted = Jobs(tmp_path)
+    assert restarted.get(job.id) is None
+    assert not path.exists()
+    assert path.with_suffix(".corrupt").read_bytes() == before
+    assert "WARNING" in caplog.text and path.name in caplog.text
 
 
 @pytest.mark.parametrize("ok, result, error, message", [
@@ -638,3 +641,22 @@ def test_finish_requires_boolean_ok(queue, ok):
     with pytest.raises(ValueError, match="ok"):
         queue.finish(job.id, ok, error="failed")
     assert queue.get(job.id).state == "running"
+
+
+def test_final_load_accepts_unknown_and_missing_optional_job_fields(queue, tmp_path):
+    job = enqueue(queue)
+    path = tmp_path / ".ae/jobs" / f"{job.id}.json"
+    data = job.to_dict()
+    for name in ("params", "state", "error", "result", "started", "finished", "depends_on"):
+        del data[name]
+    data["future_slice_field"] = {"anything": True}
+    path.write_text(json.dumps(data))
+    assert Jobs(tmp_path).get(job.id) == job
+
+
+def test_final_bad_job_does_not_prevent_loading_valid_job(queue, tmp_path):
+    job = enqueue(queue)
+    bad = tmp_path / ".ae/jobs/j_0000000000000000.json"
+    bad.write_text("{broken")
+    assert Jobs(tmp_path).get(job.id) == job
+    assert bad.with_suffix(".corrupt").read_text() == "{broken"

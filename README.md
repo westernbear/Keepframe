@@ -142,6 +142,15 @@ Target: AE 24.0+ on Windows. The current bundle's manifest requires AE 24.1+.
 See the [build, install, and live-check guide](docs/qa/ae-extension/live-check.md).
 AE verify, final render, package, and live agent control arrive in later slices.
 
+When upgrading, remove the old `Scripts/ScriptUI Panels/keepframe_panel.jsx`
+from the After Effects installation, install the new ZXP, then fully quit and
+restart AE. The `KEEPFRAME_AE_RELAY_*` environment variables are no longer used.
+
+Docker images do not include a built ZXP. Build it from a source checkout with
+`scripts/build_zxp.sh` and place it at `keepframe/ae/static/keepframe.zxp` in the
+server's installation (mount that file into a container), or run the server from
+the source checkout where the build script writes it.
+
 ## CLI
 
 | Command | Role |

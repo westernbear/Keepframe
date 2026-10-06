@@ -11,6 +11,11 @@ import time
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
+from ..log import get
+
+
+log = get("keepframe.ae.jobs")
+
 
 _KINDS = ("sync", "render_frames", "render_final", "package")
 _TERMINAL = ("done", "failed", "superseded")
@@ -80,9 +85,10 @@ class Jobs:
         for path in self._path.glob("*.json"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                job = Job(**data)
-                if (set(data) != set(Job.__dataclass_fields__)
-                        or path.name != f"{job.id}.json" or len(job.id) != 18
+                if not isinstance(data, dict):
+                    raise ValueError("invalid job record")
+                job = Job(**{key: value for key, value in data.items() if key in Job.__dataclass_fields__})
+                if (path.name != f"{job.id}.json" or len(job.id) != 18
                         or not job.id.startswith("j_")
                         or any(c not in "0123456789abcdef" for c in job.id[2:])
                         or job.kind not in _KINDS or job.state not in ("queued", "running", *_TERMINAL)
@@ -102,8 +108,10 @@ class Jobs:
                     _dictionary(job.result, "result")
                 if job.state == "failed" and (not isinstance(job.error, str) or not job.error):
                     raise ValueError("failed job has no error")
-            except (TypeError, ValueError, UnicodeDecodeError):
-                raise ValueError(f"job file is corrupt: {path.name}") from None
+            except (TypeError, ValueError, UnicodeDecodeError) as exc:
+                path.rename(path.with_suffix(".corrupt"))
+                log.warning("Quarantined invalid job file %s: %s", path.name, exc)
+                continue
             self._jobs[job.id] = job
         now = _timestamp(None)
         for job in list(self._jobs.values()):
@@ -242,15 +250,21 @@ class Jobs:
             finally:
                 self._condition.notify_all()
 
-    def abandon(self, device, reason, now=None) -> list[Job]:
+    def abandon(self, device, reason, now=None, *, queued=False) -> list[Job]:
         if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
             raise ValueError("invalid error: required, at most 2000 characters")
         with self._condition:
             now, failed = _timestamp(now), []
             try:
                 for job in list(self._jobs.values()):
-                    if job.device == device and job.state == "running":
-                        failed.extend(self._end(job, False, None, reason, now))
+                    if job.device == device and job.state in (("queued", "running") if queued else ("running",)):
+                        # Disconnect every active job with the same reason, including sync dependents.
+                        if queued:
+                            updated = replace(job, state="failed", result=None, error=reason, finished=now)
+                            self._save(updated)
+                            failed.append(updated)
+                        else:
+                            failed.extend(self._end(job, False, None, reason, now))
                 return copy.deepcopy(failed)
             finally:
                 self._condition.notify_all()

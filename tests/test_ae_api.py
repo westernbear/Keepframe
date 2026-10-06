@@ -330,7 +330,7 @@ def test_idle_poll_abandons_running_sync_and_continues(server, project, has_next
     assert poll(server, headers, "bad")[0] == 400
     assert routes.jobs.get(running["id"]).state == "running"
     status, value = poll(server, headers)
-    reason = "the Keepframe panel restarted before finishing this job; send again"
+    reason = "the Keepframe panel lost this job (it asked for new work); send again"
     failed = routes.jobs.get(running["id"])
     assert failed.state == "failed" and failed.error == reason and failed.finished is not None
     assert routes.jobs.get(dependent.id).state == "failed"
@@ -378,8 +378,12 @@ def test_response_disconnect_logs_info_without_retry_or_escape(server, monkeypat
     assert responses == [status]
     assert not any(record.levelno >= logging.ERROR or record.exc_info for record in caplog.records)
     records = [record for record in caplog.records if record.name == "keepframe.ae"]
-    assert len(records) == 1 and records[0].levelno == logging.INFO
-    assert records[0].getMessage() == f"client closed the connection during GET {urlparse(path).path}"
+    assert len(records) == (2 if status in (400, 404) else 1)
+    if status in (400, 404):
+        assert records[0].levelno == logging.WARNING
+        assert urlparse(path).path in records[0].getMessage()
+    assert records[-1].levelno == logging.INFO
+    assert records[-1].getMessage() == f"client closed the connection during GET {urlparse(path).path}"
     assert headers["Authorization"] not in caplog.text
     assert headers["Authorization"][7:] not in caplog.text
     assert headers["Host"] not in caplog.text
@@ -906,3 +910,64 @@ def test_server_upload_failure_is_not_a_client_error(server, project, tmp_path, 
     assert status == expected and isinstance(error["error"], str)
     assert not list(directory.glob(".*.part-*")) and not (directory / "frame_0001.png").exists()
     assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)
+
+
+@pytest.mark.parametrize("failure", ["missing", "invalid"])
+def test_final_spec_failure_names_problem_and_logs_route(server, project, tmp_path, caplog, failure):
+    device, headers = pair(server)
+    job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    path = scene_dir(tmp_path / "p1", "s1") / "assets/image.png"
+    if failure == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"invalid image")
+    route = f"/api/ae/jobs/{job.id}/spec"
+    with caplog.at_level(logging.WARNING):
+        status, body = json_request(server, "GET", route, headers=headers)
+    assert status == (404 if failure == "missing" else 400)
+    assert path.name in body["error"]
+    records = [r for r in caplog.records if r.name == "keepframe.ae"]
+    assert any(r.levelno == logging.WARNING and route in r.message and path.name in r.message for r in records)
+    assert headers["Authorization"] not in caplog.text
+    assert headers["Authorization"][7:] not in caplog.text
+    assert headers["Host"] not in caplog.text
+
+
+def test_final_revoke_fails_all_active_jobs_only_for_device(server, project):
+    device, headers = pair(server)
+    other, _ = pair(server)
+    jobs = server.ae_routes.jobs
+    running = jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    assert poll(server, headers)[1]["job"]["id"] == running.id
+    queued = jobs.enqueue(device, "package", "p1", "s1", "v1")
+    unrelated = jobs.enqueue(other, "sync", "p1", "s1", "v1")
+    assert json_request(server, "DELETE", f"/api/ae/devices/{device}", browser=True)[0] == 204
+    for job in jobs.state("p1", "s1")["jobs"]:
+        if job["device"] == device:
+            assert job["state"] == "failed"
+            assert job["error"] == "After Effects was disconnected from this server"
+            assert job["finished"] is not None
+    assert jobs.get(queued.id).state == "failed"
+    assert jobs.get(unrelated.id).state == "queued"
+    assert poll(server, headers)[0] == 401
+
+
+def test_final_repair_revokes_previous_device_only_after_success(server, project):
+    device, headers = pair(server)
+    other, other_headers = pair(server)
+    queued = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    payload = {"code": "invalid", "info": INFO, "previous_device_id": device}
+    assert json_request(server, "POST", "/api/ae/pair", payload, headers=EXTENSION)[0] == 401
+    assert poll(server, headers)[0] == 200
+    code = json_request(server, "POST", "/api/ae/codes", browser=True)[1]["code"]
+    payload["code"] = code
+    payload["info"] = INFO | {"fonts": None}
+    assert json_request(server, "POST", "/api/ae/pair", payload, headers=EXTENSION)[0] == 400
+    assert server.ae_routes.devices.authenticate(headers["Authorization"][7:]) is not None
+    payload["info"] = INFO
+    status, paired = json_request(server, "POST", "/api/ae/pair", payload, headers=EXTENSION)
+    assert status == 200
+    assert poll(server, headers)[0] == 401
+    assert server.ae_routes.jobs.get(queued.id).error == "After Effects was disconnected from this server"
+    assert poll(server, other_headers)[0] == 204
+    assert poll(server, EXTENSION | {"Authorization": "Bearer " + paired["token"]})[0] == 204

@@ -13,6 +13,7 @@
             syncing: 'Syncing {project} / {scene} {version}…',
             synced: 'Synced {version}: {created} created, {updated} updated, {deleted} deleted',
             edited: 'AE layers were edited by hand: {ids} — overwrite from the web page',
+            syncInterrupted: 'a previous sync was interrupted — overwrite to finish it: {ids}',
             retry: 'Not connected: {reason} (retrying in {seconds} s)', failed: 'Sync failed: {reason}',
             notPaired: 'Not paired: enter a new code from the Keepframe web page',
             update: 'Update the Keepframe extension: {url}', downloading: 'Downloading {name}', stageSync: 'Syncing',
@@ -35,6 +36,7 @@
             syncing: '{project} / {scene} {version} 동기화 중…',
             synced: '{version} 동기화됨: 생성 {created}개, 업데이트 {updated}개, 삭제 {deleted}개',
             edited: 'AE 레이어가 수동으로 수정되었습니다: {ids} — 웹 페이지에서 덮어쓰세요',
+            syncInterrupted: '이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: {ids}',
             retry: '연결 안 됨: {reason} ({seconds}초 후 재시도)', failed: '동기화 실패: {reason}',
             notPaired: '페어링 안 됨: Keepframe 웹 페이지의 새 코드를 입력하세요',
             update: 'Keepframe 확장을 업데이트하세요: {url}', downloading: '{name} 다운로드 중', stageSync: '동기화 중',
@@ -65,6 +67,7 @@
     let activeRunner, generation = 0, token = '';
 
     function translate(message) {
+        if (message.includes('\n')) return message.split('\n').map(translate).join('\n');
         const key = Object.keys(strings.en).find(name => strings.en[name] === message);
         if (key) return table[key];
         let match;
@@ -75,6 +78,8 @@
             return t('synced', {version: match[1], created: match[2], updated: match[3], deleted: match[4]});
         if ((match = /^AE layers were edited by hand: (.*) — overwrite from the web page$/.exec(message)))
             return t('edited', {ids: match[1]});
+        if ((match = /^a previous sync was interrupted — overwrite to finish it: (.*)$/.exec(message)))
+            return t('syncInterrupted', {ids: match[1]});
         if ((match = /^Not connected: (.*) \(retrying in (\d+) s\)$/.exec(message)))
             return t('retry', {reason: translate(match[1]), seconds: match[2]});
         if (message.startsWith('Sync failed: ')) return t('failed', {reason: message.slice(13)});
@@ -152,7 +157,7 @@
         setStatus(table.pairing);
         try {
             if (current !== generation) return;
-            const paired = await core.pair({serverUrl, code}, deps);
+            const paired = await core.pair({serverUrl, code, previousDeviceId: localStorage.getItem('deviceId') || undefined}, deps);
             if (current !== generation) return;
             secrets.push(paired.token);
             try {

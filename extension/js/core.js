@@ -142,9 +142,17 @@
                     res.on('end', () => {
                         if (settled) return;
                         if (res.statusCode < 200 || res.statusCode >= 300) {
-                            // Do not reflect server error bodies: a pair response may echo credentials.
-                            const message = res.statusCode === 401 ? NOT_PAIRED : res.statusCode === 426 ?
+                            let message = res.statusCode === 401 ? NOT_PAIRED : res.statusCode === 426 ?
                                 updateMessage(context.serverUrl) : 'Server returned HTTP ' + res.statusCode;
+                            // Pair responses may echo credentials; only authenticated work routes expose diagnostics.
+                            if (res.statusCode !== 401 && res.statusCode !== 426 &&
+                                (route.startsWith('/api/ae/jobs/') || /^\/api\/ae\/(next|info)(?:\?|$)/.test(route))) {
+                                try {
+                                    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                                    if (typeof body.error === 'string' && body.error.trim())
+                                        message = safeError({message: body.error}, context.secrets);
+                                } catch (_) {}
+                            }
                             finish(failure(message, {status: res.statusCode}));
                         } else finish(null, {status: res.statusCode, headers: res.headers,
                             text: Buffer.concat(chunks).toString('utf8')});
@@ -166,7 +174,7 @@
 
     function hostCall(context, script) {
         const deps = context.deps, secrets = context.secrets;
-        const timeout = script === 'kfInfo()' ? 30000 : HOST_TIMEOUT_MS;
+        const timeout = script.startsWith('kfInfo(') ? 30000 : HOST_TIMEOUT_MS;
         return new Promise((resolve, reject) => {
             let settled = false;
             const finish = (error, raw) => {
@@ -193,7 +201,7 @@
 
     function deviceInfo(info, deps) {
         return {ae_version: info.ae_version, extension_version: EXTENSION_VERSION,
-            os: deps.os.platform() + ' ' + deps.os.release(), fonts: info.fonts,
+            os: deps.os.platform() + ' ' + deps.os.release(), fonts: info.fonts.slice(0, 5000),
             host_build: info.host_build, panel_build: HOST_BUILD};
     }
 
@@ -206,9 +214,10 @@
 
     async function pair(options, deps) {
         const context = contextFor(options, deps);
-        const info = await hostCall(context, 'kfInfo()');
+        const info = await hostCall(context, 'kfInfo("true")');
         let response;
-        try { response = await request(context, 'POST', '/api/ae/pair', {code: options.code, info: deviceInfo(info, deps)}); }
+        try { response = await request(context, 'POST', '/api/ae/pair', {code: options.code, info: deviceInfo(info, deps),
+            previous_device_id: options.previousDeviceId}); }
         catch (error) {
             if (error.status === 401) throw failure('Pairing code is invalid or expired');
             throw error;
@@ -228,7 +237,7 @@
     function assetCachePath(documentsDir, project, asset, path) {
         validateProject(project);
         if (!asset || typeof asset.name !== 'string' || /[\/\\\x00-\x1f:]/.test(asset.name) ||
-            asset.name.includes('..') || !/\.(png|glb)$/.test(asset.name)) throw failure('Invalid asset name or extension');
+            asset.name.includes('..') || !/\.(png|jpg|webp|glb)$/.test(asset.name)) throw failure('Invalid asset name or extension');
         if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256)) throw failure('Invalid asset SHA-256');
         if (!Number.isSafeInteger(asset.bytes) || asset.bytes < 0) throw failure('Invalid asset byte count');
         const folder = path.resolve(documentsDir, 'Keepframe', project, 'assets');
@@ -367,7 +376,7 @@
                         if (!error.network && error.status !== 429 && !(error.status >= 500 && error.status < 600)) {
                             outcome = true;
                             const message = error.status === 409 ? 'Result not posted: job already ended (HTTP 409)' :
-                                'Result not posted: ' + (error.status ? 'server returned HTTP ' + error.status : safeError(error, context.secrets));
+                                'Result not posted: ' + safeError(error, context.secrets);
                             status(message, {job, finished: true}); log(message);
                             return;
                         }
@@ -378,8 +387,14 @@
                 outcome = true;
                 let text;
                 if (!payload.ok) text = mismatch || 'Sync failed: ' + payload.error + (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
-                else if (payload.result.applied === false) text = 'AE layers were edited by hand: ' +
-                    (payload.result.hand_edited || []).join(', ') + ' — overwrite from the web page';
+                else if (payload.result.applied === false) {
+                    const interrupted = payload.result.interrupted || [];
+                    const edited = (payload.result.hand_edited || []).filter(id => !interrupted.includes(id));
+                    const messages = [];
+                    if (interrupted.length) messages.push('a previous sync was interrupted — overwrite to finish it: ' + interrupted.join(', '));
+                    if (edited.length) messages.push('AE layers were edited by hand: ' + edited.join(', ') + ' — overwrite from the web page');
+                    text = messages.join('\n');
+                }
                 else {
                     const count = value => Array.isArray(value) ? value.length : Number(value) || 0;
                     text = 'Synced ' + job.version + ': ' + count(payload.result.created) + ' created, ' +
@@ -393,7 +408,7 @@
             let announced = false;
             while (running) {
                 try {
-                    const info = await hostCall(context, 'kfInfo()');
+                    const info = await hostCall(context, announced ? 'kfInfo("false")' : 'kfInfo("true")');
                     if (!running) break;
                     const mismatch = info.host_build === HOST_BUILD ? '' :
                         'The AE script (build ' + (info.host_build || 'unknown') + ') does not match the panel (build ' +

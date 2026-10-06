@@ -1023,3 +1023,12 @@ test("ES3 checker reports multiline locations and preserves ordinary ES3 identif
   assert.doesNotThrow(() => checkES3Syntax('var let = 1; let += 2; var 이름 = 1; var \\u0061 = 2;'));
   assert.doesNotThrow(() => checkES3Syntax('var f = function() {} / 2; function g() {} /class =>/.test("class");'));
 });
+
+test('final: AE rejects inPoint at or beyond outPoint', () => {
+  const f = fixture();
+  for (const value of [f.layer.outPoint, f.layer.outPoint + 1])
+    assert.throws(() => { f.layer.inPoint = value; }, /inPoint.*outPoint/);
+  f.layer.outPoint = 7;
+  f.layer.inPoint = 5;
+  assert.equal(f.layer.inPoint, 5);
+});

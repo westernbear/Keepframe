@@ -200,7 +200,7 @@ if (typeof JSON !== "object" || JSON === null) {
     function layerHash(s) {
         var content = {}, key;
         // Stack order is handled separately; renumbering must not rewrite layer content.
-        for (key in s) { if (own(s, key) && key !== "order") { content[key] = s[key]; } }
+        for (key in s) { if (own(s, key) && key !== "order" && key !== "name" && key !== "label") { content[key] = s[key]; } }
         // Reapply model placement once to layers synced with the old origin/100% fit.
         if (s.kind === "model") { content.model_fit = "bounds-center-0.9"; }
         return hash(JSON.stringify(content));
@@ -297,12 +297,15 @@ if (typeof JSON !== "object" || JSON === null) {
         return values;
     }
 
-    function fingerprint(layer, fps) {
+    function fingerprint(layer, fps, legacy) {
         var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
         var position = transform(layer).property("ADBE Position");
         var modelScale = kind(layer) === "model";
         // FPS is managed context: changing it changes how every frame-based property must be written.
-        data.push(rounded(fps), layer.name, layer.label, Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
+        data.push(rounded(fps));
+        // ponytail: builds up to 1.0.238 fingerprinted name and label; accept that form until each layer is rewritten once.
+        if (legacy) { data.push(layer.name, layer.label); }
+        data.push(Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
             position.expressionEnabled, position.expression);
         if (kind(layer) === "solid") {
             data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
@@ -328,8 +331,8 @@ if (typeof JSON !== "object" || JSON === null) {
         return hash(JSON.stringify(data));
     }
 
-    function readFingerprint(layer, fps) {
-        try { return fingerprint(layer, fps); } catch (e) { return null; }
+    function readFingerprint(layer, fps, legacy) {
+        try { return fingerprint(layer, fps, legacy); } catch (e) { return null; }
     }
 
     function keyCount(layer) {
@@ -470,10 +473,9 @@ if (typeof JSON !== "object" || JSON === null) {
                 i === 2 ? factor : 1, i === 2 && s.kind === "model");
         }
         writeEffects(layer, s, fps, anchor, force);
+        if (s["in"] / fps >= layer.outPoint) { layer.outPoint = (s.out + 1) / fps; }
         layer.inPoint = s["in"] / fps;
         layer.outPoint = (s.out + 1) / fps;
-        layer.label = s.label === null ? 0 : s.label;
-        layer.name = s.name;
         layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s) + ";fp=" + (readFingerprint(layer, fps) || "00000000");
     }
 
@@ -530,6 +532,8 @@ if (typeof JSON !== "object" || JSON === null) {
         } else { layer = comp.layers.add(assets["$" + s.source.asset]); }
         // Claim immediately: errors after creation must leave a recoverable tagged layer.
         layer.comment = "keepframe:" + s.id;
+        layer.label = s.label === null ? 0 : s.label;
+        layer.name = s.name;
         // Visibility belongs to the user after creation, including the glyph-image layer.
         if (s.hidden === true) { layer.enabled = false; }
         if (s.kind === "solid" || s.kind === "null") { layer.source.parentFolder = comp.parentFolder; }
@@ -603,8 +607,8 @@ if (typeof JSON !== "object" || JSON === null) {
         var i, layer;
         for (i = 1; i <= comp.layers.length; i += 1) {
             layer = comp.layers[i];
-            if (!tag(layer) && ((layer.parent && layer.parent.index === target.index)
-                || (layer.trackMatteLayer && layer.trackMatteLayer.index === target.index))) { return true; }
+            if ((layer.parent && layer.parent.index === target.index)
+                || (layer.trackMatteLayer && layer.trackMatteLayer.index === target.index)) { return true; }
         }
         return false;
     }
@@ -630,7 +634,7 @@ if (typeof JSON !== "object" || JSON === null) {
         throw new Error("this After Effects has no Advanced 3D renderer (needed for 3D models)");
     }
 
-    function updateComp(comp, s, parent) {
+    function updateComp(comp, s) {
         var names = ["name", "width", "height", "pixelAspect", "frameRate", "duration"], i;
         var values = [s.name, s.width, s.height, 1, s.fps, s.frames / s.fps];
         for (i = 0; i < names.length; i += 1) {
@@ -640,7 +644,6 @@ if (typeof JSON !== "object" || JSON === null) {
                 if (Math.round(comp.duration * s.fps) !== s.frames) { comp.duration = values[i]; }
             } else if (comp[names[i]] !== values[i]) { comp[names[i]] = values[i]; }
         }
-        if (comp.parentFolder.id !== parent.id) { comp.parentFolder = parent; }
     }
 
     function placeNew(layer, s, ordered, existing) {
@@ -702,24 +705,29 @@ if (typeof JSON !== "object" || JSON === null) {
         return JSON.stringify({ok: false, error: String(e.message || e), line: e.line || 0});
     }
 
-    global.kfInfo = function () {
+    global.kfInfo = function (withFonts) {
         try {
-            var fonts = [], all = app.fonts.allFonts, i, j, font;
-            for (i = 0; i < all.length; i += 1) {
-                for (j = 0; j < all[i].length; j += 1) {
-                    font = all[i][j];
-                    fonts.push({family: font.familyName, style: font.styleName, postscript: font.postScriptName});
+            var fonts = [], all, i, j, font;
+            var info = {ok: true, ae_version: app.version, project_name: app.project.file ? decodeURI(app.project.file.name) : null,
+                project_saved: app.project.file !== null, host_build: HOST_BUILD};
+            if (withFonts !== "false") {
+                all = app.fonts.allFonts;
+                for (i = 0; i < all.length; i += 1) {
+                    for (j = 0; j < all[i].length; j += 1) {
+                        font = all[i][j];
+                        fonts.push({family: font.familyName, style: font.styleName, postscript: font.postScriptName});
+                    }
                 }
+                info.fonts = fonts;
             }
-            return JSON.stringify({ok: true, ae_version: app.version, project_name: app.project.file ? decodeURI(app.project.file.name) : null,
-                project_saved: app.project.file !== null, fonts: fonts, host_build: HOST_BUILD});
+            return JSON.stringify(info);
         } catch (e) { return errorResult(e); }
     };
 
     global.kfSync = function (specJson, assetsJson, force) {
         try {
             var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
-            var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered;
+            var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered, fps;
             validate(spec, paths, force);
             var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
                 keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version};
@@ -729,7 +737,7 @@ if (typeof JSON !== "object" || JSON === null) {
             for (i = 0; i < records.length; i += 1) {
                 record = records[i];
                 requireValue(!own(existing, "$" + record.id), "two layers are tagged " + record.id
-                    + "; delete the duplicate (Edit > Undo or remove the copy) and send again");
+                    + " (a duplicated Keepframe layer). Delete the copy, or keep it by clearing its layer comment, then send again");
                 existing["$" + record.id] = record;
             }
             for (i = 0; i < spec.layers.length; i += 1) {
@@ -737,13 +745,14 @@ if (typeof JSON !== "object" || JSON === null) {
             }
             for (i = 0; i < records.length; i += 1) {
                 record = records[i]; s = wanted["$" + record.id];
-                record.current = readFingerprint(record.layer, Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001
-                    ? spec.comp.fps : rounded(comp.frameRate));
+                fps = Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001 ? spec.comp.fps : rounded(comp.frameRate);
+                record.current = readFingerprint(record.layer, fps);
                 record.kind = kind(record.layer);
                 if (force !== "true") {
                     if (record.fp === null) { interrupted.push(record.id); }
                     try {
-                        if (record.current === null || record.current !== record.fp || hasExpression(record.layer)
+                        if (record.current === null || (record.current !== record.fp && readFingerprint(record.layer, fps, true) !== record.fp)
+                            || hasExpression(record.layer)
                             || ((!s || s.kind !== record.kind) && (hasExtras(record.layer)
                                 || hasUserDependents(comp, record.layer)))) { edits.push(record.id); }
                     } catch (readError) { edits.push(record.id); }
@@ -763,7 +772,7 @@ if (typeof JSON !== "object" || JSON === null) {
                     comp.comment = spec.comp.tag;
                     comp.parentFolder = parent;
                 }
-                updateComp(comp, spec.comp, parent);
+                updateComp(comp, spec.comp);
                 if (renderer) {
                     renderer = modelRenderer(comp);
                     if (comp.renderer !== renderer) { comp.renderer = renderer; }

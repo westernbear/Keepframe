@@ -117,7 +117,7 @@ def assert_button_styles(page):
             assert value["opacity"] >= .7, value
 
 
-def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
+def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
     from playwright.sync_api import expect
 
     page, server, errors = ae_page
@@ -137,17 +137,15 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
     assert status == 200 and claimed["job"]["version"] == "v1"
     job = claimed["job"]
     assert job["device"] == device and job["params"] == {"force": False}
+    spec, host_path, actual = host_card_result(tmp_path, hand_edits=True)
     status, _ = json_request(server, "POST", f'/api/ae/jobs/{job["id"]}/result',
-                             {"ok": True, "result": {"ok": True, "applied": False, "hand_edited": ["kf:title", "kf:logo"],
-                                                      "warnings": ["<img src=x onerror=alert(1)>"]}}, headers=headers)
+                             {"ok": True, "result": actual}, headers=headers)
     assert status == 200
     expect(page.locator("#ae-hand-edits")).to_be_visible(timeout=6000)
     expect(page.locator("#ae-hand-edits")).to_contain_text("2개 레이어")
-    expect(page.locator("#ae-hand-edits")).to_contain_text("kf:title, kf:logo")
+    for eid in ("kf:title", "kf:logo"):
+        expect(page.locator("#ae-hand-edits")).to_contain_text(eid)
     assert_button_styles(page)
-    page.locator("#ae-jobs summary").click()
-    expect(page.locator("#ae-jobs details")).to_contain_text("<img src=x onerror=alert(1)>")
-    assert page.locator("#ae-jobs img").count() == 0
     page.locator("#ae-overwrite").click()
     expect(page.locator("#ae-overwrite-confirm")).to_be_visible()
     expect(page.locator("#ae-overwrite-yes")).to_be_focused()
@@ -160,12 +158,30 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page):
     status, claimed = poll(server, headers)
     assert status == 200 and claimed["job"]["params"] == {"force": True}
     job = claimed["job"]
+    spec, host_path, actual = host_card_result(tmp_path / "overwrite", warning="<img src=x onerror=alert(1)>")
+    assert len(actual["created"]) == 55
     status, _ = json_request(server, "POST", f'/api/ae/jobs/{job["id"]}/result',
-                             {"ok": True, "result": {"ok": True, "applied": True, "created": 3, "updated": 2,
-                                                      "deleted": 0, "unchanged": 1, "warnings": []}}, headers=headers)
+                             {"ok": True, "result": actual}, headers=headers)
     assert status == 200
     expect(page.locator("#ae-synced")).to_have_text("AE 버전: v1", timeout=6000)
-    expect(page.locator("#ae-jobs")).to_contain_text("3개 생성 · 2개 수정 · 0개 삭제")
+    expect(page.locator("#ae-jobs > li").first).to_contain_text("55개 생성 · 0개 수정 · 0개 삭제")
+    page.locator("#ae-jobs summary").click()
+    expect(page.locator("#ae-jobs details")).to_contain_text("<img src=x onerror=alert(1)>")
+    assert page.locator("#ae-jobs img").count() == 0
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-jobs > li").first).to_contain_text("55 created · 0 updated · 0 deleted")
+    page.locator("#ae-send").click()
+    expect(page.locator("#ae-jobs > li").first).to_contain_text("Queued")
+    status, claimed = poll(server, headers)
+    assert status == 200
+    from tests.test_ae_host_sync import sync
+    actual = sync(host_path, spec)["value"]
+    assert actual["created"] == actual["updated"] == actual["deleted"] == []
+    assert actual["unchanged"] == 55
+    status, _ = json_request(server, "POST", f'/api/ae/jobs/{claimed["job"]["id"]}/result',
+                             {"ok": True, "result": actual}, headers=headers)
+    assert status == 200
+    expect(page.locator("#ae-jobs > li").first).to_contain_text("0 created · 0 updated · 0 deleted")
     screenshot = Path("/tmp/keepframe-task10-ae-card.png")
     page.locator("#ae-card").screenshot(path=str(screenshot))
     assert not errors
@@ -423,4 +439,51 @@ def test_ae_polling_pauses_when_hidden_and_resumes(ae_page):
     expect(page.locator("#ae-jobs > li")).to_have_count(5)
     with page.expect_request("**/api/ae/state?*"):
         page.clock.fast_forward(2000)
+    assert not errors
+
+
+def host_card_result(root, *, hand_edits=False, interrupted=False, warning=None):
+    from tests.test_ae_host_sync import spec_for, sync, read_state, save_state, layers, prop
+    from tests.test_ae_spec import element
+
+    root.mkdir(parents=True, exist_ok=True)
+    spec, _ = spec_for(root, *[element(eid, kind="group") for eid in
+                             ["title", "logo", *[f"e{i}" for i in range(52)]]])
+    if warning:
+        spec["warnings"].append(warning)
+    path = root / "ae.json"
+    actual = sync(path, spec)["value"]
+    if hand_edits or interrupted:
+        state = read_state(path)
+        for eid in ("kf:title", "kf:logo"):
+            prop(layers(state)[eid], "ADBE Rotate Z")["value"] = 25
+        if interrupted:
+            layers(state)["kf:title"]["comment"] = "keepframe:kf:title"
+        save_state(path, state)
+        actual = sync(path, spec)["value"]
+    return spec, path, actual
+
+
+def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page, tmp_path):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, headers = connect(page, server)
+    page.locator("[data-lang-toggle]").click()
+    _, _, actual = host_card_result(tmp_path, hand_edits=True, interrupted=True)
+    assert actual["interrupted"] == ["kf:title"]
+    assert set(actual["hand_edited"]) == {"kf:title", "kf:logo"}
+    job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    assert poll(server, headers)[1]["job"]["id"] == job.id
+    assert json_request(server, "POST", f'/api/ae/jobs/{job.id}/result',
+                        {"ok": True, "result": actual}, headers=headers)[0] == 200
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-hand-message")).to_contain_text(
+        "a previous sync was interrupted — overwrite to finish it: kf:title")
+    expect(page.locator("#ae-hand-message")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
+    expect(page.locator("#ae-hand-message")).not_to_contain_text("hand in AE: kf:title")
+    expect(page.locator("#ae-jobs")).to_contain_text(
+        "a previous sync was interrupted — overwrite to finish it: kf:title")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-hand-message")).to_contain_text("이전 동기화가 중단되었습니다")
     assert not errors

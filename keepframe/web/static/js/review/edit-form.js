@@ -1,7 +1,7 @@
-import { postEdit } from "/static/js/api.js?v=20261006f";
-import { T, Tf } from "/static/js/i18n.js?v=20261006f";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261006f";
-import { isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261006f";
+import { postEdit } from "/static/js/api.js?v=20261006g";
+import { T, Tf } from "/static/js/i18n.js?v=20261006g";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261006g";
+import { isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261006g";
 
 export function attachEditForm(ws) {
   const { dom } = ws;

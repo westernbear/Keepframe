@@ -43,14 +43,18 @@ def _info(info):
         if name in info:
             result[name] = _string(info[name], name, 64)
     fonts = info.get("fonts")
-    if not isinstance(fonts, list) or len(fonts) > 5000:
+    if not isinstance(fonts, list):
         raise ValueError("invalid fonts")
     result["fonts"] = []
-    for font in fonts:
+    for font in fonts[:5000]:
         if not isinstance(font, dict):
-            raise ValueError("invalid font")
-        result["fonts"].append({name: _string(font.get(name), name, 256, name != "family")
-                                for name in ("family", "style", "postscript")})
+            continue
+        try:
+            clean = {name: _string(font.get(name), name, 256, name != "family")
+                     for name in ("family", "style", "postscript")}
+        except ValueError:
+            continue
+        result["fonts"].append(clean)
     return result
 
 

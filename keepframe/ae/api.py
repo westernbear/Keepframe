@@ -141,9 +141,12 @@ class AERoutes:
                     if device is None:
                         return True
                 dispatch(handler, u, device)
-            except FileNotFoundError:
-                _error(handler, 404, "not found")
+            except FileNotFoundError as exc:
+                reason = f"file not found: {Path(exc.filename).name}" if exc.filename else str(exc) or "not found"
+                log.warning("After Effects %s %s: %s", handler.command, u.path, reason)
+                _error(handler, 404, reason)
             except ValueError as exc:
+                log.warning("After Effects %s %s: %s", handler.command, u.path, exc)
                 _error(handler, 400, str(exc))
             except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
                 raise
@@ -238,7 +241,7 @@ class AERoutes:
                                         "project_saved": saved == "1"})
             with self._progress_lock:
                 for abandoned in self.jobs.abandon(device, (
-                        "the Keepframe panel restarted before finishing this job; send again")):
+                        "the Keepframe panel lost this job (it asked for new work); send again")):
                     self._progress.pop(abandoned.id, None)
                     with self._upload_lock:
                         self._uploaded.pop(abandoned.id, None)
@@ -266,7 +269,7 @@ class AERoutes:
                 asset = next((asset for asset in json.loads(spec)["assets"] if asset["name"] == name), None)
                 if asset is None:
                     raise FileNotFoundError
-                self._stream(handler, spec_asset_paths(scene, directory)[name], headers=(
+                self._stream(handler, spec_asset_paths(scene, directory)[name], content_type=mimetypes.guess_type(name)[0], headers=(
                     ("X-Keepframe-Sha256", asset["sha256"]),))
             return
         _error(handler, 404, "not found")
@@ -332,10 +335,15 @@ class AERoutes:
         if data is None:
             return
         if u.path == "/api/ae/pair":
+            previous = data.get("previous_device_id")
+            if previous is not None and (not isinstance(previous, str) or not re.fullmatch(r"d_[0-9a-f]{12}", previous)):
+                raise ValueError("invalid previous_device_id")
             paired = self.devices.pair(data.get("code"), data.get("info"))
             if paired is None:
                 _error(handler, 401, "pairing code is invalid or expired")
             else:
+                if previous is not None:
+                    self._revoke(previous)
                 handler._json(200, {"device_id": paired[0], "token": paired[1], "server_name": socket.gethostname()})
         elif u.path == "/api/ae/info":
             self.devices.update_info(device, data.get("info"))
@@ -442,9 +450,19 @@ class AERoutes:
             return
         handler._send(204, b"", "application/json")
 
+    def _revoke(self, device):
+        if not self.devices.revoke(device):
+            return False
+        with self._progress_lock, self._upload_lock:
+            for job in self.jobs.abandon(device, "After Effects was disconnected from this server", queued=True):
+                self._progress.pop(job.id, None)
+                self._uploaded.pop(job.id, None)
+                self._uploading.pop(job.id, None)
+        return True
+
     def _delete(self, handler, u, device):
         match = re.fullmatch(r"/api/ae/devices/([^/]+)", u.path)
-        if match and self.devices.revoke(match[1]):
+        if match and self._revoke(match[1]):
             handler._send(204, b"", "application/json")
         else:
             _error(handler, 404, "not found")

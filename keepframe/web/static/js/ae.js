@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006f";
-import { T, Tf } from "/static/js/i18n.js?v=20261006f";
+import { api } from "/static/js/api.js?v=20261006g";
+import { T, Tf } from "/static/js/i18n.js?v=20261006g";
 
 async function copyText(text) {
   if (window.isSecureContext && navigator.clipboard) {
@@ -60,6 +60,13 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     value.textContent = text;
     value.className = className;
     return value;
+  }
+
+  function editMessage(result) {
+    const interrupted = Array.isArray(result.interrupted) ? result.interrupted : [];
+    const edited = (Array.isArray(result.hand_edited) ? result.hand_edited : []).filter(id => !interrupted.includes(id));
+    return [interrupted.length && Tf("ae.interrupted", {ids: interrupted.join(", ")}),
+      edited.length && Tf("ae.handEdited", {n: edited.length, ids: edited.join(", ")})].filter(Boolean).join("\n");
   }
 
   function button(key, click, destructive = false) {
@@ -171,8 +178,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     handJobId = handJob?.id;
     el("hand-edits").hidden = !handJob;
     if (handJob) {
-      const ids = Array.isArray(handJob.result.hand_edited) ? handJob.result.hand_edited : [];
-      el("hand-message").textContent = Tf("ae.handEdited", {n: ids.length, ids: ids.join(", ")});
+      el("hand-message").textContent = editMessage(handJob.result);
     }
     el("overwrite-confirm").hidden = !overwriteConfirmed;
     el("overwrite").hidden = overwriteConfirmed;
@@ -189,9 +195,13 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
       row.append(node("p", Tf("ae.job", {kind: T(`ae.${job.kind}`), state: T(`ae.${job.state}`),
         version: job.version, time: relative(job.finished ?? job.started ?? job.created)})));
       if (job.error) row.append(node("p", job.error, "ae-card__error"));
-      else if (job.result?.applied === true) row.append(node("p", Tf("ae.summary", {
-        created: job.result.created ?? 0, updated: job.result.updated ?? 0, deleted: job.result.deleted ?? 0,
-      })));
+      else if (job.result?.applied === false) row.append(node("p", editMessage(job.result)));
+      else if (job.result?.applied === true) {
+        const count = value => Array.isArray(value) ? value.length : Number(value) || 0;
+        row.append(node("p", Tf("ae.summary", {
+          created: count(job.result.created), updated: count(job.result.updated), deleted: count(job.result.deleted),
+        })));
+      }
       const progress = snapshot.progress[job.id];
       if (progress) row.append(node("p", Tf("ae.progress", progress)));
       const warnings = Array.isArray(job.result?.warnings) ? job.result.warnings : [];

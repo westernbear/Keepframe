@@ -211,6 +211,22 @@ def test_existing_model_gets_corrected_once_without_a_spec_change(tmp_path, full
     assert sync(path, spec, assets)["writes"] == 0
 
 
+def test_layers_synced_with_name_and_label_fingerprints_upgrade_without_a_hand_edit(tmp_path, full_spec):
+    spec, assets = full_spec
+    # Builds up to 1.0.238 fingerprinted name and label.
+    legacy = HOST.read_text().replace(
+        "if (legacy) { data.push(layer.name, layer.label); }", "data.push(layer.name, layer.label);")
+    assert legacy != HOST.read_text()
+    legacy_host = tmp_path / "legacy.jsx"
+    legacy_host.write_text(legacy)
+    path = tmp_path / "ae.json"
+    response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
+    assert response["value"]["applied"], response
+    response = sync(path, spec, assets)
+    assert response["value"]["applied"] and "hand_edited" not in response["value"], response
+    assert sync(path, spec, assets)["writes"] == 0
+
+
 def test_sync_twice_is_a_no_op(tmp_path, full_spec):
     spec, assets = full_spec
     path = tmp_path / "ae.json"
@@ -573,7 +589,11 @@ def test_fingerprint_covers_managed_state(tmp_path, full_spec, change):
         prop(item, "ADBE Linear Wipe-0002")["value"] = 90
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
+    if change in ("name", "label"):
+        assert response["value"]["applied"]
+        assert read_state(path) == state
+    else:
+        assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
     assert response["writes"] == 0
 
 
@@ -810,7 +830,8 @@ def test_spec_tag_hashes_layer_content_and_warnings_are_combined(tmp_path):
         # Independent FNV-1a multiplication over JavaScript UTF-16 code units.
         # JSON.stringify writes integral doubles as integers (100.0 becomes 100).
         normalized = json.loads(json.dumps(layer_spec), parse_float=lambda v: int(float(v)) if float(v).is_integer() else float(v))
-        normalized.pop("order")  # Stack order is managed independently of layer content.
+        for field in ("order", "name", "label"):
+            normalized.pop(field)  # Ordering is independent; names/labels belong to the user.
         serialized = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
         units = serialized.encode("utf-16-le")
         expected = 2166136261
@@ -956,14 +977,17 @@ def test_review_effect_compositing_groups_are_not_managed_properties(tmp_path, f
 
 @pytest.mark.parametrize("relation", ["parent", "trackMatteLayer"])
 @pytest.mark.parametrize("action", ["delete", "recreate"])
-def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relation, action):
-    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()))
+@pytest.mark.parametrize("tagged_dependent", [False, True])
+def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relation, action, tagged_dependent):
+    spec, _ = spec_for(tmp_path, element("a", kind="text", text="A", font=FontGuess()),
+                       *([element("b", kind="group")] if tagged_dependent else []))
     path = tmp_path / "ae.json"
     sync(path, spec)
     state = read_state(path)
-    user = user_copy(layers(state)["kf:a"])
-    comp(state)["layers"].append(user)
-    user[relation] = 1  # a is top, background below.
+    user = layers(state)["kf:b"] if tagged_dependent else user_copy(layers(state)["kf:a"])
+    if not tagged_dependent:
+        comp(state)["layers"].append(user)
+    user[relation] = comp(state)["layers"].index(layers(state)["kf:a"]) + 1
     save_state(path, state)
     if action == "delete":
         spec["layers"].pop(1)
@@ -1060,7 +1084,7 @@ def test_review_duplicate_tag_refuses_even_with_force(tmp_path, force):
     save_state(path, state)
     response = sync(path, spec, force=force)
     assert response["value"]["ok"] is False
-    assert response["value"]["error"] == "two layers are tagged kf:a; delete the duplicate (Edit > Undo or remove the copy) and send again"
+    assert response["value"]["error"] == "two layers are tagged kf:a (a duplicated Keepframe layer). Delete the copy, or keep it by clearing its layer comment, then send again"
     assert response["writes"] == response["undo_groups"] == 0
 
 
@@ -1301,3 +1325,60 @@ def test_fix2_tagged_layer_user_relationships_are_extras(tmp_path, relation, act
             assert relation not in layers(read_state(path))["kf:a"]
     assert comp(read_state(path))["layers"][-1] == user
     assert sync(path, spec)["writes"] == 0
+
+
+@pytest.mark.parametrize("start", [10, 15, 30])
+def test_final_timing_moves_in_past_old_out(tmp_path, start):
+    path = tmp_path / "ae.json"
+    spec, _ = spec_for(tmp_path, element("a", kind="group", visible=(0, 9)))
+    assert sync(path, spec)["value"]["ok"]
+    updated, _ = spec_for(tmp_path, element("a", kind="group", visible=(start, 45)))
+    result = sync(path, updated)
+    assert result["value"]["ok"], result
+    item = layers(read_state(path))["kf:a"]
+    assert item["inPoint"] == start / 30
+    assert item["outPoint"] == 46 / 30
+    assert sync(path, updated)["writes"] == 0
+
+
+def test_final_names_labels_and_comp_folder_belong_to_user(tmp_path):
+    path = tmp_path / "ae.json"
+    spec, _ = spec_for(tmp_path, element("a", kind="group"))
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    item = layers(state)["kf:a"]
+    assert item["name"] == spec["layers"][1]["name"]
+    assert item["label"] == 0
+    item.update(name="User's name", label=12)
+    comp(state)["parentFolder"] = None  # Move the existing comp to the project root.
+    save_state(path, state)
+    result = sync(path, spec)
+    assert result["value"]["applied"], result
+    assert result["writes"] == 0
+    updated, _ = spec_for(tmp_path, element("a", kind="group", tracks={"rot": track((0, 30))}))
+    assert sync(path, updated)["value"]["updated"] == ["kf:a"]
+    state = read_state(path)
+    assert (layers(state)["kf:a"]["name"], layers(state)["kf:a"]["label"]) == ("User's name", 12)
+    assert comp(state)["parentFolder"] is None
+
+
+def test_final_existing_comp_stays_in_user_folder(tmp_path):
+    path = tmp_path / "ae.json"
+    spec, _ = spec_for(tmp_path, element("a", kind="group"))
+    assert sync(path, spec)["value"]["ok"]
+    state = read_state(path)
+    comp(state)["parentFolder"] = None
+    save_state(path, state)
+    assert sync(path, spec)["writes"] == 0
+    assert comp(read_state(path))["parentFolder"] is None
+
+
+def test_final_info_omits_fonts_when_not_requested(tmp_path):
+    path = tmp_path / "ae.json"
+    save_state(path, {"app": {"fonts": [[{"familyName": "Example", "styleName": "Regular",
+                                         "postScriptName": "Example-Regular"}]]}})
+    with_fonts = run_jsx(path, HOST, "kfInfo", "true")["value"]
+    assert with_fonts["fonts"]
+    without_fonts = run_jsx(path, HOST, "kfInfo", "false")["value"]
+    assert "fonts" not in without_fonts
+    assert without_fonts == {key: value for key, value in with_fonts.items() if key != "fonts"}

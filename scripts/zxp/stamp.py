@@ -1,6 +1,8 @@
 """Stamp the staged extension only; run before ZXP signing."""
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -12,9 +14,11 @@ def stamp(stage, repo):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
 
-    count = git("rev-list", "--count", "HEAD")
-    version = "1.0." + count
-    build = count + "-" + git("rev-parse", "--short", "HEAD")
+    now = time.time_ns()
+    date = datetime.fromtimestamp(now // 1_000_000_000, timezone.utc)
+    # UTC date and millisecond time advance independently of branch history, including dirty builds.
+    version = f"1.{date:%Y%m%d}.{int(date.strftime('%H%M%S')) * 1000 + now // 1_000_000 % 1000}"
+    build = version + "-" + git("rev-parse", "--short", "HEAD")
     if git("status", "--porcelain"):
         build += "-dirty"
     replacements = {

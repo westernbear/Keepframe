@@ -5,7 +5,7 @@ import zlib
 
 import pytest
 
-from keepframe.ae.spec import comp_spec, comp_spec_json, ease_to_ae, png_size
+from keepframe.ae.spec import comp_spec, comp_spec_json, ease_to_ae, png_size, spec_asset_paths
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Group, Keyframe, Scene, Track
 
 
@@ -553,3 +553,26 @@ def test_json_is_byte_deterministic_compact_unicode_and_rounded(tmp_path):
                 check_rounding(child)
 
     check_rounding(spec)
+
+
+@pytest.mark.parametrize("format,extension", [("JPEG", "jpg"), ("WEBP", "webp")])
+def test_final_texture_edit_with_real_bytes_under_png_name(tmp_path, format, extension):
+    from io import BytesIO
+    from PIL import Image
+    from keepframe.edit.apply import apply_edit
+    from keepframe.edit.intent import Target
+
+    image = BytesIO()
+    Image.new("RGB", (40, 24), "red").save(image, format=format)
+    edited = apply_edit(scene(element()), tmp_path,
+                        [Target(element="e1", property="texture", value="attachment")], {}, image.getvalue())
+    texture = tmp_path / edited.element("e1").canonical.texture
+    assert texture.suffix == ".png"
+    assert texture.read_bytes() == image.getvalue()
+    spec = describe(edited, tmp_path)
+    name = f"e1.{extension}"
+    assert spec["assets"] == [{"name": name, "sha256": hashlib.sha256(image.getvalue()).hexdigest(),
+                               "bytes": len(image.getvalue())}]
+    assert layer(spec)["source"] == {"asset": name, "scale_fix": [0.25, 0.25]}
+    assert layer(spec)["anchor"] == [20, 12]
+    assert spec_asset_paths(edited, tmp_path) == {name: texture}

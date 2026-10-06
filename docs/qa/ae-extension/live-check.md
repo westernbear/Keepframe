@@ -2,7 +2,7 @@
 
 This checks slice 1: pairing and editable composition sync on Windows.
 The controller builds the signed bundle and runs the check with the user.
-The results are not filled in yet. Record them in [README.md](README.md).
+Results are recorded in [README.md](README.md), including the completed live check.
 
 The target is AE 24.0+. The current manifest requires AE 24.1+ and CEP 11.
 Use AE 24.1+ for this bundle. The host's model-version gate starts at 24.0.
@@ -100,10 +100,9 @@ Verify, final render, package, and live agent control arrive in later slices.
 
 The no-new-undo-step expectation in check 2 still needs real AE confirmation.
 The host opens an undo group even on a clean resend. The fake proves zero writes.
-For check 12, the web card shows the failed job or hand-edit warning.
-It does not display a separate `interrupted` detail or the full result JSON.
-The panel shows numeric counts. The current web summary can show layer IDs or
-blank counts instead. Send the web text as displayed.
+For check 12, the panel and web card distinguish interrupted syncs from hand edits
+and list the affected IDs: "a previous sync was interrupted — overwrite to finish it".
+Both show numeric created, updated, and deleted counts; a clean resend shows zero.
 
 ## AE behaviours to confirm
 

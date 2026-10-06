@@ -264,7 +264,7 @@ def test_info_must_be_a_dict(store, details):
         store.pair(code, details)
 
 
-@pytest.mark.parametrize("fonts", [None, {}, (), "fonts", [None], ["font"], [[]], [{}]])
+@pytest.mark.parametrize("fonts", [None, {}, (), "fonts"])
 def test_fonts_must_be_a_list_of_font_dicts(store, fonts):
     code, _ = store.create_code()
     with pytest.raises(ValueError):
@@ -276,21 +276,22 @@ def test_fonts_must_be_a_list_of_font_dicts(store, fonts):
 def test_font_strings_are_validated(store, field, bad):
     font = {"family": "Example", "style": "Regular", "postscript": "Example-Regular", field: bad}
     code, _ = store.create_code()
-    with pytest.raises(ValueError, match=field):
-        store.pair(code, info(fonts=[font]))
+    device_id, _ = store.pair(code, info(fonts=[font]))
+    assert store.fonts(device_id) == []
 
 
 def test_font_family_cannot_be_null(store):
     code, _ = store.create_code()
-    with pytest.raises(ValueError, match="family"):
-        store.pair(code, info(fonts=[{"family": None, "style": None, "postscript": None}]))
+    device_id, _ = store.pair(code, info(fonts=[{"family": None, "style": None, "postscript": None}]))
+    assert store.fonts(device_id) == []
 
 
-def test_font_cap_rejects_overflow_and_accepts_all_maximum_lengths(store):
+def test_font_cap_truncates_overflow_and_accepts_all_maximum_lengths(store):
     font = {"family": "한" * 256, "style": "x" * 256, "postscript": "x" * 256}
     code, _ = store.create_code()
-    with pytest.raises(ValueError, match="fonts"):
-        store.pair(code, info(fonts=[font] * 5001))
+    device_id, _ = store.pair(code, info(fonts=[font] * 5001))
+    assert store.fonts(device_id) == [font] * 5000
+    code, _ = store.create_code()
     details = info(ae_version="a" * 32, extension_version="e" * 32, os="o" * 64, fonts=[font] * 5000)
     device_id, _ = store.pair(code, details)
     assert store.fonts(device_id) == [font] * 5000
@@ -328,7 +329,7 @@ def test_invalid_update_info_preserves_existing_info_and_file(store, tmp_path):
     path = tmp_path / ".ae" / "devices.json"
     before = path.read_bytes()
     with pytest.raises(ValueError, match="fonts"):
-        store.update_info(device_id, info(fonts=[{}] * 5001))
+        store.update_info(device_id, info(fonts=None))
     assert store.authenticate(token).info == info()
     assert path.read_bytes() == before
 
@@ -520,3 +521,22 @@ def test_corrupt_file_fails_loudly_without_overwriting(tmp_path, contents):
     with pytest.raises(ValueError, match="^devices file is corrupt$"):
         Devices(tmp_path)
     assert path.read_bytes() == contents
+
+
+def test_final_font_cap_keeps_order_and_drops_invalid_kept_entries(store, tmp_path):
+    from tests.ae_fake_runner import run_jsx
+    from tests.test_ae_host_sync import HOST
+
+    state = tmp_path / "ae.json"
+    state.write_text(json.dumps({"app": {"fonts": [[
+        {"familyName": f"Font {i}", "styleName": "Regular", "postScriptName": f"Font-{i}"}
+        for i in range(5002)]]}}))
+    host_info = run_jsx(state, HOST, "kfInfo", "true")["value"]
+    fonts = host_info["fonts"]
+    fonts[1]["family"] = None
+    fonts[2]["style"] = "x" * 257
+    fonts[3] = None
+    device_id, _ = paired(store, info(fonts=fonts))
+    assert store.fonts(device_id) == [fonts[0], *fonts[4:5000]]
+    store.update_info(device_id, info(fonts=fonts))
+    assert Devices(tmp_path).fonts(device_id) == store.fonts(device_id)
