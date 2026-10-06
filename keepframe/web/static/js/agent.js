@@ -13,13 +13,14 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261006a";
-import { T, Tf } from "/static/js/i18n.js?v=20261006a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261006a";
+} from "/static/js/api.js?v=20261006b";
+import { T, Tf } from "/static/js/i18n.js?v=20261006b";
+import { initAECard } from "/static/js/ae.js?v=20261006b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261006b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261006a";
+} from "/static/js/playback.js?v=20261006b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -817,6 +818,7 @@ async function runConfirmWithChoices() {
 async function refreshAfterEdit(version) {
   versionId = version;
   await loadState();
+  await aeCard.refresh();
   await loadRenderCard();
 }
 
@@ -1020,9 +1022,12 @@ window.addEventListener("keepframe:lang", () => {
   paintRenderCard();
 });
 
+const aeCard = initAECard({projectId, getSceneId: () => sceneId, getVersionId: () => versionId});
+
 if (!projectId) showMissingProject();
 else {
   loadState()
+    .then(() => aeCard.refresh())
     .then(loadHistory)
     .then(loadRenderCard)
     .catch((err) => {

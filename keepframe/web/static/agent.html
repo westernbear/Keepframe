@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261006a" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261006b" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261006a"></script>
-<script type="module" src="/static/js/api.js?v=20261006a"></script>
-<script type="module" src="/static/js/agent.js?v=20261006a"></script>
+<script type="module" src="/static/js/i18n.js?v=20261006b"></script>
+<script type="module" src="/static/js/api.js?v=20261006b"></script>
+<script type="module" src="/static/js/agent.js?v=20261006b"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -103,6 +103,52 @@
 <div class="render-card__actions">
 <button class="btn" id="render-approve" type="button" data-i18n="agent.renderApprove" disabled>승인</button>
 </div>
+</div>
+</section>
+<section class="render-card ae-card" id="ae-card" aria-labelledby="ae-card-title">
+<div class="render-card__head">
+<h2 id="ae-card-title" data-i18n="ae.title">After Effects</h2>
+<span id="ae-status" class="render-card__status" role="status" aria-live="polite" data-i18n="ae.notConnected">연결 안 됨</span>
+</div>
+<div class="render-card__body">
+<details id="ae-install" open>
+<summary data-i18n="ae.install">설치 / 재설치</summary>
+<div class="ae-card__install">
+<a href="/ae/keepframe.zxp" download class="btn btn--secondary btn--inline" data-i18n="ae.download">확장 다운로드</a>
+<label for="ae-install-command" data-i18n="ae.installCommand">Windows 설치 명령</label>
+<div class="ae-card__row">
+<input id="ae-install-command" class="ae-card__command mono" readonly value="&quot;C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe&quot; /install keepframe.zxp"/>
+<button id="ae-install-copy" class="btn btn--inline" type="button" data-i18n="ae.copy">복사</button>
+</div>
+<p class="render-card__lock" data-i18n="ae.installHint">또는 무료 aescripts ZXP Installer를 사용하세요</p>
+</div>
+</details>
+<div class="render-card__actions">
+<button id="ae-connect" class="btn btn--secondary btn--inline" type="button" data-i18n="ae.connect">AE 연결</button>
+<button id="ae-send" class="btn btn--primary" type="button" data-i18n="ae.send" disabled>AE로 보내기</button>
+</div>
+<div id="ae-pairing" class="ae-card__pairing" data-ai-private>
+<div id="ae-code-field" class="ae-card__row" hidden>
+<input id="ae-code" class="ae-card__code mono" readonly data-i18n-aria="ae.pairingCode" aria-label="페어링 코드"/>
+<button id="ae-code-copy" class="btn btn--inline" type="button" data-i18n="ae.copy">복사</button>
+<span id="ae-countdown" class="mono" data-i18n-aria="ae.expiresIn" aria-label="만료까지 남은 시간"></span>
+</div>
+<p id="ae-pair-message" class="render-card__lock" role="status"></p>
+</div>
+<p id="ae-copy-status" class="render-card__lock" role="status" aria-live="polite"></p>
+<p id="ae-error" class="ae-card__error" role="status" aria-live="polite" hidden></p>
+<ul id="ae-devices" class="ae-card__list"></ul>
+<p id="ae-synced" class="render-card__lock" data-i18n="ae.nothingSynced">아직 동기화하지 않음</p>
+<div id="ae-hand-edits" class="ae-card__hand-edits" hidden>
+<p id="ae-hand-message"></p>
+<button id="ae-overwrite" class="btn btn--inline" type="button" data-i18n="ae.overwrite">덮어쓰기</button>
+<div id="ae-overwrite-confirm" class="ae-card__row" hidden>
+<span data-i18n="ae.overwriteConfirm">AE에서 직접 수정한 내용을 덮어쓸까요?</span>
+<button id="ae-overwrite-yes" class="btn btn--inline" type="button" data-i18n="ae.yes">예</button>
+<button id="ae-overwrite-no" class="btn btn--inline" type="button" data-i18n="ae.no">아니요</button>
+</div>
+</div>
+<ul id="ae-jobs" class="ae-card__list" aria-live="polite"></ul>
 </div>
 </section>
 <div class="agent-transport">
