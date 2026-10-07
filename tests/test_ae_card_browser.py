@@ -69,12 +69,60 @@ def test_ae_device_rows_show_panel_and_host_builds_in_both_languages(ae_page, bu
 
     page, server, errors = ae_page
     connect(page, server, INFO | builds)
+    expect(page.locator("#ae-pair-message")).to_be_hidden()
     page.locator("#ae-details summary").click()
     expect(page.locator("#ae-devices")).to_contain_text("빌드 " + builds.get("panel_build", "알 수 없음"))
     expect(page.locator("#ae-devices")).to_contain_text("AE 스크립트 " + builds.get("host_build", "알 수 없음"))
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-devices")).to_contain_text("build " + builds.get("panel_build", "unknown"))
     expect(page.locator("#ae-devices")).to_contain_text("AE script " + builds.get("host_build", "unknown"))
+    assert not errors
+
+
+@pytest.mark.parametrize("version", [None, ""])
+def test_ae_device_without_version_still_paints(ae_page, version):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    device = {"id": "legacy", "connected": True, "last_seen": time.time(),
+              "created": time.time(), "project_name": "Example.aep"}
+    if version is not None:
+        device["ae_version"] = version
+    state = {"devices": [device], "jobs": [], "last_synced": {}, "progress": {}}
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json=state))
+    page.reload()
+    expect(page.locator("#ae-status")).to_have_text("AE 연결됨 · Example.aep")
+    expect(page.locator("#ae-send")).to_be_enabled()
+    expect(page.locator("#ae-synced")).to_have_text("아직 보내지 않았습니다")
+    expect(page.locator("#ae-error")).to_be_hidden()
+    page.locator("#ae-details summary").click()
+    expect(page.locator("#ae-devices")).not_to_contain_text("undefined")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-status")).to_have_text("AE connected · Example.aep")
+    assert not errors
+
+
+def test_latest_ae_job_failure_is_red_success_is_muted(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, _ = connect(page, server)
+    jobs = server.ae_routes.jobs
+    failed = jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    jobs.next(device, wait=0)
+    jobs.finish(failed.id, False, error="Font missing")
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    synced = page.locator("#ae-synced")
+    expect(synced).to_contain_text("Font missing")
+    expect(synced).to_have_class(re.compile(r"\bae-card__error\b"))
+    assert synced.evaluate("el => getComputedStyle(el).color === getComputedStyle(document.querySelector('#ae-error')).color")
+    success = jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    jobs.next(device, wait=0)
+    jobs.finish(success.id, True, {"applied": True, "updated": ["title"]})
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(synced).to_have_text("AE에 v1이 있습니다. 1개 수정")
+    expect(synced).not_to_have_class(re.compile(r"\bae-card__error\b"))
+    assert synced.evaluate("el => getComputedStyle(el).color === getComputedStyle(document.querySelector('#ae-send-reason')).color")
     assert not errors
 
 
@@ -128,7 +176,7 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
     expect(page.locator("#ae-install")).to_have_attribute("open", "")
     assert_button_styles(page)
     device, headers = connect(page, server)
-    expect(page.locator("#ae-status")).to_have_text("AE 25.0 연결됨 Example.aep")
+    expect(page.locator("#ae-status")).to_have_text("AE 25.0 연결됨 · Example.aep")
     expect(page.locator("#ae-send")).to_be_enabled()
     expect(page.locator("#ae-install")).not_to_have_attribute("open", "")
     page.locator("#ae-send").click()
@@ -483,8 +531,19 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
         "a previous sync was interrupted — overwrite to finish it: kf:title")
     expect(page.locator("#ae-hand-message")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
     expect(page.locator("#ae-hand-message")).not_to_contain_text("hand in AE: kf:title")
-    expect(page.locator("#ae-hand-edits")).to_contain_text(
+    # Keep a distinct hand-edit prompt while the interrupted sync moves into history.
+    latest = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    assert poll(server, headers)[1]["job"]["id"] == latest.id
+    assert json_request(server, "POST", f'/api/ae/jobs/{latest.id}/result',
+                        {"ok": True, "result": {"applied": False, "hand_edited": ["kf:logo"]}}, headers=headers)[0] == 200
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-hand-message")).to_have_text("1 layers were edited by hand in AE: kf:logo")
+    page.locator("#ae-details summary").click()
+    expect(page.locator("#ae-jobs")).to_contain_text(
         "a previous sync was interrupted — overwrite to finish it: kf:title")
+    expect(page.locator("#ae-jobs")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
+    expect(page.locator("#ae-jobs")).not_to_contain_text("hand in AE: kf:title")
     page.locator("[data-lang-toggle]").click()
-    expect(page.locator("#ae-hand-message")).to_contain_text("이전 동기화가 중단되었습니다")
+    expect(page.locator("#ae-jobs")).to_contain_text("이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: kf:title")
+    expect(page.locator("#ae-hand-message")).to_have_text("AE에서 1개 레이어를 직접 수정했습니다: kf:logo")
     assert not errors

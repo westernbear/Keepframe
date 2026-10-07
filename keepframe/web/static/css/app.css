@@ -546,8 +546,7 @@ a { color: inherit; text-decoration: none; }
 .verify-chip--pass { color: var(--secondary); border-color: var(--secondary); }
 .verify-chip--fail { color: var(--error); border-color: var(--error); }
 .verify-chip--warn { color: var(--gradient-orange); border-color: var(--gradient-orange); }
-.agent-tools-menu { position: relative; }
-.agent-tools { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 5; min-width: 160px; max-height: 45vh; overflow-y: auto; padding: 6px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--r-md); }
+.agent-tools { position: fixed; inset: auto; margin: 0; min-width: 160px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 6px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--r-md); }
 .tool {
   display: flex; width: 100%; align-items: center; gap: 6px; min-height: 44px; padding: 5px 10px; border-radius: var(--r-xs);
   border: 0; background: var(--surface-2); color: var(--ink);
@@ -562,7 +561,8 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.45; padding: 10px 12px; min-height: 64px;
 }
 .agent-compose textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.agent-compose__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agent-compose__row { display: flex; align-items: center; gap: 8px; }
+#agent-send { margin-left: auto; flex-shrink: 0; }
 .agent-banner { margin: 0 14px 12px; padding: 8px 12px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); background: var(--surface-2); border: 1px solid var(--hairline); }
 .agent-banner--error { color: var(--error); border-color: var(--error); }
 .agent-banner[hidden] { display: none; }
@@ -843,6 +843,7 @@ a { color: inherit; text-decoration: none; }
 .agent-viewer button:focus-visible, .agent-tools-menu button:focus-visible, .agent-shell summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .agent-shell summary { cursor: pointer; min-height: 44px; align-content: center; font-size: var(--fs-caption); }
 .toolcall summary { padding: 7px 10px; }
+.toolcall__name { display: block; padding: 0 10px; }
 .toolcall details[open] { grid-column: 1 / -1; border-top: 1px solid var(--hairline); }
 #render-plan-field { grid-column: 1 / -1; }
 #agent-attach-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-micro); }

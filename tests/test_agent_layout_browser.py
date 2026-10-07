@@ -130,7 +130,10 @@ def test_render_card_only_applicable_information(agent_page):
 def test_ae_summary_and_details(agent_page):
     from playwright.sync_api import expect
     page, server, device = agent_page
-    expect(page.locator("#ae-status")).to_have_text("AE 26.5 연결됨 Example.aep")
+    expect(page.locator("#ae-status")).to_have_text("AE 26.5 연결됨 · Example.aep")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-status")).to_have_text("AE 26.5 connected · Example.aep")
+    page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-synced")).to_have_text("AE에 v1이 있습니다. 3개 생성, 2개 수정")
     visible = page.locator("#ae-card").inner_text()
     assert "Windows" not in visible and "124-panel" not in visible and "0개" not in visible
@@ -154,12 +157,20 @@ def test_tool_call_summary_and_no_repeated_reply(agent_page, tmp_path):
     applied = page.locator(".toolcall").last
     failed = page.locator(".toolcall").first
     expect(applied).to_contain_text("편집 적용됨")
-    expect(failed).to_contain_text("편집 실패: Font missing")
+    expect(page.locator(".msg--agent .msg__body")).to_have_text([
+        "Font missing\nChoose an installed font", "Title updated",
+    ])
+    for reply in page.locator(".msg--agent .msg__body").all():
+        expect(reply).to_be_visible()
+    expect(failed).not_to_contain_text("Choose an installed font")
+    expect(applied).not_to_contain_text("Title updated")
     expect(applied.locator(".toolcall__args")).to_be_hidden()
-    expect(page.locator(".msg--agent")).to_have_count(0)
     applied.get_by_text("자세히", exact=True).click()
     expect(applied.locator(".toolcall__args")).to_contain_text('"text":"Keepframe"')
-    expect(applied.locator(".toolcall__msg")).to_have_text("Title updated")
+    expect(applied.locator(".toolcall__msg")).to_have_count(0)
+    failed.get_by_text("자세히", exact=True).click()
+    expect(failed.locator(".toolcall__msg")).to_have_count(0)
+    expect(failed).not_to_contain_text("Font missing")
     long_error = "Missing font " * 30
     turn = {"status": "done", "reply": long_error,
             "tool_calls": [{"name": "edit", "arguments": {}}],
@@ -171,7 +182,64 @@ def test_tool_call_summary_and_no_repeated_reply(agent_page, tmp_path):
     latest = page.locator(".toolcall").last
     assert latest.locator(".toolcall__head").bounding_box()["height"] <= 48
     latest.get_by_text("자세히", exact=True).click()
-    expect(latest.locator(".toolcall__msg")).to_have_text(long_error)
+    expect(latest.locator(".toolcall__msg")).to_have_count(0)
+    expect(page.locator(".msg--agent .msg__body").last).to_have_text(long_error)
+
+
+@pytest.mark.parametrize("message,reply,has_details", [
+    ("  Title updated  ", "Title updated", False),
+    ("Title updated", "Title updated\nReady to preview", False),
+    ("Font missing\nInstalled fonts: Inter, Arial", "Choose an installed font", True),
+])
+def test_tool_details_only_add_information(agent_page, message, reply, has_details):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    turn = {"status": "done", "reply": reply,
+            "tool_calls": [{"name": "edit", "arguments": {"text": "Keepframe"}}],
+            "results": [{"ok": False, "message": message}]}
+    page.route("**/api/agent?*", lambda route: route.fulfill(json={"turns": [{"user": "Edit", "turn": turn}]}))
+    page.reload()
+    tool = page.locator(".toolcall")
+    expect(page.locator(".msg--agent .msg__body")).to_have_text(reply)
+    expect(page.locator(".msg--agent .msg__body")).to_be_visible()
+    expect(tool.locator(".toolcall__msg")).to_be_hidden()
+    tool.get_by_text("자세히", exact=True).click()
+    if has_details:
+        expect(tool.locator(".toolcall__msg")).to_have_text(message)
+    else:
+        expect(tool.locator(".toolcall__msg")).to_have_count(0)
+
+
+def test_tool_line_has_only_localized_status(agent_page):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    expect(page.locator(".toolcall__head")).to_have_text(["편집 실패", "편집 적용됨"])
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator(".toolcall__head")).to_have_text(["Edit failed", "Edit applied"])
+
+
+def test_tool_status_names_each_action(agent_page):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    turn = {"status": "done", "reply": "Ready to preview",
+            "tool_calls": [{"name": name, "arguments": {}} for name in ["render", "set_keep", "verify"]],
+            "results": [{"ok": True}, {"ok": False}, {"ok": True}]}
+    page.route("**/api/agent?*", lambda route: route.fulfill(json={"turns": [{"user": "Check", "turn": turn}]}))
+    page.reload()
+    expect(page.locator(".toolcall__head")).to_have_text(["렌더 완료", "유지 지정 실패", "검증 완료"])
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator(".toolcall__head")).to_have_text(["Render completed", "Set keep failed", "Verify completed"])
+
+
+@pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
+def test_composer_groups_tools_and_attach(agent_page, width, height):
+    page, _, _ = agent_page
+    page.set_viewport_size({"width": width, "height": height})
+    tools = page.locator("#agent-tools-toggle").bounding_box()
+    attach = page.locator("#agent-attach-btn").bounding_box()
+    send = page.locator("#agent-send").bounding_box()
+    assert 0 <= attach["x"] - (tools["x"] + tools["width"]) <= 12
+    assert send["x"] - (attach["x"] + attach["width"]) > 12
 
 
 @pytest.mark.parametrize("total,failed,ko,en", [
@@ -215,6 +283,44 @@ def test_composer_tools_keyboard_and_prompt(agent_page):
     expect(page.locator("#agent-input")).to_have_value("문구를 바꿔줘")
     expect(page.locator("#agent-input")).to_be_focused()
     expect(page.locator("#agent-tools")).to_be_hidden()
+
+
+@pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
+def test_tools_menu_items_inside_viewport_and_escape_focus(agent_page, width, height):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    page.set_viewport_size({"width": width, "height": height})
+    tools = page.locator("#agent-tools-toggle")
+    tools.click()
+    items = page.get_by_role("menuitem")
+    expect(items).to_have_count(8)
+    for item in items.all():
+        expect(item).to_be_visible()
+        assert item.evaluate("""item => {
+          const r = item.getBoundingClientRect();
+          const menu = item.parentElement.getBoundingClientRect();
+          const insideViewport = r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth;
+          const insideMenu = r.top >= menu.top && r.bottom <= menu.bottom;
+          const unclipped = [r.top + 2, r.bottom - 2].every(y =>
+            item.contains(document.elementFromPoint(r.left + r.width / 2, y)));
+          return insideViewport && insideMenu && unclipped;
+        }"""), item.inner_text()
+    page.keyboard.press("Escape")
+    expect(page.locator("#agent-tools")).to_be_hidden()
+    expect(tools).to_have_attribute("aria-expanded", "false")
+    expect(tools).to_be_focused()
+
+
+def test_elements_initial_count_uses_saved_language(agent_page):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    page.add_init_script("localStorage.setItem('keepframe.lang', 'en')")
+    page.route("**/api/state?*", lambda route: route.abort())
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+    expect(page.locator("#agent-count")).to_have_text("0 elements")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#agent-count")).to_have_text("요소 0개")
 
 
 def test_elements_disclosure_count_and_persistence(agent_page):

@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261006h"}
+    assert stamps == {"20261006i"}
 
 
 def test_ae_card_static_contract():
@@ -598,7 +598,7 @@ def test_ae_card_static_contract():
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261006h"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261006i"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh
@@ -619,6 +619,12 @@ def test_ae_card_static_contract():
     assert used
     for key in used:
         assert f'"{key}":' in ko and f'"{key}":' in en, key
+
+
+def test_agent_and_ae_removed_copy_stays_unused():
+    source = static_src("js/i18n.js")
+    for key in ("ae.warnings", "ae.connected", "agent.toolCall", "agent.job"):
+        assert f'"{key}":' not in source
 
 
 def test_pending_solid_button_uses_edit_preview_and_confirmation(tmp_path):

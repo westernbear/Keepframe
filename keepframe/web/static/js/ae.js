@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006h";
-import { T, Tf } from "/static/js/i18n.js?v=20261006h";
+import { api } from "/static/js/api.js?v=20261006i";
+import { T, Tf } from "/static/js/i18n.js?v=20261006i";
 
 const JOB_HISTORY_LIMIT = 4;
 
@@ -110,7 +110,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
 
   function acceptDevices(devices) {
     snapshot.devices = devices;
-    if (pairing && devices.some((device) => !pairing.before.has(device.id))) clearCode("ae.connected");
+    if (pairing && devices.some((device) => !pairing.before.has(device.id))) clearCode();
   }
 
   async function pollDevices() {
@@ -152,8 +152,9 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const isConnected = Boolean(connected);
     let status = T("ae.notConnected");
     if (isConnected) {
-      status = Tf("ae.connectedDevice", {version: connected.ae_version.split(".").slice(0, 2).join(".")});
-      if (connected.project_name) status += ` ${connected.project_name}`;
+      const version = connected.ae_version?.split(".").slice(0, 2).join(".");
+      status = Tf("ae.connectedDevice", {version: version ? ` ${version}` : ""});
+      if (connected.project_name) status += ` · ${connected.project_name}`;
     }
     if (el("status").textContent !== status) el("status").textContent = status;
     el("status").classList.toggle("render-card__status--active", isConnected);
@@ -175,6 +176,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const syncedText = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
     const outcome = jobOutcome(latestJob);
     el("synced").textContent = outcome ? `${syncedText}. ${outcome}` : syncedText;
+    el("synced").classList.toggle("ae-card__error", Boolean(latestJob?.error) || latestJob?.state === "failed");
     const buildsDiffer = devices.some(device => device.panel_build && device.host_build && device.panel_build !== device.host_build);
     el("build-warning").hidden = !buildsDiffer;
     el("build-warning").textContent = T("ae.buildMismatch");
@@ -186,7 +188,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("warnings").replaceChildren(...warnings.map(warning => node("li", warning)));
 
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {
-      version: device.ae_version, seen: relative(device.last_seen),
+      version: device.ae_version || T("ae.unknownBuild"), seen: relative(device.last_seen),
     }), build: Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
       host: device.host_build || T("ae.unknownBuild")})}));
     const deviceSignature = JSON.stringify([rows.map(({device, text, build}) => [device.id, text, build, device.connected]), disconnectId, busy]);

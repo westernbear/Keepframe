@@ -13,14 +13,14 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261006h";
-import { T, Tf } from "/static/js/i18n.js?v=20261006h";
-import { initAECard } from "/static/js/ae.js?v=20261006h";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261006h";
+} from "/static/js/api.js?v=20261006i";
+import { T, Tf } from "/static/js/i18n.js?v=20261006i";
+import { initAECard } from "/static/js/ae.js?v=20261006i";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261006i";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261006h";
+} from "/static/js/playback.js?v=20261006i";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -68,6 +68,7 @@ const frameNum = document.getElementById("agent-frame");
 const frameTotal = document.getElementById("agent-total");
 const elementsList = document.getElementById("agent-elements-list");
 const countEl = document.getElementById("agent-count");
+countEl.textContent = Tf("agent.elementCount", {n: 0});
 const playBtn = document.getElementById("agent-play");
 const playIcon = document.getElementById("agent-play-icon");
 const pauseIcon = document.getElementById("agent-pause-icon");
@@ -400,7 +401,7 @@ function appendUser(text) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function appendToolCall(name, args, result) {
+function appendToolCall(name, args, result, reply = "") {
   const el = document.createElement("div");
   el.className = "toolcall";
   const head = document.createElement("div");
@@ -410,27 +411,38 @@ function appendToolCall(name, args, result) {
   nameEl.textContent = name;
   const status = document.createElement("span");
   status.className = "toolcall__status" + (result.ok ? " toolcall__status--ok" : " toolcall__status--fail");
+  el.dataset.tool = name;
   el.dataset.ok = String(Boolean(result.ok));
-  el.dataset.error = (result.message || "").split("\n")[0];
-  status.textContent = result.ok ? T("agent.toolApplied") : Tf("agent.toolFailed", {error: el.dataset.error});
-  head.append(nameEl, status);
+  status.textContent = toolStatus(name, result.ok);
+  head.append(status);
   const argsEl = document.createElement("div");
   argsEl.className = "toolcall__args";
   const logArgs = name === "correct" && args && args.args && typeof args.args === "object" && "mask_png_base64" in args.args
     ? { ...args, args: { ...args.args, mask_png_base64: T("agent.correctionMaskHidden") } }
     : args;
   argsEl.textContent = JSON.stringify(logArgs || {}, null, 0);
-  const msgEl = document.createElement("div");
-  msgEl.className = "toolcall__msg";
-  msgEl.textContent = result.message || "";
   const details = document.createElement("details");
   const summary = document.createElement("summary");
   summary.dataset.i18n = "agent.details";
   summary.textContent = T("agent.details");
-  details.append(summary, argsEl, msgEl);
+  details.append(summary, nameEl, argsEl);
+  const message = (result.message || "").trim();
+  const addsInformation = message && !reply.trim().includes(message);
+  if (addsInformation) {
+    const msgEl = document.createElement("div");
+    msgEl.className = "toolcall__msg";
+    msgEl.textContent = result.message;
+    details.append(msgEl);
+  }
   el.append(head, details);
   logEl.appendChild(el);
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function toolStatus(name, ok) {
+  if (name === "edit") return T(ok ? "agent.toolApplied" : "agent.toolFailed");
+  const tool = T(`agent.tool.${name === "set_keep" ? "keep" : name}`);
+  return Tf(ok ? "agent.toolCompleted" : "agent.toolActionFailed", {tool});
 }
 
 function isKeepPassed(verify) {
@@ -842,7 +854,7 @@ async function refreshAfterEdit(version) {
 
 function paintToolCalls(turn) {
   (turn.tool_calls || []).forEach((tc, i) => {
-    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" });
+    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" }, turn.reply || "");
   });
 }
 
@@ -852,8 +864,7 @@ function verifyFromTurn(turn) {
 
 function paintTurn(turn, actionable = true) {
   paintToolCalls(turn);
-  const repeatsToolResult = (turn.results || []).some(result => result.message?.trim() === turn.reply?.trim());
-  if (turn.reply && !repeatsToolResult) appendAgent(turn.reply);
+  if (turn.reply) appendAgent(turn.reply);
   appendVerify(verifyFromTurn(turn));
   const isPending = turn.status === "pending";
   const isError = turn.status === "error";
@@ -1039,12 +1050,17 @@ const toolsToggle = document.getElementById("agent-tools-toggle");
 const toolsMenu = document.getElementById("agent-tools");
 const toolItems = [...toolsMenu.querySelectorAll(".tool")];
 function closeTools(returnFocus = false) {
+  toolsMenu.hidePopover();
   toolsMenu.hidden = true;
   toolsToggle.setAttribute("aria-expanded", "false");
   if (returnFocus) toolsToggle.focus();
 }
 function openTools(index = 0) {
+  const rect = toolsToggle.getBoundingClientRect();
+  toolsMenu.style.left = `${rect.left}px`;
+  toolsMenu.style.bottom = `${window.innerHeight - rect.top + 8}px`;
   toolsMenu.hidden = false;
+  toolsMenu.showPopover();
   toolsToggle.setAttribute("aria-expanded", "true");
   toolItems[index].focus();
 }
@@ -1102,10 +1118,10 @@ document.getElementById("agent-prev").addEventListener("click", () => { setPlayi
 document.getElementById("agent-next").addEventListener("click", () => { setPlaying(false); setFrame(frame + 1); });
 window.addEventListener("keepframe:lang", () => {
   if (state) renderElements();
+  else countEl.textContent = Tf("agent.elementCount", {n: 0});
   paintRenderCard();
   logEl.querySelectorAll(".toolcall").forEach(call => {
-    call.querySelector(".toolcall__status").textContent = call.dataset.ok === "true"
-      ? T("agent.toolApplied") : Tf("agent.toolFailed", {error: call.dataset.error});
+    call.querySelector(".toolcall__status").textContent = toolStatus(call.dataset.tool, call.dataset.ok === "true");
   });
   logEl.querySelectorAll(".verify-chip").forEach(paintVerifyChip);
 });

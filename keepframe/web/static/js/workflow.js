@@ -1,4 +1,4 @@
-import { T } from "/static/js/i18n.js?v=20261006h";
+import { T } from "/static/js/i18n.js?v=20261006i";
 
 const STEPS = ["ingest", "analyze", "review"];
 const PAGE_STAGE = { "/new": "ingest", "/analyze": "analyze", "/review": "review" };
@@ -37,7 +37,7 @@ function render() {
 }
 
 if (container) {
-  shellReady = fetch("/static/workflow.html?v=20261006h")
+  shellReady = fetch("/static/workflow.html?v=20261006i")
     .then((response) => {
       if (!response.ok) throw new Error("workflow shell unavailable");
       return response.text();
@@ -46,7 +46,7 @@ if (container) {
       container.innerHTML = html;
       window.addEventListener("keepframe:lang", render);
       render();
-      import("/static/js/i18n.js?v=20261006h").then(({ applyI18n }) => {
+      import("/static/js/i18n.js?v=20261006i").then(({ applyI18n }) => {
         applyI18n(container);
         render();
       });
