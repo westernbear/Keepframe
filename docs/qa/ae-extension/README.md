@@ -54,3 +54,40 @@ Known differences:
 
 - Known renderer difference (AE 26.5): AE draws the dark back face of a single-sided triangle; Keepframe's Three.js renderer culls that face. This is a renderer difference, not a placement bug.
 - AE uses a perspective comp camera for 3D model layers; Keepframe's composer uses an orthographic camera, so rotating models show slight foreshortening in AE.
+
+## Live check 3 (slice 2)
+
+- Date: _TBD_
+- AE version: _TBD_
+- Extension version and build: _TBD_
+
+1. Follow [Slice 2: verify](live-check.md#slice-2-verify).
+2. Record mean / max / pass and render + upload + compare seconds per scene.
+   Record the large sync time separately. Leave unrun results blank.
+3. The web report shows percentages. Use normalized values in Calibration
+   (for example, 2% is 0.02).
+
+| # | Check | How | Expected | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Verify reveal text | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 2 | Verify image background | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 3 | Verify spinning GLB | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 4 | Verify ig2demo | Click **Verify against AE** (AE와 비교) after sending `ig2demo`. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 5 | Worst-frame images | Open **Details** (자세히). Open each worst-frame image in a new tab. | Up to three worst frames show **After Effects**, **Keepframe**, and **Difference** (차이). All images load. | |
+| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the replacement font, text-region ID, and worst region difference. | Notes name the substituted font. Masked text entries (마스킹한 텍스트) show each region's worst percentage. These regions are excluded from the pass score. | |
+| 7 | Large sync time | Have the controller prepare a changed version or fresh test comp for the ~120k-key `ae-live-long` scene. Time **Send to AE** (AE로 보내기) until sync finishes. | Target: under 2 minutes. Record actual seconds and outcome. Slice-1 live check 2 took over 10 minutes. | |
+| 8 | Key interpolation through the Higgsfield bridge | Have the controller call `ae_get_keyframes` on animated properties with an eased key and a linear key. Record in/out interpolation, influence, and speed. | Eased sides report `BEZIER` with the intended ease values. A linear key reports `LINEAR` on both sides. | |
+| 9 | `saveFrameToPng` in Korean AE 26.5 | Run Verify in the user's Korean AE 26.5. Have the controller watch the temporary files and inspect the PNGs during export. Compare the render queue and undo history before and after Verify. | Files appear and become complete PNGs. The job's temp folder is removed after upload. Verify adds no render-queue items or undo steps. | |
+| 10 | Windows temp-folder agreement | Have the controller compare AE's `Folder.temp.fsName` with the panel's `os.tmpdir()`. Inspect the returned frame paths. | The `keepframe-<job id>` folders resolve to the same location. A mismatch fails with `Invalid frame from AE`. | |
+| 11 | AE dialog during Verify | Open a dialog in Korean AE during Verify. Record its name, how long it stays open, progress, and outcome. Dismiss it and retry once AE responds if needed. | If the dialog blocks the host call for 10 minutes, it times out. The reason says AE may still be working on a large scene or waiting for a dialog. | |
+| 12 | Verify without connected AE | Click **Disconnect** (연결 해제), then **Yes** (예) in the web card. Wait for **Not connected** (연결 안 됨). Inspect Verify. | **Verify against AE** (AE와 비교) is disabled. The reason reads “AE is not connected — open the Keepframe panel in After Effects” (AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요). | |
+
+### Findings
+
+1. <!-- Add live-check findings here. -->
+
+### Calibration
+
+| Scene | Mean | Max | Pass |
+| --- | --- | --- | --- |
+| | | | |
