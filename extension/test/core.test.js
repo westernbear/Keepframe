@@ -31,9 +31,9 @@ async function fixture(t, route) {
     const server = http.createServer(async (req, res) => {
         const chunks = [];
         for await (const chunk of req) chunks.push(chunk);
-        const raw = Buffer.concat(chunks).toString();
-        const request = {method: req.method, path: req.url, headers: req.headers, raw,
-            body: raw ? JSON.parse(raw) : undefined};
+        const data = Buffer.concat(chunks), raw = data.toString();
+        const request = {method: req.method, path: req.url, headers: req.headers, raw, data,
+            body: raw && req.headers['content-type'] === 'application/json' ? JSON.parse(raw) : undefined};
         requests.push(request);
         const reply = (status, body, headers) => {
             res.writeHead(status, headers || {'Content-Type': 'application/json'});
@@ -483,11 +483,183 @@ test('unparseable and failed evalScript results fail jobs with safe raw output a
 });
 
 test('unsupported job kinds post readable failures', async t => {
-    for (const kind of ['render_frames', 'render_final', 'package']) {
+    for (const kind of ['render_final', 'package']) {
         const f = await oneJob(t, {job: {kind}});
         assert.deepEqual(f.result, {ok: false, error: kind + ' is not supported by this extension version'});
         assert.equal(f.requests.some(req => req.path.endsWith('/spec')), false);
     }
+});
+
+const renderJob = {id: 'j_' + '0'.repeat(16), kind: 'render_frames',
+    project: 'demo', scene: 's1', version: 'v7', params: {frames: [0, 5, 10000], tag: 'keepframe:demo/s1'}};
+
+async function oneRenderJob(t, options = {}) {
+    return oneJob(t, {job: Object.assign({}, renderJob, options.job),
+        route: (req, reply, res) => {
+            if (options.route && options.route(req, reply, res)) return true;
+            if (req.path.includes('/files/')) { reply(204); return true; }
+        }, prepare: async f => {
+            const folder = path.join(f.documentsDir, 'temp', 'keepframe-' + renderJob.id);
+            f.frameFolder = folder;
+            f.deps.os = Object.assign({}, os, {tmpdir: () => path.join(f.documentsDir, 'temp')});
+            fs.mkdirSync(folder, {recursive: true});
+            const response = {ok: true, width: 320, height: 180, frames: renderJob.params.frames.map(frame => {
+                const file = path.join(folder, 'frame_' + String(frame).padStart(4, '0') + '.png');
+                fs.writeFileSync(file, bytes);
+                return {frame, path: file};
+            })};
+            if (options.response) options.response(response, f);
+            f.deps.evalScript = (script, callback) => {
+                f.scripts.push(script);
+                callback(JSON.stringify(script.startsWith('kfInfo(') ? info : response));
+            };
+            if (options.prepare) await options.prepare(f);
+        }});
+}
+
+test('render_frames streams all frames, posts progress and result, and removes temporary files', async t => {
+    const streams = [];
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {
+            readFileSync: () => assert.fail('frames must stream'),
+            promises: Object.assign({}, fs.promises, {readFile: () => assert.fail('frames must stream')}),
+            createReadStream: file => { streams.push(file); return fs.createReadStream(file, {highWaterMark: 3}); }
+        });
+    }});
+    assert.deepEqual(f.result, {ok: true, result: {frames: [0, 5, 10000]}});
+    let request;
+    vm.runInNewContext(f.scripts.find(s => s.startsWith('kfRender(')), {kfRender: raw => { request = JSON.parse(raw); }});
+    assert.deepEqual(request, {job: renderJob.id, tag: 'keepframe:demo/s1', frames: [0, 5, 10000]});
+    const uploads = f.requests.filter(req => req.path.includes('/files/'));
+    assert.deepEqual(uploads.map(req => req.path), [0, 5, 10000].map(frame =>
+        '/api/ae/jobs/' + renderJob.id + '/files/frame_' + String(frame).padStart(4, '0') + '.png'));
+    for (const req of uploads) {
+        assert.equal(req.method, 'PUT'); assert.deepEqual(req.data, bytes);
+        assert.equal(req.headers['content-type'], 'image/png');
+        assert.equal(req.headers['content-length'], String(bytes.length));
+        assert.equal(req.headers.authorization, 'Bearer ' + TOKEN);
+    }
+    assert.equal(streams.length, 3);
+    assert.deepEqual(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'uploading')
+        .map(req => req.body), [1, 2, 3].map(done => ({stage: 'uploading', done, total: 3})));
+    assert.ok(f.statuses.some(s => s.message === 'Rendering 3 frames of demo / s1 v7…'));
+    assert.deepEqual(f.statuses.filter(s => s.message.startsWith('Uploading frame')).map(s => s.message),
+        ['Uploading frame 1/3…', 'Uploading frame 2/3…', 'Uploading frame 3/3…']);
+    assert.ok(f.statuses.some(s => s.message === 'Rendered 3 frames — Keepframe is comparing them'));
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f);
+});
+
+test('invalid AE frames reject the entire list before uploading and only clean the job folder', async t => {
+    for (const bad of ['outside', 'unrequested', 'duplicate', 'missing', 'name', 'symlink', 'empty']) {
+        let outside;
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            outside = path.join(f.documentsDir, 'private.png'); fs.writeFileSync(outside, 'keep');
+            const frame = response.frames[2];
+            if (bad === 'outside') frame.path = outside;
+            if (bad === 'unrequested') frame.frame = 99;
+            if (bad === 'duplicate') frame.frame = 0;
+            if (bad === 'missing') response.frames.pop();
+            if (bad === 'name') frame.path = response.frames[0].path;
+            if (bad === 'symlink') { fs.unlinkSync(frame.path); fs.symlinkSync(outside, frame.path); }
+            if (bad === 'empty') fs.writeFileSync(frame.path, '');
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'}, bad);
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false, bad);
+        assert.equal(fs.existsSync(f.frameFolder), false, bad);
+        assert.equal(fs.readFileSync(outside, 'utf8'), 'keep');
+        assert.equal(JSON.stringify({result: f.result, statuses: f.statuses}).includes(f.documentsDir), false);
+    }
+});
+
+test('upload 409/413 retain redacted server text and clean all temporary frames', async t => {
+    for (const status of [409, 413]) {
+        const f = await oneRenderJob(t, {route: (req, reply) => {
+            if (req.path.includes('/files/')) { reply(status, {error: 'frame rejected ' + TOKEN + ' ' + CODE}); return true; }
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'frame rejected [redacted] [redacted]'});
+        assert.equal(f.requests.filter(req => req.path.includes('/files/')).length, 1);
+        assert.equal(fs.existsSync(f.frameFolder), false);
+        assert.ok(f.statuses.some(s => s.message === 'Render failed: ' + f.result.error));
+        assertPrivate(f, f.result);
+    }
+});
+
+test('render host errors still remove the temporary job folder', async t => {
+    const f = await oneRenderJob(t, {response: response => {
+        response.ok = false; response.error = 'AE did not write frame 0 within 60 s'; response.line = 9;
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 0 within 60 s', line: 9});
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('render upload and cleanup work with the CEP 11 filesystem surface', {timeout: 2000}, async t => {
+    let removals = 0;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {
+            createReadStream: file => {
+                const stream = fs.createReadStream(file);
+                Object.defineProperty(stream, 'closed', {value: undefined});
+                return stream;
+            },
+            promises: Object.assign({}, fs.promises, {rm: undefined, rmdir: (folder, options) => {
+                removals++;
+                assert.equal(options.recursive, true);
+                return fs.promises.rm(folder, {recursive: true, force: true});
+            }})
+        });
+    }});
+    assert.deepEqual(f.result, {ok: true, result: {frames: [0, 5, 10000]}});
+    assert.equal(removals, 1);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('frame stream errors close the stream, report safely, and clean the folder', async t => {
+    let stream;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: file => {
+            stream = fs.createReadStream(file);
+            stream.destroy(Object.assign(new Error(file + ' ' + TOKEN), {code: 'EIO'}));
+            return stream;
+        }});
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Could not read frame upload (EIO)'});
+    assert.equal(stream.closed, true);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f, f.result);
+    assert.equal(JSON.stringify(f.result).includes(f.documentsDir), false);
+});
+
+test('cleanup errors are visible and cannot replace an AE error', async t => {
+    for (const hostFails of [false, true]) {
+        const f = await oneRenderJob(t, {
+            response: response => { if (hostFails) { response.ok = false; response.error = 'AE failed'; } },
+            prepare: f => {
+                f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                    rm: async folder => { throw Object.assign(new Error(folder + ' ' + TOKEN), {code: 'EPERM'}); }
+                })});
+            }
+        });
+        assert.deepEqual(f.result, {ok: false, error: hostFails ? 'AE failed' : 'Could not remove temporary frame folder (EPERM)'});
+        assert.ok(f.logs.includes('Could not remove temporary frame folder (EPERM)'));
+        assertPrivate(f, f.result);
+    }
+});
+
+test('panel translates rendering and uploading statuses into Korean', () => {
+    const p = panelHarness('ko_KR'), deps = p.runs[0].deps;
+    for (const [message, expected] of [
+        ['Rendering 3 frames of demo / s1 v7…', 'demo / s1 v7 프레임 3개 렌더링 중…'],
+        ['Uploading frame 1/3…', '프레임 업로드 중 1/3…'],
+        ['Rendered 3 frames — Keepframe is comparing them', '프레임 3개 렌더링 완료 — Keepframe에서 비교 중'],
+        ['Render failed: Network request failed', '렌더링 실패: 네트워크 요청 실패']
+    ]) {
+        deps.setStatus(message); deps.log(message);
+        assert.equal(p.nodes.status.textContent, expected);
+        assert.ok(p.nodes.log.value.includes(expected));
+    }
+    deps.setStatus('Uploading frame 1/3…', {job: renderJob, progress: {stage: 'uploading', done: 1, total: 3}});
+    assert.ok(p.nodes['current-job'].textContent.includes('프레임 업로드 중'));
 });
 
 async function until(check) {

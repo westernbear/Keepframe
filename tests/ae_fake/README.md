@@ -45,6 +45,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `CompItem.name` / `comment` / `parentFolder`: settable item metadata.
 - `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1; frameRate, duration and colours store `Math.fround` values.
 - `CompItem.renderer` / `renderers`: renderer defaults to Classic 3D's `ADBE Advanced 3d`; the read-only available list defaults to `["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"]`; assignments must be listed. Comp state can seed a shorter available list.
+- `CompItem.saveFrameToPng(time,file)`: writes a valid RGB PNG at the comp's width/height, filled with the bottom-most enabled non-null solid's colour (black without a solid). Ignores text, media, transforms and compositing; this is sufficient for background-only verification, not a general AE renderer. Counts `calls.saveFrameToPng`, with no project writes or undo group.
+- `createAE({frameWriteDelayMs:n,frameWriteFails:true})`: delays PNG output by n ms, or never writes when failure is enabled; the same options may be seeded via `state.testHooks` for CLI host tests. Due writes flush during File exists/length reads and blocking sleep, and via a timer when the event loop is free.
 - `CompItem.layers`: LayerCollection with `.length` and 1-based `[i]`; index 1 is the top of the stack.
 - `comp.layers.add(item)`: adds AVLayer sourced by a FootageItem or CompItem, at the top.
 - `comp.layers.addText(text)`: adds TextLayer with null source, at the top.
@@ -94,12 +96,15 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `TextDocument.tracking` / `applyStroke` / `strokeColor`: detached unmanaged styling preserved through property assignment; fill colour stores float32 channels.
 - `ParagraphJustification`: symbolic `LEFT_JUSTIFY`, `CENTER_JUSTIFY`, `RIGHT_JUSTIFY` constants.
 - `$.getenv(name)` / `$.global` / `$.line`: environment from `state.app.env` (missing → null), the VM global object, and fixed line 0.
+- `$.sleep(ms)`: blocks with `Atomics.wait` on a SharedArrayBuffer; pending frame writes still become observable during JSX's polling loop.
 - `File(path)` / `Folder(path)`: callable with or without `new`; read-only absolute `fsName`, `name`, dynamic `exists`, and path string conversion; File `name` is URI encoded and `displayName` is decoded.
 - `File.encoding`: settable label, default BINARY; the port reads/writes UTF-8 text regardless of this label.
 - `File.open("r"|"w")` / `read()` / `write(text)` / `close()`: buffered text access; failed read open returns false; close flushes write mode.
+- `File.length`: dynamic size in bytes, zero when the file does not exist.
 - `File.remove()` / `rename(name)`: filesystem operations returning success booleans; rename refuses to overwrite and updates name/fsName.
 - `Folder.create()` / `getFiles()`: recursive directory creation and unfiltered File/Folder listing.
 - `Folder.myDocuments` / `Folder.userData`: documents argument and LOCALAPPDATA (falling back to documents).
+- `Folder.temp`: `<documents>/temp`; `extension_runner.js` supplies the same directory through its injected `os.tmpdir()` so the panel validates and removes only this run's frame files.
 - `counters.undoGroups` / `counters.writes`: begin calls and project mutations; same-value assignments count, failed mutations/read operations/hydration/serialization/detached value edits/file I/O do not.
 - `createAE().calls`: test-only method-count map for `setValue`, `setValueAtTime`, `setValuesAtTimes`, `setTemporalEaseAtKey`, `setInterpolationTypeAtKey`, and `keyInInterpolationType`; counts attempted calls through these property methods, including reads used by fingerprints. Not exposed to JSX or persisted in project state.
 - `createAE().trace`: test-only array for neighbour moves, source replacements and ease/interpolation call order (the former `calls` array). Optional `state.testHooks.readProperty` / `writeProperty` inject persistent errors for a match name on property value reads/writes (writes throw before mutation); also not AE APIs or JSX members.

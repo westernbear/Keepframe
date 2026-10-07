@@ -46,6 +46,73 @@ def save_state(path, state):
     path.write_text(json.dumps(state))
 
 
+def test_render_writes_requested_frames(tmp_path, full_spec):
+    spec, assets = full_spec
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    before = read_state(state_path)
+    job = "j_" + "0" * 16
+    folder = tmp_path / "temp" / ("keepframe-" + job)
+    folder.mkdir(parents=True)
+    (folder / "stale.png").write_bytes(b"stale")
+    out = run_jsx(state_path, HOST, "kfRender", json.dumps({
+        "job": job, "tag": spec["comp"]["tag"], "frames": [0, 5, 29]}), documents=tmp_path)
+    assert out["value"]["ok"], out
+    assert [f["frame"] for f in out["value"]["frames"]] == [0, 5, 29]
+    assert (out["value"]["width"], out["value"]["height"]) == (spec["comp"]["width"], spec["comp"]["height"])
+    for frame in out["value"]["frames"]:
+        file = Path(frame["path"])
+        assert file.is_absolute() and file.parent == folder
+        assert file.name == f"frame_{frame['frame']:04d}.png"
+        from PIL import Image
+        with Image.open(file) as image:
+            image.load()
+            assert image.size == (spec["comp"]["width"], spec["comp"]["height"])
+    assert not (folder / "stale.png").exists()
+    assert out["writes"] == out["undo_groups"] == 0
+    assert out["calls"]["saveFrameToPng"] == 3
+    assert read_state(state_path) == before
+
+
+def test_render_waits_for_late_frame_and_fails_on_missing(tmp_path, full_spec):
+    spec, assets = full_spec
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    for fails in (False, True):
+        state = read_state(state_path)
+        state["testHooks"] = {"frameWriteDelayMs": 300, "frameWriteFails": fails}
+        save_state(state_path, state)
+        out = run_jsx(state_path, HOST, "kfRender", json.dumps({
+            "job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0], "wait_ms": 500}), documents=tmp_path)
+        assert out["value"]["ok"] is not fails, out
+        if fails:
+            assert out["value"]["error"] == "AE did not write frame 0 within 60 s"
+
+
+def test_render_without_the_comp_says_send_first(tmp_path):
+    out = run_jsx(tmp_path / "ae.json", HOST, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": "keepframe:demo/s1", "frames": [0]}), documents=tmp_path)
+    assert out["value"]["ok"] is False
+    assert out["value"]["error"] == "the Keepframe comp is missing; send the scene to AE first"
+
+
+@pytest.mark.parametrize("patch", [
+    {"job": "../escape"}, {"tag": None}, {"frames": []}, {"frames": [0, 0]},
+    {"frames": [-1]}, {"frames": [1.5]}, {"frames": [True]}, {"frames": ["0"]},
+    {"frames": [1000000]}, {"frames": list(range(17))}, {"wait_ms": -1},
+])
+def test_render_rejects_invalid_requests_before_writing(tmp_path, patch):
+    spec, assets = spec_for(tmp_path)
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    request = {"job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0]}
+    request.update(patch)
+    out = run_jsx(state_path, HOST, "kfRender", json.dumps(request), documents=tmp_path)
+    assert out["value"]["ok"] is False, out
+    assert out["calls"].get("saveFrameToPng", 0) == 0
+    assert not (tmp_path / "temp").exists()
+
+
 def comp(state):
     return next(item for item in state["project"]["items"] if item["type"] == "CompItem")
 

@@ -177,6 +177,32 @@ def test_pair_announces_real_fake_ae_info(extension):
     assert ext.pairing["results"] == [] and ext.pairing["writes"] == 0
 
 
+def test_render_frames_uploads_real_fake_pngs_and_posts_the_frame_list(extension, monkeypatch):
+    # Task 4 exercises the transport; Task 6 covers the comparison renderer.
+    monkeypatch.setattr("keepframe.ae.api.verify", lambda *args, **kwargs: {
+        "passed": True, "mean": 0, "frames": []})
+    ext = extension
+    sync(ext)
+    before = read_state(ext.state)
+    routes = ext.server.ae_routes
+    queued = routes.jobs.enqueue(ext.device, "render_frames", "p1", "s1", "v1", params={
+        "frames": [0, 5, 59], "tag": "keepframe:p1/s1"})
+    output = ext.run("--jobs", 1)
+    assert output["results"] == [{"ok": True, "result": {"frames": [0, 5, 59]}}]
+    assert routes.jobs.get(queued.id).state == "done"
+    assert output["writes"] == output["undo_groups"] == 0
+    assert read_state(ext.state) == before
+    from PIL import Image
+    for frame in (0, 5, 59):
+        file = routes.workspace / "p1" / "ae" / "s1" / "v1" / f"frame_{frame:04d}.png"
+        with Image.open(file) as image:
+            image.load()
+            assert image.size == (320, 180)
+    assert not (ext.documents / "temp" / ("keepframe-" + queued.id)).exists()
+    assert any(status["message"] == "Rendered 3 frames — Keepframe is comparing them"
+               for status in output["statuses"])
+
+
 def test_sync_builds_comp_effects_model_and_downloaded_assets(extension):
     ext = extension
     output, job = sync(ext)

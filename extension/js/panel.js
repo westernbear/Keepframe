@@ -11,6 +11,10 @@
             copyFailed: 'Could not copy the log', storageFailed: 'Could not save settings: pair again',
             download: 'Download extension', connected: 'Connected · {host}',
             syncing: 'Syncing {project} / {scene} {version}…',
+            rendering: 'Rendering {n} frames of {project} / {scene} {version}…',
+            uploading: 'Uploading frame {i}/{n}…',
+            rendered: 'Rendered {n} frames — Keepframe is comparing them',
+            renderFailed: 'Render failed: {reason}', stageRender: 'Rendering', stageUpload: 'Uploading frames',
             synced: 'Synced {version}: {created} created, {updated} updated, {deleted} deleted',
             edited: 'AE layers were edited by hand: {ids} — overwrite from the web page',
             syncInterrupted: 'a previous sync was interrupted — overwrite to finish it: {ids}',
@@ -35,6 +39,10 @@
             copyFailed: '로그를 복사할 수 없습니다', storageFailed: '설정을 저장할 수 없습니다: 다시 페어링하세요',
             download: '확장 다운로드', connected: '연결됨 · {host}',
             syncing: '{project} / {scene} {version} 동기화 중…',
+            rendering: '{project} / {scene} {version} 프레임 {n}개 렌더링 중…',
+            uploading: '프레임 업로드 중 {i}/{n}…',
+            rendered: '프레임 {n}개 렌더링 완료 — Keepframe에서 비교 중',
+            renderFailed: '렌더링 실패: {reason}', stageRender: '렌더링 중', stageUpload: '프레임 업로드 중',
             synced: '{version} 동기화됨: 생성 {created}개, 업데이트 {updated}개, 삭제 {deleted}개',
             edited: 'AE 레이어가 수동으로 수정되었습니다: {ids} — 웹 페이지에서 덮어쓰세요',
             syncInterrupted: '이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: {ids}',
@@ -76,6 +84,12 @@
         if ((match = /^Connected · (.*)$/.exec(message))) return t('connected', {host: match[1]});
         if ((match = /^Syncing (.*) \/ (.*) (.*)…$/.exec(message)))
             return t('syncing', {project: match[1], scene: match[2], version: match[3]});
+        if ((match = /^Rendering (\d+) frames of (.*) \/ (.*) (.*)…$/.exec(message)))
+            return t('rendering', {n: match[1], project: match[2], scene: match[3], version: match[4]});
+        if ((match = /^Uploading frame (\d+)\/(\d+)…$/.exec(message)))
+            return t('uploading', {i: match[1], n: match[2]});
+        if ((match = /^Rendered (\d+) frames — Keepframe is comparing them$/.exec(message)))
+            return t('rendered', {n: match[1]});
         if ((match = /^Synced (.*): (\d+) created, (\d+) updated, (\d+) deleted$/.exec(message)))
             return t('synced', {version: match[1], created: match[2], updated: match[3], deleted: match[4]});
         if ((match = /^AE layers were edited by hand: (.*) — overwrite from the web page$/.exec(message)))
@@ -87,6 +101,7 @@
         if ((match = /^After Effects did not finish within (\d+(?:\.\d+)?) min\. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again\.$/.exec(message)))
             return t('hostTimeout', {minutes: match[1]});
         if (message.startsWith('Sync failed: ')) return t('failed', {reason: translate(message.slice(13))});
+        if (message.startsWith('Render failed: ')) return t('renderFailed', {reason: translate(message.slice(15))});
         if (message.startsWith('Update the Keepframe extension: '))
             return t('update', {url: message.slice('Update the Keepframe extension: '.length)});
         return message; // AE and server diagnostics retain their original wording.
@@ -107,7 +122,8 @@
             let text = job.project + ' / ' + job.scene + ' · ' + job.version;
             if (progress) {
                 const stage = progress.stage.startsWith('downloading ') ?
-                    t('downloading', {name: progress.stage.slice(12)}) : table.stageSync;
+                    t('downloading', {name: progress.stage.slice(12)}) :
+                    progress.stage === 'rendering' ? table.stageRender : progress.stage === 'uploading' ? table.stageUpload : table.stageSync;
                 text += '\n' + stage + ' · ' + progress.done + '/' + progress.total;
             }
             el('current-job').textContent = core.redact(text, secrets);

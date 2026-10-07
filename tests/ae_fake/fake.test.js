@@ -5,9 +5,69 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const zlib = require("node:zlib");
 const { spawnSync } = require("node:child_process");
 const { createAE } = require("./ae");
 const { checkES3Syntax } = require("./run");
+
+test("frame export writes a valid full-size PNG using the bottom enabled solid", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-png-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const ae = createAE({ documents: dir }), c = ae.context;
+  assert.equal(path.dirname(c.Folder.temp.fsName), dir);
+  const folder = new c.Folder(c.Folder.temp.fsName + "/frames");
+  assert.equal(folder.create(), true);
+  const comp = c.app.project.items.addComp("PNG", 3, 2, 1, 1, 30);
+  const bottom = comp.layers.addSolid([1, 0.5, 0], "bottom", 3, 2, 1, 1);
+  comp.layers.addSolid([0, 1, 0], "top", 3, 2, 1, 1);
+  comp.layers.addText("ignored");
+  const file = new c.File(folder.fsName + "/frame.png");
+  const writes = ae.counters.writes;
+  function pixels() {
+    const png = fs.readFileSync(file.fsName);
+    assert.deepEqual(png.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    assert.equal(png.readUInt32BE(16), 3); assert.equal(png.readUInt32BE(20), 2);
+    assert.equal(png[24], 8); assert.equal(png[25], 2);
+    assert.equal(png.readUInt32BE(png.length - 4), 0xae426082);
+    const chunks = [];
+    for (let offset = 8; offset < png.length;) {
+      const size = png.readUInt32BE(offset), kind = png.toString("ascii", offset + 4, offset + 8);
+      if (kind === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + size));
+      offset += size + 12;
+    }
+    return [...zlib.inflateSync(Buffer.concat(chunks))];
+  }
+  comp.saveFrameToPng(0, file);
+  assert.equal(file.exists, true); assert.ok(file.length > 0);
+  assert.deepEqual(pixels(), [0, 255,128,0, 255,128,0, 255,128,0, 0, 255,128,0, 255,128,0, 255,128,0]);
+  assert.equal(ae.counters.writes, writes); assert.equal(ae.counters.undoGroups, 0);
+  assert.equal(ae.calls.saveFrameToPng, 1);
+  bottom.enabled = false;
+  comp.saveFrameToPng(0, file);
+  assert.deepEqual(pixels(), [0, 0,255,0, 0,255,0, 0,255,0, 0, 0,255,0, 0,255,0, 0,255,0]);
+  comp.layers[2].enabled = false;
+  comp.saveFrameToPng(0, file);
+  assert.deepEqual(pixels(), Array(20).fill(0));
+  assert.equal(file.remove(), true); assert.equal(file.exists, false); assert.equal(file.length, 0);
+  assert.throws(() => comp.saveFrameToPng(-1, file), /time/);
+  assert.throws(() => comp.saveFrameToPng(0, "bad"), /File/);
+});
+
+test("delayed and missing frame writes work while JSX sleep blocks", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-png-delay-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const fails of [false, true]) {
+    const ae = createAE({ documents: dir, frameWriteDelayMs: 30, frameWriteFails: fails }), c = ae.context;
+    const comp = c.app.project.items.addComp("PNG", 2, 2, 1, 1, 30);
+    const file = new c.File(dir + "/delayed-" + fails + ".png");
+    comp.saveFrameToPng(0, file);
+    assert.equal(file.exists, false);
+    const started = Date.now();
+    c.$.sleep(50);
+    assert.ok(Date.now() - started >= 45);
+    assert.equal(file.exists, !fails); assert.equal(file.length > 0, !fails);
+  }
+});
 
 function fixture(options) {
   const ae = createAE(options);

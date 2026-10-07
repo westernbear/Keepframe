@@ -52,6 +52,7 @@
     }
 
     function failure(message, properties) { return Object.assign(new Error(message), properties); }
+    const literal = value => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
     function safeError(error, secrets) { return redact(error.message || error, secrets).slice(0, 1800); }
     function updateMessage(serverUrl) { return 'Update the Keepframe extension: ' + serverUrl + '/ae/keepframe.zxp'; }
     function networkError(error) {
@@ -62,7 +63,7 @@
         return failure(reasons[error.code] || 'Network request failed', {network: true});
     }
 
-    async function request(context, method, route, body, extraHeaders, file) {
+    async function request(context, method, route, body, extraHeaders, file, upload) {
         const deps = context.deps;
         const url = new URL(context.serverUrl + route), host = url.host;
         if (url.protocol === 'http:') {
@@ -84,7 +85,11 @@
                 headers['Content-Type'] = 'application/json';
                 headers['Content-Length'] = Buffer.byteLength(data);
             }
-            let req, output, response, settled = false;
+            if (upload) {
+                headers['Content-Type'] = 'image/png';
+                headers['Content-Length'] = upload.size;
+            }
+            let req, input, output, response, settled = false, inputClosed = false;
             const finish = (error, value) => {
                 if (settled) return;
                 settled = true;
@@ -95,7 +100,13 @@
                     if (output && !output.closed) {
                         output.once('close', () => reject(error));
                         output.destroy();
+                    } else if (input && !inputClosed) {
+                        input.once('close', () => reject(error));
+                        input.destroy();
                     } else reject(error);
+                } else if (input && !inputClosed) {
+                    input.once('close', () => resolve(value));
+                    input.destroy();
                 } else resolve(value);
             };
             try {
@@ -162,8 +173,14 @@
                 req.on('error', error => finish(networkError(error)));
                 req.setTimeout(route.startsWith('/api/ae/next?') ? 35000 : 30000,
                     () => finish(networkError({code: 'ETIMEDOUT'})));
-                req.end(data);
-            } catch (error) { finish(failure(safeError(error, context.secrets))); }
+                if (upload) {
+                    input = deps.fs.createReadStream(upload.path);
+                    input.on('close', () => { inputClosed = true; });
+                    input.on('error', error => finish(failure('Could not read frame upload (' + (error.code || 'unknown error') + ')')));
+                    input.pipe(req);
+                } else req.end(data);
+            } catch (error) { finish(failure(upload ? 'Could not upload frame (' + (error.code || 'unknown error') + ')' :
+                safeError(error, context.secrets))); }
         });
     }
 
@@ -265,8 +282,8 @@
                 (key, value) => typeof value === 'string' ? redact(value, context.secrets) : value));
             if (running || terminal) deps.setStatus(redact(message, context.secrets), safeDetails);
         };
-        const send = async (method, route, body, headers, file) => {
-            const response = await request(context, method, route, body, headers, file);
+        const send = async (method, route, body, headers, file, upload) => {
+            const response = await request(context, method, route, body, headers, file, upload);
             backoff = 0;
             return response;
         };
@@ -333,17 +350,78 @@
             status('Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
             if (!running) throw failure('Disconnected before sync');
             // JSON literals only, including ES3-safe escapes for line/paragraph separators.
-            const literal = value => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
             return hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
                 literal(job.params && job.params.force ? 'true' : 'false') + ')');
         }
 
+        async function renderFrames(job, progress) {
+            const params = job.params, path = deps.path;
+            if (!/^j_[0-9a-f]{16}$/.test(job.id) || !params || typeof params.tag !== 'string' ||
+                !Array.isArray(params.frames) || !params.frames.length || params.frames.length > 16 ||
+                params.frames.some(f => !Number.isSafeInteger(f) || f < 0 || f > 999999) ||
+                new Set(params.frames).size !== params.frames.length) throw failure('Invalid render job');
+            const folder = path.resolve(deps.os.tmpdir(), 'keepframe-' + job.id);
+            const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
+            let renderError;
+            try {
+                if (!running) throw failure('Disconnected before render');
+                const rendered = await hostCall(context, 'kfRender(' + literal(JSON.stringify({
+                    job: job.id, tag: params.tag, frames: params.frames})) + ')');
+                if (!Array.isArray(rendered.frames) || rendered.frames.length !== params.frames.length)
+                    throw failure('Invalid frame from AE');
+                const seen = new Set(), files = [];
+                // Validate the entire list before opening any upload stream.
+                for (const frame of rendered.frames) {
+                    const name = frame && 'frame_' + String(frame.frame).padStart(4, '0') + '.png';
+                    if (!frame || !params.frames.includes(frame.frame) || seen.has(frame.frame) ||
+                        typeof frame.path !== 'string' || !path.isAbsolute(frame.path) ||
+                        path.basename(frame.path) !== name) throw failure('Invalid frame from AE');
+                    let stat;
+                    try {
+                        if ((await deps.fs.promises.lstat(folder)).isSymbolicLink() ||
+                            await deps.fs.promises.realpath(path.dirname(frame.path)) !== await deps.fs.promises.realpath(folder))
+                            throw failure('Invalid frame from AE');
+                        stat = await deps.fs.promises.lstat(frame.path);
+                    } catch (_) { throw failure('Invalid frame from AE'); }
+                    if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > 25 * 1024 * 1024)
+                        throw failure('Invalid frame from AE');
+                    seen.add(frame.frame);
+                    files.push({path: frame.path, size: stat.size, name});
+                }
+                progress.stage = 'uploading'; progress.done = 0; progress.total = files.length;
+                for (let i = 0; i < files.length; i++) {
+                    if (!running) throw failure('Disconnected before upload');
+                    status('Uploading frame ' + (i + 1) + '/' + files.length + '…', {job, progress});
+                    await send('PUT', prefix + '/files/' + files[i].name,
+                        undefined, undefined, undefined, files[i]);
+                    progress.done = i + 1;
+                    await send('POST', prefix + '/progress', Object.assign({}, progress));
+                }
+                return {frames: params.frames};
+            } catch (error) { renderError = error; throw error; }
+            finally {
+                try {
+                    await (deps.fs.promises.rm || deps.fs.promises.rmdir)(folder, {recursive: true, force: true});
+                }
+                catch (error) {
+                    if (error.code !== 'ENOENT') {
+                        const message = 'Could not remove temporary frame folder (' + (error.code || 'unknown error') + ')';
+                        log(message);
+                        if (!renderError) throw failure(message);
+                    }
+                }
+            }
+        }
+
         async function runJob(job, mismatch) {
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
-            const progress = {stage: 'syncing', done: 0, total: 0};
+            const rendering = job.kind === 'render_frames';
+            const total = rendering && job.params && Array.isArray(job.params.frames) ? job.params.frames.length : 0;
+            const progress = {stage: rendering ? 'rendering' : 'syncing', done: 0, total};
             let finished = false, finishHeartbeat;
             const ended = new Promise(resolve => { finishHeartbeat = resolve; });
-            const message = mismatch || 'Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…';
+            const message = mismatch || (rendering ? 'Rendering ' + total + ' frames of ' : 'Syncing ') +
+                job.project + ' / ' + job.scene + ' ' + job.version + '…';
             status(message, {job, progress}); log(message);
             const heartbeat = async () => {
                 while (!finished && !terminal) {
@@ -360,8 +438,10 @@
             let payload;
             try {
                 if (mismatch) throw failure(mismatch);
-                if (job.kind !== 'sync') throw failure(job.kind + ' is not supported by this extension version');
-                payload = {ok: true, result: await sync(job, progress)};
+                const handlers = {sync, render_frames: renderFrames};
+                if (!Object.prototype.hasOwnProperty.call(handlers, job.kind))
+                    throw failure(job.kind + ' is not supported by this extension version');
+                payload = {ok: true, result: await handlers[job.kind](job, progress)};
             } catch (error) {
                 payload = {ok: false, error: safeError(error, context.secrets)};
                 if (Number.isInteger(error.line)) payload.line = error.line;
@@ -387,7 +467,9 @@
                 if (terminal) return;
                 outcome = true;
                 let text;
-                if (!payload.ok) text = mismatch || 'Sync failed: ' + payload.error + (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
+                if (!payload.ok) text = mismatch || (rendering ? 'Render failed: ' : 'Sync failed: ') + payload.error +
+                    (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
+                else if (rendering) text = 'Rendered ' + payload.result.frames.length + ' frames — Keepframe is comparing them';
                 else if (payload.result.applied === false) {
                     const interrupted = payload.result.interrupted || [];
                     const edited = (payload.result.hand_edited || []).filter(id => !interrupted.includes(id));

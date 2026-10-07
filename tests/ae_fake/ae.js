@@ -2,6 +2,27 @@
 const vm = require("node:vm");
 const fs = require("node:fs");
 const path = require("node:path");
+const zlib = require("node:zlib");
+
+function solidPNG(width, height, color) {
+  function chunk(kind, data) {
+    const payload = Buffer.concat([Buffer.from(kind), data]);
+    let crc = 0xffffffff;
+    for (const byte of payload) {
+      crc ^= byte;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    const length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    length.writeUInt32BE(data.length); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, payload, checksum]);
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  const row = Buffer.alloc(1 + width * 3), rgb = color.map(v => Math.round(v * 255));
+  for (let x = 0; x < width; x++) row.set(rgb, 1 + x * 3);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header),
+    chunk("IDAT", zlib.deflateSync(Buffer.concat(Array(height).fill(row)))), chunk("IEND", Buffer.alloc(0))]);
+}
 
 // Keep implementation data outside proxies: JSX only sees the documented surface.
 const records = new WeakMap();
@@ -10,7 +31,9 @@ function field(target, name, get, set) {
   Object.defineProperty(target, name, { configurable: true, enumerable: true, get, set });
 }
 
-function createAE({ state = {}, documents = process.cwd(), defaultInterpolation = "LINEAR" } = {}) {
+function createAE({ state = {}, documents = process.cwd(), defaultInterpolation = "LINEAR",
+  frameWriteDelayMs = state.testHooks?.frameWriteDelayMs || 0,
+  frameWriteFails = state.testHooks?.frameWriteFails || false } = {}) {
   const context = vm.createContext({});
   const realm = vm.runInContext("({Array: Array, Object: Object, Error: Error, Function: Function})", context);
   const Error = realm.Error;
@@ -103,6 +126,12 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   }
   const counters = { undoGroups: 0, writes: 0 };
   const calls = {}, trace = [];
+  const pendingFrames = [];
+  function flushFrames() {
+    for (let i = pendingFrames.length - 1; i >= 0; i--) {
+      if (pendingFrames[i].due <= Date.now()) pendingFrames.splice(i, 1)[0].write();
+    }
+  }
   const testHooks = copy(state.testHooks || {});
   const fault = (operation, matchName) => {
     if (testHooks[`${operation}Property`] === matchName) throw Error(`fake AE: injected ${operation} ${matchName}`);
@@ -134,7 +163,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     field(api, "name", () => encodeURI(path.basename(filename)));
     field(api, "displayName", () => path.basename(filename));
     field(api, "encoding", () => encoding, (value) => { encoding = String(value); });
-    field(api, "exists", () => { try { return fs.statSync(filename).isFile(); } catch { return false; } });
+    field(api, "exists", () => { flushFrames(); try { return fs.statSync(filename).isFile(); } catch { return false; } });
+    field(api, "length", () => { flushFrames(); try { return fs.statSync(filename).size; } catch { return 0; } });
     api.toString = () => filename;
     api[Symbol.toPrimitive] = () => filename;
     api.open = (nextMode) => {
@@ -179,6 +209,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   }
   Folder.myDocuments = Folder(documents);
   Folder.userData = Folder(env.LOCALAPPDATA || documents);
+  Folder.temp = Folder(path.join(documents, "temp"));
   function ImportOptions(file) {
     const values = { file };
     const api = Object.create(ImportOptions.prototype);
@@ -605,6 +636,27 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         setting(api, values, "bgColor", (v) => vector(v, 3, "bgColor", true), true, (v) => v.map(Math.fround));
         const layers = [];
         records.get(proxy).layers = layers;
+        api.saveFrameToPng = (time, file) => {
+          finite(time, "time");
+          if (time < 0 || time >= values.duration) throw Error("fake AE: invalid frame time");
+          if (records.get(file)?.type !== "File") throw Error("fake AE: saveFrameToPng requires a File");
+          calls.saveFrameToPng = (calls.saveFrameToPng || 0) + 1;
+          if (frameWriteFails) return;
+          // ponytail: solid backgrounds only; add compositing when non-background verification needs it.
+          let color = [0, 0, 0];
+          for (let i = layers.length - 1; i >= 0; i--) {
+            const l = records.get(layers[i]), source = records.get(l.source);
+            if (l.values.enabled && !l.values.nullLayer && source?.values.mainSource?.color) {
+              color = source.values.mainSource.color; break;
+            }
+          }
+          const png = solidPNG(values.width, values.height, color);
+          const write = () => fs.writeFileSync(file.fsName, png);
+          if (frameWriteDelayMs > 0) {
+            pendingFrames.push({ due: Date.now() + frameWriteDelayMs, write });
+            setTimeout(flushFrames, frameWriteDelayMs);
+          } else write();
+        };
         const addLayer = (layerType, sourceItem, name, duration, text, nullLayer = false) => {
           const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text, nullLayer }, canonical(sourceItem));
           layers.unshift(l); changed(); return l;
@@ -775,7 +827,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     AVLayer: host("AVLayer", AVLayer), TextLayer: host("TextLayer", TextLayer),
     TextDocument: host("TextDocument", TextDocument), KeyframeEase: host("KeyframeEase", KeyframeEase),
     KeyframeInterpolationType, ParagraphJustification, PropertyValueType, PropertyType, TrackMatteType };
-  const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0 };
+  const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0,
+    sleep(ms) { finite(ms, "sleep"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); flushFrames(); } };
   sandbox.$ = host("$", dollar);
   Object.assign(context, sandbox);
   dollar.global = contextGlobal;
