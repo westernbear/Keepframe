@@ -15,6 +15,7 @@
             edited: 'AE layers were edited by hand: {ids} — overwrite from the web page',
             syncInterrupted: 'a previous sync was interrupted — overwrite to finish it: {ids}',
             retry: 'Not connected: {reason} (retrying in {seconds} s)', failed: 'Sync failed: {reason}',
+            hostTimeout: 'After Effects did not finish within {minutes} min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.',
             notPaired: 'Not paired: enter a new code from the Keepframe web page',
             update: 'Update the Keepframe extension: {url}', downloading: 'Downloading {name}', stageSync: 'Syncing',
             invalidCode: 'Pairing code is invalid or expired', invalidUrl: 'Enter a server URL',
@@ -38,6 +39,7 @@
             edited: 'AE 레이어가 수동으로 수정되었습니다: {ids} — 웹 페이지에서 덮어쓰세요',
             syncInterrupted: '이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: {ids}',
             retry: '연결 안 됨: {reason} ({seconds}초 후 재시도)', failed: '동기화 실패: {reason}',
+            hostTimeout: 'After Effects가 {minutes}분 안에 끝내지 못했습니다. 큰 장면을 아직 처리 중이거나 대화상자를 기다리는 중일 수 있습니다. AE가 응답하면 다시 보내세요.',
             notPaired: '페어링 안 됨: Keepframe 웹 페이지의 새 코드를 입력하세요',
             update: 'Keepframe 확장을 업데이트하세요: {url}', downloading: '{name} 다운로드 중', stageSync: '동기화 중',
             invalidCode: '페어링 코드가 올바르지 않거나 만료되었습니다', invalidUrl: '서버 URL을 입력하세요',
@@ -82,7 +84,9 @@
             return t('syncInterrupted', {ids: match[1]});
         if ((match = /^Not connected: (.*) \(retrying in (\d+) s\)$/.exec(message)))
             return t('retry', {reason: translate(match[1]), seconds: match[2]});
-        if (message.startsWith('Sync failed: ')) return t('failed', {reason: message.slice(13)});
+        if ((match = /^After Effects did not finish within (\d+(?:\.\d+)?) min\. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again\.$/.exec(message)))
+            return t('hostTimeout', {minutes: match[1]});
+        if (message.startsWith('Sync failed: ')) return t('failed', {reason: translate(message.slice(13))});
         if (message.startsWith('Update the Keepframe extension: '))
             return t('update', {url: message.slice('Update the Keepframe extension: '.length)});
         return message; // AE and server diagnostics retain their original wording.

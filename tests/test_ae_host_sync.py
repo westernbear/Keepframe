@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.ae_fake_runner import run_jsx
-from keepframe.ae.spec import comp_spec, spec_asset_paths
+from keepframe.ae.spec import comp_spec, ease_to_ae, spec_asset_paths
 from keepframe.ir.schema import FontGuess, Group
 from tests.test_ae_spec import EASE, element, png, scene, track
 
@@ -20,6 +20,14 @@ def spec_for(root, *elements, **kwargs):
     value = scene(*elements, **kwargs)
     spec = comp_spec(value, root, project="demo", scene_id="s1", version="v1")
     assets = {name: str(path) for name, path in spec_asset_paths(value, root).items()}
+    return spec, assets
+
+
+def solid_spec_with_x_keys(root, keys):
+    spec, assets = spec_for(root)
+    spec["layers"][0]["props"]["position_x"] = keys
+    spec["comp"]["frames"] = keys[-1][0] + 1
+    spec["layers"][0]["out"] = keys[-1][0]
     return spec, assets
 
 
@@ -239,6 +247,48 @@ def test_sync_twice_is_a_no_op(tmp_path, full_spec):
     assert response["value"]["unchanged"] == 5
     assert response["value"]["created"] == response["value"]["updated"] == response["value"]["deleted"] == []
     assert read_state(path) == before
+
+
+def test_linear_keys_are_written_in_one_call_per_property(tmp_path):
+    keys = [[f, 320.0 + f, None, None] for f in range(600)]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    result = sync(path, spec, assets)
+    assert result["value"]["applied"]
+    calls = result["calls"]
+    assert calls.get("setValuesAtTimes", 0) == 1
+    assert calls.get("setValueAtTime", 0) == 0
+    assert calls.get("setTemporalEaseAtKey", 0) == 0
+    assert calls.get("setInterpolationTypeAtKey", 0) == 0
+    written = prop(layers(read_state(path))["kf:background"], "ADBE Position_0")["keys"]
+    assert [(k["time"], k["value"]) for k in written] == [(k[0] / 30, k[1]) for k in keys]
+    assert all(k["inInterpolation"] == k["outInterpolation"] == "LINEAR" for k in written)
+    assert all(k["inEases"] == k["outEases"] == [{"speed": 0, "influence": 16.666667}]
+               for k in written)
+    before = read_state(path)
+    assert sync(path, spec, assets)["writes"] == 0
+    assert read_state(path) == before
+
+
+def test_eased_keys_still_get_ease_and_bezier(tmp_path):
+    ease = [0.25, 0.1, 0.25, 1.0]
+    converted = ease_to_ae(ease, 0.0, 100.0, 12 / 30)
+    keys = [[0, 0.0, [converted["out"]], None], [12, 100.0, None, [converted["in"]]],
+            [24, 50.0, None, None]]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    result = sync(path, spec, assets)
+    assert result["value"]["applied"]
+    written = prop(layers(read_state(path))["kf:background"], "ADBE Position_0")["keys"]
+    assert [(k["inInterpolation"], k["outInterpolation"]) for k in written] == [
+        ("LINEAR", "BEZIER"), ("BEZIER", "LINEAR"), ("LINEAR", "LINEAR")]
+    assert written[0]["outEases"] == [{"speed": 100, "influence": 25}]
+    assert written[1]["inEases"] == [{"speed": 0, "influence": 75}]
+    assert written[2]["inEases"] == written[2]["outEases"] == [{"speed": 0, "influence": 16.666667}]
+    assert result["calls"].get("setValueAtTime", 0) == 0
+    assert result["calls"]["setTemporalEaseAtKey"] == 2
+    assert result["calls"]["setInterpolationTypeAtKey"] == 2
+    assert sync(path, spec, assets)["writes"] == 0
 
 
 def test_2d_sync_preserves_hidden_3d_properties_and_ignores_them_in_fingerprints(tmp_path, full_spec):

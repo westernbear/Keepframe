@@ -1,6 +1,6 @@
 # Fake After Effects
 
-`createAE({state, documents})` returns `{context, serialize, counters, calls}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
+`createAE({state, documents, defaultInterpolation})` returns `{context, serialize, counters, calls, trace}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
 Unknown host members and unknown property/effect match names throw `fake AE: unsupported <Type>.<name>`; host internals are private.
 Arrays, plain objects, and errors returned to JSX belong to its VM realm; host objects and methods cross through strict proxies. Font records, source rectangles, TextDocuments, and KeyframeEases are strict host objects.
 This models the Task 7 sync surface; the runner checks the listed ES3 syntax gaps, and broader engine differences remain outside its scope.
@@ -8,12 +8,12 @@ This models the Task 7 sync surface; the runner checks the listed ES3 syntax gap
 ## Running
 
 ```sh
-node --test tests/ae_fake
+node --test 'tests/ae_fake/*.test.js' 'extension/test/*.test.js'
 node tests/ae_fake/run.js state.json script.jsx entry arg1 arg2 --documents /tmp/documents
 .venv/bin/python -m pytest -p no:cacheprovider -q tests/test_ae_fake_runner.py
 ```
 
-`run.js` creates an empty project when the state file is missing, invokes the named entry with string arguments, atomically replaces state on success, and emits one JSON line `{result, undo_groups, writes}`.
+`run.js` creates an empty project when the state file is missing, invokes the named entry with string arguments, atomically replaces state on success, and emits one JSON line `{result, undo_groups, writes, calls}`. `calls` is a method-count map (absent methods have count zero), passed through unchanged by `run_jsx`.
 An exception emits `{error, line}` and exits 1; JSX stack locations supply the line, or 0 if unavailable; unsuccessful runs leave persisted state untouched.
 `run.js` discards all mutations from a run that throws; real AE keeps partial mutations made before an error.
 `checkES3Syntax(source)` runs before JSX execution and rejects `let`/`const` declarations, arrow functions, template literals, classes, trailing commas in object/array literals, and getter/setter literal syntax; errors name the line and use the same `{error, line}` payload.
@@ -75,11 +75,12 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `ADBE Anchor Point` / `ADBE Position`: `ThreeD_SPATIAL` on every AV layer, including 2D layers; defaults are source center (or [0,0,0] for text) and comp center, with z=0. `ADBE Scale`: `ThreeD`, default [100,100,100]; rotation: 0; opacity: 100. Toggling `threeDLayer` preserves all three components of values, keys and eases.
 - `ADBE Position.dimensionsSeparated`: settable boolean; true exposes scalar `ADBE Position_0` / `ADBE Position_1` / `ADBE Position_2`; Z is hidden on 2D layers. Toggling transfers values/keys and joined reads combine all three followers.
 - `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation`: default 0 / 0 / [0,0,0]; hidden on 2D layers; GLB layers start in 3D.
-- Hidden `ADBE Position_2` / `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation` remain readable by name/match name, including values and key metadata, but are excluded from numeric enumeration. Their `setValue`, `setValueAtTime`, `removeKey`, `setTemporalEaseAtKey`, and `setInterpolationTypeAtKey` throw `After Effects error: Can't "set value" on this property because the property or a parent property is hidden.` before mutation. Setting `layer.threeDLayer = true` unhides them, including previously obtained property references; restoration preserves this behavior.
+- Hidden `ADBE Position_2` / `ADBE Rotate X` / `ADBE Rotate Y` / `ADBE Orientation` remain readable by name/match name, including values and key metadata, but are excluded from numeric enumeration. Their `setValue`, `setValueAtTime`, `setValuesAtTimes`, `removeKey`, `setTemporalEaseAtKey`, and `setInterpolationTypeAtKey` throw `After Effects error: Can't "set value" on this property because the property or a parent property is hidden.` before mutation. Setting `layer.threeDLayer = true` unhides them, including previously obtained property references; restoration preserves this behavior.
 - `ADBE Text Properties` → `ADBE Text Document`: Source Text property containing a detached TextDocument copy.
 - `Property.value`: read-only copy sampled at time 0; evaluating an enabled expression throws.
 - `Property.setValue(v)`: assigns a static value; throws `fake AE: setValue on a keyframed property` if keys exist. AV anchor/position/scale accept two components and pad z=0/0/100, or three components to set z explicitly; reads always return three (also for setValueAtTime).
 - `Property.setValueAtTime(t,v)`: adds a sorted key or replaces the value at an existing time, preserving that key's ease/interpolation metadata.
+- `Property.setValuesAtTimes(times,values)`: same time/value validation and replacement semantics as `setValueAtTime`, sorted keys, one write for the batch; non-arrays or unequal lengths throw `fake AE: setValuesAtTimes needs equal arrays`. Both key-writing methods create keys with LINEAR interpolation and temporal ease `{influence: 16.666667, speed: 0}` per ease dimension. `createAE({defaultInterpolation: "BEZIER"})` changes the interpolation for new keys only. A separated Position leader rejects both key-writing methods.
 - `Property.numKeys` / `keyTime(i)` / `keyValue(i)` / `removeKey(i)` / `nearestKeyIndex(t)`: 1-based key operations; invalid indices and nearest on an unkeyed property throw.
 - `Property.valueAtTime(t,preExpression)`: linearly interpolates scalars/vectors, honors outgoing HOLD, holds beyond endpoints, and holds TextDocuments between keys; BEZIER metadata is preserved but sampled linearly.
 - `Property.setInterpolationTypeAtKey(i,inType,outType)` / `keyInInterpolationType(i)` / `keyOutInterpolationType(i)`: store/read interpolation; omitted outType defaults to inType.
@@ -100,7 +101,8 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `Folder.create()` / `getFiles()`: recursive directory creation and unfiltered File/Folder listing.
 - `Folder.myDocuments` / `Folder.userData`: documents argument and LOCALAPPDATA (falling back to documents).
 - `counters.undoGroups` / `counters.writes`: begin calls and project mutations; same-value assignments count, failed mutations/read operations/hydration/serialization/detached value edits/file I/O do not.
-- `createAE().calls`: test-only traces for neighbour moves, source replacements and ease/interpolation call order; not exposed to JSX. Optional `state.testHooks.readProperty` / `writeProperty` inject persistent errors for a match name on property value reads/writes (writes throw before mutation); also not AE APIs or JSX members.
+- `createAE().calls`: test-only method-count map for `setValue`, `setValueAtTime`, `setValuesAtTimes`, `setTemporalEaseAtKey`, `setInterpolationTypeAtKey`, and `keyInInterpolationType`; counts attempted calls through these property methods, including reads used by fingerprints. Not exposed to JSX or persisted in project state.
+- `createAE().trace`: test-only array for neighbour moves, source replacements and ease/interpolation call order (the former `calls` array). Optional `state.testHooks.readProperty` / `writeProperty` inject persistent errors for a match name on property value reads/writes (writes throw before mutation); also not AE APIs or JSX members.
 
 ## State
 

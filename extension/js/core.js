@@ -184,8 +184,9 @@
                 context.abortHost = undefined;
                 if (error) reject(error); else resolve(raw);
             };
-            const timer = deps.setTimeout(() => finish(failure('After Effects did not respond within ' +
-                (timeout / 60000) + ' min (a dialog may be open in AE)', {hostTimeout: true})), timeout);
+            const timer = deps.setTimeout(() => finish(failure('After Effects did not finish within ' +
+                (timeout / 60000) + ' min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.',
+                {hostTimeout: true})), timeout);
             context.abortHost = error => finish(error);
             try { deps.evalScript(script, raw => finish(null, raw)); }
             catch (error) { finish(failure(safeError(error, secrets))); }

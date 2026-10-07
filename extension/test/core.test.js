@@ -542,7 +542,7 @@ test('hung kfSync times out at ten minutes, stops heartbeats and posts failure',
     clock.advance(15000);
     await until(() => resultReply);
     assert.deepEqual(f.requests.find(req => req.path.endsWith('/result')).body, {ok: false,
-        error: 'After Effects did not respond within 10 min (a dialog may be open in AE)'});
+        error: 'After Effects did not finish within 10 min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.'});
     const beats = f.requests.filter(req => req.path.endsWith('/progress')).length;
     clock.advance(60000);
     await new Promise(resolve => setImmediate(resolve));
@@ -585,7 +585,7 @@ test('hung kfInfo has a thirty-second deadline during pairing and polling', asyn
     f.deps.evalScript = (script, cb) => { lateCallback = cb; };
     const pairing = core.pair({serverUrl: f.serverUrl, code: CODE}, f.deps);
     const rejection = assert.rejects(pairing,
-        {message: 'After Effects did not respond within 0.5 min (a dialog may be open in AE)'});
+        {message: 'After Effects did not finish within 0.5 min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.'});
     pairing.then(() => { paired = true; }, () => {});
     clock.advance(29999);
     await new Promise(resolve => setImmediate(resolve));
@@ -599,7 +599,7 @@ test('hung kfInfo has a thirty-second deadline during pairing and polling', asyn
     const r = runner(f), running = r.start();
     t.after(() => r.stop());
     clock.advance(30000);
-    await until(() => f.statuses.some(s => s.message.includes('did not respond within 0.5 min')));
+    await until(() => f.statuses.some(s => s.message.includes('did not finish within 0.5 min')));
     r.stop();
     await running;
     assert.equal(clock.pending(), 0);
@@ -881,6 +881,29 @@ test('panel glue restores pairing, translates status, pairs, forgets credentials
         assert.equal(p.nodes['copy-notice'].textContent, locale.startsWith('ko') ? '로그 복사됨' : 'Log copied');
         assert.equal(p.nodes.log.value.includes(TOKEN), false);
         assert.equal(p.nodes.log.value.includes(CODE), false);
+    }
+});
+
+test('panel translates host timeout status and log in English and Korean', () => {
+    for (const locale of ['en_US', 'ko_KR']) {
+        const p = panelHarness(locale);
+        for (const minutes of [10, 0.5]) {
+            const message = 'After Effects did not finish within ' + minutes +
+                ' min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.';
+            const translated = locale.startsWith('ko') ? 'After Effects가 ' + minutes +
+                '분 안에 끝내지 못했습니다. 큰 장면을 아직 처리 중이거나 대화상자를 기다리는 중일 수 있습니다. AE가 응답하면 다시 보내세요.' : message;
+            for (const prefix of ['', 'Sync failed: ', 'Not connected: ']) {
+                const suffix = prefix === 'Not connected: ' ? ' (retrying in 1 s)' : '';
+                const expected = prefix === 'Sync failed: ' && locale.startsWith('ko') ? '동기화 실패: ' + translated :
+                    prefix === 'Not connected: ' && locale.startsWith('ko') ? '연결 안 됨: ' + translated + ' (1초 후 재시도)' :
+                    prefix + translated + suffix;
+                p.runs[0].deps.setStatus(prefix + message + suffix);
+                p.runs[0].deps.log(prefix + message + suffix);
+                assert.equal(p.nodes.status.textContent, expected);
+                assert.ok(p.nodes.log.value.endsWith(expected));
+            }
+        }
+        p.nodes.disconnect.handlers.click();
     }
 });
 

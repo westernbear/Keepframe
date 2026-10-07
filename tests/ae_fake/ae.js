@@ -10,7 +10,7 @@ function field(target, name, get, set) {
   Object.defineProperty(target, name, { configurable: true, enumerable: true, get, set });
 }
 
-function createAE({ state = {}, documents = process.cwd() } = {}) {
+function createAE({ state = {}, documents = process.cwd(), defaultInterpolation = "LINEAR" } = {}) {
   const context = vm.createContext({});
   const realm = vm.runInContext("({Array: Array, Object: Object, Error: Error, Function: Function})", context);
   const Error = realm.Error;
@@ -102,7 +102,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     }
   }
   const counters = { undoGroups: 0, writes: 0 };
-  const calls = [];
+  const calls = {}, trace = [];
   const testHooks = copy(state.testHooks || {});
   const fault = (operation, matchName) => {
     if (testHooks[`${operation}Property`] === matchName) throw Error(`fake AE: injected ${operation} ${matchName}`);
@@ -304,18 +304,29 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (data.keys.length) throw Error("fake AE: setValue on a keyframed property");
       data.value = encode(v); changed();
     };
-    api.setValueAtTime = (t, v) => {
+    const writeValues = (times, values) => {
       writable();
       fault("write", matchName);
-      finite(t, "key time");
-      const encoded = encode(v), existing = data.keys.find((k) => k.time === t);
-      if (existing) existing.value = encoded;
-      else {
-        const ease = () => Array.from({ length: easeDimensions() }, () => ({ speed: 0, influence: 33.33333333333333 }));
-        data.keys.push({ time: t, value: encoded, inInterpolation: "LINEAR", outInterpolation: "LINEAR", inEases: ease(), outEases: ease() });
-        data.keys.sort((a, b) => a.time - b.time);
+      const byTime = new Map(data.keys.map((k) => [k.time, k]));
+      for (let i = 0; i < times.length; i++) {
+        const t = times[i];
+        finite(t, "key time");
+        const encoded = encode(values[i]), existing = byTime.get(t);
+        if (existing) existing.value = encoded;
+        else {
+          const ease = () => Array.from({ length: easeDimensions() }, () => ({ speed: 0, influence: 16.666667 }));
+          byTime.set(t, { time: t, value: encoded, inInterpolation: defaultInterpolation,
+            outInterpolation: defaultInterpolation, inEases: ease(), outEases: ease() });
+        }
       }
+      data.keys = [...byTime.values()].sort((a, b) => a.time - b.time);
       changed();
+    };
+    api.setValueAtTime = (t, v) => writeValues([t], [v]);
+    api.setValuesAtTimes = (times, values) => {
+      if (!Array.isArray(times) || !Array.isArray(values) || times.length !== values.length)
+        throw Error("fake AE: setValuesAtTimes needs equal arrays");
+      writeValues(times, values);
     };
     api.keyTime = (i) => key(i).time;
     api.keyValue = (i) => { fault("read", matchName); return decode(key(i).value); };
@@ -337,7 +348,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       const k = key(i);
       for (const v of [incoming, outgoing]) if (!["LINEAR", "BEZIER", "HOLD"].includes(v)) throw Error("fake AE: invalid interpolation type");
       k.inInterpolation = incoming; k.outInterpolation = outgoing; changed();
-      calls.push({operation: "interpolation", matchName, key: i});
+      trace.push({operation: "interpolation", matchName, key: i});
     };
     api.keyInInterpolationType = (i) => key(i).inInterpolation;
     api.keyOutInterpolationType = (i) => key(i).outInterpolation;
@@ -355,11 +366,19 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       k.inEases = inEases; k.outEases = outEases; changed();
       if (k.inInterpolation === "LINEAR") k.inInterpolation = "BEZIER";
       if (k.outInterpolation === "LINEAR") k.outInterpolation = "BEZIER";
-      calls.push({operation: "ease", matchName, key: i});
+      trace.push({operation: "ease", matchName, key: i});
     };
     const decodeEases = (eases) => eases.map((e) => KeyframeEase(e.speed, e.influence));
     api.keyInTemporalEase = (i) => decodeEases(key(i).inEases);
     api.keyOutTemporalEase = (i) => decodeEases(key(i).outEases);
+    for (const method of ["setValue", "setValueAtTime", "setValuesAtTimes", "setTemporalEaseAtKey",
+      "setInterpolationTypeAtKey", "keyInInterpolationType"]) {
+      const operation = api[method];
+      api[method] = (...args) => {
+        calls[method] = (calls[method] || 0) + 1;
+        return operation(...args);
+      };
+    }
     return host("Property", api, { data, api });
   }
 
@@ -445,7 +464,8 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     const position = children[1], r = records.get(position);
     const followers = () => children.slice(8, 11);
     r.data.dimensionsSeparated ??= false;
-    const sample = r.api.valueAtTime, setValue = r.api.setValue, setValueAtTime = r.api.setValueAtTime;
+    const sample = r.api.valueAtTime, setValue = r.api.setValue, setValueAtTime = r.api.setValueAtTime,
+      setValuesAtTimes = r.api.setValuesAtTimes;
     const visible = () => children.filter((p, i) => (i < 5 || (i < 8 && layerValues.threeDLayer)
       || (i >= 8 && r.data.dimensionsSeparated && (i < 10 || layerValues.threeDLayer))));
     records.get(g).api.property = (query) => {
@@ -488,6 +508,10 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
     r.api.setValueAtTime = (t, value) => {
       if (r.data.dimensionsSeparated) throw Error("fake AE: setValueAtTime on separated position");
       setValueAtTime(t, value);
+    };
+    r.api.setValuesAtTimes = (times, values) => {
+      if (r.data.dimensionsSeparated) throw Error("fake AE: setValuesAtTimes on separated position");
+      setValuesAtTimes(times, values);
     };
     return g;
   }
@@ -643,7 +667,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       if (!["FootageItem", "CompItem"].includes(records.get(sourceItem)?.type)) throw Error("fake AE: replaceSource requires footage or comp");
       source = canonical(sourceItem);
       records.get(proxy).source = source;
-      calls.push({operation: "replaceSource", index: api.index});
+      trace.push({operation: "replaceSource", index: api.index});
       changed();
     };
     const findGroup = (match) => saved.properties?.find((p) => p.matchName === match);
@@ -671,7 +695,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
       target = canonical(target);
       if (!stack.includes(target)) throw Error("fake AE: move target must be in the same comp");
       if (target === proxy) throw Error("fake AE: cannot move a layer before or after itself");
-      calls.push({operation: offset ? "moveAfter" : "moveBefore", name: values.name, comment: values.comment, target: target.name});
+      trace.push({operation: offset ? "moveAfter" : "moveBefore", name: values.name, comment: values.comment, target: target.name});
       stack.splice(stack.indexOf(proxy), 1); stack.splice(stack.indexOf(target) + offset, 0, proxy);
       changed();
     };
@@ -779,7 +803,7 @@ function createAE({ state = {}, documents = process.cwd() } = {}) {
         return result;
       }) } };
   }
-  return { context, serialize, counters, calls };
+  return { context, serialize, counters, calls, trace };
 }
 
 module.exports = { createAE };

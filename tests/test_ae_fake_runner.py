@@ -16,7 +16,7 @@ def test_run_jsx(tmp_path):
     state = tmp_path / "state.json"
     result = run_jsx(state, script, "sync", "first", documents=tmp_path)
     assert result == {"result": '{"name":"first"}', "value": {"name": "first"},
-                      "undo_groups": 0, "writes": 1}
+                      "undo_groups": 0, "writes": 1, "calls": {}}
     assert json.loads(state.read_text())["project"]["items"][0]["name"] == "first"
     assert run_jsx(state, script, "sync", "second")["value"] == {"name": "first"}
     assert "value" not in run_jsx(state, script, "plain")

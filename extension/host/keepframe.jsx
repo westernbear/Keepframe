@@ -359,19 +359,26 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function writeKeys(p, keys, fps, factor, modelScale) {
-        var i, k, value, dimensions = propertyDimensions(p, true);
+        var i, k, value, times = [], values = [], dimensions = propertyDimensions(p, true), linearize;
         clear(p);
         for (i = 0; i < keys.length; i += 1) {
             k = keys[i];
             value = k[1];
             if (modelScale) { value = [value[0] * factor, value[1] * factor]; }
-            value = paddedValue(p, value, modelScale);
-            if (keys.length === 1) { p.setValue(value); }
-            else {
-                p.setValueAtTime(k[0] / fps, value);
+            times.push(k[0] / fps); values.push(paddedValue(p, value, modelScale));
+        }
+        if (keys.length === 1) { p.setValue(values[0]); return; }
+        // One call for all keys; per-key calls only where an ease is set (linear keys keep AE's defaults).
+        p.setValuesAtTimes(times, values);
+        linearize = p.keyInInterpolationType(1) !== KeyframeInterpolationType.LINEAR;
+        for (i = 0; i < keys.length; i += 1) {
+            k = keys[i];
+            if (k[2] || k[3]) {
                 p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor), eases(k[2], dimensions, factor));
                 p.setInterpolationTypeAtKey(i + 1, k[3] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR,
                     k[2] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR);
+            } else if (linearize) {
+                p.setInterpolationTypeAtKey(i + 1, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
             }
         }
     }
