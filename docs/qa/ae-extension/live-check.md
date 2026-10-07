@@ -178,7 +178,8 @@ Use a saved test project for destructive probes.
    Follow the Pair steps above if the connection was lost.
 4. Select each scene and version. Click **Send to AE** (AE로 보내기).
    Wait for sync to finish. Then click **Verify against AE** (AE와 비교).
-   Verify renders the existing AE comp; it does not send the scene first.
+   Verify sends the selected scene first when AE has another version, then renders it.
+   If AE already has that version, Verify renders the existing comp, including hand edits.
    Time from the Verify click until the comparison result appears.
    This covers render + upload + compare. Record elapsed seconds per scene.
 5. Open **Details** (자세히) in the web card. Run the table checks below.

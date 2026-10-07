@@ -668,9 +668,29 @@ def test_upload_replace_failure_discards_temp_and_keeps_existing_file(server, pr
     directory = tmp_path / "p1" / "ae" / "s1" / "v1"
     assert (directory / "project.zip").read_bytes() == b"original"
     assert list(directory.iterdir()) == [directory / "project.zip"]
-    assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)
+    assert any(record.name == "keepframe.ae" and "upload failed" in record.getMessage() for record in caplog.records)
     assert headers["Authorization"] not in caplog.text
     assert headers["Host"] not in caplog.text
+
+
+def test_upload_oserror_omits_absolute_paths(server, project, tmp_path, monkeypatch, caplog):
+    from keepframe.ae import api
+
+    headers, job = running_upload_job(server, "render_frames")
+    original = api.os.replace
+
+    def fail_upload(source, destination):
+        if ".part-" in str(source):
+            raise PermissionError(errno.EACCES, "Permission denied", str(source), None, str(destination))
+        return original(source, destination)
+
+    monkeypatch.setattr(api.os, "replace", fail_upload)
+    status, response = json_request(server, "PUT", f'/api/ae/jobs/{job["id"]}/files/frame_0000.png',
+                                    headers=headers, body=b"png")
+    assert status == 500
+    assert response == {"error": "upload failed: Permission denied"}
+    assert str(tmp_path) not in caplog.text
+    assert not list((tmp_path / "p1" / "ae" / "s1" / "v1").glob(".*.part-*"))
 
 
 def test_assets_are_also_available_to_the_owning_render_job(server, project):
@@ -911,7 +931,7 @@ def test_server_upload_failure_is_not_a_client_error(server, project, tmp_path, 
                                  headers=headers, body=b"png")
     assert status == expected and isinstance(error["error"], str)
     assert not list(directory.glob(".*.part-*")) and not (directory / "frame_0001.png").exists()
-    assert any(record.name == "keepframe.ae" and record.exc_info for record in caplog.records)
+    assert any(record.name == "keepframe.ae" and "upload failed" in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.parametrize("failure", ["missing", "invalid"])
@@ -1060,6 +1080,21 @@ def test_verify_enqueues_render_frames_with_sampled_frames(server, project, tmp_
     assert verify_request(server, device="missing")[0] == 404
 
 
+@pytest.mark.parametrize("running", [False, True])
+def test_verify_reuses_active_job(server, project, running):
+    from concurrent.futures import ThreadPoolExecutor
+
+    device, headers, synced = running_sync(server)
+    assert finish(server, headers, synced, ok=True, result={"applied": True})[0] == 200
+    first = verify_request(server, device=device, version="v1")[1]["job"]
+    if running:
+        assert poll(server, headers)[1]["job"]["id"] == first["id"]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _: verify_request(server, device=device, version="v1"), range(4)))
+    assert all(status == 202 and value["job"]["id"] == first["id"] for status, value in responses)
+    assert len([job for job in state(server)["jobs"] if job["kind"] == "render_frames"]) == 1
+
+
 def test_render_frames_result_starts_verification_and_state_reports_it(server, project, tmp_path, fake_verify, caplog):
     calls, release = fake_verify
     release.clear()
@@ -1094,6 +1129,9 @@ def test_render_frames_result_starts_verification_and_state_reports_it(server, p
     assert request(server, "GET", path, headers={"Host": "evil.example"})[0] == 403
     logs = [r.getMessage() for r in caplog.records if r.name == "keepframe.ae" and r.levelno == logging.INFO]
     assert any("verification start" in text and "p1" in text and "v1" in text for text in logs)
+    start_log = next(text for text in logs if "verification start" in text)
+    assert start_log == f"After Effects verification start project=p1 scene=s1 version=v1 job={job['id']}"
+    assert "mean=" not in start_log and "passed=" not in start_log
     assert any("verification finish" in text and "0.005" in text and "True" in text for text in logs)
     assert not any(str(tmp_path) in text or headers["Authorization"][7:] in text for text in logs)
     assert job["id"] not in server.ae_routes._uploaded
@@ -1150,6 +1188,24 @@ def test_interrupted_verification_is_reported(server, project, tmp_path):
     for _ in range(11):
         server.ae_routes.jobs.enqueue(job["device"], "sync", "p1", "s1", "v1")
     assert state(server)["verify"]["state"] == "interrupted"
+
+
+@pytest.mark.parametrize("saved", ["{broken", "[]", "null", "42", b"\xff"])
+def test_corrupt_saved_verify_report_does_not_break_state(server, project, tmp_path, caplog, saved):
+    headers, job = running_verify(server)
+    server.ae_routes.jobs.finish(job["id"], True, result={"frames": job["params"]["frames"]})
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1" / "verify"
+    directory.mkdir(parents=True)
+    path = directory / "verify.json"
+    path.write_bytes(saved if isinstance(saved, bytes) else saved.encode())
+    status, response = json_request(server, "GET", "/api/ae/state?project=p1&scene=s1")
+    assert status == 200
+    assert response["verify"] == {"job": job["id"], "version": "v1", "state": "failed",
+                                  "error": "the saved report could not be read — verify again"}
+    assert response["devices"] and response["jobs"]
+    warnings = [record.getMessage() for record in caplog.records if record.name == "keepframe.ae" and record.levelno == logging.WARNING]
+    assert any("saved report could not be read" in message for message in warnings)
+    assert all(str(tmp_path) not in message for message in warnings)
 
 
 @pytest.mark.parametrize("error,expected", [

@@ -317,7 +317,8 @@ def test_hand_edit_warns_without_writes_and_force_restores(extension):
     edited = ext.state.read_bytes()
     assert prop(layers(read_state(ext.state))["kf:title"], "ADBE Position_0")["keys"][0]["value"] == 999
     output, job = sync(ext)
-    assert job["result"] == {"ok": True, "applied": False, "hand_edited": ["kf:title"]}
+    assert job["result"] == {"ok": True, "applied": False, "hand_edited": ["kf:title"],
+                             "timings": job["result"]["timings"]}
     assert output["writes"] == output["undo_groups"] == 0
     assert ext.state.read_bytes() == edited
     assert browser_state(ext)["jobs"][0]["result"]["hand_edited"] == ["kf:title"]
@@ -505,7 +506,8 @@ def test_verify_fails_when_prerequisite_sync_refuses_hand_edits(server, tmp_path
         # Only sync is claimed: the server fails its dependent render without dispatching it.
         output = ext.run("--jobs", 1)
         assert output["results"] == [{"ok": True, "result": {
-            "ok": True, "applied": False, "hand_edited": ["kf:title"]}}]
+            "ok": True, "applied": False, "hand_edited": ["kf:title"],
+            "timings": output["results"][0]["result"]["timings"]}}]
         assert output["writes"] == output["undo_groups"] == 0
         assert output["calls"].get("saveFrameToPng", 0) == 0
         assert ext.state.read_bytes() == before

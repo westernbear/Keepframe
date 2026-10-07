@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006k";
-import { T, Tf } from "/static/js/i18n.js?v=20261006k";
+import { api } from "/static/js/api.js?v=20261006l";
+import { T, Tf } from "/static/js/i18n.js?v=20261006l";
 
 const JOB_HISTORY_LIMIT = 4;
 
@@ -153,7 +153,10 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   function verifyOutcome(report) {
     if (report.state === "rendering") return T("ae.verifyRendering");
     if (report.state === "verifying") return T("ae.verifyVerifying");
-    if (report.state === "failed") return report.error || T("ae.verifyFailed");
+    if (report.state === "failed") {
+      if (report.error === "the saved report could not be read — verify again") return T("ae.verifyUnreadable");
+      return report.error || T("ae.verifyFailed");
+    }
     if (report.state === "interrupted") return T("ae.verifyInterrupted");
     const worst = report.worst[0];
     let text = Tf(report.passed ? "ae.verifyPassed" : "ae.verifyDiffers", {
@@ -161,7 +164,10 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     });
     if (!report.passed) {
       const n = report.frames.filter(row => row.l1 > report.thresholds.frame).length;
-      text += Tf("ae.verifyOver", {n, threshold: Number(percent(report.thresholds.frame))});
+      if (n) text += Tf(n === 1 ? "ae.verifyOverOne" : "ae.verifyOver", {
+        n, threshold: Number(percent(report.thresholds.frame)),
+      });
+      else text += Tf("ae.verifyMeanOver", {mean: percent(report.mean), threshold: Number(percent(report.thresholds.mean))});
     }
     return text;
   }
@@ -174,6 +180,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("verify-report").hidden = !hasReport;
     el("verify-worst").replaceChildren();
     el("verify-notes").replaceChildren();
+    el("verify-outcome").textContent = hasReport ? verifyOutcome(report) : "";
     if (!hasReport) return;
     el("verify-limits").textContent = Tf("ae.verifyLimits", {
       mean: Number(percent(report.thresholds.mean)), frame: Number(percent(report.thresholds.frame)),
@@ -213,7 +220,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const isConnected = Boolean(connected);
     let status = T("ae.notConnected");
     if (isConnected) {
-      const version = connected.ae_version?.split(".").slice(0, 2).join(".");
+      const version = connected.ae_version?.match(/^\d+(?:\.\d+)?/)?.[0];
       status = Tf("ae.connectedDevice", {version: version ? ` ${version}` : ""});
       if (connected.project_name) status += ` · ${connected.project_name}`;
     }
@@ -223,7 +230,12 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (el("connect").parentElement !== connectContainer) connectContainer.prepend(el("connect"));
     el("connect").disabled = busy;
     el("send").disabled = busy || !isConnected || !projectId || !getSceneId() || !getVersionId();
-    el("verify").disabled = el("send").disabled;
+    const verifyActive = ["rendering", "verifying"].includes(snapshot.verify?.state)
+      || snapshot.jobs.some(job => job.kind === "render_frames" && ["queued", "running"].includes(job.state));
+    el("verify").disabled = el("send").disabled || verifyActive;
+    el("verify").setAttribute("aria-describedby", verifyActive && isConnected ? "ae-verify-reason" : "ae-send-reason");
+    el("verify-reason").hidden = !verifyActive || !isConnected;
+    el("verify-reason").textContent = verifyActive && isConnected ? T("ae.verifyBusy") : "";
     el("send-reason").hidden = isConnected;
     el("overwrite-reason").hidden = isConnected;
     if (isConnected !== hadConnection) el("install").open = !isConnected;
@@ -251,9 +263,13 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const latestProgress = latestJob && snapshot.progress[latestJob.id];
     el("latest-progress").hidden = !latestProgress;
     el("latest-progress").textContent = latestProgress ? Tf("ae.progress", latestProgress) : "";
+    const timings = snapshot.jobs.find(job => job.kind === "sync")?.result?.timings;
+    el("sync-timings").hidden = !timings;
+    el("sync-timings").textContent = timings ? Tf("ae.syncTimings", timings) : "";
     const warnings = Array.isArray(latestJob?.result?.warnings) ? latestJob.result.warnings : [];
     el("warnings-details").hidden = !warnings.length;
-    el("warnings-summary").textContent = Tf("ae.warningCount", {n: warnings.length});
+    el("warnings-summary").textContent = warnings.length
+      ? Tf(warnings.length === 1 ? "ae.warningOne" : "ae.warningCount", {n: warnings.length}) : "";
     el("warnings").replaceChildren(...warnings.map(warning => node("li", warning)));
 
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {

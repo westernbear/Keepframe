@@ -358,8 +358,11 @@
             status('Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
             if (!running) throw failure('Disconnected before sync');
             // JSON literals only, including ES3-safe escapes for line/paragraph separators.
-            return hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
+            const result = await hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
                 literal(job.params && job.params.force ? 'true' : 'false') + ')');
+            if (result.timings) log('Sync timings: ' + ['validate', 'read', 'hash', 'assets', 'write', 'order', 'total']
+                .map(stage => stage + ' ' + result.timings[stage] + ' ms').join(', '));
+            return result;
         }
 
         async function renderFrames(job, progress) {
@@ -378,16 +381,16 @@
                 deps.fs.realpath.native(file, (error, resolved) => error ? reject(error) : resolve(resolved));
             });
             const normalize = file => (deps.platform || process.platform) === 'win32' ? file.toLowerCase() : file;
+            const frameNotReady = error => ['ENOENT', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code);
             const frameStat = async file => {
                 let stat;
                 try { stat = await deps.fs.promises.lstat(file); }
-                catch (error) { if (error.code === 'ENOENT') return; invalidFrame('not a regular file'); }
+                catch (error) { if (frameNotReady(error)) return; invalidFrame('not a regular file'); }
                 if (stat.isSymbolicLink()) invalidFrame('symlink');
                 if (!stat.isFile()) invalidFrame('not a regular file');
-                if (stat.size > 25 * 1024 * 1024) invalidFrame();
+                if (stat.size > 25 * 1024 * 1024) invalidFrame('frame larger than 25 MB');
                 return stat;
             };
-            let renderError;
             try {
                 if (!running) throw failure('Disconnected before render');
                 const rendered = await hostCall(context, 'kfRender(' + literal(JSON.stringify({
@@ -436,7 +439,7 @@
                                     head.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
                                     tail.equals(Buffer.from([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130])) &&
                                     (await handle.stat()).size === stat.size && deps.now() < deadline) file.size = stat.size;
-                            } catch (error) { if (error.code !== 'ENOENT') invalidFrame('not a regular file'); }
+                            } catch (error) { if (!frameNotReady(error)) invalidFrame('not a regular file'); }
                             finally { if (handle) await handle.close(); }
                             if (file.size !== undefined) break;
                         }
@@ -460,16 +463,24 @@
                     await send('POST', prefix + '/progress', Object.assign({}, progress));
                 }
                 return {frames: params.frames};
-            } catch (error) { renderError = error; throw error; }
-            finally {
+            } finally {
                 try {
-                    await (deps.fs.promises.rm || deps.fs.promises.rmdir)(folder, {recursive: true, force: true});
+                    if (deps.fs.promises.rm) {
+                        await deps.fs.promises.rm(folder, {recursive: true, force: true, maxRetries: 3, retryDelay: 200});
+                    } else {
+                        for (let attempt = 0; ; attempt++) {
+                            try { await deps.fs.promises.rmdir(folder, {recursive: true}); break; }
+                            catch (error) {
+                                if (attempt === 3 || !['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(error.code)) throw error;
+                                await deps.sleep(200);
+                            }
+                        }
+                    }
                 }
                 catch (error) {
                     if (error.code !== 'ENOENT') {
                         const message = 'Could not remove temporary frame folder (' + (error.code || 'unknown error') + ')';
                         log(message);
-                        if (!renderError) throw failure(message);
                     }
                 }
             }

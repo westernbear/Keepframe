@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261006k" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261006l" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261006k"></script>
-<script type="module" src="/static/js/api.js?v=20261006k"></script>
-<script type="module" src="/static/js/agent.js?v=20261006k"></script>
+<script type="module" src="/static/js/i18n.js?v=20261006l"></script>
+<script type="module" src="/static/js/api.js?v=20261006l"></script>
+<script type="module" src="/static/js/agent.js?v=20261006l"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -135,6 +135,7 @@
 <button id="ae-send" class="btn btn--primary" type="button" data-i18n="ae.send" aria-describedby="ae-send-reason" disabled>AE로 보내기</button>
 <button id="ae-verify" class="btn btn--secondary btn--inline" type="button" data-i18n="ae.verify" aria-describedby="ae-send-reason" disabled>AE와 비교</button>
 <span id="ae-send-reason" class="ae-card__reason" data-i18n="ae.connectionRequired">AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요</span>
+<span id="ae-verify-reason" class="ae-card__reason" hidden></span>
 </div>
 <div id="ae-pairing" class="ae-card__pairing" data-ai-private>
 <div id="ae-code-field" class="ae-card__row" hidden>
@@ -150,12 +151,14 @@
 <details id="ae-details">
 <summary data-i18n="ae.details">자세히</summary>
 <div id="ae-verify-report" class="ae-card__verify-report" hidden>
+<p id="ae-verify-outcome"></p>
 <p id="ae-verify-limits"></p>
 <ul id="ae-verify-worst" class="ae-card__list"></ul>
 <ul id="ae-verify-notes" class="ae-card__list" hidden></ul>
 </div>
 <ul id="ae-devices" class="ae-card__list"></ul>
 <p id="ae-latest-progress" class="render-card__lock" hidden></p>
+<p id="ae-sync-timings" hidden></p>
 <details id="ae-warnings-details" class="ae-card__warnings" hidden>
 <summary id="ae-warnings-summary"></summary>
 <ul id="ae-warnings" class="ae-card__list"></ul>

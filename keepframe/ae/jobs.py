@@ -164,6 +164,11 @@ class Jobs:
         return max(synced, key=lambda job: (job.finished, job.created)).version if synced else None
 
     def _enqueue(self, device, kind, project, scene, version, params, now):
+        if kind == "render_frames":
+            for job in self._jobs.values():
+                if ((job.device, job.kind, job.project, job.scene, job.version) == (device, kind, project, scene, version)
+                        and job.state in {"queued", "running"}):
+                    return job
         dependency = None
         if kind != "sync" and self._last_synced(device, project, scene) != version:
             dependency = self._enqueue(device, "sync", project, scene, version, {}, now).id

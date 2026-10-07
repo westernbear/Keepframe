@@ -26,6 +26,18 @@ const success = {ok: true, applied: true, created: ['kf:a', 'kf:b'], updated: ['
     deleted: [], warnings: ['test warning'], keys: {'kf:a': 4}};
 const never = () => new Promise(() => {});
 
+test('sync timings are logged once and stay out of the panel status', async t => {
+    const timings = {validate: 1, read: 2, hash: 3, assets: 4, write: 5, order: 6, total: 21};
+    const f = await oneJob(t, {prepare: f => {
+        f.deps.evalScript = (script, callback) => callback(JSON.stringify(
+            script.startsWith('kfInfo(') ? info : Object.assign({}, success, {timings})));
+    }});
+    assert.deepEqual(f.result.result.timings, timings);
+    assert.deepEqual(f.logs.filter(message => message.startsWith('Sync timings:')),
+        ['Sync timings: validate 1 ms, read 2 ms, hash 3 ms, assets 4 ms, write 5 ms, order 6 ms, total 21 ms']);
+    assert.equal(f.statuses.some(status => status.message.includes('timings')), false);
+});
+
 async function fixture(t, route) {
     const requests = [], statuses = [], logs = [], scripts = [];
     const documentsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keepframe-panel-'));
@@ -649,6 +661,47 @@ test('a frame that never appears times out after 60 s without any upload', async
     assert.equal(fs.existsSync(f.frameFolder), false);
 });
 
+test('transient Windows frame locks are awaited at stat, open and read until the deadline', async t => {
+    for (const code of ['EBUSY', 'EPERM', 'EACCES']) {
+        for (const operation of ['lstat', 'open', 'read']) {
+            for (const permanent of [false, true]) {
+                let blocked = 0;
+                const f = await oneRenderJob(t, {prepare: f => {
+                    const locked = () => {
+                        blocked++;
+                        if (permanent || blocked <= 2) throw Object.assign(new Error('locked'), {code});
+                    };
+                    f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                        lstat: async file => { if (operation === 'lstat' && file.endsWith('frame_0000.png')) locked(); return fs.promises.lstat(file); },
+                        open: async (file, flags) => {
+                            if (operation === 'open' && file.endsWith('frame_0000.png')) locked();
+                            const handle = await fs.promises.open(file, flags);
+                            if (operation === 'read' && file.endsWith('frame_0000.png')) {
+                                const read = handle.read.bind(handle);
+                                handle.read = async (...args) => { locked(); return read(...args); };
+                            }
+                            return handle;
+                        }
+                    })});
+                }});
+                assert.deepEqual(f.result, permanent ? {ok: false, error: 'AE did not write frame 0 within 60 s'} :
+                    {ok: true, result: {frames: renderJob.params.frames}});
+                assert.ok(blocked >= 3);
+                assert.equal(f.requests.some(req => req.path.includes('/files/')), !permanent);
+                assert.equal(f.logs.some(message => message.includes('Invalid frame from AE')), false);
+            }
+        }
+    }
+});
+
+test('an oversized frame logs its 25 MB limit without a local path', async t => {
+    const f = await oneRenderJob(t, {response: response => fs.truncateSync(response.frames[0].path, 25 * 1024 * 1024 + 1)});
+    assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+    assert.ok(f.logs.includes('Invalid frame from AE: frame larger than 25 MB'));
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(JSON.stringify(f.logs).includes(f.documentsDir), false);
+});
+
 test('truncated PNGs without a signature or IEND never upload', async t => {
     for (const data of [pngBytes.subarray(0, 8), pngBytes.subarray(0, -12),
         Buffer.concat([Buffer.alloc(8), pngBytes.subarray(8)]), Buffer.alloc(0)]) {
@@ -836,19 +889,46 @@ test('frame stream errors close the stream, report safely, and clean the folder'
     assert.equal(JSON.stringify(f.result).includes(f.documentsDir), false);
 });
 
-test('cleanup errors are visible and cannot replace an AE error', async t => {
+test('cleanup errors are logged and preserve uploaded success or an AE error', async t => {
     for (const hostFails of [false, true]) {
         const f = await oneRenderJob(t, {
             response: response => { if (hostFails) { response.ok = false; response.error = 'AE failed'; } },
             prepare: f => {
                 f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
-                    rm: async folder => { throw Object.assign(new Error(folder + ' ' + TOKEN), {code: 'EPERM'}); }
+                    rm: async (folder, options) => {
+                        assert.equal(options.maxRetries, 3);
+                        assert.equal(options.retryDelay, 200);
+                        throw Object.assign(new Error(folder + ' ' + TOKEN), {code: 'EPERM'});
+                    }
                 })});
             }
         });
-        assert.deepEqual(f.result, {ok: false, error: hostFails ? 'AE failed' : 'Could not remove temporary frame folder (EPERM)'});
+        assert.deepEqual(f.result, hostFails ? {ok: false, error: 'AE failed'} :
+            {ok: true, result: {frames: renderJob.params.frames}});
         assert.ok(f.logs.includes('Could not remove temporary frame folder (EPERM)'));
         assertPrivate(f, f.result);
+    }
+});
+
+test('CEP cleanup retries transient errors with a bounded fallback', async t => {
+    for (const fails of [2, 4]) {
+        let attempts = 0, waits = 0;
+        const f = await oneRenderJob(t, {prepare: f => {
+            const sleep = f.deps.sleep;
+            f.deps.sleep = ms => { if (ms === 200) { waits++; return Promise.resolve(); } return sleep(ms); };
+            f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                rm: undefined, rmdir: async (folder, options) => {
+                    attempts++;
+                    if (attempts <= fails) throw Object.assign(new Error(folder), {code: 'EBUSY'});
+                    return fs.promises.rm(folder, options);
+                }
+            })});
+        }});
+        assert.deepEqual(f.result, {ok: true, result: {frames: renderJob.params.frames}});
+        assert.equal(attempts, fails === 2 ? 3 : 4);
+        assert.equal(waits, fails === 2 ? 2 : 3);
+        assert.equal(fs.existsSync(f.frameFolder), fails === 4);
+        assert.equal(f.logs.some(message => message.includes('Could not remove temporary frame folder')), fails === 4);
     }
 });
 

@@ -106,7 +106,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `Folder.myDocuments` / `Folder.userData`: documents argument and LOCALAPPDATA (falling back to documents).
 - `Folder.temp`: `<documents>/temp`; `extension_runner.js` supplies the same directory through its injected `os.tmpdir()` so the panel validates and removes only this run's frame files.
 - `counters.undoGroups` / `counters.writes`: begin calls and project mutations; same-value assignments count, failed mutations/read operations/hydration/serialization/detached value edits/file I/O do not.
-- `createAE().calls`: test-only method-count map for `setValue`, `setValueAtTime`, `setValuesAtTimes`, `setTemporalEaseAtKey`, `setInterpolationTypeAtKey`, and `keyInInterpolationType`; counts attempted calls through these property methods, including reads used by fingerprints. Not exposed to JSX or persisted in project state.
+- `createAE().calls`: test-only method-count map for 11 property methods: `setValue`, `setValueAtTime`, `setValuesAtTimes`, `setTemporalEaseAtKey`, `setInterpolationTypeAtKey`, `keyTime`, `keyValue`, `keyInInterpolationType`, `keyOutInterpolationType`, `keyInTemporalEase`, and `keyOutTemporalEase`; also counts `CompItem.saveFrameToPng`. Counts attempted calls, including reads used by fingerprints. Not exposed to JSX or persisted in project state.
 - `createAE().trace`: test-only array for neighbour moves, source replacements and ease/interpolation call order (the former `calls` array). Optional `state.testHooks.readProperty` / `writeProperty` inject persistent errors for a match name on property value reads/writes (writes throw before mutation); also not AE APIs or JSX members.
 
 ## State

@@ -1,9 +1,9 @@
-import { objectColor } from "/static/js/review/colors.js?v=20261006k";
+import { objectColor } from "/static/js/review/colors.js?v=20261006l";
 import {
   fetchReviewState,
   postApprove,
-} from "/static/js/api.js?v=20261006k";
-import { T, Tf } from "/static/js/i18n.js?v=20261006k";
+} from "/static/js/api.js?v=20261006l";
+import { T, Tf } from "/static/js/i18n.js?v=20261006l";
 import {
   LOADING_PCT_START,
   LOADING_PCT_LIST_BASE,
@@ -12,7 +12,7 @@ import {
   LIST_CHUNK,
   CONSTRAINT_STEP,
   yieldMain,
-} from "/static/js/review/workspace.js?v=20261006k";
+} from "/static/js/review/workspace.js?v=20261006l";
 
 export function attachInspector(ws) {
   const { dom } = ws;

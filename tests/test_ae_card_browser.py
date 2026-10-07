@@ -204,6 +204,12 @@ def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     expect(page.locator("#ae-synced")).to_have_text("AE has v1. 1 updated")
     expect(page.locator("#ae-verify-report")).to_be_visible()
+    expect(page.locator("#ae-verify-report > :first-child")).to_have_text(
+        "Differs from Keepframe (v1): mean 3.6%, worst frame 42 at 8.1%, 3 frames over 4%")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-verify-report > :first-child")).to_have_text(
+        "Keepframe과 다릅니다 (v1): 평균 3.6%, 최대 차이 42번 프레임 8.1%, 4%를 넘는 프레임 3개")
+    page.locator("[data-lang-toggle]").click()
     # A connection lost after painting returns a visible request error.
     server.ae_routes.devices.seen(job["device"], now=0)
     verify.click()
@@ -244,6 +250,23 @@ def test_verify_states_in_both_languages(ae_page, state, ko, en):
     assert not errors
 
 
+def test_unreadable_saved_report_is_a_localized_card_error(ae_page):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = {"job": "j_" + "0" * 16, "version": "v1", "state": "failed",
+              "error": "the saved report could not be read — verify again"}
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    expect(page.locator("#ae-synced")).to_have_text("저장된 비교 결과를 읽을 수 없습니다. 다시 비교하세요")
+    expect(page.locator("#ae-synced")).to_have_class(re.compile(r"\bae-card__error\b"))
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-synced")).to_have_text(report["error"])
+    expect(page.locator("#ae-verify-report")).to_be_hidden()
+    assert not errors
+
+
 def test_verify_report_uses_its_thresholds_and_version(ae_page):
     from playwright.sync_api import expect
 
@@ -265,6 +288,102 @@ def test_verify_report_uses_its_thresholds_and_version(ae_page):
         "Keepframe과 다릅니다 (v4): 평균 3.6%, 최대 차이 42번 프레임 8.1%, 7%를 넘는 프레임 2개")
     expect(page.locator("#ae-verify-limits")).to_have_text("기준: 평균 2.5%, 프레임 7%")
     expect(page.locator("#ae-verify-notes")).to_have_text("e6 · title: Arial로 표시, 글자 영역 차이 5.3%")
+    assert not errors
+
+
+@pytest.mark.parametrize("over,ko,en", [
+    (0, "평균 3.0%가 기준 2.5%를 넘습니다", "mean 3.0% is over the 2.5% limit"),
+    (1, "4%를 넘는 프레임 1개", "1 frame over 4%"),
+    (2, "4%를 넘는 프레임 2개", "2 frames over 4%"),
+])
+def test_verify_failure_explains_mean_or_frame_count(ae_page, over, ko, en):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = verify_report(False) | {"job": "j_" + "0" * 16, "version": "v1", "state": "done", "mean": .03}
+    for i, row in enumerate(report["frames"]):
+        row["l1"] = .05 if i < over else .03
+    report["max"] = report["frames"][0]["l1"]
+    report["worst"] = [{**row, "l1": report["frames"][i]["l1"]} for i, row in enumerate(report["worst"])]
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    expect(page.locator("#ae-synced")).to_contain_text(ko)
+    expect(page.locator("#ae-synced")).not_to_contain_text("프레임 0개")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-synced")).to_contain_text(en)
+    expect(page.locator("#ae-synced")).not_to_contain_text("1 frames")
+    assert not errors
+
+
+def test_warning_count_singular_and_empty_summary(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, _ = connect(page, server)
+    job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    server.ae_routes.jobs.next(device, wait=0)
+    server.ae_routes.jobs.finish(job.id, True, {"applied": True, "warnings": ["Font missing"]})
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-warnings-summary")).to_have_text("경고 1개")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-warnings-summary")).to_have_text("1 warning")
+    job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+    server.ae_routes.jobs.next(device, wait=0)
+    server.ae_routes.jobs.finish(job.id, True, {"applied": True, "warnings": []})
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-warnings-details")).to_be_hidden()
+    expect(page.locator("#ae-warnings-summary")).to_have_text("")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-warnings-summary")).to_have_text("")
+    assert not errors
+
+
+def test_latest_job_without_warnings_clears_summary(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, _ = connect(page, server)
+    for warnings in (["Font missing", "Image missing"], []):
+        job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+        server.ae_routes.jobs.next(device, wait=0)
+        server.ae_routes.jobs.finish(job.id, True, {"applied": True, "warnings": warnings})
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        expect(page.locator("#ae-warnings-summary")).to_have_text("경고 2개" if warnings else "")
+    expect(page.locator("#ae-warnings-details")).to_be_hidden()
+    assert not errors
+
+
+def test_latest_sync_timings_live_only_in_details(ae_page, tmp_path):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, _ = connect(page, server)
+    _, _, actual = host_card_result(tmp_path / "timings")
+    actual["timings"] = {"validate": 1, "read": 2, "hash": 3, "assets": 4, "write": 5, "order": 6, "total": 21}
+    for result in (actual, {"applied": True, "unchanged": 55, "warnings": []}):
+        job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+        server.ae_routes.jobs.next(device, wait=0)
+        server.ae_routes.jobs.finish(job.id, True, result)
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        timings = page.locator("#ae-sync-timings")
+        if "timings" in result:
+            expect(timings).to_be_hidden()
+            page.locator("#ae-details > summary").click()
+            expect(timings).to_have_text("동기화 시간: 검증 1 ms, 읽기 2 ms, 해시 3 ms, 에셋 4 ms, 쓰기 5 ms, 순서 6 ms, 전체 21 ms")
+            expect(timings).to_be_visible()
+            expect(page.locator("#ae-synced")).not_to_contain_text("ms")
+            page.locator("[data-lang-toggle]").click()
+            expect(timings).to_have_text("Sync timings: validate 1 ms, read 2 ms, hash 3 ms, assets 4 ms, write 5 ms, order 6 ms, total 21 ms")
+            render = server.ae_routes.jobs.enqueue(device, "render_frames", "p1", "s1", "v1")
+            server.ae_routes.jobs.next(device, wait=0)
+            server.ae_routes.jobs.finish(render.id, False, error="AE did not write frame 0 within 60 s")
+            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+            expect(timings).to_be_visible()
+            expect(timings).to_have_text("Sync timings: validate 1 ms, read 2 ms, hash 3 ms, assets 4 ms, write 5 ms, order 6 ms, total 21 ms")
+        else:
+            expect(timings).to_be_hidden()
+            expect(timings).to_have_text("")
     assert not errors
 
 
@@ -391,6 +510,50 @@ def test_ae_device_without_version_still_paints(ae_page, version):
     expect(page.locator("#ae-devices")).not_to_contain_text("undefined")
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-status")).to_have_text("AE connected · Example.aep")
+    assert not errors
+
+
+def test_ae_chip_trims_real_build_suffix(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    connect(page, server, INFO | {"ae_version": "26.5x89"})
+    expect(page.locator("#ae-status")).to_have_text("AE 26.5 연결됨 · Example.aep")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-status")).to_have_text("AE 26.5 connected · Example.aep")
+    assert not errors
+
+
+@pytest.mark.parametrize("active", ["rendering", "verifying", "queued", "running"])
+def test_verify_disabled_while_scene_is_being_compared(ae_page, active):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    device, _ = connect(page, server)
+    state = {"devices": server.ae_routes.devices.list(), "jobs": [], "last_synced": {}, "progress": {}}
+    if active in ("rendering", "verifying"):
+        state["verify"] = {"job": "j_" + "0" * 16, "version": "v1", "state": active}
+    else:
+        job = server.ae_routes.jobs.enqueue(device, "render_frames", "p1", "s1", "v1").to_dict()
+        job["state"] = active
+        state["jobs"] = [job]
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json=state))
+    page.reload()
+    verify = page.locator("#ae-verify")
+    expect(verify).to_be_disabled()
+    reason = page.locator("#ae-verify-reason")
+    expect(verify).to_have_attribute("aria-describedby", "ae-verify-reason")
+    expect(reason).to_be_visible()
+    expect(reason).to_have_text("비교가 끝나면 다시 비교할 수 있습니다")
+    expect(page.locator("#ae-send")).to_be_enabled()
+    page.locator("[data-lang-toggle]").click()
+    expect(reason).to_have_text("Verify again when this comparison finishes")
+    state["jobs"] = []
+    state["verify"] = None
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(verify).to_be_enabled()
+    expect(reason).to_be_hidden()
+    expect(reason).to_have_text("")
     assert not errors
 
 

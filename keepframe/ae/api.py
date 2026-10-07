@@ -250,7 +250,14 @@ class AERoutes:
             if path.is_file():
                 if path.resolve().parent != path.parent.resolve():
                     raise FileNotFoundError
-                report = json.loads(path.read_text(encoding="utf-8"))
+                try:
+                    report = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(report, dict):
+                        raise ValueError("invalid saved report")
+                except (OSError, ValueError):
+                    message = "the saved report could not be read — verify again"
+                    log.warning("After Effects %s", message)
+                    return {**state, "state": "failed", "error": message}
                 if report.get("job") == job.id:
                     return {**report, **state, "state": "failed" if "error" in report else "done"}
         return {**state, "state": "interrupted"}
@@ -277,8 +284,8 @@ class AERoutes:
 
     def _run_verification(self, job, ae_frames, snapshot):
         report = {}
-        log.info("After Effects verification start project=%s scene=%s version=%s mean=None passed=None",
-                 job.project, job.scene, job.version)
+        log.info("After Effects verification start project=%s scene=%s version=%s job=%s",
+                 job.project, job.scene, job.version, job.id)
         try:
             with snapshot, self._verify_lock:
                 if self._stop.is_set():
@@ -603,17 +610,19 @@ class AERoutes:
                 os.replace(temporary, directory / name)
                 self._uploaded.setdefault(job.id, set()).add(name)
         except Exception as exc:
-            log.exception("After Effects upload failed")
+            log.error("After Effects upload failed: %s", type(exc).__name__)
             try:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
             except OSError as cleanup_error:
-                log.exception("After Effects upload cleanup failed")
+                log.error("After Effects upload cleanup failed: %s", type(cleanup_error).__name__)
                 exc = cleanup_error
             status = 400 if isinstance(exc, ValueError) else 500
             if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
                 status = 507
-            message = f"upload failed: {exc}"
+            reason = (exc.strerror or type(exc).__name__) if isinstance(exc, OSError) else (
+                str(exc) if isinstance(exc, ValueError) else type(exc).__name__)
+            message = f"upload failed: {reason}"
         finally:
             with self._upload_lock:
                 uploading = self._uploading.get(job.id)
