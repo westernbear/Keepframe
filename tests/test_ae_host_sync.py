@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.ae_fake_runner import run_jsx
-from keepframe.ae.spec import comp_spec, spec_asset_paths
+from keepframe.ae.spec import comp_spec, ease_to_ae, spec_asset_paths
 from keepframe.ir.schema import FontGuess, Group
 from tests.test_ae_spec import EASE, element, png, scene, track
 
@@ -20,6 +20,14 @@ def spec_for(root, *elements, **kwargs):
     value = scene(*elements, **kwargs)
     spec = comp_spec(value, root, project="demo", scene_id="s1", version="v1")
     assets = {name: str(path) for name, path in spec_asset_paths(value, root).items()}
+    return spec, assets
+
+
+def solid_spec_with_x_keys(root, keys):
+    spec, assets = spec_for(root)
+    spec["layers"][0]["props"]["position_x"] = keys
+    spec["comp"]["frames"] = keys[-1][0] + 1
+    spec["layers"][0]["out"] = keys[-1][0]
     return spec, assets
 
 
@@ -36,6 +44,95 @@ def read_state(path):
 
 def save_state(path, state):
     path.write_text(json.dumps(state))
+
+
+def test_render_writes_requested_frames(tmp_path, full_spec):
+    spec, assets = full_spec
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    before = read_state(state_path)
+    job = "j_" + "0" * 16
+    folder = tmp_path / "temp" / ("keepframe-" + job)
+    folder.mkdir(parents=True)
+    (folder / "stale.png").write_bytes(b"stale")
+    out = run_jsx(state_path, HOST, "kfRender", json.dumps({
+        "job": job, "tag": spec["comp"]["tag"], "frames": [0, 5, 29]}), documents=tmp_path)
+    assert out["value"]["ok"], out
+    assert [f["frame"] for f in out["value"]["frames"]] == [0, 5, 29]
+    assert (out["value"]["width"], out["value"]["height"]) == (spec["comp"]["width"], spec["comp"]["height"])
+    for frame in out["value"]["frames"]:
+        file = Path(frame["path"])
+        assert file.is_absolute() and file.parent == folder
+        assert file.name == f"frame_{frame['frame']:04d}.png"
+        from PIL import Image
+        with Image.open(file) as image:
+            image.load()
+            assert image.size == (spec["comp"]["width"], spec["comp"]["height"])
+    assert not (folder / "stale.png").exists()
+    assert out["writes"] == out["undo_groups"] == 0
+    assert out["calls"]["saveFrameToPng"] == 3
+    assert read_state(state_path) == before
+
+
+def test_render_returns_paths_without_waiting_for_writes(tmp_path, full_spec):
+    spec, assets = full_spec
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    state = read_state(state_path)
+    state["testHooks"] = {"frameWriteFails": True}
+    save_state(state_path, state)
+    script = tmp_path / "no-wait.jsx"
+    # Replace the global rather than the fake's read-only sleep member.
+    script.write_text(HOST.read_text() + '\n$ = {sleep: function () { throw new Error("host must not wait"); }};\n')
+    out = run_jsx(state_path, script, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0, 5, 29]}), documents=tmp_path)
+    assert out["value"]["ok"], out
+    assert [f["frame"] for f in out["value"]["frames"]] == [0, 5, 29]
+    assert all(not Path(f["path"]).exists() for f in out["value"]["frames"])
+    assert out["calls"]["saveFrameToPng"] == 3
+    assert out["writes"] == out["undo_groups"] == 0
+
+
+@pytest.mark.parametrize("exporter", ["undefined", "null", "42"])
+def test_render_requires_a_callable_frame_exporter(tmp_path, exporter):
+    script = tmp_path / "unsupported-export.jsx"
+    script.write_text(HOST.read_text() + """
+CompItem = function () {};
+var oldComp = new CompItem();
+oldComp.comment = "keepframe:demo/s1";
+oldComp.duration = 1; oldComp.frameRate = 30;
+oldComp.saveFrameToPng = """ + exporter + ";\n" + """
+app = {project: {items: {length: 1, 1: oldComp}}};
+""")
+    out = run_jsx(tmp_path / "ae.json", script, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": "keepframe:demo/s1", "frames": [0]}), documents=tmp_path)
+    assert out["value"]["ok"] is False, out
+    assert out["value"]["error"] == "this After Effects cannot export frames; update to After Effects 24.1 or newer"
+    assert out["calls"].get("saveFrameToPng", 0) == 0
+
+
+def test_render_without_the_comp_says_send_first(tmp_path):
+    out = run_jsx(tmp_path / "ae.json", HOST, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": "keepframe:demo/s1", "frames": [0]}), documents=tmp_path)
+    assert out["value"]["ok"] is False
+    assert out["value"]["error"] == "the Keepframe comp is missing; send the scene to AE first"
+
+
+@pytest.mark.parametrize("patch", [
+    {"job": "../escape"}, {"tag": None}, {"frames": []}, {"frames": [0, 0]},
+    {"frames": [-1]}, {"frames": [1.5]}, {"frames": [True]}, {"frames": ["0"]},
+    {"frames": [1000000]}, {"frames": list(range(17))},
+])
+def test_render_rejects_invalid_requests_before_writing(tmp_path, patch):
+    spec, assets = spec_for(tmp_path)
+    state_path = tmp_path / "ae.json"
+    sync(state_path, spec, assets)
+    request = {"job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0]}
+    request.update(patch)
+    out = run_jsx(state_path, HOST, "kfRender", json.dumps(request), documents=tmp_path)
+    assert out["value"]["ok"] is False, out
+    assert out["calls"].get("saveFrameToPng", 0) == 0
+    assert not (tmp_path / "temp").exists()
 
 
 def comp(state):
@@ -215,16 +312,50 @@ def test_layers_synced_with_name_and_label_fingerprints_upgrade_without_a_hand_e
     spec, assets = full_spec
     # Builds up to 1.0.238 fingerprinted name and label.
     legacy = HOST.read_text().replace(
-        "if (legacy) { data.push(layer.name, layer.label); }", "data.push(layer.name, layer.label);")
+        "return fingerprint(layer, fps, legacy, timings);", "return fingerprint(layer, fps, true, timings);")
     assert legacy != HOST.read_text()
     legacy_host = tmp_path / "legacy.jsx"
     legacy_host.write_text(legacy)
     path = tmp_path / "ae.json"
     response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
     assert response["value"]["applied"], response
+    before = layers(read_state(path))
     response = sync(path, spec, assets)
     assert response["value"]["applied"] and "hand_edited" not in response["value"], response
+    assert response["value"]["unchanged"] == 5
+    assert response["value"]["updated"] == response["value"]["created"] == response["value"]["deleted"] == []
+    assert response["writes"] == 5  # Only migrate the comments, preserving all AE state.
+    after = layers(read_state(path))
+    for eid in before:
+        assert after[eid]["comment"] != before[eid]["comment"]
+        after[eid]["comment"] = before[eid]["comment"]
+    assert after == before
     assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_layers_synced_with_v1_ease_fingerprints_upgrade_without_a_hand_edit(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    # Run the producer with the original all-key-ease form (without name/label).
+    legacy = HOST.read_text().replace(
+        "return fingerprint(layer, fps, legacy, timings);", 'return fingerprint(layer, fps, "ease", timings);')
+    legacy_host = tmp_path / "v1-ease.jsx"
+    legacy_host.write_text(legacy)
+    path = tmp_path / "ae.json"
+    response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
+    assert response["value"]["applied"]
+    assert response["calls"]["keyInTemporalEase"] == response["calls"]["keyOutTemporalEase"] == 600
+    before = read_state(path)
+    response = sync(path, spec, assets)
+    assert response["value"]["applied"] and "hand_edited" not in response["value"], response
+    assert response["value"]["unchanged"] == 1 and response["value"]["updated"] == []
+    assert response["writes"] == 1
+    after = read_state(path)
+    assert layers(after)["kf:background"]["comment"] != layers(before)["kf:background"]["comment"]
+    layers(after)["kf:background"]["comment"] = layers(before)["kf:background"]["comment"]
+    assert after == before
+    response = sync(path, spec, assets)
+    assert response["writes"] == 0 and response["calls"]["keyValue"] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == response["calls"].get("keyOutTemporalEase", 0) == 0
 
 
 def test_sync_twice_is_a_no_op(tmp_path, full_spec):
@@ -239,6 +370,94 @@ def test_sync_twice_is_a_no_op(tmp_path, full_spec):
     assert response["value"]["unchanged"] == 5
     assert response["value"]["created"] == response["value"]["updated"] == response["value"]["deleted"] == []
     assert read_state(path) == before
+
+
+def test_linear_keys_are_written_in_one_call_per_property(tmp_path):
+    keys = [[f, 320.0 + f, None, None] for f in range(600)]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    result = sync(path, spec, assets)
+    assert result["value"]["applied"]
+    calls = result["calls"]
+    assert calls.get("setValuesAtTimes", 0) == 1
+    assert calls.get("setValueAtTime", 0) == 0
+    assert calls.get("setTemporalEaseAtKey", 0) == 0
+    assert calls.get("setInterpolationTypeAtKey", 0) == 0
+    written = prop(layers(read_state(path))["kf:background"], "ADBE Position_0")["keys"]
+    assert [(k["time"], k["value"]) for k in written] == [(k[0] / 30, k[1]) for k in keys]
+    assert all(k["inInterpolation"] == k["outInterpolation"] == "LINEAR" for k in written)
+    assert all(k["inEases"] == k["outEases"] == [{"speed": 0, "influence": 16.666667}]
+               for k in written)
+    before = read_state(path)
+    assert sync(path, spec, assets)["writes"] == 0
+    assert read_state(path) == before
+
+
+def test_linear_fingerprint_skips_ease_reads(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    response = sync(tmp_path / "ae.json", spec, assets)
+    assert response["value"]["applied"]
+    assert response["calls"]["keyValue"] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == 0
+    assert response["calls"].get("keyOutTemporalEase", 0) == 0
+
+
+def test_unchanged_resend_reads_each_key_once(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    response = sync(path, spec, assets)
+    assert response["value"]["unchanged"] == 1 and response["writes"] == 0
+    for method in ("keyTime", "keyValue", "keyInInterpolationType", "keyOutInterpolationType"):
+        assert response["calls"][method] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == 0
+    assert response["calls"].get("keyOutTemporalEase", 0) == 0
+
+
+def test_eased_keys_still_get_ease_and_bezier(tmp_path):
+    ease = [0.25, 0.1, 0.25, 1.0]
+    converted = ease_to_ae(ease, 0.0, 100.0, 12 / 30)
+    keys = [[0, 0.0, [converted["out"]], None], [12, 100.0, None, [converted["in"]]],
+            [24, 50.0, None, None]]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    result = sync(path, spec, assets)
+    assert result["value"]["applied"]
+    written = prop(layers(read_state(path))["kf:background"], "ADBE Position_0")["keys"]
+    assert [(k["inInterpolation"], k["outInterpolation"]) for k in written] == [
+        ("LINEAR", "BEZIER"), ("BEZIER", "LINEAR"), ("LINEAR", "LINEAR")]
+    assert written[0]["outEases"] == [{"speed": 100, "influence": 25}]
+    assert written[1]["inEases"] == [{"speed": 0, "influence": 75}]
+    assert written[2]["inEases"] == written[2]["outEases"] == [{"speed": 0, "influence": 16.666667}]
+    assert result["calls"].get("setValueAtTime", 0) == 0
+    assert result["calls"]["setTemporalEaseAtKey"] == 2
+    assert result["calls"]["setInterpolationTypeAtKey"] == 2
+    assert result["calls"]["keyInTemporalEase"] == result["calls"]["keyOutTemporalEase"] == 2
+    response = sync(path, spec, assets)
+    assert response["writes"] == 0 and response["calls"]["keyValue"] == 3
+    assert response["calls"]["keyInTemporalEase"] == response["calls"]["keyOutTemporalEase"] == 2
+
+
+@pytest.mark.parametrize("change", ["eased_key_ease", "linear_key_to_bezier"])
+def test_v2_fingerprint_detects_visible_key_hand_edits(tmp_path, change):
+    keys = [[f, float(f), None, None] for f in range(600)]
+    if change == "eased_key_ease":
+        keys[0][2] = [ease_to_ae(EASE, 0, 1, 1 / 30)["out"]]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    state = read_state(path)
+    key = prop(layers(state)["kf:background"], "ADBE Position_0")["keys"][0]
+    if change == "eased_key_ease":
+        key["outEases"][0]["speed"] += 1
+    else:
+        key["outInterpolation"] = "BEZIER"
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:background"]}
+    assert response["calls"]["keyInTemporalEase"] > 0 and response["calls"]["keyOutTemporalEase"] > 0
+    assert response["writes"] == response["undo_groups"] == 0
+    assert read_state(path) == state
 
 
 def test_2d_sync_preserves_hidden_3d_properties_and_ignores_them_in_fingerprints(tmp_path, full_spec):
@@ -301,7 +520,7 @@ def test_model_sync_manages_3d_properties_and_force_clears_them(tmp_path, full_s
     prop(model, match).update(keys=keys, expression="value", expressionEnabled=True)
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:model"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:model"]}
     assert response["writes"] == 0
     response = sync(path, spec, assets, force=True)
     assert response["value"]["ok"] and response["value"]["updated"] == ["kf:model"], response
@@ -449,7 +668,7 @@ def test_hand_edit_refuses_before_any_write_and_force_applies(tmp_path, full_spe
     changed["comp"]["name"] = "New comp name"
     changed["assets"][0]["sha256"] = "a" * 64
     response = sync(path, changed, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:image"]}
     assert response["writes"] == response["undo_groups"] == 0
     assert read_state(path) == before
     response = sync(path, changed, assets, force=True)
@@ -530,7 +749,7 @@ def test_user_extras_survive_updates_and_protect_destructive_changes(tmp_path, f
         assert (effects(item) if extra == "effect" else prop(item, "ADBE Mask Parade")["properties"]) == [added]
         assert sync(path, spec, assets)["writes"] == 0
     else:
-        assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+        assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:image"]}
         assert response["writes"] == response["undo_groups"] == 0
         assert read_state(path) == before
         assert sync(path, spec, assets, force=True)["value"]["applied"]
@@ -553,7 +772,7 @@ def test_enabled_expression_is_a_hand_edit_and_force_disables_it(tmp_path, full_
     p.update(expression="value", expressionEnabled=True)
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": [eid]}
     assert response["writes"] == response["undo_groups"] == 0
     assert sync(path, spec, assets, force=True)["value"]["updated"] == [eid]
     assert prop(layers(read_state(path))[eid], match)["expressionEnabled"] is False
@@ -593,7 +812,7 @@ def test_fingerprint_covers_managed_state(tmp_path, full_spec, change):
         assert response["value"]["applied"]
         assert read_state(path) == state
     else:
-        assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
+        assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": [eid]}
     assert response["writes"] == 0
 
 
@@ -811,6 +1030,69 @@ def test_fps_change_retimes_layers_even_when_layer_spec_hash_is_unchanged(tmp_pa
     assert sync(path, changed)["writes"] == 0
 
 
+def test_final_identical_layers_retime_from_30_to_25_fps(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[0, 0, None, None], [30, 100, None, None]])
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    original = copy.deepcopy(spec["layers"])
+    spec["comp"]["fps"] = 25
+    result = sync(path, spec, assets)
+    assert spec["layers"] == original
+    assert result["value"]["updated"] == ["kf:background"]
+    assert result["value"]["unchanged"] == 0
+    assert [key["time"] for key in prop(layers(read_state(path))["kf:background"], "ADBE Position_0")["keys"]] == [0, 1.2]
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_final_model_same_name_new_bytes_is_updated(tmp_path, full_spec):
+    import hashlib
+
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    original = copy.deepcopy(spec["layers"])
+    model = Path(assets["model.glb"])
+    model.write_bytes(model.read_bytes().replace(b'"2.0"', b'"2.1"'))
+    next(asset for asset in spec["assets"] if asset["name"] == "model.glb")["sha256"] = hashlib.sha256(model.read_bytes()).hexdigest()
+    result = sync(path, spec, assets)
+    assert spec["layers"] == original
+    assert result["value"]["updated"] == ["kf:model"]
+    assert result["value"]["unchanged"] == 4
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_final_sync_timings_are_nonnegative_integers_and_noop_has_no_writes(tmp_path, full_spec):
+    spec, assets = full_spec
+    path = tmp_path / "ae.json"
+    for resend in (False, True):
+        response = sync(path, spec, assets)
+        timings = response["value"]["timings"]
+        assert set(timings) == {"validate", "read", "hash", "assets", "write", "order", "total"}
+        assert all(type(ms) is int and ms >= 0 for ms in timings.values())
+        assert response["value"]["applied"] is True
+        if resend:
+            assert response["writes"] == 0
+            assert response["value"]["unchanged"] == len(spec["layers"])
+
+
+def test_final_sync_timings_do_not_charge_json_hashing_to_ae_reads(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[0, 0, None, None], [30, 100, None, None]])
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    script = tmp_path / "clocked-host.jsx"
+    script.write_text(HOST.read_text() + """
+var clock = 0;
+Date = function () { this.getTime = function () { return clock; }; };
+var stringify = JSON.stringify;
+JSON.stringify = function (value) { clock += 7; return stringify(value); };
+""")
+    response = run_jsx(path, script, "kfSync", json.dumps(spec), json.dumps(assets), "false")
+    assert response["value"]["timings"] == {"validate": 0, "read": 0, "hash": 14,
+                                            "assets": 0, "write": 0, "order": 0, "total": 14}
+    assert response["calls"]["keyTime"] > 0
+    assert response["writes"] == 0
+
+
 @pytest.mark.parametrize("field,value", [("width", 0), ("width", 1.5), ("fps", 0), ("frames", -1)])
 def test_invalid_comp_settings_fail_before_writes(tmp_path, field, value):
     spec, _ = spec_for(tmp_path)
@@ -925,7 +1207,7 @@ def test_review_changed_source_is_a_hand_edit(tmp_path, full_spec, edit):
         state["project"]["items"][item["source"] - 1]["width"] = 100
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": [eid]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": [eid]}
     assert response["writes"] == response["undo_groups"] == 0
     assert sync(path, spec, assets, force=True)["value"]["applied"]
     assert sync(path, spec, assets)["writes"] == 0
@@ -995,7 +1277,7 @@ def test_review_untagged_dependents_protect_destructive_changes(tmp_path, relati
         replacement, _ = spec_for(tmp_path, element("a", kind="group"))
         spec["layers"][1] = replacement["layers"][1]
     response = sync(path, spec)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:a"]}
     assert response["writes"] == response["undo_groups"] == 0
     assert sync(path, spec, force=True)["value"]["applied"]
 
@@ -1014,7 +1296,7 @@ def test_review_partial_failure_tags_new_layer_and_retry_has_no_duplicate(tmp_pa
     save_state(path, state)
     interrupted = stack_ids(state)
     response = sync(path, spec)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": interrupted,
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": interrupted,
                                  "interrupted": interrupted}
     assert response["writes"] == response["undo_groups"] == 0
     response = sync(path, spec, force=True)
@@ -1052,7 +1334,7 @@ def test_review_owned_effect_updates_preserve_user_order_and_enabled_state(tmp_p
     effects(layers(state)["kf:image"])[0]["enabled"] = False
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:image"]}
     assert response["writes"] == 0
     spec["layers"][1]["props"]["rotation"] = [[0, 15, None, None]]
     assert sync(path, spec, assets, force=True)["value"]["updated"] == ["kf:image"]
@@ -1096,7 +1378,7 @@ def test_review_fingerprint_read_failure_is_hand_edit_and_force_does_not_throw(t
     state["testHooks"] = {"readProperty": "ADBE Text Document"}
     save_state(path, state)
     response = sync(path, spec)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:a"]}
     assert response["writes"] == response["undo_groups"] == 0
     # Transform reads can fail persistently without preventing a forced write.
     state["testHooks"] = {"readProperty": "ADBE Scale"}
@@ -1247,7 +1529,7 @@ def test_fix2_force_resets_owned_effect_unwritten_parameters(tmp_path, full_spec
         prop(skew, match)["value"] = 50
     save_state(path, state)
     response = sync(path, spec, assets)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:image"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:image"]}
     assert response["writes"] == response["undo_groups"] == 0
     response = sync(path, spec, assets, force=True)
     assert response["value"]["updated"] == ["kf:image"], response
@@ -1265,7 +1547,7 @@ def test_fix2_force_enables_user_disabled_text_fill(tmp_path):
     doc.update(applyFill=False, tracking=37, applyStroke=True, strokeColor=[1, 0, 0])
     save_state(path, state)
     response = sync(path, spec)
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:a"]}
     assert response["writes"] == response["undo_groups"] == 0
     response = sync(path, spec, force=True)
     assert response["value"]["ok"] and response["value"]["updated"] == ["kf:a"], response
@@ -1287,7 +1569,7 @@ def test_fix2_partial_tags_report_interrupted_ids(tmp_path, partial):
     save_state(path, state)
     response = sync(path, spec)
     ids = ["kf:a", "kf:background"]
-    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ids, "interrupted": ids}
+    assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ids, "interrupted": ids}
     assert response["writes"] == response["undo_groups"] == 0
     assert sync(path, spec, force=True)["value"]["applied"]
     assert len(comp(read_state(path))["layers"]) == len(spec["layers"])
@@ -1317,7 +1599,7 @@ def test_fix2_tagged_layer_user_relationships_are_extras(tmp_path, relation, act
         assert response["value"]["updated"] == ["kf:a"], response
         assert layers(read_state(path))["kf:a"][relation] == len(comp(read_state(path))["layers"])
     else:
-        assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:a"]}
+        assert response["value"] == {"timings": response["value"]["timings"], "ok": True, "applied": False, "hand_edited": ["kf:a"]}
         assert response["writes"] == response["undo_groups"] == 0
         assert read_state(path) == state
         assert sync(path, spec, force=True)["value"]["applied"]

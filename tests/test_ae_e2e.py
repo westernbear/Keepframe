@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from keepframe.ir.schema import Background, FontGuess, Scene
+from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Scene
 from keepframe.ir.store import init_project, load_scene, new_version, scene_dir
 from tests.ae_fake_runner import run_jsx
-from tests.test_ae_api import json_request
+from tests.test_ae_api import json_request, request, verify_request
 from tests.test_ae_host_sync import comp, effects, layers, prop, read_state
 from tests.test_ae_spec import element, png, track
 from tests.test_web_server import start
@@ -177,6 +177,35 @@ def test_pair_announces_real_fake_ae_info(extension):
     assert ext.pairing["results"] == [] and ext.pairing["writes"] == 0
 
 
+@pytest.mark.parametrize("write_delay", [0, 1500])
+def test_render_frames_uploads_real_fake_pngs_and_posts_the_frame_list(extension, monkeypatch, write_delay):
+    # Task 4 exercises the transport; Task 6 covers the comparison renderer.
+    monkeypatch.setattr("keepframe.ae.api.verify", lambda *args, **kwargs: {
+        "passed": True, "mean": 0, "frames": []})
+    ext = extension
+    sync(ext)
+    before = read_state(ext.state)
+    before["testHooks"] = {"frameWriteDelayMs": write_delay}
+    ext.state.write_text(json.dumps(before))
+    routes = ext.server.ae_routes
+    queued = routes.jobs.enqueue(ext.device, "render_frames", "p1", "s1", "v1", params={
+        "frames": [0, 5, 59], "tag": "keepframe:p1/s1"})
+    output = ext.run("--jobs", 1)
+    assert output["results"] == [{"ok": True, "result": {"frames": [0, 5, 59]}}]
+    assert routes.jobs.get(queued.id).state == "done"
+    assert output["writes"] == output["undo_groups"] == 0
+    assert read_state(ext.state) == before
+    from PIL import Image
+    for frame in (0, 5, 59):
+        file = routes.workspace / "p1" / "ae" / "s1" / "v1" / f"frame_{frame:04d}.png"
+        with Image.open(file) as image:
+            image.load()
+            assert image.size == (320, 180)
+    assert not (ext.documents / "temp" / ("keepframe-" + queued.id)).exists()
+    assert any(status["message"] == "Rendered 3 frames — Keepframe is comparing them"
+               for status in output["statuses"])
+
+
 def test_sync_builds_comp_effects_model_and_downloaded_assets(extension):
     ext = extension
     output, job = sync(ext)
@@ -288,7 +317,8 @@ def test_hand_edit_warns_without_writes_and_force_restores(extension):
     edited = ext.state.read_bytes()
     assert prop(layers(read_state(ext.state))["kf:title"], "ADBE Position_0")["keys"][0]["value"] == 999
     output, job = sync(ext)
-    assert job["result"] == {"ok": True, "applied": False, "hand_edited": ["kf:title"]}
+    assert job["result"] == {"ok": True, "applied": False, "hand_edited": ["kf:title"],
+                             "timings": job["result"]["timings"]}
     assert output["writes"] == output["undo_groups"] == 0
     assert ext.state.read_bytes() == edited
     assert browser_state(ext)["jobs"][0]["result"]["hand_edited"] == ["kf:title"]
@@ -380,3 +410,115 @@ def test_progress_keeps_slow_eval_alive_past_sweep_threshold(isolated_server, tm
         job = next(job for job in browser_state(ext)["jobs"] if job["id"] == sent["id"])
         assert job["state"] == "done" and job["error"] is None
         assert browser_state(ext)["progress"] == {}
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("with_sprite", [False, True], ids=["background-only", "missing-sprite"])
+def test_pair_sync_render_and_verify_with_real_renderer(server, tmp_path, with_sprite):
+    root = server.ae_routes.workspace / "p1"
+    directory = scene_dir(root, "s1")
+    value = Scene(id="s1", size=(64, 36), fps=30, frames=6,
+                  background=Background(value="#102030"), elements=[])
+    if with_sprite:
+        png(directory / "assets" / "verify-sprite.png", 24, 16)
+        value.elements = [Element(id="sprite", kind="sprite", visible=(2, 4),
+            canonical=Canonical(width=24, height=16, texture="assets/verify-sprite.png"),
+            tracks={"x": track((0, 32)), "y": track((0, 18))})]
+    version = new_version(root, "s1", value, "small end-to-end verification scene")
+    with paired(server, tmp_path / "panel") as ext:
+        status, queued = verify_request(server, version=version.id)
+        assert status == 202
+        render_job = queued["job"]
+        assert render_job["kind"] == "render_frames" and render_job["state"] == "queued"
+        assert render_job["params"] == {"frames": list(range(6)), "tag": "keepframe:p1/s1"}
+        assert render_job["depends_on"] is not None
+        assert browser_state(ext)["verify"] == {
+            "job": render_job["id"], "version": version.id, "state": "rendering"}
+
+        output = ext.run("--jobs", 2)
+        assert len(output["results"]) == 2
+        assert output["results"][0]["ok"] is True and output["results"][0]["result"]["applied"] is True
+        assert output["results"][1] == {"ok": True, "result": {"frames": list(range(6))}}
+        assert output["calls"]["saveFrameToPng"] == 6
+        assert output["undo_groups"] == 1
+        state = browser_state(ext)
+        jobs = {job["id"]: job for job in state["jobs"]}
+        prerequisite = jobs[render_job["depends_on"]]
+        assert prerequisite["kind"] == "sync" and prerequisite["version"] == version.id
+        assert prerequisite["state"] == jobs[render_job["id"]]["state"] == "done"
+        assert state["last_synced"][ext.device] == version.id
+        assert not (ext.documents / "temp" / ("keepframe-" + render_job["id"])).exists()
+
+        deadline = time.monotonic() + 30
+        report = state["verify"]
+        while report["state"] in {"rendering", "verifying"} and time.monotonic() < deadline:
+            time.sleep(0.05)
+            report = browser_state(ext)["verify"]
+        assert report["state"] == "done", report
+        assert (report["job"], report["version"]) == (render_job["id"], version.id)
+        assert report["passed"] is (not with_sprite)
+        assert report["thresholds"] == {"mean": 0.025, "frame": 0.04}
+        assert [row["frame"] for row in report["frames"]] == list(range(6))
+        assert report["notes"] == report["masked"] == []
+        if with_sprite:
+            assert {row["frame"] for row in report["worst"]} == {2, 3, 4}
+            assert report["mean"] > 0.025 and report["max"] > 0.04
+            assert all(row["l1"] > 0.04 if 2 <= row["frame"] <= 4 else row["l1"] == 0
+                       for row in report["frames"])
+        else:
+            assert report["mean"] == report["max"] == 0
+            assert all(row["l1"] == 0 for row in report["frames"])
+
+        saved = root / "ae" / "s1" / version.id / "verify"
+        assert json.loads((saved / "verify.json").read_text()) == {
+            key: val for key, val in report.items() if key != "state"}
+        assert len(report["worst"]) == 3
+        for row in report["worst"]:
+            for kind in ("ae", "kf", "diff"):
+                image = saved / row[kind]
+                assert image.is_file()
+                url = (f"/api/ae/verify-image?project=p1&scene=s1&version={version.id}"
+                       f"&name={row[kind]}&job={render_job['id']}")
+                status, headers, body = request(server, "GET", url, browser=True)
+                assert status == 200 and headers["content-type"] == "image/png"
+                assert body.startswith(b"\x89PNG\r\n\x1a\n") and body == image.read_bytes()
+
+
+def test_verify_fails_when_prerequisite_sync_refuses_hand_edits(server, tmp_path):
+    with paired(server, tmp_path / "panel") as ext:
+        sync(ext)
+        edit(ext, """
+    for (i = 1; i <= comp.layers.length; i += 1) {
+        if (comp.layers[i].comment.indexOf("keepframe:kf:title;") === 0) {
+            comp.layers[i].property("ADBE Transform Group").property("ADBE Position_0").setValueAtTime(0, 999);
+        }
+    }
+""")
+        before = ext.state.read_bytes()
+        root = server.ae_routes.workspace / "p1"
+        value = load_scene(scene_dir(root, "s1") / "scene.v1.json")
+        value.elements[0].tracks["x"] = track((0, 75), (30, 175))
+        version = new_version(root, "s1", value, "update title after hand edit")
+        status, queued = verify_request(server, version=version.id)
+        assert status == 202
+        render_job = queued["job"]
+        assert render_job["kind"] == "render_frames" and render_job["depends_on"] is not None
+        # Only sync is claimed: the server fails its dependent render without dispatching it.
+        output = ext.run("--jobs", 1)
+        assert output["results"] == [{"ok": True, "result": {
+            "ok": True, "applied": False, "hand_edited": ["kf:title"],
+            "timings": output["results"][0]["result"]["timings"]}}]
+        assert output["writes"] == output["undo_groups"] == 0
+        assert output["calls"].get("saveFrameToPng", 0) == 0
+        assert ext.state.read_bytes() == before
+        assert any("edited by hand" in status["message"] for status in output["statuses"])
+        state = browser_state(ext)
+        jobs = {job["id"]: job for job in state["jobs"]}
+        assert jobs[render_job["depends_on"]]["state"] == "done"
+        failed = jobs[render_job["id"]]
+        assert failed["state"] == "failed" and failed["started"] is None and failed["result"] is None
+        assert failed["error"] == "AE layers were edited by hand; resend with overwrite"
+        assert state["verify"] == {"job": render_job["id"], "version": version.id,
+                                  "state": "failed", "error": failed["error"]}
+        assert state["last_synced"][ext.device] == "v1"
+        assert not (root / "ae" / "s1" / version.id).exists()

@@ -1,12 +1,14 @@
 # After Effects extension: install and live check
 
 This checks slice 1: pairing and editable composition sync on Windows.
+It also checks slice 2: Verify against AE.
 The controller builds the signed bundle and runs the check with the user.
 Results are recorded in [README.md](README.md), including the completed live check.
 
 The target is AE 24.0+. The current manifest requires AE 24.1+ and CEP 11.
 Use AE 24.1+ for this bundle. The host's model-version gate starts at 24.0.
-Verify, final render, package, and live agent control arrive in later slices.
+Verify against AE is available. Final render, package, and live agent control
+arrive in later slices.
 
 ## Server side (controller)
 
@@ -39,7 +41,7 @@ Verify, final render, package, and live agent control arrive in later slices.
 ## Install on Windows
 
 1. Open the test project's agent page in Keepframe.
-   In the **After Effects** card, open **Install / reinstall** (설치 / 재설치).
+   In the **After Effects** card, open **Install or connect another AE** (설치 · 다른 AE 연결).
    Click **Download extension** (확장 다운로드). Save `keepframe.zxp` in Downloads.
 2. Close AE. Open PowerShell (as administrator if required).
    Run the card's exact Adobe UPIA command:
@@ -53,7 +55,7 @@ Verify, final render, package, and live agent control arrive in later slices.
 
    Alternatively, install that file with the aescripts ZXP Installer.
 3. Restart AE. Open **Window > Extensions > Keepframe** (창 > 확장 > Keepframe).
-   Record the panel's **Extension version** (확장 버전).
+   Record the panel's **Extension** (확장) version and build.
 
 ## Pair
 
@@ -156,6 +158,69 @@ Use a saved test project for destructive probes.
 | A41 | Tailscale DNS pinning and TLS | Pair over real Tailscale IPv4 and IPv6. Have the controller inspect checked-IP connections. A disallowed HTTP resolution must fail before sending credentials. For HTTPS, confirm certificate trust errors remain visible. | |
 | A42 | CEP clipboard and download link | Copy the log and paste elsewhere. Confirm no pairing code/token. Open the update link and confirm CEP's native clipboard permissions and new-window handling allow copy and ZXP download. | |
 | A43 | Hand-edit result and force transport | Hand-edit a managed AE value and resend. Compare the panel/web warning with the controller's raw `applied: false` and `hand_edited` result. Confirm the web overwrite sends force and the host receives the string `"true"`. | |
+
+## Slice 2: verify
+
+1. Wait for the controller to build the new signed bundle and restart the server
+   from this worktree. In the web **After Effects** card, open
+   **Install or connect another AE** (설치 · 다른 AE 연결).
+   Click **Download extension** (확장 다운로드).
+   Replace `keepframe.zxp` in Downloads with the new file.
+2. Close AE. Install the new ZXP with the same PowerShell UPIA command:
+
+   ```powershell
+   & "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$env:USERPROFILE\Downloads\keepframe.zxp"
+   ```
+
+   Change the last path if you saved the file elsewhere.
+3. Restart AE and reopen the Keepframe panel.
+   Record the **Extension** (확장) version and build.
+   Follow the Pair steps above if the connection was lost.
+4. Select each scene and version. Click **Send to AE** (AE로 보내기).
+   Wait for sync to finish. Then click **Verify against AE** (AE와 비교).
+   Verify sends the selected scene first when AE has another version, then renders it.
+   If AE already has that version, Verify renders the existing comp, including hand edits.
+   Time from the Verify click until the comparison result appears.
+   This covers render + upload + compare. Record elapsed seconds per scene.
+5. Open **Details** (자세히) in the web card. Run the table checks below.
+   Copy the metrics before moving to the next scene.
+   Fill [Live check 3 (slice 2)](README.md#live-check-3-slice-2).
+   Leave unrun results blank. Record unavailable probes under Findings.
+
+Verify compares 16 sampled frames, or all frames when the scene has fewer than 16.
+The calibrated pass rule is mean normalized RGB L1 ≤ 0.025 and maximum frame L1 ≤ 0.04.
+The web report shows percentages. Use normalized values in the Calibration table
+(for example, 2% is 0.02).
+
+| # | Check | How | Expected | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Verify reveal text | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 2 | Verify image background | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 3 | Verify spinning GLB | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 4 | Verify ig2demo | Click **Verify against AE** (AE와 비교) after sending `ig2demo`. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
+| 5 | Worst-frame images | Open **Details** (자세히). Open each worst-frame image in a new tab. | Up to three worst frames show **After Effects**, **Keepframe**, and **Difference** (차이). All images load. | |
+| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the layer name, replacement font, and worst region difference in Korean and English. | One localized line per region names the substituted font and worst percentage. No duplicate English notes. These regions are excluded from the pass score. | |
+| 7 | Large sync time | Have the controller prepare a changed version or fresh test comp for the ~120k-key `ae-live-long` scene. Time **Send to AE** (AE로 보내기) until sync finishes. | Target: under 2 minutes. Record actual seconds and outcome. Slice-1 live check 2 took over 10 minutes. | |
+| 8 | Key interpolation through the Higgsfield bridge | Have the controller call `ae_get_keyframes` on animated properties with an eased key and a linear key. Record in/out interpolation, influence, and speed. | Eased sides report `BEZIER` with the intended ease values. A linear key reports `LINEAR` on both sides. | |
+| 9 | `saveFrameToPng` in Korean AE 26.5 | Run Verify in the user's Korean AE 26.5. Have the controller watch the temporary files and inspect the PNGs during export. Compare the render queue and undo history before and after Verify. | Files appear and become complete PNGs. The job's temp folder is removed after upload. Verify adds no render-queue items or undo steps. | |
+| 10 | Windows temp-folder agreement | Have the controller compare AE's `Folder.temp.fsName` with the panel's `os.tmpdir()`. Inspect the returned frame paths. | The `keepframe-<job id>` folders resolve to the same location. A mismatch fails with `Invalid frame from AE`. | |
+| 11 | AE dialog during Verify | Open a dialog in Korean AE during Verify. Record its name, how long it stays open, progress, and outcome. Dismiss it and retry once AE responds if needed. | If the dialog blocks the host call for 10 minutes, it times out. The reason says AE may still be working on a large scene or waiting for a dialog. | |
+| 12 | Verify without connected AE | Click **Disconnect** (연결 해제), then **Yes** (예) in the web card. Wait for **Not connected** (연결 안 됨). Inspect Verify. | **Verify against AE** (AE와 비교) is disabled. The reason reads “AE is not connected — open the Keepframe panel in After Effects” (AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요). | |
+
+### Calibration
+
+Keep the rule unchanged.
+
+Live check 3 in AE 26.5 measured worst mean 0.0115 and worst frame 0.0188.
+Twice those values are 0.023 and 0.0376; rounding up to 0.005 gives
+`VERIFY_MEAN_MAX = 0.025` and `VERIFY_FRAME_MAX = 0.04`.
+
+1. Use only scenes that look right. Record each scene's mean / max / pass.
+2. Set `VERIFY_MEAN_MAX` to 2× the worst observed mean.
+   Set `VERIFY_FRAME_MAX` to 2× the worst observed maximum frame error.
+3. Round each threshold up to a multiple of 0.005.
+   Never set it below observed noise.
+   The controller updates the constants and records the calibrated limits.
 
 ## What to send back
 

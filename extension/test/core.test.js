@@ -15,6 +15,7 @@ const core = require('../js/core');
 const TOKEN = 'private-device-token-123456';
 const CODE = 'KF-ABCD-1234';
 const bytes = Buffer.from('test asset bytes');
+const pngBytes = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082', 'hex');
 const sha = crypto.createHash('sha256').update(bytes).digest('hex');
 const info = {ok: true, host_build: 'dev', ae_version: '25.0', project_name: '한글 Project.aep',
     project_saved: true, fonts: [{family: 'Arial', style: 'Regular', postscript: 'ArialMT'}]};
@@ -25,15 +26,28 @@ const success = {ok: true, applied: true, created: ['kf:a', 'kf:b'], updated: ['
     deleted: [], warnings: ['test warning'], keys: {'kf:a': 4}};
 const never = () => new Promise(() => {});
 
+test('sync timings are logged once and stay out of the panel status', async t => {
+    const timings = {validate: 1, read: 2, hash: 3, assets: 4, write: 5, order: 6, total: 21};
+    const f = await oneJob(t, {prepare: f => {
+        f.deps.evalScript = (script, callback) => callback(JSON.stringify(
+            script.startsWith('kfInfo(') ? info : Object.assign({}, success, {timings})));
+    }});
+    assert.deepEqual(f.result.result.timings, timings);
+    assert.deepEqual(f.logs.filter(message => message.startsWith('Sync timings:')),
+        ['Sync timings: validate 1 ms, read 2 ms, hash 3 ms, assets 4 ms, write 5 ms, order 6 ms, total 21 ms']);
+    assert.equal(f.statuses.some(status => status.message.includes('timings')), false);
+});
+
 async function fixture(t, route) {
     const requests = [], statuses = [], logs = [], scripts = [];
     const documentsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keepframe-panel-'));
     const server = http.createServer(async (req, res) => {
         const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
-        const raw = Buffer.concat(chunks).toString();
-        const request = {method: req.method, path: req.url, headers: req.headers, raw,
-            body: raw ? JSON.parse(raw) : undefined};
+        try { for await (const chunk of req) chunks.push(chunk); }
+        catch (error) { if (req.aborted) return; throw error; }
+        const data = Buffer.concat(chunks), raw = data.toString();
+        const request = {method: req.method, path: req.url, headers: req.headers, raw, data,
+            body: raw && req.headers['content-type'] === 'application/json' ? JSON.parse(raw) : undefined};
         requests.push(request);
         const reply = (status, body, headers) => {
             res.writeHead(status, headers || {'Content-Type': 'application/json'});
@@ -483,11 +497,458 @@ test('unparseable and failed evalScript results fail jobs with safe raw output a
 });
 
 test('unsupported job kinds post readable failures', async t => {
-    for (const kind of ['render_frames', 'render_final', 'package']) {
+    for (const kind of ['render_final', 'package']) {
         const f = await oneJob(t, {job: {kind}});
         assert.deepEqual(f.result, {ok: false, error: kind + ' is not supported by this extension version'});
         assert.equal(f.requests.some(req => req.path.endsWith('/spec')), false);
     }
+});
+
+const renderJob = {id: 'j_' + '0'.repeat(16), kind: 'render_frames',
+    project: 'demo', scene: 's1', version: 'v7', params: {frames: [0, 5, 10000], tag: 'keepframe:demo/s1'}};
+
+async function oneRenderJob(t, options = {}) {
+    return oneJob(t, {job: Object.assign({}, renderJob, options.job),
+        route: (req, reply, res) => {
+            if (options.route && options.route(req, reply, res)) return true;
+            if (req.path.includes('/files/')) { reply(204); return true; }
+        }, prepare: async f => {
+            const folder = path.join(f.documentsDir, 'temp', 'keepframe-' + renderJob.id);
+            f.frameFolder = folder;
+            f.deps.os = Object.assign({}, os, {tmpdir: () => path.join(f.documentsDir, 'temp')});
+            let time = 0;
+            f.deps.now = () => time;
+            f.deps.sleep = ms => {
+                if (ms !== 250) return never(); // Heartbeats remain independent of the accelerated poll clock.
+                time += ms;
+                return Promise.resolve();
+            };
+            fs.mkdirSync(folder, {recursive: true});
+            const response = {ok: true, width: 320, height: 180, frames: renderJob.params.frames.map(frame => {
+                const file = path.join(folder, 'frame_' + String(frame).padStart(4, '0') + '.png');
+                fs.writeFileSync(file, pngBytes);
+                return {frame, path: file};
+            })};
+            if (options.response) options.response(response, f);
+            f.deps.evalScript = (script, callback) => {
+                f.scripts.push(script);
+                callback(JSON.stringify(script.startsWith('kfInfo(') ? info : response));
+            };
+            if (options.prepare) await options.prepare(f);
+        }});
+}
+
+test('render_frames streams all frames, posts progress and result, and removes temporary files', async t => {
+    const streams = [];
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {
+            readFileSync: () => assert.fail('frames must stream'),
+            promises: Object.assign({}, fs.promises, {readFile: () => assert.fail('frames must stream')}),
+            createReadStream: (file, options) => {
+                streams.push({file, options});
+                return fs.createReadStream(file, Object.assign({highWaterMark: 3}, options));
+            }
+        });
+    }});
+    assert.deepEqual(f.result, {ok: true, result: {frames: [0, 5, 10000]}});
+    let request;
+    vm.runInNewContext(f.scripts.find(s => s.startsWith('kfRender(')), {kfRender: raw => { request = JSON.parse(raw); }});
+    assert.deepEqual(request, {job: renderJob.id, tag: 'keepframe:demo/s1', frames: [0, 5, 10000]});
+    const uploads = f.requests.filter(req => req.path.includes('/files/'));
+    assert.deepEqual(uploads.map(req => req.path), [0, 5, 10000].map(frame =>
+        '/api/ae/jobs/' + renderJob.id + '/files/frame_' + String(frame).padStart(4, '0') + '.png'));
+    for (const req of uploads) {
+        assert.equal(req.method, 'PUT'); assert.deepEqual(req.data, pngBytes);
+        assert.equal(req.headers['content-type'], 'image/png');
+        assert.equal(req.headers['content-length'], String(pngBytes.length));
+        assert.equal(req.headers.authorization, 'Bearer ' + TOKEN);
+    }
+    assert.equal(streams.length, 3);
+    assert.ok(streams.every(s => s.options && s.options.start === 0 && s.options.end === pngBytes.length - 1));
+    assert.deepEqual(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'uploading')
+        .map(req => req.body), [1, 2, 3].map(done => ({stage: 'uploading', done, total: 3})));
+    assert.ok(f.statuses.some(s => s.message === 'Rendering 3 frames of demo / s1 v7…'));
+    assert.deepEqual(f.statuses.filter(s => s.message.startsWith('Uploading frame')).map(s => s.message),
+        ['Uploading frame 1/3…', 'Uploading frame 2/3…', 'Uploading frame 3/3…']);
+    assert.ok(f.statuses.some(s => s.message === 'Rendered 3 frames — Keepframe is comparing them'));
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f);
+});
+
+test('invalid AE frames reject the entire list before uploading and only clean the job folder', async t => {
+    for (const bad of ['outside', 'unrequested', 'duplicate', 'missing', 'name', 'symlink', 'directory']) {
+        let outside;
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            outside = path.join(f.documentsDir, 'private.png'); fs.writeFileSync(outside, 'keep');
+            const frame = response.frames[2];
+            if (bad === 'outside') frame.path = outside;
+            if (bad === 'unrequested') frame.frame = 99;
+            if (bad === 'duplicate') frame.frame = 0;
+            if (bad === 'missing') response.frames.pop();
+            if (bad === 'name') frame.path = response.frames[0].path;
+            if (bad === 'symlink') { fs.unlinkSync(frame.path); fs.symlinkSync(outside, frame.path); }
+            if (bad === 'directory') { fs.unlinkSync(frame.path); fs.mkdirSync(frame.path); }
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'}, bad);
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false, bad);
+        assert.equal(fs.existsSync(f.frameFolder), false, bad);
+        assert.equal(fs.readFileSync(outside, 'utf8'), 'keep');
+        assert.equal(JSON.stringify({result: f.result, statuses: f.statuses}).includes(f.documentsDir), false);
+    }
+});
+
+test('native realpath accepts Windows case and short-name aliases but rejects different folders', async t => {
+    for (const [platform, different] of [['win32', false], ['win32', true], ['linux', false]]) {
+        const nativeCalls = [];
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            const alias = path.join(f.documentsDir, 'SEOWOO~1', path.basename(f.frameFolder));
+            fs.mkdirSync(alias, {recursive: true});
+            response.frames.forEach(frame => {
+                frame.path = path.join(alias, path.basename(frame.path));
+                fs.writeFileSync(frame.path, pngBytes);
+            });
+            f.deps.platform = platform;
+            const canonical = 'C:\\Users\\Seowoo\\AppData\\Local\\Temp\\' + path.basename(f.frameFolder);
+            const realpath = Object.assign(() => assert.fail('use realpath.native'), {native: (folder, callback) => {
+                nativeCalls.push(folder);
+                callback(null, folder === f.frameFolder ? canonical : different ? 'D:\\different' : canonical.toLowerCase());
+            }});
+            f.deps.fs = Object.assign({}, fs, {realpath, promises: Object.assign({}, fs.promises, {
+                // Unlike the native API, the legacy resolver may retain SEOWOO~1.
+                realpath: async folder => folder === f.frameFolder ? canonical : canonical.replace('Seowoo', 'SEOWOO~1')
+            })});
+        }});
+        assert.deepEqual(f.result, platform === 'win32' && !different ?
+            {ok: true, result: {frames: renderJob.params.frames}} : {ok: false, error: 'Invalid frame from AE'});
+        assert.ok(nativeCalls.includes(f.frameFolder));
+        assert.ok(nativeCalls.some(folder => folder.includes('SEOWOO~1')));
+        if (different || platform !== 'win32') assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    }
+});
+
+test('a frame written 1.5 s after kfRender returns is awaited with rendering heartbeats then uploaded', async t => {
+    let returnedAt, writtenAt;
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        const frame = response.frames[0];
+        fs.unlinkSync(frame.path);
+        f.deps.now = Date.now;
+        f.deps.sleep = ms => new Promise(resolve => setTimeout(resolve, ms === 15000 ? 300 : ms));
+    }, prepare: f => {
+        const evaluate = f.deps.evalScript;
+        f.deps.evalScript = (script, callback) => evaluate(script, raw => {
+            callback(raw);
+            if (script.startsWith('kfRender(')) {
+                returnedAt = Date.now();
+                const frame = JSON.parse(raw).frames[0];
+                setTimeout(() => { writtenAt = Date.now(); fs.writeFileSync(frame.path, pngBytes); }, 1500);
+            }
+        });
+    }});
+    assert.ok(writtenAt - returnedAt >= 1490);
+    assert.deepEqual(f.result, {ok: true, result: {frames: renderJob.params.frames}});
+    assert.equal(f.requests.filter(req => req.path.includes('/files/')).length, 3);
+    assert.ok(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' &&
+        req.body.done === 0 && req.body.total === 3).length >= 3);
+    assert.deepEqual([...new Set(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' &&
+        req.body.done > 0).map(req => req.body.done))], [1, 2, 3]);
+});
+
+test('a frame that never appears times out after 60 s without any upload', async t => {
+    const f = await oneRenderJob(t, {response: response => fs.unlinkSync(response.frames[1].path)});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 5 within 60 s'});
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.ok(f.requests.some(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' && req.body.done === 1));
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('transient Windows frame locks are awaited at stat, open and read until the deadline', async t => {
+    for (const code of ['EBUSY', 'EPERM', 'EACCES']) {
+        for (const operation of ['lstat', 'open', 'read']) {
+            for (const permanent of [false, true]) {
+                let blocked = 0;
+                const f = await oneRenderJob(t, {prepare: f => {
+                    const locked = () => {
+                        blocked++;
+                        if (permanent || blocked <= 2) throw Object.assign(new Error('locked'), {code});
+                    };
+                    f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                        lstat: async file => { if (operation === 'lstat' && file.endsWith('frame_0000.png')) locked(); return fs.promises.lstat(file); },
+                        open: async (file, flags) => {
+                            if (operation === 'open' && file.endsWith('frame_0000.png')) locked();
+                            const handle = await fs.promises.open(file, flags);
+                            if (operation === 'read' && file.endsWith('frame_0000.png')) {
+                                const read = handle.read.bind(handle);
+                                handle.read = async (...args) => { locked(); return read(...args); };
+                            }
+                            return handle;
+                        }
+                    })});
+                }});
+                assert.deepEqual(f.result, permanent ? {ok: false, error: 'AE did not write frame 0 within 60 s'} :
+                    {ok: true, result: {frames: renderJob.params.frames}});
+                assert.ok(blocked >= 3);
+                assert.equal(f.requests.some(req => req.path.includes('/files/')), !permanent);
+                assert.equal(f.logs.some(message => message.includes('Invalid frame from AE')), false);
+            }
+        }
+    }
+});
+
+test('an oversized frame logs its 25 MB limit without a local path', async t => {
+    const f = await oneRenderJob(t, {response: response => fs.truncateSync(response.frames[0].path, 25 * 1024 * 1024 + 1)});
+    assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+    assert.ok(f.logs.includes('Invalid frame from AE: frame larger than 25 MB'));
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(JSON.stringify(f.logs).includes(f.documentsDir), false);
+});
+
+test('truncated PNGs without a signature or IEND never upload', async t => {
+    for (const data of [pngBytes.subarray(0, 8), pngBytes.subarray(0, -12),
+        Buffer.concat([Buffer.alloc(8), pngBytes.subarray(8)]), Buffer.alloc(0)]) {
+        const f = await oneRenderJob(t, {response: response => fs.writeFileSync(response.frames[2].path, data)});
+        assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 10000 within 60 s'});
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+        assert.equal(fs.existsSync(f.frameFolder), false);
+    }
+});
+
+test('a PNG growing between completeness checks never uploads', async t => {
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        const sleep = f.deps.sleep;
+        let growth = 0;
+        f.deps.sleep = ms => {
+            if (ms === 250) fs.writeFileSync(response.frames[2].path,
+                Buffer.concat([pngBytes.subarray(0, -12), Buffer.alloc(++growth), pngBytes.subarray(-12)]));
+            return sleep(ms);
+        };
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 10000 within 60 s'});
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+});
+
+test('the combined frame wait is capped at ten minutes', async t => {
+    const frames = Array.from({length: 16}, (_, i) => i);
+    let time = 0;
+    const f = await oneRenderJob(t, {job: {params: {...renderJob.params, frames}}, response: (response, f) => {
+        response.frames = frames.map(frame => ({frame, path: path.join(f.frameFolder, 'frame_' + String(frame).padStart(4, '0') + '.png')}));
+        fs.readdirSync(f.frameFolder).forEach(name => fs.unlinkSync(path.join(f.frameFolder, name)));
+        f.deps.now = () => time;
+        f.deps.sleep = ms => {
+            if (ms !== 250) return never();
+            time += ms;
+            for (const frame of response.frames) {
+                if (time >= (frame.frame + 1) * 39000 && !fs.existsSync(frame.path)) fs.writeFileSync(frame.path, pngBytes);
+            }
+            return Promise.resolve();
+        };
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 15 within 60 s'});
+    assert.equal(time, 10 * 60 * 1000);
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+});
+
+test('uploads stop at the measured size even if the PNG grows before the stream opens', async t => {
+    const readSizes = [];
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: (file, options) => {
+            fs.appendFileSync(file, 'extra data');
+            const stream = fs.createReadStream(file, options);
+            let read = 0;
+            stream.on('data', chunk => { read += chunk.length; });
+            stream.on('end', () => readSizes.push(read));
+            return stream;
+        }});
+    }});
+    assert.equal(f.result.ok, true);
+    const uploads = f.requests.filter(req => req.path.includes('/files/'));
+    assert.equal(uploads.length, 3);
+    assert.deepEqual(readSizes, [pngBytes.length, pngBytes.length, pngBytes.length]);
+    uploads.forEach(req => assert.deepEqual(req.data, pngBytes));
+});
+
+test('a frame that shrinks after the completeness check fails clearly before uploading', async t => {
+    const f = await oneRenderJob(t, {prepare: f => {
+        const status = f.deps.setStatus;
+        f.deps.setStatus = (message, details) => {
+            status(message, details);
+            if (message.startsWith('Uploading frame')) fs.truncateSync(path.join(f.frameFolder, 'frame_0000.png'), 8);
+        };
+    }});
+    assert.equal(f.result.ok, false);
+    assert.match(f.result.error, /Frame upload shrank/);
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('a frame that shrinks as the upload stream opens fails with its byte count and closes', async t => {
+    let stream;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: (file, options) => {
+            fs.truncateSync(file, 8);
+            stream = fs.createReadStream(file, options);
+            return stream;
+        }});
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Frame upload shrank (expected ' + pngBytes.length + ' bytes, read 8)'});
+    assert.equal(stream.closed, true);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f, f.result);
+});
+
+test('frame rejection logs a path-free reason and preserves the user-facing error', async t => {
+    for (const reason of ['frame outside the job folder', 'not a regular file', 'symlink']) {
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            const frame = response.frames[0];
+            if (reason === 'frame outside the job folder') {
+                frame.path = path.join(f.documentsDir, path.basename(frame.path));
+                fs.writeFileSync(frame.path, pngBytes);
+            } else {
+                fs.unlinkSync(frame.path);
+                if (reason === 'symlink') fs.symlinkSync(response.frames[1].path, frame.path);
+                else fs.mkdirSync(frame.path);
+            }
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+        assert.ok(f.logs.includes('Invalid frame from AE: ' + reason));
+        assert.equal(JSON.stringify({result: f.result, statuses: f.statuses, logs: f.logs}).includes(f.documentsDir), false);
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+        assertPrivate(f);
+    }
+});
+
+test('a symlinked job folder is rejected without deleting its target', async t => {
+    let target;
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        target = path.join(f.documentsDir, 'private-job-folder');
+        fs.renameSync(f.frameFolder, target);
+        fs.symlinkSync(target, f.frameFolder, 'dir');
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+    assert.ok(f.logs.includes('Invalid frame from AE: symlink'));
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assert.equal(fs.readFileSync(path.join(target, 'frame_0000.png')).equals(pngBytes), true);
+    assert.equal(JSON.stringify(f.logs).includes(f.documentsDir), false);
+});
+
+test('upload 409/413 retain redacted server text and clean all temporary frames', async t => {
+    for (const status of [409, 413]) {
+        const f = await oneRenderJob(t, {route: (req, reply) => {
+            if (req.path.includes('/files/')) { reply(status, {error: 'frame rejected ' + TOKEN + ' ' + CODE}); return true; }
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'frame rejected [redacted] [redacted]'});
+        assert.equal(f.requests.filter(req => req.path.includes('/files/')).length, 1);
+        assert.equal(fs.existsSync(f.frameFolder), false);
+        assert.ok(f.statuses.some(s => s.message === 'Render failed: ' + f.result.error));
+        assertPrivate(f, f.result);
+    }
+});
+
+test('render host errors still remove the temporary job folder', async t => {
+    const f = await oneRenderJob(t, {response: response => {
+        response.ok = false; response.error = 'AE did not write frame 0 within 60 s'; response.line = 9;
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 0 within 60 s', line: 9});
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('render upload and cleanup work with the CEP 11 filesystem surface', {timeout: 2000}, async t => {
+    let removals = 0;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {
+            createReadStream: file => {
+                const stream = fs.createReadStream(file);
+                Object.defineProperty(stream, 'closed', {value: undefined});
+                return stream;
+            },
+            promises: Object.assign({}, fs.promises, {rm: undefined, rmdir: (folder, options) => {
+                removals++;
+                assert.equal(options.recursive, true);
+                return fs.promises.rm(folder, {recursive: true, force: true});
+            }})
+        });
+    }});
+    assert.deepEqual(f.result, {ok: true, result: {frames: [0, 5, 10000]}});
+    assert.equal(removals, 1);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('frame stream errors close the stream, report safely, and clean the folder', async t => {
+    let stream;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: file => {
+            stream = fs.createReadStream(file);
+            stream.destroy(Object.assign(new Error(file + ' ' + TOKEN), {code: 'EIO'}));
+            return stream;
+        }});
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Could not read frame upload (EIO)'});
+    assert.equal(stream.closed, true);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f, f.result);
+    assert.equal(JSON.stringify(f.result).includes(f.documentsDir), false);
+});
+
+test('cleanup errors are logged and preserve uploaded success or an AE error', async t => {
+    for (const hostFails of [false, true]) {
+        const f = await oneRenderJob(t, {
+            response: response => { if (hostFails) { response.ok = false; response.error = 'AE failed'; } },
+            prepare: f => {
+                f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                    rm: async (folder, options) => {
+                        assert.equal(options.maxRetries, 3);
+                        assert.equal(options.retryDelay, 200);
+                        throw Object.assign(new Error(folder + ' ' + TOKEN), {code: 'EPERM'});
+                    }
+                })});
+            }
+        });
+        assert.deepEqual(f.result, hostFails ? {ok: false, error: 'AE failed'} :
+            {ok: true, result: {frames: renderJob.params.frames}});
+        assert.ok(f.logs.includes('Could not remove temporary frame folder (EPERM)'));
+        assertPrivate(f, f.result);
+    }
+});
+
+test('CEP cleanup retries transient errors with a bounded fallback', async t => {
+    for (const fails of [2, 4]) {
+        let attempts = 0, waits = 0;
+        const f = await oneRenderJob(t, {prepare: f => {
+            const sleep = f.deps.sleep;
+            f.deps.sleep = ms => { if (ms === 200) { waits++; return Promise.resolve(); } return sleep(ms); };
+            f.deps.fs = Object.assign({}, fs, {promises: Object.assign({}, fs.promises, {
+                rm: undefined, rmdir: async (folder, options) => {
+                    attempts++;
+                    if (attempts <= fails) throw Object.assign(new Error(folder), {code: 'EBUSY'});
+                    return fs.promises.rm(folder, options);
+                }
+            })});
+        }});
+        assert.deepEqual(f.result, {ok: true, result: {frames: renderJob.params.frames}});
+        assert.equal(attempts, fails === 2 ? 3 : 4);
+        assert.equal(waits, fails === 2 ? 2 : 3);
+        assert.equal(fs.existsSync(f.frameFolder), fails === 4);
+        assert.equal(f.logs.some(message => message.includes('Could not remove temporary frame folder')), fails === 4);
+    }
+});
+
+test('panel translates rendering and uploading statuses into Korean', () => {
+    const p = panelHarness('ko_KR'), deps = p.runs[0].deps;
+    for (const [message, expected] of [
+        ['Rendering 3 frames of demo / s1 v7…', 'demo / s1 v7 프레임 3개 렌더링 중…'],
+        ['Uploading frame 1/3…', '프레임 업로드 중 1/3…'],
+        ['Rendered 3 frames — Keepframe is comparing them', '프레임 3개 렌더링 완료 — Keepframe에서 비교 중'],
+        ['Render failed: Network request failed', '렌더링 실패: 네트워크 요청 실패'],
+        ['Render failed: AE did not write frame 5 within 60 s', '렌더링 실패: AE가 60초 안에 프레임 5를 기록하지 못했습니다'],
+        ['Render failed: this After Effects cannot export frames; update to After Effects 24.1 or newer',
+            '렌더링 실패: 이 After Effects에서는 프레임을 내보낼 수 없습니다. After Effects 24.1 이상으로 업데이트하세요']
+    ]) {
+        deps.setStatus(message); deps.log(message);
+        assert.equal(p.nodes.status.textContent, expected);
+        assert.ok(p.nodes.log.value.includes(expected));
+    }
+    deps.setStatus('Uploading frame 1/3…', {job: renderJob, progress: {stage: 'uploading', done: 1, total: 3}});
+    assert.ok(p.nodes['current-job'].textContent.includes('프레임 업로드 중'));
 });
 
 async function until(check) {
@@ -542,7 +1003,7 @@ test('hung kfSync times out at ten minutes, stops heartbeats and posts failure',
     clock.advance(15000);
     await until(() => resultReply);
     assert.deepEqual(f.requests.find(req => req.path.endsWith('/result')).body, {ok: false,
-        error: 'After Effects did not respond within 10 min (a dialog may be open in AE)'});
+        error: 'After Effects did not finish within 10 min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.'});
     const beats = f.requests.filter(req => req.path.endsWith('/progress')).length;
     clock.advance(60000);
     await new Promise(resolve => setImmediate(resolve));
@@ -585,7 +1046,7 @@ test('hung kfInfo has a thirty-second deadline during pairing and polling', asyn
     f.deps.evalScript = (script, cb) => { lateCallback = cb; };
     const pairing = core.pair({serverUrl: f.serverUrl, code: CODE}, f.deps);
     const rejection = assert.rejects(pairing,
-        {message: 'After Effects did not respond within 0.5 min (a dialog may be open in AE)'});
+        {message: 'After Effects did not finish within 0.5 min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.'});
     pairing.then(() => { paired = true; }, () => {});
     clock.advance(29999);
     await new Promise(resolve => setImmediate(resolve));
@@ -599,7 +1060,7 @@ test('hung kfInfo has a thirty-second deadline during pairing and polling', asyn
     const r = runner(f), running = r.start();
     t.after(() => r.stop());
     clock.advance(30000);
-    await until(() => f.statuses.some(s => s.message.includes('did not respond within 0.5 min')));
+    await until(() => f.statuses.some(s => s.message.includes('did not finish within 0.5 min')));
     r.stop();
     await running;
     assert.equal(clock.pending(), 0);
@@ -881,6 +1342,29 @@ test('panel glue restores pairing, translates status, pairs, forgets credentials
         assert.equal(p.nodes['copy-notice'].textContent, locale.startsWith('ko') ? '로그 복사됨' : 'Log copied');
         assert.equal(p.nodes.log.value.includes(TOKEN), false);
         assert.equal(p.nodes.log.value.includes(CODE), false);
+    }
+});
+
+test('panel translates host timeout status and log in English and Korean', () => {
+    for (const locale of ['en_US', 'ko_KR']) {
+        const p = panelHarness(locale);
+        for (const minutes of [10, 0.5]) {
+            const message = 'After Effects did not finish within ' + minutes +
+                ' min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.';
+            const translated = locale.startsWith('ko') ? 'After Effects가 ' + minutes +
+                '분 안에 끝내지 못했습니다. 큰 장면을 아직 처리 중이거나 대화상자를 기다리는 중일 수 있습니다. AE가 응답하면 다시 보내세요.' : message;
+            for (const prefix of ['', 'Sync failed: ', 'Not connected: ']) {
+                const suffix = prefix === 'Not connected: ' ? ' (retrying in 1 s)' : '';
+                const expected = prefix === 'Sync failed: ' && locale.startsWith('ko') ? '동기화 실패: ' + translated :
+                    prefix === 'Not connected: ' && locale.startsWith('ko') ? '연결 안 됨: ' + translated + ' (1초 후 재시도)' :
+                    prefix + translated + suffix;
+                p.runs[0].deps.setStatus(prefix + message + suffix);
+                p.runs[0].deps.log(prefix + message + suffix);
+                assert.equal(p.nodes.status.textContent, expected);
+                assert.ok(p.nodes.log.value.endsWith(expected));
+            }
+        }
+        p.nodes.disconnect.handlers.click();
     }
 });
 

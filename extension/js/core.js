@@ -7,6 +7,8 @@
     const EXTENSION_VERSION = '1.0.0';
     const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
+    const FRAME_WAIT_MS = 60000;
+    const RENDER_WAIT_MS = 10 * 60 * 1000;
     const NOT_PAIRED = 'Not paired: enter a new code from the Keepframe web page';
 
     function localAddress(address) {
@@ -52,6 +54,7 @@
     }
 
     function failure(message, properties) { return Object.assign(new Error(message), properties); }
+    const literal = value => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
     function safeError(error, secrets) { return redact(error.message || error, secrets).slice(0, 1800); }
     function updateMessage(serverUrl) { return 'Update the Keepframe extension: ' + serverUrl + '/ae/keepframe.zxp'; }
     function networkError(error) {
@@ -62,7 +65,7 @@
         return failure(reasons[error.code] || 'Network request failed', {network: true});
     }
 
-    async function request(context, method, route, body, extraHeaders, file) {
+    async function request(context, method, route, body, extraHeaders, file, upload) {
         const deps = context.deps;
         const url = new URL(context.serverUrl + route), host = url.host;
         if (url.protocol === 'http:') {
@@ -84,7 +87,11 @@
                 headers['Content-Type'] = 'application/json';
                 headers['Content-Length'] = Buffer.byteLength(data);
             }
-            let req, output, response, settled = false;
+            if (upload) {
+                headers['Content-Type'] = 'image/png';
+                headers['Content-Length'] = upload.size;
+            }
+            let req, input, output, response, settled = false, inputClosed = false;
             const finish = (error, value) => {
                 if (settled) return;
                 settled = true;
@@ -95,7 +102,13 @@
                     if (output && !output.closed) {
                         output.once('close', () => reject(error));
                         output.destroy();
+                    } else if (input && !inputClosed) {
+                        input.once('close', () => reject(error));
+                        input.destroy();
                     } else reject(error);
+                } else if (input && !inputClosed) {
+                    input.once('close', () => resolve(value));
+                    input.destroy();
                 } else resolve(value);
             };
             try {
@@ -162,8 +175,20 @@
                 req.on('error', error => finish(networkError(error)));
                 req.setTimeout(route.startsWith('/api/ae/next?') ? 35000 : 30000,
                     () => finish(networkError({code: 'ETIMEDOUT'})));
-                req.end(data);
-            } catch (error) { finish(failure(safeError(error, context.secrets))); }
+                if (upload) {
+                    input = deps.fs.createReadStream(upload.path, {start: 0, end: upload.size - 1});
+                    input.on('close', () => { inputClosed = true; });
+                    input.on('error', error => finish(failure('Could not read frame upload (' + (error.code || 'unknown error') + ')')));
+                    let read = 0;
+                    input.on('data', chunk => { read += chunk.length; });
+                    input.on('end', () => {
+                        if (read !== upload.size) finish(failure('Frame upload shrank (expected ' +
+                            upload.size + ' bytes, read ' + read + ')'));
+                    });
+                    input.pipe(req);
+                } else req.end(data);
+            } catch (error) { finish(failure(upload ? 'Could not upload frame (' + (error.code || 'unknown error') + ')' :
+                safeError(error, context.secrets))); }
         });
     }
 
@@ -184,8 +209,9 @@
                 context.abortHost = undefined;
                 if (error) reject(error); else resolve(raw);
             };
-            const timer = deps.setTimeout(() => finish(failure('After Effects did not respond within ' +
-                (timeout / 60000) + ' min (a dialog may be open in AE)', {hostTimeout: true})), timeout);
+            const timer = deps.setTimeout(() => finish(failure('After Effects did not finish within ' +
+                (timeout / 60000) + ' min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.',
+                {hostTimeout: true})), timeout);
             context.abortHost = error => finish(error);
             try { deps.evalScript(script, raw => finish(null, raw)); }
             catch (error) { finish(failure(safeError(error, secrets))); }
@@ -264,8 +290,8 @@
                 (key, value) => typeof value === 'string' ? redact(value, context.secrets) : value));
             if (running || terminal) deps.setStatus(redact(message, context.secrets), safeDetails);
         };
-        const send = async (method, route, body, headers, file) => {
-            const response = await request(context, method, route, body, headers, file);
+        const send = async (method, route, body, headers, file, upload) => {
+            const response = await request(context, method, route, body, headers, file, upload);
             backoff = 0;
             return response;
         };
@@ -332,17 +358,143 @@
             status('Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
             if (!running) throw failure('Disconnected before sync');
             // JSON literals only, including ES3-safe escapes for line/paragraph separators.
-            const literal = value => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-            return hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
+            const result = await hostCall(context, 'kfSync(' + literal(response.text) + ',' + literal(JSON.stringify(assets)) + ',' +
                 literal(job.params && job.params.force ? 'true' : 'false') + ')');
+            if (result.timings) log('Sync timings: ' + ['validate', 'read', 'hash', 'assets', 'write', 'order', 'total']
+                .map(stage => stage + ' ' + result.timings[stage] + ' ms').join(', '));
+            return result;
+        }
+
+        async function renderFrames(job, progress) {
+            const params = job.params, path = deps.path;
+            if (!/^j_[0-9a-f]{16}$/.test(job.id) || !params || typeof params.tag !== 'string' ||
+                !Array.isArray(params.frames) || !params.frames.length || params.frames.length > 16 ||
+                params.frames.some(f => !Number.isSafeInteger(f) || f < 0 || f > 999999) ||
+                new Set(params.frames).size !== params.frames.length) throw failure('Invalid render job');
+            const folder = path.resolve(deps.os.tmpdir(), 'keepframe-' + job.id);
+            const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
+            const invalidFrame = reason => {
+                if (reason) log('Invalid frame from AE: ' + reason);
+                throw failure('Invalid frame from AE');
+            };
+            const realpath = file => new Promise((resolve, reject) => {
+                deps.fs.realpath.native(file, (error, resolved) => error ? reject(error) : resolve(resolved));
+            });
+            const normalize = file => (deps.platform || process.platform) === 'win32' ? file.toLowerCase() : file;
+            const frameNotReady = error => ['ENOENT', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code);
+            const frameStat = async file => {
+                let stat;
+                try { stat = await deps.fs.promises.lstat(file); }
+                catch (error) { if (frameNotReady(error)) return; invalidFrame('not a regular file'); }
+                if (stat.isSymbolicLink()) invalidFrame('symlink');
+                if (!stat.isFile()) invalidFrame('not a regular file');
+                if (stat.size > 25 * 1024 * 1024) invalidFrame('frame larger than 25 MB');
+                return stat;
+            };
+            try {
+                if (!running) throw failure('Disconnected before render');
+                const rendered = await hostCall(context, 'kfRender(' + literal(JSON.stringify({
+                    job: job.id, tag: params.tag, frames: params.frames})) + ')');
+                const renderDeadline = deps.now() + RENDER_WAIT_MS;
+                if (!Array.isArray(rendered.frames) || rendered.frames.length !== params.frames.length)
+                    throw failure('Invalid frame from AE');
+                const seen = new Set(), files = [];
+                let canonicalFolder;
+                try {
+                    const stat = await deps.fs.promises.lstat(folder);
+                    if (stat.isSymbolicLink()) invalidFrame('symlink');
+                    if (!stat.isDirectory()) invalidFrame('not a regular file');
+                    canonicalFolder = normalize(await realpath(folder));
+                } catch (_) { throw failure('Invalid frame from AE'); }
+                // Validate the entire list before opening any upload stream.
+                for (const frame of rendered.frames) {
+                    const name = frame && 'frame_' + String(frame.frame).padStart(4, '0') + '.png';
+                    if (!frame || !params.frames.includes(frame.frame) || seen.has(frame.frame) ||
+                        typeof frame.path !== 'string' || !path.isAbsolute(frame.path)) throw failure('Invalid frame from AE');
+                    let parent;
+                    try {
+                        parent = normalize(await realpath(path.dirname(frame.path)));
+                    } catch (_) { invalidFrame('frame outside the job folder'); }
+                    if (parent !== canonicalFolder) invalidFrame('frame outside the job folder');
+                    if (path.basename(frame.path) !== name) invalidFrame();
+                    await frameStat(frame.path);
+                    seen.add(frame.frame);
+                    files.push({frame: frame.frame, path: frame.path, name});
+                }
+                // AE can finish writing only after evalScript returns. Poll on the panel's event loop.
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i], deadline = Math.min(renderDeadline, deps.now() + FRAME_WAIT_MS);
+                    let previous = 0;
+                    while (deps.now() < deadline) {
+                        if (!running) throw failure('Disconnected before render');
+                        const stat = await frameStat(file.path);
+                        if (stat && stat.size >= 20 && stat.size === previous) {
+                            let handle;
+                            try {
+                                handle = await deps.fs.promises.open(file.path, 'r');
+                                const head = Buffer.alloc(8), tail = Buffer.alloc(12);
+                                const first = await handle.read(head, 0, 8, 0);
+                                const last = await handle.read(tail, 0, 12, stat.size - 12);
+                                if (first.bytesRead === 8 && last.bytesRead === 12 &&
+                                    head.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+                                    tail.equals(Buffer.from([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130])) &&
+                                    (await handle.stat()).size === stat.size && deps.now() < deadline) file.size = stat.size;
+                            } catch (error) { if (!frameNotReady(error)) invalidFrame('not a regular file'); }
+                            finally { if (handle) await handle.close(); }
+                            if (file.size !== undefined) break;
+                        }
+                        previous = stat ? stat.size : 0;
+                        await wait(Math.min(250, Math.max(0, deadline - deps.now())), stopped);
+                    }
+                    if (file.size === undefined) throw failure('AE did not write frame ' + file.frame + ' within 60 s');
+                    progress.done = i + 1;
+                    status('Rendering ' + files.length + ' frames of ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
+                    await send('POST', prefix + '/progress', Object.assign({}, progress));
+                }
+                progress.stage = 'uploading'; progress.done = 0; progress.total = files.length;
+                for (let i = 0; i < files.length; i++) {
+                    if (!running) throw failure('Disconnected before upload');
+                    status('Uploading frame ' + (i + 1) + '/' + files.length + '…', {job, progress});
+                    const stat = await frameStat(files[i].path);
+                    if (!stat || stat.size < files[i].size) throw failure('Frame upload shrank before upload');
+                    await send('PUT', prefix + '/files/' + files[i].name,
+                        undefined, undefined, undefined, files[i]);
+                    progress.done = i + 1;
+                    await send('POST', prefix + '/progress', Object.assign({}, progress));
+                }
+                return {frames: params.frames};
+            } finally {
+                try {
+                    if (deps.fs.promises.rm) {
+                        await deps.fs.promises.rm(folder, {recursive: true, force: true, maxRetries: 3, retryDelay: 200});
+                    } else {
+                        for (let attempt = 0; ; attempt++) {
+                            try { await deps.fs.promises.rmdir(folder, {recursive: true}); break; }
+                            catch (error) {
+                                if (attempt === 3 || !['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(error.code)) throw error;
+                                await deps.sleep(200);
+                            }
+                        }
+                    }
+                }
+                catch (error) {
+                    if (error.code !== 'ENOENT') {
+                        const message = 'Could not remove temporary frame folder (' + (error.code || 'unknown error') + ')';
+                        log(message);
+                    }
+                }
+            }
         }
 
         async function runJob(job, mismatch) {
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
-            const progress = {stage: 'syncing', done: 0, total: 0};
+            const rendering = job.kind === 'render_frames';
+            const total = rendering && job.params && Array.isArray(job.params.frames) ? job.params.frames.length : 0;
+            const progress = {stage: rendering ? 'rendering' : 'syncing', done: 0, total};
             let finished = false, finishHeartbeat;
             const ended = new Promise(resolve => { finishHeartbeat = resolve; });
-            const message = mismatch || 'Syncing ' + job.project + ' / ' + job.scene + ' ' + job.version + '…';
+            const message = mismatch || (rendering ? 'Rendering ' + total + ' frames of ' : 'Syncing ') +
+                job.project + ' / ' + job.scene + ' ' + job.version + '…';
             status(message, {job, progress}); log(message);
             const heartbeat = async () => {
                 while (!finished && !terminal) {
@@ -359,8 +511,10 @@
             let payload;
             try {
                 if (mismatch) throw failure(mismatch);
-                if (job.kind !== 'sync') throw failure(job.kind + ' is not supported by this extension version');
-                payload = {ok: true, result: await sync(job, progress)};
+                const handlers = {sync, render_frames: renderFrames};
+                if (!Object.prototype.hasOwnProperty.call(handlers, job.kind))
+                    throw failure(job.kind + ' is not supported by this extension version');
+                payload = {ok: true, result: await handlers[job.kind](job, progress)};
             } catch (error) {
                 payload = {ok: false, error: safeError(error, context.secrets)};
                 if (Number.isInteger(error.line)) payload.line = error.line;
@@ -386,7 +540,9 @@
                 if (terminal) return;
                 outcome = true;
                 let text;
-                if (!payload.ok) text = mismatch || 'Sync failed: ' + payload.error + (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
+                if (!payload.ok) text = mismatch || (rendering ? 'Render failed: ' : 'Sync failed: ') + payload.error +
+                    (payload.line === undefined ? '' : ' (line ' + payload.line + ')');
+                else if (rendering) text = 'Rendered ' + payload.result.frames.length + ' frames — Keepframe is comparing them';
                 else if (payload.result.applied === false) {
                     const interrupted = payload.result.interrupted || [];
                     const edited = (payload.result.hand_edited || []).filter(id => !interrupted.includes(id));

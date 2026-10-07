@@ -130,7 +130,8 @@ if (require.main === module) {
     } finally {
       fs.rmSync(temporary, { force: true });
     }
-    process.stdout.write(JSON.stringify({ result, undo_groups: ae.counters.undoGroups, writes: ae.counters.writes }) + "\n");
+    process.stdout.write(JSON.stringify({ result, undo_groups: ae.counters.undoGroups,
+      writes: ae.counters.writes, calls: ae.calls }) + "\n");
   } catch (error) {
     const stackLine = scriptPath && String(error?.stack || "").split("\n").find((line) => line.includes(`${scriptPath}:`));
     const location = stackLine && stackLine.slice(stackLine.indexOf(`${scriptPath}:`) + scriptPath.length + 1).match(/^\d+/);

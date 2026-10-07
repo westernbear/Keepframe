@@ -1,5 +1,7 @@
-import { api } from "/static/js/api.js?v=20261006g";
-import { T, Tf } from "/static/js/i18n.js?v=20261006g";
+import { api } from "/static/js/api.js?v=20261006l";
+import { T, Tf } from "/static/js/i18n.js?v=20261006l";
+
+const JOB_HISTORY_LIMIT = 4;
 
 async function copyText(text) {
   if (window.isSecureContext && navigator.clipboard) {
@@ -31,7 +33,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   let handJobId = null, overwriteConfirmed = false;
   let stateTimer, deviceTimer, countdownTimer;
   let refreshing = false, refreshAgain = false;
-  let devicesPainted = "", jobsPainted = "", hadDevices = false;
+  let devicesPainted = "", jobsPainted = "", verifyPainted = "", hadConnection = false;
   let stateDelay = 15000, deviceDelay = 2000, pollError = false;
 
   function error(err, fromPoll = false) {
@@ -91,6 +93,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("code-field").hidden = true;
     pairMessage = message;
     el("pair-message").textContent = message ? T(message) : "";
+    el("pair-message").hidden = !message;
   }
 
   function tickCode() {
@@ -107,7 +110,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
 
   function acceptDevices(devices) {
     snapshot.devices = devices;
-    if (pairing && devices.some((device) => !pairing.before.has(device.id))) clearCode("ae.connected");
+    if (pairing && devices.some((device) => !pairing.before.has(device.id))) clearCode();
   }
 
   async function pollDevices() {
@@ -127,40 +130,164 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, deviceDelay);
   }
 
+  function jobOutcome(job) {
+    if (!job) return "";
+    if (job.error) return job.error;
+    if (job.state !== "done") return T(`ae.${job.state}`);
+    if (job.result?.applied !== true) {
+      if (job.result?.applied === false) return ""; // The hand-edit prompt owns this outcome.
+      return T("ae.done");
+    }
+    const counts = ["created", "updated", "deleted"].flatMap(key => {
+      const value = job.result[key];
+      const n = Array.isArray(value) ? value.length : Number(value) || 0;
+      return n > 0 ? [Tf(`ae.count.${key}`, {n})] : [];
+    });
+    return counts.join(", ") || T("ae.noChanges");
+  }
+
+  function percent(value) {
+    return (value * 100).toFixed(1);
+  }
+
+  function verifyOutcome(report) {
+    if (report.state === "rendering") return T("ae.verifyRendering");
+    if (report.state === "verifying") return T("ae.verifyVerifying");
+    if (report.state === "failed") {
+      if (report.error === "the saved report could not be read — verify again") return T("ae.verifyUnreadable");
+      return report.error || T("ae.verifyFailed");
+    }
+    if (report.state === "interrupted") return T("ae.verifyInterrupted");
+    const worst = report.worst[0];
+    let text = Tf(report.passed ? "ae.verifyPassed" : "ae.verifyDiffers", {
+      version: report.version, mean: percent(report.mean), frame: worst.frame, max: percent(report.max),
+    });
+    if (!report.passed) {
+      const n = report.frames.filter(row => row.l1 > report.thresholds.frame).length;
+      if (n) text += Tf(n === 1 ? "ae.verifyOverOne" : "ae.verifyOver", {
+        n, threshold: Number(percent(report.thresholds.frame)),
+      });
+      else text += Tf("ae.verifyMeanOver", {mean: percent(report.mean), threshold: Number(percent(report.thresholds.mean))});
+    }
+    return text;
+  }
+
+  function paintVerify(report) {
+    const signature = JSON.stringify([getSceneId(), report, T("ae.verify")]);
+    if (signature === verifyPainted) return;
+    verifyPainted = signature;
+    const hasReport = report?.state === "done";
+    el("verify-report").hidden = !hasReport;
+    el("verify-worst").replaceChildren();
+    el("verify-notes").replaceChildren();
+    el("verify-outcome").textContent = hasReport ? verifyOutcome(report) : "";
+    if (!hasReport) return;
+    el("verify-limits").textContent = Tf("ae.verifyLimits", {
+      mean: Number(percent(report.thresholds.mean)), frame: Number(percent(report.thresholds.frame)),
+    });
+    el("verify-worst").replaceChildren(...report.worst.slice(0, 3).map(row => {
+      const item = node("li");
+      item.append(node("p", Tf("ae.verifyFrame", {frame: row.frame, l1: percent(row.l1)})));
+      const images = node("div", "", "ae-card__verify-images");
+      for (const [kind, key] of [["ae", "ae.verifyAE"], ["kf", "ae.verifyKF"], ["diff", "ae.verifyDiff"]]) {
+        const figure = node("figure");
+        const img = node("img");
+        img.loading = "lazy";
+        img.alt = Tf("ae.verifyImageAlt", {kind: T(key), frame: row.frame});
+        img.src = `/api/ae/verify-image?${new URLSearchParams({project: projectId, scene: getSceneId(),
+          version: report.version, name: row[kind], job: report.job})}`;
+        figure.append(node("figcaption", T(key)), img);
+        images.append(figure);
+      }
+      item.append(images);
+      return item;
+    }));
+    let notes = report.notes || [];
+    if (Array.isArray(report.masked)) {
+      notes = report.masked.map(row => {
+        // Saved reports from earlier builds have only id and worst_l1.
+        if (!row.font) return Tf("ae.verifyMaskedLegacy", {id: row.id, l1: percent(row.worst_l1)});
+        return Tf("ae.verifyMasked", {name: row.name, font: row.font, l1: percent(row.worst_l1)});
+      });
+    }
+    el("verify-notes").hidden = !notes.length;
+    el("verify-notes").replaceChildren(...notes.map(note => node("li", note)));
+  }
+
   function paint() {
     const devices = [...snapshot.devices].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0) || b.created - a.created);
     const connected = devices.find((device) => device.connected);
-    const status = connected ? Tf("ae.connectedDevice", {
-      version: connected.ae_version, project: connected.project_name || T("ae.noProject"),
-    }) : T("ae.notConnected");
+    const isConnected = Boolean(connected);
+    let status = T("ae.notConnected");
+    if (isConnected) {
+      const version = connected.ae_version?.match(/^\d+(?:\.\d+)?/)?.[0];
+      status = Tf("ae.connectedDevice", {version: version ? ` ${version}` : ""});
+      if (connected.project_name) status += ` · ${connected.project_name}`;
+    }
     if (el("status").textContent !== status) el("status").textContent = status;
-    el("status").classList.toggle("render-card__status--active", Boolean(connected));
+    el("status").classList.toggle("render-card__status--active", isConnected);
+    const connectContainer = el(isConnected ? "install-connect" : "actions");
+    if (el("connect").parentElement !== connectContainer) connectContainer.prepend(el("connect"));
     el("connect").disabled = busy;
-    el("send").disabled = busy || !connected || !projectId || !getSceneId() || !getVersionId();
-    el("send-reason").hidden = Boolean(connected);
-    el("overwrite-reason").hidden = Boolean(connected);
-    if (Boolean(devices.length) !== hadDevices) el("install").open = !devices.length;
-    hadDevices = Boolean(devices.length);
+    el("send").disabled = busy || !isConnected || !projectId || !getSceneId() || !getVersionId();
+    const verifyActive = ["rendering", "verifying"].includes(snapshot.verify?.state)
+      || snapshot.jobs.some(job => job.kind === "render_frames" && ["queued", "running"].includes(job.state));
+    el("verify").disabled = el("send").disabled || verifyActive;
+    el("verify").setAttribute("aria-describedby", verifyActive && isConnected ? "ae-verify-reason" : "ae-send-reason");
+    el("verify-reason").hidden = !verifyActive || !isConnected;
+    el("verify-reason").textContent = verifyActive && isConnected ? T("ae.verifyBusy") : "";
+    el("send-reason").hidden = isConnected;
+    el("overwrite-reason").hidden = isConnected;
+    if (isConnected !== hadConnection) el("install").open = !isConnected;
+    hadConnection = isConnected;
     el("pair-message").textContent = pairMessage ? T(pairMessage) : "";
+    el("pair-message").hidden = !pairMessage;
     el("copy-status").textContent = copyMessage ? T(copyMessage) : "";
-    const synced = devices[0] && snapshot.last_synced[devices[0].id];
-    el("synced").textContent = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
+    el("copy-status").hidden = !copyMessage;
+    const syncDevice = connected || devices[0];
+    const synced = syncDevice && snapshot.last_synced[syncDevice.id];
+    const latestJob = snapshot.jobs[0];
+    const syncedText = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
+    const outcome = jobOutcome(latestJob);
+    const report = snapshot.verify;
+    const showVerify = report && (!latestJob || latestJob.id === report.job);
+    let summary = outcome ? `${syncedText}. ${outcome}` : syncedText;
+    if (showVerify) summary = verifyOutcome(report);
+    el("synced").textContent = summary;
+    const failed = showVerify ? report.state === "failed" : Boolean(latestJob?.error) || latestJob?.state === "failed";
+    el("synced").classList.toggle("ae-card__error", failed);
+    paintVerify(report);
+    const buildsDiffer = devices.some(device => device.panel_build && device.host_build && device.panel_build !== device.host_build);
+    el("build-warning").hidden = !buildsDiffer;
+    el("build-warning").textContent = T("ae.buildMismatch");
+    const latestProgress = latestJob && snapshot.progress[latestJob.id];
+    el("latest-progress").hidden = !latestProgress;
+    el("latest-progress").textContent = latestProgress ? Tf("ae.progress", latestProgress) : "";
+    const timings = snapshot.jobs.find(job => job.kind === "sync")?.result?.timings;
+    el("sync-timings").hidden = !timings;
+    el("sync-timings").textContent = timings ? Tf("ae.syncTimings", timings) : "";
+    const warnings = Array.isArray(latestJob?.result?.warnings) ? latestJob.result.warnings : [];
+    el("warnings-details").hidden = !warnings.length;
+    el("warnings-summary").textContent = warnings.length
+      ? Tf(warnings.length === 1 ? "ae.warningOne" : "ae.warningCount", {n: warnings.length}) : "";
+    el("warnings").replaceChildren(...warnings.map(warning => node("li", warning)));
 
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {
-      version: device.ae_version, os: device.os, project: device.project_name || T("ae.noProject"),
-      status: T(device.connected ? "ae.connected" : "ae.notConnected"), seen: relative(device.last_seen),
-    }) + " · " + Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
+      version: device.ae_version || T("ae.unknownBuild"), seen: relative(device.last_seen),
+    }), build: Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
       host: device.host_build || T("ae.unknownBuild")})}));
-    const deviceSignature = JSON.stringify([rows.map(({device, text}) => [device.id, text]), disconnectId, busy]);
+    const deviceSignature = JSON.stringify([rows.map(({device, text, build}) => [device.id, text, build, device.connected]), disconnectId, busy]);
     if (deviceSignature !== devicesPainted) {
       devicesPainted = deviceSignature;
-      el("devices").replaceChildren(...rows.map(({device, text}) => {
+      el("devices").replaceChildren(...rows.map(({device, text, build}) => {
         const row = node("li", "", "ae-card__row");
         row.dataset.device = device.id;
         const dot = node("span", "", "ae-card__dot");
         dot.classList.toggle("ae-card__dot--connected", device.connected);
         dot.setAttribute("aria-hidden", "true");
-        row.append(dot, node("span", text, "ae-card__device"));
+        const description = node("span", "", "ae-card__device");
+        description.append(node("span", text), node("p", build));
+        row.append(dot, description);
         if (disconnectId === device.id) {
           row.append(node("span", T("ae.disconnectConfirm")),
             button("ae.yes", () => action(async () => {
@@ -185,37 +312,15 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("overwrite").disabled = el("overwrite-yes").disabled = busy || !connected;
     el("overwrite-no").disabled = busy;
 
-    const jobs = snapshot.jobs.slice(0, 5);
+    const jobs = snapshot.jobs.slice(1, JOB_HISTORY_LIMIT + 1);
     const jobSignature = JSON.stringify(jobs.map((job) => [job, relative(job.finished ?? job.started ?? job.created), snapshot.progress[job.id]])) + T("ae.sync");
     if (jobSignature === jobsPainted) return;
     jobsPainted = jobSignature;
-    const openWarnings = new Set([...el("jobs").querySelectorAll("details[open]")].map((details) => details.dataset.job));
     el("jobs").replaceChildren(...jobs.map((job) => {
-      const row = node("li");
-      row.append(node("p", Tf("ae.job", {kind: T(`ae.${job.kind}`), state: T(`ae.${job.state}`),
-        version: job.version, time: relative(job.finished ?? job.started ?? job.created)})));
-      if (job.error) row.append(node("p", job.error, "ae-card__error"));
-      else if (job.result?.applied === false) row.append(node("p", editMessage(job.result)));
-      else if (job.result?.applied === true) {
-        const count = value => Array.isArray(value) ? value.length : Number(value) || 0;
-        row.append(node("p", Tf("ae.summary", {
-          created: count(job.result.created), updated: count(job.result.updated), deleted: count(job.result.deleted),
-        })));
-      }
-      const progress = snapshot.progress[job.id];
-      if (progress) row.append(node("p", Tf("ae.progress", progress)));
-      const warnings = Array.isArray(job.result?.warnings) ? job.result.warnings : [];
-      if (warnings.length) {
-        const details = node("details");
-        details.dataset.job = job.id;
-        details.open = openWarnings.has(job.id);
-        details.append(node("summary", Tf("ae.warnings", {n: warnings.length})));
-        const list = node("ul");
-        list.append(...warnings.map((warning) => node("li", warning)));
-        details.append(list);
-        row.append(details);
-      }
-      return row;
+      const outcome = job.result?.applied === false ? editMessage(job.result) : jobOutcome(job);
+      return node("li", Tf("ae.job", {kind: T(`ae.${job.kind}`),
+        outcome: (outcome || T(`ae.${job.state}`)).replace(/\s+/g, " "),
+        time: relative(job.finished ?? job.started ?? job.created)}), job.error ? "ae-card__error" : "");
     }));
   }
 
@@ -235,7 +340,9 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
         snapshot = {jobs: [], last_synced: {}, progress: {}, ...data};
         acceptDevices(data.devices);
         paint();
-        stateDelay = snapshot.jobs.some((job) => ["queued", "running"].includes(job.state)) ? 2000 : 15000;
+        const hasActiveJob = snapshot.jobs.some(job => ["queued", "running"].includes(job.state));
+        const isVerifying = ["rendering", "verifying"].includes(snapshot.verify?.state);
+        stateDelay = hasActiveJob || isVerifying ? 2000 : 15000;
         if (pollError) clearError();
       } catch (err) {
         stateDelay = Math.min(stateDelay * 2, 60000);
@@ -270,6 +377,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     }
     copyMessage = copied ? "ae.copied" : "ae.copyFailed";
     el("copy-status").textContent = T(copyMessage);
+    el("copy-status").hidden = false;
   }
 
   el("connect").addEventListener("click", () => action(async () => {
@@ -281,6 +389,9 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, 2000);
   }));
   el("send").addEventListener("click", () => action(() => send()));
+  el("verify").addEventListener("click", () => action(() => api("/api/ae/verify", {
+    method: "POST", body: JSON.stringify({project: projectId, scene: getSceneId(), version: getVersionId()}),
+  })));
   el("overwrite").addEventListener("click", () => { overwriteConfirmed = true; paint(); el("overwrite-yes").focus(); });
   el("overwrite-no").addEventListener("click", () => { overwriteConfirmed = false; paint(); el("overwrite").focus(); });
   el("overwrite-yes").addEventListener("click", () => {

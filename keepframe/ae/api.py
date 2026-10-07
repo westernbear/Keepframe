@@ -10,12 +10,14 @@ import shutil
 import socket
 import tempfile
 import threading
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
 
 from .devices import Devices
 from .jobs import Jobs
-from .spec import comp_spec_json, spec_asset_paths
+from .spec import comp_spec, comp_spec_json, spec_asset_paths
+from .verify import sample_frames, verify
 from ..log import get
 from ..ir.store import load_project, load_scene, scene_dir
 
@@ -23,7 +25,9 @@ from ..ir.store import load_project, load_scene, scene_dir
 EXTENSION_PROTOCOL_MAJOR = 1
 UPLOAD_IDLE_TIMEOUT = 60
 STATIC = Path(__file__).resolve().parent / "static"
-_BROWSER = {"/api/ae/codes", "/api/ae/devices", "/api/ae/send", "/api/ae/state"}
+_BROWSER = {"/api/ae/codes", "/api/ae/devices", "/api/ae/send", "/api/ae/state",
+            "/api/ae/verify", "/api/ae/verify-image"}
+_VERIFY_IMAGE = re.compile(r"f[0-9]{4,6}_(ae|kf|diff)\.png")
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _SEMVER = re.compile(
     r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -75,6 +79,15 @@ def _read_json(handler, cap=1024 * 1024):
     return value
 
 
+def _verification_error(exc):
+    if isinstance(exc, FileNotFoundError):
+        return f"file not found: {Path(exc.filename).name}" if exc.filename else "file not found"
+    if isinstance(exc, ValueError):
+        return str(exc)
+    log.exception("After Effects verification failed")
+    return f"verification failed: {type(exc).__name__}"
+
+
 class AERoutes:
     def __init__(self, workspace):
         self.workspace = Path(workspace)
@@ -85,6 +98,11 @@ class AERoutes:
         self._upload_lock = threading.Lock()
         self._uploaded = {}
         self._uploading = {}
+        # ponytail: one renderer at a time; use a bounded worker pool if throughput matters.
+        self._verify_lock = threading.Lock()
+        self._verify_state_lock = threading.Lock()
+        self._verifying = {}
+        self._verify_errors = {}
         self._stop = threading.Event()
         self._sweeper = threading.Thread(target=self._sweep, name="keepframe-ae-sweeper", daemon=True)
         self._sweeper.start()
@@ -104,7 +122,8 @@ class AERoutes:
                 log.exception("After Effects job sweep failed")
 
     def close(self) -> None:
-        self._stop.set()
+        with self._verify_state_lock:
+            self._stop.set()
         self._sweeper.join()
 
     def _extension(self, handler, pair=False):
@@ -131,7 +150,7 @@ class AERoutes:
                 device = None
                 if u.path in _BROWSER or u.path.startswith("/api/ae/devices/"):
                     # Read-only browser GETs use the Host guard; responses have no CORS headers.
-                    if handler.command == "GET" and u.path in {"/api/ae/devices", "/api/ae/state"}:
+                    if handler.command == "GET" and u.path in {"/api/ae/devices", "/api/ae/state", "/api/ae/verify-image"}:
                         if not handler._host_allowed():
                             return True
                     elif not handler._same_origin():
@@ -207,6 +226,134 @@ class AERoutes:
             handler.end_headers()
             shutil.copyfileobj(stream, handler.wfile, length=1024 * 1024)
 
+    def _verify_directory(self, project, scene, version):
+        directory = self.workspace / project / "ae" / scene / version / "verify"
+        if not directory.resolve().is_relative_to((self.workspace / project).resolve()):
+            raise FileNotFoundError
+        return directory
+
+    def _verify_state(self, project, scene):
+        job = self.jobs.latest(project, scene, "render_frames")
+        if job is None:
+            return None
+        state = {"job": job.id, "version": job.version}
+        if job.state in {"queued", "running"}:
+            return {**state, "state": "rendering"}
+        if job.state == "failed":
+            return {**state, "state": "failed", "error": job.error}
+        with self._verify_state_lock:
+            if job.id in self._verifying:
+                return {**state, "state": "verifying"}
+            if job.id in self._verify_errors:
+                return {**state, "state": "failed", "error": self._verify_errors[job.id]}
+            path = self._verify_directory(project, scene, job.version) / "verify.json"
+            if path.is_file():
+                if path.resolve().parent != path.parent.resolve():
+                    raise FileNotFoundError
+                try:
+                    report = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(report, dict):
+                        raise ValueError("invalid saved report")
+                except (OSError, ValueError):
+                    message = "the saved report could not be read — verify again"
+                    log.warning("After Effects %s", message)
+                    return {**state, "state": "failed", "error": message}
+                if report.get("job") == job.id:
+                    return {**report, **state, "state": "failed" if "error" in report else "done"}
+        return {**state, "state": "interrupted"}
+
+    def _start_verification(self, job, ae_frames):
+        snapshot = None
+        try:
+            # Uploads replace the shared version files; retain this job's bytes before freeing the device.
+            snapshot = tempfile.TemporaryDirectory(
+                dir=self._verify_directory(job.project, job.scene, job.version).parent, prefix=".verify-frames-")
+            frames = {f: Path(snapshot.name) / path.name for f, path in ae_frames.items()}
+            for frame, path in ae_frames.items():
+                shutil.copyfile(path, frames[frame])
+            with self._verify_state_lock:
+                self._verifying[job.id] = job.version
+            threading.Thread(target=self._run_verification, args=(job, frames, snapshot),
+                             name=f"keepframe-ae-verify-{job.id}", daemon=True).start()
+        except Exception as exc:
+            with self._verify_state_lock:
+                self._verifying.pop(job.id, None)
+                self._verify_errors[job.id] = _verification_error(exc)
+            if snapshot is not None:
+                snapshot.cleanup()
+
+    def _run_verification(self, job, ae_frames, snapshot):
+        report = {}
+        log.info("After Effects verification start project=%s scene=%s version=%s job=%s",
+                 job.project, job.scene, job.version, job.id)
+        try:
+            with snapshot, self._verify_lock:
+                if self._stop.is_set():
+                    return
+                if self.jobs.latest(job.project, job.scene, "render_frames", version=job.version).id != job.id:
+                    return
+                # Stage images too: a verifier finishing after close() must not publish any files.
+                with tempfile.TemporaryDirectory(prefix="keepframe-ae-report-") as temporary:
+                    staging = Path(temporary)
+                    directory = None
+                    try:
+                        directory = self._verify_directory(job.project, job.scene, job.version)
+                        with self._verify_state_lock:
+                            if self._stop.is_set():
+                                return
+                            directory.mkdir(parents=True, exist_ok=True)
+                            for path in directory.iterdir():
+                                if path.name == "verify.json" or re.fullmatch(r"f.*_(ae|kf|diff)\.png", path.name):
+                                    path.unlink()
+                        scene, scene_dir, version = self._scene(job.project, job.scene, job.version)
+                        spec = comp_spec(scene, scene_dir, project=job.project, scene_id=job.scene,
+                                         version=version, fonts=self.devices.fonts(job.device))
+                        elements = {el.id: el for el in scene.elements}
+                        masked = {}
+                        for layer in spec["layers"]:
+                            eid = layer["id"].removeprefix("kf:")
+                            if layer["kind"] != "text" or eid.endswith("~text") or eid not in elements:
+                                continue
+                            font = layer["source"]["font"]
+                            if font["substituted"] and elements[eid].canonical.font is not None:
+                                masked[eid] = {"name": layer["name"], "font": font["family"],
+                                               "requested": elements[eid].canonical.font.family_guess}
+                        report = verify(scene, scene_dir, ae_frames, staging, masked=masked)
+                    except Exception as exc:
+                        report = {"error": _verification_error(exc)}
+                    report.update(job=job.id, version=job.version, finished=time.time())
+                    with self._verify_state_lock:
+                        if self._stop.is_set():
+                            return
+                        if self.jobs.latest(job.project, job.scene, "render_frames", version=job.version).id != job.id:
+                            return
+                        try:
+                            if directory is None:
+                                raise FileNotFoundError
+                            directory.mkdir(parents=True, exist_ok=True)
+                            if "error" not in report:
+                                for path in staging.iterdir():
+                                    if _VERIFY_IMAGE.fullmatch(path.name):
+                                        shutil.copyfile(path, directory / path.name)
+                            fd, path = tempfile.mkstemp(dir=directory, prefix=".verify-", suffix=".tmp")
+                            try:
+                                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                                    json.dump(report, stream, allow_nan=False)
+                                os.replace(path, directory / "verify.json")
+                            finally:
+                                Path(path).unlink(missing_ok=True)
+                        except Exception as exc:
+                            self._verify_errors[job.id] = _verification_error(exc)
+        except Exception as exc:
+            with self._verify_state_lock:
+                if not self._stop.is_set():
+                    self._verify_errors[job.id] = _verification_error(exc)
+        finally:
+            with self._verify_state_lock:
+                self._verifying.pop(job.id, None)
+            log.info("After Effects verification finish project=%s scene=%s version=%s mean=%s passed=%s",
+                     job.project, job.scene, job.version, report.get("mean"), report.get("passed"))
+
     def _get(self, handler, u, device):
         query = parse_qs(u.query)
         if u.path == "/ae/keepframe.zxp":
@@ -227,7 +374,20 @@ class AERoutes:
                 state = self.jobs.state(project, scene)
                 state["progress"] = {job["id"]: self._progress[job["id"]] for job in state["jobs"]
                                      if job["state"] == "running" and job["id"] in self._progress}
+                state["verify"] = self._verify_state(project, scene)
             handler._json(200, {**state, "devices": self.devices.list()})
+            return
+        if u.path == "/api/ae/verify-image":
+            project, scene = query.get("project", [None])[0], query.get("scene", [None])[0]
+            version, name = query.get("version", [None])[0], query.get("name", [""])[0]
+            if version is None or _VERIFY_IMAGE.fullmatch(name) is None:
+                raise FileNotFoundError
+            self._scene(project, scene, version)
+            directory = self._verify_directory(project, scene, version)
+            path = directory / name
+            if path.resolve().parent != directory.resolve():
+                raise FileNotFoundError
+            self._stream(handler, path, content_type="image/png")
             return
         if u.path == "/api/ae/next":
             wait = float(query.get("wait", [25])[0])
@@ -311,7 +471,27 @@ class AERoutes:
                             if not isinstance(error, str) or type(data["line"]) is not int:
                                 raise ValueError("invalid error or line")
                             error = f'{error} (line {data["line"]})'[:2000]
-                        job = self.jobs.finish(job.id, data.get("ok"), data.get("result"), error)
+                        ok, result = data.get("ok"), data.get("result")
+                        ae_frames = {}
+                        if job.kind == "render_frames" and ok is True:
+                            if not isinstance(result, dict):
+                                raise ValueError("invalid result: expected a JSON dictionary")
+                            frames = result.get("frames")
+                            if not isinstance(frames, list) or any(type(f) is not int for f in frames):
+                                raise ValueError("invalid frames: expected a list of integers")
+                            expected = set(job.params.get("frames", []))
+                            with self._upload_lock:
+                                uploaded = self._uploaded.get(job.id, set()).copy()
+                            missing = (expected ^ set(frames)) | {
+                                f for f in expected if f"frame_{f:04d}.png" not in uploaded}
+                            if missing:
+                                ok, error = False, ("frames missing from AE: " + ", ".join(map(str, sorted(missing))))[:2000]
+                            else:
+                                directory = self.workspace / job.project / "ae" / job.scene / job.version
+                                ae_frames = {f: directory / f"frame_{f:04d}.png" for f in expected}
+                        job = self.jobs.finish(job.id, ok, result, error)
+                        if job.kind == "render_frames" and job.state == "done":
+                            self._start_verification(job, ae_frames)
                     except ValueError as exc:
                         if str(exc) == "job must be running":
                             _error(handler, 409, str(exc))
@@ -328,7 +508,7 @@ class AERoutes:
                     else:
                         handler._json(200, {"job": job.to_dict()})
             return
-        if u.path not in {"/api/ae/pair", "/api/ae/info", "/api/ae/send"}:
+        if u.path not in {"/api/ae/pair", "/api/ae/info", "/api/ae/send", "/api/ae/verify"}:
             _error(handler, 404, "not found")
             return
         data = _read_json(handler, 8 * 1024 * 1024)
@@ -349,7 +529,7 @@ class AERoutes:
             self.devices.update_info(device, data.get("info"))
             handler._send(204, b"", "application/json")
         else:
-            _, _, version = self._scene(data.get("project"), data.get("scene"), data.get("version"))
+            scene, _, version = self._scene(data.get("project"), data.get("scene"), data.get("version"))
             devices = self.devices.list()
             if data.get("device") is not None:
                 device = next((row["id"] for row in devices if row["id"] == data["device"]), None)
@@ -361,8 +541,11 @@ class AERoutes:
                     _error(handler, 409, "no connected After Effects")
                     return
                 device = max(connected, key=lambda row: row["last_seen"])["id"]
-            job = self.jobs.enqueue(device, "sync", data["project"], data["scene"], version,
-                                    params={"force": bool(data.get("force"))})
+            kind, params = "sync", {"force": bool(data.get("force"))}
+            if u.path == "/api/ae/verify":
+                kind, params = "render_frames", {"frames": sample_frames(scene.frames),
+                                                 "tag": f"keepframe:{data['project']}/{data['scene']}"}
+            job = self.jobs.enqueue(device, kind, data["project"], data["scene"], version, params=params)
             handler._json(202, {"job": job.to_dict()})
 
     def _put(self, handler, u, device):
@@ -370,7 +553,7 @@ class AERoutes:
         if match is None:
             raise FileNotFoundError
         job, name = self._job(match[1], device), unquote(match[2])
-        allowed = {"render_frames": (r"frame_[0-9]{4}\.png", 25 * 1024 * 1024),
+        allowed = {"render_frames": (r"frame_[0-9]{4,6}\.png", 25 * 1024 * 1024),
                    "render_final": (r"final\.mp4", 4 * 1024**3), "package": (r"project\.zip", 4 * 1024**3)}
         if job.kind not in allowed or not re.fullmatch(allowed[job.kind][0], name):
             raise FileNotFoundError
@@ -427,17 +610,19 @@ class AERoutes:
                 os.replace(temporary, directory / name)
                 self._uploaded.setdefault(job.id, set()).add(name)
         except Exception as exc:
-            log.exception("After Effects upload failed")
+            log.error("After Effects upload failed: %s", type(exc).__name__)
             try:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
             except OSError as cleanup_error:
-                log.exception("After Effects upload cleanup failed")
+                log.error("After Effects upload cleanup failed: %s", type(cleanup_error).__name__)
                 exc = cleanup_error
             status = 400 if isinstance(exc, ValueError) else 500
             if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
                 status = 507
-            message = f"upload failed: {exc}"
+            reason = (exc.strerror or type(exc).__name__) if isinstance(exc, OSError) else (
+                str(exc) if isinstance(exc, ValueError) else type(exc).__name__)
+            message = f"upload failed: {reason}"
         finally:
             with self._upload_lock:
                 uploading = self._uploading.get(job.id)

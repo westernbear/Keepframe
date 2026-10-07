@@ -5,9 +5,71 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const zlib = require("node:zlib");
 const { spawnSync } = require("node:child_process");
 const { createAE } = require("./ae");
 const { checkES3Syntax } = require("./run");
+
+test("frame export writes a valid full-size PNG using the bottom enabled solid", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-png-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const ae = createAE({ documents: dir }), c = ae.context;
+  assert.equal(path.dirname(c.Folder.temp.fsName), dir);
+  const folder = new c.Folder(c.Folder.temp.fsName + "/frames");
+  assert.equal(folder.create(), true);
+  const comp = c.app.project.items.addComp("PNG", 3, 2, 1, 1, 30);
+  const bottom = comp.layers.addSolid([1, 0.5, 0], "bottom", 3, 2, 1, 1);
+  comp.layers.addSolid([0, 1, 0], "top", 3, 2, 1, 1);
+  comp.layers.addText("ignored");
+  const file = new c.File(folder.fsName + "/frame.png");
+  const writes = ae.counters.writes;
+  function pixels() {
+    const png = fs.readFileSync(file.fsName);
+    assert.deepEqual(png.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    assert.equal(png.readUInt32BE(16), 3); assert.equal(png.readUInt32BE(20), 2);
+    assert.equal(png[24], 8); assert.equal(png[25], 2);
+    assert.equal(png.readUInt32BE(png.length - 4), 0xae426082);
+    const chunks = [];
+    for (let offset = 8; offset < png.length;) {
+      const size = png.readUInt32BE(offset), kind = png.toString("ascii", offset + 4, offset + 8);
+      if (kind === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + size));
+      offset += size + 12;
+    }
+    return [...zlib.inflateSync(Buffer.concat(chunks))];
+  }
+  comp.saveFrameToPng(0, file);
+  assert.equal(file.exists, true); assert.ok(file.length > 0);
+  assert.deepEqual(pixels(), [0, 255,128,0, 255,128,0, 255,128,0, 0, 255,128,0, 255,128,0, 255,128,0]);
+  assert.equal(ae.counters.writes, writes); assert.equal(ae.counters.undoGroups, 0);
+  assert.equal(ae.calls.saveFrameToPng, 1);
+  bottom.enabled = false;
+  comp.saveFrameToPng(0, file);
+  assert.deepEqual(pixels(), [0, 0,255,0, 0,255,0, 0,255,0, 0, 0,255,0, 0,255,0, 0,255,0]);
+  comp.layers[2].enabled = false;
+  comp.saveFrameToPng(0, file);
+  assert.deepEqual(pixels(), Array(20).fill(0));
+  assert.equal(file.remove(), true); assert.equal(file.exists, false); assert.equal(file.length, 0);
+  assert.throws(() => comp.saveFrameToPng(-1, file), /time/);
+  assert.throws(() => comp.saveFrameToPng(0, "bad"), /File/);
+});
+
+test("delayed and missing frame writes run on a timer after JSX returns", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-png-delay-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const fails of [false, true]) {
+    const ae = createAE({ documents: dir, frameWriteDelayMs: 30, frameWriteFails: fails }), c = ae.context;
+    const comp = c.app.project.items.addComp("PNG", 2, 2, 1, 1, 30);
+    const file = new c.File(dir + "/delayed-" + fails + ".png");
+    comp.saveFrameToPng(0, file);
+    assert.equal(file.exists, false);
+    const started = Date.now();
+    c.$.sleep(50);
+    assert.ok(Date.now() - started >= 45);
+    assert.equal(file.exists, false); assert.equal(file.length, 0);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(file.exists, !fails); assert.equal(file.length > 0, !fails);
+  }
+});
 
 function fixture(options) {
   const ae = createAE(options);
@@ -17,8 +79,8 @@ function fixture(options) {
   return { ...ae, comp, layer, transform, opacity: transform.property("ADBE Opacity") };
 }
 
-function syncFixture(desired) {
-  const f = createAE();
+function syncFixture(desired, options) {
+  const f = createAE(options);
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8"), f.context);
   const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C",
     width: 640, height: 480, fps: 30, frames: 60}, assets: [], warnings: [],
@@ -63,10 +125,10 @@ for (const probe of ["user-moved bottom pair", "changed order with trailing pair
     } else {
       for (const s of f.spec.layers) s.order = desired.length - desired.indexOf(s.id);
     }
-    f.calls.length = 0;
+    f.trace.length = 0;
     assert.equal(f.sync().applied, true);
     assert.deepEqual(stackLayers(f.comp).map((l) => l.name), desired);
-    assert.deepEqual(f.calls.filter((c) => /^move/.test(c.operation)).map((c) => c.name), desired.slice(-2));
+    assert.deepEqual(f.trace.filter((c) => /^move/.test(c.operation)).map((c) => c.name), desired.slice(-2));
     const writes = f.counters.writes;
     assert.equal(f.sync().applied, true);
     assert.equal(f.counters.writes - writes, 0);
@@ -93,12 +155,12 @@ test("fix2: random tagged permutations preserve users and kept anchors, then wri
       const ranks = current.flatMap((name, i) => mask & (1 << i) ? [desired.indexOf(name)] : []);
       if (ranks.every((r, i) => !i || ranks[i - 1] < r)) longest = Math.max(longest, ranks.length);
     }
-    f.calls.length = 0;
+    f.trace.length = 0;
     const response = f.sync(), scenario = JSON.stringify({n, users, trial, before});
     assert.equal(response.applied, true, scenario);
     const after = stackLayers(f.comp).map((l) => l.name);
     assert.deepEqual(after.filter((name) => desired.includes(name)), desired, scenario);
-    const moves = f.calls.filter((c) => /^move/.test(c.operation)), moved = moves.map((c) => c.name);
+    const moves = f.trace.filter((c) => /^move/.test(c.operation)), moved = moves.map((c) => c.name);
     assert.equal(moved.length, n - longest, scenario);
     assert.equal(new Set(moved).size, moved.length, scenario);
     const kept = desired.filter((id) => !moved.includes(id)), placed = new Set(kept);
@@ -204,11 +266,11 @@ test("review: ease can switch linear interpolation; host must set interpolation 
   const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C", width: 640,
     height: 480, fps: 30, frames: 60}, assets: [], warnings: [], layers: [{id: "x", kind: "null", name: "x",
     label: null, order: 0, in: 0, out: 59, source: null, anchor: [0, 0], warnings: [],
-    props: {position_x: [[0, 0, null, null], [30, 100, null, null]], position_y: [[0, 0, null, null]],
+    props: {position_x: [[0, 0, [[25, 100]], null], [30, 100, null, [[25, 100]]]], position_y: [[0, 0, null, null]],
       scale: [[0, [100, 100], null, null]], rotation: [[0, 0, null, null]], opacity: [[0, 100, null, null]]},
     effects: {reveal: null, skew: null}}]};
   assert.equal(JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false")).ok, true);
-  const temporal = f.calls.filter((call) => ["ease", "interpolation"].includes(call.operation));
+  const temporal = f.trace.filter((call) => ["ease", "interpolation"].includes(call.operation));
   assert.deepEqual(temporal.slice(-4).map((call) => call.operation), ["ease", "interpolation", "ease", "interpolation"]);
 });
 
@@ -255,7 +317,7 @@ test("review: host insertion and reordering move only new layers or layers outsi
     const sync = () => JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false"));
     assert.equal(sync().ok, true);
     const comp = f.context.app.project.items[3], user = comp.layers.addText("USER-TOP");
-    user.name = "USER-TOP"; f.calls.length = 0;
+    user.name = "USER-TOP"; f.trace.length = 0;
     if (change === "insert") spec.layers.push(layerSpec("c", 1.5));
     if (change === "decrease") spec.layers[3].order = -1;
     if (change === "swap") { spec.layers[1].order = 2; spec.layers[2].order = 1; }
@@ -264,12 +326,12 @@ test("review: host insertion and reordering move only new layers or layers outsi
       spec.layers[1].order = 4; spec.layers.push(layerSpec("c", 3.5));
     }
     assert.equal(sync().ok, true);
-    const moves = f.calls.filter((call) => /^move/.test(call.operation));
+    const moves = f.trace.filter((call) => /^move/.test(call.operation));
     const expected = {ordered: [], insert: ["c"], decrease: ["d"], swap: ["a"], combined: ["a", "c"]}[change];
     assert.deepEqual(moves.map((call) => call.comment.split(";")[0].replace(/^keepframe:/, "")), expected, change);
     for (const move of moves) assert.notEqual(move.name, move.target);
-    f.calls.length = 0; assert.equal(sync().ok, true);
-    assert.deepEqual(f.calls, [], change);
+    f.trace.length = 0; assert.equal(sync().ok, true);
+    assert.deepEqual(f.trace, [], change);
   }
 });
 
@@ -401,6 +463,115 @@ test("keys replace, sort, interpolate, hold outside range, and remove", () => {
   const copy = position.keyValue(1);
   copy[0] = 999;
   assert.deepEqual(Array.from(position.keyValue(1)), [0, 10, 0]);
+});
+
+test("setValuesAtTimes writes sorted linear keys with default ease in one call", () => {
+  const f = fixture(), p = f.opacity, writes = f.counters.writes;
+  p.setValuesAtTimes([2, 0, 1], [80, 0, 40]);
+  assert.equal(p.numKeys, 3);
+  assert.equal(p.keyTime(1), 0);
+  assert.equal(p.keyValue(2), 40);
+  assert.equal(p.keyInInterpolationType(2), "LINEAR");
+  assert.equal(p.keyOutInterpolationType(2), "LINEAR");
+  assert.equal(p.keyInTemporalEase(2)[0].influence, 16.666667);
+  assert.equal(p.keyOutTemporalEase(2)[0].speed, 0);
+  assert.equal(f.counters.writes, writes + 1);
+  assert.equal(f.calls.setValuesAtTimes, 1);
+  assert.equal(f.calls.setValueAtTime || 0, 0);
+  p.setInterpolationTypeAtKey(2, "HOLD");
+  p.setTemporalEaseAtKey(2, [new f.context.KeyframeEase(4, 25)]);
+  p.setValuesAtTimes([1, 3], [45, 100]);
+  assert.equal(p.keyValue(2), 45);
+  assert.equal(p.keyInInterpolationType(2), "HOLD");
+  assert.equal(p.keyInTemporalEase(2)[0].influence, 25);
+  assert.equal(p.numKeys, 4);
+  assert.equal(f.calls.setInterpolationTypeAtKey, 1);
+  assert.equal(f.calls.setTemporalEaseAtKey, 1);
+});
+
+test("setValuesAtTimes validates arrays, finite times, values and dimensions", () => {
+  const f = fixture(), p = f.opacity, writes = f.counters.writes;
+  for (const [times, values] of [[[0, 1], [10]], [null, []], [[], {}]]) {
+    assert.throws(() => p.setValuesAtTimes(times, values),
+      {message: "fake AE: setValuesAtTimes needs equal arrays"});
+  }
+  for (const [times, values] of [[[NaN], [10]], [[Infinity], [10]], [["0"], [10]],
+    [[0], [NaN]], [[0], ["10"]], [[0], [[10]]]]) {
+    assert.throws(() => p.setValuesAtTimes(times, values), /invalid/);
+  }
+  const scale = f.transform.property("ADBE Scale");
+  assert.throws(() => scale.setValuesAtTimes([0], [[100]]), /dimensions/);
+  assert.equal(f.counters.writes, writes);
+  assert.equal(p.numKeys, 0);
+  scale.setValuesAtTimes([0, 1], [[100, 200], [50, 60, 70]]);
+  assert.deepEqual(Array.from(scale.keyValue(1)), [100, 200, 100]);
+  assert.deepEqual(Array.from(scale.keyInTemporalEase(1), e => [e.speed, e.influence]),
+    [[0, 16.666667], [0, 16.666667], [0, 16.666667]]);
+  const text = f.layer.property("Text").property("Source Text"), doc = text.value;
+  doc.text = "Batch";
+  text.setValuesAtTimes([0, 1], [doc, doc]);
+  doc.text = "Detached";
+  assert.equal(text.keyValue(2).text, "Batch");
+});
+
+test("setValuesAtTimes respects hidden properties, separated position and write faults", () => {
+  const f = fixture(), position = f.transform.property("ADBE Position");
+  position.dimensionsSeparated = true;
+  const z = f.transform.property("ADBE Position_2"), writes = f.counters.writes;
+  assert.throws(() => z.setValuesAtTimes([0], [10]), /parent property is hidden/);
+  assert.throws(() => position.setValuesAtTimes([0], [[10, 20]]), /separated position/);
+  assert.equal(f.counters.writes, writes);
+  f.layer.threeDLayer = true;
+  z.setValuesAtTimes([0, 1], [10, 20]);
+  assert.equal(z.numKeys, 2);
+  const faulty = fixture({state: {testHooks: {writeProperty: "ADBE Opacity"}}});
+  const before = faulty.counters.writes;
+  assert.throws(() => faulty.opacity.setValuesAtTimes([0], [10]), /injected write/);
+  assert.equal(faulty.counters.writes, before);
+});
+
+test("defaultInterpolation can model BEZIER for script-created keys", () => {
+  const f = fixture({defaultInterpolation: "BEZIER"});
+  f.opacity.setValuesAtTimes([0, 1, 2], [0, 50, 100]);
+  assert.equal(f.opacity.keyInInterpolationType(1), "BEZIER");
+  assert.equal(f.opacity.keyOutInterpolationType(3), "BEZIER");
+  f.opacity.setValueAtTime(3, 80);
+  assert.equal(f.opacity.keyInInterpolationType(4), "BEZIER");
+  assert.equal(f.calls.setValueAtTime, 1);
+});
+
+for (const eased of [false, true]) {
+  test(`host guards BEZIER defaults before applying explicit ease (eased=${eased})`, () => {
+    const f = syncFixture(["x"], {defaultInterpolation: "BEZIER"});
+    f.spec.layers[0].props.position_x = eased ?
+      [[0, 0, [[25, 100]], null], [12, 100, null, [[75, 0]]], [24, 50, null, null]] :
+      [[0, 0, null, null], [12, 100, null, null], [24, 50, null, null]];
+    const reads = f.calls.keyInInterpolationType || 0;
+    assert.equal(f.sync().applied, true);
+    assert.equal(f.calls.keyInInterpolationType - reads, 4, "one guard read plus three fingerprint reads");
+    assert.equal(f.calls.setValuesAtTimes, 1);
+    assert.equal(f.calls.setValueAtTime || 0, 0);
+    assert.equal(f.calls.setTemporalEaseAtKey || 0, eased ? 2 : 0);
+    assert.equal(f.calls.setInterpolationTypeAtKey, 3);
+    const x = f.comp.layers[1].property("Transform").property("ADBE Position_0");
+    assert.deepEqual(Array.from({length: 3}, (_, i) => [x.keyInInterpolationType(i + 1),
+      x.keyOutInterpolationType(i + 1)]), eased ?
+      [["LINEAR", "BEZIER"], ["BEZIER", "LINEAR"], ["LINEAR", "LINEAR"]] :
+      [["LINEAR", "LINEAR"], ["LINEAR", "LINEAR"], ["LINEAR", "LINEAR"]]);
+    const writes = f.counters.writes;
+    assert.equal(f.sync().applied, true);
+    assert.equal(f.counters.writes, writes);
+  });
+}
+
+test("key read calls count values, times, interpolation and ease independently", () => {
+  const f = fixture(), p = f.opacity;
+  p.setValuesAtTimes([0, 1], [0, 100]);
+  const reads = ["keyTime", "keyValue", "keyInInterpolationType", "keyOutInterpolationType",
+    "keyInTemporalEase", "keyOutTemporalEase"];
+  const before = { ...f.calls };
+  for (const method of reads) p[method](1);
+  for (const method of reads) assert.equal(f.calls[method] - (before[method] || 0), 1, method);
 });
 
 test("ease dimension checks, interpolation, and influence boundaries", () => {
@@ -751,7 +922,7 @@ test("CLI persists state, returns only JSON, accepts string args and documents; 
   const first = run("sync", "literal $`\" arg");
   assert.equal(first.status, 0, first.stdout + first.stderr);
   assert.equal(first.stdout.trim().split("\n").length, 1);
-  assert.deepEqual(JSON.parse(first.stdout), { result: `literal $\`" arg:${path.basename(dir)}`, undo_groups: 0, writes: 1 });
+  assert.deepEqual(JSON.parse(first.stdout), { result: `literal $\`" arg:${path.basename(dir)}`, undo_groups: 0, writes: 1, calls: {} });
   assert.equal(JSON.parse(fs.readFileSync(state, "utf8")).project.items.length, 1);
   const second = run("sync", "ignored");
   assert.equal(second.status, 0, second.stdout + second.stderr);

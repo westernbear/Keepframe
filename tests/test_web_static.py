@@ -457,7 +457,7 @@ import vm from 'node:vm';
 const scenario = ''' + json.dumps(scenario) + ''';
 const nodes = [], requests = [], banners = [], imageSources = [];
 class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.listeners = {}; this.textContent = ''; }
+  constructor(tag) { this.tag = tag; this.children = []; this.listeners = {}; this.dataset = {}; this.textContent = ''; }
   set innerHTML(value) { throw new Error('preview values must only be rendered as text'); }
   append(...children) { this.children.push(...children); }
   addEventListener(event, handler) { this.listeners[event] = handler; }
@@ -584,13 +584,13 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261006g"}
+    assert stamps == {"20261006l"}
 
 
 def test_ae_card_static_contract():
     html = static_src("agent.html")
     assert re.search(r'</section>\s*<section class="render-card ae-card" id="ae-card" aria-labelledby="ae-card-title">', html)
-    assert html.index('id="render-card"') < html.index('id="ae-card"') < html.index('class="agent-transport"')
+    assert html.index('class="compare-panes"') < html.index('class="agent-transport"') < html.index('id="render-card"') < html.index('id="ae-card"')
     assert '<a href="/ae/keepframe.zxp" download' in html
     assert r'value="&amp; &quot;C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe&quot; /install &quot;$env:USERPROFILE\Downloads\keepframe.zxp&quot;"' in html
     assert 'aria-describedby="ae-install-path-hint"' in html
@@ -598,26 +598,38 @@ def test_ae_card_static_contract():
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261006g"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261006l"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh
     ae = static_src("js/ae.js")
     assert "export function initAECard({projectId, getSceneId, getVersionId})" in ae
-    assert set(re.findall(r"/api/ae/[a-z_/]+", ae)) == {
+    assert set(re.findall(r"/api/ae/[a-z_/-]+", ae)) == {
         "/api/ae/codes", "/api/ae/devices", "/api/ae/devices/", "/api/ae/send", "/api/ae/state",
+        "/api/ae/verify", "/api/ae/verify-image",
     }
     assert "visibilitychange" in ae
     assert "console." not in ae and "innerHTML" not in ae and "window.confirm" not in ae
     ko, en = static_src("js/i18n.js").split("en: {", 1)
-    used = set(re.findall(r"ae\.[A-Za-z0-9_.]+", html + ae)) - {"ae.js"}
+    used = set(re.findall(r"ae\.[A-Za-z0-9_.]+", html + ae)) - {"ae.js", "ae.count."}
     # Dynamic job keys must also have both translations.
     used |= {f"ae.{value}" for value in (
         "sync", "render_frames", "render_final", "package", "queued", "running", "done", "failed", "superseded",
     )}
+    used |= {f"ae.count.{value}" for value in ("created", "updated", "deleted")}
+    used |= {f"ae.verify{value}" for value in (
+        "", "Rendering", "Verifying", "Passed", "Differs", "Over", "Failed", "Interrupted",
+        "Limits", "Frame", "AE", "KF", "Diff", "ImageAlt", "Masked",
+    )}
     assert used
     for key in used:
         assert f'"{key}":' in ko and f'"{key}":' in en, key
+
+
+def test_agent_and_ae_removed_copy_stays_unused():
+    source = static_src("js/i18n.js")
+    for key in ("ae.warnings", "ae.connected", "agent.toolCall", "agent.job"):
+        assert f'"{key}":' not in source
 
 
 def test_pending_solid_button_uses_edit_preview_and_confirmation(tmp_path):

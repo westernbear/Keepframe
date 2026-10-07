@@ -197,13 +197,15 @@ if (typeof JSON !== "object" || JSON === null) {
         return ("00000000" + h.toString(16)).slice(-8);
     }
 
-    function layerHash(s) {
-        var content = {}, key;
+    function layerHash(s, timings) {
+        var content = {}, key, started = new Date().getTime(), value;
         // Stack order is handled separately; renumbering must not rewrite layer content.
         for (key in s) { if (own(s, key) && key !== "order" && key !== "name" && key !== "label") { content[key] = s[key]; } }
         // Reapply model placement once to layers synced with the old origin/100% fit.
         if (s.kind === "model") { content.model_fit = "bounds-center-0.9"; }
-        return hash(JSON.stringify(content));
+        value = hash(JSON.stringify(content));
+        if (timings) { timings.hash += new Date().getTime() - started; }
+        return value;
     }
 
     function transform(layer) { return layer.property("ADBE Transform Group"); }
@@ -297,42 +299,55 @@ if (typeof JSON !== "object" || JSON === null) {
         return values;
     }
 
-    function fingerprint(layer, fps, legacy) {
-        var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
-        var position = transform(layer).property("ADBE Position");
-        var modelScale = kind(layer) === "model";
-        // FPS is managed context: changing it changes how every frame-based property must be written.
-        data.push(rounded(fps));
-        // ponytail: builds up to 1.0.238 fingerprinted name and label; accept that form until each layer is rewritten once.
-        if (legacy) { data.push(layer.name, layer.label); }
-        data.push(Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
-            position.expressionEnabled, position.expression);
-        if (kind(layer) === "solid") {
-            data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
-        } else if (layer.source) { data.push(layer.source.id); }
-        // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
-        if (kind(layer) === "model") { data.push(layer.source.comment); }
-        for (i = 0; i < props.length; i += 1) {
-            p = props[i];
-            keys = [];
-            for (k = 1; k <= p.numKeys; k += 1) {
-                keys.push([Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(p.keyInInterpolationType(k)),
-                    String(p.keyOutInterpolationType(k)), easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k))]);
+    function fingerprint(layer, fps, legacy, timings) {
+        var started = new Date().getTime(), value;
+        try {
+            var props = managed(layer), data = [], i, k, p, keys, key, incoming, outgoing, effects, effect, effectNames = [];
+            var position = transform(layer).property("ADBE Position");
+            var modelScale = kind(layer) === "model";
+            // FPS is managed context: changing it changes how every frame-based property must be written.
+            data.push(rounded(fps));
+            // v1 read every ease; builds up to 1.0.238 also fingerprinted name and label.
+            if (legacy === true) { data.push(layer.name, layer.label); }
+            data.push(Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
+                position.expressionEnabled, position.expression);
+            if (kind(layer) === "solid") {
+                data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
+            } else if (layer.source) { data.push(layer.source.id); }
+            // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
+            if (kind(layer) === "model") { data.push(layer.source.comment); }
+            for (i = 0; i < props.length; i += 1) {
+                p = props[i];
+                keys = [];
+                for (k = 1; k <= p.numKeys; k += 1) {
+                    incoming = p.keyInInterpolationType(k); outgoing = p.keyOutInterpolationType(k);
+                    key = [Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(incoming), String(outgoing)];
+                    // AE turns an ease-edited key Bezier; all-LINEAR ease has no visible state.
+                    if (legacy || incoming !== KeyframeInterpolationType.LINEAR || outgoing !== KeyframeInterpolationType.LINEAR) {
+                        key.push(easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k)));
+                    }
+                    keys.push(key);
+                }
+                data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale),
+                    p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
             }
-            data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale),
-                p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
+            effects = layer.property("ADBE Effect Parade");
+            for (i = 1; i <= effects.numProperties; i += 1) {
+                effect = effects.property(i);
+                if (owned(effect)) { effectNames.push([effect.matchName, effect.name, effect.enabled]); }
+            }
+            data.push(effectNames);
+        } finally {
+            if (timings) { timings.read += new Date().getTime() - started; }
         }
-        effects = layer.property("ADBE Effect Parade");
-        for (i = 1; i <= effects.numProperties; i += 1) {
-            effect = effects.property(i);
-            if (owned(effect)) { effectNames.push([effect.matchName, effect.name, effect.enabled]); }
-        }
-        data.push(effectNames);
-        return hash(JSON.stringify(data));
+        started = new Date().getTime();
+        value = hash(JSON.stringify(data));
+        if (timings) { timings.hash += new Date().getTime() - started; }
+        return value;
     }
 
-    function readFingerprint(layer, fps, legacy) {
-        try { return fingerprint(layer, fps, legacy); } catch (e) { return null; }
+    function readFingerprint(layer, fps, legacy, timings) {
+        try { return fingerprint(layer, fps, legacy, timings); } catch (e) { return null; }
     }
 
     function keyCount(layer) {
@@ -359,19 +374,26 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function writeKeys(p, keys, fps, factor, modelScale) {
-        var i, k, value, dimensions = propertyDimensions(p, true);
+        var i, k, value, times = [], values = [], dimensions = propertyDimensions(p, true), linearize;
         clear(p);
         for (i = 0; i < keys.length; i += 1) {
             k = keys[i];
             value = k[1];
             if (modelScale) { value = [value[0] * factor, value[1] * factor]; }
-            value = paddedValue(p, value, modelScale);
-            if (keys.length === 1) { p.setValue(value); }
-            else {
-                p.setValueAtTime(k[0] / fps, value);
+            times.push(k[0] / fps); values.push(paddedValue(p, value, modelScale));
+        }
+        if (keys.length === 1) { p.setValue(values[0]); return; }
+        // One call for all keys; per-key calls only where an ease is set (linear keys keep AE's defaults).
+        p.setValuesAtTimes(times, values);
+        linearize = p.keyInInterpolationType(1) !== KeyframeInterpolationType.LINEAR;
+        for (i = 0; i < keys.length; i += 1) {
+            k = keys[i];
+            if (k[2] || k[3]) {
                 p.setTemporalEaseAtKey(i + 1, eases(k[3], dimensions, factor), eases(k[2], dimensions, factor));
                 p.setInterpolationTypeAtKey(i + 1, k[3] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR,
                     k[2] ? KeyframeInterpolationType.BEZIER : KeyframeInterpolationType.LINEAR);
+            } else if (linearize) {
+                p.setInterpolationTypeAtKey(i + 1, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
             }
         }
     }
@@ -435,7 +457,7 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
-    function writeLayer(layer, s, fps, force) {
+    function writeLayer(layer, s, fps, force, timings) {
         var t, rect, anchor = s.anchor, doc, i, factor = 1;
         if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
         t = transform(layer);
@@ -476,7 +498,7 @@ if (typeof JSON !== "object" || JSON === null) {
         if (s["in"] / fps >= layer.outPoint) { layer.outPoint = (s.out + 1) / fps; }
         layer.inPoint = s["in"] / fps;
         layer.outPoint = (s.out + 1) / fps;
-        layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s) + ";fp=" + (readFingerprint(layer, fps) || "00000000");
+        layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s, timings) + ";fp=" + (readFingerprint(layer, fps, false, timings) || "00000000");
     }
 
     function folder(name, parent) {
@@ -724,13 +746,57 @@ if (typeof JSON !== "object" || JSON === null) {
         } catch (e) { return errorResult(e); }
     };
 
+    global.kfRender = function (requestJson) {
+        var folder;
+        try {
+            var request = JSON.parse(requestJson), comp, frames, seen = {}, i, f, name, file, stale;
+            var result = [];
+            requireValue(request && typeof request.job === "string" && /^j_[0-9a-f]{16}$/.test(request.job), "Invalid render job");
+            requireValue(typeof request.tag === "string" && /^keepframe:[^\/\x00-\x1f]+\/[^\/\x00-\x1f]+$/.test(request.tag), "Invalid render tag");
+            frames = request.frames;
+            requireValue(array(frames) && frames.length > 0 && frames.length <= 16, "Invalid render frames");
+            comp = findComp(request.tag);
+            requireValue(comp, "the Keepframe comp is missing; send the scene to AE first");
+            for (i = 0; i < frames.length; i += 1) {
+                f = frames[i];
+                requireValue(number(f) && Math.floor(f) === f && f >= 0 &&
+                    f < Math.round(comp.duration * comp.frameRate) && !own(seen, "$" + f), "Invalid render frames");
+                seen["$" + f] = true;
+            }
+            requireValue(typeof comp.saveFrameToPng === "function",
+                "this After Effects cannot export frames; update to After Effects 24.1 or newer");
+            folder = new Folder(Folder.temp.fsName + "/keepframe-" + request.job);
+            requireValue(folder.exists || folder.create(), "Could not create temporary frame folder");
+            stale = folder.getFiles();
+            for (i = 0; i < stale.length; i += 1) {
+                requireValue(stale[i] instanceof File && stale[i].remove(), "Could not remove stale frame file");
+            }
+            for (i = 0; i < frames.length; i += 1) {
+                f = frames[i]; name = String(f);
+                while (name.length < 4) { name = "0" + name; }
+                file = new File(folder.fsName + "/frame_" + name + ".png");
+                comp.saveFrameToPng(f / comp.frameRate, file);
+                result.push({frame: f, path: file.fsName});
+            }
+            return JSON.stringify({ok: true, frames: result, width: comp.width, height: comp.height});
+        } catch (e) {
+            if (folder) {
+                return errorResult({message: String(e.message || e).split(folder.fsName).join("[temporary frames]"), line: e.line || 0});
+            }
+            return errorResult(e);
+        }
+    };
+
     global.kfSync = function (specJson, assetsJson, force) {
         try {
+            var started = new Date().getTime(), stage = started, measured;
+            var timings = {validate: 0, read: 0, hash: 0, assets: 0, write: 0, order: 0, total: 0};
             var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
             var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered, fps;
             validate(spec, paths, force);
+            timings.validate = new Date().getTime() - stage;
             var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
-                keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version};
+                keys: {}, warnings: spec.warnings.slice(0), ae_version: app.version, timings: timings};
             comp = findComp(spec.comp.tag);
             records = tagged(comp);
             for (i = 0; i < spec.layers.length; i += 1) { wanted["$" + spec.layers[i].id] = spec.layers[i]; }
@@ -746,12 +812,18 @@ if (typeof JSON !== "object" || JSON === null) {
             for (i = 0; i < records.length; i += 1) {
                 record = records[i]; s = wanted["$" + record.id];
                 fps = Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001 ? spec.comp.fps : rounded(comp.frameRate);
-                record.current = readFingerprint(record.layer, fps);
+                record.fps = fps;
+                record.current = readFingerprint(record.layer, fps, false, timings);
                 record.kind = kind(record.layer);
+                record.asset = record.kind === "model" ? record.layer.source.comment : null;
+                record.upgrade = record.fp !== null && record.current !== null && record.current !== record.fp
+                    && (readFingerprint(record.layer, fps, "ease", timings) === record.fp
+                        || readFingerprint(record.layer, fps, true, timings) === record.fp);
+                if (record.upgrade) { record.fp = record.current; }
                 if (force !== "true") {
                     if (record.fp === null) { interrupted.push(record.id); }
                     try {
-                        if (record.current === null || (record.current !== record.fp && readFingerprint(record.layer, fps, true) !== record.fp)
+                        if (record.current === null || record.current !== record.fp
                             || hasExpression(record.layer)
                             || ((!s || s.kind !== record.kind) && (hasExtras(record.layer)
                                 || hasUserDependents(comp, record.layer)))) { edits.push(record.id); }
@@ -759,12 +831,14 @@ if (typeof JSON !== "object" || JSON === null) {
                 }
             }
             if (edits.length) {
-                result = {ok: true, applied: false, hand_edited: edits};
+                result = {ok: true, applied: false, hand_edited: edits, timings: timings};
                 if (interrupted.length) { result.interrupted = interrupted; }
+                timings.total = new Date().getTime() - started;
                 return JSON.stringify(result);
             }
             app.beginUndoGroup("Keepframe sync");
             try {
+                stage = new Date().getTime();
                 parent = folder(spec.project, folder("Keepframe", null));
                 if (!comp) {
                     comp = app.project.items.addComp(spec.comp.name, spec.comp.width, spec.comp.height, 1,
@@ -777,7 +851,11 @@ if (typeof JSON !== "object" || JSON === null) {
                     renderer = modelRenderer(comp);
                     if (comp.renderer !== renderer) { comp.renderer = renderer; }
                 }
+                timings.write += new Date().getTime() - stage;
+                stage = new Date().getTime();
                 assets = syncAssets(spec, paths, parent);
+                timings.assets += new Date().getTime() - stage;
+                stage = new Date().getTime();
                 for (i = 0; i < records.length; i += 1) {
                     record = records[i]; s = wanted["$" + record.id];
                     if (!s) {
@@ -792,15 +870,23 @@ if (typeof JSON !== "object" || JSON === null) {
                     s = spec.layers[i]; record = existing["$" + s.id];
                     if (record) { desired.push({id: s.id, layer: record.layer, order: s.order, sequence: i}); }
                 }
+                timings.write += new Date().getTime() - stage;
+                stage = new Date().getTime();
                 orderLayers(comp, desired);
+                timings.order += new Date().getTime() - stage;
                 desired = [];
+                stage = new Date().getTime();
+                measured = timings.read + timings.hash;
                 for (i = 0; i < spec.layers.length; i += 1) {
                     s = spec.layers[i]; record = existing["$" + s.id];
-                    newHash = layerHash(s);
-                    if (record) { record.current = readFingerprint(record.layer, spec.comp.fps); }
+                    newHash = layerHash(s, timings);
                     if (record && record.spec === newHash && record.current !== null && record.fp === record.current
+                        && record.fps === spec.comp.fps && (record.kind !== "model" || record.asset === record.layer.source.comment)
                         && (s.kind !== "solid" || (record.layer.source.width === comp.width && record.layer.source.height === comp.height))) {
                         layer = record.layer; result.unchanged += 1;
+                        if (record.upgrade) {
+                            layer.comment = "keepframe:" + s.id + ";spec=" + record.spec + ";fp=" + record.current;
+                        }
                     } else {
                         if (record && record.kind !== s.kind) {
                             layer = createLayer(comp, s, assets);
@@ -813,7 +899,7 @@ if (typeof JSON !== "object" || JSON === null) {
                             if (record) { updateSource(layer, comp, s, assets); }
                             else { placeNew(layer, s, ordered, existing); }
                         }
-                        writeLayer(layer, s, spec.comp.fps, force === "true");
+                        writeLayer(layer, s, spec.comp.fps, force === "true", timings);
                         (record ? result.updated : result.created).push(s.id);
                     }
                     result.keys[s.id] = keyCount(layer);
@@ -821,8 +907,12 @@ if (typeof JSON !== "object" || JSON === null) {
                     existing["$" + s.id] = {layer: layer};
                     desired.push({id: s.id, layer: layer, order: s.order, sequence: i});
                 }
+                timings.write += new Date().getTime() - stage - (timings.read + timings.hash - measured);
+                stage = new Date().getTime();
                 orderLayers(comp, desired);
+                timings.order += new Date().getTime() - stage;
             } finally { app.endUndoGroup(); }
+            timings.total = new Date().getTime() - started;
             return JSON.stringify(result);
         } catch (e) { return errorResult(e); }
     };

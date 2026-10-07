@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261006g" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261006l" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261006g"></script>
-<script type="module" src="/static/js/api.js?v=20261006g"></script>
-<script type="module" src="/static/js/agent.js?v=20261006g"></script>
+<script type="module" src="/static/js/i18n.js?v=20261006l"></script>
+<script type="module" src="/static/js/api.js?v=20261006l"></script>
+<script type="module" src="/static/js/agent.js?v=20261006l"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -38,26 +38,28 @@
 <div class="agent-chat__log" id="agent-log">
 <p class="agent-empty" id="agent-empty" data-i18n="agent.empty">예: 문구를 Hello로 바꿔줘</p>
 </div>
-<div class="agent-tools" id="agent-tools">
-<button class="tool" type="button" data-tool="analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="agent.tool.analyze">분석</span></button>
-<button class="tool" type="button" data-tool="correct"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7h-9M14 3l6 4-6 4"/></svg><span data-i18n="agent.tool.correct">보정</span></button>
-<button class="tool" type="button" data-tool="set_keep"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="agent.tool.keep">유지 지정</span></button>
-<button class="tool" type="button" data-tool="edit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span data-i18n="agent.tool.edit">재해석</span></button>
-<button class="tool" type="button" data-tool="render"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3Z"/></svg><span data-i18n="agent.tool.render">렌더</span></button>
-<button class="tool" type="button" data-tool="verify"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></svg><span data-i18n="agent.tool.verify">검증</span></button>
-<button class="tool" type="button" data-tool="export"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg><span data-i18n="agent.tool.export">내보내기</span></button>
-<button class="tool" type="button" data-tool="report"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span data-i18n="agent.tool.report">보고서</span></button>
-</div>
 <div class="agent-compose">
 <label class="sr-only" for="agent-input">에이전트에게 보낼 메시지</label>
 <textarea id="agent-input" rows="2" data-i18n-placeholder="agent.placeholder" placeholder="수정이나 검증, 내보내기를 적어 보내세요."></textarea>
-<p class="agent-compose__context">현재 화면과 원본·재구성 preview가 AI에 전달됨</p>
+<p class="agent-compose__context" data-i18n="agent.composeContext">화면과 미리보기를 함께 보냅니다</p>
 <div class="agent-compose__row">
-<span class="agent-compose__hint">Ctrl+Enter 전송</span>
+<div class="agent-tools-menu">
+<button id="agent-tools-toggle" class="btn btn--secondary btn--inline" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="agent-tools" data-i18n="agent.tools">도구</button>
+<div class="agent-tools" id="agent-tools" role="menu" aria-labelledby="agent-tools-toggle" popover="manual" hidden>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="analyze"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="agent.tool.analyze">분석</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="correct"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7h-9M14 3l6 4-6 4"/></svg><span data-i18n="agent.tool.correct">보정</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="set_keep"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="agent.tool.keep">유지 지정</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="edit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span data-i18n="agent.tool.edit">재해석</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="render"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3Z"/></svg><span data-i18n="agent.tool.render">렌더</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="verify"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14l-3-3"/></svg><span data-i18n="agent.tool.verify">검증</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="export"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg><span data-i18n="agent.tool.export">내보내기</span></button>
+<button class="tool" type="button" role="menuitem" tabindex="-1" data-tool="report"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span data-i18n="agent.tool.report">보고서</span></button>
+</div>
+</div>
 <input type="file" id="agent-attach" accept="image/png,image/jpeg,image/svg+xml,.svg,model/gltf-binary,.glb" hidden>
 <button type="button" class="btn btn--secondary btn--inline" id="agent-attach-btn" data-i18n="agent.attach" data-i18n-aria="agent.attachmentFormats">첨부</button>
 <span id="agent-attach-name" class="mono"></span>
-<button class="btn btn--primary" id="agent-send" type="button" data-i18n="agent.send">전송</button>
+<button class="btn btn--primary" id="agent-send" type="button" title="Ctrl+Enter" aria-keyshortcuts="Control+Enter" data-i18n="agent.send">전송</button>
 </div>
 </div>
 <div class="agent-banner" id="agent-banner" role="status" hidden></div>
@@ -73,49 +75,53 @@
 <div class="compare-pane__body"><img id="agent-recon" alt="현재 장면의 재구성 preview" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/></div>
 </div>
 </div>
+<div class="agent-transport">
+<button class="btn--icon" id="agent-play" type="button" aria-label="재생">
+<svg class="icon" id="agent-play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
+<svg class="icon" id="agent-pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+</button>
+<button class="btn--icon transport__step" id="agent-prev" type="button" aria-label="이전 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+<button class="btn--icon transport__step" id="agent-next" type="button" aria-label="다음 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+<span class="mono" style="font-weight:700"><span id="agent-frame">0</span> <span style="color:var(--muted);font-weight:400">/ <span id="agent-total">0</span></span></span>
+</div>
 <section class="render-card" id="render-card" aria-labelledby="render-card-title">
 <div class="render-card__head">
-<div>
-<h2 id="render-card-title" data-i18n="agent.renderTitle">렌더 계획</h2>
-<p id="render-lock" class="render-card__lock mono">—</p>
+<h2 id="render-card-title"><button id="render-card-toggle" class="card-toggle" type="button" aria-expanded="true" aria-controls="render-card-body" data-i18n="agent.renderTitle">렌더 계획</button></h2>
+<span id="render-status" class="render-card__status" role="status" aria-live="polite" hidden></span>
 </div>
-<div class="render-card__head-actions">
-<span id="render-status" class="render-card__status" data-i18n="agent.renderNoPlan">계획 없음</span>
-</div>
-</div>
-<div class="render-card__body">
+<div class="render-card__body" id="render-card-body">
 <div class="render-card__setup">
 <label><span data-i18n="agent.renderMode">모드</span><select id="render-mode"><option value="preview" data-i18n="agent.renderPreview">미리보기</option><option value="final" data-i18n="agent.renderFinal">최종</option></select></label>
 <label><span data-i18n="agent.renderBackend">백엔드</span><select id="render-backend"><option value="native">Native</option><option value="lottie">Lottie</option></select></label>
-<label><span data-i18n="agent.renderPlan">계획</span><select id="render-plan-selector"><option value="" data-i18n="agent.renderSelectPlan">계획 선택</option></select></label>
+<label id="render-plan-field" hidden><span data-i18n="agent.renderPlan">계획</span><select id="render-plan-selector"></select></label>
 <button class="btn btn--primary" id="render-create" type="button" data-i18n="agent.renderCreate">계획 만들기</button>
 </div>
-<div class="render-card__facts">
-<div><span data-i18n="agent.renderOutputs">출력</span><strong id="render-outputs">—</strong></div>
+<div class="render-card__facts" id="render-output-field" hidden>
+<div><span data-i18n="agent.renderOutputs">출력</span><strong id="render-outputs"></strong></div>
 </div>
 <div id="render-live-status" class="render-card__live-status" role="status" aria-live="polite" aria-atomic="true">
-<div class="render-card__state">
-<div><span data-i18n="agent.renderState">상태 / revision</span><strong id="render-state">—</strong></div>
-<div><span data-i18n="agent.renderReason">실패 이유</span><strong id="render-reason">—</strong></div>
+<div class="render-card__facts" id="render-reason-field" hidden>
+<div><span data-i18n="agent.renderReason">실패 이유</span><strong id="render-reason"></strong></div>
 </div>
 <div id="render-artifacts" class="render-artifacts" data-i18n-aria="agent.renderArtifacts" aria-label="렌더 산출물"></div>
 </div>
-<div class="render-card__actions">
-<button class="btn" id="render-approve" type="button" data-i18n="agent.renderApprove" disabled>승인</button>
+<div class="render-card__actions" id="render-approval" hidden>
+<button class="btn btn--primary" id="render-approve" type="button" data-i18n="agent.renderApprove" disabled>승인</button>
 </div>
 </div>
 </section>
 <section class="render-card ae-card" id="ae-card" aria-labelledby="ae-card-title">
 <div class="render-card__head">
-<h2 id="ae-card-title" data-i18n="ae.title">After Effects</h2>
+<h2 id="ae-card-title"><button id="ae-card-toggle" class="card-toggle" type="button" aria-expanded="true" aria-controls="ae-card-body" data-i18n="ae.title">After Effects</button></h2>
 <span id="ae-status" class="render-card__status" role="status" aria-live="polite" data-i18n="ae.notConnected">연결 안 됨</span>
 </div>
-<div class="render-card__body">
+<div class="render-card__body" id="ae-card-body">
 <details id="ae-install" open>
-<summary data-i18n="ae.install">설치 / 재설치</summary>
+<summary data-i18n="ae.install">설치 · 다른 AE 연결</summary>
+<div id="ae-install-connect" class="render-card__actions"></div>
 <div class="ae-card__install">
 <a href="/ae/keepframe.zxp" download class="btn btn--secondary btn--inline" data-i18n="ae.download">확장 다운로드</a>
-<label for="ae-install-command" data-i18n="ae.installCommand">Windows 설치 명령</label>
+<label for="ae-install-command" data-i18n="ae.installCommand">설치 명령</label>
 <div class="ae-card__row">
 <input id="ae-install-command" class="ae-card__command mono" readonly aria-describedby="ae-install-path-hint" value="&amp; &quot;C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe&quot; /install &quot;$env:USERPROFILE\Downloads\keepframe.zxp&quot;"/>
 <button id="ae-install-copy" class="btn btn--secondary btn--inline" type="button" data-i18n="ae.copy">복사</button>
@@ -124,10 +130,12 @@
 <p class="render-card__lock" data-i18n="ae.installHint">또는 무료 aescripts ZXP Installer를 사용하세요</p>
 </div>
 </details>
-<div class="render-card__actions">
-<button id="ae-connect" class="btn btn--primary" type="button" data-i18n="ae.connect">AE 연결</button>
+<div class="render-card__actions" id="ae-actions">
+<button id="ae-connect" class="btn btn--secondary" type="button" data-i18n="ae.connect">AE 연결</button>
 <button id="ae-send" class="btn btn--primary" type="button" data-i18n="ae.send" aria-describedby="ae-send-reason" disabled>AE로 보내기</button>
+<button id="ae-verify" class="btn btn--secondary btn--inline" type="button" data-i18n="ae.verify" aria-describedby="ae-send-reason" disabled>AE와 비교</button>
 <span id="ae-send-reason" class="ae-card__reason" data-i18n="ae.connectionRequired">AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요</span>
+<span id="ae-verify-reason" class="ae-card__reason" hidden></span>
 </div>
 <div id="ae-pairing" class="ae-card__pairing" data-ai-private>
 <div id="ae-code-field" class="ae-card__row" hidden>
@@ -138,9 +146,27 @@
 <p id="ae-pair-message" class="render-card__lock" role="status"></p>
 </div>
 <p id="ae-copy-status" class="render-card__lock" role="status" aria-live="polite"></p>
-<p id="ae-error" class="ae-card__error" role="status" aria-live="polite" hidden></p>
+<p id="ae-synced" class="render-card__lock" aria-live="polite" data-i18n="ae.nothingSynced">아직 보내지 않았습니다</p>
+<p id="ae-build-warning" class="render-card__lock" hidden data-i18n="ae.buildMismatch">AE를 완전히 종료했다가 다시 여세요</p>
+<details id="ae-details">
+<summary data-i18n="ae.details">자세히</summary>
+<div id="ae-verify-report" class="ae-card__verify-report" hidden>
+<p id="ae-verify-outcome"></p>
+<p id="ae-verify-limits"></p>
+<ul id="ae-verify-worst" class="ae-card__list"></ul>
+<ul id="ae-verify-notes" class="ae-card__list" hidden></ul>
+</div>
 <ul id="ae-devices" class="ae-card__list"></ul>
-<p id="ae-synced" class="render-card__lock" data-i18n="ae.nothingSynced">아직 동기화하지 않음</p>
+<p id="ae-latest-progress" class="render-card__lock" hidden></p>
+<p id="ae-sync-timings" hidden></p>
+<details id="ae-warnings-details" class="ae-card__warnings" hidden>
+<summary id="ae-warnings-summary"></summary>
+<ul id="ae-warnings" class="ae-card__list"></ul>
+</details>
+<ul id="ae-jobs" class="ae-card__list" aria-live="polite"></ul>
+</details>
+</div>
+<p id="ae-error" class="ae-card__error" role="status" aria-live="polite" hidden></p>
 <div id="ae-hand-edits" class="ae-card__hand-edits" hidden>
 <p id="ae-hand-message"></p>
 <button id="ae-overwrite" class="btn btn--secondary btn--inline ae-card__destructive" type="button" data-i18n="ae.overwrite" aria-describedby="ae-overwrite-reason">덮어쓰기</button>
@@ -151,21 +177,10 @@
 </div>
 <span id="ae-overwrite-reason" class="ae-card__reason" data-i18n="ae.connectionRequired" hidden>AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요</span>
 </div>
-<ul id="ae-jobs" class="ae-card__list" aria-live="polite"></ul>
-</div>
 </section>
-<div class="agent-transport">
-<button class="btn--icon" id="agent-play" type="button" aria-label="재생">
-<svg class="icon" id="agent-play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14l11-7z"/></svg>
-<svg class="icon" id="agent-pause-icon" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
-</button>
-<button class="btn--icon transport__step" id="agent-prev" type="button" aria-label="이전 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
-<button class="btn--icon transport__step" id="agent-next" type="button" aria-label="다음 프레임"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
-<span class="mono" style="font-weight:700"><span id="agent-frame">0</span> <span style="color:var(--muted);font-weight:400">/ <span id="agent-total">0</span></span></span>
-</div>
 <div class="agent-elements">
-<div class="agent-elements__head"><span data-i18n="agent.elements">요소 목록</span><span id="agent-count" class="mono">0</span></div>
-<div class="agent-elements__list" id="agent-elements-list"></div>
+<button class="agent-elements__head card-toggle" id="agent-elements-toggle" type="button" aria-expanded="false" aria-controls="agent-elements-list"><span id="agent-count"></span></button>
+<div class="agent-elements__list" id="agent-elements-list" hidden></div>
 </div>
 </section>
 </main>

@@ -58,7 +58,7 @@ async function main() {
         res.on("end", () => {
           if (options["die-after-claim"] && route === "/api/ae/next" && res.statusCode === 200
               && JSON.parse(Buffer.concat(chunks).toString()).job) {
-            fs.writeFileSync(1, JSON.stringify({ results, statuses, writes: ae.counters.writes,
+            fs.writeFileSync(1, JSON.stringify({ results, statuses, calls: ae.calls, writes: ae.counters.writes,
               undo_groups: ae.counters.undoGroups }) + "\n");
             process.exit(3);
           }
@@ -78,7 +78,8 @@ async function main() {
     } });
     const deps = {
       http: transport(require("node:http")), https: transport(require("node:https")),
-      dns: require("node:dns"), fs, path, crypto: require("node:crypto"), os: require("node:os"),
+      dns: require("node:dns"), fs, path, crypto: require("node:crypto"),
+      os: { ...require("node:os"), tmpdir: () => ae.context.Folder.temp.fsName },
       documentsDir: options.documents, setTimeout, clearTimeout, now: Date.now,
       log() {}, setStatus: (message, details) => statuses.push({ message, details }),
       sleep(ms) {
@@ -96,7 +97,7 @@ async function main() {
             if (typeof result !== "string") throw Error("evalScript must return a string");
           } catch (e) { result = JSON.stringify({ ok: false, error: e.message, line: e.line || 0 }); }
           callback(result);
-        }, script.startsWith("kfSync(") ? delay : 0);
+        }, /^(kfSync|kfRender)\(/.test(script) ? delay : 0);
         evalTimers.add(timer);
       },
     };
@@ -133,7 +134,7 @@ async function main() {
       catch (e) { error = core.redact(e.message || e, [credentials?.token, options.pair]); }
     }
   }
-  fs.writeFileSync(1, JSON.stringify({ results, statuses, writes: ae?.counters.writes || 0,
+  fs.writeFileSync(1, JSON.stringify({ results, statuses, calls: ae?.calls || {}, writes: ae?.counters.writes || 0,
     undo_groups: ae?.counters.undoGroups || 0, ...(error ? { error } : {}) }) + "\n");
   process.exit(error ? 1 : 0);
 }
