@@ -177,13 +177,16 @@ def test_pair_announces_real_fake_ae_info(extension):
     assert ext.pairing["results"] == [] and ext.pairing["writes"] == 0
 
 
-def test_render_frames_uploads_real_fake_pngs_and_posts_the_frame_list(extension, monkeypatch):
+@pytest.mark.parametrize("write_delay", [0, 1500])
+def test_render_frames_uploads_real_fake_pngs_and_posts_the_frame_list(extension, monkeypatch, write_delay):
     # Task 4 exercises the transport; Task 6 covers the comparison renderer.
     monkeypatch.setattr("keepframe.ae.api.verify", lambda *args, **kwargs: {
         "passed": True, "mean": 0, "frames": []})
     ext = extension
     sync(ext)
     before = read_state(ext.state)
+    before["testHooks"] = {"frameWriteDelayMs": write_delay}
+    ext.state.write_text(json.dumps(before))
     routes = ext.server.ae_routes
     queued = routes.jobs.enqueue(ext.device, "render_frames", "p1", "s1", "v1", params={
         "frames": [0, 5, 59], "tag": "keepframe:p1/s1"})

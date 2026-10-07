@@ -53,7 +53,7 @@ test("frame export writes a valid full-size PNG using the bottom enabled solid",
   assert.throws(() => comp.saveFrameToPng(0, "bad"), /File/);
 });
 
-test("delayed and missing frame writes work while JSX sleep blocks", (t) => {
+test("delayed and missing frame writes run on a timer after JSX returns", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-png-delay-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   for (const fails of [false, true]) {
@@ -65,6 +65,8 @@ test("delayed and missing frame writes work while JSX sleep blocks", (t) => {
     const started = Date.now();
     c.$.sleep(50);
     assert.ok(Date.now() - started >= 45);
+    assert.equal(file.exists, false); assert.equal(file.length, 0);
+    await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(file.exists, !fails); assert.equal(file.length > 0, !fails);
   }
 });

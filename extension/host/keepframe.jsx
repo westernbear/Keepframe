@@ -735,7 +735,7 @@ if (typeof JSON !== "object" || JSON === null) {
         var folder;
         try {
             var request = JSON.parse(requestJson), comp, frames, seen = {}, i, f, name, file, stale;
-            var waitMs = 60000, started, previous, size, ready, result = [];
+            var result = [];
             requireValue(request && typeof request.job === "string" && /^j_[0-9a-f]{16}$/.test(request.job), "Invalid render job");
             requireValue(typeof request.tag === "string" && /^keepframe:[^\/\x00-\x1f]+\/[^\/\x00-\x1f]+$/.test(request.tag), "Invalid render tag");
             frames = request.frames;
@@ -748,10 +748,8 @@ if (typeof JSON !== "object" || JSON === null) {
                     f < Math.round(comp.duration * comp.frameRate) && !own(seen, "$" + f), "Invalid render frames");
                 seen["$" + f] = true;
             }
-            if (request.wait_ms !== undefined) {
-                requireValue(number(request.wait_ms) && request.wait_ms > 0, "Invalid render wait");
-                waitMs = Math.min(request.wait_ms, 60000);
-            }
+            requireValue(typeof comp.saveFrameToPng === "function",
+                "this After Effects cannot export frames; update to After Effects 24.1 or newer");
             folder = new Folder(Folder.temp.fsName + "/keepframe-" + request.job);
             requireValue(folder.exists || folder.create(), "Could not create temporary frame folder");
             stale = folder.getFiles();
@@ -763,15 +761,6 @@ if (typeof JSON !== "object" || JSON === null) {
                 while (name.length < 4) { name = "0" + name; }
                 file = new File(folder.fsName + "/frame_" + name + ".png");
                 comp.saveFrameToPng(f / comp.frameRate, file);
-                started = new Date().getTime(); previous = 0; ready = false;
-                while (new Date().getTime() - started <= waitMs) {
-                    size = file.exists ? file.length : 0;
-                    if (size > 0 && size === previous) { ready = true; break; }
-                    previous = size;
-                    if (new Date().getTime() - started + 100 > waitMs) { break; }
-                    $.sleep(100);
-                }
-                requireValue(ready, "AE did not write frame " + f + " within 60 s");
                 result.push({frame: f, path: file.fsName});
             }
             return JSON.stringify({ok: true, frames: result, width: comp.width, height: comp.height});

@@ -74,19 +74,41 @@ def test_render_writes_requested_frames(tmp_path, full_spec):
     assert read_state(state_path) == before
 
 
-def test_render_waits_for_late_frame_and_fails_on_missing(tmp_path, full_spec):
+def test_render_returns_paths_without_waiting_for_writes(tmp_path, full_spec):
     spec, assets = full_spec
     state_path = tmp_path / "ae.json"
     sync(state_path, spec, assets)
-    for fails in (False, True):
-        state = read_state(state_path)
-        state["testHooks"] = {"frameWriteDelayMs": 300, "frameWriteFails": fails}
-        save_state(state_path, state)
-        out = run_jsx(state_path, HOST, "kfRender", json.dumps({
-            "job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0], "wait_ms": 500}), documents=tmp_path)
-        assert out["value"]["ok"] is not fails, out
-        if fails:
-            assert out["value"]["error"] == "AE did not write frame 0 within 60 s"
+    state = read_state(state_path)
+    state["testHooks"] = {"frameWriteFails": True}
+    save_state(state_path, state)
+    script = tmp_path / "no-wait.jsx"
+    # Replace the global rather than the fake's read-only sleep member.
+    script.write_text(HOST.read_text() + '\n$ = {sleep: function () { throw new Error("host must not wait"); }};\n')
+    out = run_jsx(state_path, script, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": spec["comp"]["tag"], "frames": [0, 5, 29]}), documents=tmp_path)
+    assert out["value"]["ok"], out
+    assert [f["frame"] for f in out["value"]["frames"]] == [0, 5, 29]
+    assert all(not Path(f["path"]).exists() for f in out["value"]["frames"])
+    assert out["calls"]["saveFrameToPng"] == 3
+    assert out["writes"] == out["undo_groups"] == 0
+
+
+@pytest.mark.parametrize("exporter", ["undefined", "null", "42"])
+def test_render_requires_a_callable_frame_exporter(tmp_path, exporter):
+    script = tmp_path / "unsupported-export.jsx"
+    script.write_text(HOST.read_text() + """
+CompItem = function () {};
+var oldComp = new CompItem();
+oldComp.comment = "keepframe:demo/s1";
+oldComp.duration = 1; oldComp.frameRate = 30;
+oldComp.saveFrameToPng = """ + exporter + ";\n" + """
+app = {project: {items: {length: 1, 1: oldComp}}};
+""")
+    out = run_jsx(tmp_path / "ae.json", script, "kfRender", json.dumps({
+        "job": "j_" + "0" * 16, "tag": "keepframe:demo/s1", "frames": [0]}), documents=tmp_path)
+    assert out["value"]["ok"] is False, out
+    assert out["value"]["error"] == "this After Effects cannot export frames; update to After Effects 24.1 or newer"
+    assert out["calls"].get("saveFrameToPng", 0) == 0
 
 
 def test_render_without_the_comp_says_send_first(tmp_path):
@@ -99,7 +121,7 @@ def test_render_without_the_comp_says_send_first(tmp_path):
 @pytest.mark.parametrize("patch", [
     {"job": "../escape"}, {"tag": None}, {"frames": []}, {"frames": [0, 0]},
     {"frames": [-1]}, {"frames": [1.5]}, {"frames": [True]}, {"frames": ["0"]},
-    {"frames": [1000000]}, {"frames": list(range(17))}, {"wait_ms": -1},
+    {"frames": [1000000]}, {"frames": list(range(17))},
 ])
 def test_render_rejects_invalid_requests_before_writing(tmp_path, patch):
     spec, assets = spec_for(tmp_path)

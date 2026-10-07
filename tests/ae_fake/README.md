@@ -46,7 +46,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1; frameRate, duration and colours store `Math.fround` values.
 - `CompItem.renderer` / `renderers`: renderer defaults to Classic 3D's `ADBE Advanced 3d`; the read-only available list defaults to `["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"]`; assignments must be listed. Comp state can seed a shorter available list.
 - `CompItem.saveFrameToPng(time,file)`: writes a valid RGB PNG at the comp's width/height, filled with the bottom-most enabled non-null solid's colour (black without a solid). Ignores text, media, transforms and compositing; this is sufficient for background-only verification, not a general AE renderer. Counts `calls.saveFrameToPng`, with no project writes or undo group.
-- `createAE({frameWriteDelayMs:n,frameWriteFails:true})`: delays PNG output by n ms, or never writes when failure is enabled; the same options may be seeded via `state.testHooks` for CLI host tests. Due writes flush during File exists/length reads and blocking sleep, and via a timer when the event loop is free.
+- `createAE({frameWriteDelayMs:n,frameWriteFails:true})`: delays PNG output by n ms on a Node timer, or never writes when failure is enabled; the same options may be seeded via `state.testHooks` for CLI host tests. Delayed writes run only after the script returns to Node's event loop; File exists/length reads and blocking `$.sleep` do not flush them. Zero delay writes immediately.
 - `CompItem.layers`: LayerCollection with `.length` and 1-based `[i]`; index 1 is the top of the stack.
 - `comp.layers.add(item)`: adds AVLayer sourced by a FootageItem or CompItem, at the top.
 - `comp.layers.addText(text)`: adds TextLayer with null source, at the top.
@@ -96,7 +96,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `TextDocument.tracking` / `applyStroke` / `strokeColor`: detached unmanaged styling preserved through property assignment; fill colour stores float32 channels.
 - `ParagraphJustification`: symbolic `LEFT_JUSTIFY`, `CENTER_JUSTIFY`, `RIGHT_JUSTIFY` constants.
 - `$.getenv(name)` / `$.global` / `$.line`: environment from `state.app.env` (missing → null), the VM global object, and fixed line 0.
-- `$.sleep(ms)`: blocks with `Atomics.wait` on a SharedArrayBuffer; pending frame writes still become observable during JSX's polling loop.
+- `$.sleep(ms)`: blocks with `Atomics.wait` on a SharedArrayBuffer, preventing pending Node frame-write timers from running until JSX returns.
 - `File(path)` / `Folder(path)`: callable with or without `new`; read-only absolute `fsName`, `name`, dynamic `exists`, and path string conversion; File `name` is URI encoded and `displayName` is decoded.
 - `File.encoding`: settable label, default BINARY; the port reads/writes UTF-8 text regardless of this label.
 - `File.open("r"|"w")` / `read()` / `write(text)` / `close()`: buffered text access; failed read open returns false; close flushes write mode.
@@ -117,3 +117,5 @@ Items contain persistent id/type/name/comment and type-specific settings; CompIt
 Property records contain value, sorted keys with time/value/inEases/outEases/inInterpolation/outInterpolation, expression metadata, matchName/name/propertyValueType, and position separation state.
 TextDocuments and KeyframeEases serialize to plain field objects; fonts/env can also be supplied as top-level seed fields.
 RenderQueue, ShapeLayer, scheduling, project saving, other effects/mask attributes, media decoding, and expression evaluation fail when requested or remain outside this modeled surface.
+
+`kfRender` schedules exports and returns frame paths immediately. The real panel core in `extension_runner.js` polls asynchronously every 250 ms until each file has a positive stable size, PNG signature and terminal IEND chunk, then streams uploads. This permits delayed fake writes to exercise the complete render job; the per-frame wait is 60 seconds and the combined wait is 10 minutes. The CLI `run.js` also lets scheduled timers finish after its entry point returns; its JSON result does not imply that a delayed frame already exists.

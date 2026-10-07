@@ -15,6 +15,7 @@ const core = require('../js/core');
 const TOKEN = 'private-device-token-123456';
 const CODE = 'KF-ABCD-1234';
 const bytes = Buffer.from('test asset bytes');
+const pngBytes = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082', 'hex');
 const sha = crypto.createHash('sha256').update(bytes).digest('hex');
 const info = {ok: true, host_build: 'dev', ae_version: '25.0', project_name: '한글 Project.aep',
     project_saved: true, fonts: [{family: 'Arial', style: 'Regular', postscript: 'ArialMT'}]};
@@ -30,7 +31,8 @@ async function fixture(t, route) {
     const documentsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keepframe-panel-'));
     const server = http.createServer(async (req, res) => {
         const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
+        try { for await (const chunk of req) chunks.push(chunk); }
+        catch (error) { if (req.aborted) return; throw error; }
         const data = Buffer.concat(chunks), raw = data.toString();
         const request = {method: req.method, path: req.url, headers: req.headers, raw, data,
             body: raw && req.headers['content-type'] === 'application/json' ? JSON.parse(raw) : undefined};
@@ -502,10 +504,17 @@ async function oneRenderJob(t, options = {}) {
             const folder = path.join(f.documentsDir, 'temp', 'keepframe-' + renderJob.id);
             f.frameFolder = folder;
             f.deps.os = Object.assign({}, os, {tmpdir: () => path.join(f.documentsDir, 'temp')});
+            let time = 0;
+            f.deps.now = () => time;
+            f.deps.sleep = ms => {
+                if (ms !== 250) return never(); // Heartbeats remain independent of the accelerated poll clock.
+                time += ms;
+                return Promise.resolve();
+            };
             fs.mkdirSync(folder, {recursive: true});
             const response = {ok: true, width: 320, height: 180, frames: renderJob.params.frames.map(frame => {
                 const file = path.join(folder, 'frame_' + String(frame).padStart(4, '0') + '.png');
-                fs.writeFileSync(file, bytes);
+                fs.writeFileSync(file, pngBytes);
                 return {frame, path: file};
             })};
             if (options.response) options.response(response, f);
@@ -523,7 +532,10 @@ test('render_frames streams all frames, posts progress and result, and removes t
         f.deps.fs = Object.assign({}, fs, {
             readFileSync: () => assert.fail('frames must stream'),
             promises: Object.assign({}, fs.promises, {readFile: () => assert.fail('frames must stream')}),
-            createReadStream: file => { streams.push(file); return fs.createReadStream(file, {highWaterMark: 3}); }
+            createReadStream: (file, options) => {
+                streams.push({file, options});
+                return fs.createReadStream(file, Object.assign({highWaterMark: 3}, options));
+            }
         });
     }});
     assert.deepEqual(f.result, {ok: true, result: {frames: [0, 5, 10000]}});
@@ -534,12 +546,13 @@ test('render_frames streams all frames, posts progress and result, and removes t
     assert.deepEqual(uploads.map(req => req.path), [0, 5, 10000].map(frame =>
         '/api/ae/jobs/' + renderJob.id + '/files/frame_' + String(frame).padStart(4, '0') + '.png'));
     for (const req of uploads) {
-        assert.equal(req.method, 'PUT'); assert.deepEqual(req.data, bytes);
+        assert.equal(req.method, 'PUT'); assert.deepEqual(req.data, pngBytes);
         assert.equal(req.headers['content-type'], 'image/png');
-        assert.equal(req.headers['content-length'], String(bytes.length));
+        assert.equal(req.headers['content-length'], String(pngBytes.length));
         assert.equal(req.headers.authorization, 'Bearer ' + TOKEN);
     }
     assert.equal(streams.length, 3);
+    assert.ok(streams.every(s => s.options && s.options.start === 0 && s.options.end === pngBytes.length - 1));
     assert.deepEqual(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'uploading')
         .map(req => req.body), [1, 2, 3].map(done => ({stage: 'uploading', done, total: 3})));
     assert.ok(f.statuses.some(s => s.message === 'Rendering 3 frames of demo / s1 v7…'));
@@ -551,7 +564,7 @@ test('render_frames streams all frames, posts progress and result, and removes t
 });
 
 test('invalid AE frames reject the entire list before uploading and only clean the job folder', async t => {
-    for (const bad of ['outside', 'unrequested', 'duplicate', 'missing', 'name', 'symlink', 'empty']) {
+    for (const bad of ['outside', 'unrequested', 'duplicate', 'missing', 'name', 'symlink', 'directory']) {
         let outside;
         const f = await oneRenderJob(t, {response: (response, f) => {
             outside = path.join(f.documentsDir, 'private.png'); fs.writeFileSync(outside, 'keep');
@@ -562,7 +575,7 @@ test('invalid AE frames reject the entire list before uploading and only clean t
             if (bad === 'missing') response.frames.pop();
             if (bad === 'name') frame.path = response.frames[0].path;
             if (bad === 'symlink') { fs.unlinkSync(frame.path); fs.symlinkSync(outside, frame.path); }
-            if (bad === 'empty') fs.writeFileSync(frame.path, '');
+            if (bad === 'directory') { fs.unlinkSync(frame.path); fs.mkdirSync(frame.path); }
         }});
         assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'}, bad);
         assert.equal(f.requests.some(req => req.path.includes('/files/')), false, bad);
@@ -570,6 +583,199 @@ test('invalid AE frames reject the entire list before uploading and only clean t
         assert.equal(fs.readFileSync(outside, 'utf8'), 'keep');
         assert.equal(JSON.stringify({result: f.result, statuses: f.statuses}).includes(f.documentsDir), false);
     }
+});
+
+test('native realpath accepts Windows case and short-name aliases but rejects different folders', async t => {
+    for (const [platform, different] of [['win32', false], ['win32', true], ['linux', false]]) {
+        const nativeCalls = [];
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            const alias = path.join(f.documentsDir, 'SEOWOO~1', path.basename(f.frameFolder));
+            fs.mkdirSync(alias, {recursive: true});
+            response.frames.forEach(frame => {
+                frame.path = path.join(alias, path.basename(frame.path));
+                fs.writeFileSync(frame.path, pngBytes);
+            });
+            f.deps.platform = platform;
+            const canonical = 'C:\\Users\\Seowoo\\AppData\\Local\\Temp\\' + path.basename(f.frameFolder);
+            const realpath = Object.assign(() => assert.fail('use realpath.native'), {native: (folder, callback) => {
+                nativeCalls.push(folder);
+                callback(null, folder === f.frameFolder ? canonical : different ? 'D:\\different' : canonical.toLowerCase());
+            }});
+            f.deps.fs = Object.assign({}, fs, {realpath, promises: Object.assign({}, fs.promises, {
+                // Unlike the native API, the legacy resolver may retain SEOWOO~1.
+                realpath: async folder => folder === f.frameFolder ? canonical : canonical.replace('Seowoo', 'SEOWOO~1')
+            })});
+        }});
+        assert.deepEqual(f.result, platform === 'win32' && !different ?
+            {ok: true, result: {frames: renderJob.params.frames}} : {ok: false, error: 'Invalid frame from AE'});
+        assert.ok(nativeCalls.includes(f.frameFolder));
+        assert.ok(nativeCalls.some(folder => folder.includes('SEOWOO~1')));
+        if (different || platform !== 'win32') assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    }
+});
+
+test('a frame written 1.5 s after kfRender returns is awaited with rendering heartbeats then uploaded', async t => {
+    let returnedAt, writtenAt;
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        const frame = response.frames[0];
+        fs.unlinkSync(frame.path);
+        f.deps.now = Date.now;
+        f.deps.sleep = ms => new Promise(resolve => setTimeout(resolve, ms === 15000 ? 300 : ms));
+    }, prepare: f => {
+        const evaluate = f.deps.evalScript;
+        f.deps.evalScript = (script, callback) => evaluate(script, raw => {
+            callback(raw);
+            if (script.startsWith('kfRender(')) {
+                returnedAt = Date.now();
+                const frame = JSON.parse(raw).frames[0];
+                setTimeout(() => { writtenAt = Date.now(); fs.writeFileSync(frame.path, pngBytes); }, 1500);
+            }
+        });
+    }});
+    assert.ok(writtenAt - returnedAt >= 1490);
+    assert.deepEqual(f.result, {ok: true, result: {frames: renderJob.params.frames}});
+    assert.equal(f.requests.filter(req => req.path.includes('/files/')).length, 3);
+    assert.ok(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' &&
+        req.body.done === 0 && req.body.total === 3).length >= 3);
+    assert.deepEqual([...new Set(f.requests.filter(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' &&
+        req.body.done > 0).map(req => req.body.done))], [1, 2, 3]);
+});
+
+test('a frame that never appears times out after 60 s without any upload', async t => {
+    const f = await oneRenderJob(t, {response: response => fs.unlinkSync(response.frames[1].path)});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 5 within 60 s'});
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.ok(f.requests.some(req => req.path.endsWith('/progress') && req.body.stage === 'rendering' && req.body.done === 1));
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('truncated PNGs without a signature or IEND never upload', async t => {
+    for (const data of [pngBytes.subarray(0, 8), pngBytes.subarray(0, -12),
+        Buffer.concat([Buffer.alloc(8), pngBytes.subarray(8)]), Buffer.alloc(0)]) {
+        const f = await oneRenderJob(t, {response: response => fs.writeFileSync(response.frames[2].path, data)});
+        assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 10000 within 60 s'});
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+        assert.equal(fs.existsSync(f.frameFolder), false);
+    }
+});
+
+test('a PNG growing between completeness checks never uploads', async t => {
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        const sleep = f.deps.sleep;
+        let growth = 0;
+        f.deps.sleep = ms => {
+            if (ms === 250) fs.writeFileSync(response.frames[2].path,
+                Buffer.concat([pngBytes.subarray(0, -12), Buffer.alloc(++growth), pngBytes.subarray(-12)]));
+            return sleep(ms);
+        };
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 10000 within 60 s'});
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+});
+
+test('the combined frame wait is capped at ten minutes', async t => {
+    const frames = Array.from({length: 16}, (_, i) => i);
+    let time = 0;
+    const f = await oneRenderJob(t, {job: {params: {...renderJob.params, frames}}, response: (response, f) => {
+        response.frames = frames.map(frame => ({frame, path: path.join(f.frameFolder, 'frame_' + String(frame).padStart(4, '0') + '.png')}));
+        fs.readdirSync(f.frameFolder).forEach(name => fs.unlinkSync(path.join(f.frameFolder, name)));
+        f.deps.now = () => time;
+        f.deps.sleep = ms => {
+            if (ms !== 250) return never();
+            time += ms;
+            for (const frame of response.frames) {
+                if (time >= (frame.frame + 1) * 39000 && !fs.existsSync(frame.path)) fs.writeFileSync(frame.path, pngBytes);
+            }
+            return Promise.resolve();
+        };
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'AE did not write frame 15 within 60 s'});
+    assert.equal(time, 10 * 60 * 1000);
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+});
+
+test('uploads stop at the measured size even if the PNG grows before the stream opens', async t => {
+    const readSizes = [];
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: (file, options) => {
+            fs.appendFileSync(file, 'extra data');
+            const stream = fs.createReadStream(file, options);
+            let read = 0;
+            stream.on('data', chunk => { read += chunk.length; });
+            stream.on('end', () => readSizes.push(read));
+            return stream;
+        }});
+    }});
+    assert.equal(f.result.ok, true);
+    const uploads = f.requests.filter(req => req.path.includes('/files/'));
+    assert.equal(uploads.length, 3);
+    assert.deepEqual(readSizes, [pngBytes.length, pngBytes.length, pngBytes.length]);
+    uploads.forEach(req => assert.deepEqual(req.data, pngBytes));
+});
+
+test('a frame that shrinks after the completeness check fails clearly before uploading', async t => {
+    const f = await oneRenderJob(t, {prepare: f => {
+        const status = f.deps.setStatus;
+        f.deps.setStatus = (message, details) => {
+            status(message, details);
+            if (message.startsWith('Uploading frame')) fs.truncateSync(path.join(f.frameFolder, 'frame_0000.png'), 8);
+        };
+    }});
+    assert.equal(f.result.ok, false);
+    assert.match(f.result.error, /Frame upload shrank/);
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+});
+
+test('a frame that shrinks as the upload stream opens fails with its byte count and closes', async t => {
+    let stream;
+    const f = await oneRenderJob(t, {prepare: f => {
+        f.deps.fs = Object.assign({}, fs, {createReadStream: (file, options) => {
+            fs.truncateSync(file, 8);
+            stream = fs.createReadStream(file, options);
+            return stream;
+        }});
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Frame upload shrank (expected ' + pngBytes.length + ' bytes, read 8)'});
+    assert.equal(stream.closed, true);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assertPrivate(f, f.result);
+});
+
+test('frame rejection logs a path-free reason and preserves the user-facing error', async t => {
+    for (const reason of ['frame outside the job folder', 'not a regular file', 'symlink']) {
+        const f = await oneRenderJob(t, {response: (response, f) => {
+            const frame = response.frames[0];
+            if (reason === 'frame outside the job folder') {
+                frame.path = path.join(f.documentsDir, path.basename(frame.path));
+                fs.writeFileSync(frame.path, pngBytes);
+            } else {
+                fs.unlinkSync(frame.path);
+                if (reason === 'symlink') fs.symlinkSync(response.frames[1].path, frame.path);
+                else fs.mkdirSync(frame.path);
+            }
+        }});
+        assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+        assert.ok(f.logs.includes('Invalid frame from AE: ' + reason));
+        assert.equal(JSON.stringify({result: f.result, statuses: f.statuses, logs: f.logs}).includes(f.documentsDir), false);
+        assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+        assertPrivate(f);
+    }
+});
+
+test('a symlinked job folder is rejected without deleting its target', async t => {
+    let target;
+    const f = await oneRenderJob(t, {response: (response, f) => {
+        target = path.join(f.documentsDir, 'private-job-folder');
+        fs.renameSync(f.frameFolder, target);
+        fs.symlinkSync(target, f.frameFolder, 'dir');
+    }});
+    assert.deepEqual(f.result, {ok: false, error: 'Invalid frame from AE'});
+    assert.ok(f.logs.includes('Invalid frame from AE: symlink'));
+    assert.equal(f.requests.some(req => req.path.includes('/files/')), false);
+    assert.equal(fs.existsSync(f.frameFolder), false);
+    assert.equal(fs.readFileSync(path.join(target, 'frame_0000.png')).equals(pngBytes), true);
+    assert.equal(JSON.stringify(f.logs).includes(f.documentsDir), false);
 });
 
 test('upload 409/413 retain redacted server text and clean all temporary frames', async t => {
@@ -652,7 +858,10 @@ test('panel translates rendering and uploading statuses into Korean', () => {
         ['Rendering 3 frames of demo / s1 v7…', 'demo / s1 v7 프레임 3개 렌더링 중…'],
         ['Uploading frame 1/3…', '프레임 업로드 중 1/3…'],
         ['Rendered 3 frames — Keepframe is comparing them', '프레임 3개 렌더링 완료 — Keepframe에서 비교 중'],
-        ['Render failed: Network request failed', '렌더링 실패: 네트워크 요청 실패']
+        ['Render failed: Network request failed', '렌더링 실패: 네트워크 요청 실패'],
+        ['Render failed: AE did not write frame 5 within 60 s', '렌더링 실패: AE가 60초 안에 프레임 5를 기록하지 못했습니다'],
+        ['Render failed: this After Effects cannot export frames; update to After Effects 24.1 or newer',
+            '렌더링 실패: 이 After Effects에서는 프레임을 내보낼 수 없습니다. After Effects 24.1 이상으로 업데이트하세요']
     ]) {
         deps.setStatus(message); deps.log(message);
         assert.equal(p.nodes.status.textContent, expected);

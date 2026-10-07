@@ -15,6 +15,8 @@
             uploading: 'Uploading frame {i}/{n}…',
             rendered: 'Rendered {n} frames — Keepframe is comparing them',
             renderFailed: 'Render failed: {reason}', stageRender: 'Rendering', stageUpload: 'Uploading frames',
+            frameTimeout: 'AE did not write frame {frame} within 60 s',
+            exportUnavailable: 'this After Effects cannot export frames; update to After Effects 24.1 or newer',
             synced: 'Synced {version}: {created} created, {updated} updated, {deleted} deleted',
             edited: 'AE layers were edited by hand: {ids} — overwrite from the web page',
             syncInterrupted: 'a previous sync was interrupted — overwrite to finish it: {ids}',
@@ -43,6 +45,8 @@
             uploading: '프레임 업로드 중 {i}/{n}…',
             rendered: '프레임 {n}개 렌더링 완료 — Keepframe에서 비교 중',
             renderFailed: '렌더링 실패: {reason}', stageRender: '렌더링 중', stageUpload: '프레임 업로드 중',
+            frameTimeout: 'AE가 60초 안에 프레임 {frame}를 기록하지 못했습니다',
+            exportUnavailable: '이 After Effects에서는 프레임을 내보낼 수 없습니다. After Effects 24.1 이상으로 업데이트하세요',
             synced: '{version} 동기화됨: 생성 {created}개, 업데이트 {updated}개, 삭제 {deleted}개',
             edited: 'AE 레이어가 수동으로 수정되었습니다: {ids} — 웹 페이지에서 덮어쓰세요',
             syncInterrupted: '이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: {ids}',
@@ -90,6 +94,8 @@
             return t('uploading', {i: match[1], n: match[2]});
         if ((match = /^Rendered (\d+) frames — Keepframe is comparing them$/.exec(message)))
             return t('rendered', {n: match[1]});
+        if ((match = /^AE did not write frame (\d+) within 60 s$/.exec(message)))
+            return t('frameTimeout', {frame: match[1]});
         if ((match = /^Synced (.*): (\d+) created, (\d+) updated, (\d+) deleted$/.exec(message)))
             return t('synced', {version: match[1], created: match[2], updated: match[3], deleted: match[4]});
         if ((match = /^AE layers were edited by hand: (.*) — overwrite from the web page$/.exec(message)))

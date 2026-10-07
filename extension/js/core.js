@@ -7,6 +7,8 @@
     const EXTENSION_VERSION = '1.0.0';
     const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
+    const FRAME_WAIT_MS = 60000;
+    const RENDER_WAIT_MS = 10 * 60 * 1000;
     const NOT_PAIRED = 'Not paired: enter a new code from the Keepframe web page';
 
     function localAddress(address) {
@@ -174,9 +176,15 @@
                 req.setTimeout(route.startsWith('/api/ae/next?') ? 35000 : 30000,
                     () => finish(networkError({code: 'ETIMEDOUT'})));
                 if (upload) {
-                    input = deps.fs.createReadStream(upload.path);
+                    input = deps.fs.createReadStream(upload.path, {start: 0, end: upload.size - 1});
                     input.on('close', () => { inputClosed = true; });
                     input.on('error', error => finish(failure('Could not read frame upload (' + (error.code || 'unknown error') + ')')));
+                    let read = 0;
+                    input.on('data', chunk => { read += chunk.length; });
+                    input.on('end', () => {
+                        if (read !== upload.size) finish(failure('Frame upload shrank (expected ' +
+                            upload.size + ' bytes, read ' + read + ')'));
+                    });
                     input.pipe(req);
                 } else req.end(data);
             } catch (error) { finish(failure(upload ? 'Could not upload frame (' + (error.code || 'unknown error') + ')' :
@@ -362,36 +370,90 @@
                 new Set(params.frames).size !== params.frames.length) throw failure('Invalid render job');
             const folder = path.resolve(deps.os.tmpdir(), 'keepframe-' + job.id);
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
+            const invalidFrame = reason => {
+                if (reason) log('Invalid frame from AE: ' + reason);
+                throw failure('Invalid frame from AE');
+            };
+            const realpath = file => new Promise((resolve, reject) => {
+                deps.fs.realpath.native(file, (error, resolved) => error ? reject(error) : resolve(resolved));
+            });
+            const normalize = file => (deps.platform || process.platform) === 'win32' ? file.toLowerCase() : file;
+            const frameStat = async file => {
+                let stat;
+                try { stat = await deps.fs.promises.lstat(file); }
+                catch (error) { if (error.code === 'ENOENT') return; invalidFrame('not a regular file'); }
+                if (stat.isSymbolicLink()) invalidFrame('symlink');
+                if (!stat.isFile()) invalidFrame('not a regular file');
+                if (stat.size > 25 * 1024 * 1024) invalidFrame();
+                return stat;
+            };
             let renderError;
             try {
                 if (!running) throw failure('Disconnected before render');
                 const rendered = await hostCall(context, 'kfRender(' + literal(JSON.stringify({
                     job: job.id, tag: params.tag, frames: params.frames})) + ')');
+                const renderDeadline = deps.now() + RENDER_WAIT_MS;
                 if (!Array.isArray(rendered.frames) || rendered.frames.length !== params.frames.length)
                     throw failure('Invalid frame from AE');
                 const seen = new Set(), files = [];
+                let canonicalFolder;
+                try {
+                    const stat = await deps.fs.promises.lstat(folder);
+                    if (stat.isSymbolicLink()) invalidFrame('symlink');
+                    if (!stat.isDirectory()) invalidFrame('not a regular file');
+                    canonicalFolder = normalize(await realpath(folder));
+                } catch (_) { throw failure('Invalid frame from AE'); }
                 // Validate the entire list before opening any upload stream.
                 for (const frame of rendered.frames) {
                     const name = frame && 'frame_' + String(frame.frame).padStart(4, '0') + '.png';
                     if (!frame || !params.frames.includes(frame.frame) || seen.has(frame.frame) ||
-                        typeof frame.path !== 'string' || !path.isAbsolute(frame.path) ||
-                        path.basename(frame.path) !== name) throw failure('Invalid frame from AE');
-                    let stat;
+                        typeof frame.path !== 'string' || !path.isAbsolute(frame.path)) throw failure('Invalid frame from AE');
+                    let parent;
                     try {
-                        if ((await deps.fs.promises.lstat(folder)).isSymbolicLink() ||
-                            await deps.fs.promises.realpath(path.dirname(frame.path)) !== await deps.fs.promises.realpath(folder))
-                            throw failure('Invalid frame from AE');
-                        stat = await deps.fs.promises.lstat(frame.path);
-                    } catch (_) { throw failure('Invalid frame from AE'); }
-                    if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > 25 * 1024 * 1024)
-                        throw failure('Invalid frame from AE');
+                        parent = normalize(await realpath(path.dirname(frame.path)));
+                    } catch (_) { invalidFrame('frame outside the job folder'); }
+                    if (parent !== canonicalFolder) invalidFrame('frame outside the job folder');
+                    if (path.basename(frame.path) !== name) invalidFrame();
+                    await frameStat(frame.path);
                     seen.add(frame.frame);
-                    files.push({path: frame.path, size: stat.size, name});
+                    files.push({frame: frame.frame, path: frame.path, name});
+                }
+                // AE can finish writing only after evalScript returns. Poll on the panel's event loop.
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i], deadline = Math.min(renderDeadline, deps.now() + FRAME_WAIT_MS);
+                    let previous = 0;
+                    while (deps.now() < deadline) {
+                        if (!running) throw failure('Disconnected before render');
+                        const stat = await frameStat(file.path);
+                        if (stat && stat.size >= 20 && stat.size === previous) {
+                            let handle;
+                            try {
+                                handle = await deps.fs.promises.open(file.path, 'r');
+                                const head = Buffer.alloc(8), tail = Buffer.alloc(12);
+                                const first = await handle.read(head, 0, 8, 0);
+                                const last = await handle.read(tail, 0, 12, stat.size - 12);
+                                if (first.bytesRead === 8 && last.bytesRead === 12 &&
+                                    head.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+                                    tail.equals(Buffer.from([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130])) &&
+                                    (await handle.stat()).size === stat.size && deps.now() < deadline) file.size = stat.size;
+                            } catch (error) { if (error.code !== 'ENOENT') invalidFrame('not a regular file'); }
+                            finally { if (handle) await handle.close(); }
+                            if (file.size !== undefined) break;
+                        }
+                        previous = stat ? stat.size : 0;
+                        await wait(Math.min(250, Math.max(0, deadline - deps.now())), stopped);
+                    }
+                    if (file.size === undefined) throw failure('AE did not write frame ' + file.frame + ' within 60 s');
+                    progress.done = i + 1;
+                    status('Rendering ' + files.length + ' frames of ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
+                    await send('POST', prefix + '/progress', Object.assign({}, progress));
                 }
                 progress.stage = 'uploading'; progress.done = 0; progress.total = files.length;
                 for (let i = 0; i < files.length; i++) {
                     if (!running) throw failure('Disconnected before upload');
                     status('Uploading frame ' + (i + 1) + '/' + files.length + '…', {job, progress});
+                    const stat = await frameStat(files[i].path);
+                    if (!stat || stat.size < files[i].size) throw failure('Frame upload shrank before upload');
                     await send('PUT', prefix + '/files/' + files[i].name,
                         undefined, undefined, undefined, files[i]);
                     progress.done = i + 1;

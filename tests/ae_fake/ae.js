@@ -126,12 +126,6 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   }
   const counters = { undoGroups: 0, writes: 0 };
   const calls = {}, trace = [];
-  const pendingFrames = [];
-  function flushFrames() {
-    for (let i = pendingFrames.length - 1; i >= 0; i--) {
-      if (pendingFrames[i].due <= Date.now()) pendingFrames.splice(i, 1)[0].write();
-    }
-  }
   const testHooks = copy(state.testHooks || {});
   const fault = (operation, matchName) => {
     if (testHooks[`${operation}Property`] === matchName) throw Error(`fake AE: injected ${operation} ${matchName}`);
@@ -163,8 +157,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     field(api, "name", () => encodeURI(path.basename(filename)));
     field(api, "displayName", () => path.basename(filename));
     field(api, "encoding", () => encoding, (value) => { encoding = String(value); });
-    field(api, "exists", () => { flushFrames(); try { return fs.statSync(filename).isFile(); } catch { return false; } });
-    field(api, "length", () => { flushFrames(); try { return fs.statSync(filename).size; } catch { return 0; } });
+    field(api, "exists", () => { try { return fs.statSync(filename).isFile(); } catch { return false; } });
+    field(api, "length", () => { try { return fs.statSync(filename).size; } catch { return 0; } });
     api.toString = () => filename;
     api[Symbol.toPrimitive] = () => filename;
     api.open = (nextMode) => {
@@ -652,10 +646,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
           }
           const png = solidPNG(values.width, values.height, color);
           const write = () => fs.writeFileSync(file.fsName, png);
-          if (frameWriteDelayMs > 0) {
-            pendingFrames.push({ due: Date.now() + frameWriteDelayMs, write });
-            setTimeout(flushFrames, frameWriteDelayMs);
-          } else write();
+          if (frameWriteDelayMs > 0) setTimeout(write, frameWriteDelayMs);
+          else write();
         };
         const addLayer = (layerType, sourceItem, name, duration, text, nullLayer = false) => {
           const l = layer(proxy, layerType, { name, outPoint: duration ?? proxy.duration, text, nullLayer }, canonical(sourceItem));
@@ -828,7 +820,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     TextDocument: host("TextDocument", TextDocument), KeyframeEase: host("KeyframeEase", KeyframeEase),
     KeyframeInterpolationType, ParagraphJustification, PropertyValueType, PropertyType, TrackMatteType };
   const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0,
-    sleep(ms) { finite(ms, "sleep"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); flushFrames(); } };
+    sleep(ms) { finite(ms, "sleep"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } };
   sandbox.$ = host("$", dollar);
   Object.assign(context, sandbox);
   dollar.global = contextGlobal;
