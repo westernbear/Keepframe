@@ -309,8 +309,8 @@ class AERoutes:
                                 continue
                             font = layer["source"]["font"]
                             if font["substituted"] and elements[eid].canonical.font is not None:
-                                masked[eid] = (f"{layer['name']}: {font['family']} instead of "
-                                               f"{elements[eid].canonical.font.family_guess}")
+                                masked[eid] = {"name": layer["name"], "font": font["family"],
+                                               "requested": elements[eid].canonical.font.family_guess}
                         report = verify(scene, scene_dir, ae_frames, staging, masked=masked)
                     except Exception as exc:
                         report = {"error": _verification_error(exc)}

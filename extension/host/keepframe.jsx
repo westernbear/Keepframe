@@ -298,13 +298,13 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function fingerprint(layer, fps, legacy) {
-        var props = managed(layer), data = [], i, k, p, keys, effects, effect, effectNames = [];
+        var props = managed(layer), data = [], i, k, p, keys, key, incoming, outgoing, effects, effect, effectNames = [];
         var position = transform(layer).property("ADBE Position");
         var modelScale = kind(layer) === "model";
         // FPS is managed context: changing it changes how every frame-based property must be written.
         data.push(rounded(fps));
-        // ponytail: builds up to 1.0.238 fingerprinted name and label; accept that form until each layer is rewritten once.
-        if (legacy) { data.push(layer.name, layer.label); }
+        // v1 read every ease; builds up to 1.0.238 also fingerprinted name and label.
+        if (legacy === true) { data.push(layer.name, layer.label); }
         data.push(Math.round(layer.inPoint * fps), Math.round(layer.outPoint * fps), layer.threeDLayer, position.dimensionsSeparated,
             position.expressionEnabled, position.expression);
         if (kind(layer) === "solid") {
@@ -316,8 +316,13 @@ if (typeof JSON !== "object" || JSON === null) {
             p = props[i];
             keys = [];
             for (k = 1; k <= p.numKeys; k += 1) {
-                keys.push([Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(p.keyInInterpolationType(k)),
-                    String(p.keyOutInterpolationType(k)), easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k))]);
+                incoming = p.keyInInterpolationType(k); outgoing = p.keyOutInterpolationType(k);
+                key = [Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(incoming), String(outgoing)];
+                // AE turns an ease-edited key Bezier; all-LINEAR ease has no visible state.
+                if (legacy || incoming !== KeyframeInterpolationType.LINEAR || outgoing !== KeyframeInterpolationType.LINEAR) {
+                    key.push(easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k)));
+                }
+                keys.push(key);
             }
             data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale),
                 p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
@@ -794,12 +799,18 @@ if (typeof JSON !== "object" || JSON === null) {
             for (i = 0; i < records.length; i += 1) {
                 record = records[i]; s = wanted["$" + record.id];
                 fps = Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001 ? spec.comp.fps : rounded(comp.frameRate);
+                record.fps = fps;
                 record.current = readFingerprint(record.layer, fps);
                 record.kind = kind(record.layer);
+                record.asset = record.kind === "model" ? record.layer.source.comment : null;
+                record.upgrade = record.fp !== null && record.current !== null && record.current !== record.fp
+                    && (readFingerprint(record.layer, fps, "ease") === record.fp
+                        || readFingerprint(record.layer, fps, true) === record.fp);
+                if (record.upgrade) { record.fp = record.current; }
                 if (force !== "true") {
                     if (record.fp === null) { interrupted.push(record.id); }
                     try {
-                        if (record.current === null || (record.current !== record.fp && readFingerprint(record.layer, fps, true) !== record.fp)
+                        if (record.current === null || record.current !== record.fp
                             || hasExpression(record.layer)
                             || ((!s || s.kind !== record.kind) && (hasExtras(record.layer)
                                 || hasUserDependents(comp, record.layer)))) { edits.push(record.id); }
@@ -845,10 +856,13 @@ if (typeof JSON !== "object" || JSON === null) {
                 for (i = 0; i < spec.layers.length; i += 1) {
                     s = spec.layers[i]; record = existing["$" + s.id];
                     newHash = layerHash(s);
-                    if (record) { record.current = readFingerprint(record.layer, spec.comp.fps); }
                     if (record && record.spec === newHash && record.current !== null && record.fp === record.current
+                        && record.fps === spec.comp.fps && (record.kind !== "model" || record.asset === record.layer.source.comment)
                         && (s.kind !== "solid" || (record.layer.source.width === comp.width && record.layer.source.height === comp.height))) {
                         layer = record.layer; result.unchanged += 1;
+                        if (record.upgrade) {
+                            layer.comment = "keepframe:" + s.id + ";spec=" + record.spec + ";fp=" + record.current;
+                        }
                     } else {
                         if (record && record.kind !== s.kind) {
                             layer = createLayer(comp, s, assets);

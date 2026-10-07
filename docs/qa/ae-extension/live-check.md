@@ -187,7 +187,7 @@ Use a saved test project for destructive probes.
    Leave unrun results blank. Record unavailable probes under Findings.
 
 Verify compares 16 sampled frames, or all frames when the scene has fewer than 16.
-The current pass rule is mean normalized RGB L1 ≤ 0.02 and maximum frame L1 ≤ 0.05.
+The calibrated pass rule is mean normalized RGB L1 ≤ 0.025 and maximum frame L1 ≤ 0.04.
 The web report shows percentages. Use normalized values in the Calibration table
 (for example, 2% is 0.02).
 
@@ -198,7 +198,7 @@ The web report shows percentages. Use normalized values in the Calibration table
 | 3 | Verify spinning GLB | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
 | 4 | Verify ig2demo | Click **Verify against AE** (AE와 비교) after sending `ig2demo`. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
 | 5 | Worst-frame images | Open **Details** (자세히). Open each worst-frame image in a new tab. | Up to three worst frames show **After Effects**, **Keepframe**, and **Difference** (차이). All images load. | |
-| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the replacement font, text-region ID, and worst region difference. | Notes name the substituted font. Masked text entries (마스킹한 텍스트) show each region's worst percentage. These regions are excluded from the pass score. | |
+| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the layer name, replacement font, and worst region difference in Korean and English. | One localized line per region names the substituted font and worst percentage. No duplicate English notes. These regions are excluded from the pass score. | |
 | 7 | Large sync time | Have the controller prepare a changed version or fresh test comp for the ~120k-key `ae-live-long` scene. Time **Send to AE** (AE로 보내기) until sync finishes. | Target: under 2 minutes. Record actual seconds and outcome. Slice-1 live check 2 took over 10 minutes. | |
 | 8 | Key interpolation through the Higgsfield bridge | Have the controller call `ae_get_keyframes` on animated properties with an eased key and a linear key. Record in/out interpolation, influence, and speed. | Eased sides report `BEZIER` with the intended ease values. A linear key reports `LINEAR` on both sides. | |
 | 9 | `saveFrameToPng` in Korean AE 26.5 | Run Verify in the user's Korean AE 26.5. Have the controller watch the temporary files and inspect the PNGs during export. Compare the render queue and undo history before and after Verify. | Files appear and become complete PNGs. The job's temp folder is removed after upload. Verify adds no render-queue items or undo steps. | |
@@ -209,6 +209,10 @@ The web report shows percentages. Use normalized values in the Calibration table
 ### Calibration
 
 Keep the rule unchanged.
+
+Live check 3 in AE 26.5 measured worst mean 0.0115 and worst frame 0.0188.
+Twice those values are 0.023 and 0.0376; rounding up to 0.005 gives
+`VERIFY_MEAN_MAX = 0.025` and `VERIFY_FRAME_MAX = 0.04`.
 
 1. Use only scenes that look right. Record each scene's mean / max / pass.
 2. Set `VERIFY_MEAN_MAX` to 2× the worst observed mean.

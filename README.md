@@ -142,12 +142,15 @@ User layers and user effects on retained layers survive updates.
 render of the selected scene version. When AE has another version, Keepframe sends
 this one first.
 It compares 16 sampled frames, or all frames for a shorter scene.
-It passes when mean normalized RGB L1 is ≤ 0.02 and every frame's L1 is ≤ 0.05
+It passes when mean normalized RGB L1 is ≤ 0.025 and every frame's L1 is ≤ 0.04
 (`VERIFY_MEAN_MAX` and `VERIFY_FRAME_MAX`).
+AE 26.5 live checks measured a worst mean of 0.0115 and worst frame of 0.0188.
+The limits are twice those values, rounded up to a multiple of 0.005.
 Text regions with a substituted requested font are excluded from that score
 and reported separately. The result appears in the web **After Effects** card.
 Open **Details** (자세히) for the thresholds, up to three worst-frame image comparisons,
-and font notes.
+and localized font-region differences. Latest-job warnings have their own closed
+disclosure with a count; past jobs show only their outcome and time.
 
 Precomposing or deleting a Keepframe layer in AE makes the next send create it
 again in the main comp with no warning yet (a later slice adds the warning),

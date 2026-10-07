@@ -397,7 +397,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     api.keyInTemporalEase = (i) => decodeEases(key(i).inEases);
     api.keyOutTemporalEase = (i) => decodeEases(key(i).outEases);
     for (const method of ["setValue", "setValueAtTime", "setValuesAtTimes", "setTemporalEaseAtKey",
-      "setInterpolationTypeAtKey", "keyInInterpolationType"]) {
+      "setInterpolationTypeAtKey", "keyTime", "keyValue", "keyInInterpolationType", "keyOutInterpolationType",
+      "keyInTemporalEase", "keyOutTemporalEase"]) {
       const operation = api[method];
       api[method] = (...args) => {
         calls[method] = (calls[method] || 0) + 1;

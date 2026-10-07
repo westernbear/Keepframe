@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006j";
-import { T, Tf } from "/static/js/i18n.js?v=20261006j";
+import { api } from "/static/js/api.js?v=20261006k";
+import { T, Tf } from "/static/js/i18n.js?v=20261006k";
 
 const JOB_HISTORY_LIMIT = 4;
 
@@ -174,7 +174,6 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("verify-report").hidden = !hasReport;
     el("verify-worst").replaceChildren();
     el("verify-notes").replaceChildren();
-    el("verify-masked").replaceChildren();
     if (!hasReport) return;
     el("verify-limits").textContent = Tf("ae.verifyLimits", {
       mean: Number(percent(report.thresholds.mean)), frame: Number(percent(report.thresholds.frame)),
@@ -196,12 +195,16 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
       item.append(images);
       return item;
     }));
-    el("verify-notes").hidden = !report.notes.length;
-    el("verify-notes").replaceChildren(...report.notes.map(note => node("li", note)));
-    el("verify-masked").hidden = !report.masked.length;
-    el("verify-masked").replaceChildren(...report.masked.map(row => node("li", Tf("ae.verifyMasked", {
-      id: row.id, l1: percent(row.worst_l1),
-    }))));
+    let notes = report.notes || [];
+    if (Array.isArray(report.masked)) {
+      notes = report.masked.map(row => {
+        // Saved reports from earlier builds have only id and worst_l1.
+        if (!row.font) return Tf("ae.verifyMaskedLegacy", {id: row.id, l1: percent(row.worst_l1)});
+        return Tf("ae.verifyMasked", {name: row.name, font: row.font, l1: percent(row.worst_l1)});
+      });
+    }
+    el("verify-notes").hidden = !notes.length;
+    el("verify-notes").replaceChildren(...notes.map(note => node("li", note)));
   }
 
   function paint() {
@@ -249,7 +252,8 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("latest-progress").hidden = !latestProgress;
     el("latest-progress").textContent = latestProgress ? Tf("ae.progress", latestProgress) : "";
     const warnings = Array.isArray(latestJob?.result?.warnings) ? latestJob.result.warnings : [];
-    el("warnings").hidden = !warnings.length;
+    el("warnings-details").hidden = !warnings.length;
+    el("warnings-summary").textContent = Tf("ae.warningCount", {n: warnings.length});
     el("warnings").replaceChildren(...warnings.map(warning => node("li", warning)));
 
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {
@@ -297,21 +301,10 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (jobSignature === jobsPainted) return;
     jobsPainted = jobSignature;
     el("jobs").replaceChildren(...jobs.map((job) => {
-      const row = node("li");
-      row.append(node("p", Tf("ae.job", {kind: T(`ae.${job.kind}`), state: T(`ae.${job.state}`),
-        version: job.version, time: relative(job.finished ?? job.started ?? job.created)})));
-      const outcome = jobOutcome(job);
-      if (outcome) row.append(node("p", outcome, job.error ? "ae-card__error" : ""));
-      if (job.result?.applied === false) row.append(node("p", editMessage(job.result)));
-      const progress = snapshot.progress[job.id];
-      if (progress) row.append(node("p", Tf("ae.progress", progress)));
-      const warnings = Array.isArray(job.result?.warnings) ? job.result.warnings : [];
-      if (warnings.length) {
-        const list = node("ul");
-        list.append(...warnings.map(warning => node("li", warning)));
-        row.append(list);
-      }
-      return row;
+      const outcome = job.result?.applied === false ? editMessage(job.result) : jobOutcome(job);
+      return node("li", Tf("ae.job", {kind: T(`ae.${job.kind}`),
+        outcome: (outcome || T(`ae.${job.state}`)).replace(/\s+/g, " "),
+        time: relative(job.finished ?? job.started ?? job.created)}), job.error ? "ae-card__error" : "");
     }));
   }
 

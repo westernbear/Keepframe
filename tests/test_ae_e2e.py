@@ -456,13 +456,13 @@ def test_pair_sync_render_and_verify_with_real_renderer(server, tmp_path, with_s
         assert report["state"] == "done", report
         assert (report["job"], report["version"]) == (render_job["id"], version.id)
         assert report["passed"] is (not with_sprite)
-        assert report["thresholds"] == {"mean": 0.02, "frame": 0.05}
+        assert report["thresholds"] == {"mean": 0.025, "frame": 0.04}
         assert [row["frame"] for row in report["frames"]] == list(range(6))
         assert report["notes"] == report["masked"] == []
         if with_sprite:
             assert {row["frame"] for row in report["worst"]} == {2, 3, 4}
-            assert report["mean"] > 0.02 and report["max"] > 0.05
-            assert all(row["l1"] > 0.05 if 2 <= row["frame"] <= 4 else row["l1"] == 0
+            assert report["mean"] > 0.025 and report["max"] > 0.04
+            assert all(row["l1"] > 0.04 if 2 <= row["frame"] <= 4 else row["l1"] == 0
                        for row in report["frames"])
         else:
             assert report["mean"] == report["max"] == 0

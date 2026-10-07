@@ -312,16 +312,50 @@ def test_layers_synced_with_name_and_label_fingerprints_upgrade_without_a_hand_e
     spec, assets = full_spec
     # Builds up to 1.0.238 fingerprinted name and label.
     legacy = HOST.read_text().replace(
-        "if (legacy) { data.push(layer.name, layer.label); }", "data.push(layer.name, layer.label);")
+        "return fingerprint(layer, fps, legacy);", "return fingerprint(layer, fps, true);")
     assert legacy != HOST.read_text()
     legacy_host = tmp_path / "legacy.jsx"
     legacy_host.write_text(legacy)
     path = tmp_path / "ae.json"
     response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
     assert response["value"]["applied"], response
+    before = layers(read_state(path))
     response = sync(path, spec, assets)
     assert response["value"]["applied"] and "hand_edited" not in response["value"], response
+    assert response["value"]["unchanged"] == 5
+    assert response["value"]["updated"] == response["value"]["created"] == response["value"]["deleted"] == []
+    assert response["writes"] == 5  # Only migrate the comments, preserving all AE state.
+    after = layers(read_state(path))
+    for eid in before:
+        assert after[eid]["comment"] != before[eid]["comment"]
+        after[eid]["comment"] = before[eid]["comment"]
+    assert after == before
     assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_layers_synced_with_v1_ease_fingerprints_upgrade_without_a_hand_edit(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    # Run the producer with the original all-key-ease form (without name/label).
+    legacy = HOST.read_text().replace(
+        "return fingerprint(layer, fps, legacy);", 'return fingerprint(layer, fps, "ease");')
+    legacy_host = tmp_path / "v1-ease.jsx"
+    legacy_host.write_text(legacy)
+    path = tmp_path / "ae.json"
+    response = run_jsx(path, legacy_host, "kfSync", json.dumps(spec), json.dumps(assets), "false")
+    assert response["value"]["applied"]
+    assert response["calls"]["keyInTemporalEase"] == response["calls"]["keyOutTemporalEase"] == 600
+    before = read_state(path)
+    response = sync(path, spec, assets)
+    assert response["value"]["applied"] and "hand_edited" not in response["value"], response
+    assert response["value"]["unchanged"] == 1 and response["value"]["updated"] == []
+    assert response["writes"] == 1
+    after = read_state(path)
+    assert layers(after)["kf:background"]["comment"] != layers(before)["kf:background"]["comment"]
+    layers(after)["kf:background"]["comment"] = layers(before)["kf:background"]["comment"]
+    assert after == before
+    response = sync(path, spec, assets)
+    assert response["writes"] == 0 and response["calls"]["keyValue"] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == response["calls"].get("keyOutTemporalEase", 0) == 0
 
 
 def test_sync_twice_is_a_no_op(tmp_path, full_spec):
@@ -359,6 +393,27 @@ def test_linear_keys_are_written_in_one_call_per_property(tmp_path):
     assert read_state(path) == before
 
 
+def test_linear_fingerprint_skips_ease_reads(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    response = sync(tmp_path / "ae.json", spec, assets)
+    assert response["value"]["applied"]
+    assert response["calls"]["keyValue"] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == 0
+    assert response["calls"].get("keyOutTemporalEase", 0) == 0
+
+
+def test_unchanged_resend_reads_each_key_once(tmp_path):
+    spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    response = sync(path, spec, assets)
+    assert response["value"]["unchanged"] == 1 and response["writes"] == 0
+    for method in ("keyTime", "keyValue", "keyInInterpolationType", "keyOutInterpolationType"):
+        assert response["calls"][method] == 600
+    assert response["calls"].get("keyInTemporalEase", 0) == 0
+    assert response["calls"].get("keyOutTemporalEase", 0) == 0
+
+
 def test_eased_keys_still_get_ease_and_bezier(tmp_path):
     ease = [0.25, 0.1, 0.25, 1.0]
     converted = ease_to_ae(ease, 0.0, 100.0, 12 / 30)
@@ -377,7 +432,32 @@ def test_eased_keys_still_get_ease_and_bezier(tmp_path):
     assert result["calls"].get("setValueAtTime", 0) == 0
     assert result["calls"]["setTemporalEaseAtKey"] == 2
     assert result["calls"]["setInterpolationTypeAtKey"] == 2
-    assert sync(path, spec, assets)["writes"] == 0
+    assert result["calls"]["keyInTemporalEase"] == result["calls"]["keyOutTemporalEase"] == 2
+    response = sync(path, spec, assets)
+    assert response["writes"] == 0 and response["calls"]["keyValue"] == 3
+    assert response["calls"]["keyInTemporalEase"] == response["calls"]["keyOutTemporalEase"] == 2
+
+
+@pytest.mark.parametrize("change", ["eased_key_ease", "linear_key_to_bezier"])
+def test_v2_fingerprint_detects_visible_key_hand_edits(tmp_path, change):
+    keys = [[f, float(f), None, None] for f in range(600)]
+    if change == "eased_key_ease":
+        keys[0][2] = [ease_to_ae(EASE, 0, 1, 1 / 30)["out"]]
+    spec, assets = solid_spec_with_x_keys(tmp_path, keys)
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    state = read_state(path)
+    key = prop(layers(state)["kf:background"], "ADBE Position_0")["keys"][0]
+    if change == "eased_key_ease":
+        key["outEases"][0]["speed"] += 1
+    else:
+        key["outInterpolation"] = "BEZIER"
+    save_state(path, state)
+    response = sync(path, spec, assets)
+    assert response["value"] == {"ok": True, "applied": False, "hand_edited": ["kf:background"]}
+    assert response["calls"]["keyInTemporalEase"] > 0 and response["calls"]["keyOutTemporalEase"] > 0
+    assert response["writes"] == response["undo_groups"] == 0
+    assert read_state(path) == state
 
 
 def test_2d_sync_preserves_hidden_3d_properties_and_ignores_them_in_fingerprints(tmp_path, full_spec):

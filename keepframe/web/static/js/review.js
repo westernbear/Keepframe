@@ -1,13 +1,13 @@
-import { fetchProjects } from "/static/js/api.js?v=20261006j";
-import { T } from "/static/js/i18n.js?v=20261006j";
-import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261006j";
-import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20261006j";
-import { attachPlayback } from "/static/js/review/playback-ui.js?v=20261006j";
-import { attachTimeline } from "/static/js/review/timeline.js?v=20261006j";
-import { attachInspector } from "/static/js/review/inspector.js?v=20261006j";
-import { attachEditForm } from "/static/js/review/edit-form.js?v=20261006j";
-import { attachCorrections } from "/static/js/review/corrections.js?v=20261006j";
-import { attachJob } from "/static/js/review/job.js?v=20261006j";
+import { fetchProjects } from "/static/js/api.js?v=20261006k";
+import { T } from "/static/js/i18n.js?v=20261006k";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261006k";
+import { createReviewWorkspace } from "/static/js/review/workspace.js?v=20261006k";
+import { attachPlayback } from "/static/js/review/playback-ui.js?v=20261006k";
+import { attachTimeline } from "/static/js/review/timeline.js?v=20261006k";
+import { attachInspector } from "/static/js/review/inspector.js?v=20261006k";
+import { attachEditForm } from "/static/js/review/edit-form.js?v=20261006k";
+import { attachCorrections } from "/static/js/review/corrections.js?v=20261006k";
+import { attachJob } from "/static/js/review/job.js?v=20261006k";
 
 const ws = createReviewWorkspace();
 attachJob(ws);

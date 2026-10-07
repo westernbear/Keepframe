@@ -46,7 +46,8 @@ def seed_agent(workspace):
         job = jobs.enqueue(device, "sync", "p1", "s1", "v1", now=time.time() - 10 + i)
         jobs.next(device, wait=0)
         jobs.finish(job.id, True, {"applied": True, "created": ["e1", "e2", "e3"],
-                                   "updated": ["e4", "e5"], "deleted": [], "warnings": ["Review the font"]})
+                                   "updated": ["e4", "e5"], "deleted": [],
+                                   "warnings": [f"Review the font for e{n}" for n in range(30)]})
     return server, device
 
 
@@ -92,7 +93,7 @@ def test_preview_size_transport_and_scroll(agent_page, width, height):
         assert image["height"] >= min(.4 * dimensions["height"], image["available"] * 9 / 16) - 2
         assert abs(image["width"] / image["height"] - 16 / 9) < .02
     page.locator("#ae-install summary").click()
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     page.locator("#agent-elements-toggle").click()
     page.locator(".agent-viewer").evaluate("el => el.scrollTop = el.scrollHeight")
     assert page.locator(".agent-viewer").evaluate("el => el.scrollTop > 0")
@@ -140,14 +141,20 @@ def test_ae_summary_and_details(agent_page):
     expect(page.locator("#ae-connect")).to_be_hidden()
     page.locator("#ae-install summary").click()
     expect(page.locator("#ae-connect")).to_be_visible()
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-devices")).to_contain_text("124-panel")
     expect(page.locator("#ae-jobs > li")).to_have_count(4)
-    expect(page.locator("#ae-warnings")).to_contain_text("Review the font")
+    expect(page.locator("#ae-jobs ul, #ae-jobs p")).to_have_count(0)
+    expect(page.locator("#ae-warnings-details")).not_to_have_attribute("open", "")
+    expect(page.locator("#ae-warnings-summary")).to_have_text("경고 30개")
+    expect(page.locator("#ae-warnings li:visible")).to_have_count(0)
+    expect(page.locator("#ae-warnings li")).to_have_count(30)
+    page.locator("#ae-warnings-summary").click()
+    expect(page.locator("#ae-warnings li:visible")).to_have_count(30)
     assert "Windows" not in page.locator("#ae-devices").inner_text()
     server.ae_routes.devices.update_info(device, INFO | {"panel_build": "125-panel", "host_build": "124-host"})
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-build-warning")).to_have_text("AE를 완전히 종료했다가 다시 여세요")
 
 

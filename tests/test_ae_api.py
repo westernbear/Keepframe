@@ -991,10 +991,12 @@ def fake_verify(monkeypatch):
             png(out_dir / name, 20, 12)
             worst[kind] = name
         report = {"passed": True, "mean": 0.005, "max": 0.01,
-                  "thresholds": {"mean": 0.02, "frame": 0.05},
+                  "thresholds": {"mean": 0.025, "frame": 0.04},
                   "frames": [{"frame": f, "l1": 0.005} for f in ae_frames],
-                  "worst": [worst], "notes": list(masked.values()),
-                  "masked": [{"id": eid, "worst_l1": 0.1} for eid in masked]}
+                  "worst": [worst],
+                  "notes": [f"{font['name']}: {font['font']} instead of {font['requested']} — text region differs by 10.0%"
+                            for font in masked.values()],
+                  "masked": [{"id": eid, **font, "worst_l1": 0.1} for eid, font in masked.items()]}
         (out_dir / "verify.json").write_text(json.dumps(report))
         return report
 
@@ -1072,13 +1074,16 @@ def test_render_frames_result_starts_verification_and_state_reports_it(server, p
         assert set(frames) == set(job["params"]["frames"])
         assert all(path.name == f"frame_{f:04d}.png" and path.read_bytes() == b"png"
                    and path.parent.parent == tmp_path / "p1" / "ae" / "s1" / "v1" for f, path in frames.items())
-        assert masked == {"title": "title · text: Arial instead of Example"}
+        assert masked == {"title": {"name": "title · text", "font": "Arial", "requested": "Example"}}
         assert state(server)["verify"] == {"job": job["id"], "version": "v1", "state": "verifying"}
         assert poll(server, headers) == (204, None)
         release.set()
         report = wait_verify(server)
     assert report["job"] == job["id"] and report["version"] == "v1"
     assert report["passed"] and report["mean"] == 0.005 and report["finished"] >= result["job"]["finished"]
+    assert report["masked"] == [{"id": "title", "name": "title · text", "font": "Arial",
+                                 "requested": "Example", "worst_l1": 0.1}]
+    assert report["notes"] == ["title · text: Arial instead of Example — text region differs by 10.0%"]
     stored = json.loads((tmp_path / "p1" / "ae" / "s1" / "v1" / "verify" / "verify.json").read_text())
     assert stored == {key: value for key, value in report.items() if key != "state"}
     path = "/api/ae/verify-image?project=p1&scene=s1&version=v1&name=f0000_ae.png"

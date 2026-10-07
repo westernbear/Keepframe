@@ -564,6 +564,16 @@ for (const eased of [false, true]) {
   });
 }
 
+test("key read calls count values, times, interpolation and ease independently", () => {
+  const f = fixture(), p = f.opacity;
+  p.setValuesAtTimes([0, 1], [0, 100]);
+  const reads = ["keyTime", "keyValue", "keyInInterpolationType", "keyOutInterpolationType",
+    "keyInTemporalEase", "keyOutTemporalEase"];
+  const before = { ...f.calls };
+  for (const method of reads) p[method](1);
+  for (const method of reads) assert.equal(f.calls[method] - (before[method] || 0), 1, method);
+});
+
 test("ease dimension checks, interpolation, and influence boundaries", () => {
   const { context, transform, opacity } = fixture();
   const ease = new context.KeyframeEase(4, 33);

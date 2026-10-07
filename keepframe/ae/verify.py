@@ -13,8 +13,8 @@ from ..ir.schema import Scene
 from ..render.renderer import render
 
 
-VERIFY_MEAN_MAX = 0.02
-VERIFY_FRAME_MAX = 0.05
+VERIFY_MEAN_MAX = 0.025
+VERIFY_FRAME_MAX = 0.04
 MASK_PAD = 4
 
 
@@ -41,7 +41,7 @@ def compare_frames(
 
 def verify(
     scene: Scene, scene_dir: Path, ae_frames: dict[int, Path], out_dir: Path,
-    *, masked: dict[str, str] = {},
+    *, masked: dict[str, dict[str, str]] = {},
 ) -> dict:
     """Render matching frames and write AE/KF/diff images for the worst three."""
     frames = sorted(ae_frames)
@@ -111,7 +111,8 @@ def verify(
         "mean": mean_l1, "max": max_l1,
         "thresholds": {"mean": VERIFY_MEAN_MAX, "frame": VERIFY_FRAME_MAX},
         "frames": rows, "worst": worst,
-        "notes": [f"{text} — text region differs by {masked_errors[eid] * 100:.1f}%"
-                  for eid, text in masked.items()],
-        "masked": [{"id": eid, "worst_l1": l1} for eid, l1 in masked_errors.items()],
+        "notes": [f"{font['name']}: {font['font']} instead of {font['requested']}"
+                  f" — text region differs by {masked_errors[eid] * 100:.1f}%"
+                  for eid, font in masked.items()],
+        "masked": [{"id": eid, **masked[eid], "worst_l1": l1} for eid, l1 in masked_errors.items()],
     }

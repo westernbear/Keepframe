@@ -141,7 +141,7 @@ def test_pass_rule_and_worst_three(tmp_path, monkeypatch):
     assert report["passed"] is False
     assert report["mean"] == pytest.approx(0.024)
     assert report["max"] == pytest.approx(0.06)
-    assert report["thresholds"] == {"mean": 0.02, "frame": 0.05}
+    assert report["thresholds"] == {"mean": 0.025, "frame": 0.04}
     assert [row["frame"] for row in report["frames"]] == [0, 1, 2, 3, 4]
     assert [row["l1"] for row in report["frames"]] == pytest.approx([0, 0.01, 0.06, 0.02, 0.03])
     assert [row["frame"] for row in report["worst"]] == [2, 4, 3]
@@ -163,21 +163,22 @@ def test_pass_rule_and_worst_three(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("counts, passed, mean, maximum", [
-    ([1, 0, 5], True, 0.02, 0.05),
-    ([3], False, 0.03, 0.03),
-    ([0, 0, 6, 0, 0], False, 0.012, 0.06),
+    ([2, 8], True, 0.025, 0.04),
+    ([5], True, 0.025, 0.025),
+    ([6], False, 0.03, 0.03),
+    ([0, 0, 9, 0, 0], False, 0.009, 0.045),
 ])
 def test_verify_requires_both_thresholds_and_accepts_equality(
     tmp_path, monkeypatch, counts, passed, mean, maximum,
 ):
-    black = np.zeros((10, 10, 3), np.uint8)
+    black = np.zeros((10, 20, 3), np.uint8)
     ae_frames = {}
     for frame, count in enumerate(counts):
         image = black.copy()
         image.reshape(-1, 3)[:count] = 255
         ae_frames[frame] = _png(tmp_path / f"ae-{frame}.png", image)
     _stub_render(monkeypatch, {frame: black for frame in ae_frames})
-    report = verifier.verify(_scene(size=(10, 10)), tmp_path, ae_frames, tmp_path / "report")
+    report = verifier.verify(_scene(size=(20, 10)), tmp_path, ae_frames, tmp_path / "report")
     assert report["passed"] is passed
     assert report["mean"] == pytest.approx(mean)
     assert report["max"] == pytest.approx(maximum)
@@ -209,12 +210,12 @@ def test_substituted_text_is_masked_and_noted(tmp_path, monkeypatch, ae_level):
         image[3:13, 5:15] = level
         ae_frames[frame] = _png(tmp_path / f"ae-{frame}.png", image)
     _stub_render(monkeypatch, {3: kf, 17: kf}, {"t1": [[9, 7, 11, 9], [9, 7, 11, 9]]})
-    note = "e1 · title: Arial Bold instead of Pretendard"
-    report = verifier.verify(_scene(text), tmp_path, ae_frames, tmp_path / "masked", masked={"t1": note})
+    font = {"name": "t1 · title", "font": "Arial", "requested": "Pretendard"}
+    report = verifier.verify(_scene(text), tmp_path, ae_frames, tmp_path / "masked", masked={"t1": font})
     region_l1 = (128 - ae_level) / 255
     assert report["passed"] and report["mean"] == report["max"] == 0.0
-    assert report["masked"] == [{"id": "t1", "worst_l1": pytest.approx(region_l1)}]
-    assert report["notes"] == [f"{note} — text region differs by {region_l1 * 100:.1f}%"]
+    assert report["masked"] == [{"id": "t1", **font, "worst_l1": pytest.approx(region_l1)}]
+    assert report["notes"] == [f"t1 · title: Arial instead of Pretendard — text region differs by {region_l1 * 100:.1f}%"]
     assert cv2.imread(str(tmp_path / "masked/f0017_diff.png"))[3:13, 5:15].any()
     unmasked = verifier.verify(_scene(text), tmp_path, ae_frames, tmp_path / "unmasked")
     assert unmasked["passed"] is False
@@ -229,14 +230,15 @@ def test_text_mask_rounds_outward_clips_and_preserves_outside_errors(tmp_path, m
     _stub_render(monkeypatch, {0: black}, {"t1": [[-1.2, 1.2, 2.2, 3.4]]})
     out = tmp_path / "report"
     scene = _scene(text, size=(10, 10))
-    report = verifier.verify(scene, tmp_path, {0: ae_path}, out, masked={"t1": "substituted"})
+    font = {"name": "t1 · text", "font": "Arial", "requested": "sans-serif"}
+    report = verifier.verify(scene, tmp_path, {0: ae_path}, out, masked={"t1": font})
     assert report["passed"] and report["mean"] == 0.0
-    assert report["masked"] == [{"id": "t1", "worst_l1": 1.0}]
-    ae[8, 7] = 255
+    assert report["masked"] == [{"id": "t1", **font, "worst_l1": 1.0}]
+    ae[8, 7:9] = 255
     _png(ae_path, ae)
-    report = verifier.verify(scene, tmp_path, {0: ae_path}, out, masked={"t1": "substituted"})
+    report = verifier.verify(scene, tmp_path, {0: ae_path}, out, masked={"t1": font})
     assert report["passed"] is False
-    assert report["mean"] == pytest.approx(1 / 44)
+    assert report["mean"] == pytest.approx(2 / 44)
 
 
 @pytest.mark.parametrize("bbox", [
@@ -248,11 +250,12 @@ def test_empty_or_off_frame_text_boxes_are_skipped(tmp_path, monkeypatch, bbox):
     black = np.zeros((10, 10, 3), np.uint8)
     ae = _png(tmp_path / "ae.png", np.full_like(black, 255))
     _stub_render(monkeypatch, {0: black}, {"t1": [bbox]})
+    font = {"name": "t1 · text", "font": "Arial", "requested": "sans-serif"}
     report = verifier.verify(_scene(text, size=(10, 10)), tmp_path, {0: ae}, tmp_path / "report",
-                             masked={"t1": "substituted"})
+                             masked={"t1": font})
     assert report["passed"] is False and report["mean"] == 1.0
-    assert report["masked"] == [{"id": "t1", "worst_l1": 0.0}]
-    assert report["notes"] == ["substituted — text region differs by 0.0%"]
+    assert report["masked"] == [{"id": "t1", **font, "worst_l1": 0.0}]
+    assert report["notes"] == ["t1 · text: Arial instead of sans-serif — text region differs by 0.0%"]
 
 
 @pytest.mark.parametrize("missing", [True, False], ids=["missing", "not-image"])
@@ -329,5 +332,5 @@ def test_browser_own_render_passes_and_missing_sprite_fails(tmp_path):
     report = verifier.verify(scene, tmp_path, ae_frames, tmp_path / "changed")
     assert report["passed"] is False
     assert report["worst"][0]["frame"] == 6
-    assert report["max"] > 0.05 and report["mean"] < 0.02
+    assert report["max"] > 0.04 and report["mean"] < 0.025
     assert all(row["l1"] == 0.0 for row in report["frames"] if row["frame"] != 6)

@@ -67,11 +67,55 @@ def verify_report(passed=True):
     if not passed:
         rows = [{"frame": 42, "l1": .081}, {"frame": 7, "l1": .067}, {"frame": 1, "l1": .051}]
     return {"passed": passed, "mean": .003 if passed else .036, "max": rows[0]["l1"],
-            "thresholds": {"mean": .02, "frame": .05}, "frames": rows,
+            "thresholds": {"mean": .025, "frame": .04}, "frames": rows,
             "worst": [{**row, **{kind: f'f{row["frame"]:04d}_{kind}.png'
                                 for kind in ("ae", "kf", "diff")}} for row in rows],
-            "notes": ["A substitute font was used", "<img src=x onerror=alert(1)>"],
-            "masked": [{"id": "title", "worst_l1": .123}]}
+            "notes": ["e6 · title: Arial instead of sans-serif — text region differs by 5.3%"],
+            "masked": [{"id": "e6", "name": "e6 · title", "font": "Arial", "requested": "sans-serif", "worst_l1": .053}]}
+
+
+def test_details_has_compact_history_and_closed_latest_warnings(ae_page, tmp_path):
+    from playwright.sync_api import expect
+    from tests.test_ae_host_sync import sync
+
+    page, server, errors = ae_page
+    device, headers = connect(page, server)
+    spec, path, _ = host_card_result(tmp_path / "host")
+    for layer in spec["layers"]:
+        layer["warnings"] = []
+    sync(path, spec)
+    latest = []
+    for i in range(5):
+        latest = [f"job {i}: unsupported text feature {n}" for n in range(30)]
+        spec["warnings"] = latest
+        actual = sync(path, spec)["value"]
+        assert actual["warnings"] == latest
+        job = server.ae_routes.jobs.enqueue(device, "sync", "p1", "s1", "v1")
+        assert poll(server, headers)[1]["job"]["id"] == job.id
+        assert json_request(server, "POST", f"/api/ae/jobs/{job.id}/result",
+                            {"ok": True, "result": actual}, headers=headers)[0] == 200
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-synced")).to_have_text("AE에 v1이 있습니다. 변경 없음")
+    page.locator("#ae-details > summary").click()
+    expect(page.locator("#ae-jobs > li")).to_have_count(4)
+    expect(page.locator("#ae-warnings li:visible")).to_have_count(0)
+    expect(page.locator("#ae-details li li:visible")).to_have_count(0)
+    expect(page.locator("#ae-jobs ul, #ae-jobs p")).to_have_count(0)
+    for row in page.locator("#ae-jobs > li").all():
+        expect(row).to_have_text("동기화: 변경 없음. 방금")
+    disclosure = page.locator("#ae-warnings-details")
+    expect(disclosure).not_to_have_attribute("open", "")
+    expect(disclosure.locator("summary")).to_have_text("경고 30개")
+    expect(disclosure.locator("li")).to_have_text(latest)
+    assert latest[0] not in page.locator("#ae-details").inner_text()
+    disclosure.locator("summary").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#ae-warnings li:visible")).to_have_count(30)
+    page.locator("[data-lang-toggle]").click()
+    expect(disclosure.locator("summary")).to_have_text("30 warnings")
+    for row in page.locator("#ae-jobs > li").all():
+        expect(row).to_have_text("Sync: No changes. just now")
+    assert not errors
 
 
 def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
@@ -126,11 +170,11 @@ def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
         assert wait_verify(server)["passed"] is passed
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
         summary = "Matches Keepframe (v1): mean 0.3%, worst frame 42 at 1.1%" if passed else (
-            "Differs from Keepframe (v1): mean 3.6%, worst frame 42 at 8.1%, 3 frames over 5%")
+            "Differs from Keepframe (v1): mean 3.6%, worst frame 42 at 8.1%, 3 frames over 4%")
         expect(page.locator("#ae-synced")).to_have_text(summary)
         if passed:
             expect(page.locator("#ae-verify-report")).to_be_hidden()
-            page.locator("#ae-details summary").click()
+            page.locator("#ae-details > summary").click()
         expect(page.locator("#ae-verify-report")).to_be_visible()
         expect(page.locator("#ae-verify-worst > li")).to_have_count(3)
         images = page.locator("#ae-verify-worst img")
@@ -147,10 +191,9 @@ def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
         if old_urls:
             assert all(old != new for old, new in zip(old_urls, urls))
         old_urls = urls
-        expect(page.locator("#ae-verify-notes")).to_contain_text("A substitute font was used")
-        expect(page.locator("#ae-verify-notes")).to_contain_text("<img src=x onerror=alert(1)>")
-        expect(page.locator("#ae-verify-notes img")).to_have_count(0)
-        expect(page.locator("#ae-verify-masked")).to_have_text("Masked text title: worst difference 12.3%")
+        expect(page.locator("#ae-verify-notes > li")).to_have_count(1)
+        expect(page.locator("#ae-verify-notes")).to_have_text("e6 · title: shown in Arial, text area differs by 5.3%")
+        expect(page.locator("#ae-verify-report")).not_to_contain_text("instead of")
     # Sending after a report must still show the latest sync's outcome.
     page.locator("#ae-send").click()
     expect(page.locator("#ae-synced")).to_have_text("AE has v1. Queued")
@@ -195,7 +238,7 @@ def test_verify_states_in_both_languages(ae_page, state, ko, en):
     else:
         expect(page.locator("#ae-synced")).not_to_have_class(re.compile(r"\bae-card__error\b"))
     if state != "done":
-        page.locator("#ae-details summary").click()
+        page.locator("#ae-details > summary").click()
         expect(page.locator("#ae-verify-report")).to_be_hidden()
         expect(page.locator("#ae-verify-worst img")).to_have_count(0)
     assert not errors
@@ -215,13 +258,57 @@ def test_verify_report_uses_its_thresholds_and_version(ae_page):
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-synced")).to_have_text(
         "Differs from Keepframe (v4): mean 3.6%, worst frame 42 at 8.1%, 2 frames over 7%")
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-verify-limits")).to_have_text("Limits: mean 2.5%, frame 7%")
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-synced")).to_have_text(
         "Keepframe과 다릅니다 (v4): 평균 3.6%, 최대 차이 42번 프레임 8.1%, 7%를 넘는 프레임 2개")
     expect(page.locator("#ae-verify-limits")).to_have_text("기준: 평균 2.5%, 프레임 7%")
-    expect(page.locator("#ae-verify-masked")).to_have_text("마스킹한 텍스트 title: 최대 차이 12.3%")
+    expect(page.locator("#ae-verify-notes")).to_have_text("e6 · title: Arial로 표시, 글자 영역 차이 5.3%")
+    assert not errors
+
+
+@pytest.mark.parametrize("name", ["e6 · title", "e6 · <img src=x onerror=alert(1)>"])
+def test_verify_font_region_is_one_localized_list(ae_page, name):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = verify_report() | {"state": "done", "job": "rendered", "version": "v1"}
+    report["masked"][0]["name"] = name
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    page.locator("#ae-details > summary").click()
+    expect(page.locator("#ae-verify-notes > li")).to_have_count(1)
+    expect(page.locator("#ae-verify-notes")).to_have_text(f"{name}: Arial로 표시, 글자 영역 차이 5.3%")
+    expect(page.locator("#ae-verify-notes img")).to_have_count(0)
+    expect(page.locator("#ae-verify-report")).not_to_contain_text("instead of")
+    expect(page.locator("#ae-verify-masked")).to_have_count(0)
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-verify-notes")).to_have_text(f"{name}: shown in Arial, text area differs by 5.3%")
+    assert not errors
+
+
+@pytest.mark.parametrize("masked,expected", [
+    (None, "e6 · title: Arial instead of sans-serif — text region differs by 5.3%"),
+    ([], ""),
+    ([{"id": "e6", "worst_l1": .053}], "마스킹한 텍스트 e6: 최대 차이 5.3%"),
+])
+def test_verify_notes_are_rendered_only_without_masked(ae_page, masked, expected):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = verify_report() | {"state": "done", "job": "rendered", "version": "v1"}
+    if masked is None:
+        del report["masked"]
+    else:
+        report["masked"] = masked
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    page.locator("#ae-details > summary").click()
+    expect(page.locator("#ae-verify-notes")).to_have_text(expected)
+    expect(page.locator("#ae-verify-notes li")).to_have_count(1 if expected else 0)
     assert not errors
 
 
@@ -275,7 +362,7 @@ def test_ae_device_rows_show_panel_and_host_builds_in_both_languages(ae_page, bu
     page, server, errors = ae_page
     connect(page, server, INFO | builds)
     expect(page.locator("#ae-pair-message")).to_be_hidden()
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-devices")).to_contain_text("빌드 " + builds.get("panel_build", "알 수 없음"))
     expect(page.locator("#ae-devices")).to_contain_text("AE 스크립트 " + builds.get("host_build", "알 수 없음"))
     page.locator("[data-lang-toggle]").click()
@@ -300,7 +387,7 @@ def test_ae_device_without_version_still_paints(ae_page, version):
     expect(page.locator("#ae-send")).to_be_enabled()
     expect(page.locator("#ae-synced")).to_have_text("아직 보내지 않았습니다")
     expect(page.locator("#ae-error")).to_be_hidden()
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-devices")).not_to_contain_text("undefined")
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-status")).to_have_text("AE connected · Example.aep")
@@ -418,7 +505,7 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
                              {"ok": True, "result": actual}, headers=headers)
     assert status == 200
     expect(page.locator("#ae-synced")).to_have_text("AE에 v1이 있습니다. 55개 생성", timeout=6000)
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-warnings")).to_contain_text("<img src=x onerror=alert(1)>")
     assert page.locator("#ae-warnings img").count() == 0
     page.locator("[data-lang-toggle]").click()
@@ -456,7 +543,7 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     server.ae_routes.devices.seen(device, now=0)
     page.locator("#ae-send").click()
     expect(page.locator("#ae-error")).to_have_text("no connected After Effects")
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     page.locator("#ae-devices").get_by_role("button", name="연결 해제", exact=True).click()
     expect(page.locator("#ae-devices")).to_contain_text("이 AE의 연결을 해제할까요?")
     expect(page.locator("#ae-devices").get_by_role("button", name="예", exact=True)).to_be_focused()
@@ -743,7 +830,7 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
                         {"ok": True, "result": {"applied": False, "hand_edited": ["kf:logo"]}}, headers=headers)[0] == 200
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     expect(page.locator("#ae-hand-message")).to_have_text("1 layers were edited by hand in AE: kf:logo")
-    page.locator("#ae-details summary").click()
+    page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-jobs")).to_contain_text(
         "a previous sync was interrupted — overwrite to finish it: kf:title")
     expect(page.locator("#ae-jobs")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
