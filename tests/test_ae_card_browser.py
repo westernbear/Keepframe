@@ -4,13 +4,13 @@ import json
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
 
 from keepframe.ir.schema import Background, Scene
 from keepframe.ir.store import init_project, scene_dir
-from tests.test_ae_api import EXTENSION, INFO, json_request, poll
+from tests.test_ae_api import EXTENSION, INFO, json_request, poll, upload_verify_frames, wait_verify
 from tests.test_web_server import start
 
 pytestmark = pytest.mark.browser
@@ -60,6 +60,211 @@ def connect(page, server, info=INFO):
     expect(page.locator("#ae-code")).to_have_value("")
     assert "KF-" not in page.locator("#ae-card").inner_text()
     return paired["device_id"], headers
+
+
+def verify_report(passed=True):
+    rows = [{"frame": 42, "l1": .011}, {"frame": 7, "l1": .004}, {"frame": 1, "l1": .003}]
+    if not passed:
+        rows = [{"frame": 42, "l1": .081}, {"frame": 7, "l1": .067}, {"frame": 1, "l1": .051}]
+    return {"passed": passed, "mean": .003 if passed else .036, "max": rows[0]["l1"],
+            "thresholds": {"mean": .02, "frame": .05}, "frames": rows,
+            "worst": [{**row, **{kind: f'f{row["frame"]:04d}_{kind}.png'
+                                for kind in ("ae", "kf", "diff")}} for row in rows],
+            "notes": ["A substitute font was used", "<img src=x onerror=alert(1)>"],
+            "masked": [{"id": "title", "worst_l1": .123}]}
+
+
+def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
+    from PIL import Image
+    from playwright.sync_api import expect
+    from keepframe.ae import api
+
+    page, server, errors = ae_page
+    verify = page.get_by_role("button", name="AE와 비교", exact=True)
+    expect(verify).to_be_disabled()
+    expect(verify).to_have_attribute("aria-describedby", "ae-send-reason")
+    expect(page.locator("#ae-send-reason")).to_be_visible()
+    _, headers = connect(page, server)
+    expect(verify).to_be_enabled()
+    assert verify.evaluate("el => el.previousElementSibling.id") == "ae-send"
+    expect(verify).to_have_class(re.compile(r"\bbtn--secondary\b"))
+    send_box, verify_box = page.locator("#ae-send").bounding_box(), verify.bounding_box()
+    assert verify_box["x"] >= send_box["x"] + send_box["width"]
+    assert abs(verify_box["y"] - send_box["y"]) < 1
+    report = verify_report()
+
+    def fake(scene, directory, frames, out_dir, *, masked):
+        for row in report["worst"]:
+            for kind in ("ae", "kf", "diff"):
+                Image.new("RGB", (32, 18), "#0099ff").save(out_dir / row[kind])
+        (out_dir / "verify.json").write_text(json.dumps(report))
+        return report
+
+    monkeypatch.setattr(api, "verify", fake)
+    page.locator("[data-lang-toggle]").click()
+    verify = page.get_by_role("button", name="Verify against AE", exact=True)
+    old_urls = None
+    for passed in (True, False):
+        report = verify_report(passed)
+        with page.expect_request("**/api/ae/verify") as sent:
+            verify.click()
+        assert sent.value.post_data_json == {"project": "p1", "scene": "s1", "version": "v1"}
+        expect(page.locator("#ae-synced")).to_have_text("AE is rendering frames…")
+        status, claimed = poll(server, headers)
+        if passed:
+            # The server first syncs a version which AE has not received yet.
+            assert status == 200 and claimed["job"]["kind"] == "sync"
+            assert json_request(server, "POST", f'/api/ae/jobs/{claimed["job"]["id"]}/result',
+                                {"ok": True, "result": {"applied": True, "created": [], "updated": [],
+                                                       "deleted": [], "warnings": []}}, headers=headers)[0] == 200
+            status, claimed = poll(server, headers)
+        assert status == 200 and claimed["job"]["kind"] == "render_frames"
+        job = claimed["job"]
+        upload_verify_frames(server, headers, job)
+        assert json_request(server, "POST", f'/api/ae/jobs/{job["id"]}/result',
+                            {"ok": True, "result": {"frames": job["params"]["frames"]}}, headers=headers)[0] == 200
+        assert wait_verify(server)["passed"] is passed
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        summary = "Matches Keepframe (v1): mean 0.3%, worst frame 42 at 1.1%" if passed else (
+            "Differs from Keepframe (v1): mean 3.6%, worst frame 42 at 8.1%, 3 frames over 5%")
+        expect(page.locator("#ae-synced")).to_have_text(summary)
+        if passed:
+            expect(page.locator("#ae-verify-report")).to_be_hidden()
+            page.locator("#ae-details summary").click()
+        expect(page.locator("#ae-verify-report")).to_be_visible()
+        expect(page.locator("#ae-verify-worst > li")).to_have_count(3)
+        images = page.locator("#ae-verify-worst img")
+        expect(images).to_have_count(9)
+        urls = []
+        for image in images.all():
+            expect(image).to_have_attribute("loading", "lazy")
+            expect(image).to_have_attribute("alt", re.compile(r"frame (42|7|1)"))
+            query = parse_qs(urlparse(image.get_attribute("src")).query)
+            assert query["project"] == ["p1"] and query["scene"] == ["s1"]
+            assert query["version"] == ["v1"] and query["job"] == [job["id"]]
+            expect(image).to_have_js_property("naturalWidth", 32)
+            urls.append(image.get_attribute("src"))
+        if old_urls:
+            assert all(old != new for old, new in zip(old_urls, urls))
+        old_urls = urls
+        expect(page.locator("#ae-verify-notes")).to_contain_text("A substitute font was used")
+        expect(page.locator("#ae-verify-notes")).to_contain_text("<img src=x onerror=alert(1)>")
+        expect(page.locator("#ae-verify-notes img")).to_have_count(0)
+        expect(page.locator("#ae-verify-masked")).to_have_text("Masked text title: worst difference 12.3%")
+    # Sending after a report must still show the latest sync's outcome.
+    page.locator("#ae-send").click()
+    expect(page.locator("#ae-synced")).to_have_text("AE has v1. Queued")
+    status, claimed = poll(server, headers)
+    assert status == 200 and claimed["job"]["kind"] == "sync"
+    assert json_request(server, "POST", f'/api/ae/jobs/{claimed["job"]["id"]}/result',
+                        {"ok": True, "result": {"applied": True, "updated": ["title"]}}, headers=headers)[0] == 200
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-synced")).to_have_text("AE has v1. 1 updated")
+    expect(page.locator("#ae-verify-report")).to_be_visible()
+    # A connection lost after painting returns a visible request error.
+    server.ae_routes.devices.seen(job["device"], now=0)
+    verify.click()
+    expect(page.locator("#ae-error")).to_have_text("no connected After Effects")
+    assert not errors
+
+
+@pytest.mark.parametrize("state,ko,en", [
+    ("rendering", "AE가 프레임을 렌더링하고 있습니다…", "AE is rendering frames…"),
+    ("verifying", "Keepframe이 프레임을 비교하고 있습니다…", "Keepframe is comparing frames…"),
+    ("failed", "Font missing", "Font missing"),
+    ("interrupted", "비교가 중단되었습니다 — 다시 비교하세요", "Verification was interrupted — verify again"),
+    ("done", "Keepframe과 일치합니다 (v4): 평균 0.3%, 최대 차이 42번 프레임 1.1%",
+     "Matches Keepframe (v4): mean 0.3%, worst frame 42 at 1.1%"),
+])
+def test_verify_states_in_both_languages(ae_page, state, ko, en):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = verify_report() | {"job": "verify-v4", "version": "v4", "state": state}
+    if state == "failed":
+        report["error"] = "Font missing"
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    expect(page.locator("#ae-synced")).to_have_text(ko)
+    expect(page.locator("#ae-details")).not_to_have_attribute("open", "")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-synced")).to_have_text(en)
+    if state == "failed":
+        expect(page.locator("#ae-synced")).to_have_class(re.compile(r"\bae-card__error\b"))
+    else:
+        expect(page.locator("#ae-synced")).not_to_have_class(re.compile(r"\bae-card__error\b"))
+    if state != "done":
+        page.locator("#ae-details summary").click()
+        expect(page.locator("#ae-verify-report")).to_be_hidden()
+        expect(page.locator("#ae-verify-worst img")).to_have_count(0)
+    assert not errors
+
+
+def test_verify_report_uses_its_thresholds_and_version(ae_page):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    report = verify_report(False) | {"job": "verify-v4", "version": "v4", "state": "done",
+                                    "thresholds": {"mean": .025, "frame": .07},
+                                    "frames": [{"frame": 42, "l1": .081}, {"frame": 7, "l1": .07},
+                                               {"frame": 1, "l1": .075}]}
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json={
+        "devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}))
+    page.reload()
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-synced")).to_have_text(
+        "Differs from Keepframe (v4): mean 3.6%, worst frame 42 at 8.1%, 2 frames over 7%")
+    page.locator("#ae-details summary").click()
+    expect(page.locator("#ae-verify-limits")).to_have_text("Limits: mean 2.5%, frame 7%")
+    page.locator("[data-lang-toggle]").click()
+    expect(page.locator("#ae-synced")).to_have_text(
+        "Keepframe과 다릅니다 (v4): 평균 3.6%, 최대 차이 42번 프레임 8.1%, 7%를 넘는 프레임 2개")
+    expect(page.locator("#ae-verify-limits")).to_have_text("기준: 평균 2.5%, 프레임 7%")
+    expect(page.locator("#ae-verify-masked")).to_have_text("마스킹한 텍스트 title: 최대 차이 12.3%")
+    assert not errors
+
+
+@pytest.mark.parametrize("state", ["rendering", "verifying"])
+def test_verify_active_polling_then_idle_and_hidden(ae_page, state):
+    from playwright.sync_api import expect
+
+    page, _, errors = ae_page
+    page.clock.install()
+    page.clock.pause_at(page.evaluate("Date.now() / 1000"))
+    report = {"job": "verify-v4", "version": "v4", "state": state}
+    data = {"devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}
+    page.route("**/api/ae/state?*", lambda route: route.fulfill(json=data))
+    requests = []
+    page.on("request", lambda request: requests.append(request.url) if "/api/ae/state?" in request.url else None)
+    page.reload()
+    expect(page.locator("#ae-synced")).to_contain_text("…")
+    page.wait_for_timeout(100)
+    before = len(requests)
+    page.clock.fast_forward(1999)
+    page.wait_for_timeout(50)
+    assert len(requests) == before
+    with page.expect_request("**/api/ae/state?*"):
+        page.clock.fast_forward(1)
+    page.wait_for_timeout(100)
+    assert len(requests) == before + 1
+    page.evaluate("Object.defineProperty(document, 'hidden', {configurable: true, value: true}); document.dispatchEvent(new Event('visibilitychange'))")
+    before = len(requests)
+    page.clock.fast_forward(30000)
+    page.wait_for_timeout(100)
+    assert len(requests) == before
+    report["state"] = "interrupted"
+    page.evaluate("Object.defineProperty(document, 'hidden', {configurable: true, value: false}); document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#ae-synced")).to_have_text("비교가 중단되었습니다 — 다시 비교하세요")
+    page.wait_for_timeout(100)
+    before = len(requests)
+    page.clock.fast_forward(14999)
+    page.wait_for_timeout(50)
+    assert len(requests) == before
+    with page.expect_request("**/api/ae/state?*"):
+        page.clock.fast_forward(1)
+    assert len(requests) == before + 1
+    assert not errors
 
 
 @pytest.mark.parametrize("builds", [{}, {"host_build": "123-abc1234", "panel_build": "123-abc1234"},

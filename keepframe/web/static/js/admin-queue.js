@@ -1,5 +1,5 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261006i";
-import { T } from "/static/js/i18n.js?v=20261006i";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261006j";
+import { T } from "/static/js/i18n.js?v=20261006j";
 
 let retryCap = 0;
 let jobs = [];

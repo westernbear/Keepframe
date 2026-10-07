@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261006i"}
+    assert stamps == {"20261006j"}
 
 
 def test_ae_card_static_contract():
@@ -598,14 +598,15 @@ def test_ae_card_static_contract():
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261006i"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261006j"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh
     ae = static_src("js/ae.js")
     assert "export function initAECard({projectId, getSceneId, getVersionId})" in ae
-    assert set(re.findall(r"/api/ae/[a-z_/]+", ae)) == {
+    assert set(re.findall(r"/api/ae/[a-z_/-]+", ae)) == {
         "/api/ae/codes", "/api/ae/devices", "/api/ae/devices/", "/api/ae/send", "/api/ae/state",
+        "/api/ae/verify", "/api/ae/verify-image",
     }
     assert "visibilitychange" in ae
     assert "console." not in ae and "innerHTML" not in ae and "window.confirm" not in ae
@@ -616,6 +617,10 @@ def test_ae_card_static_contract():
         "sync", "render_frames", "render_final", "package", "queued", "running", "done", "failed", "superseded",
     )}
     used |= {f"ae.count.{value}" for value in ("created", "updated", "deleted")}
+    used |= {f"ae.verify{value}" for value in (
+        "", "Rendering", "Verifying", "Passed", "Differs", "Over", "Failed", "Interrupted",
+        "Limits", "Frame", "AE", "KF", "Diff", "ImageAlt", "Masked",
+    )}
     assert used
     for key in used:
         assert f'"{key}":' in ko and f'"{key}":' in en, key

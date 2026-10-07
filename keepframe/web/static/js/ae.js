@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261006i";
-import { T, Tf } from "/static/js/i18n.js?v=20261006i";
+import { api } from "/static/js/api.js?v=20261006j";
+import { T, Tf } from "/static/js/i18n.js?v=20261006j";
 
 const JOB_HISTORY_LIMIT = 4;
 
@@ -33,7 +33,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   let handJobId = null, overwriteConfirmed = false;
   let stateTimer, deviceTimer, countdownTimer;
   let refreshing = false, refreshAgain = false;
-  let devicesPainted = "", jobsPainted = "", hadConnection = false;
+  let devicesPainted = "", jobsPainted = "", verifyPainted = "", hadConnection = false;
   let stateDelay = 15000, deviceDelay = 2000, pollError = false;
 
   function error(err, fromPoll = false) {
@@ -146,6 +146,64 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     return counts.join(", ") || T("ae.noChanges");
   }
 
+  function percent(value) {
+    return (value * 100).toFixed(1);
+  }
+
+  function verifyOutcome(report) {
+    if (report.state === "rendering") return T("ae.verifyRendering");
+    if (report.state === "verifying") return T("ae.verifyVerifying");
+    if (report.state === "failed") return report.error || T("ae.verifyFailed");
+    if (report.state === "interrupted") return T("ae.verifyInterrupted");
+    const worst = report.worst[0];
+    let text = Tf(report.passed ? "ae.verifyPassed" : "ae.verifyDiffers", {
+      version: report.version, mean: percent(report.mean), frame: worst.frame, max: percent(report.max),
+    });
+    if (!report.passed) {
+      const n = report.frames.filter(row => row.l1 > report.thresholds.frame).length;
+      text += Tf("ae.verifyOver", {n, threshold: Number(percent(report.thresholds.frame))});
+    }
+    return text;
+  }
+
+  function paintVerify(report) {
+    const signature = JSON.stringify([getSceneId(), report, T("ae.verify")]);
+    if (signature === verifyPainted) return;
+    verifyPainted = signature;
+    const hasReport = report?.state === "done";
+    el("verify-report").hidden = !hasReport;
+    el("verify-worst").replaceChildren();
+    el("verify-notes").replaceChildren();
+    el("verify-masked").replaceChildren();
+    if (!hasReport) return;
+    el("verify-limits").textContent = Tf("ae.verifyLimits", {
+      mean: Number(percent(report.thresholds.mean)), frame: Number(percent(report.thresholds.frame)),
+    });
+    el("verify-worst").replaceChildren(...report.worst.slice(0, 3).map(row => {
+      const item = node("li");
+      item.append(node("p", Tf("ae.verifyFrame", {frame: row.frame, l1: percent(row.l1)})));
+      const images = node("div", "", "ae-card__verify-images");
+      for (const [kind, key] of [["ae", "ae.verifyAE"], ["kf", "ae.verifyKF"], ["diff", "ae.verifyDiff"]]) {
+        const figure = node("figure");
+        const img = node("img");
+        img.loading = "lazy";
+        img.alt = Tf("ae.verifyImageAlt", {kind: T(key), frame: row.frame});
+        img.src = `/api/ae/verify-image?${new URLSearchParams({project: projectId, scene: getSceneId(),
+          version: report.version, name: row[kind], job: report.job})}`;
+        figure.append(node("figcaption", T(key)), img);
+        images.append(figure);
+      }
+      item.append(images);
+      return item;
+    }));
+    el("verify-notes").hidden = !report.notes.length;
+    el("verify-notes").replaceChildren(...report.notes.map(note => node("li", note)));
+    el("verify-masked").hidden = !report.masked.length;
+    el("verify-masked").replaceChildren(...report.masked.map(row => node("li", Tf("ae.verifyMasked", {
+      id: row.id, l1: percent(row.worst_l1),
+    }))));
+  }
+
   function paint() {
     const devices = [...snapshot.devices].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0) || b.created - a.created);
     const connected = devices.find((device) => device.connected);
@@ -162,6 +220,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (el("connect").parentElement !== connectContainer) connectContainer.prepend(el("connect"));
     el("connect").disabled = busy;
     el("send").disabled = busy || !isConnected || !projectId || !getSceneId() || !getVersionId();
+    el("verify").disabled = el("send").disabled;
     el("send-reason").hidden = isConnected;
     el("overwrite-reason").hidden = isConnected;
     if (isConnected !== hadConnection) el("install").open = !isConnected;
@@ -175,8 +234,14 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     const latestJob = snapshot.jobs[0];
     const syncedText = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
     const outcome = jobOutcome(latestJob);
-    el("synced").textContent = outcome ? `${syncedText}. ${outcome}` : syncedText;
-    el("synced").classList.toggle("ae-card__error", Boolean(latestJob?.error) || latestJob?.state === "failed");
+    const report = snapshot.verify;
+    const showVerify = report && (!latestJob || latestJob.id === report.job);
+    let summary = outcome ? `${syncedText}. ${outcome}` : syncedText;
+    if (showVerify) summary = verifyOutcome(report);
+    el("synced").textContent = summary;
+    const failed = showVerify ? report.state === "failed" : Boolean(latestJob?.error) || latestJob?.state === "failed";
+    el("synced").classList.toggle("ae-card__error", failed);
+    paintVerify(report);
     const buildsDiffer = devices.some(device => device.panel_build && device.host_build && device.panel_build !== device.host_build);
     el("build-warning").hidden = !buildsDiffer;
     el("build-warning").textContent = T("ae.buildMismatch");
@@ -266,7 +331,9 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
         snapshot = {jobs: [], last_synced: {}, progress: {}, ...data};
         acceptDevices(data.devices);
         paint();
-        stateDelay = snapshot.jobs.some((job) => ["queued", "running"].includes(job.state)) ? 2000 : 15000;
+        const hasActiveJob = snapshot.jobs.some(job => ["queued", "running"].includes(job.state));
+        const isVerifying = ["rendering", "verifying"].includes(snapshot.verify?.state);
+        stateDelay = hasActiveJob || isVerifying ? 2000 : 15000;
         if (pollError) clearError();
       } catch (err) {
         stateDelay = Math.min(stateDelay * 2, 60000);
@@ -313,6 +380,9 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, 2000);
   }));
   el("send").addEventListener("click", () => action(() => send()));
+  el("verify").addEventListener("click", () => action(() => api("/api/ae/verify", {
+    method: "POST", body: JSON.stringify({project: projectId, scene: getSceneId(), version: getVersionId()}),
+  })));
   el("overwrite").addEventListener("click", () => { overwriteConfirmed = true; paint(); el("overwrite-yes").focus(); });
   el("overwrite-no").addEventListener("click", () => { overwriteConfirmed = false; paint(); el("overwrite").focus(); });
   el("overwrite-yes").addEventListener("click", () => {
