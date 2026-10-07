@@ -86,8 +86,10 @@ Known differences:
 
 1. Large syncs are slow in real AE: reading each key back for hand-edit detection dominated (each layer's fingerprint was read twice per sync and ease was read for linear keys). Fixed in 9a70dfd (one pass, no ease reads on all-LINEAR keys, old fingerprints accepted once and re-stamped): 112 s → 80 s for ~24k keys. The rest of the time is not yet attributed (ExtendScript JSON parsing and hashing are suspects); kfSync will report per-stage timings, and optimization is the first task of the next slice.
 2. **Details** printed every past job's full warning list (30 English internal strings each, about 2,400 px) and the verify report listed the substituted-font facts twice. Fixed in 9a70dfd: one line per past job, the latest job's warnings behind their own count, one localized font list (card height 4,428 px → 1,649 px with the report open).
-3. Open after the fixes: the AE chip shows `AE 26.5x89` (real AE versions carry a build suffix; trim to `26.5`), and an empty `경고 0개` disclosure appears when the latest job has no warnings.
+3. After the first fixes the AE chip still showed `AE 26.5x89` and an empty `경고 0개` summary remained; both fixed in b331ab4 (see 6).
 4. Known renderer difference: AE's default lighting renders the GLB material lighter than Keepframe's renderer (placement and shape match).
+5. Final build 1.20261007.110312957 (b331ab4), per-stage timings for the 41-layer, ~24k-key scene: create 66.7 s = validate 60.6 s + hash 4.2 s + write 1.0 s + read 0.9 s; unchanged resend 64.6 s = validate 60.8 s + hash 2.9 s + read 0.8 s. Parsing and validating the 0.9 MB spec in ExtendScript (no built-in JSON) takes 91 % of the time; AE reads and writes take about 2 s. ig2demo (949 keys): 1.4 s in total. The next slice speeds up spec parsing.
+6. Final build UI checks: the chip reads `AE 26.5 연결됨`; **Verify against AE** is disabled while a verify runs (reason `비교가 끝나면 다시 비교할 수 있습니다`) and two quick POSTs queue one render; no warnings disclosure when the latest job has none; **Details** starts with the verify outcome and its version, and shows the latest sync's timings.
 
 ### Calibration
 
