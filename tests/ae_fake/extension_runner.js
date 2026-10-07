@@ -58,7 +58,7 @@ async function main() {
         res.on("end", () => {
           if (options["die-after-claim"] && route === "/api/ae/next" && res.statusCode === 200
               && JSON.parse(Buffer.concat(chunks).toString()).job) {
-            fs.writeFileSync(1, JSON.stringify({ results, statuses, writes: ae.counters.writes,
+            fs.writeFileSync(1, JSON.stringify({ results, statuses, calls: ae.calls, writes: ae.counters.writes,
               undo_groups: ae.counters.undoGroups }) + "\n");
             process.exit(3);
           }
@@ -134,7 +134,7 @@ async function main() {
       catch (e) { error = core.redact(e.message || e, [credentials?.token, options.pair]); }
     }
   }
-  fs.writeFileSync(1, JSON.stringify({ results, statuses, writes: ae?.counters.writes || 0,
+  fs.writeFileSync(1, JSON.stringify({ results, statuses, calls: ae?.calls || {}, writes: ae?.counters.writes || 0,
     undo_groups: ae?.counters.undoGroups || 0, ...(error ? { error } : {}) }) + "\n");
   process.exit(error ? 1 : 0);
 }
