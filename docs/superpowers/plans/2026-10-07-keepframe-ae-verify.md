@@ -21,7 +21,7 @@ Live check 2 finding 9: syncing ~120k keys took more than 10 minutes because eve
 1. **Frames come from `CompItem.saveFrameToPng(time, file)`, not the render queue.** Same outcome as the spec's "PNG sequence" (PNG files of chosen frames) without adding render-queue items to the user's project or choosing an output module by localized name; the Higgsfield bridge already exports frames this way in the user's Korean AE 26.5. The file may appear asynchronously, so `kfRender` waits for each file (Task 4). Frames are written at the comp's own resolution; `verify.py` resizes to the scene size anyway (the spec's "half resolution" was a speed choice that 16 frames do not need). Cost if wrong: switch `kfRender` to the render queue; nothing else changes.
 2. **Verification runs on the server after the upload**, in one background thread at a time; the `render_frames` job ends when the frames are uploaded, so the device is free while Keepframe renders.
 3. **`render_frames` keeps the spec's prerequisite rule** (sync first only when the device's last applied sync of that scene is another version). A comp hand-edited after its last sync is verified as it is; the report then shows the user's differences, which is a true answer.
-4. **Substituted-font text is masked, not dropped:** pixels inside that text element's Keepframe bounding box (+4 px) are excluded from the metric for that frame, and the report lists the layer as a note (spec: "their difference does not fail the check").
+4. **Substituted-font text is masked, not dropped:** pixels inside that text element's Keepframe bounding box (+4 px) are excluded from the pass/fail metric for that frame (spec: "their difference does not fail the check"), but the report still measures them: each note carries that region's worst L1 across the sampled frames, so missing or wrong-colour text shows as a large number instead of passing silently.
 5. **Upload names allow 4–6 digits** (`frame_[0-9]{4,6}\.png`), so scenes longer than 9,999 frames can be verified.
 
 ## Global Constraints
@@ -124,14 +124,15 @@ Guard (Step 3b): AE's default temporal interpolation for script-made keys is exp
   - `VERIFY_MEAN_MAX = 0.02`, `VERIFY_FRAME_MAX = 0.05`, `MASK_PAD = 4`
   - `sample_frames(frames: int, n: int = 16) -> list[int]`
   - `compare_frames(ae: np.ndarray, kf: np.ndarray, masks: list[tuple[int,int,int,int]] = ()) -> tuple[float, np.ndarray]` — inputs RGB uint8 HxWx3 of equal size; returns (L1 in 0..1 over unmasked pixels, diff image uint8 = `clip(|a−b|·4)`).
-  - `verify(scene: Scene, scene_dir: Path, ae_frames: dict[int, Path], out_dir: Path, *, masked: dict[str, str] = {}) -> dict` — `masked` maps element id → note text; writes `out_dir/f<NNNN>_{ae,kf,diff}.png` for the three worst frames and returns the report:
+  - `verify(scene: Scene, scene_dir: Path, ae_frames: dict[int, Path], out_dir: Path, *, masked: dict[str, str] = {}) -> dict` — `masked` maps element id → note text; the report's note for each masked element is `f"{text} — text region differs by {pct:.1f}%"` where `pct` is the worst per-frame L1 inside that element's padded box (frames where the box is empty or off-frame are skipped); writes `out_dir/f<NNNN>_{ae,kf,diff}.png` for the three worst frames and returns the report:
 
 ```python
 {"passed": bool, "mean": float, "max": float,
  "thresholds": {"mean": VERIFY_MEAN_MAX, "frame": VERIFY_FRAME_MAX},
  "frames": [{"frame": int, "l1": float}, ...],          # sorted by frame
  "worst": [{"frame": int, "l1": float, "ae": "f0042_ae.png", "kf": "f0042_kf.png", "diff": "f0042_diff.png"}],  # ≤3, worst first
- "notes": ["<note>", ...]}
+ "notes": ["<note>", ...],
+ "masked": [{"id": "e1", "worst_l1": float}]}
 ```
 
 - [ ] **Step 1: Failing tests** (no browser):
@@ -160,7 +161,8 @@ def test_pass_rule_and_worst_three(tmp_path, monkeypatch):
 
 def test_substituted_text_is_masked_and_noted(tmp_path, monkeypatch):
     # difference only inside element "t1"'s bbox; masked={"t1": "e1 · title: Arial Bold instead of Pretendard"}
-    # → passed True and the note is in report["notes"]
+    # → passed True; report["masked"] == [{"id": "t1", "worst_l1": <region L1>}] and the note ends with "text region differs by N.N%"
+    # also: the text missing from the AE frame (region blank) still passes but shows a large worst_l1
     ...
 ```
 
