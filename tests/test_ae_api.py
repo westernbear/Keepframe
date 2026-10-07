@@ -7,6 +7,7 @@ import json
 import logging
 import queue
 import socket
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlparse
@@ -85,7 +86,7 @@ def pair(server):
 
 @pytest.mark.parametrize("method,path", [
     ("POST", "/api/ae/codes"),
-    ("DELETE", "/api/ae/devices/missing"), ("POST", "/api/ae/send"),
+    ("DELETE", "/api/ae/devices/missing"), ("POST", "/api/ae/send"), ("POST", "/api/ae/verify"),
 ])
 def test_browser_routes_reject_cross_origin_first(server, method, path):
     status, error = json_request(server, method, path, headers={"Origin": "https://evil.example"})
@@ -123,7 +124,7 @@ def test_browser_get_routes_require_allowed_host_only(server, project, path):
 
 
 @pytest.mark.parametrize("method,path", [
-    ("POST", "/api/ae/codes"), ("POST", "/api/ae/send"),
+    ("POST", "/api/ae/codes"), ("POST", "/api/ae/send"), ("POST", "/api/ae/verify"),
     ("DELETE", "/api/ae/devices/missing"),
 ])
 def test_browser_mutations_require_origin(server, method, path):
@@ -247,7 +248,8 @@ def test_send_uses_current_version_and_most_recent_connected_device(server, proj
     assert status == 202 and value["job"]["device"] == first and value["job"]["version"] == "v1"
     assert value["job"]["params"] == {"force": False}
     snapshot = state(server)
-    assert set(snapshot) == {"jobs", "last_synced", "devices", "progress"}
+    assert set(snapshot) == {"jobs", "last_synced", "devices", "progress", "verify"}
+    assert snapshot["verify"] is None
     assert len(snapshot["jobs"]) == 2 and snapshot["last_synced"] == snapshot["progress"] == {}
 
 
@@ -595,7 +597,7 @@ def test_upload_allowlist_length_caps_and_success(server, project, tmp_path, kin
     directory = tmp_path / "p1" / "ae" / "s1" / "v1"
     assert (directory / name).read_bytes() == data
     assert not list(directory.glob(".*.part-*"))
-    assert finish(server, headers, job, ok=True)[0] == 200
+    assert finish(server, headers, job, ok=kind != "render_frames", error="upload-only test complete")[0] == 200
     assert job["id"] not in server.ae_routes._uploaded
     # A completed job must reject before reading; avoid racing a large send with the early response.
     assert json_request(server, "PUT", prefix + name, headers=headers | {
@@ -767,7 +769,7 @@ def test_authenticated_requests_refresh_seen_and_preserve_status_without_polling
              ("GET", prefix + "/spec", None, None, 404),
              ("POST", "/api/ae/info", {"info": INFO}, None, 204),
              ("GET", "/api/ae/unknown", None, None, 404),
-             ("POST", prefix + "/result", {"ok": True}, None, 200)]
+             ("POST", prefix + "/result", {"ok": False, "error": "upload-only test complete"}, None, 200)]
     for method, path, data, body, expected in calls:
         current[0] += 65
         assert request(server, method, path, data, body=body, headers=headers)[0] == expected
@@ -775,7 +777,7 @@ def test_authenticated_requests_refresh_seen_and_preserve_status_without_polling
         assert row["last_seen"] == current[0]
         assert {key: row[key] for key in status} == status
         assert routes.jobs.sweep({row["id"]: row["last_seen"]}, now=current[0]) == []
-        assert routes.jobs.get(job["id"]).state == ("done" if path.endswith("/result") else "running")
+        assert routes.jobs.get(job["id"]).state == ("failed" if path.endswith("/result") else "running")
 
 
 def test_upload_refreshes_seen_as_slow_body_arrives_for_over_sweep_threshold(server, project, tmp_path, monkeypatch):
@@ -971,3 +973,369 @@ def test_final_repair_revokes_previous_device_only_after_success(server, project
     assert server.ae_routes.jobs.get(queued.id).error == "After Effects was disconnected from this server"
     assert poll(server, other_headers)[0] == 204
     assert poll(server, EXTENSION | {"Authorization": "Bearer " + paired["token"]})[0] == 204
+
+
+@pytest.fixture
+def fake_verify(monkeypatch):
+    from keepframe.ae import api
+    calls, release = queue.Queue(), threading.Event()
+    release.set()
+
+    def fake(scene, directory, ae_frames, out_dir, *, masked):
+        calls.put((scene, directory, ae_frames, out_dir, masked))
+        assert release.wait(5)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        worst = {"frame": 0, "l1": 0.01}
+        for kind in ("ae", "kf", "diff"):
+            name = f"f0000_{kind}.png"
+            png(out_dir / name, 20, 12)
+            worst[kind] = name
+        report = {"passed": True, "mean": 0.005, "max": 0.01,
+                  "thresholds": {"mean": 0.02, "frame": 0.05},
+                  "frames": [{"frame": f, "l1": 0.005} for f in ae_frames],
+                  "worst": [worst], "notes": list(masked.values()),
+                  "masked": [{"id": eid, "worst_l1": 0.1} for eid in masked]}
+        (out_dir / "verify.json").write_text(json.dumps(report))
+        return report
+
+    monkeypatch.setattr(api, "verify", fake, raising=False)
+    try:
+        yield calls, release
+    finally:
+        release.set()
+
+
+def verify_request(server, **changes):
+    return json_request(server, "POST", "/api/ae/verify", {"project": "p1", "scene": "s1", **changes},
+                        browser=True)
+
+
+def running_verify(server):
+    _, headers, sync = running_sync(server)
+    assert finish(server, headers, sync, ok=True, result={"applied": True})[0] == 200
+    status, value = verify_request(server)
+    assert status == 202
+    job = value["job"]
+    assert poll(server, headers)[1]["job"]["id"] == job["id"]
+    return headers, job
+
+
+def upload_verify_frames(server, headers, job, *, skip=()):
+    for frame in job["params"]["frames"]:
+        if frame not in skip:
+            assert json_request(server, "PUT", f'/api/ae/jobs/{job["id"]}/files/frame_{frame:04d}.png',
+                                headers=headers, body=b"png")[0] == 204
+
+
+def wait_verify(server, expected="done"):
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        report = state(server)["verify"]
+        if report["state"] == expected:
+            return report
+        time.sleep(0.01)
+    pytest.fail(f"verification did not reach {expected}: {report}")
+
+
+def test_verify_enqueues_render_frames_with_sampled_frames(server, project, tmp_path):
+    assert verify_request(server) == (409, {"error": "no connected After Effects"})
+    device, headers, sync = running_sync(server)
+    assert finish(server, headers, sync, ok=True, result={"applied": True})[0] == 200
+    status, value = verify_request(server, device=device, version="v1")
+    assert status == 202
+    job = value["job"]
+    assert (job["device"], job["project"], job["scene"], job["version"], job["kind"], job["depends_on"]) == (
+        device, "p1", "s1", "v1", "render_frames", None)
+    assert job["params"] == {"frames": [0, 4, 8, 12, 16, 20, 24, 28, 31, 35, 39, 43, 47, 51, 55, 59],
+                             "tag": "keepframe:p1/s1"}
+    assert state(server)["verify"] == {"job": job["id"], "version": "v1", "state": "rendering"}
+    new_version(tmp_path / "p1", "s1", project.model_copy(update={"frames": 5}), "shorter")
+    status, value = verify_request(server)
+    assert status == 202 and value["job"]["version"] == "v2"
+    assert value["job"]["params"]["frames"] == [0, 1, 2, 3, 4]
+    dependency = server.ae_routes.jobs.get(value["job"]["depends_on"])
+    assert dependency.kind == "sync" and dependency.version == "v2"
+    assert verify_request(server, device="missing")[0] == 404
+
+
+def test_render_frames_result_starts_verification_and_state_reports_it(server, project, tmp_path, fake_verify, caplog):
+    calls, release = fake_verify
+    release.clear()
+    headers, job = running_verify(server)
+    assert state(server)["verify"]["state"] == "rendering"
+    upload_verify_frames(server, headers, job)
+    with caplog.at_level(logging.INFO):
+        status, result = finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})
+        assert status == 200 and result["job"]["state"] == "done"
+        scene, directory, frames, _, masked = calls.get(timeout=2)
+        assert scene == project and directory == scene_dir(tmp_path / "p1", "s1")
+        assert set(frames) == set(job["params"]["frames"])
+        assert all(path.name == f"frame_{f:04d}.png" and path.read_bytes() == b"png"
+                   and path.parent.parent == tmp_path / "p1" / "ae" / "s1" / "v1" for f, path in frames.items())
+        assert masked == {"title": "title · text: Arial instead of Example"}
+        assert state(server)["verify"] == {"job": job["id"], "version": "v1", "state": "verifying"}
+        assert poll(server, headers) == (204, None)
+        release.set()
+        report = wait_verify(server)
+    assert report["job"] == job["id"] and report["version"] == "v1"
+    assert report["passed"] and report["mean"] == 0.005 and report["finished"] >= result["job"]["finished"]
+    stored = json.loads((tmp_path / "p1" / "ae" / "s1" / "v1" / "verify" / "verify.json").read_text())
+    assert stored == {key: value for key, value in report.items() if key != "state"}
+    path = "/api/ae/verify-image?project=p1&scene=s1&version=v1&name=f0000_ae.png"
+    for origin in ({}, {"Origin": "https://evil.example"}):
+        status, response_headers, body = request(server, "GET", path, headers=origin)
+        assert status == 200 and response_headers["content-type"] == "image/png" and body.startswith(b"\x89PNG")
+        assert not any(key.lower().startswith("access-control-") for key in response_headers)
+    assert request(server, "GET", path, headers={"Host": "evil.example"})[0] == 403
+    logs = [r.getMessage() for r in caplog.records if r.name == "keepframe.ae" and r.levelno == logging.INFO]
+    assert any("verification start" in text and "p1" in text and "v1" in text for text in logs)
+    assert any("verification finish" in text and "0.005" in text and "True" in text for text in logs)
+    assert not any(str(tmp_path) in text or headers["Authorization"][7:] in text for text in logs)
+    assert job["id"] not in server.ae_routes._uploaded
+
+
+@pytest.mark.parametrize("case", ["upload", "result", "extra", "combined", "wrong_type", "not_list", "no_result"])
+def test_result_with_missing_frames_fails_without_verifying(server, project, tmp_path, fake_verify, case):
+    calls, _ = fake_verify
+    headers, job = running_verify(server)
+    frames = job["params"]["frames"]
+    # A stale file on disk is not an upload for this job.
+    if case == "upload":
+        directory = tmp_path / "p1" / "ae" / "s1" / "v1"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "frame_0012.png").write_bytes(b"stale")
+    upload_verify_frames(server, headers, job, skip=(12,) if case == "upload" else ())
+    reported = {"upload": frames, "result": [f for f in frames if f != 12], "extra": frames + [40],
+                "combined": [f for f in frames if f != 12] + [40],
+                "wrong_type": [False, *frames[1:]], "not_list": "frames", "no_result": None}[case]
+    status, value = finish(server, headers, job, ok=True, result={"frames": reported})
+    assert status in (200, 400) and server.ae_routes.jobs.get(job["id"]).state == "failed"
+    if case in ("upload", "result"):
+        assert state(server)["verify"]["error"] == "frames missing from AE: 12"
+    elif case == "extra":
+        assert state(server)["verify"]["error"] == "frames missing from AE: 40"
+    elif case == "combined":
+        assert state(server)["verify"]["error"] == "frames missing from AE: 12, 40"
+    assert state(server)["verify"]["state"] == "failed" and calls.empty()
+    assert job["id"] not in server.ae_routes._uploaded
+    assert poll(server, headers) == (204, None)
+
+
+def test_verify_uses_the_job_version(server, project, tmp_path, fake_verify):
+    headers, job = running_verify(server)
+    edited = project.model_copy(update={"size": (640, 360), "frames": 120})
+    new_version(tmp_path / "p1", "s1", edited, "new size")
+    upload_verify_frames(server, headers, job)
+    assert finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})[0] == 200
+    assert wait_verify(server)["version"] == "v1"
+    assert fake_verify[0].get(timeout=2)[0] == project
+    assert not (tmp_path / "p1" / "ae" / "s1" / "v2" / "verify").exists()
+
+
+def test_interrupted_verification_is_reported(server, project, tmp_path):
+    headers, job = running_verify(server)
+    # Emulate a crash after the render job was persisted as done, before the server verifier finished.
+    server.ae_routes.jobs.finish(job["id"], True, {"frames": job["params"]["frames"]})
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1" / "verify"
+    directory.mkdir(parents=True)
+    (directory / "verify.json").write_text(json.dumps({"job": "older", "version": "v1", "passed": True}))
+    assert state(server)["verify"] == {"job": job["id"], "version": "v1", "state": "interrupted"}
+    (directory / "verify.json").unlink()
+    # The latest render job must still be found beyond the ten recent-job rows.
+    for _ in range(11):
+        server.ae_routes.jobs.enqueue(job["device"], "sync", "p1", "s1", "v1")
+    assert state(server)["verify"]["state"] == "interrupted"
+
+
+@pytest.mark.parametrize("error,expected", [
+    (ValueError("frame 3 from AE is missing or not an image"), "frame 3 from AE is missing or not an image"),
+    (FileNotFoundError(errno.ENOENT, "not found", "/private/assets/missing.png"), "file not found: missing.png"),
+    (RuntimeError("failure in /private/workspace"), "verification failed: RuntimeError"),
+])
+def test_verifier_error_is_shown(server, project, tmp_path, monkeypatch, caplog, error, expected):
+    from keepframe.ae import api
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(api, "verify", fail, raising=False)
+    headers, job = running_verify(server)
+    upload_verify_frames(server, headers, job)
+    assert finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})[0] == 200
+    report = wait_verify(server, "failed")
+    assert report["error"] == expected and "/private" not in report["error"]
+    saved = json.loads((tmp_path / "p1" / "ae" / "s1" / "v1" / "verify" / "verify.json").read_text())
+    assert saved["error"] == expected and saved["job"] == job["id"] and saved["finished"] is not None
+    if isinstance(error, RuntimeError):
+        assert any(r.name == "keepframe.ae" and r.exc_info for r in caplog.records)
+
+
+def test_verify_image_rejects_other_names(server, project, tmp_path):
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1" / "verify"
+    directory.mkdir(parents=True)
+    png(directory / "f0000_ae.png", 20, 12)
+    png(directory / "f012345_diff.png", 20, 12)
+    assert request(server, "GET", "/api/ae/verify-image?project=p1&scene=s1&version=v1&name=f012345_diff.png")[0] == 200
+    for name in ("../verify.json", "f1_ae.png", "f1234567_ae.png", "f0000_other.png", "verify.json"):
+        assert json_request(server, "GET", "/api/ae/verify-image?project=p1&scene=s1&version=v1&name=" + quote(name))[0] == 404
+    assert json_request(server, "GET", "/api/ae/verify-image?project=other&scene=s1&version=v1&name=f0000_ae.png")[0] == 404
+    assert json_request(server, "GET", "/api/ae/verify-image?project=p1&scene=s1&version=missing&name=f0000_ae.png")[0] == 404
+    assert json_request(server, "GET", "/api/ae/verify-image?project=p1&scene=s1&name=f0000_ae.png")[0] == 404
+    outside = tmp_path / "outside.png"
+    png(outside, 20, 12)
+    (directory / "f0000_ae.png").unlink()
+    (directory / "f0000_ae.png").symlink_to(outside)
+    assert json_request(server, "GET", "/api/ae/verify-image?project=p1&scene=s1&version=v1&name=f0000_ae.png")[0] == 404
+
+
+def test_upload_names_allow_six_digits(server, project, tmp_path):
+    headers, job = running_upload_job(server, "render_frames")
+    prefix = f'/api/ae/jobs/{job["id"]}/files/'
+    for name in ("frame_012345.png", "frame_12345.png"):
+        assert json_request(server, "PUT", prefix + name, headers=headers, body=b"png")[0] == 204
+        assert (tmp_path / "p1" / "ae" / "s1" / "v1" / name).read_bytes() == b"png"
+    assert json_request(server, "PUT", prefix + "frame_1234567.png", headers=headers, body=b"png")[0] == 404
+
+
+def test_verify_masks_scene_text_only_and_clears_old_outputs(server, project, tmp_path, fake_verify, monkeypatch):
+    from keepframe.ae import api
+
+    def spec_with_unknown_text(*args, **kwargs):
+        spec = comp_spec(*args, **kwargs)
+        spec["layers"].append({"id": "kf:unknown", "kind": "text", "name": "Unknown",
+                               "source": {"font": {"substituted": True, "family": "Arial"}}})
+        return spec
+
+    monkeypatch.setattr(api, "comp_spec", spec_with_unknown_text)
+    project.elements.append(Element(id="image_text", kind="text", visible=(0, 59),
+                                    canonical=Canonical(width=20, height=12, text="Raster text", texture="assets/image.png")))
+    new_version(tmp_path / "p1", "s1", project, "companion")
+    device, headers, sync = running_sync(server)
+    assert sync["version"] == "v2"
+    fonts = [{"family": "Example", "style": "Regular", "postscript": "Example-Regular"}]
+    assert json_request(server, "POST", "/api/ae/info", {"info": INFO | {"fonts": fonts}}, headers=headers)[0] == 204
+    assert finish(server, headers, sync, ok=True, result={"applied": True})[0] == 200
+    job = verify_request(server, device=device)[1]["job"]
+    assert poll(server, headers)[1]["job"]["id"] == job["id"]
+    directory = tmp_path / "p1" / "ae" / "s1" / "v2" / "verify"
+    directory.mkdir(parents=True)
+    for name in ("f0059_ae.png", "f0059_kf.png", "f0059_diff.png", "f_old_diff.png", "verify.json"):
+        (directory / name).write_text("old")
+    upload_verify_frames(server, headers, job)
+    assert finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})[0] == 200
+    report = wait_verify(server)
+    assert fake_verify[0].get(timeout=2)[4] == {} and report["masked"] == []
+    assert sorted(p.name for p in directory.iterdir()) == ["f0000_ae.png", "f0000_diff.png", "f0000_kf.png", "verify.json"]
+
+
+def test_close_does_not_join_verifier_or_publish_after_shutdown(server, project, tmp_path, fake_verify):
+    calls, release = fake_verify
+    release.clear()
+    headers, job = running_verify(server)
+    upload_verify_frames(server, headers, job)
+    assert finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})[0] == 200
+    calls.get(timeout=2)
+    threads = [t for t in threading.enumerate() if job["id"] in t.name]
+    assert len(threads) == 1 and threads[0].daemon
+    server.ae_routes.close()
+    assert threads[0].is_alive()
+    release.set()
+    threads[0].join(timeout=2)
+    assert not threads[0].is_alive()
+    directory = tmp_path / "p1" / "ae" / "s1" / "v1" / "verify"
+    assert not list(directory.glob("*.png")) and not (directory / "verify.json").exists()
+
+
+def test_verifications_run_one_at_a_time(server, project, fake_verify):
+    calls, release = fake_verify
+    release.clear()
+    headers, first = running_verify(server)
+    upload_verify_frames(server, headers, first)
+    assert finish(server, headers, first, ok=True, result={"frames": first["params"]["frames"]})[0] == 200
+    calls.get(timeout=2)
+    second = verify_request(server)[1]["job"]
+    assert poll(server, headers)[1]["job"]["id"] == second["id"]
+    upload_verify_frames(server, headers, second)
+    assert finish(server, headers, second, ok=True, result={"frames": second["params"]["frames"]})[0] == 200
+    assert calls.empty() and state(server)["verify"]["state"] == "verifying"
+    release.set()
+    calls.get(timeout=2)
+    assert wait_verify(server)["job"] == second["id"]
+
+
+def test_report_write_failure_is_shown(server, project, fake_verify, monkeypatch):
+    from keepframe.ae import api
+    original = api.os.replace
+
+    def fail_report(source, destination):
+        if api.Path(destination).name == "verify.json":
+            raise PermissionError(errno.EACCES, "cannot write /private/report")
+        return original(source, destination)
+
+    monkeypatch.setattr(api.os, "replace", fail_report)
+    headers, job = running_verify(server)
+    upload_verify_frames(server, headers, job)
+    assert finish(server, headers, job, ok=True, result={"frames": job["params"]["frames"]})[0] == 200
+    assert wait_verify(server, "failed")["error"] == "verification failed: PermissionError"
+
+
+def test_queued_verification_keeps_its_uploaded_frames(server, project, monkeypatch):
+    from keepframe.ae import api
+    entered, release, values = threading.Event(), threading.Event(), queue.Queue()
+
+    def fake(scene, directory, ae_frames, out_dir, *, masked):
+        entered.set()
+        assert release.wait(5)
+        values.put(ae_frames[0].read_bytes())
+        return {"passed": True, "mean": 0, "max": 0, "frames": [], "worst": [], "notes": [], "masked": []}
+
+    monkeypatch.setattr(api, "verify", fake)
+    headers, first = running_verify(server)
+    try:
+        upload_verify_frames(server, headers, first)
+        assert finish(server, headers, first, ok=True, result={"frames": first["params"]["frames"]})[0] == 200
+        assert entered.wait(2)
+        second = verify_request(server)[1]["job"]
+        assert poll(server, headers)[1]["job"]["id"] == second["id"]
+        upload_verify_frames(server, headers, second)
+        assert json_request(server, "PUT", f'/api/ae/jobs/{second["id"]}/files/frame_0000.png',
+                            headers=headers, body=b"second render")[0] == 204
+        assert finish(server, headers, second, ok=True, result={"frames": second["params"]["frames"]})[0] == 200
+        release.set()
+        assert values.get(timeout=2) == b"png"
+        assert values.get(timeout=2) == b"second render"
+        assert wait_verify(server)["job"] == second["id"]
+    finally:
+        release.set()
+
+
+def test_older_verification_cannot_replace_newer_report(server, project, fake_verify, monkeypatch):
+    routes = server.ae_routes
+    original = routes._run_verification
+    entered, release = threading.Event(), threading.Event()
+    headers, first = running_verify(server)
+
+    def delay_first(job, *args):
+        if job.id == first["id"]:
+            entered.set()
+            assert release.wait(5)
+        return original(job, *args)
+
+    monkeypatch.setattr(routes, "_run_verification", delay_first)
+    try:
+        upload_verify_frames(server, headers, first)
+        assert finish(server, headers, first, ok=True, result={"frames": first["params"]["frames"]})[0] == 200
+        assert entered.wait(2)
+        second = verify_request(server)[1]["job"]
+        assert poll(server, headers)[1]["job"]["id"] == second["id"]
+        upload_verify_frames(server, headers, second)
+        assert finish(server, headers, second, ok=True, result={"frames": second["params"]["frames"]})[0] == 200
+        assert wait_verify(server)["job"] == second["id"]
+        thread = next(t for t in threading.enumerate() if first["id"] in t.name)
+        release.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert state(server)["verify"]["state"] == "done"
+        assert state(server)["verify"]["job"] == second["id"]
+    finally:
+        release.set()

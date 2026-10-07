@@ -273,6 +273,13 @@ class Jobs:
         with self._condition:
             return copy.deepcopy(self._jobs.get(job_id))
 
+    def latest(self, project, scene, kind, *, version=None) -> Job | None:
+        with self._condition:
+            jobs = (job for job in self._jobs.values()
+                    if (job.project, job.scene, job.kind) == (project, scene, kind)
+                    and (version is None or job.version == version))
+            return copy.deepcopy(max(jobs, key=lambda job: job.created, default=None))
+
     def last_synced(self, device, project, scene) -> str | None:
         with self._condition:
             return self._last_synced(device, project, scene)
