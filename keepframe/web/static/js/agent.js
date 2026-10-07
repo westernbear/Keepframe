@@ -13,14 +13,14 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261006g";
-import { T, Tf } from "/static/js/i18n.js?v=20261006g";
-import { initAECard } from "/static/js/ae.js?v=20261006g";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261006g";
+} from "/static/js/api.js?v=20261006h";
+import { T, Tf } from "/static/js/i18n.js?v=20261006h";
+import { initAECard } from "/static/js/ae.js?v=20261006h";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261006h";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261006g";
+} from "/static/js/playback.js?v=20261006h";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -80,9 +80,7 @@ const renderPlanSelectorEl = document.getElementById("render-plan-selector");
 const renderCreateBtn = document.getElementById("render-create");
 const renderApproveBtn = document.getElementById("render-approve");
 const renderStatusEl = document.getElementById("render-status");
-const renderLockEl = document.getElementById("render-lock");
 const renderOutputsEl = document.getElementById("render-outputs");
-const renderStateEl = document.getElementById("render-state");
 const renderReasonEl = document.getElementById("render-reason");
 const renderArtifactsEl = document.getElementById("render-artifacts");
 
@@ -140,7 +138,7 @@ function setPlaying(on) {
 
 function renderElements() {
   const els = state.scene.elements || [];
-  countEl.textContent = String(els.length);
+  countEl.textContent = Tf("agent.elementCount", {n: els.length});
   elementsList.innerHTML = "";
   els.forEach((el) => {
     const row = document.createElement("button");
@@ -206,17 +204,13 @@ function upsertRenderPlan(payload) {
 function paintPlanSelector() {
   const currentId = renderPayload && renderPayload.plan && renderPayload.plan.id;
   renderPlanSelectorEl.replaceChildren();
-  const current = document.createElement("option");
-  current.value = "";
-  current.textContent = renderPlans.length ? T("agent.renderSelectPlan") : T("agent.renderNoPlan");
-  current.selected = !currentId;
-  renderPlanSelectorEl.appendChild(current);
+  document.getElementById("render-plan-field").hidden = renderPlans.length <= 1;
   renderPlans.forEach((payload) => {
     const plan = payload.plan;
     const option = document.createElement("option");
     const backend = plan.backend === "lottie" ? "Lottie" : "Native";
     option.value = plan.id;
-    option.textContent = `${backend} · ${plan.mode} · ${renderPayloadStatus(payload)} · ${shortDigest(plan.id)}`;
+    option.textContent = `${backend} ${plan.mode} (${renderPayloadStatus(payload)}, ${shortDigest(plan.id)})`;
     option.selected = plan.id === currentId;
     renderPlanSelectorEl.appendChild(option);
   });
@@ -237,6 +231,7 @@ function expectedOutputs(plan) {
 
 function paintArtifacts(plan, payload) {
   renderArtifactsEl.replaceChildren();
+  renderArtifactsEl.hidden = true;
   if (!plan) return;
   (payload && payload.artifacts || []).forEach((artifact) => {
     if (!artifact || !artifact.kind) return;
@@ -246,6 +241,7 @@ function paintArtifacts(plan, payload) {
     link.rel = "noopener";
     renderArtifactsEl.appendChild(link);
   });
+  renderArtifactsEl.hidden = !renderArtifactsEl.childElementCount;
 }
 
 
@@ -266,21 +262,26 @@ function updateRenderControls() {
 function paintRenderCard() {
   const plan = renderPayload && renderPayload.plan;
   const planState = renderPayload && renderPayload.state;
-  const status = renderPayload ? renderPayloadStatus(renderPayload) : T("agent.renderNoPlan");
+  const hasPlan = Boolean(plan);
+  const status = hasPlan ? renderPayloadStatus(renderPayload) : "";
   const jobError = renderPayload && renderPayload.job && renderPayload.job.error;
-  const lockedProject = (plan && plan.project_id) || projectId || "—";
-  const lockedScene = (plan && plan.scene_id) || sceneId;
-  const lockedVersion = (plan && plan.version_id) || versionId || "—";
-  renderLockEl.textContent = `${lockedProject} / ${lockedScene} / ${lockedVersion}${plan ? ` · ${plan.mode} · ${plan.backend}` : ""}`;
-  renderStatusEl.textContent = status;
+  const outputs = expectedOutputs(plan);
+  const awaitsApproval = hasPlan && planState?.status === "awaiting_approval";
+  renderStatusEl.hidden = !hasPlan;
+  renderStatusEl.textContent = hasPlan ? `${status} (${plan.version_id})` : "";
+  renderStatusEl.title = planState ? `${status}, r${planState.revision}` : status;
   renderStatusClass(status);
-  renderStateEl.textContent = planState ? `${status} / r${planState.revision}` : status;
-  renderReasonEl.textContent = jobError || (renderPayload && renderPayload.error) || "—";
+  renderReasonEl.textContent = jobError || renderPayload?.error || "";
+  document.getElementById("render-reason-field").hidden = status !== "failed" || !renderReasonEl.textContent;
+  document.getElementById("render-output-field").hidden = !hasPlan || !outputs.length;
+  document.getElementById("render-approval").hidden = !awaitsApproval;
+  renderCreateBtn.classList.toggle("btn--primary", !awaitsApproval);
+  renderCreateBtn.classList.toggle("btn--secondary", awaitsApproval);
   if (plan) {
     renderBackendEl.value = plan.backend;
     renderModeEl.value = plan.mode;
   }
-  renderOutputsEl.textContent = expectedOutputs(plan).join(", ") || "—";
+  renderOutputsEl.textContent = outputs.join(", ");
   paintPlanSelector();
   paintArtifacts(plan, renderPayload);
   updateRenderControls();
@@ -406,10 +407,12 @@ function appendToolCall(name, args, result) {
   head.className = "toolcall__head";
   const nameEl = document.createElement("span");
   nameEl.className = "toolcall__name";
-  nameEl.textContent = `TOOL ${name}`;
+  nameEl.textContent = name;
   const status = document.createElement("span");
   status.className = "toolcall__status" + (result.ok ? " toolcall__status--ok" : " toolcall__status--fail");
-  status.textContent = result.ok ? "OK" : "FAIL";
+  el.dataset.ok = String(Boolean(result.ok));
+  el.dataset.error = (result.message || "").split("\n")[0];
+  status.textContent = result.ok ? T("agent.toolApplied") : Tf("agent.toolFailed", {error: el.dataset.error});
   head.append(nameEl, status);
   const argsEl = document.createElement("div");
   argsEl.className = "toolcall__args";
@@ -420,7 +423,12 @@ function appendToolCall(name, args, result) {
   const msgEl = document.createElement("div");
   msgEl.className = "toolcall__msg";
   msgEl.textContent = result.message || "";
-  el.append(head, argsEl, msgEl);
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.dataset.i18n = "agent.details";
+  summary.textContent = T("agent.details");
+  details.append(summary, argsEl, msgEl);
+  el.append(head, details);
   logEl.appendChild(el);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -436,12 +444,22 @@ function appendVerify(verify) {
   const rate = total > 0 ? (total - failed) / total : 0;
   const keepPassed = total > 0 && failed === 0 && isKeepPassed({ ...verify, keep_pass_rate: rate });
   const chip = document.createElement("span");
-  chip.className = "verify-chip " + (total === 0 ? "verify-chip--warn" : keepPassed ? "verify-chip--pass" : "verify-chip--fail");
-  chip.textContent = total === 0
-    ? T("agent.verifyNoKeep")
-    : `${keepPassed ? "PASS" : "FAIL"} · keep ${Math.round(rate * CONFIDENCE_PERCENT)}% (${total}) · err ${(verify.layer_max_err_px ?? 0).toFixed(2)}px`;
+  let statusClass = "verify-chip--fail";
+  if (total === 0) statusClass = "verify-chip--warn";
+  else if (keepPassed) statusClass = "verify-chip--pass";
+  chip.className = `verify-chip ${statusClass}`;
+  chip.dataset.verify = JSON.stringify({total, keepPassed, rate, error: verify.layer_max_err_px ?? 0});
+  paintVerifyChip(chip);
   logEl.appendChild(chip);
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function paintVerifyChip(chip) {
+  const {total, keepPassed, rate, error} = JSON.parse(chip.dataset.verify);
+  const key = keepPassed ? "agent.verifyPassed" : "agent.verifyFailed";
+  chip.textContent = total === 0 ? T("agent.verifyNoKeep") : Tf(key, {rate: Math.round(rate * CONFIDENCE_PERCENT)});
+  chip.title = Tf("agent.verifyDetails", {summary: chip.textContent, n: total, error: error.toFixed(2)});
+  chip.setAttribute("aria-label", chip.title);
 }
 
 function appendAgent(text) {
@@ -834,7 +852,8 @@ function verifyFromTurn(turn) {
 
 function paintTurn(turn, actionable = true) {
   paintToolCalls(turn);
-  if (turn.reply) appendAgent(turn.reply);
+  const repeatsToolResult = (turn.results || []).some(result => result.message?.trim() === turn.reply?.trim());
+  if (turn.reply && !repeatsToolResult) appendAgent(turn.reply);
   appendVerify(verifyFromTurn(turn));
   const isPending = turn.status === "pending";
   const isError = turn.status === "error";
@@ -945,6 +964,26 @@ function fillToolPrompt(tool) {
   inputEl.focus();
 }
 
+function initDisclosure(buttonId, bodyId, key, defaultOpen) {
+  const button = document.getElementById(buttonId);
+  const body = document.getElementById(bodyId);
+  let open = defaultOpen;
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) open = saved === "true";
+  } catch {}
+  function paint() {
+    button.setAttribute("aria-expanded", String(open));
+    body.hidden = !open;
+  }
+  button.addEventListener("click", () => {
+    open = !open;
+    paint();
+    try { localStorage.setItem(key, String(open)); } catch {}
+  });
+  paint();
+}
+
 function showMissingProject() {
   emptyEl.textContent = T("agent.needProject");
   emptyEl.hidden = false;
@@ -992,8 +1031,52 @@ inputEl.addEventListener("keydown", (e) => {
   const isSendChord = e.key === "Enter" && (e.ctrlKey || e.metaKey);
   if (isSendChord) send();
 });
-document.querySelectorAll("#agent-tools .tool").forEach((btn) => {
-  btn.addEventListener("click", () => fillToolPrompt(btn.dataset.tool));
+initDisclosure("render-card-toggle", "render-card-body", "kf.agent.renderCardOpen", true);
+initDisclosure("ae-card-toggle", "ae-card-body", "kf.agent.aeCardOpen", true);
+initDisclosure("agent-elements-toggle", "agent-elements-list", "kf.agent.elementsOpen", false);
+
+const toolsToggle = document.getElementById("agent-tools-toggle");
+const toolsMenu = document.getElementById("agent-tools");
+const toolItems = [...toolsMenu.querySelectorAll(".tool")];
+function closeTools(returnFocus = false) {
+  toolsMenu.hidden = true;
+  toolsToggle.setAttribute("aria-expanded", "false");
+  if (returnFocus) toolsToggle.focus();
+}
+function openTools(index = 0) {
+  toolsMenu.hidden = false;
+  toolsToggle.setAttribute("aria-expanded", "true");
+  toolItems[index].focus();
+}
+toolsToggle.addEventListener("click", () => {
+  if (toolsMenu.hidden) openTools();
+  else closeTools();
+});
+toolsToggle.addEventListener("keydown", event => {
+  if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+  event.preventDefault();
+  openTools(event.key === "ArrowUp" ? toolItems.length - 1 : 0);
+});
+toolsMenu.addEventListener("keydown", event => {
+  const index = toolItems.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeTools(true);
+  } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    let next = index;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = toolItems.length - 1;
+    else next = (index + (event.key === "ArrowDown" ? 1 : -1) + toolItems.length) % toolItems.length;
+    toolItems[next].focus();
+  } else if (event.key === "Tab") closeTools(true);
+});
+toolItems.forEach(button => button.addEventListener("click", () => {
+  closeTools();
+  fillToolPrompt(button.dataset.tool);
+}));
+document.addEventListener("click", event => {
+  if (!event.target.closest(".agent-tools-menu")) closeTools();
 });
 renderBackendEl.addEventListener("change", () => {
   if (renderBackendEl.value === "lottie") renderModeEl.value = "final";
@@ -1020,6 +1103,11 @@ document.getElementById("agent-next").addEventListener("click", () => { setPlayi
 window.addEventListener("keepframe:lang", () => {
   if (state) renderElements();
   paintRenderCard();
+  logEl.querySelectorAll(".toolcall").forEach(call => {
+    call.querySelector(".toolcall__status").textContent = call.dataset.ok === "true"
+      ? T("agent.toolApplied") : Tf("agent.toolFailed", {error: call.dataset.error});
+  });
+  logEl.querySelectorAll(".verify-chip").forEach(paintVerifyChip);
 });
 
 const aeCard = initAECard({projectId, getSceneId: () => sceneId, getVersionId: () => versionId});

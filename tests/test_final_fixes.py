@@ -81,23 +81,37 @@ def test_verify_chip_uses_counts_and_legacy_fallback(tmp_path):
     src = (ROOT / "keepframe/web/static/js/agent.js").read_text()
     src = src[src.index("function isKeepPassed("):src.index("function appendAgent(")]
     script = tmp_path / "verify-chip.cjs"
-    script.write_text("""const assert = require('node:assert/strict');
+    script.write_text(r"""const assert = require('node:assert/strict');
 const KEEP_PASS_RATE = 1, CONFIDENCE_PERCENT = 100;
-const document = {createElement: () => ({})};
+const document = {createElement: () => ({dataset:{}, setAttribute(name, value) {this[name] = value;}})};
 const chips = [], logEl = {appendChild: c => chips.push(c)};
-const T = key => key;
+const copy = {
+  'agent.verifyPassed': 'Checks passed · keep {rate}%',
+  'agent.verifyFailed': 'Checks failed · keep {rate}%',
+  'agent.verifyNoKeep': 'No keep rules to check',
+  'agent.verifyDetails': '{summary}. {n} keep rules. Maximum error {error}px',
+};
+const T = key => copy[key] || key;
+const Tf = (key, values) => T(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
 """ + src + r"""
 appendVerify({keep_total:1000, keep_failed:0, keep_pass_rate:1, keep_results:[]});
-assert.match(chips.at(-1).textContent, /PASS.*100% \(1000\)/);
+assert.equal(chips.at(-1).textContent, 'Checks passed · keep 100%');
+assert.equal(chips.at(-1).title, 'Checks passed · keep 100%. 1000 keep rules. Maximum error 0.00px');
+assert.equal(chips.at(-1)['aria-label'], chips.at(-1).title);
 assert.match(chips.at(-1).className, /--pass/);
 appendVerify({keep_total:1000, keep_failed:75, keep_pass_rate:1, keep_results:[]});
-assert.match(chips.at(-1).textContent, /FAIL.*93% \(1000\)/);
+assert.equal(chips.at(-1).textContent, 'Checks failed · keep 93%');
+assert.match(chips.at(-1).title, /1000 keep rules/);
+assert.match(chips.at(-1).className, /--fail/);
 appendVerify({keep_total:0, keep_failed:0, keep_results:[]});
-assert.equal(chips.at(-1).textContent, 'agent.verifyNoKeep');
+assert.equal(chips.at(-1).textContent, 'No keep rules to check');
+assert.match(chips.at(-1).className, /--warn/);
 appendVerify({keep_pass_rate:1, keep_results:[{passed:true}, {passed:true}]});
-assert.match(chips.at(-1).textContent, /PASS.*100% \(2\)/);
+assert.equal(chips.at(-1).textContent, 'Checks passed · keep 100%');
+assert.match(chips.at(-1).title, /2 keep rules/);
 appendVerify({keep_pass_rate:0.5, keep_results:[{passed:true}, {passed:false}]});
-assert.match(chips.at(-1).textContent, /FAIL.*50% \(2\)/);
+assert.equal(chips.at(-1).textContent, 'Checks failed · keep 50%');
+assert.match(chips.at(-1).title, /2 keep rules/);
 """)
     subprocess.run([node, str(script)], check=True, capture_output=True, text=True)
 

@@ -69,6 +69,7 @@ def test_ae_device_rows_show_panel_and_host_builds_in_both_languages(ae_page, bu
 
     page, server, errors = ae_page
     connect(page, server, INFO | builds)
+    page.locator("#ae-details summary").click()
     expect(page.locator("#ae-devices")).to_contain_text("빌드 " + builds.get("panel_build", "알 수 없음"))
     expect(page.locator("#ae-devices")).to_contain_text("AE 스크립트 " + builds.get("host_build", "알 수 없음"))
     page.locator("[data-lang-toggle]").click()
@@ -127,12 +128,12 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
     expect(page.locator("#ae-install")).to_have_attribute("open", "")
     assert_button_styles(page)
     device, headers = connect(page, server)
-    expect(page.locator("#ae-status")).to_have_text("연결됨 · AE 25.0 · Example.aep")
+    expect(page.locator("#ae-status")).to_have_text("AE 25.0 연결됨 Example.aep")
     expect(page.locator("#ae-send")).to_be_enabled()
     expect(page.locator("#ae-install")).not_to_have_attribute("open", "")
     page.locator("#ae-send").click()
-    expect(page.locator("#ae-jobs li")).to_have_count(1)
-    expect(page.locator("#ae-jobs")).to_contain_text("대기 중")
+    expect(page.locator("#ae-synced")).to_contain_text("대기 중")
+    expect(page.locator("#ae-jobs > li")).to_have_count(0)
     status, claimed = poll(server, headers)
     assert status == 200 and claimed["job"]["version"] == "v1"
     job = claimed["job"]
@@ -163,15 +164,14 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
     status, _ = json_request(server, "POST", f'/api/ae/jobs/{job["id"]}/result',
                              {"ok": True, "result": actual}, headers=headers)
     assert status == 200
-    expect(page.locator("#ae-synced")).to_have_text("AE 버전: v1", timeout=6000)
-    expect(page.locator("#ae-jobs > li").first).to_contain_text("55개 생성 · 0개 수정 · 0개 삭제")
-    page.locator("#ae-jobs summary").click()
-    expect(page.locator("#ae-jobs details")).to_contain_text("<img src=x onerror=alert(1)>")
-    assert page.locator("#ae-jobs img").count() == 0
+    expect(page.locator("#ae-synced")).to_have_text("AE에 v1이 있습니다. 55개 생성", timeout=6000)
+    page.locator("#ae-details summary").click()
+    expect(page.locator("#ae-warnings")).to_contain_text("<img src=x onerror=alert(1)>")
+    assert page.locator("#ae-warnings img").count() == 0
     page.locator("[data-lang-toggle]").click()
-    expect(page.locator("#ae-jobs > li").first).to_contain_text("55 created · 0 updated · 0 deleted")
+    expect(page.locator("#ae-synced")).to_have_text("AE has v1. 55 created")
     page.locator("#ae-send").click()
-    expect(page.locator("#ae-jobs > li").first).to_contain_text("Queued")
+    expect(page.locator("#ae-synced")).to_contain_text("Queued")
     status, claimed = poll(server, headers)
     assert status == 200
     from tests.test_ae_host_sync import sync
@@ -181,7 +181,7 @@ def test_ae_pair_send_hand_edits_and_overwrite(ae_page, tmp_path):
     status, _ = json_request(server, "POST", f'/api/ae/jobs/{claimed["job"]["id"]}/result',
                              {"ok": True, "result": actual}, headers=headers)
     assert status == 200
-    expect(page.locator("#ae-jobs > li").first).to_contain_text("0 created · 0 updated · 0 deleted")
+    expect(page.locator("#ae-synced")).to_have_text("AE has v1. No changes")
     screenshot = Path("/tmp/keepframe-task10-ae-card.png")
     page.locator("#ae-card").screenshot(path=str(screenshot))
     assert not errors
@@ -203,6 +203,7 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
     server.ae_routes.devices.seen(device, now=0)
     page.locator("#ae-send").click()
     expect(page.locator("#ae-error")).to_have_text("no connected After Effects")
+    page.locator("#ae-details summary").click()
     page.locator("#ae-devices").get_by_role("button", name="연결 해제", exact=True).click()
     expect(page.locator("#ae-devices")).to_contain_text("이 AE의 연결을 해제할까요?")
     expect(page.locator("#ae-devices").get_by_role("button", name="예", exact=True)).to_be_focused()
@@ -351,7 +352,7 @@ def test_ae_poll_error_backoff_and_recovery(ae_page, route_name, active):
             status=503 if mode["fail"] else 200, content_type="application/json",
             body=json.dumps({"error": "Temporary AE poll failure"} if mode["fail"] else data)))
     page.reload()
-    expect(page.locator("#render-lock")).to_contain_text("v1")
+    expect(page.locator("#agent-total")).to_have_text("2")
     if route_name == "devices":
         page.locator("#ae-connect").click()
         expect(page.locator("#ae-code-field")).to_be_visible()
@@ -397,7 +398,7 @@ def test_ae_polling_pauses_when_hidden_and_resumes(ae_page):
     page.clock.install()
     page.clock.pause_at(page.evaluate("Date.now() / 1000"))
     page.reload()
-    expect(page.locator("#render-lock")).to_contain_text("v1")
+    expect(page.locator("#agent-total")).to_have_text("2")
     expect(page.locator("#ae-send")).to_be_disabled()
     # Idle state polls after 15 s, never at the 2 s active interval.
     before = counts["state"]
@@ -436,7 +437,7 @@ def test_ae_polling_pauses_when_hidden_and_resumes(ae_page):
     with page.expect_request("**/api/ae/devices"):
         page.clock.fast_forward(2000)
     expect(page.locator("#ae-code")).to_have_value("")
-    expect(page.locator("#ae-jobs > li")).to_have_count(5)
+    expect(page.locator("#ae-jobs > li")).to_have_count(4)
     with page.expect_request("**/api/ae/state?*"):
         page.clock.fast_forward(2000)
     assert not errors
@@ -482,7 +483,7 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
         "a previous sync was interrupted — overwrite to finish it: kf:title")
     expect(page.locator("#ae-hand-message")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
     expect(page.locator("#ae-hand-message")).not_to_contain_text("hand in AE: kf:title")
-    expect(page.locator("#ae-jobs")).to_contain_text(
+    expect(page.locator("#ae-hand-edits")).to_contain_text(
         "a previous sync was interrupted — overwrite to finish it: kf:title")
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-hand-message")).to_contain_text("이전 동기화가 중단되었습니다")

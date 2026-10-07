@@ -1,5 +1,7 @@
-import { api } from "/static/js/api.js?v=20261006g";
-import { T, Tf } from "/static/js/i18n.js?v=20261006g";
+import { api } from "/static/js/api.js?v=20261006h";
+import { T, Tf } from "/static/js/i18n.js?v=20261006h";
+
+const JOB_HISTORY_LIMIT = 4;
 
 async function copyText(text) {
   if (window.isSecureContext && navigator.clipboard) {
@@ -31,7 +33,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
   let handJobId = null, overwriteConfirmed = false;
   let stateTimer, deviceTimer, countdownTimer;
   let refreshing = false, refreshAgain = false;
-  let devicesPainted = "", jobsPainted = "", hadDevices = false;
+  let devicesPainted = "", jobsPainted = "", hadConnection = false;
   let stateDelay = 15000, deviceDelay = 2000, pollError = false;
 
   function error(err, fromPoll = false) {
@@ -91,6 +93,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("code-field").hidden = true;
     pairMessage = message;
     el("pair-message").textContent = message ? T(message) : "";
+    el("pair-message").hidden = !message;
   }
 
   function tickCode() {
@@ -127,40 +130,77 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     if (pairing && !document.hidden) deviceTimer = setTimeout(pollDevices, deviceDelay);
   }
 
+  function jobOutcome(job) {
+    if (!job) return "";
+    if (job.error) return job.error;
+    if (job.state !== "done") return T(`ae.${job.state}`);
+    if (job.result?.applied !== true) {
+      if (job.result?.applied === false) return ""; // The hand-edit prompt owns this outcome.
+      return T("ae.done");
+    }
+    const counts = ["created", "updated", "deleted"].flatMap(key => {
+      const value = job.result[key];
+      const n = Array.isArray(value) ? value.length : Number(value) || 0;
+      return n > 0 ? [Tf(`ae.count.${key}`, {n})] : [];
+    });
+    return counts.join(", ") || T("ae.noChanges");
+  }
+
   function paint() {
     const devices = [...snapshot.devices].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0) || b.created - a.created);
     const connected = devices.find((device) => device.connected);
-    const status = connected ? Tf("ae.connectedDevice", {
-      version: connected.ae_version, project: connected.project_name || T("ae.noProject"),
-    }) : T("ae.notConnected");
+    const isConnected = Boolean(connected);
+    let status = T("ae.notConnected");
+    if (isConnected) {
+      status = Tf("ae.connectedDevice", {version: connected.ae_version.split(".").slice(0, 2).join(".")});
+      if (connected.project_name) status += ` ${connected.project_name}`;
+    }
     if (el("status").textContent !== status) el("status").textContent = status;
-    el("status").classList.toggle("render-card__status--active", Boolean(connected));
+    el("status").classList.toggle("render-card__status--active", isConnected);
+    const connectContainer = el(isConnected ? "install-connect" : "actions");
+    if (el("connect").parentElement !== connectContainer) connectContainer.prepend(el("connect"));
     el("connect").disabled = busy;
-    el("send").disabled = busy || !connected || !projectId || !getSceneId() || !getVersionId();
-    el("send-reason").hidden = Boolean(connected);
-    el("overwrite-reason").hidden = Boolean(connected);
-    if (Boolean(devices.length) !== hadDevices) el("install").open = !devices.length;
-    hadDevices = Boolean(devices.length);
+    el("send").disabled = busy || !isConnected || !projectId || !getSceneId() || !getVersionId();
+    el("send-reason").hidden = isConnected;
+    el("overwrite-reason").hidden = isConnected;
+    if (isConnected !== hadConnection) el("install").open = !isConnected;
+    hadConnection = isConnected;
     el("pair-message").textContent = pairMessage ? T(pairMessage) : "";
+    el("pair-message").hidden = !pairMessage;
     el("copy-status").textContent = copyMessage ? T(copyMessage) : "";
-    const synced = devices[0] && snapshot.last_synced[devices[0].id];
-    el("synced").textContent = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
+    el("copy-status").hidden = !copyMessage;
+    const syncDevice = connected || devices[0];
+    const synced = syncDevice && snapshot.last_synced[syncDevice.id];
+    const latestJob = snapshot.jobs[0];
+    const syncedText = synced ? Tf("ae.hasVersion", {version: synced}) : T("ae.nothingSynced");
+    const outcome = jobOutcome(latestJob);
+    el("synced").textContent = outcome ? `${syncedText}. ${outcome}` : syncedText;
+    const buildsDiffer = devices.some(device => device.panel_build && device.host_build && device.panel_build !== device.host_build);
+    el("build-warning").hidden = !buildsDiffer;
+    el("build-warning").textContent = T("ae.buildMismatch");
+    const latestProgress = latestJob && snapshot.progress[latestJob.id];
+    el("latest-progress").hidden = !latestProgress;
+    el("latest-progress").textContent = latestProgress ? Tf("ae.progress", latestProgress) : "";
+    const warnings = Array.isArray(latestJob?.result?.warnings) ? latestJob.result.warnings : [];
+    el("warnings").hidden = !warnings.length;
+    el("warnings").replaceChildren(...warnings.map(warning => node("li", warning)));
 
     const rows = devices.map((device) => ({device, text: Tf("ae.device", {
-      version: device.ae_version, os: device.os, project: device.project_name || T("ae.noProject"),
-      status: T(device.connected ? "ae.connected" : "ae.notConnected"), seen: relative(device.last_seen),
-    }) + " · " + Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
+      version: device.ae_version, seen: relative(device.last_seen),
+    }), build: Tf("ae.build", {panel: device.panel_build || T("ae.unknownBuild"),
       host: device.host_build || T("ae.unknownBuild")})}));
-    const deviceSignature = JSON.stringify([rows.map(({device, text}) => [device.id, text]), disconnectId, busy]);
+    const deviceSignature = JSON.stringify([rows.map(({device, text, build}) => [device.id, text, build, device.connected]), disconnectId, busy]);
     if (deviceSignature !== devicesPainted) {
       devicesPainted = deviceSignature;
-      el("devices").replaceChildren(...rows.map(({device, text}) => {
+      el("devices").replaceChildren(...rows.map(({device, text, build}) => {
         const row = node("li", "", "ae-card__row");
         row.dataset.device = device.id;
         const dot = node("span", "", "ae-card__dot");
         dot.classList.toggle("ae-card__dot--connected", device.connected);
         dot.setAttribute("aria-hidden", "true");
-        row.append(dot, node("span", text, "ae-card__device"));
+        const description = node("span", "", "ae-card__device");
+        description.append(node("span", text), node("p", build));
+        row.append(dot, description);
         if (disconnectId === device.id) {
           row.append(node("span", T("ae.disconnectConfirm")),
             button("ae.yes", () => action(async () => {
@@ -185,35 +225,24 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     el("overwrite").disabled = el("overwrite-yes").disabled = busy || !connected;
     el("overwrite-no").disabled = busy;
 
-    const jobs = snapshot.jobs.slice(0, 5);
+    const jobs = snapshot.jobs.slice(1, JOB_HISTORY_LIMIT + 1);
     const jobSignature = JSON.stringify(jobs.map((job) => [job, relative(job.finished ?? job.started ?? job.created), snapshot.progress[job.id]])) + T("ae.sync");
     if (jobSignature === jobsPainted) return;
     jobsPainted = jobSignature;
-    const openWarnings = new Set([...el("jobs").querySelectorAll("details[open]")].map((details) => details.dataset.job));
     el("jobs").replaceChildren(...jobs.map((job) => {
       const row = node("li");
       row.append(node("p", Tf("ae.job", {kind: T(`ae.${job.kind}`), state: T(`ae.${job.state}`),
         version: job.version, time: relative(job.finished ?? job.started ?? job.created)})));
-      if (job.error) row.append(node("p", job.error, "ae-card__error"));
-      else if (job.result?.applied === false) row.append(node("p", editMessage(job.result)));
-      else if (job.result?.applied === true) {
-        const count = value => Array.isArray(value) ? value.length : Number(value) || 0;
-        row.append(node("p", Tf("ae.summary", {
-          created: count(job.result.created), updated: count(job.result.updated), deleted: count(job.result.deleted),
-        })));
-      }
+      const outcome = jobOutcome(job);
+      if (outcome) row.append(node("p", outcome, job.error ? "ae-card__error" : ""));
+      if (job.result?.applied === false) row.append(node("p", editMessage(job.result)));
       const progress = snapshot.progress[job.id];
       if (progress) row.append(node("p", Tf("ae.progress", progress)));
       const warnings = Array.isArray(job.result?.warnings) ? job.result.warnings : [];
       if (warnings.length) {
-        const details = node("details");
-        details.dataset.job = job.id;
-        details.open = openWarnings.has(job.id);
-        details.append(node("summary", Tf("ae.warnings", {n: warnings.length})));
         const list = node("ul");
-        list.append(...warnings.map((warning) => node("li", warning)));
-        details.append(list);
-        row.append(details);
+        list.append(...warnings.map(warning => node("li", warning)));
+        row.append(list);
       }
       return row;
     }));
@@ -270,6 +299,7 @@ export function initAECard({projectId, getSceneId, getVersionId}) {
     }
     copyMessage = copied ? "ae.copied" : "ae.copyFailed";
     el("copy-status").textContent = T(copyMessage);
+    el("copy-status").hidden = false;
   }
 
   el("connect").addEventListener("click", () => action(async () => {
