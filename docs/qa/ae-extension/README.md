@@ -57,9 +57,9 @@ Known differences:
 
 ## Live check 3 (slice 2)
 
-- Date: _TBD_
-- AE version: _TBD_
-- Extension version and build: _TBD_
+- Date: 2026-10-07
+- AE version: After Effects 2026 (26.5x89), Korean UI
+- Extension version and build: 1.20261007.45957109 (12d0e44) for the first pass; 1.20261007.95826219 (9a70dfd) after the fixes
 
 1. Follow [Slice 2: verify](live-check.md#slice-2-verify).
 2. Record mean / max / pass and render + upload + compare seconds per scene.
@@ -69,25 +69,33 @@ Known differences:
 
 | # | Check | How | Expected | Result |
 | --- | --- | --- | --- | --- |
-| 1 | Verify reveal text | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
-| 2 | Verify image background | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
-| 3 | Verify spinning GLB | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
-| 4 | Verify ig2demo | Click **Verify against AE** (AE와 비교) after sending `ig2demo`. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. | |
-| 5 | Worst-frame images | Open **Details** (자세히). Open each worst-frame image in a new tab. | Up to three worst frames show **After Effects**, **Keepframe**, and **Difference** (차이). All images load. | |
-| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the replacement font, text-region ID, and worst region difference. | Notes name the substituted font. Masked text entries (마스킹한 텍스트) show each region's worst percentage. These regions are excluded from the pass score. | |
-| 7 | Large sync time | Have the controller prepare a changed version or fresh test comp for the ~120k-key `ae-live-long` scene. Time **Send to AE** (AE로 보내기) until sync finishes. | Target: under 2 minutes. Record actual seconds and outcome. Slice-1 live check 2 took over 10 minutes. | |
-| 8 | Key interpolation through the Higgsfield bridge | Have the controller call `ae_get_keyframes` on animated properties with an eased key and a linear key. Record in/out interpolation, influence, and speed. | Eased sides report `BEZIER` with the intended ease values. A linear key reports `LINEAR` on both sides. | |
-| 9 | `saveFrameToPng` in Korean AE 26.5 | Run Verify in the user's Korean AE 26.5. Have the controller watch the temporary files and inspect the PNGs during export. Compare the render queue and undo history before and after Verify. | Files appear and become complete PNGs. The job's temp folder is removed after upload. Verify adds no render-queue items or undo steps. | |
-| 10 | Windows temp-folder agreement | Have the controller compare AE's `Folder.temp.fsName` with the panel's `os.tmpdir()`. Inspect the returned frame paths. | The `keepframe-<job id>` folders resolve to the same location. A mismatch fails with `Invalid frame from AE`. | |
-| 11 | AE dialog during Verify | Open a dialog in Korean AE during Verify. Record its name, how long it stays open, progress, and outcome. Dismiss it and retry once AE responds if needed. | If the dialog blocks the host call for 10 minutes, it times out. The reason says AE may still be working on a large scene or waiting for a dialog. | |
-| 12 | Verify without connected AE | Click **Disconnect** (연결 해제), then **Yes** (예) in the web card. Wait for **Not connected** (연결 안 됨). Inspect Verify. | **Verify against AE** (AE와 비교) is disabled. The reason reads “AE is not connected — open the Keepframe panel in After Effects” (AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요). | |
+| 1 | Verify reveal text | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. || Pass — v2: mean 0.0016, max 0.0021 (f32); 10 s end to end. |
+| 2 | Verify image background | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. || Pass — v1: mean 0.0006, max 0.0015 (f16); 15 s (render + upload 9 s, compare 6 s). |
+| 3 | Verify spinning GLB | Click **Verify against AE** (AE와 비교) after sending this scene. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. || Pass — v1: mean 0.0115, max 0.0188 (f56); 10 s. Same placement and shape; AE lights the model lighter than Keepframe's renderer (known renderer difference, see below). |
+| 4 | Verify ig2demo | Click **Verify against AE** (AE와 비교) after sending `ig2demo`. Record mean / max / pass and render + upload + compare seconds. | The report compares the same sampled frame numbers. It shows the mean, worst frame error, and pass or fail. || Pass — v4: mean 0.0012, max 0.0091 (f79); 15 s (render + upload 9 s, compare 6 s). Re-run on the fixed build: same numbers, 18 s. |
+| 5 | Worst-frame images | Open **Details** (자세히). Open each worst-frame image in a new tab. | Up to three worst frames show **After Effects**, **Keepframe**, and **Difference** (차이). All images load. || Pass — the card shows one result line; **Details** holds three rows of After Effects / Keepframe / 차이 images, all loaded (1920 px wide), no console errors. |
+| 6 | Substituted-font notes and region numbers | Verify text with a requested font missing from AE. Under **Details** (자세히), record the replacement font, text-region ID, and worst region difference. | Notes name the substituted font. Masked text entries (마스킹한 텍스트) show each region's worst percentage. These regions are excluded from the pass score. || Pass with finding — ig2demo has 15 substituted-font text layers (Linux font guesses such as Liberation Sans, DejaVu Sans, WenQuanYi Zen Hei shown in Arial / Malgun Gothic); their regions differ by 2.5–27 %. After the fix they appear as one localized list (`e38 · text: Arial로 표시, 글자 영역 차이 27.3%`). |
+| 7 | Large sync time | Have the controller prepare a changed version or fresh test comp for the ~120k-key `ae-live-long` scene. Time **Send to AE** (AE로 보내기) until sync finishes. | Target: under 2 minutes. Record actual seconds and outcome. Slice-1 live check 2 took over 10 minutes. || Not met — measured on a 20-element × 600-frame scene (41 layers, ~24k keys) instead of the 120k-key scene: 101 s create / 112 s unchanged resend before the fix, 79 s / 80 s after. The ~120k-key run was not repeated (it would take minutes). Normal scenes stay fast (ig2demo, 949 keys: about 2 s). Timing instrumentation comes next; optimization moves to the next slice (user decision). |
+| 8 | Key interpolation through the Higgsfield bridge | Have the controller call `ae_get_keyframes` on animated properties with an eased key and a linear key. Record in/out interpolation, influence, and speed. | Eased sides report `BEZIER` with the intended ease values. A linear key reports `LINEAR` on both sides. || Partial — `ae_get_keyframes` returns only times and values (and only for unseparated Position, Scale, Rotation, Opacity): e36 Opacity's 11 keys and e12 Opacity's 3 keys hold the written times and values. Interpolation is not exposed; ig2demo's frame match (mean 0.0012) confirms eased motion indirectly. |
+| 9 | `saveFrameToPng` in Korean AE 26.5 | Run Verify in the user's Korean AE 26.5. Have the controller watch the temporary files and inspect the PNGs during export. Compare the render queue and undo history before and after Verify. | Files appear and become complete PNGs. The job's temp folder is removed after upload. Verify adds no render-queue items or undo steps. || Pass — frames appear and upload as complete PNGs in Korean AE 26.5 (Verify succeeded four times). The temp folder, render queue and undo history were not inspected directly. |
+| 10 | Windows temp-folder agreement | Have the controller compare AE's `Folder.temp.fsName` with the panel's `os.tmpdir()`. Inspect the returned frame paths. | The `keepframe-<job id>` folders resolve to the same location. A mismatch fails with `Invalid frame from AE`. || Pass — no `Invalid frame from AE`; AE's `Folder.temp` and the panel's temp folder agree on the user's Windows machine. |
+| 11 | AE dialog during Verify | Open a dialog in Korean AE during Verify. Record its name, how long it stays open, progress, and outcome. Dismiss it and retry once AE responds if needed. | If the dialog blocks the host call for 10 minutes, it times out. The reason says AE may still be working on a large scene or waiting for a dialog. || Not run in this pass. (Live check 2: Composition Settings left open does not block CEP host calls in AE 26.5.) |
+| 12 | Verify without connected AE | Click **Disconnect** (연결 해제), then **Yes** (예) in the web card. Wait for **Not connected** (연결 안 됨). Inspect Verify. | **Verify against AE** (AE와 비교) is disabled. The reason reads “AE is not connected — open the Keepframe panel in After Effects” (AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요). || Not run live; covered by `tests/test_ae_card_browser.py`. |
 
 ### Findings
 
-1. <!-- Add live-check findings here. -->
+1. Large syncs are slow in real AE: reading each key back for hand-edit detection dominated (each layer's fingerprint was read twice per sync and ease was read for linear keys). Fixed in 9a70dfd (one pass, no ease reads on all-LINEAR keys, old fingerprints accepted once and re-stamped): 112 s → 80 s for ~24k keys. The rest of the time is not yet attributed (ExtendScript JSON parsing and hashing are suspects); kfSync will report per-stage timings, and optimization is the first task of the next slice.
+2. **Details** printed every past job's full warning list (30 English internal strings each, about 2,400 px) and the verify report listed the substituted-font facts twice. Fixed in 9a70dfd: one line per past job, the latest job's warnings behind their own count, one localized font list (card height 4,428 px → 1,649 px with the report open).
+3. Open after the fixes: the AE chip shows `AE 26.5x89` (real AE versions carry a build suffix; trim to `26.5`), and an empty `경고 0개` disclosure appears when the latest job has no warnings.
+4. Known renderer difference: AE's default lighting renders the GLB material lighter than Keepframe's renderer (placement and shape match).
 
 ### Calibration
 
 | Scene | Mean | Max | Pass |
 | --- | --- | --- | --- |
-| | | | |
+| ig2demo v4 | 0.0012 | 0.0091 | yes |
+| reveal v2 | 0.0016 | 0.0021 | yes |
+| plate v1 | 0.0006 | 0.0015 | yes |
+| model v1 | 0.0115 | 0.0188 | yes |
+
+Rule: 2× the worst value on scenes that look right, rounded up to 0.005. Worst mean 0.0115 → `VERIFY_MEAN_MAX = 0.025`; worst frame 0.0188 → `VERIFY_FRAME_MAX = 0.04` (set in 9a70dfd). Substituted-font regions are excluded from both numbers.
