@@ -42,6 +42,14 @@ def main(argv: list[str] | None = None) -> int:
     ed.add_argument("--confirm", action="store_true")
     ed.add_argument("--choice", action="append", default=[])
     g3 = sub.add_parser("gate-m3"); g3.add_argument("--out", required=True); g3.add_argument("--n", type=int, default=8)
+    ee = sub.add_parser("eval-edits", help="edit-after checks on synthetic references and/or gold-titled clips")
+    ee.add_argument("--clips", default=None); ee.add_argument("--gold", default=None); ee.add_argument("--out", required=True)
+    ee.add_argument("--max-frames", type=int, default=150); ee.add_argument("--baseline", default=None)
+    ee.add_argument("--synthetic", type=int, default=6); ee.add_argument("--reuse", action="store_true")
+    ee.add_argument("--clip", action="extend", nargs="+", default=None, help="only these clips (stem or file name)")
+    ee.add_argument("--renderer", choices=["browser", "numpy"], default="browser"); ee.add_argument("--strict", action="store_true")
+    ee.add_argument("--refine", action=argparse.BooleanOptionalAction, default=None,
+                    help="sprite refine (default: off for synthetic, analysis default for clips)")
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
@@ -133,6 +141,16 @@ def main(argv: list[str] | None = None) -> int:
         from .gates import m2_gate_real
         print(json.dumps(m2_gate_real(Path(a.clips), Path(a.out), max_frames=a.max_frames,
                                     render_check=a.render_check), indent=2)); return 0
+    if a.cmd == "eval-edits":
+        if bool(a.clips) != bool(a.gold):
+            ee.error("--clips and --gold go together")
+        from .qa.edits import eval_edits
+        m = eval_edits(Path(a.clips) if a.clips else None, Path(a.gold) if a.gold else None, Path(a.out), max_frames=a.max_frames,
+                       baseline=Path(a.baseline) if a.baseline else None, synthetic=a.synthetic, reuse=a.reuse,
+                       renderer=a.renderer, strict=a.strict, only=a.clip, refine=a.refine)
+        print(Path(a.out) / "metrics.json")
+        print(json.dumps({g: {k: v["passed"] for k, v in gates.items()} for g, gates in m["gates"].items()}, indent=2))
+        return 1 if a.strict and not m["passed"] else 0
     if a.cmd == "serve":
         from .web.server import JOBS, make_server
         configure()
