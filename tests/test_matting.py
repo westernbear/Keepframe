@@ -263,6 +263,44 @@ def test_canonical_frame_outlier_gives_way_to_consistent_frames(tmp_path):
     assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
 
 
+@pytest.mark.parametrize("r", [4, 6])
+def test_small_blob_in_the_canonical_frame_stays_out(tmp_path, r):
+    """R32: an unmodelled blob in the canonical frame too small to make it an outlier (< 30 % of the core) is not
+    baked in: where cf strays from the per-pixel median by ΔE > 20, the median colour holds."""
+    n, disc = 12, _disc(40)
+    bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    cv2.circle(frames[0], (165, 95), r, (17, 138, 178), -1, cv2.LINE_AA)   # only in the canonical frame
+    out, meta = matting.texture_v2(raw, disc[..., 3] > 127, frames, plate, ref_frame=0)
+    assert 0 in meta.frames   # cf still anchors
+    F, a = _split(out)
+    tF, ta = _split(_pad(disc))
+    blob = np.zeros(out.shape[:2], np.uint8)
+    cv2.circle(blob, (25 + P, 25 + P), r - 1, 1, -1)
+    assert float(delta_e(srgb_to_lab(F[blob > 0]), srgb_to_lab(tF[blob > 0])).mean()) < 3
+    assert foreground_errors(F, tF, a, ta)["f_de_interior"] < 1.5
+
+
+def test_text_mask_filling_its_box_is_matted(tmp_path):
+    """A text element is matted unpadded (R27); a label on a solid chip has a mask that fills its whole box, with no
+    background pixel inside the texture: it is still matted, not left binary with an error."""
+    n = 8
+    chip = np.zeros((20, 60, 4), np.uint8)
+    chip[..., :3], chip[..., 3] = (20, 40, 110), 255
+    chip[6:14, 10:50, :3] = (250, 250, 250)
+    bg = Background(kind="gradient", gradient=_grad("#e8d5b7", "#f4efe6", 90.0))
+    scene = _scene(tmp_path, [("c", chip, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    props = {"t1": {"raw": raw.copy(), "canon": chip.copy(), "cf": 0, "kind": "text", "first": 0, "last": n - 1}}
+    matting.matte_props(props, frames, plate, workers=1)
+    p = props["t1"]
+    assert "texture_error" not in p and "texture_note" not in p
+    assert p["texture_meta"]["method"] != "binary" and p["texture_meta"]["padding"] == 0 and p["canon"].shape == chip.shape
+    F, a = _split(p["canon"])
+    assert a.min() > 0.95 and float(delta_e(srgb_to_lab(F), srgb_to_lab(chip[..., :3].astype(np.float32))).mean()) < 3
+
+
 def test_two_frames_never_outvote_the_canonical_frame(tmp_path):
     """R31: a consensus needs three agreeing frames; two frames sharing the same wrong transform (a short duplicate
     track) agree with their own median trivially, and the canonical frame stands."""

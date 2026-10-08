@@ -10,8 +10,9 @@ the known per-frame plate B (`PlateModel.at(f)`) with the layers drawn below the
 - triangulation, per pixel, where B varies behind the element over ≥ 6 frames (it moves over a gradient or a
   picture, or the plate animates): I = G + kB, α = 1 − k, F = G / α;
 - the two-colour model for flat glyphs and shapes: α the projection of I − B on F − B, F the interior colour;
-- a keyed band otherwise: α the projection on the nearest solid colour. Inside, α = 1 and F is the sharpest
-  frame's colour; a band pixel neither model explains keeps its binary edge.
+- a keyed band otherwise: α the projection on the nearest solid colour. Inside, α = 1 and F is the reference
+  frame's colour (the canonical frame, or the best one when the others outvote it), the per-pixel median where that
+  frame strays; a band pixel neither model explains keeps its binary edge.
 
 Per-frame estimates fuse by weighted median, F is extended under transparent pixels (no fringe after an edit),
 and the texture grows by `pad` px a side so soft edges fit, its centre and anchor fixed. On a picture plate, the
@@ -151,9 +152,11 @@ def _erode(m: np.ndarray, r: int) -> np.ndarray:
 
 
 def _stroke_px(own: np.ndarray) -> float:
-    dt = cv2.distanceTransform(own.astype(np.uint8), cv2.DIST_L2, 3)
+    """Stroke width: twice the p90 distance to the mask edge. The texture border counts as outside (an unpadded
+    text texture's mask can touch it, or fill the whole box), and the width never exceeds the box."""
+    dt = cv2.distanceTransform(np.pad(own, 1).astype(np.uint8), cv2.DIST_L2, 3)[1:-1, 1:-1]
     v = dt[own]
-    return 2.0 * float(np.percentile(v, 90)) if v.size else 1.0
+    return min(2.0 * float(np.percentile(v, 90)), float(min(own.shape))) if v.size else 1.0
 
 
 def _whole_pixel(M: np.ndarray, corners: np.ndarray) -> np.ndarray:
@@ -480,11 +483,10 @@ def _median_colour(top: list[Sample], w: np.ndarray, mask: np.ndarray) -> np.nda
     return _wmedian(np.stack(vals).astype(np.float32), w)
 
 
-def _core_colour(top: list[Sample], w: np.ndarray, core: np.ndarray, ref: Sample, anchored: bool) -> tuple[np.ndarray, np.ndarray]:
+def _core_colour(top: list[Sample], w: np.ndarray, core: np.ndarray, ref: Sample) -> tuple[np.ndarray, np.ndarray]:
     """F inside the solid core, and where it is known: the reference frame's colour (fusing frames that disagree by
-    a fraction of a pixel blurs detail), the per-pixel median where that frame does not see the pixel. `anchored`
-    (the reference is the canonical frame): its colour stands; else (the best frame) the median also replaces it
-    where it strays by ΔE > 20."""
+    a fraction of a pixel blurs detail), the per-pixel median where that frame does not see the pixel or strays from
+    it by ΔE > 20 (something unmodelled crossing that frame, too small to make it an outlier: R32)."""
     th, tw = core.shape
     F = np.full((th, tw, 3), np.nan, np.float32)
     if not core.any():
@@ -492,10 +494,8 @@ def _core_colour(top: list[Sample], w: np.ndarray, core: np.ndarray, ref: Sample
     med = _median_colour(top, w, core)
     I, B, o = _defade(ref)
     best = np.clip((I - (1 - o) * B) / o, 0, 255)[core] if o < 1 else I[core]
-    use = ref.valid[core].copy()
-    if not anchored:
-        use &= ~np.isnan(med).any(-1)
-        use[use] = delta_e(srgb_to_lab(best[use]), srgb_to_lab(med[use])) <= OUTLIER_DE
+    use = ref.valid[core] & ~np.isnan(med).any(-1)
+    use[use] = delta_e(srgb_to_lab(best[use]), srgb_to_lab(med[use])) <= OUTLIER_DE
     vals = np.where(use[:, None], best, med)
     F[core] = vals
     known = np.zeros((th, tw), bool)
@@ -726,7 +726,7 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
     interior = _erode(own, max(1, int(round(INTERIOR_K * _stroke_px(own)))))
     fill, flat = _flat_fill(top, w, interior, own)
     core = _core(own)
-    F_core, solid = _core_colour(top, w, core, ref, anchored=cf is not None)
+    F_core, solid = _core_colour(top, w, core, ref)
     if flat:   # α from the projection on the fill, F the fill; solid inside, where F keeps its own detail
         method = "two_colour"
         alpha, _ = fuse(two_colour(top, fill), None, w)
