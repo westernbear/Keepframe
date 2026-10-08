@@ -62,7 +62,7 @@ def test_bg_leak_fraction_flags_binary_crop():
     spill = clean.copy()
     spill[..., :3] = 0.7 * red + 0.3 * plate                  # 30 % of the plate mixed into the colour
     assert abs(leak_correlation(spill, plate) - 0.3) < 0.03 and bg_leak_fraction(spill, plate) < 0.01
-    assert leak_correlation(crop, np.full_like(plate, 128)) == 0.0
+    assert leak_correlation(crop, np.full_like(plate, 128)) is None     # flat plate: nothing to regress on
     as_uint8 = np.dstack([clean[..., :3], clean[..., 3:] * 255]).round().astype(np.uint8)
     assert bg_leak_fraction(as_uint8, plate) < 0.01
 
@@ -127,6 +127,18 @@ def test_title_integrity_whole_vs_fragments():
     assert title_integrity(_scene("ＡＷｅｅｋｅｎｄ Ａｗａｙ"), [{"text": "AWeekend Away"}])[0]["whole"]   # NFKC
     twice = title_integrity(_scene("A Weekend Away", "AWeekend Away", spans=[(8, 13), (10, 59)]), gold[:1])[0]
     assert twice["element"] == "e1" and twice["duplicates"] == 1      # the held copy is the title, the intro copy a duplicate
+
+
+def test_unmeasurable_metrics_are_none():
+    plate, a = _plate(), _glyphs()
+    empty = np.zeros_like(a)
+    assert halo_ring(plate, plate, empty) is None
+    assert outside_glyph_delta(plate, plate, plate, a, a, (0, 0, 0, 0)) is None
+    assert smear_score(plate, a, a) is None                   # the new glyphs cover every old one
+    tiny = np.zeros((H, W, 4), np.float32)
+    tiny[:2, :2, 3] = 1
+    assert leak_correlation(tiny, plate) is None and bg_leak_fraction(np.zeros((H, W, 4), np.float32), plate) is None
+    assert alpha_errors(empty, empty)["sad"] is None and plate_residue(plate, empty.astype(bool))["mean_de"] is None
 
 
 def test_plate_residue_one_sided_ring_stays_bounded():

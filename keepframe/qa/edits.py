@@ -28,7 +28,8 @@ TITLE_TEXT = "Fall Drop Sale"
 BACKGROUND_EDITS: list[tuple[str, str]] = [("replace", "#1a2a6c")]   # Task 12 adds ("tint", …) with the background choice
 SHEET_LABELS = ("source", "rebuilt", "title edited", "element hidden", "background replaced")
 PLATES = ("gradient", "flat", "animated", "image")
-# name: (sample key, op, threshold). Every sample must pass, except "rate" gates (share of hits).
+# name: (sample key, op, threshold[, True: add the scene's ring_floor]). Every sample must pass, except "rate" gates
+# (share of hits); an unmeasured sample (None / NaN) fails.
 SYNTHETIC_GATES = {
     "title_outside_glyph_delta": ("title.outside_glyph_delta", "le", 1.0),
     "title_smear_score": ("title.smear_score", "le", 3.0),
@@ -36,6 +37,9 @@ SYNTHETIC_GATES = {
     "hide_plate_de": ("hide.mean_de", "le", 2.0),
     "hide_hf_ratio": ("hide.hf_ratio", "in", (0.5, 2.0)),
     "hide_residue": ("hide.residue_fraction", "le", 0.02),
+    "hide_truth_de": ("hide.truth_de", "le", 2.0, True),            # exact truth: the plate after hiding vs the true plate
+    "plate_de_title": ("plate_de.under_title", "le", 2.0, True),    # the analysed plate vs the true plate under the title
+    "plate_de_logo": ("plate_de.under_logo", "le", 2.0, True),      # … and under the always-covered logo
     "recolour_halo_ring": ("background.halo_ring", "lt", 2.0),
     "alpha_sad_edge": ("alpha.sad", "le", 0.03),
     "f_de_interior": ("alpha.f_de_interior", "lt", 3.0),
@@ -49,13 +53,22 @@ def make_ocr(truth: Scene | None):
     return None
 
 
+def _finite(v) -> bool:
+    return v is not None and bool(np.isfinite(v))
+
+
 def _mean(values) -> float | None:
-    values = [v for v in values if v is not None]
+    values = [float(v) for v in values if _finite(v)]
     return float(np.mean(values)) if values else None
 
 
 def _means(per: list[dict], keys: Sequence[str]) -> dict:
     return {k: _mean(p.get(k) for p in per) for k in keys}
+
+
+def _strict(per: list[dict], keys: Sequence[str]) -> dict:
+    """Mean over frames per key; None when there are no frames or any frame could not be measured."""
+    return {k: _mean(p[k] for p in per) if per and all(_finite(p.get(k)) for p in per) else None for k in keys}
 
 
 def _only(scene: Scene, eid: str) -> Scene:
@@ -140,12 +153,11 @@ def edit_checks(root, scene_id, *, title, hide, frames, renderer: Renderer, trut
     images = {f: [src[f], rebuilt[f], None, None, None] for f in frames}
     cache: dict = {}
 
-    def exclusion(eid: str, f: int) -> np.ndarray:
-        """Pixels other layers may legitimately cover: the true other layers when known (so an analysed layer
-        that still holds this element's pixels is measured, not excused), else the other analysed layers."""
+    def exclusion(eid: str | None, tid: str | None, f: int) -> np.ndarray:
+        """Pixels other layers may legitimately cover: the true layers other than `tid` when known (so an analysed
+        layer that still holds this element's pixels is measured, not excused), else the other analysed layers."""
         if not truth:
             return others[eid][f] > 0.02
-        tid = pairs.get(eid, truth.get("title") if eid == title else None)
         if (tid, f) not in cache:
             keep = np.ones(scene.size[::-1], np.float32)
             for t, per_frame in truth["layers"].items():
@@ -171,7 +183,7 @@ def edit_checks(root, scene_id, *, title, hide, frames, renderer: Renderer, trut
                         old_a = truth["layers"][truth["title"]][f][0]
                     else:
                         old_a = alone[title][f]
-                    ex = exclusion(title, f)
+                    ex = exclusion(title, pairs.get(title, truth.get("title")) if truth else None, f)
                     images[f][2] = imgs[f]
                     if not ((new_a[f] > 0.5) & ~ex).any():   # the new title is not on screen: nothing passes
                         per.append({"frame": f, "visible": False, "outside_glyph_delta": None, "smear_score": None, "glyph_de": None})
@@ -181,30 +193,41 @@ def edit_checks(root, scene_id, *, title, hide, frames, renderer: Renderer, trut
                                                                            _box(old_a, new_a[f]), exclude=ex),
                                 "smear_score": smear_score(imgs[f], old_a, new_a[f], exclude=ex),
                                 "glyph_de": glyph_colour_delta(imgs[f], np.where(ex, 0, new_a[f]), expected)})
-                keys = ("outside_glyph_delta", "smear_score", "glyph_de")
-                shown = all(p["visible"] for p in per)
                 check.update(element=title, text=TITLE_TEXT, colour=expected, visible_frames=sum(p["visible"] for p in per),
-                             **(_means(per, keys) if shown else dict.fromkeys(keys)), frames=per)
+                             **_strict(per, ("outside_glyph_delta", "smear_score", "glyph_de")), frames=per)
             result["title"] = check
 
-    for h in hide:
-        edited = scene.model_copy(update={"elements": [e for e in scene.elements if e.id != h]})
-        imgs = dict(zip(frames, render_frames(edited, sd, frames, renderer=renderer)))
+    hides = [(h, pairs.get(h)) for h in hide]
+    if truth:   # true layers the analysis missed: nothing to remove, so whatever it baked in their place scores
+        hides += [(None, t) for t in truth["layers"] if t not in pairs.values()]
+    for h, tid in hides:
+        if h is None:
+            imgs = rebuilt
+        else:
+            edited = scene.model_copy(update={"elements": [e for e in scene.elements if e.id != h]})
+            imgs = dict(zip(frames, render_frames(edited, sd, frames, renderer=renderer)))
         per = []
         for f in frames:
-            mask = alone[h][f] > 0.02
-            if h in pairs:
-                mask |= truth["layers"][pairs[h]][f][0] > 0.02
-            mask, ex = _grow(mask, 2), exclusion(h, f)
+            mask = alone[h][f] > 0.02 if h is not None else np.zeros(scene.size[::-1], bool)
+            if tid is not None:
+                mask |= truth["layers"][tid][f][0] > 0.02
+            mask, ex = _grow(mask, 2), exclusion(h, tid, f)
             r = {"frame": f, **plate_residue(imgs[f], mask, exclude=ex)}
+            if not r["pixels"]:   # the element shows nowhere at this frame: nothing to hide here
+                per.append({"frame": f, "absent": True})
+                continue
             if truth:
                 m = mask & ~ex
-                r["truth_de"] = float(delta_e(srgb_to_lab(imgs[f][m]), srgb_to_lab(truth["plates"][f][m])).mean()) if m.any() else None
+                r["truth_de"] = float(delta_e(srgb_to_lab(imgs[f][m]), srgb_to_lab(truth["plates"][f][m])).mean())
             per.append(r)
-            if h == hide[0]:
+            if h is not None and h == hide[0]:
                 images[f][3] = imgs[f]
-        result["hide"].append({"element": h, "truth": pairs.get(h),
-                               **_means(per, ("mean_de", "p95_de", "hf_ratio", "residue_fraction", "truth_de")), "frames": per})
+        shown = [p for p in per if not p.get("absent")]
+        if h is None and not shown:
+            continue
+        # any shown frame that cannot be measured voids the check, like the title check
+        result["hide"].append({"element": h, "truth": tid, "missed": h is None,
+                               **_strict(shown, ("mean_de", "p95_de", "hf_ratio", "residue_fraction", "truth_de")), "frames": per})
 
     for mode, colour in BACKGROUND_EDITS:
         with tempfile.TemporaryDirectory(prefix="keepframe-eval-") as temp:
@@ -227,7 +250,7 @@ def edit_checks(root, scene_id, *, title, hide, frames, renderer: Renderer, trut
                     ideal = {f: src[f] + (new - old[f]) * (1 - cover[f])[..., None] for f in frames}
                     alpha_scene = cover
                 per = [{"frame": f, "halo_ring": halo_ring(imgs[f], ideal[f], alpha_scene[f])} for f in frames]
-                check.update(**_means(per, ("halo_ring",)), frames=per)
+                check.update(**_strict(per, ("halo_ring",)), frames=per)
                 if mode == BACKGROUND_EDITS[0][0]:
                     for f in frames:
                         images[f][4] = imgs[f]
@@ -255,6 +278,26 @@ def _match(truth: dict, analysed: dict, frames: Sequence[int], fixed: dict[str, 
             iou[i, j] = inter / union if union else 0.0
     rows, cols = linear_sum_assignment(-iou)
     return {**fixed, **{aids[c]: tids[r] for r, c in zip(rows, cols) if iou[r, c] >= 0.3}}
+
+
+def _alpha_rows(truth: dict, analysed: dict, pairs: dict[str, str], frames: Sequence[int]) -> list[dict]:
+    """α / F errors per true layer and frame where it shows. A true layer with no analysed pair counts as full
+    error (SAD = MSE = 1 over its edge band), so missing or baking a layer cannot improve the score."""
+    by_truth = {t: a for a, t in pairs.items()}
+    rows = []
+    for t, per_frame in truth.items():
+        for f in frames:
+            ta, tfg = per_frame[f]
+            if ta.max() <= 0.02:
+                continue
+            a_id = by_truth.get(t)
+            if a_id is None:
+                rows.append({"element": None, "truth": t, "missed": True, "sad": 1.0, "mse": 1.0,
+                             "band_px": alpha_errors(np.zeros_like(ta), ta)["band_px"], "f_de_interior": None, "f_de_edge": None})
+            else:
+                a, fg = analysed[a_id][f]
+                rows.append({"element": a_id, "truth": t, "missed": False, **alpha_errors(a, ta), **foreground_errors(fg, tfg, a, ta)})
+    return rows
 
 
 def _analyse(video: Path, n_frames: int, root: Path, opts: AnalyzeOptions, ocr, reuse: bool) -> float:
@@ -310,12 +353,7 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
     integrity = title_integrity(scene, [{"text": t.canonical.text, "role": "title"} for t in titles])
     pairs = _match(gt, analysed, frames, {i["element"]: t.id for t, i in zip(titles, integrity) if i["element"]})
 
-    alpha_rows, leak_px, opaque_px, corr = [], 0, 0, []
-    for a_id, t_id in pairs.items():
-        for f in frames:
-            (a, fg), (ta, tfg) = analysed[a_id][f], gt[t_id][f]
-            if ta.max() > 0.02:
-                alpha_rows.append({"element": a_id, **alpha_errors(a, ta), **foreground_errors(fg, tfg, a, ta)})
+    alpha_rows, leak_px, opaque_px, corr = _alpha_rows(gt, analysed, pairs, frames), 0, 0, []
     for a_id, per_frame in analysed.items():
         for f in frames:
             a, fg = per_frame[f]
@@ -353,7 +391,8 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
                                 if el is not None and el.canonical.color else None for t, el in found],
             "font_hits": [el is not None and _font_hit(t, el) for t, el in found],
             "font_top3": _mean(float(el is not None and _font_hit(t, el)) for t, el in found),
-            "alpha": {**_means(alpha_rows, ("sad", "mse", "f_de_interior", "f_de_edge")), "layers": len(alpha_rows)},
+            "alpha": {**_means(alpha_rows, ("sad", "mse", "f_de_interior", "f_de_edge")), "layers": len(alpha_rows),
+                      "missed": sorted({r["truth"] for r in alpha_rows if r["missed"]})},
             "leak": {"bg_leak_fraction": leak_px / opaque_px if opaque_px else None, "leak_correlation": _mean(corr)},
             "plate_de": {k: _mean(v) for k, v in plate_de.items()},
             "ring_floor": _mean(plate_residue(plates[f], t_mask[f])["mean_de"] for f in frames),
@@ -361,49 +400,67 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
             "sheet": sheet, "messages": _messages(proj)}
 
 
-def _samples(rows: list[dict], key: str) -> list:
+def _samples(rows: list[dict], key: str) -> tuple[list, list[float]]:
+    """Samples for a gate key ("check.metric"; a check that ran on nothing gives one None) and each sample's
+    scene ring_floor (0 when unknown)."""
     head, _, tail = key.partition(".")
-    out = []
+    values, floors = [], []
     for row in rows:
         v = row.get(head)
         if head == "font_hits":
-            out += v
+            got = list(v or [])
         elif isinstance(v, list):
-            out += [x.get(tail) for x in v] or [None]
+            got = [x.get(tail) for x in v] or [None]
         else:
-            out.append(v.get(tail) if isinstance(v, dict) else None)
-    return out
+            got = [v.get(tail) if isinstance(v, dict) else None]
+        values += got
+        floors += [row.get("ring_floor") if _finite(row.get("ring_floor")) else 0.0] * len(got)
+    return values, floors
 
 
-def _passes(v, op: str, thr) -> bool:
-    if v is None:
+def _excess(v, op: str, lim) -> float:
+    if op == "in":
+        return max(lim[0] - v, v - lim[1])
+    return lim - v if op == "ge" else v - lim
+
+
+def _passes(v, op: str, lim) -> bool:
+    if not _finite(v):
         return False
-    if op == "in":
-        return thr[0] <= v <= thr[1]
-    return {"le": v <= thr, "lt": v < thr, "ge": v >= thr}[op]
+    return _excess(v, op, lim) < 0 if op == "lt" else _excess(v, op, lim) <= 0
 
 
-def _worst(values: list, op: str, thr):
-    values = [v for v in values if v is not None]
-    if not values:
-        return None
-    if op == "in":
-        return max(values, key=lambda v: max(thr[0] - v, v - thr[1]))
-    return min(values) if op == "ge" else max(values)
-
-
-def _gate(samples: list, op: str, thr) -> dict:
+def _gate(samples: list, op: str, thr, limits: list | None = None) -> dict:
+    """Every sample must pass its limit (thr, or limits[i]); None / NaN samples fail; no samples fail."""
     if op == "rate":
-        hits = [bool(s) for s in samples]
+        hits = [_finite(s) and bool(s) for s in samples]
         value = float(np.mean(hits)) if hits else None
         return {"value": value, "threshold": thr, "op": "ge", "samples": len(hits), "passed": value is not None and value >= thr}
-    failed = sum(not _passes(s, op, thr) for s in samples)
-    return {"value": _mean(samples), "worst": _worst(samples, op, thr), "threshold": list(thr) if isinstance(thr, tuple) else thr,
-            "op": op, "samples": len(samples), "failed": failed, "passed": bool(samples) and failed == 0}
+    lims = limits if limits is not None else [thr] * len(samples)
+    measured = [(s, lim) for s, lim in zip(samples, lims) if _finite(s)]
+    gate = {"value": _mean(samples), "worst": max(measured, key=lambda x: _excess(x[0], op, x[1]))[0] if measured else None,
+            "threshold": list(thr) if isinstance(thr, tuple) else thr, "op": op, "samples": len(samples),
+            "failed": sum(not _passes(s, op, lim) for s, lim in zip(samples, lims))}
+    if limits is not None:
+        gate["limits"] = [round(lim, 4) for lim in limits]
+    gate["passed"] = bool(samples) and gate["failed"] == 0
+    return gate
 
 
 def synthetic_gates(rows: list[dict]) -> dict:
-    return {name: _gate(_samples(rows, key), op, thr) for name, (key, op, thr) in SYNTHETIC_GATES.items()}
+    gates = {}
+    for name, (key, op, thr, *floor) in SYNTHETIC_GATES.items():
+        values, floors = _samples(rows, key)
+        gates[name] = _gate(values, op, thr, [thr + f for f in floors] if floor else None)
+    return gates
+
+
+def overall_passed(gates: dict, strict: bool = False) -> bool:
+    """True only when at least one gate was evaluated and none failed; unevaluated gates (no baseline) fail
+    under `strict`."""
+    verdicts = [g["passed"] for group in gates.values() for g in group.values()]
+    ran = [v for v in verdicts if v is not None]
+    return bool(ran) and all(ran) and not (strict and None in verdicts)
 
 
 def eval_synthetic(out, n=6, *, renderer: Renderer, options: AnalyzeOptions | None = None, reuse: bool = False) -> dict:
@@ -521,7 +578,7 @@ def summary_markdown(m: dict) -> str:
     for group, gates in m["gates"].items():
         lines += [f"## {group} gates", "", "| gate | threshold | mean | worst | failed / samples | pass |", "|---|---|---|---|---|---|"]
         for name, g in gates.items():
-            thr = g.get("threshold", g.get("limits", "baseline"))
+            thr = f"{g['threshold']} + ring floor" if "threshold" in g and "limits" in g else g.get("threshold", g.get("limits", "baseline"))
             op = {"le": "≤", "lt": "<", "ge": "≥", "in": "∈"}.get(g.get("op"), "")
             lines.append(f"| {name} | {op} {thr} | {_fmt(g.get('value'), 3)} | {_fmt(g.get('worst'), 3)} | "
                          f"{g.get('failed', '—')} / {g.get('samples', '—')} | {_fmt(g.get('passed'))} |")
@@ -534,8 +591,8 @@ def summary_markdown(m: dict) -> str:
                   "|" + "---|" * 16]
         for r in rows:
             t, a = r["title"] or {}, r["alpha"]
-            hides = "; ".join(f"{h['element']}: {_fmt(h['mean_de'])} / {_fmt(h['hf_ratio'])} / {_fmt(h['residue_fraction'], 3)} ({_fmt(h['truth_de'])})"
-                              for h in r["hide"])
+            hides = "; ".join(f"{h['element'] or 'missed ' + h['truth']}: {_fmt(h['mean_de'])} / {_fmt(h['hf_ratio'])} / "
+                              f"{_fmt(h['residue_fraction'], 3)} ({_fmt(h['truth_de'])})" for h in r["hide"])
             lines.append(f"| {r['seed']} | {r['plate']} | {r['seconds']:.0f} | {r['matched']}/{r['elements']['truth']} | "
                          f"{_fmt(r['integrity'][0]['whole'])} | {_fmt(r['title_colour_de'][0])} | {_fmt(r['font_top3'])} | {_fmt(a['sad'], 3)} | "
                          f"{_fmt(a['f_de_interior'])} / {_fmt(a['f_de_edge'])} | {_fmt(r['leak']['bg_leak_fraction'], 3)} | "
@@ -586,8 +643,7 @@ def eval_edits(clips_dir, gold_dir, out, *, max_frames=150, baseline=None, synth
             rows.append(eval_clip(clip, gold, out, max_frames=max_frames, baseline=baseline, reuse=reuse, renderer=renderer, options=clip_opts))
         m["clips"] = {"rows": rows, "missing_gold": missing}
         m["gates"]["clips"] = clip_gates(rows)
-    verdicts = [g["passed"] for gates in m["gates"].values() for g in gates.values()]
-    m["passed"] = all(v is True or (v is None and not strict) for v in verdicts)
+    m["passed"] = overall_passed(m["gates"], strict)
     (out / "metrics.json").write_text(json.dumps(m, indent=2, default=float))
     (out / "summary.md").write_text(summary_markdown(m))
     return m

@@ -1,5 +1,6 @@
 """Metrics for clean layers. Images are RGB in 0..255 (uint8 or float); α in 0..1; ΔE is CIE76 (ir.colour).
-An `rgba` layer is F (straight colour, 0..255) plus α: float with α in 0..1, or uint8 with α in 0..255."""
+An `rgba` layer is F (straight colour, 0..255) plus α: float with α in 0..1, or uint8 with α in 0..255.
+A metric that has nothing to measure returns None, never 0, so a gate cannot pass on it."""
 from __future__ import annotations
 import unicodedata
 from difflib import SequenceMatcher
@@ -81,27 +82,28 @@ def plate_residue(plate, mask, ring=(6, 16), *, exclude=None) -> dict:
             "residue_fraction": float((de > RESIDUE_DE).mean()), "pixels": int(inside.sum()), "fit_degree": degree}
 
 
-def bg_leak_fraction(rgba, local_plate) -> float:
+def bg_leak_fraction(rgba, local_plate) -> float | None:
     """Share of the layer's α > 0.5 pixels whose colour is the plate behind them (ΔE < 5): background
     baked into the texture."""
     fg, a = _split(rgba)
     m = a > 0.5
     if not m.any():
-        return 0.0
+        return None
     return float((_de(fg[m], np.asarray(local_plate, np.float32)[m]) < LEAK_DE).mean())
 
 
-def leak_correlation(rgba, plate) -> float:
+def leak_correlation(rgba, plate) -> float | None:
     """Regression slope of the layer's colour on the plate's (sRGB, α > 0.5 pixels), pooled within the
     layer's own colour clusters (k-means, k = 3), so glyph-vs-background contrast does not count: the share
-    of the plate mixed into the texture (0 clean, 0.3 for a 30 % spill, 1 copied plate). 0 on flat plates."""
+    of the plate mixed into the texture (0 clean, 0.3 for a 30 % spill, 1 copied plate). None on flat plates
+    and layers under 16 opaque pixels."""
     fg, a = _split(rgba)
     m = a > 0.5
     if m.sum() < 16:
-        return 0.0
+        return None
     f, b = fg[m], np.asarray(plate, np.float32)[m]
     if b.std(0).max() < 1.0:
-        return 0.0
+        return None
     k = min(3, len(f))
     cv2.setRNGSeed(0)
     _, labels, _ = cv2.kmeans(f.astype(np.float32), k, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.1),
@@ -114,16 +116,16 @@ def leak_correlation(rgba, plate) -> float:
         fc, bc = f[sel] - f[sel].mean(0), b[sel] - b[sel].mean(0)
         num += float((fc * bc).sum())
         den += float((bc * bc).sum())
-    return num / den if den > 0 else 0.0
+    return num / den if den > 0 else None
 
 
-def halo_ring(recomposite, ideal, alpha_scene, width=4) -> float:
+def halo_ring(recomposite, ideal, alpha_scene, width=4) -> float | None:
     """Mean ΔE between a recomposite and the ideal one on the `width`-px ring just outside α > 0.5:
     white fringes and baked background show up here after a background change."""
     inside = np.asarray(alpha_scene) > 0.5
     ring = _grow(inside, width) & ~inside
     if not ring.any():
-        return 0.0
+        return None
     return float(_de(np.asarray(recomposite, np.float32)[ring], np.asarray(ideal, np.float32)[ring]).mean())
 
 
@@ -135,7 +137,7 @@ def _box_mask(shape, box) -> np.ndarray:
     return m
 
 
-def outside_glyph_delta(src, rebuilt, edited, old_a, new_a, box, *, exclude=None) -> float:
+def outside_glyph_delta(src, rebuilt, edited, old_a, new_a, box, *, exclude=None) -> float | None:
     """After a text change, how much worse the pixels inside `box` but outside both glyph sets match the
     source than the unedited rebuild did (mean ΔE, floored at 0): revealed smears, pasted boxes."""
     glyphs = _grow((np.asarray(old_a) > 0.02) | (np.asarray(new_a) > 0.02), 2)
@@ -143,7 +145,7 @@ def outside_glyph_delta(src, rebuilt, edited, old_a, new_a, box, *, exclude=None
     if exclude is not None:
         region &= ~np.asarray(exclude, bool)
     if not region.any():
-        return 0.0
+        return None
     src = np.asarray(src, np.float32)[region]
     worse = _de(np.asarray(edited, np.float32)[region], src).mean() - _de(np.asarray(rebuilt, np.float32)[region], src).mean()
     return float(max(0.0, worse))
@@ -167,7 +169,7 @@ def _fill(lab: np.ndarray, known: np.ndarray, need: np.ndarray) -> np.ndarray:
     return out
 
 
-def smear_score(edited, old_a, new_a, *, exclude=None) -> float:
+def smear_score(edited, old_a, new_a, *, exclude=None) -> float | None:
     """Mean ΔE where the old glyphs were and the new ones are not, against the plate estimated from the
     surrounding non-glyph pixels: ghost glyphs a median plate absorbed show up here."""
     old_a, new_a = np.asarray(old_a), np.asarray(new_a)
@@ -177,7 +179,7 @@ def smear_score(edited, old_a, new_a, *, exclude=None) -> float:
         reveal &= ~np.asarray(exclude, bool)
         known &= ~np.asarray(exclude, bool)
     if not reveal.any():
-        return 0.0
+        return None
     ys, xs = np.nonzero(reveal)
     pad = 150
     H, W = reveal.shape
@@ -209,7 +211,7 @@ def alpha_errors(alpha, alpha_gt, band=3) -> dict:
     alpha, alpha_gt = np.asarray(alpha, np.float32), np.asarray(alpha_gt, np.float32)
     m = _band(alpha_gt, band)
     if not m.any():
-        return {"sad": 0.0, "mse": 0.0, "band_px": 0}
+        return {"sad": None, "mse": None, "band_px": 0}
     d = alpha[m] - alpha_gt[m]
     return {"sad": float(np.abs(d).mean()), "mse": float((d * d).mean()), "band_px": int(m.sum())}
 
