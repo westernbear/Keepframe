@@ -16,8 +16,13 @@ import html
 import io
 import math
 import os
+import re
 import tempfile
 import threading
+import time
+from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Iterable
 
@@ -31,8 +36,18 @@ from .registry import FontFace, FontRegistry, safe_alias
 log = get("keepframe.fonts")
 BASIC_LATIN = frozenset(range(0x20, 0x7F))
 _GENERIC = {"serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"}
-_SUBSET_LOCK = threading.Lock()   # one subset per key at a time (fontTools work is CPU-bound anyway)
 SUBSET_VERSION = "1"
+# Subsetting runs on a small pool so one slow font (fontTools decoding a large WOFF2 can take ~50 s) never holds
+# a compose: compose waits at most SUBSET_WAIT_S for all its faces, then embeds what is ready; the rest keeps
+# running and is cached for the next compose. A key subsets once at a time; a failed key is not retried for
+# SUBSET_RETRY_S (R36).
+SUBSET_WORKERS = 2
+SUBSET_WAIT_S = 20.0
+SUBSET_RETRY_S = 600.0
+MAX_PENDING = 32
+MAX_SOURCE_BYTES = 20 * 2**20      # uploads are <= 20 MiB (Task 11); bundled files <= 5.9 MB
+MAX_CODEPOINTS = 2048              # per face
+MAX_CACHE_BYTES = 256 * 2**20      # oldest subsets evicted first
 
 
 def _n(v: float) -> str:
@@ -65,7 +80,8 @@ def fallback_alias(fonts: TextFonts) -> str:
 
 
 def _css_family(name: str) -> str:
-    return name if name.casefold() in _GENERIC else "'" + name.replace("\\", "").replace("'", "") + "'"
+    """A system family name as a quoted CSS string: letters, digits, spaces and hyphens only (the FontGuess rule)."""
+    return name if name.casefold() in _GENERIC else "'" + re.sub(r"[^\w \-]", "", name) + "'"
 
 
 def families(font: FontGuess, fonts: TextFonts) -> str:
@@ -176,27 +192,85 @@ def _source_sha(face: FontFace) -> str:
     return face.sha256 or hashlib.sha256(face.path.read_bytes()).hexdigest()
 
 
-def subset_font(face: FontFace, codepoints: Iterable[int], *, wght: float | None = None,
-                cache_dir: Path | str | None = None) -> bytes:
-    """WOFF2 bytes of `face` cut to `codepoints` + Basic Latin, keeping the layout features browsers (and HarfBuzz in
-    Pillow) apply by default; variable fonts pinned at `wght` when given. Cached by source hash, weight and
-    codepoints."""
+class SubsetUnavailable(RuntimeError):
+    """No subset now (too large, failed recently, busy or still running): the face is not embedded."""
+
+
+_STATE = threading.Lock()
+_INFLIGHT: dict[str, Future] = {}
+_FAILED: OrderedDict[str, float] = OrderedDict()
+_POOL: ThreadPoolExecutor | None = None
+_EVICT = threading.Lock()
+
+
+def _pool() -> ThreadPoolExecutor:
+    global _POOL
+    if _POOL is None:
+        _POOL = ThreadPoolExecutor(SUBSET_WORKERS, thread_name_prefix="kf-subset")
+    return _POOL
+
+
+def _request(face: FontFace, codepoints: Iterable[int], wght: float | None, cache_dir) -> bytes | Future:
+    """Cached bytes, or the (possibly shared) future of the subset job for this key."""
+    if face.path.stat().st_size > MAX_SOURCE_BYTES:
+        raise SubsetUnavailable(f"{face.path.name} is over {MAX_SOURCE_BYTES >> 20} MiB")
     cps = sorted(set(codepoints) | BASIC_LATIN)
+    if len(cps) > MAX_CODEPOINTS:
+        log.warning("font %s: %d codepoints, subset keeps %d", face.family, len(cps), MAX_CODEPOINTS)
+        cps = cps[:MAX_CODEPOINTS]
     key = hashlib.sha256(f"{SUBSET_VERSION}|{_source_sha(face)}|{face.index}|{wght}|{cps}".encode()).hexdigest()[:32]
     root = cache_root(cache_dir)
     path = root / f"{key}.woff2"
     try:
-        return path.read_bytes()
+        data = path.read_bytes()
+        os.utime(path)   # recently used: last to be evicted
+        return data
     except OSError:
         pass
-    with _SUBSET_LOCK:
-        try:
-            return path.read_bytes()   # another thread made it meanwhile
-        except OSError:
-            pass
+    job = str(path)
+    with _STATE:
+        failed = _FAILED.get(job)
+        if failed is not None and time.monotonic() - failed < SUBSET_RETRY_S:
+            raise SubsetUnavailable("failed recently")
+        future = _INFLIGHT.get(job)
+        if future is None:
+            if len(_INFLIGHT) >= MAX_PENDING:
+                raise SubsetUnavailable("subset queue full")
+            future = _INFLIGHT[job] = _pool().submit(_job, job, face, cps, wght, root, path)
+    return future
+
+
+def _job(job: str, face: FontFace, cps: list[int], wght: float | None, root: Path, path: Path) -> bytes:
+    try:
         data = _subset(face, cps, wght)
         _cache_write(root, path, data)
-    return data
+        return data
+    except Exception:
+        with _STATE:
+            _FAILED[job] = time.monotonic()
+            while len(_FAILED) > 256:
+                _FAILED.popitem(last=False)
+        raise
+    finally:
+        with _STATE:
+            _INFLIGHT.pop(job, None)
+
+
+def _wait(got: bytes | Future, timeout: float) -> bytes:
+    if isinstance(got, bytes):
+        return got
+    try:
+        return got.result(timeout=max(0.0, timeout))
+    except FutureTimeout:
+        raise SubsetUnavailable("still subsetting") from None
+
+
+def subset_font(face: FontFace, codepoints: Iterable[int], *, wght: float | None = None,
+                cache_dir: Path | str | None = None, wait: float | None = None) -> bytes:
+    """WOFF2 bytes of `face` cut to `codepoints` + Basic Latin, keeping the layout features browsers (and HarfBuzz in
+    Pillow) apply by default; variable fonts pinned at `wght` when given. Cached by source hash, weight and
+    codepoints; waits at most `wait` (SUBSET_WAIT_S) seconds, else raises SubsetUnavailable."""
+    return _wait(_request(face, codepoints, wght, cache_dir), SUBSET_WAIT_S if wait is None else wait)
 
 
 def _subset(face: FontFace, cps: list[int], wght: float | None) -> bytes:
@@ -242,6 +316,7 @@ def _cache_write(root: Path, path: Path, data: bytes) -> None:
             f.write(data)
         os.replace(tmp, path)
         tmp = None
+        _evict(root)
     except OSError as e:   # read-only home: embed without caching
         log.warning("font subset cache unavailable (%s)", e)
     finally:
@@ -252,12 +327,27 @@ def _cache_write(root: Path, path: Path, data: bytes) -> None:
                 pass
 
 
-def _font_data(face: FontFace, cps: set[int], wght: float | None, cache_dir) -> tuple[str, bytes] | None:
-    try:
-        return "font/woff2", subset_font(face, cps, wght=wght, cache_dir=cache_dir)
-    except Exception as e:   # never embed a whole (possibly uploaded, megabytes) file: the browser falls back
-        log.warning("font subset failed for %s (%s); not embedded", face.family, e)
-        return None
+def _evict(root: Path) -> None:
+    """Keep the cache under MAX_CACHE_BYTES, least recently used (mtime) first, down to 90 %."""
+    with _EVICT:
+        files = []
+        for p in root.glob("*.woff2"):
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            files.append((st.st_mtime_ns, st.st_size, p))
+        total = sum(size for _, size, _ in files)
+        if total <= MAX_CACHE_BYTES:
+            return
+        for _, size, p in sorted(files)[:-1]:   # never the file just written
+            try:
+                p.unlink()
+            except OSError:
+                continue
+            total -= size
+            if total <= MAX_CACHE_BYTES * 0.9:
+                break
 
 
 def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry | None = None, *,
@@ -291,12 +381,23 @@ def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry |
                 else:
                     entry = used[("p", str(face.path), face.index)]
                 entry["cps"].update(ord(ch) for ch in run)
+    entries = sorted(used.values(), key=lambda e: (e["alias"], e["weight"]))
+    requests = []
+    for entry in entries:   # start every job first, then wait once for all of them
+        try:
+            requests.append(_request(entry["face"], entry["cps"], entry["wght"], cache_dir))
+        except Exception as e:
+            requests.append(e)
+    deadline = time.monotonic() + SUBSET_WAIT_S
     rules = []
-    for entry in sorted(used.values(), key=lambda e: (e["alias"], e["weight"])):
-        got = _font_data(entry["face"], entry["cps"], entry["wght"], cache_dir)
-        if got is None:
+    for entry, got in zip(entries, requests):
+        try:
+            if isinstance(got, Exception):
+                raise got
+            data = _wait(got, deadline - time.monotonic())
+        except Exception as e:   # never embed a whole (possibly uploaded, megabytes) file: the browser falls back
+            log.warning("font %s not embedded (%s)", entry["face"].family, e)
             continue
-        mime, data = got
-        rules.append(f"@font-face{{font-family:{entry['alias']};src:url(data:{mime};base64,{base64.b64encode(data).decode('ascii')});"
+        rules.append(f"@font-face{{font-family:{entry['alias']};src:url(data:font/woff2;base64,{base64.b64encode(data).decode('ascii')});"
                      f"font-weight:{entry['weight']};font-style:normal;font-display:block{entry['extra']}}}")
     return "\n".join(rules)

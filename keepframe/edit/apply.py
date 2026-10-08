@@ -13,7 +13,7 @@ from ..ir.colour import rgb8_to_hex
 from ..ir.schema import Background, Element, FontGuess, Scene, TextStyle
 from ..ir.synth import make_text_texture
 from ..assets import AssetAPIError, validate_glb
-from ..fonts.raster import embedded_face, natural_box, render_styled, resolve_fonts
+from ..fonts.raster import MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts
 from ..fonts.registry import FontRegistry
 from ..log import get
 from .retime import apply_timing
@@ -39,6 +39,22 @@ def _rgb(hexs: str) -> tuple[int, int, int]:
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _shrink(size: float, fits) -> float:
+    """Where `while size > 8 and not fits(size): size -= 2` stops, found by bisection (O(log) layouts) and
+    starting no higher than MAX_TEXT_PX, the largest size the raster draws (scene sizes are untrusted)."""
+    s0 = min(float(size), MAX_TEXT_PX) if math.isfinite(size) else MAX_TEXT_PX
+    if s0 <= 8 or fits(s0):
+        return s0
+    lo, hi = 0, math.ceil((s0 - 8) / 2)      # s0 - 2*lo does not fit; s0 - 2*hi <= 8 ends the walk
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if fits(s0 - 2 * mid):
+            hi = mid
+        else:
+            lo = mid
+    return s0 - 2 * hi
 
 
 def _split_wrap(text: str) -> list[str]:
@@ -225,8 +241,7 @@ def _apply_styled_text(el: Element, scene_dir: Path, text: str, overflow: str | 
     natural = lambda size: natural_box(lines, size, resolved, tracking_em=style.tracking_em, shear_deg=style.shear_deg, dx=style.dx)
     size = font.size_px
     if overflow == "shrink_font":
-        while size > 8 and natural(size)[0] > c.width:
-            size -= 2
+        size = _shrink(size, lambda s: natural(s)[0] <= c.width)
         font = font.model_copy(update={"size_px": float(size)})
     need_w = float(natural(size)[0])
     width = need_w if overflow == "expand_box" or need_w > c.width else c.width
@@ -252,8 +267,7 @@ def _apply_text(el: Element, scene_dir: Path, text: str, overflow: str | None, f
     if overflow == "wrap":
         lines = _split_wrap(text)
     elif overflow == "shrink_font":
-        while size > 8 and measure_text(text, size, font.family_guess)[0] > el.canonical.width:
-            size -= 2
+        size = _shrink(size, lambda s: measure_text(text, s, font.family_guess)[0] <= el.canonical.width)
         font = font.model_copy(update={"size_px": size})
     dest = _next_asset(scene_dir, el.id, "txt")
     w, h = write_text_texture(dest, text, font.size_px, color, lines=lines, family=font.family_guess)

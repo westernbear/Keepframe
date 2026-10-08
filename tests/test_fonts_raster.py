@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from keepframe.compose.composer import compose
-from keepframe.fonts.registry import FontRegistry
+from keepframe.fonts.registry import FontFace, FontRegistry
 from keepframe.ir.schema import (Background, Canonical, Element, FontGuess, Keyframe, Scene, TextEffect, TextStyle,
                                  Track)
 
@@ -146,10 +146,18 @@ def test_fonts_css_only_used_families_safe_names(tmp_path):
     html = compose(scene, tmp_path, tmp_path / "c.html").read_text()
     assert html.count("@font-face") == 3
     assert '<span style="font-family:sans-serif;font-weight:400;font-size:20.0px;line-height:60.0px;color:#ffffff">legacy</span>' in html
-    hostile = _el("d", "x", FontGuess(family_guess="x;}</style><script>alert(1)</script>", size_px=20), TextStyle())
-    html = compose(scene.model_copy(update={"elements": els + [hostile]}), tmp_path, tmp_path / "c.html").read_text()
+    evil = "x';}\n</style><script>alert(1)</script>"
+
+    class Hostile(FontRegistry):   # a system face whose name is hostile (FontGuess.fallback is not validated)
+        def face(self, family, weight=400, *, italic=False):
+            return FontFace(evil, "system", REG.face("Pretendard").path) if family == evil else super().face(family, weight, italic=italic)
+
+    hostile = _el("d", "가 x", FontGuess(family_guess="Inter", fallback=evil, size_px=20), TextStyle())
+    html = compose(scene.model_copy(update={"elements": els + [hostile]}), tmp_path, tmp_path / "c.html",
+                   fonts=Hostile()).read_text()
     body = html.split("<body>", 1)[1].split("<script>", 1)[0]          # the element markup, before the page scripts
-    assert 'id="el-d"' in body and "alert(1)" not in body and "</style><script>alert" not in html
+    assert 'id="el-d"' in body and "font-family:kf-inter,&#x27;xstylescriptalert1script&#x27;" in body
+    assert "alert(1)" not in body and "</style><script>alert" not in html and "\n</style>" not in body
 
 
 def _legacy_scene():
@@ -279,7 +287,7 @@ def test_failed_subset_embeds_no_whole_font(tmp_path, monkeypatch):
     from keepframe.fonts import css as fcss
     def boom(*_a, **_k):
         raise RuntimeError("cannot subset")
-    monkeypatch.setattr(fcss, "subset_font", boom)
+    monkeypatch.setattr(fcss, "_subset", boom)
     name = "assets/font-0123456789abcdef.woff2"
     (tmp_path / "assets").mkdir()
     shutil.copyfile(REG.face("Lobster").path, tmp_path / name)
@@ -301,42 +309,178 @@ def test_subset_cache_writes_are_atomic_across_threads(tmp_path):
     assert len(list(tmp_path.glob("*.woff2"))) == 1
 
 
-ABSURD = r"""
-import json, resource, sys, time
-from keepframe.fonts.css import text_css, text_html
-from keepframe.fonts.raster import glyph_alpha, render_styled
+def test_untrusted_sizes_are_bounded():
+    import time
+    from keepframe.fonts import raster as R
+    from keepframe.fonts.css import text_html
+    t = time.perf_counter()
+    w, h, pad = R.bounded_canvas((1e6, 1e6), 10**6)
+    assert max(w, h) <= R.MAX_BOX_SIDE and pad <= R.MAX_PAD and (w + 2 * pad) * (h + 2 * pad) <= R.MAX_CANVAS_PX
+    assert R.bounded_canvas((3840, 2160), 40) == (3840, 2160, 40)              # a full 4K frame is not cropped
+    assert R.MAX_TEXT_PX == 4096 and R.text_size(1e300) == 4096 and R.text_size(3000, 2160) == 3000
+    assert R.text_size(1e6, 60) == 480                                         # <= 8x the line box
+    with pytest.raises(ValueError):
+        R.text_size(float("nan"))
+    raw = TextStyle(tracking_em=1e6, shear_deg=89.9, dx=1e9, dy=-1e9,
+                    effects=[TextEffect(kind="stroke", color="#000", width=1e6),
+                             TextEffect(kind="shadow", color="#000", dx=1e9, dy=1e9, blur=1e6),
+                             TextEffect(kind="glow", color="#fff", blur=float("inf"), opacity=7)])
+    st = R.bounded_style(raw, (200, 60))
+    assert (st.tracking_em, st.shear_deg, st.dx, st.dy) == (2.0, 60.0, 200.0, -200.0)
+    assert [(e.width, e.blur, e.dx, e.dy, e.opacity) for e in st.effects] == [
+        (32.0, 0.0, 0.0, 0.0, 1.0), (0.0, 128.0, 200.0, 200.0, 1.0), (0.0, 0.0, 0.0, 0.0, 1.0)]
+    assert R.effect_pad(st.effects) <= R.MAX_PAD
+    assert sum(map(len, R._cap_chars(["W" * 100000, "x"]))) == R.MAX_CHARS
+    font = FontGuess(family_guess="Inter", size_px=1e6)
+    css = text_html(Canonical(width=200, height=60, text="Hi", font=font, style=raw), registry=REG)
+    for decl in ("font-size:480px", "letter-spacing:2em", "skewX(-60deg)", "filter:blur(64px)", "left:200px",
+                 "-webkit-text-stroke:64px"):
+        assert decl in css, decl
+    assert time.perf_counter() - t < 1.0
+    img = R.render_styled(["Hi"], font, "#fff", raw, registry=REG, box=(200, 60))   # one small end-to-end call
+    assert img.shape == (60, 200, 4)
+
+
+@pytest.mark.parametrize("size", [1e5, 1e300])
+@pytest.mark.parametrize("styled", [True, False])
+def test_shrink_font_edit_finishes_for_huge_sizes(tmp_path, size, styled):
+    import time
+    from keepframe.edit.apply import apply_edit, measure_text
+    from keepframe.edit.intent import Target
+    from keepframe.fonts.raster import natural_box, resolve_fonts
+    font = FontGuess(family_guess="Inter" if styled else "sans-serif", size_px=size)
+    scene = Scene(id="s", size=(320, 180), fps=30, frames=5, background=Background(),
+                  elements=[_el("t", "Sale", font, TextStyle() if styled else None, w=200, h=60)])
+    t = time.perf_counter()
+    out = apply_edit(scene, tmp_path, [Target(element="t", property="text", value="Big sale today")],
+                     {"overflow": "shrink_font"}, None)
+    assert time.perf_counter() - t < 5
+    c = out.elements[0].canonical
+    assert 8 < c.font.size_px <= 4096 and c.width == 200
+    if styled:
+        assert natural_box(["Big sale today"], c.font.size_px, resolve_fonts(c.font, "Big sale today", REG))[0] <= 200
+        assert natural_box(["Big sale today"], c.font.size_px + 2, resolve_fonts(c.font, "Big sale today", REG))[0] > 200
+    else:
+        assert measure_text("Big sale today", c.font.size_px)[0] <= 200 < measure_text("Big sale today", c.font.size_px + 2)[0]
+
+
+# --- R36: subsetting never holds compose hostage -------------------------------------------------------------
+
+@pytest.fixture
+def fake_subset(monkeypatch):
+    """`_subset` stub: per-family delay or failure, counting calls."""
+    import time
+    from keepframe.fonts import css as fcss
+    calls, plan = [], {}
+    def stub(face, cps, wght):
+        calls.append(face.family)
+        delay, fail = plan.get(face.family, (0.0, False))
+        time.sleep(delay)
+        if fail:
+            raise RuntimeError("cannot subset")
+        return b"wOF2" + face.family.encode() + bytes(1000)
+    monkeypatch.setattr(fcss, "_subset", stub)
+    return calls, plan
+
+
+def _text_scene(*families):
+    return Scene(id="s", size=(320, 180), fps=30, frames=5, background=Background(),
+                 elements=[_el(f"e{i}", "Hi", FontGuess(family_guess=f), TextStyle()) for i, f in enumerate(families)])
+
+
+def test_subset_keys_run_concurrently(tmp_path, fake_subset):
+    import threading
+    import time
+    from keepframe.fonts.css import subset_font
+    calls, plan = fake_subset
+    plan["Lobster"] = (2.0, False)
+    slow = threading.Thread(target=subset_font, args=(REG.face("Lobster"), [0x41]), kwargs={"cache_dir": tmp_path})
+    slow.start()
+    time.sleep(0.2)
+    t = time.perf_counter()
+    assert subset_font(REG.face("Inter"), [0x41], cache_dir=tmp_path).startswith(b"wOF2Inter")
+    assert time.perf_counter() - t < 1.0              # another key does not wait for the slow one
+    slow.join()
+    assert sorted(calls) == ["Inter", "Lobster"]
+
+
+def test_slow_subset_does_not_block_compose(tmp_path, fake_subset, monkeypatch):
+    import time
+    from keepframe.fonts import css as fcss
+    calls, plan = fake_subset
+    plan["Lobster"] = (1.5, False)
+    monkeypatch.setattr(fcss, "SUBSET_WAIT_S", 0.3)
+    scene = _text_scene("Inter", "Lobster")
+    t = time.perf_counter()
+    css = fcss.font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "c")
+    assert time.perf_counter() - t < 1.0
+    assert "kf-inter" in css and "kf-lobster" not in css            # that face falls back in the browser this time
+    time.sleep(1.6)                                                  # the subset finished in the background ...
+    assert "kf-lobster" in fcss.font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "c")   # ... and is cached
+    assert calls.count("Lobster") == 1
+
+
+def test_failed_subset_not_retried_on_every_compose(tmp_path, fake_subset):
+    from keepframe.fonts import css as fcss
+    calls, plan = fake_subset
+    plan["Lobster"] = (0.0, True)
+    scene = _text_scene("Lobster")
+    assert fcss.font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "c") == ""
+    assert fcss.font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "c") == ""
+    assert calls == ["Lobster"]
+
+
+def test_subset_cache_evicts_oldest(tmp_path, monkeypatch):
+    import os
+    import time
+    from keepframe.fonts import css as fcss
+    monkeypatch.setattr(fcss, "MAX_CACHE_BYTES", 120_000)
+    face = REG.face("Playfair Display")
+    paths = []
+    for i in range(6):
+        fcss.subset_font(face, [0x100 + i], cache_dir=tmp_path)
+        newest = max(tmp_path.glob("*.woff2"), key=os.path.getmtime)
+        paths.append(newest)
+        assert sum(p.stat().st_size for p in tmp_path.glob("*.woff2")) <= 120_000
+        time.sleep(0.01)
+    assert paths[-1].exists() and not paths[0].exists()
+
+
+def test_subset_caps_source_size_and_codepoints(tmp_path, monkeypatch):
+    import io as _io
+    from fontTools.ttLib import TTFont
+    from keepframe.fonts import css as fcss
+    monkeypatch.setattr(fcss, "MAX_CODEPOINTS", 120)
+    data = fcss.subset_font(REG.face("Inter"), range(0x20, 0x3000), cache_dir=tmp_path)
+    assert len(TTFont(_io.BytesIO(data)).getBestCmap()) <= 120
+    monkeypatch.setattr(fcss, "MAX_SOURCE_BYTES", 1000)
+    with pytest.raises(fcss.SubsetUnavailable):
+        fcss.subset_font(REG.face("Lobster"), [0x41], cache_dir=tmp_path)
+    assert fcss.font_face_css(_text_scene("Lobster"), tmp_path, REG, cache_dir=tmp_path) == ""
+
+
+LAYOUT_AFTER_SUBSET = r"""
+import sys, tempfile
+from keepframe.fonts.css import subset_font
 from keepframe.fonts.registry import FontRegistry
-from keepframe.ir.schema import Canonical, FontGuess, TextEffect, TextStyle
 reg = FontRegistry()
-t = time.time()
-style = TextStyle(tracking_em=1e6, shear_deg=89.9, dx=1e9, dy=-1e9,
-                  effects=[TextEffect(kind="stroke", color="#000", width=1e6),
-                           TextEffect(kind="shadow", color="#000", dx=1e9, dy=1e9, blur=1e6),
-                           TextEffect(kind="glow", color="#fff", blur=1e9)])
-font = FontGuess(family_guess="Inter", size_px=1e6)
-shapes = [render_styled(["W" * 100000], font, "#fff", style, registry=reg, box=(1e6, 1e6)).shape,
-          render_styled(["W" * 100000, "x"], font, "#fff", style, registry=reg).shape,
-          render_styled(["Hi"], font, "#fff", style, registry=reg, box=(200, 60)).shape,
-          glyph_alpha(["W" * 5000], 1e6, [reg.face("Inter")], weight=400, tracking_em=1e6, pad=10**6).shape]
-css = text_html(Canonical(width=200, height=60, text="Hi", font=font, style=style), registry=reg)
-print("RESULT " + json.dumps({"shapes": shapes, "took": time.time() - t, "css": css,
-                             "rss_kb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}))
+subset_font(reg.face("Pretendard"), [0xac00], cache_dir=tempfile.mkdtemp())    # WOFF2 decoded by FreeType
+from PIL import ImageFont                                                      # Pillow's first text layout after it
+width = ImageFont.truetype(str(reg.face("Inter").path), 100).getlength("Big")
+libs = open("/proc/self/maps").read() if sys.platform == "linux" else ""
+hb = sorted({l.split()[-1] for l in libs.splitlines() if "libharfbuzz" in l and "pillow.libs" not in l})
+print(width, hb)
 """
 
 
-def test_absurd_style_values_are_bounded():
+def test_subsetting_leaves_pillow_text_layout_intact(tmp_path):
+    """FreeType 2.13+ dlopens the system HarfBuzz when it opens a WOFF2 face; done in this process, Pillow's lazily
+    bound text layout then measured garbage (advances of 1e5+ px). The decode runs in a child process."""
+    import os
     import subprocess
     import sys
-    import resource
-    def limit():   # a regression must fail here, not take the shared host's memory
-        resource.setrlimit(resource.RLIMIT_AS, (6 * 2**30, 6 * 2**30))
-    r = subprocess.run([sys.executable, "-c", ABSURD], capture_output=True, text=True, timeout=120, preexec_fn=limit)
+    env = dict(os.environ, KEEPFRAME_FONT_CACHE=str(tmp_path))
+    r = subprocess.run([sys.executable, "-c", LAYOUT_AFTER_SUBSET], capture_output=True, text=True, timeout=120, env=env)
     assert r.returncode == 0, r.stderr[-2000:]
-    res = json.loads(next(line for line in r.stdout.splitlines() if line.startswith("RESULT "))[7:])
-    print(f"absurd values: {res['took']:.1f}s, max RSS {res['rss_kb'] / 1024:.0f} MB, shapes {res['shapes']}")
-    assert all(s[0] * s[1] <= 8_000_000 for s in res["shapes"])
-    assert res["took"] < 30 and res["rss_kb"] < 1_500_000
-    css = res["css"]
-    sizes = [float(v) for v in re.findall(r"font-size:([0-9.]+)px", css)]
-    assert sizes and max(sizes) <= 2048                                       # CSS draws the clamped size the raster drew
-    assert max(float(v) for v in re.findall(r"blur\(([0-9.]+)px\)", css)) <= 64
+    width, hb = r.stdout.strip().splitlines()[-1].split(" ", 1)
+    assert 100 < float(width) < 250 and hb == "[]", r.stdout

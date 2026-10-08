@@ -46,9 +46,9 @@ _HANGUL = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 _FT_LOCK = threading.RLock()   # cached FreeType faces are shared; FreeType faces are not thread-safe
 # Scene JSON is untrusted: every size that reaches an allocation is bounded (clamped and logged), the same way
 # on both sides so sane values keep parity.
-MAX_TEXT_PX = 2048.0           # font size, and at most 8x the line box
+MAX_TEXT_PX = 4096.0           # font size (frame-filling 4K titles), and at most 8x the line box
 MAX_BOX_SIDE = 16384           # texture side
-MAX_CANVAS_PX = 8_000_000      # 1x canvas: box + effect padding
+MAX_CANVAS_PX = 16_000_000     # 1x canvas: box + effect padding (a full 3840x2160 box fits)
 MAX_PAD = 512
 MAX_GLYPH_MASK = 16_000_000    # one Pillow draw call (its mask spans the whole string), supersampled
 MAX_CHARS = 4000               # characters laid out per element
