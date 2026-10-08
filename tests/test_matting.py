@@ -231,19 +231,49 @@ def test_keyed_path_recovers_alpha_and_rim_colour(tmp_path):
 
 
 def test_mistracked_frames_keep_the_canonical_frames_colour(tmp_path):
-    """R28: most frames carry a transform that jumped 9 px (the tracker followed something else); the texture keeps
-    the canonical frame's colour and no plate."""
+    """R28/R31: most frames carry a transform that jumped (the tracker followed something else), each a different
+    way, so they do not agree among themselves either; the canonical frame wins: its colour, no plate."""
     n, disc = 12, _disc(40)
     bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
     scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
     frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
-    raw[1:9, 0] += 9.0
+    raw[1:9, 0] += (14, -13, 0, 12, -12, 0, 13, -14)   # 12–14 px: half the solid disc lands off it
+    raw[1:9, 1] += (0, 12, -13, 9, 0, -14, 12, -10)
     out, meta = matting.texture_v2(raw, disc[..., 3] > 127, frames, plate, ref_frame=0)
     assert 0 in meta.frames and not set(meta.frames) & set(range(1, 9))
     F, a = _split(out)
     tF, ta = _split(_pad(disc))
     assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
     assert foreground_errors(F, tF, a, ta)["f_de_interior"] < 3
+
+
+def test_canonical_frame_outlier_gives_way_to_consistent_frames(tmp_path):
+    """R31: the canonical frame holds something no layer models (a disc crossing it mid ease-in), while the other
+    frames agree among themselves: their consensus wins, and the disc stays out of the texture."""
+    n, disc = 12, _disc(40)
+    bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    cv2.circle(frames[0], (152, 84), 13, (17, 138, 178), -1, cv2.LINE_AA)   # only in the canonical frame
+    out, meta = matting.texture_v2(raw, disc[..., 3] > 127, frames, plate, ref_frame=0)
+    assert 0 not in meta.frames and len(meta.frames) >= 6
+    F, a = _split(out)
+    tF, ta = _split(_pad(disc))
+    assert foreground_errors(F, tF, a, ta)["f_de_interior"] < 3 and alpha_errors(a, ta)["sad"] < 0.03
+    assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
+
+
+def test_two_frames_never_outvote_the_canonical_frame(tmp_path):
+    """R31: a consensus needs three agreeing frames; two frames sharing the same wrong transform (a short duplicate
+    track) agree with their own median trivially, and the canonical frame stands."""
+    n, disc = 3, _disc(40)
+    bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    raw[1:, 0] += 14
+    out, meta = matting.texture_v2(raw, disc[..., 3] > 127, frames, plate, ref_frame=0)
+    assert meta.frames == [0]
+    assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
 
 
 def test_keyed_uses_the_redecided_mask_after_realignment(tmp_path, monkeypatch):

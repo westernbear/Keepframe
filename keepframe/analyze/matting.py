@@ -53,6 +53,7 @@ OUTLIER_DE = 20.0           # a solid pixel this far from its median colour is c
 OUTLIER_SHARE = 0.1         # … and a frame with more of them than this is dropped
 ODD_DE = 15.0               # a band pixel the fitted model misses by this much keeps its binary edge
 AGREE_SHARE = 0.3           # a frame whose core differs from the canonical frame's (ΔE > 12) here is dropped
+CONSENSUS_MIN = 3           # agreeing frames that can outvote the canonical frame (R31)
 BAND = 3                    # px around the mask where α is solved
 CORE_PX = 2                 # keyed: the mask eroded by this is solid
 EXTEND_THR = 0.05           # F under α below this is extended from its neighbours
@@ -567,6 +568,35 @@ def _agree(ranked: list[Sample], ref: Sample, core: np.ndarray) -> list[Sample]:
     return out
 
 
+def _consensus(rest: list[Sample], cf: Sample, core: np.ndarray) -> list[Sample] | None:
+    """The other frames, when they outvote the canonical frame: they agree among themselves (a majority within
+    ΔE 12 of their per-pixel median at ≤ 30 % of the core pixels) and cf does not (> 30 %). Returns those agreeing
+    frames, else None (cf stands: frames a tracker mis-placed scatter and disagree with each other too). A consensus
+    needs at least 3 agreeing frames: one or two frames always agree with their own median."""
+    if len(rest) < CONSENSUS_MIN or core.sum() < 8:
+        return None
+    ncore = int(core.sum())
+
+    def lab(s):
+        out = np.full((ncore, 3), np.nan, np.float32)
+        m = s.valid[core]
+        out[m] = srgb_to_lab(s.I[core][m].astype(np.float32))
+        return out
+
+    labs = np.stack([lab(s) for s in rest])
+    med = _wmedian(labs, np.array([s.score for s in rest], np.float64))
+
+    def share(l):
+        m = ~np.isnan(l[:, 0]) & ~np.isnan(med[:, 0])
+        return float((np.linalg.norm(l[m] - med[m], axis=-1) > FG_DE).mean()) if m.sum() >= 8 else None
+
+    agreeing = [s for s, l in zip(rest, labs) if (sh := share(l)) is not None and sh <= AGREE_SHARE]
+    if 2 * len(agreeing) <= len(rest) or len(agreeing) < CONSENSUS_MIN:
+        return None
+    cf_share = share(lab(cf))
+    return agreeing if cf_share is not None and cf_share > AGREE_SHARE else None
+
+
 def _consistent(ranked: list[Sample], core: np.ndarray) -> list[Sample]:
     """Drops frames in which something no layer models (a sprite the tracker lost, a flash) covers the element:
     those whose share of solid pixels more than ΔE 20 from the per-pixel median exceeds 10 % and twice the median
@@ -641,8 +671,9 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
     plate on its own). `candidates` limits the frames; `keep` = (mask, rgb) in canonical space stays opaque with that
     colour (a mover's filled-in pixels). `ref_frame`, the canonical frame (where the binary texture came from and the
     transform is exact by construction), anchors the texture when it passes the filters: frames align to it, frames
-    whose core disagrees with it are dropped, and the solid colour is its own. Raises NotMatted when no frame shows
-    enough of it."""
+    whose core disagrees with it are dropped, and the solid colour is its own — unless the other frames agree among
+    themselves and cf does not (something unmodelled sits in cf), when their consensus wins. Raises NotMatted when
+    no frame shows enough of it."""
     plate = as_plate(plate)
     samples = gather_samples(raw, canon_binary, frames, plate, others_at, pad, candidates=candidates)
     if ref_frame is not None and all(s.frame != ref_frame for s in samples) and (candidates is None or ref_frame in candidates):
@@ -655,6 +686,10 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
         raise NotMatted("other layers cover it (or it is off-frame) in every usable frame")
     ranked = sorted((s for s in samples if s.score > 0), key=lambda s: (-s.score, s.frame))
     cf = next((s for s in ranked if s.frame == ref_frame), None)   # the canonical frame, when it passes the filters
+    if cf is not None:
+        consensus = _consensus([s for s in ranked if s is not cf], cf, _core(canon))
+        if consensus is not None:   # R31: cf is the outlier (something unmodelled in it); the agreeing frames win
+            cf, ranked = None, consensus
     ref = cf or ranked[0]
     offsets = _offsets(ranked, ref, canon)   # onto the reference frame
     if offsets:   # re-warp those frames aligned to the reference; they keep their scores
