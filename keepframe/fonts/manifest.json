@@ -1,0 +1,2065 @@
+{
+ "google_fonts_commit": "2eb0b48d5f760f62e286216f0859a8c540dbc1bd",
+ "pretendard_release": "v1.3.9",
+ "families": [
+  {
+   "family": "Poppins",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Poppins-400.woff2",
+     "sha256": "1fa6cba5c6bd759a31c490d9176e12ae9475df0572ec3ec7609f44c44b9d200c",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Poppins-Regular",
+     "source_file": "Poppins-Regular.ttf"
+    },
+    {
+     "file": "Poppins-700.woff2",
+     "sha256": "09c573a1d3f43f360cfd89ba11bf9bf9b0fdd3e3d9642dfa5f955a565ed11e2d",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Poppins-Bold",
+     "source_file": "Poppins-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Poppins-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/poppins"
+  },
+  {
+   "family": "Montserrat",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Montserrat.woff2",
+     "sha256": "10028e8dd9f98838c44f7f85417f3084cb24d8b93641ff443bdc2f6a616842ce",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Montserrat-Thin",
+     "source_file": "Montserrat[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Montserrat-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/montserrat"
+  },
+  {
+   "family": "Outfit",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Outfit.woff2",
+     "sha256": "b4a8fc3c04e9a2b718c5d93440fa35a41994331f0f6150501f806e88827887cf",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Outfit-Thin",
+     "source_file": "Outfit[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Outfit-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/outfit"
+  },
+  {
+   "family": "Urbanist",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Urbanist.woff2",
+     "sha256": "c0005e09061e649b45c9b98474a10b6b24c388b576301094bb82b76f77d05174",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Urbanist-Regular",
+     "source_file": "Urbanist[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Urbanist-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/urbanist"
+  },
+  {
+   "family": "Plus Jakarta Sans",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "PlusJakartaSans.woff2",
+     "sha256": "7fc7907071ad70324063cf136d060359964900590c3e060f11d6c35601a10066",
+     "axes": {
+      "wght": [
+       200,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "PlusJakartaSans-Regular",
+     "source_file": "PlusJakartaSans[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "PlusJakartaSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/plusjakartasans"
+  },
+  {
+   "family": "Lexend",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Lexend.woff2",
+     "sha256": "d01237998cc4dd20a16300cbb10811c6ca1609cbd4aa6e215d179e9c88c3c2db",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Lexend-Regular",
+     "source_file": "Lexend[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Lexend-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/lexend"
+  },
+  {
+   "family": "Sora",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Sora.woff2",
+     "sha256": "3c847c746b6ff1c3fed5fea5f1938f75aecc56eabab656dec1017cd45d1f9f14",
+     "axes": {
+      "wght": [
+       100,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "Sora-Regular",
+     "source_file": "Sora[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Sora-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/sora"
+  },
+  {
+   "family": "Manrope",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Manrope.woff2",
+     "sha256": "9b0b8fcc56ebb9990b0dc9615671df10f346df86cbda874b172ca2bb12eae58b",
+     "axes": {
+      "wght": [
+       200,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "Manrope-ExtraLight",
+     "source_file": "Manrope[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Manrope-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/manrope"
+  },
+  {
+   "family": "Figtree",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Figtree.woff2",
+     "sha256": "c4a08b7d79d562c98d6b75f566bbfbbf40d13d6c9664286d165408ecbddea5eb",
+     "axes": {
+      "wght": [
+       300,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Figtree-Light",
+     "source_file": "Figtree[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Figtree-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/figtree"
+  },
+  {
+   "family": "Red Hat Display",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "RedHatDisplay.woff2",
+     "sha256": "db0021141b2c6485f6dac2ffd691b52cba502bf9a07ecb54ff67cba3726056ce",
+     "axes": {
+      "wght": [
+       300,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "RedHatDisplay-Regular",
+     "source_file": "RedHatDisplay[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "RedHatDisplay-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/redhatdisplay"
+  },
+  {
+   "family": "Jost",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "Jost.woff2",
+     "sha256": "f784dfc90b736b84397270f16fce20dd8e8ae26f3a30d98d852a0275081d08b4",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Jost-Regular",
+     "source_file": "Jost[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Jost-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/jost"
+  },
+  {
+   "family": "Space Grotesk",
+   "category": "geometric_sans",
+   "files": [
+    {
+     "file": "SpaceGrotesk.woff2",
+     "sha256": "286115c86ff78d9db4cf28e0a49dfb2b7c45c2c39f40afdf3d9b4c9c5681b847",
+     "axes": {
+      "wght": [
+       300,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "SpaceGrotesk-Light",
+     "source_file": "SpaceGrotesk[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "SpaceGrotesk-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/spacegrotesk"
+  },
+  {
+   "family": "Inter",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Inter.woff2",
+     "sha256": "fe0bdc8c4970c86473fdfcc53cc605446112d1dfebc816e439199ac98c05ad15",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Inter-Regular",
+     "source_file": "Inter[opsz,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Inter-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/inter"
+  },
+  {
+   "family": "Roboto",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Roboto.woff2",
+     "sha256": "6864132f584b4a644e3dd26754591caaf962f219d55c468d94c10b8ed8b5718b",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Roboto-Regular",
+     "source_file": "Roboto[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Roboto-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/roboto"
+  },
+  {
+   "family": "DM Sans",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "DMSans.woff2",
+     "sha256": "927fbab86332cfce6588af94512a3c0edd8f8a675e00a20f1b389748ba76c1c3",
+     "axes": {
+      "wght": [
+       100,
+       1000
+      ]
+     },
+     "italic": false,
+     "postscript": "DMSans-9ptRegular",
+     "source_file": "DMSans[opsz,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "DMSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/dmsans"
+  },
+  {
+   "family": "Work Sans",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "WorkSans.woff2",
+     "sha256": "7e955c9655146cc8d9e7b9b58532b21514e381ff85759f2f066b5354b48d5d56",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "WorkSans-Regular",
+     "source_file": "WorkSans[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "WorkSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/worksans"
+  },
+  {
+   "family": "Archivo",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Archivo.woff2",
+     "sha256": "804316cafde416ee6b0b4ff3b15506dc51fad265c9057cdfa5ff0cf3062d7b4d",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Archivo-SemiBold",
+     "source_file": "Archivo[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Archivo-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/archivo"
+  },
+  {
+   "family": "IBM Plex Sans",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "IBMPlexSans.woff2",
+     "sha256": "3bb30390738bce5494d03ba584013e659f825f09df786091f1a605d271e475f2",
+     "axes": {
+      "wght": [
+       100,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "IBMPlexSans-Regular",
+     "source_file": "IBMPlexSans[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "IBMPlexSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/ibmplexsans"
+  },
+  {
+   "family": "Public Sans",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "PublicSans.woff2",
+     "sha256": "323203392e2a824f9421cfdbbff394da438912276cdb8a38a207fab6790e3e90",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "PublicSans-Thin",
+     "source_file": "PublicSans[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "PublicSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/publicsans"
+  },
+  {
+   "family": "Instrument Sans",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "InstrumentSans.woff2",
+     "sha256": "00964a5822b45a588f28ae88e3b0a0374487b4487cfe3da369bc4d00f92f7cbb",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "InstrumentSans-Regular",
+     "source_file": "InstrumentSans[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "InstrumentSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/instrumentsans"
+  },
+  {
+   "family": "Onest",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Onest.woff2",
+     "sha256": "f9269307698bb3be5c32774fb1078086bb7ac4aae3475645950b00cbfcc69be1",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Onest-Regular",
+     "source_file": "Onest[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Onest-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/onest"
+  },
+  {
+   "family": "Geist",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Geist.woff2",
+     "sha256": "ea70509a766464682c530ac3e093fe2dc5bf601d630592025efbaa315e0de49a",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Geist-Regular",
+     "source_file": "Geist[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Geist-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/geist"
+  },
+  {
+   "family": "Be Vietnam Pro",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "BeVietnamPro-400.woff2",
+     "sha256": "0c81a5371b15af3d2ac9c98235e8c1facfea318f28b5be95b2d03a5f09e5ccd2",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "BeVietnamPro-Regular",
+     "source_file": "BeVietnamPro-Regular.ttf"
+    },
+    {
+     "file": "BeVietnamPro-700.woff2",
+     "sha256": "fbcac805d2a3e239c0df36babf37583ebd0be4dd8f3d8663359fc205b082b0e9",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "BeVietnamPro-Bold",
+     "source_file": "BeVietnamPro-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "BeVietnamPro-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/bevietnampro"
+  },
+  {
+   "family": "Open Sans",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "OpenSans.woff2",
+     "sha256": "a8f166f190dead5101b3dca2650411b6477229d5b6dc1c57cc67420ebdcfb813",
+     "axes": {
+      "wght": [
+       300,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "OpenSans-Regular",
+     "source_file": "OpenSans[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "OpenSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/opensans"
+  },
+  {
+   "family": "Source Sans 3",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "SourceSans3.woff2",
+     "sha256": "81dfd6dc39de3681d6106b2fa1db034011001f1b03601f9e5b58c6f8ca959c4e",
+     "axes": {
+      "wght": [
+       200,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "SourceSans3-Roman",
+     "source_file": "SourceSans3[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "SourceSans3-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/sourcesans3"
+  },
+  {
+   "family": "Lato",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "Lato-400.woff2",
+     "sha256": "a1301b91d39f708165bdd0915350d06032d46aa58643367feef833c8e9d7ae7c",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Lato-Regular",
+     "source_file": "Lato-Regular.ttf"
+    },
+    {
+     "file": "Lato-700.woff2",
+     "sha256": "3aaa3a73f56ff24eafad05c248836bae43ee664390949136b3645fbc59709ec0",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Lato-Bold",
+     "source_file": "Lato-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Lato-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/lato"
+  },
+  {
+   "family": "Noto Sans",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "NotoSans.woff2",
+     "sha256": "e05def62da990f768efc9f7eb29dc1ad7ed17bd068f4b813233ee21d9fad629f",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "NotoSans-Regular",
+     "source_file": "NotoSans[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "NotoSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/notosans"
+  },
+  {
+   "family": "Fira Sans",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "FiraSans-400.woff2",
+     "sha256": "05be28bb6c0a932792f332316611887bd87dc6afa5c3d4f2c10b75de7c6bb449",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "FiraSans-Regular",
+     "source_file": "FiraSans-Regular.ttf"
+    },
+    {
+     "file": "FiraSans-700.woff2",
+     "sha256": "f78969a28ad1611890d433c2223dccd2ffe6a61fe7717f7947eb6f45b1a67446",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "FiraSans-Bold",
+     "source_file": "FiraSans-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "FiraSans-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/firasans"
+  },
+  {
+   "family": "Noto Sans KR",
+   "category": "humanist_sans",
+   "files": [
+    {
+     "file": "NotoSansKR.woff2",
+     "sha256": "333f2afd8c749b2cca1136e3f4b744ff7c9a05d3c39c6e432d195a1b2595b146",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "NotoSansKR-Thin",
+     "source_file": "NotoSansKR[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin",
+    "hangul"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "NotoSansKR-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/notosanskr"
+  },
+  {
+   "family": "Nunito",
+   "category": "rounded_sans",
+   "files": [
+    {
+     "file": "Nunito.woff2",
+     "sha256": "0863c19a4f71c1ce61f13de5a25e0a9306d92f43d9d492fe8cb4b2f8cb371d4a",
+     "axes": {
+      "wght": [
+       200,
+       1000
+      ]
+     },
+     "italic": false,
+     "postscript": "Nunito-ExtraLight",
+     "source_file": "Nunito[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Nunito-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/nunito"
+  },
+  {
+   "family": "Quicksand",
+   "category": "rounded_sans",
+   "files": [
+    {
+     "file": "Quicksand.woff2",
+     "sha256": "a1707f05ab5e9312e691682c5a4b058a24b3979b13b1cde8c191be03ddab4ef3",
+     "axes": {
+      "wght": [
+       300,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Quicksand-Light",
+     "source_file": "Quicksand[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Quicksand-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/quicksand"
+  },
+  {
+   "family": "Varela Round",
+   "category": "rounded_sans",
+   "files": [
+    {
+     "file": "VarelaRound-400.woff2",
+     "sha256": "8e096dccfde7bffeff383fdb8663a8540928f23b50aa4233a0839a545a619796",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "VarelaRound-Regular",
+     "source_file": "VarelaRound-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "VarelaRound-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/varelaround"
+  },
+  {
+   "family": "Comfortaa",
+   "category": "rounded_sans",
+   "files": [
+    {
+     "file": "Comfortaa.woff2",
+     "sha256": "dbf0d4f5bf6b91a9a21104c526524bc1d24b55a00e84e67280b62a8f4d5f6d85",
+     "axes": {
+      "wght": [
+       300,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Comfortaa-Regular",
+     "source_file": "Comfortaa[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Comfortaa-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/comfortaa"
+  },
+  {
+   "family": "Fredoka",
+   "category": "rounded_sans",
+   "files": [
+    {
+     "file": "Fredoka.woff2",
+     "sha256": "5b69b47b8b92edd6be1e7a069910eed0fc4748a538116dfc250b127a7fbec966",
+     "axes": {
+      "wght": [
+       300,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Fredoka-Light",
+     "source_file": "Fredoka[wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Fredoka-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/fredoka"
+  },
+  {
+   "family": "Barlow Condensed",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "BarlowCondensed-400.woff2",
+     "sha256": "44c7082b5eead443832afe872c97db5188423503f2c1f1b5c046a050fb050a18",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "BarlowCondensed-Regular",
+     "source_file": "BarlowCondensed-Regular.ttf"
+    },
+    {
+     "file": "BarlowCondensed-700.woff2",
+     "sha256": "10abf787ecc95805fe99f3a716c3e339f5628d9a8b1ad25c314ee7952185bdcf",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "BarlowCondensed-Bold",
+     "source_file": "BarlowCondensed-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "BarlowCondensed-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/barlowcondensed"
+  },
+  {
+   "family": "Oswald",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "Oswald.woff2",
+     "sha256": "36ef1a2e0fd6b69198cd47a2f08510e5308bb4643ac0d70c217e4bdb23a570aa",
+     "axes": {
+      "wght": [
+       200,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Oswald-Regular",
+     "source_file": "Oswald[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Oswald-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/oswald"
+  },
+  {
+   "family": "Roboto Condensed",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "RobotoCondensed.woff2",
+     "sha256": "603715f875dadaae081858e1954663b2853e60e29a77a79fa60fbb303fa9a188",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "RobotoCondensed-Regular",
+     "source_file": "RobotoCondensed[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "RobotoCondensed-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/robotocondensed"
+  },
+  {
+   "family": "Bebas Neue",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "BebasNeue-400.woff2",
+     "sha256": "3af79c3bc3d3e175f3fdfdaeda6746b9661454b1a33e2bd253222784639fd69f",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "BebasNeue-Regular",
+     "source_file": "BebasNeue-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "BebasNeue-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/bebasneue"
+  },
+  {
+   "family": "Archivo Narrow",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "ArchivoNarrow.woff2",
+     "sha256": "a41bb1fe864ab5c5d4ef4460b9aa8166add44b992daa89db50cc22a2ab3cb80b",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "ArchivoNarrow-Regular",
+     "source_file": "ArchivoNarrow[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "ArchivoNarrow-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/archivonarrow"
+  },
+  {
+   "family": "Fjalla One",
+   "category": "condensed_sans",
+   "files": [
+    {
+     "file": "FjallaOne-400.woff2",
+     "sha256": "9b2071c39df3fbd0d656501ab6bc87b196ff224e8ffe189c693e1f2d266973b5",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "FjallaOne-Regular",
+     "source_file": "FjallaOne-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "FjallaOne-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/fjallaone"
+  },
+  {
+   "family": "Anton",
+   "category": "display",
+   "files": [
+    {
+     "file": "Anton-400.woff2",
+     "sha256": "52ed4c86eaa8d22b965c0520e93da63bd7ace6c26753cf49a3677a8fc70d1a06",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Anton-Regular",
+     "source_file": "Anton-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Anton-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/anton"
+  },
+  {
+   "family": "Archivo Black",
+   "category": "display",
+   "files": [
+    {
+     "file": "ArchivoBlack-400.woff2",
+     "sha256": "3eb087feb98a2d1cfb97a3602c2dea5bcebe1343e5d62c1699a7bc74a45fee71",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "ArchivoBlack-Regular",
+     "source_file": "ArchivoBlack-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "ArchivoBlack-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/archivoblack"
+  },
+  {
+   "family": "Bricolage Grotesque",
+   "category": "display",
+   "files": [
+    {
+     "file": "BricolageGrotesque.woff2",
+     "sha256": "8ce0495c150045ee7dc1256ca9f280f248da16db626dea754eeb1700194e9f43",
+     "axes": {
+      "wght": [
+       200,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "BricolageGrotesque-96ptExtraBold",
+     "source_file": "BricolageGrotesque[opsz,wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "BricolageGrotesque-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/bricolagegrotesque"
+  },
+  {
+   "family": "Unbounded",
+   "category": "display",
+   "files": [
+    {
+     "file": "Unbounded.woff2",
+     "sha256": "36e4faff08ca7fa37813f9d35058f55148d6ffd9df77c95f42b9c28d530522e8",
+     "axes": {
+      "wght": [
+       200,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Unbounded-Regular",
+     "source_file": "Unbounded[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Unbounded-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/unbounded"
+  },
+  {
+   "family": "Syne",
+   "category": "display",
+   "files": [
+    {
+     "file": "Syne.woff2",
+     "sha256": "9e19b79fef50d292696692555c0b586c82676d0e84d0f22e3c0082ef27af95a0",
+     "axes": {
+      "wght": [
+       400,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "Syne-Regular",
+     "source_file": "Syne[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Syne-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/syne"
+  },
+  {
+   "family": "Righteous",
+   "category": "display",
+   "files": [
+    {
+     "file": "Righteous-400.woff2",
+     "sha256": "551138e3cf677287fbe4aa954fad653424c2650370f72cdf4a1c7f90c3c80a6d",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Righteous-Regular",
+     "source_file": "Righteous-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Righteous-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/righteous"
+  },
+  {
+   "family": "Lilita One",
+   "category": "display",
+   "files": [
+    {
+     "file": "LilitaOne-400.woff2",
+     "sha256": "31b5de43f58ea3ecc3bbe9714dbc206cf4033eadfd9364bf8667d2c2f1a519e0",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "LilitaOne",
+     "source_file": "LilitaOne-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "LilitaOne-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/lilitaone"
+  },
+  {
+   "family": "Playfair Display",
+   "category": "serif",
+   "files": [
+    {
+     "file": "PlayfairDisplay.woff2",
+     "sha256": "7f6f4be00e2f55175f3e9d23ec05901156d59ea75122ca406a41f41c3b4cdfd8",
+     "axes": {
+      "wght": [
+       400,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "PlayfairDisplay-Regular",
+     "source_file": "PlayfairDisplay[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "PlayfairDisplay-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/playfairdisplay"
+  },
+  {
+   "family": "Merriweather",
+   "category": "serif",
+   "files": [
+    {
+     "file": "Merriweather.woff2",
+     "sha256": "c23ebdd637c523cac6af98a9c43cb7c6e7de539051c5d01916b89c5b554c9720",
+     "axes": {
+      "wght": [
+       300,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Merriweather-Light",
+     "source_file": "Merriweather[opsz,wdth,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Merriweather-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/merriweather"
+  },
+  {
+   "family": "Lora",
+   "category": "serif",
+   "files": [
+    {
+     "file": "Lora.woff2",
+     "sha256": "b8eaec1c7b90505639d0ef978024d6028af2099dbe8845e02b85a3b96ff0ec48",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Lora-Regular",
+     "source_file": "Lora[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Lora-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/lora"
+  },
+  {
+   "family": "DM Serif Display",
+   "category": "serif",
+   "files": [
+    {
+     "file": "DMSerifDisplay-400.woff2",
+     "sha256": "f452f80cdb14fec40d59c12d08ba743cbe95acdba18dfeea91b8c11d29fe9058",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "DMSerifDisplay-Regular",
+     "source_file": "DMSerifDisplay-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "DMSerifDisplay-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/dmserifdisplay"
+  },
+  {
+   "family": "Fraunces",
+   "category": "serif",
+   "files": [
+    {
+     "file": "Fraunces.woff2",
+     "sha256": "3ef477325d628908c7c2775d55753802cd444c9e2569f0a12539d1ef83fda6a5",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Fraunces-9ptBlack",
+     "source_file": "Fraunces[SOFT,WONK,opsz,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Fraunces-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/fraunces"
+  },
+  {
+   "family": "Source Serif 4",
+   "category": "serif",
+   "files": [
+    {
+     "file": "SourceSerif4.woff2",
+     "sha256": "6f230ec89955a6dd6b552ccdf4027f540a07e09cafdb3ea60909bc8febeba883",
+     "axes": {
+      "wght": [
+       200,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "SourceSerif4Roman-Regular",
+     "source_file": "SourceSerif4[opsz,wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "SourceSerif4-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/sourceserif4"
+  },
+  {
+   "family": "Cormorant",
+   "category": "serif",
+   "files": [
+    {
+     "file": "Cormorant.woff2",
+     "sha256": "898d4a16cd7aff52a2ee5ed758db829fe789c61c23881e9e97d506903727e69e",
+     "axes": {
+      "wght": [
+       300,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Cormorant-Light",
+     "source_file": "Cormorant[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Cormorant-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/cormorant"
+  },
+  {
+   "family": "Noto Serif KR",
+   "category": "serif",
+   "files": [
+    {
+     "file": "NotoSerifKR.woff2",
+     "sha256": "881640ae71437ebe1542028c918c8ac125d2c93d5ed29c25c4d42b46d94d9eab",
+     "axes": {
+      "wght": [
+       200,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "NotoSerifKR-ExtraLight",
+     "source_file": "NotoSerifKR[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin",
+    "hangul"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "NotoSerifKR-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/notoserifkr"
+  },
+  {
+   "family": "Instrument Serif",
+   "category": "serif",
+   "files": [
+    {
+     "file": "InstrumentSerif-400.woff2",
+     "sha256": "18dd6d99c8ef58bfb3081dce98b19bce65ef5e61300d99f3869c5c8a19286551",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "InstrumentSerif-Regular",
+     "source_file": "InstrumentSerif-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "InstrumentSerif-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/instrumentserif"
+  },
+  {
+   "family": "Libre Baskerville",
+   "category": "serif",
+   "files": [
+    {
+     "file": "LibreBaskerville.woff2",
+     "sha256": "5c0c4b5cefd583fb7b8e39f8c8c1ac636d53c411886d7e8c2e2d092e05359872",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "LibreBaskerville-Regular",
+     "source_file": "LibreBaskerville[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "LibreBaskerville-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/librebaskerville"
+  },
+  {
+   "family": "Zilla Slab",
+   "category": "slab",
+   "files": [
+    {
+     "file": "ZillaSlab-400.woff2",
+     "sha256": "8b9210edafcfbca11d93a1cb6ba41c134cb7a03deb85198fb472589690032cb4",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "ZillaSlab-Regular",
+     "source_file": "ZillaSlab-Regular.ttf"
+    },
+    {
+     "file": "ZillaSlab-700.woff2",
+     "sha256": "777701065171d69da2da649160b89ced3e832f9fcfa1013918a8ea68bd6a6f50",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "ZillaSlab-Bold",
+     "source_file": "ZillaSlab-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "ZillaSlab-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/zillaslab"
+  },
+  {
+   "family": "Arvo",
+   "category": "slab",
+   "files": [
+    {
+     "file": "Arvo-400.woff2",
+     "sha256": "18b2db0c54dcd115a9db4807028f18109adc2246ed998c22fd2be4514388f677",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Arvo",
+     "source_file": "Arvo-Regular.ttf"
+    },
+    {
+     "file": "Arvo-700.woff2",
+     "sha256": "a5c79d90ad2b48db65d5e20c27e48e69354d06ef0b57c819c617f1d9e491c5c4",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Arvo-Bold",
+     "source_file": "Arvo-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Arvo-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/arvo"
+  },
+  {
+   "family": "Bitter",
+   "category": "slab",
+   "files": [
+    {
+     "file": "Bitter.woff2",
+     "sha256": "2d4099db01cf96a761bf64333521e5f41dec27bd9c1c8cf0f02850e3efc43572",
+     "axes": {
+      "wght": [
+       100,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "Bitter-Thin",
+     "source_file": "Bitter[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Bitter-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/bitter"
+  },
+  {
+   "family": "Josefin Slab",
+   "category": "slab",
+   "files": [
+    {
+     "file": "JosefinSlab.woff2",
+     "sha256": "460ce982b2c1e68e784a65ed5b7dd7f4bb5d1ad1bf1f27fca77d876ede9bc489",
+     "axes": {
+      "wght": [
+       100,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "JosefinSlab-Thin",
+     "source_file": "JosefinSlab[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "JosefinSlab-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/josefinslab"
+  },
+  {
+   "family": "Alfa Slab One",
+   "category": "slab",
+   "files": [
+    {
+     "file": "AlfaSlabOne-400.woff2",
+     "sha256": "ee8df280ea8a5c78b2d7ba8f2774c959bd444734c953e41fec602e252d08805b",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "AlfaSlabOne-Regular",
+     "source_file": "AlfaSlabOne-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "AlfaSlabOne-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/alfaslabone"
+  },
+  {
+   "family": "Pacifico",
+   "category": "script",
+   "files": [
+    {
+     "file": "Pacifico-400.woff2",
+     "sha256": "be11b7d09595c1656830847119ab0f85342d754544a7337d346509adeb541450",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Pacifico-Regular",
+     "source_file": "Pacifico-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Pacifico-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/pacifico"
+  },
+  {
+   "family": "Dancing Script",
+   "category": "script",
+   "files": [
+    {
+     "file": "DancingScript.woff2",
+     "sha256": "1eaaab83e79cdfc6e6ee6cf869a624ce4e6b2ca71d70ca38a48e9e61f295dc62",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "DancingScript-Regular",
+     "source_file": "DancingScript[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "DancingScript-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/dancingscript"
+  },
+  {
+   "family": "Great Vibes",
+   "category": "script",
+   "files": [
+    {
+     "file": "GreatVibes-400.woff2",
+     "sha256": "e599ad0ab878c87cd0e0346c9ac5a05f5e719780071375aec2f743fcba63b630",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "GreatVibes-Regular",
+     "source_file": "GreatVibes-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "GreatVibes-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/greatvibes"
+  },
+  {
+   "family": "Lobster",
+   "category": "script",
+   "files": [
+    {
+     "file": "Lobster-400.woff2",
+     "sha256": "e8efc0d7aecec552d232e9da1477b1344ab65951ad86ded127ba42419613840b",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "Lobster-Regular",
+     "source_file": "Lobster-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Lobster-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/lobster"
+  },
+  {
+   "family": "Caveat",
+   "category": "handwriting",
+   "files": [
+    {
+     "file": "Caveat.woff2",
+     "sha256": "aac01b73383e110d61ca7d082a90f30c4407c4c99a749005c8bc1862b3be0061",
+     "axes": {
+      "wght": [
+       400,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "Caveat-Regular",
+     "source_file": "Caveat[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Caveat-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/caveat"
+  },
+  {
+   "family": "Nanum Pen Script",
+   "category": "handwriting",
+   "files": [
+    {
+     "file": "NanumPenScript-400.woff2",
+     "sha256": "e4940bbb88d584a18593efc7b0fbeecb626d5eb732f75e5074727de260a3c274",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "NanumPen-Regular",
+     "source_file": "NanumPenScript-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin",
+    "hangul"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "NanumPenScript-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/nanumpenscript"
+  },
+  {
+   "family": "Patrick Hand",
+   "category": "handwriting",
+   "files": [
+    {
+     "file": "PatrickHand-400.woff2",
+     "sha256": "edb2888020e99baef4db2cae3cf9783790b79c4a972cbc2861d8efbd7862c610",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "PatrickHand-Regular",
+     "source_file": "PatrickHand-Regular.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "PatrickHand-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/patrickhand"
+  },
+  {
+   "family": "Shadows Into Light",
+   "category": "handwriting",
+   "files": [
+    {
+     "file": "ShadowsIntoLight-400.woff2",
+     "sha256": "3398ff03797a4149b7704117c3187c9884c4925892e46c6f94750ba2a9f77295",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "ShadowsIntoLight",
+     "source_file": "ShadowsIntoLight.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "ShadowsIntoLight-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/shadowsintolight"
+  },
+  {
+   "family": "JetBrains Mono",
+   "category": "mono",
+   "files": [
+    {
+     "file": "JetBrainsMono.woff2",
+     "sha256": "f9d221a057c7f19c0d33024334bca1ec2e0e8d7271fe18c880b068bd97d5567b",
+     "axes": {
+      "wght": [
+       100,
+       800
+      ]
+     },
+     "italic": false,
+     "postscript": "JetBrainsMono-Regular",
+     "source_file": "JetBrainsMono[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "JetBrainsMono-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/jetbrainsmono"
+  },
+  {
+   "family": "IBM Plex Mono",
+   "category": "mono",
+   "files": [
+    {
+     "file": "IBMPlexMono-400.woff2",
+     "sha256": "b7b4f14093c423a377281db6ef6f938aa48f5d2723c179eb6c21c1c13401b1f9",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "IBMPlexMono-Regular",
+     "source_file": "IBMPlexMono-Regular.ttf"
+    },
+    {
+     "file": "IBMPlexMono-700.woff2",
+     "sha256": "2c2af11230f23e5cf8f5d12c03a5d2e6b9229871a3bf5ab3172baf8196a724ae",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "IBMPlexMono-Bold",
+     "source_file": "IBMPlexMono-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "IBMPlexMono-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/ibmplexmono"
+  },
+  {
+   "family": "Space Mono",
+   "category": "mono",
+   "files": [
+    {
+     "file": "SpaceMono-400.woff2",
+     "sha256": "6b52e5c7367a963c80d25a64a0bd46a9d495143252b465a944247845ec8d7ad5",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "SpaceMono-Regular",
+     "source_file": "SpaceMono-Regular.ttf"
+    },
+    {
+     "file": "SpaceMono-700.woff2",
+     "sha256": "addb96446323a13b3754aedf27a059d43b8f54cf01a988d1e71dd2523fbdee12",
+     "axes": {
+      "wght": [
+       700,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "SpaceMono-Bold",
+     "source_file": "SpaceMono-Bold.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "SpaceMono-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/spacemono"
+  },
+  {
+   "family": "Roboto Mono",
+   "category": "mono",
+   "files": [
+    {
+     "file": "RobotoMono.woff2",
+     "sha256": "4a66f699516738dba3a96bb8fc4c49106b9eeae2695b03e4ccdd328169ee7c6e",
+     "axes": {
+      "wght": [
+       100,
+       700
+      ]
+     },
+     "italic": false,
+     "postscript": "RobotoMono-Regular",
+     "source_file": "RobotoMono[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "RobotoMono-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/robotomono"
+  },
+  {
+   "family": "DM Mono",
+   "category": "mono",
+   "files": [
+    {
+     "file": "DMMono-400.woff2",
+     "sha256": "0f3e0c0587f86468b9b58035f2ff65263090116abaff87501b47c585c32d82b6",
+     "axes": {
+      "wght": [
+       400,
+       400
+      ]
+     },
+     "italic": false,
+     "postscript": "DMMono-Regular",
+     "source_file": "DMMono-Regular.ttf"
+    },
+    {
+     "file": "DMMono-500.woff2",
+     "sha256": "40ffe6a631f63ae5e2e362111294c2464bcd099e0cb972210335528538a9be83",
+     "axes": {
+      "wght": [
+       500,
+       500
+      ]
+     },
+     "italic": false,
+     "postscript": "DMMono-Medium",
+     "source_file": "DMMono-Medium.ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "DMMono-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/dmmono"
+  },
+  {
+   "family": "Source Code Pro",
+   "category": "mono",
+   "files": [
+    {
+     "file": "SourceCodePro.woff2",
+     "sha256": "84621622eb1ced7412ff4baaa78f7679bb807f5774ac57d6d65f2ef1261790d3",
+     "axes": {
+      "wght": [
+       200,
+       900
+      ]
+     },
+     "italic": false,
+     "postscript": "SourceCodePro-ExtraLight",
+     "source_file": "SourceCodePro[wght].ttf"
+    }
+   ],
+   "scripts": [
+    "latin"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "SourceCodePro-OFL.txt",
+   "source": "google/fonts@2eb0b48d5f760f62e286216f0859a8c540dbc1bd:ofl/sourcecodepro"
+  },
+  {
+   "family": "Pretendard",
+   "category": "neo_grotesque",
+   "files": [
+    {
+     "file": "Pretendard.woff2",
+     "sha256": "9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4",
+     "axes": {
+      "wght": [
+       45,
+       930
+      ]
+     },
+     "italic": false,
+     "postscript": "PretendardVariable-Regular",
+     "source_file": "web/variable/woff2/PretendardVariable.woff2"
+    }
+   ],
+   "scripts": [
+    "latin",
+    "hangul"
+   ],
+   "license": "OFL-1.1",
+   "license_file": "Pretendard-OFL.txt",
+   "source": "orioncactus/pretendard@v1.3.9:Pretendard-1.3.9.zip"
+  }
+ ]
+}
