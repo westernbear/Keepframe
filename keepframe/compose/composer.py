@@ -7,11 +7,15 @@ import re
 from pathlib import Path
 
 from ..assets import validate_glb
+from ..fonts.css import font_face_css, text_html
+from ..fonts.registry import FontRegistry
+from ..log import get
 from ..ir.gradient import gradient_at, gradient_css
 from ..ir.schema import Element, Scene, UIComponent, UIModel
 from ..ir.paths import scene_asset_path
 from ..ir.tracks import eval_z
 
+log = get("keepframe.compose")
 VENDOR = Path(__file__).parent / "vendor"
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -84,7 +88,7 @@ def _ui_html(model: UIModel | None, element_id: str) -> str:
     return _ui_component(component) if component is not None else ""
 
 
-def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) -> str:
+def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, fonts: FontRegistry | None = None) -> str:
     c = el.canonical
     ax, ay = c.anchor
     style = (
@@ -101,7 +105,7 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) 
         inner = _ui_html(ui, el.id)
     elif el.kind == "text" and c.text is not None and c.font is not None:
         f = c.font
-        inner = (
+        inner = _styled_text(c, scene_dir, fonts) or (
             f'<span style="font-family:{html.escape(f.family_guess)};font-weight:{f.weight};'
             f'font-size:{f.size_px}px;line-height:{c.height}px;color:{c.color or "#000"}">{html.escape(c.text)}</span>'
         )
@@ -115,9 +119,29 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) 
     )
 
 
-def compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path:
+def _styled_text(c, scene_dir: Path, fonts: FontRegistry | None) -> str | None:
+    try:
+        return text_html(c, registry=fonts, scene_dir=scene_dir)
+    except Exception as e:   # fail soft: the legacy span still shows the text
+        log.warning("styled text markup failed (%s); plain span", e)
+        return None
+
+
+def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry) -> str:
+    try:
+        css = font_face_css(scene, scene_dir, fonts)
+    except Exception as e:   # fail soft: system fonts instead of the embedded faces
+        log.warning("font embedding failed (%s)", e)
+        css = ""
+    # Start every embedded face loading before the template awaits document.fonts.ready.
+    return f"<style>\n{css}\n</style><script>for(const f of document.fonts)f.load();</script>" if css else ""
+
+
+def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None) -> Path:
+    """`fonts`: the project's registry (uploads); bundled fonts only when None."""
     scene_dir, out_html = Path(scene_dir), Path(out_html)
-    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui) for e in scene.elements)
+    fonts = fonts or FontRegistry()
+    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
     bgd = scene.background
@@ -137,6 +161,7 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path:
         "{{CUSTOMEASE_JS}}": (VENDOR / "CustomEase.min.js").read_text(),
         "{{THREE_JS}}": (VENDOR / "three-0.128.0.min.js").read_text(),
         "{{GLTFLOADER_JS}}": (VENDOR / "GLTFLoader-0.128.0.js").read_text(),
+        "{{FONTS}}": _fonts_block(scene, scene_dir, fonts),
         "{{ELEMENTS}}": elements,
         "{{SCENE_JSON}}": scene_json,
     }.items():

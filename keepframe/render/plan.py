@@ -343,6 +343,10 @@ def _media_kind(path: Path) -> str:
         ".npz": "application/x-npz",
         ".json": "application/json",
         ".glb": "model/gltf-binary",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
     }.get(path.suffix.lower(), "application/octet-stream")
 
 
@@ -588,6 +592,8 @@ def create_render_plan(
             refs.append((element.canonical.texture, "texture"))
         if element.canonical.model:
             refs.append((element.canonical.model, "texture"))
+        if element.canonical.font is not None and element.canonical.font.file:
+            refs.append((element.canonical.font.file, "texture"))   # uploaded face the composer embeds
         if element.raw:
             refs.append((element.raw, "raw"))
     background = scene.background
