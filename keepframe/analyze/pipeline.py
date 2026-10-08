@@ -190,6 +190,8 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
         if p.get("style_error"):
             out.append(f"{ids[k]}: text style failed ({p['style_error']}); kept the core-mask colour")
+        if p.get("fade_note"):
+            out.append(f"{ids[k]}: {p['fade_note']}")
     return out
 
 
@@ -286,17 +288,21 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        text_futs = {
-            ex.submit(text_props, t, frames, bg, n_frames, 0, infer_font=is_text, plate=plate): (t, is_text)
-            for tracks, is_text in ((text_tracks, True), (shape_tracks, False)) for t in tracks
+        jobs = [(t, is_text, []) for tracks, is_text in ((text_tracks, True), (shape_tracks, False)) for t in tracks]
+        text_futs = {   # text that fades takes its canonical frame at full opacity (Task 9b)
+            ex.submit(text_props, t, frames, bg, n_frames, 0, infer_font=is_text, plate=plate, full_opacity=is_text,
+                      notes=notes): (t, is_text, notes)
+            for t, is_text, notes in jobs
         }
-        for fut, (t, is_text) in text_futs.items():
+        for fut, (t, is_text, notes) in text_futs.items():
             raw, canon, cf, font, color = fut.result()
             p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last}
             if is_text:
                 p.update(text=t.text, font=font, color=color)
             else:
                 p["z"] = 0
+            if notes:
+                p["fade_note"] = "; ".join(notes)
             props[f"{'t' if is_text else 's'}{t.id}"] = p
     log.info("sprites text_props tracks=%s shapes=%s %.2fs", len(text_tracks), len(shape_tracks), time.perf_counter() - t0)
     t0 = time.perf_counter()
