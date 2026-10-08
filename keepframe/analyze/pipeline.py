@@ -165,8 +165,15 @@ def _unclaimed(obj_tracks, shape_tracks, movers):
 
 
 def _mover_messages(props: dict, ids: dict) -> list[str]:
-    return [f"{ids[k]} animates in place; kept as a still sprite" for k, p in props.items()
-            if not k.startswith("_") and p.get("mover") and not p.get("stable") and k in ids]
+    out = []
+    for k, p in props.items():
+        if k.startswith("_") or not p.get("mover") or k not in ids:
+            continue
+        if not p.get("stable"):
+            out.append(f"{ids[k]} animates in place; kept as a still sprite")
+        if p.get("synthetic"):
+            out.append(f"{ids[k]}: {p['synthetic']} px of its texture under text are filled in (synthetic)")
+    return out
 
 
 def _plate_inputs(model: PlateModel):
@@ -217,17 +224,48 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=()):
+def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), notes=None):
+    """Solids (3D candidates) from the tracks no mover claimed; mover pixels are layers already, never a 3D
+    candidate too. Returns (solids, movers): when the movers cannot be applied they are dropped with a note."""
     plate_lab = rgb_to_lab(plate) if plate is not None else None
-    fg = (foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames)
-    shape = frames.shape[1:3]   # movers are layers already: never a 3D candidate too
-    text_masks = (text_exclusion_mask(b, shape) | mover_cover(movers, f, shape) for f, b in enumerate(boxes))
-    return _pk(sd, "solids", find_solids(frames, fg, obj_tracks, text_masks))
+    shape = frames.shape[1:3]
+
+    def run(movers):
+        fg = (foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames)
+        excluded = ((text_exclusion_mask(b, shape) | mover_cover(movers, f, shape)) if movers else text_exclusion_mask(b, shape)
+                    for f, b in enumerate(boxes))
+        return find_solids(frames, fg, _unclaimed(obj_tracks, [], movers)[0], excluded)
+
+    try:
+        solids = run(movers)
+    except Exception as e:
+        if not movers:
+            raise
+        log.exception("solids with movers failed; movers dropped")
+        if notes is not None:
+            notes.append(f"movers dropped: {type(e).__name__}: {e}"[:200])
+        movers, solids = (), run(())
+    return _pk(sd, "solids", solids), list(movers)
 
 
 def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=()):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
+    kept, failed = [], []
+    behind = plate if plate is not None else np.full((*frames.shape[1:3], 3), bg, np.uint8)
+    for m in movers:   # a mover that cannot become a sprite is dropped (its fragments come back), never the analysis
+        try:
+            props[f"m{m.id}"] = mover_props(m, frames, behind, n_frames)
+            kept.append(m)
+        except Exception as e:
+            log.exception("mover m%s dropped", m.id)
+            failed.append(f"mover m{m.id} dropped: {type(e).__name__}: {e}"[:200])
+    if failed:
+        props["_movers_message"] = "; ".join(failed)
+    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, kept)
+    if movers:
+        log.info("sprites movers=%s kept=%s %.2fs", len(movers), len(kept), time.perf_counter() - t0)
+        t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
     with ThreadPoolExecutor(max_workers=workers) as ex:
         text_futs = {
@@ -257,12 +295,6 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             props[f"o{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": z[t.id], "first": t.first, "last": t.last}
     log.info("sprites sprite_props objects=%s workers=%s ecc=%s %.2fs", len(obj_tracks), workers, opts.use_ecc,
              time.perf_counter() - t0)
-    if movers:
-        t0 = time.perf_counter()
-        behind = plate if plate is not None else np.full((*frames.shape[1:3], 3), bg, np.uint8)
-        for m in movers:
-            props[f"m{m.id}"] = mover_props(m, frames, behind, n_frames)
-        log.info("sprites movers=%s %.2fs", len(movers), time.perf_counter() - t0)
     ov = _load_overrides(sd)
     for a, b in ov.get("merge", []):   # merge object b into a (element ids resolved via ids.json at correction time)
         if a in props and b in props:
@@ -495,14 +527,14 @@ def analyze_scene_frames(
     report_stage("plate")
     model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
-    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, model.movers)
     t = _stage_done("plate", t)
     report_stage("solids")
-    solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers)
+    notes: list[str] = []
+    solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers, notes=notes)
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                           movers=model.movers)
+                           movers=movers)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -510,7 +542,8 @@ def analyze_scene_frames(
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), props.get("_message")) if m]
+    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+                            props.get("_message"), props.get("_movers_message")) if m]
     messages += _mover_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
@@ -705,19 +738,20 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         report_stage("plate")
         model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
-    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, model.movers)
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
+    notes: list[str] = []
+    movers = model.movers
     if boundary <= STAGES.index("solids") or redo:
         report_stage("solids")
-        solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers)
+        solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=movers, notes=notes)
     else:
         solids = _pk(sd, "solids")
     t = _stage_done("solids", t)
     if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                               movers=model.movers)
+                               movers=movers)
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)
@@ -727,7 +761,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), props.get("_message")) if m]
+    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+                            props.get("_message"), props.get("_movers_message")) if m]
     messages += _mover_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:

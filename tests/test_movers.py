@@ -8,7 +8,7 @@ from keepframe.ir.colour import delta_e, srgb_to_lab
 from keepframe.ir.gradient import render_gradient
 from keepframe.ir.schema import Gradient, GradientStop
 from keepframe.ir.store import current_scene, init_project, scene_dir
-from keepframe.ir.synth import make_spinning_sphere_video
+from keepframe.ir.synth import make_spinning_sphere_video, make_texture
 from keepframe.review.overlay import snapshot_from_stages
 
 OPTS = AnalyzeOptions(ocr=False, refine=False, use_ecc=False, generate_3d=False)
@@ -86,10 +86,10 @@ def test_rotating_globe_on_gradient_becomes_mover_not_plate(globe):
     assert np.percentile(de[under], 95) < 3 and np.percentile(de, 99) < 3
     assert not plate.stats.get("video_candidate")   # the globe no longer animates the plate
     p = _props(root)["m1"]
-    assert (p["kind"], p["z"], p["mover"], p["stable"]) == ("sprite", 0, True, False)
+    assert (p["kind"], p["z"], p["mover"], p["stable"]) == ("sprite", -1, True, False)
     ids = json.loads((_sd(root) / "stages" / "ids.json").read_text())
     el = scene.element(ids["m1"])
-    assert el.kind == "sprite" and el.z.keys[0].v == 0 and el.visible == (0, len(frames) - 1)
+    assert el.kind == "sprite" and el.z.keys[0].v == -1 and el.visible == (0, len(frames) - 1)
     assert abs(el.canonical.width - 2 * R) <= 6 and abs(el.canonical.height - 2 * R) <= 6
     hits = [MESSAGE.match(s) for s in _messages(root)]
     assert [h.group(1) for h in hits if h] == [ids["m1"]]
@@ -214,7 +214,7 @@ def test_mover_ids_stable_across_rerun(tmp_path):
         rerun(tmp_path, "s1", stage, f"rerun from {stage}")
         again, _ = current_scene(tmp_path, "s1")
         assert json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())["m1"] == eid
-        assert [e.id for e in again.elements] == [eid] and again.element(eid).z.keys[0].v == 0
+        assert [e.id for e in again.elements] == [eid] and again.element(eid).z.keys[0].v == -1
     assert [m.id for m in _movers(tmp_path)] == [1]
     (_sd(tmp_path) / "stages" / "movers.pkl").unlink()   # a project analysed before movers: the plate is rebuilt
     rerun(tmp_path, "s1", "keyframes", "rerun without a movers cache")
@@ -266,7 +266,7 @@ def test_stable_mover_gets_median_texture_and_translation(tmp_path):
     (m,) = _movers(tmp_path)
     assert m.stable and m.residual < 3
     p = _props(tmp_path)["m1"]
-    assert p["stable"] and p["z"] == 0
+    assert p["stable"] and p["z"] == -1
     alpha = p["canon"][..., 3] > 127
     assert abs(int(alpha.sum()) - 120 * 84) <= 120   # the card, without the mask's 2 px dilation
     assert np.abs(p["raw"][[0, 31], 0] - [120, 168]).max() <= 1 and np.abs(p["raw"][:, 1] - 90).max() <= 1
@@ -288,3 +288,171 @@ def test_mover_search_failure_keeps_plate_with_message(tmp_path, monkeypatch):
     assert pj["stats"]["movers_message"] == "movers skipped: RuntimeError: boom" and "movers" not in pj["stats"]
     assert pj["confidence"] <= 0.5 * bconf
     assert "movers skipped: RuntimeError: boom" in _messages(tmp_path)
+
+
+# --- review round 1 -------------------------------------------------------------------------------------
+
+
+class _Ocr:
+    """Fake OCR: the same box of copy in every frame."""
+    def __init__(self, box, text="Launch"):
+        self.box, self.text = box, text
+
+    def __call__(self, frame):
+        return [(self.text, self.box, 0.99)]
+
+
+OCR_OPTS = AnalyzeOptions(ocr=True, refine=False, use_ecc=False, generate_3d=False)
+DISC = (lambda yy, xx: (xx - CX) ** 2 + (yy - CY) ** 2 <= (R - 1) ** 2)(*np.mgrid[:H, :W])
+
+
+def _lift(frames, box, fs, lift=14):
+    """A faint layer: the plate, lighter by `lift` (ΔE76 ≈ 6.8), at box in frames fs."""
+    x0, y0, x1, y1 = box
+    for f in fs:
+        frames[f, y0:y1, x0:x1] = np.clip(_plate()[y0:y1, x0:x1].astype(int) + lift, 0, 255).astype(np.uint8)
+    return frames
+
+
+def test_faint_far_element_is_not_claimed(tmp_path):
+    frames = _globe_clip(n=24)
+    far = (10, 10, 60, 40)   # ΔE76 ≈ 6.8 above the plate, ~100 px from the globe
+    faint = _track(7, range(24), far)
+    _lift(frames, far, range(24))
+    sample = sample_frames(len(frames))
+    est = established_mask((H, W), [], [faint], len(frames), sample)
+    (m,) = find_movers(frames, sample, instability(frames, sample, est), [faint], [], plate=_plate(), established=est)
+    assert m.claimed == []
+    frames = _lift(_globe_clip(n=32), (10, 120, 70, 170), range(12))   # through the pipeline: it stays a layer
+    analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
+    tracks = pickle.loads((_sd(tmp_path) / "stages" / "tracks.pkl").read_bytes())
+    mine = [t.id for t in tracks if all(r.bbox[2] <= 100 for r in t.regions.values())]
+    assert mine and all(f"o{i}" in _props(tmp_path) for i in mine) and not set(mine) & set(_movers(tmp_path)[0].claimed)
+
+
+@pytest.mark.parametrize("sigma", [1.5, 3.0])
+def test_noisy_globe_mover_bbox_and_visibility(tmp_path, sigma):
+    frames = _globe_clip(n=32)
+    frames[:12] = _plate()   # the globe appears at frame 12
+    noise = np.random.default_rng(0).normal(0, sigma, frames.shape)
+    frames = np.clip(frames + noise, 0, 255).round().astype(np.uint8)
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
+    (m,) = _movers(tmp_path)
+    assert min(m.frames) == 12 and max(m.frames) == 31
+    assert np.abs(np.subtract(_union_box(m), GLOBE_BOX)).max() <= 4
+    ids = json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())
+    assert scene.element(ids["m1"]).visible == (12, 31)
+
+
+def test_mover_texture_covers_the_globe(globe):
+    root, scene, frames = globe
+    p = _props(root)["m1"]
+    (m,) = _movers(root)
+    x0, y0, x1, y1 = m.frames[p["cf"]][0]
+    a = np.zeros((H, W))
+    a[y0:y1, x0:x1] = p["canon"][..., 3] / 255.0
+    assert a[DISC].mean() >= 0.95   # the dark body is the globe, not plate
+    plate = load_plate(_sd(root)).image.astype(np.float64)
+    comp = plate.copy()
+    comp[y0:y1, x0:x1] = plate[y0:y1, x0:x1] * (1 - a[y0:y1, x0:x1, None]) + p["canon"][..., :3] * a[y0:y1, x0:x1, None]
+    de = delta_e(srgb_to_lab(comp), srgb_to_lab(frames[p["cf"]]))
+    assert np.percentile(de[DISC], 95) < 1.0
+
+
+def test_mover_draws_below_text(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+    from keepframe.ir.tracks import eval_z
+    frames = _globe_clip(n=24)
+    box = (CX - R - 40, CY - 10, CX - R + 24, CY + 10)   # left of the globe, over its edge, from frame 0
+    frames[:, box[1]:box[3], box[0]:box[2]] = (245, 245, 245)
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OCR_OPTS, ocr=_Ocr(box))
+    ids = json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())
+    mover, text = scene.element(ids["m1"]), next(e for e in scene.elements if e.kind == "text")
+    assert text.visible[0] == 0 and scene.elements.index(text) < scene.elements.index(mover)   # a tie would draw it first
+    assert eval_z(mover, 0) < min(eval_z(e, 0) for e in scene.elements if e is not mover)
+    got = composite_scene(scene, _sd(tmp_path), 5) * 255
+    over = np.zeros((H, W), bool)
+    over[box[1] + 4:box[3] - 4, CX - R + 4:box[2] - 4] = True   # the title where it covers the globe
+    assert np.percentile(delta_e(srgb_to_lab(got[over]), srgb_to_lab(frames[5][over])), 95) < 3
+
+
+@pytest.mark.browser
+def test_negative_z_layer_renders_above_the_stage_and_below_others(tmp_path):
+    from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
+    from keepframe.ir.synth import render_frames
+    make_texture(tmp_path / "assets" / "under.png", "rect", 40, 40, (200, 40, 40))
+    make_texture(tmp_path / "assets" / "over.png", "rect", 40, 40, (40, 40, 200))
+
+    def el(eid, x, z):
+        return Element(id=eid, kind="sprite", visible=(0, 0), canonical=Canonical(width=40, height=40, texture=f"assets/{eid}.png"),
+                       tracks={"x": Track(keys=[Keyframe(t=0, v=x)]), "y": Track(keys=[Keyframe(t=0, v=40)])},
+                       z=Track(keys=[Keyframe(t=0, v=z)]))
+
+    scene = Scene(id="z", size=(120, 80), fps=30, frames=1, background=Background(value="#101418"),
+                  elements=[el("over", 70, 0), el("under", 50, -1)])
+    (img,) = render_frames(scene, tmp_path, [0], renderer="browser")
+    assert np.abs(img[40, 35] - (200, 40, 40)).max() < 12   # the z −1 layer shows over the stage background
+    assert np.abs(img[40, 62] - (40, 40, 200)).max() < 12   # and under the z 0 layer
+
+
+def _titled_globe(n=24):
+    """The globe with a text-like row of bars over its middle: the gaps between glyphs show the globe."""
+    clean = _globe_clip(n=n)
+    frames = clean.copy()
+    box = (CX - 24, CY - 9, CX + 24, CY + 9)
+    for x in range(box[0] + 2, box[2] - 2, 8):
+        frames[:, box[1] + 2:box[3] - 2, x:x + 4] = (250, 250, 250)
+    return clean, frames, box
+
+
+def test_text_over_mover_is_filled_in(tmp_path):
+    clean, frames, box = _titled_globe()
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OCR_OPTS, ocr=_Ocr(box))
+    ids = json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())
+    p = _props(tmp_path)["m1"]
+    (m,) = _movers(tmp_path)
+    assert p["synthetic"] > 0 and m.cut
+    msgs = _messages(tmp_path)
+    assert f"{ids['m1']}: {p['synthetic']} px of its texture under text are filled in (synthetic)" in msgs
+    alone = scene.model_copy(update={"elements": [scene.element(ids["m1"])]})   # plate + the mover sprite
+    from keepframe.analyze.composite import composite_scene
+    cf = p["cf"]
+    got = composite_scene(alone, _sd(tmp_path), cf) * 255
+    x0, y0, x1, y1 = box
+    gaps = np.zeros((H, W), bool)
+    gaps[y0 + 3:y1 - 3, x0 + 3:x1 - 3] = True
+    gaps &= (frames[cf] < 240).any(-1)   # between the bars
+    bx0, by0, bx1, by1 = m.frames[cf][0] if m.cut.get(cf) is None else (
+        min(m.frames[cf][0][0], m.cut[cf][0][0]), min(m.frames[cf][0][1], m.cut[cf][0][1]),
+        max(m.frames[cf][0][2], m.cut[cf][0][2]), max(m.frames[cf][0][3], m.cut[cf][0][3]))
+    alpha = np.zeros((H, W))
+    alpha[by0:by1, bx0:bx1] = p["canon"][..., 3]
+    assert (alpha[gaps] == 255).all()   # opaque: the plate does not show between the glyphs
+    ring = np.zeros((H, W), bool)
+    ring[y0 - 8:y1 + 8, x0 - 8:x1 + 8] = True
+    ring[y0:y1, x0:x1] = False
+    globe = srgb_to_lab(np.median(clean[cf][ring], 0))
+    de = lambda px: float(delta_e(srgb_to_lab(np.median(px, 0).astype(np.float64)), globe))
+    assert de(got[gaps]) < 6 and de(got[gaps]) < de(load_plate(_sd(tmp_path)).image[gaps])   # globe-coloured
+
+
+def test_mover_props_failure_drops_the_mover_and_keeps_its_fragments(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("props exploded")
+
+    monkeypatch.setattr("keepframe.analyze.pipeline.mover_props", boom)
+    scene = analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    props = _props(tmp_path)
+    assert not any(k.startswith("m") for k in props) and any(k.startswith("o") for k in props) and scene.elements
+    assert "mover m1 dropped: RuntimeError: props exploded" in _messages(tmp_path)
+
+
+def test_mover_cover_failure_in_solids_drops_the_movers(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("cover exploded")
+
+    monkeypatch.setattr("keepframe.analyze.pipeline.mover_cover", boom)
+    analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    assert len(_movers(tmp_path)) == 1   # found by the plate stage, then dropped
+    assert not any(k.startswith("m") for k in _props(tmp_path))
+    assert "movers dropped: RuntimeError: cover exploded" in _messages(tmp_path)
