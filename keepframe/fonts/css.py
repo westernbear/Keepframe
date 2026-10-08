@@ -16,19 +16,22 @@ import html
 import io
 import math
 import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Iterable
 
 from ..ir.gradient import gradient_css
 from ..ir.schema import Canonical, FontGuess, Gradient, GradientStop, Scene, TextStyle
 from ..log import get
-from .raster import TextFonts, _finite, embedded_face, fade_stops, first_baseline, hex_rgb, resolve_fonts, split_runs
+from .raster import (TextFonts, bounded_style, embedded_face, fade_stops, first_baseline, hex_rgb, resolve_fonts,
+                     split_runs, text_size)
 from .registry import FontFace, FontRegistry, safe_alias
 
 log = get("keepframe.fonts")
 BASIC_LATIN = frozenset(range(0x20, 0x7F))
 _GENERIC = {"serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"}
-_MIME = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf"}
+_SUBSET_LOCK = threading.Lock()   # one subset per key at a time (fontTools work is CPU-bound anyway)
 SUBSET_VERSION = "1"
 
 
@@ -72,16 +75,10 @@ def families(font: FontGuess, fonts: TextFonts) -> str:
     return ",".join(out)
 
 
-def _clean(style: TextStyle | None) -> TextStyle:
-    """Non-finite offsets, tracking and shear count as 0, as the raster reads them."""
-    style = style or TextStyle()
-    return style.model_copy(update={k: _finite(getattr(style, k)) for k in ("dx", "dy", "tracking_em", "shear_deg")})
-
-
 def _layout_css(font: FontGuess, style: TextStyle, box_wh: tuple[float, float], text: str, fonts: TextFonts) -> list[str]:
     lines = max(1, text.count("\n") + 1)
     line_h = round(float(box_wh[1]) / lines, 4)
-    size = round(float(font.size_px), 4)
+    size = text_size(font.size_px, line_h)
     decl = ["position:absolute", f"left:{_n(style.dx)}px", f"top:{_n(style.dy)}px",
             f"font-family:{families(font, fonts)}", f"font-weight:{fonts.weight}", "font-style:normal",
             f"font-size:{_n(size)}px", f"line-height:{_n(line_h)}px", "font-synthesis:none", "font-kerning:normal",
@@ -122,7 +119,7 @@ def _fill_css(color: str | None, style: TextStyle, box_wh: tuple[float, float]) 
 def text_css(font: FontGuess, color: str | None, style: TextStyle | None, box_wh: tuple[float, float], *, text: str = "",
              registry: FontRegistry | None = None, scene_dir: Path | None = None, fonts: TextFonts | None = None) -> str:
     """Declarations of the fill layer's span (layout + paint)."""
-    style = _clean(style)
+    style = bounded_style(style, box_wh)
     fonts = fonts or resolve_fonts(font, text, registry, scene_dir)
     if fonts is None:
         raise LookupError(f"no font for {font.family_guess!r}")
@@ -142,8 +139,8 @@ def text_html(c: Canonical, *, registry: FontRegistry | None = None, scene_dir: 
     fonts = resolve_fonts(c.font, c.text, registry, scene_dir)
     if fonts is None:
         return None
-    style = _clean(c.style)
     box = (c.width, c.height)
+    style = bounded_style(c.style, box)
     base = ";".join(_layout_css(c.font, style, box, c.text, fonts))
     text = html.escape(c.text)
     attr = lambda decl: html.escape(";".join(decl) if not isinstance(decl, str) else decl, quote=True)
@@ -192,6 +189,17 @@ def subset_font(face: FontFace, codepoints: Iterable[int], *, wght: float | None
         return path.read_bytes()
     except OSError:
         pass
+    with _SUBSET_LOCK:
+        try:
+            return path.read_bytes()   # another thread made it meanwhile
+        except OSError:
+            pass
+        data = _subset(face, cps, wght)
+        _cache_write(root, path, data)
+    return data
+
+
+def _subset(face: FontFace, cps: list[int], wght: float | None) -> bytes:
     import logging
     from fontTools import subset
     from fontTools.ttLib import TTFont
@@ -199,14 +207,22 @@ def subset_font(face: FontFace, codepoints: Iterable[int], *, wght: float | None
     for name in ("fontTools.subset", "fontTools.varLib"):   # both log every table at INFO
         logging.getLogger(name).setLevel(logging.WARNING)
     raw = sfnt_bytes(face.path, face.index) if face.path.suffix.lower() == ".woff2" else None
-    tt = TTFont(io.BytesIO(raw)) if raw else TTFont(str(face.path), fontNumber=face.index)
     opts = subset.Options()
     opts.notdef_outline = True
     opts.hinting = False
     opts.legacy_kern = True
-    sub = subset.Subsetter(opts)
-    sub.populate(unicodes=cps)
-    sub.subset(tt)
+    try:
+        tt = TTFont(io.BytesIO(raw)) if raw else TTFont(str(face.path), fontNumber=face.index)
+        sub = subset.Subsetter(opts)
+        sub.populate(unicodes=cps)
+        sub.subset(tt)
+    except Exception:
+        if not raw:
+            raise
+        tt = TTFont(str(face.path), fontNumber=face.index)   # FreeType's tables did not subset: fontTools decodes
+        sub = subset.Subsetter(opts)
+        sub.populate(unicodes=cps)
+        sub.subset(tt)
     if wght is not None and "fvar" in tt:
         from fontTools.varLib import instancer
         limits = {a.axisTag: (float(wght) if a.axisTag == "wght" else None) for a in tt["fvar"].axes}
@@ -214,26 +230,34 @@ def subset_font(face: FontFace, codepoints: Iterable[int], *, wght: float | None
     tt.flavor = "woff2"
     buf = io.BytesIO()
     tt.save(buf)
-    data = buf.getvalue()
+    return buf.getvalue()
+
+
+def _cache_write(root: Path, path: Path, data: bytes) -> None:
+    tmp = None
     try:
         root.mkdir(parents=True, exist_ok=True)
-        tmp = root / f".{key}.{os.getpid()}.tmp"
-        tmp.write_bytes(data)
+        fd, tmp = tempfile.mkstemp(dir=root, prefix=f".{path.stem}.", suffix=".tmp")
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
         os.replace(tmp, path)
+        tmp = None
     except OSError as e:   # read-only home: embed without caching
         log.warning("font subset cache unavailable (%s)", e)
-    return data
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def _font_data(face: FontFace, cps: set[int], wght: float | None, cache_dir) -> tuple[str, bytes] | None:
     try:
         return "font/woff2", subset_font(face, cps, wght=wght, cache_dir=cache_dir)
-    except Exception as e:   # a font fontTools cannot cut: embed it whole, as Chromium may still read it
-        log.warning("font subset failed for %s (%s); embedding the whole file", face.family, e)
-        try:
-            return _MIME.get(face.path.suffix.lower(), "font/ttf"), face.path.read_bytes()
-        except OSError:
-            return None
+    except Exception as e:   # never embed a whole (possibly uploaded, megabytes) file: the browser falls back
+        log.warning("font subset failed for %s (%s); not embedded", face.family, e)
+        return None
 
 
 def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry | None = None, *,

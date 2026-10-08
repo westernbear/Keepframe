@@ -148,7 +148,8 @@ def test_fonts_css_only_used_families_safe_names(tmp_path):
     assert '<span style="font-family:sans-serif;font-weight:400;font-size:20.0px;line-height:60.0px;color:#ffffff">legacy</span>' in html
     hostile = _el("d", "x", FontGuess(family_guess="x;}</style><script>alert(1)</script>", size_px=20), TextStyle())
     html = compose(scene.model_copy(update={"elements": els + [hostile]}), tmp_path, tmp_path / "c.html").read_text()
-    assert "alert(1)" not in html.split("<script>")[0] and "</style><script>alert" not in html
+    body = html.split("<body>", 1)[1].split("<script>", 1)[0]          # the element markup, before the page scripts
+    assert 'id="el-d"' in body and "alert(1)" not in body and "</style><script>alert" not in html
 
 
 def _legacy_scene():
@@ -214,3 +215,128 @@ def test_textraster_draws_bundled_families(tmp_path):
     assert inter is not None and fallback is not None
     assert measure("Hamburg", 40, "Inter") == (inter.shape[1], inter.shape[0])
     assert inter.shape != fallback.shape or not np.array_equal(inter, fallback)   # Inter, not fontconfig's DejaVu
+
+
+# --- fix round 1 (R33-R35) ---------------------------------------------------------------------------------
+
+def test_generic_and_unknown_families_resolve_to_bundled_faces(tmp_path):
+    from keepframe.fonts.css import font_face_css, text_css
+    from keepframe.fonts.raster import resolve_fonts
+    want = {"sans-serif": "Inter", "Zzz Missing Sans": "Inter", "system-ui": "Inter", "serif": "Source Serif 4",
+            "monospace": "JetBrains Mono"}
+    for family, bundled in want.items():
+        fonts = resolve_fonts(FontGuess(family_guess=family), "Hi", REG)
+        assert (fonts.primary.family, fonts.primary.source) == (bundled, "bundled"), family
+    assert resolve_fonts(FontGuess(family_guess="sans-serif"), "가 Hi", REG).fallback.family == "Pretendard"
+    assert resolve_fonts(FontGuess(family_guess="serif"), "가 Hi", REG).fallback.family == "Noto Serif KR"
+    assert text_css(FontGuess(family_guess="sans-serif"), "#fff", TextStyle(), (200, 40), text="Hi").count("font-family:kf-inter;") == 1
+    scene = Scene(id="s", size=(320, 180), fps=30, frames=5, background=Background(),
+                  elements=[_el("a", "Hi", FontGuess(family_guess="sans-serif"), TextStyle()),
+                            _el("b", "Hi", FontGuess(family_guess="serif"), TextStyle())])
+    css = font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "cache")
+    assert re.findall(r"font-family:([^;]+);", css) == ["kf-inter", "kf-source-serif-4"]
+
+
+def _crafted_ttf(tmp_path, loca_end: int):
+    """Inter as a plain TTF whose loca claims the glyphs run to `loca_end`."""
+    import struct
+    from keepframe.fonts.sfnt import sfnt_bytes
+    data = bytearray(sfnt_bytes(REG.face("Inter").path))
+    num = struct.unpack(">H", data[4:6])[0]
+    for i in range(num):
+        tag, _, offset, length = struct.unpack(">4sLLL", data[12 + 16 * i:28 + 16 * i])
+        if tag == b"loca":
+            data[offset + length - 4:offset + length] = struct.pack(">L", loca_end)
+    path = tmp_path / "crafted.ttf"
+    path.write_bytes(bytes(data))
+    return path
+
+
+def test_sfnt_caps_rebuilt_glyf_from_crafted_loca(tmp_path):
+    import time
+    from keepframe.fonts import sfnt
+    t = time.time()
+    assert sfnt.sfnt_bytes(_crafted_ttf(tmp_path, 0xFFFFFF00)) is None      # ~4 GB claim: refused, nothing allocated
+    assert time.time() - t < 5
+    tables = {"head": bytes(50) + b"\x00\x01" + bytes(2), "maxp": bytes(4) + b"\x00\x01", "glyf": bytes(10),
+              "loca": (0).to_bytes(4, "big") + (200 * 2**20).to_bytes(4, "big")}
+    assert sfnt._glyf_read_length(tables, 10**6) is None                     # past 64 MiB / 16x the file
+    tables["loca"] = (0).to_bytes(4, "big") + (40).to_bytes(4, "big")
+    assert sfnt._glyf_read_length(tables, 10**6) == 40
+
+
+def test_sfnt_errors_fall_back_to_fonttools(monkeypatch):
+    from keepframe.fonts import sfnt
+    odd = {"head": bytes(50) + b"\x00\x01" + bytes(2), "maxp": bytes(4) + b"\x00\x01", "glyf": bytes(10), "loca": bytes(7)}
+    assert sfnt._loca_ok(odd) is False                                       # odd-length loca: no exception
+    def boom(_tables):
+        raise ValueError("bad loca")
+    monkeypatch.setattr(sfnt, "_loca_ok", boom)
+    assert sfnt.sfnt_bytes(REG.face("Inter").path) is None
+
+
+def test_failed_subset_embeds_no_whole_font(tmp_path, monkeypatch):
+    from keepframe.fonts import css as fcss
+    def boom(*_a, **_k):
+        raise RuntimeError("cannot subset")
+    monkeypatch.setattr(fcss, "subset_font", boom)
+    name = "assets/font-0123456789abcdef.woff2"
+    (tmp_path / "assets").mkdir()
+    shutil.copyfile(REG.face("Lobster").path, tmp_path / name)
+    font = FontGuess(family_guess="Brand Script", size_px=30, source="uploaded", file=name)
+    scene = Scene(id="s", size=(320, 180), fps=30, frames=5, background=Background(), elements=[_el("t", "Brand", font)])
+    assert fcss.font_face_css(scene, tmp_path, REG, cache_dir=tmp_path / "cache") == ""
+    html = compose(scene, tmp_path, tmp_path / "c.html").read_text()
+    assert "data:font" not in html and 'class="kf-text"' in html
+
+
+def test_subset_cache_writes_are_atomic_across_threads(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from keepframe.fonts.css import subset_font
+    face = REG.face("Playfair Display")
+    with ThreadPoolExecutor(6) as pool:
+        out = list(pool.map(lambda _: subset_font(face, [0x41, 0x42], cache_dir=tmp_path), range(6)))
+    assert len(set(out)) == 1 and out[0][:4] == b"wOF2"
+    assert [p.name for p in tmp_path.iterdir() if not p.name.endswith(".woff2")] == []
+    assert len(list(tmp_path.glob("*.woff2"))) == 1
+
+
+ABSURD = r"""
+import json, resource, sys, time
+from keepframe.fonts.css import text_css, text_html
+from keepframe.fonts.raster import glyph_alpha, render_styled
+from keepframe.fonts.registry import FontRegistry
+from keepframe.ir.schema import Canonical, FontGuess, TextEffect, TextStyle
+reg = FontRegistry()
+t = time.time()
+style = TextStyle(tracking_em=1e6, shear_deg=89.9, dx=1e9, dy=-1e9,
+                  effects=[TextEffect(kind="stroke", color="#000", width=1e6),
+                           TextEffect(kind="shadow", color="#000", dx=1e9, dy=1e9, blur=1e6),
+                           TextEffect(kind="glow", color="#fff", blur=1e9)])
+font = FontGuess(family_guess="Inter", size_px=1e6)
+shapes = [render_styled(["W" * 100000], font, "#fff", style, registry=reg, box=(1e6, 1e6)).shape,
+          render_styled(["W" * 100000, "x"], font, "#fff", style, registry=reg).shape,
+          render_styled(["Hi"], font, "#fff", style, registry=reg, box=(200, 60)).shape,
+          glyph_alpha(["W" * 5000], 1e6, [reg.face("Inter")], weight=400, tracking_em=1e6, pad=10**6).shape]
+css = text_html(Canonical(width=200, height=60, text="Hi", font=font, style=style), registry=reg)
+print("RESULT " + json.dumps({"shapes": shapes, "took": time.time() - t, "css": css,
+                             "rss_kb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}))
+"""
+
+
+def test_absurd_style_values_are_bounded():
+    import subprocess
+    import sys
+    import resource
+    def limit():   # a regression must fail here, not take the shared host's memory
+        resource.setrlimit(resource.RLIMIT_AS, (6 * 2**30, 6 * 2**30))
+    r = subprocess.run([sys.executable, "-c", ABSURD], capture_output=True, text=True, timeout=120, preexec_fn=limit)
+    assert r.returncode == 0, r.stderr[-2000:]
+    res = json.loads(next(line for line in r.stdout.splitlines() if line.startswith("RESULT "))[7:])
+    print(f"absurd values: {res['took']:.1f}s, max RSS {res['rss_kb'] / 1024:.0f} MB, shapes {res['shapes']}")
+    assert all(s[0] * s[1] <= 8_000_000 for s in res["shapes"])
+    assert res["took"] < 30 and res["rss_kb"] < 1_500_000
+    css = res["css"]
+    sizes = [float(v) for v in re.findall(r"font-size:([0-9.]+)px", css)]
+    assert sizes and max(sizes) <= 2048                                       # CSS draws the clamped size the raster drew
+    assert max(float(v) for v in re.findall(r"blur\(([0-9.]+)px\)", css)) <= 64

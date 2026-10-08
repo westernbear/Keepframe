@@ -44,6 +44,22 @@ FONT_SUFFIXES = (".ttf", ".otf", ".woff", ".woff2")
 _HEX = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
 _HANGUL = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 _FT_LOCK = threading.RLock()   # cached FreeType faces are shared; FreeType faces are not thread-safe
+# Scene JSON is untrusted: every size that reaches an allocation is bounded (clamped and logged), the same way
+# on both sides so sane values keep parity.
+MAX_TEXT_PX = 2048.0           # font size, and at most 8x the line box
+MAX_BOX_SIDE = 16384           # texture side
+MAX_CANVAS_PX = 8_000_000      # 1x canvas: box + effect padding
+MAX_PAD = 512
+MAX_GLYPH_MASK = 16_000_000    # one Pillow draw call (its mask spans the whole string), supersampled
+MAX_CHARS = 4000               # characters laid out per element
+MAX_STROKE_PX, MAX_BLUR_PX, MAX_OFFSET_PX = 32.0, 128.0, 256.0   # also <= 1/4, 1, 1 x the box side
+TRACKING_EM = (-0.5, 2.0)
+MAX_SHEAR_DEG = 60.0
+FALLBACK_SCALE = (0.25, 4.0)
+# Styled text in a generic or uninstalled family draws a bundled face on both sides (R34).
+DEFAULT_FAMILY = "Inter"
+GENERIC_FAMILIES = {"serif": "Source Serif 4", "ui-serif": "Source Serif 4", "monospace": "JetBrains Mono",
+                    "ui-monospace": "JetBrains Mono", "cursive": "Dancing Script"}
 
 
 @dataclass(frozen=True)
@@ -66,6 +82,10 @@ def _finite(v: float, default: float = 0.0) -> float:
     except (TypeError, ValueError):
         return default
     return v if math.isfinite(v) else default
+
+
+def _clamp(v: float, lo: float, hi: float, default: float = 0.0) -> float:
+    return min(max(_finite(v, default), lo), hi)
 
 
 def lu(v: float) -> float:
@@ -169,15 +189,6 @@ def scene_font_file(font: FontGuess, scene_dir: Path | None) -> Path | None:
     return path if path.suffix.lower() in FONT_SUFFIXES and path.is_file() else None
 
 
-def _system_face(family: str, hangul: bool) -> FontFace | None:
-    from ..edit.textraster import _font_match
-    try:
-        path, index = _font_match(family, hangul)
-    except LookupError:
-        return None
-    return FontFace(family, "system", Path(path), index)
-
-
 def embedded_face(font: FontGuess, registry: FontRegistry, scene_dir: Path | None = None) -> bool:
     """True when the primary face is a bundled or uploaded file (drawn from an embedded @font-face)."""
     if scene_font_file(font, scene_dir) is not None:
@@ -191,7 +202,8 @@ def _needs_glyph(ch: str) -> bool:
 
 def resolve_fonts(font: FontGuess, text: str = "", registry: FontRegistry | None = None,
                   scene_dir: Path | None = None) -> TextFonts | None:
-    """Primary face (scene font file > uploaded > bundled > system), weight, and the fallback for what it lacks."""
+    """Primary face (scene font file > uploaded > bundled > exact system family > a bundled stand-in for generic
+    and uninstalled names), weight, and the fallback for what it lacks."""
     registry = registry or FontRegistry()
     primary = None
     path = scene_font_file(font, scene_dir)
@@ -200,21 +212,22 @@ def resolve_fonts(font: FontGuess, text: str = "", registry: FontRegistry | None
             primary = _file_face(str(path), _mtime(path), font.family_guess, font.postscript)
         except Exception as e:   # unreadable upload: fall back to the registry
             log.warning("scene font %s unreadable: %s", path.name, e)
+    weight = min(max(int(_finite(font.weight, 400)), 100), 900)
     if primary is None:
-        primary = registry.face(font.family_guess, min(max(int(font.weight), 100), 900))
-    if primary is None:
-        primary = _system_face(font.family_guess, False)
+        primary = registry.face(font.family_guess, weight)
+    if primary is None:   # Chromium and fontconfig would each pick their own font for these names
+        primary = registry.face(GENERIC_FAMILIES.get(font.family_guess.casefold(), DEFAULT_FAMILY), weight)
     if primary is None:
         return None
-    fallback, fb_weight, scale = None, font.fallback_weight or font.weight, 1.0
+    fallback, fb_weight, scale = None, font.fallback_weight or weight, 1.0
     if font.fallback:
-        fallback = registry.face(font.fallback, min(max(int(fb_weight), 100), 900))
-        scale = float(font.fallback_scale) if math.isfinite(font.fallback_scale) and font.fallback_scale > 0 else 1.0
-    else:
+        fallback = registry.face(font.fallback, min(max(int(_finite(fb_weight, 400)), 100), 900))
+        scale = _clamp(font.fallback_scale, *FALLBACK_SCALE, default=1.0)
+    if fallback is None:
         covered = cmap(primary)
         if any(_HANGUL.match(ch) for ch in text if _needs_glyph(ch) and ord(ch) not in covered):
-            family, fb_weight = registry.hangul_fallback(font.family_guess, font.weight)
-            fallback = registry.face(family, fb_weight)
+            family, fb_weight = registry.hangul_fallback(primary.family, weight)
+            fallback, scale = registry.face(family, fb_weight), 1.0
     if fallback is not None and (fallback.path, fallback.index) == (primary.path, primary.index):
         fallback = None
     return TextFonts(primary, fallback, clamp_weight(primary, font.weight),
@@ -267,28 +280,86 @@ def _length(font, text: str, feats: tuple[str, ...] | None) -> float:
 
 
 def _layout_line(line: str, fonts: TextFonts, size: float, ss: int, t: float):
-    """Draw ops (x, text, font, features) at ss× and the line's advance (spacing after every character)."""
+    """Draw ops (x, text, font, features, advance) at ss× and the line's advance (spacing after every character)."""
     ops, x = [], 0.0
     for run, fb in split_runs(line, fonts):
         face = fonts.fallback if fb else fonts.primary
-        font = pil_font(face, size * (fonts.fallback_scale if fb else 1.0) * ss, fonts.fallback_weight if fb else fonts.weight)
+        px = size * (fonts.fallback_scale if fb else 1.0)
+        font = pil_font(face, px * ss, fonts.fallback_weight if fb else fonts.weight)
         if t == 0:
-            ops.append((x, run, font, None))
-            x += _length(font, run, None) / ss
+            adv = lambda s: _length(font, s, None) / ss
+            total = adv(run)
+            # one draw call per run keeps ligatures; a run whose mask would be huge goes in pieces
+            mask = total * px * 1.5 * ss * ss
+            step = len(run) if mask <= MAX_GLYPH_MASK else max(1, int(len(run) * MAX_GLYPH_MASK / mask))
+            for c in range(0, len(run), step):
+                cx = x if c == 0 else x + adv(run[:c]) + adv(run[c - 1:c + 1]) - adv(run[c - 1]) - adv(run[c])
+                ops.append((cx, run[c:c + step], font, None, adv(run[c:c + step])))
+            x += total
             continue
         adv = lambda s: _length(font, s, LIGA_OFF) / ss
+        cx = x
         for j, ch in enumerate(run):
-            kern = adv(run[j - 1:j + 1]) - adv(run[j - 1]) - adv(ch) if j else 0.0
-            ops.append((x + adv(run[:j]) + kern + j * t, ch, font, LIGA_OFF))
-        x += adv(run) + len(run) * t
+            if j:   # previous advance + pair kerning (= prefix length + kerning of the new pair), in O(n)
+                cx += adv(run[j - 1:j + 1]) - adv(ch) + t
+            ops.append((cx, ch, font, LIGA_OFF, adv(ch)))
+        x = cx + adv(run[-1]) + t
     return ops, x
 
 
-def _size(size_px: float) -> float:
-    size = round(_finite(size_px), 4)
+def text_size(size_px: float, line_h: float | None = None) -> float:
+    """Font size as both sides draw it: positive, at most MAX_TEXT_PX and 8x the line box."""
+    size = _finite(size_px)
     if size <= 0:
         raise ValueError("text size must be positive")
-    return size
+    cap = MAX_TEXT_PX if line_h is None else min(MAX_TEXT_PX, max(8.0, 8.0 * _finite(line_h, MAX_TEXT_PX)))
+    if size > cap:
+        log.warning("text size %.0f px clamped to %.0f", size, cap)
+        size = cap
+    return round(size, 4)
+
+
+def bounded_style(style: TextStyle | None, box: tuple[float, float] | None = None) -> TextStyle:
+    """The style with every number finite and bounded (relative to the box side when known)."""
+    style = style or TextStyle()
+    side = MAX_BOX_SIDE if box is None else max(1.0, min(_finite(max(box), 1.0), MAX_BOX_SIDE))
+    off = min(MAX_OFFSET_PX, side)
+    effects = [e.model_copy(update={"width": _clamp(e.width, 0.0, min(MAX_STROKE_PX, side / 4)),
+                                    "blur": _clamp(e.blur, 0.0, min(MAX_BLUR_PX, side)),
+                                    "dx": _clamp(e.dx, -off, off), "dy": _clamp(e.dy, -off, off),
+                                    "opacity": _clamp(e.opacity, 0.0, 1.0, 1.0)}) for e in style.effects]
+    out = style.model_copy(update={"dx": _clamp(style.dx, -side, side), "dy": _clamp(style.dy, -side, side),
+                                   "tracking_em": _clamp(style.tracking_em, *TRACKING_EM),
+                                   "shear_deg": _clamp(style.shear_deg, -MAX_SHEAR_DEG, MAX_SHEAR_DEG),
+                                   "effects": effects})
+    if out != style:
+        log.warning("text style values clamped to bounds")
+    return out
+
+
+def _cap_chars(lines: Sequence[str]) -> list[str]:
+    out, left = [], MAX_CHARS
+    for line in lines:
+        out.append(line[:max(0, left)])
+        left -= len(line)
+    if left < 0:
+        log.warning("styled text cut to %d characters", MAX_CHARS)
+    return out or [""]
+
+
+def bounded_canvas(box: tuple[float, float], pad: int) -> tuple[int, int, int]:
+    """Texture width, height and effect padding, within MAX_BOX_SIDE / MAX_PAD / MAX_CANVAS_PX."""
+    w = int(min(max(1, round(_finite(box[0], 1.0))), MAX_BOX_SIDE))
+    h = int(min(max(1, round(_finite(box[1], 1.0))), MAX_BOX_SIDE))
+    pad = int(min(max(0, pad), MAX_PAD))
+    if (w + 2 * pad) * (h + 2 * pad) > MAX_CANVAS_PX:
+        log.warning("text canvas %dx%d (+%d) bounded", w, h, pad)
+        while pad and (w + 2 * pad) * (h + 2 * pad) > MAX_CANVAS_PX:
+            pad //= 2
+        if w * h > MAX_CANVAS_PX:
+            f = math.sqrt(MAX_CANVAS_PX / (w * h))
+            w, h = max(1, int(w * f)), max(1, int(h * f))
+    return w, h, pad
 
 
 def _shear_overhang(k: float, ra: int, rd: int, n: int, line_h: float) -> float:
@@ -298,50 +369,62 @@ def _shear_overhang(k: float, ra: int, rd: int, n: int, line_h: float) -> float:
 def natural_box(lines: Sequence[str], size_px: float, fonts: TextFonts, *, tracking_em: float = 0.0,
                 shear_deg: float = 0.0, dx: float = 0.0) -> tuple[int, int]:
     """Smallest box the text lays out in: one ascent+descent per line, the widest advance plus the shear."""
-    size = _size(size_px)
+    lines = _cap_chars(lines)
+    size = text_size(size_px)
     ra, rd = line_metrics(fonts.primary, size)
-    n = max(1, len(lines))
-    t = size * _finite(tracking_em)
-    shear_deg = _finite(shear_deg)
+    n = len(lines)
+    t = size * _clamp(tracking_em, *TRACKING_EM)
+    k = math.tan(math.radians(_clamp(shear_deg, -MAX_SHEAR_DEG, MAX_SHEAR_DEG)))
     with _FT_LOCK:
         ext = max((_layout_line(line, fonts, size, SS, t)[1] for line in lines), default=0.0)
-    k = math.tan(math.radians(shear_deg))
-    w = lu(dx) + ext + max(0.0, _shear_overhang(k, ra, rd, n, ra + rd))
-    return max(1, math.ceil(w - 1e-6)), max(1, n * (ra + rd))
+    w = lu(_clamp(dx, -MAX_BOX_SIDE, MAX_BOX_SIDE)) + ext + max(0.0, _shear_overhang(k, ra, rd, n, ra + rd))
+    return int(min(max(1, math.ceil(w - 1e-6)), MAX_BOX_SIDE)), int(min(max(1, n * (ra + rd)), MAX_BOX_SIDE))
 
 
 def _render_alpha(lines: Sequence[str], size_px: float, fonts: TextFonts, *, tracking_em: float, shear_deg: float,
                   box: tuple[float, float] | None, dx: float, dy: float, pad: int) -> np.ndarray:
     from PIL import Image, ImageDraw
-    lines = list(lines) or [""]
-    size = _size(size_px)
-    tracking_em, shear_deg = _finite(tracking_em), _finite(shear_deg)
+    lines = _cap_chars(list(lines) or [""])
+    tracking_em = _clamp(tracking_em, *TRACKING_EM)
+    shear_deg = _clamp(shear_deg, -MAX_SHEAR_DEG, MAX_SHEAR_DEG)
+    dx, dy = _clamp(dx, -MAX_BOX_SIDE, MAX_BOX_SIDE), _clamp(dy, -MAX_BOX_SIDE, MAX_BOX_SIDE)
     if box is None:
-        box = natural_box(lines, size, fonts, tracking_em=tracking_em, shear_deg=shear_deg, dx=dx)
+        box = natural_box(lines, size_px, fonts, tracking_em=tracking_em, shear_deg=shear_deg, dx=dx)
         line_h = float(box[1]) / len(lines)
+        size = text_size(size_px)
     else:
+        box = (_clamp(box[0], 1.0, 1e9, 1.0), _clamp(box[1], 1.0, 1e9, 1.0))
         line_h = round(float(box[1]) / len(lines), 4)
-    W, H = max(1, round(box[0])), max(1, round(box[1]))
+        size = text_size(size_px, line_h)
+    W, H, pad = bounded_canvas(box, pad)
     cw, ch = W + 2 * pad, H + 2 * pad
+    k = math.tan(math.radians(shear_deg))
+    y0 = pad + lu(dy) + first_baseline(fonts.primary, size, line_h)   # skewX(−θ) about the first baseline
+    # glyphs the shear brings into the canvas are drawn on a side margin first
+    margin = int(min(math.ceil(abs(k) * max(abs(y0), abs(ch - y0))), 2 * cw)) if k else 0
+    glyph_px = size * max(1.0, fonts.fallback_scale if fonts.fallback else 1.0) * 1.5
     ss = SS
-    while ss > 1 and cw * ch * ss * ss > MAX_SS_PIXELS:
+    while ss > 1 and ((cw + 2 * margin) * ch * ss * ss > MAX_SS_PIXELS or (glyph_px * ss) ** 2 > MAX_GLYPH_MASK):
         ss //= 2
     t = size * tracking_em
-    img = Image.new("L", (cw * ss, ch * ss), 0)
+    img = Image.new("L", ((cw + 2 * margin) * ss, ch * ss), 0)
     draw = ImageDraw.Draw(img)
-    x0 = pad + lu(dx)
+    x0 = margin + pad + lu(dx)
     ys = baselines(fonts.primary, size, line_h, len(lines), dy)
     with _FT_LOCK:
         for line, y in zip(lines, ys):
-            for x, text, font, feats in _layout_line(line, fonts, size, ss, t)[0]:
+            if not -glyph_px < pad + y < ch + glyph_px:
+                continue
+            for x, text, font, feats, adv in _layout_line(line, fonts, size, ss, t)[0]:
+                if x0 + x + adv < -glyph_px or x0 + x > cw + 2 * margin + glyph_px:
+                    continue
                 kw = {"features": list(feats)} if feats and _raqm() else {}
                 draw.text(((x0 + x) * ss, (pad + y) * ss), text, font=font, fill=255, anchor="ls", **kw)
     a = np.asarray(img, np.float32) / 255.0
-    k = math.tan(math.radians(shear_deg))
     if k:
-        y0 = (pad + lu(dy) + first_baseline(fonts.primary, size, line_h)) * ss   # skewX(−θ) about the first baseline
-        m = np.float32([[1, -k, k * (y0 - 0.5)], [0, 1, 0]])
+        m = np.float32([[1, -k, k * (y0 * ss - 0.5)], [0, 1, 0]])
         a = cv2.warpAffine(a, m, (a.shape[1], a.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    a = a[:, margin * ss:(margin + cw) * ss]
     if ss > 1:
         a = cv2.resize(a, (cw, ch), interpolation=cv2.INTER_AREA)
     return np.clip(a, 0.0, 1.0).astype(np.float32)
@@ -355,7 +438,7 @@ def glyph_alpha(lines: Sequence[str], size_px: float, faces: Sequence[FontFace],
     primary, fallback = faces[0], (faces[1] if len(faces) > 1 else None)
     fonts = TextFonts(primary, fallback, clamp_weight(primary, weight),
                       clamp_weight(fallback, fallback_weight or weight) if fallback else clamp_weight(primary, weight),
-                      fallback_scale if fallback else 1.0)
+                      _clamp(fallback_scale, *FALLBACK_SCALE, default=1.0) if fallback else 1.0)
     return _render_alpha(lines, size_px, fonts, tracking_em=tracking_em, shear_deg=shear_deg, box=box, dx=dx, dy=dy, pad=pad)
 
 
@@ -398,7 +481,7 @@ def compose_text(alpha: np.ndarray, fill, effects: Iterable[TextEffect]) -> np.n
         acc_c = np.asarray(rgb, np.float32) * a[..., None] + acc_c * (1 - a[..., None])
         acc_a = a + acc_a * (1 - a)
 
-    effects = list(effects)
+    effects = bounded_style(TextStyle(effects=list(effects)[:4]), (w, h)).effects
     for e in effects:
         if e.kind in ("shadow", "glow"):
             a = _blur(_shift(alpha, _finite(e.dx), _finite(e.dy)), max(0.0, _finite(e.blur)) / 2)
@@ -423,7 +506,7 @@ def effect_pad(effects: Iterable[TextEffect]) -> int:
         else:
             reach = 2 * max(0.0, _finite(e.blur)) + 1        # 4σ
             pad = max(pad, abs(_finite(e.dx)) + reach, abs(_finite(e.dy)) + reach)
-    return int(math.ceil(min(pad, 512)))
+    return int(math.ceil(min(pad, MAX_PAD)))
 
 
 def fade_stops(fade: Fade) -> tuple[float, list[tuple[float, float]]]:
@@ -461,21 +544,24 @@ def render_styled(lines: Sequence[str], font: FontGuess, color: str | None, styl
                   registry: FontRegistry | None = None, scene_dir: Path | None = None,
                   box: tuple[float, float] | None = None) -> np.ndarray:
     """Un-premultiplied RGBA uint8 texture of the styled text, box-sized (natural box when None)."""
-    style = style or TextStyle()
-    lines = list(lines) or [""]
+    lines = _cap_chars(list(lines) or [""])
+    style = bounded_style(style)
     fonts = resolve_fonts(font, "\n".join(lines), registry, scene_dir)
     if fonts is None:
         raise LookupError(f"no font file for {font.family_guess!r}")
-    size = _size(font.size_px)
     if box is None:
-        box = natural_box(lines, size, fonts, tracking_em=style.tracking_em, shear_deg=style.shear_deg, dx=style.dx)
-    w, h = max(1, round(box[0])), max(1, round(box[1]))
-    pad = effect_pad(style.effects)
+        box = natural_box(lines, text_size(font.size_px), fonts, tracking_em=style.tracking_em,
+                          shear_deg=style.shear_deg, dx=style.dx)
+    box = (_clamp(box[0], 1.0, 1e9, 1.0), _clamp(box[1], 1.0, 1e9, 1.0))
+    style = bounded_style(style, box)
+    line_h = round(float(box[1]) / len(lines), 4)
+    size = text_size(font.size_px, line_h)
+    w, h, pad = bounded_canvas(box, effect_pad(style.effects))
     alpha = _render_alpha(lines, size, fonts, tracking_em=style.tracking_em, shear_deg=style.shear_deg, box=box,
                           dx=style.dx, dy=style.dy, pad=pad)
     if style.fill is not None:
-        y0 = lu(style.dy) + first_baseline(fonts.primary, size, round(float(box[1]) / len(lines), 4))
-        fill = gradient_fill(style.fill, box, w, h, pad, shear_deg=_finite(style.shear_deg), y0=y0)
+        y0 = lu(style.dy) + first_baseline(fonts.primary, size, line_h)
+        fill = gradient_fill(style.fill, box, w, h, pad, shear_deg=style.shear_deg, y0=y0)
     else:
         fill = np.array(hex_rgb(color), np.float32) / 255
     rgba = compose_text(alpha, fill, style.effects)[pad:pad + h, pad:pad + w]

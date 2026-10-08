@@ -45,17 +45,34 @@ def _tag(value: int) -> str:
     return value.to_bytes(4, "big").decode("latin-1")
 
 
-def _true_glyf_length(tables: dict[str, bytes]) -> int | None:
-    """End of the last glyph per loca when it lies past the glyf length FreeType reports."""
-    if not {"head", "loca", "glyf"} <= tables.keys() or len(tables["head"]) < 54:
-        return None
-    long = int.from_bytes(tables["head"][50:52], "big", signed=True) == 1
+MAX_SFNT_BYTES = 64 * 2**20   # rebuilt tables, all together
+MAX_GROWTH = 16                # ... and at most this multiple of the input file (bundled fonts: <= 5.2x)
+
+
+def _budget(input_size: int) -> int:
+    return min(MAX_SFNT_BYTES, MAX_GROWTH * max(1, input_size))
+
+
+def _head_long_loca(tables: dict[str, bytes]) -> bool | None:
+    head = tables.get("head", b"")
+    return None if len(head) < 54 else int.from_bytes(head[50:52], "big", signed=True) == 1
+
+
+def _glyf_read_length(tables: dict[str, bytes], input_size: int) -> int | None:
+    """Bytes of glyf to read: 0 when FreeType's reported length already covers loca's last glyph, the larger
+    length otherwise (its directory keeps the WOFF2 header length while the rebuilt glyf can be longer), None when
+    that length — font-controlled — is past the budget."""
+    long = _head_long_loca(tables)
+    if long is None or not {"loca", "glyf"} <= tables.keys():
+        return 0
     width = 4 if long else 2
     loca = tables["loca"]
     if len(loca) < width:
-        return None
+        return 0
     end = int.from_bytes(loca[-width:], "big") * (1 if long else 2)
-    return end if end > len(tables["glyf"]) else None
+    if end <= len(tables["glyf"]):
+        return 0
+    return end if end <= _budget(input_size) - sum(len(v) for k, v in tables.items() if k != "glyf") else None
 
 
 def _loca_ok(tables: dict[str, bytes]) -> bool:
@@ -63,10 +80,13 @@ def _loca_ok(tables: dict[str, bytes]) -> bool:
     decodes those fonts instead). Trims glyf to the last glyph."""
     if "glyf" not in tables:
         return True
-    if not {"head", "loca", "maxp"} <= tables.keys() or len(tables["maxp"]) < 6:
+    long = _head_long_loca(tables)
+    if long is None or not {"loca", "maxp"} <= tables.keys() or len(tables["maxp"]) < 6:
+        return False
+    width = 4 if long else 2
+    if len(tables["loca"]) % width:
         return False
     import numpy as np
-    long = int.from_bytes(tables["head"][50:52], "big", signed=True) == 1
     loca = np.frombuffer(tables["loca"], ">u4" if long else ">u2").astype(np.int64) * (1 if long else 2)
     glyphs = int.from_bytes(tables["maxp"][4:6], "big")
     if len(loca) != glyphs + 1 or not bool(np.all(np.diff(loca) >= 0)) or int(loca[-1]) > len(tables["glyf"]):
@@ -76,11 +96,21 @@ def _loca_ok(tables: dict[str, bytes]) -> bool:
 
 
 def sfnt_bytes(path: Path, index: int = 0) -> bytes | None:
-    """The font's tables as a plain sfnt (TTF/OTF) file, decoded by FreeType; None when unavailable."""
+    """The font's tables as a plain sfnt (TTF/OTF) file, decoded by FreeType; None when unavailable, over the
+    size budget or inconsistent (callers then use fontTools)."""
+    try:
+        return _sfnt_bytes(Path(path), index)
+    except Exception as e:   # any surprise in a font we do not control: the fontTools path decides
+        log.warning("FreeType sfnt decode failed for %s (%s); using fontTools", Path(path).name, e)
+        return None
+
+
+def _sfnt_bytes(path: Path, index: int) -> bytes | None:
     lib = _freetype()
     if lib is None:
         return None
-    data = Path(path).read_bytes()
+    data = path.read_bytes()
+    budget = _budget(len(data))
     ftlib, face = ctypes.c_void_p(), ctypes.c_void_p()
     if lib.FT_Init_FreeType(ctypes.byref(ftlib)):
         return None
@@ -89,21 +119,25 @@ def sfnt_bytes(path: Path, index: int = 0) -> bytes | None:
             return None
         try:
             count = ctypes.c_ulong()
-            if lib.FT_Sfnt_Table_Info(face, 0, None, ctypes.byref(count)):
+            if lib.FT_Sfnt_Table_Info(face, 0, None, ctypes.byref(count)) or count.value > 512:
                 return None
-            tables = {}
+            tables, total = {}, 0
             for i in range(count.value):
                 tag, length = ctypes.c_ulong(), ctypes.c_ulong()
                 if lib.FT_Sfnt_Table_Info(face, i, ctypes.byref(tag), ctypes.byref(length)):
+                    return None
+                total += length.value
+                if total > budget:
                     return None
                 buf = ctypes.create_string_buffer(max(1, length.value))
                 size = ctypes.c_ulong(length.value)
                 if lib.FT_Load_Sfnt_Table(face, tag.value, 0, buf, ctypes.byref(size)):
                     return None
                 tables[_tag(tag.value)] = buf.raw[:size.value]
-            glyf = _true_glyf_length(tables)
-            if glyf is not None:
-                # FreeType's directory keeps the WOFF2 header length; its rebuilt glyf can be longer.
+            glyf = _glyf_read_length(tables, len(data))
+            if glyf is None:
+                return None
+            if glyf:
                 buf, size = ctypes.create_string_buffer(glyf), ctypes.c_ulong(glyf)
                 if lib.FT_Load_Sfnt_Table(face, int.from_bytes(b"glyf", "big"), 0, buf, ctypes.byref(size)):
                     return None

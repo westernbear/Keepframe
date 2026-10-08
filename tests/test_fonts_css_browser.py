@@ -156,3 +156,12 @@ def test_edited_text_preview_matches_html(tmp_path):
         l1 = float(np.abs(a - b).mean())
         print(f"edited {value!r} box {c.width}x{c.height}: L1 {l1:.4f}")
         assert l1 <= 0.03
+
+
+def test_generic_and_unknown_families_match(tmp_path):
+    for family in ("sans-serif", "serif", "Zzz Missing Sans"):
+        a, b = _parity(tmp_path, "Generic Family 42", FontGuess(family_guess=family, weight=400, size_px=40.0),
+                       TextStyle(), (420, 56))
+        iou, d = _mask_stats(a, b)
+        print(f"generic {family}: IoU {iou:.3f} bbox {d:.2f}")
+        assert iou >= 0.90 and d <= 1.5
