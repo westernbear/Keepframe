@@ -53,8 +53,18 @@ def main(argv: list[str] | None = None) -> int:
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
+    fo = sub.add_parser("fonts", help="font registry"); fsub = fo.add_subparsers(dest="fonts_cmd", required=True)
+    fl = fsub.add_parser("list", help="list uploaded and bundled font families"); fl.add_argument("--root", default=None)
+    fl.add_argument("--script", choices=["latin", "hangul"], default=None)
     a = ap.parse_args(argv)
 
+    if a.cmd == "fonts":
+        from .fonts import FontRegistry
+        reg = FontRegistry.for_project(a.root)
+        for name in reg.families(script=a.script):
+            f = reg.face(name, 400)
+            print(f"{name}\t{f.source}\t{f.category}\t{f.weight_range[0]}-{f.weight_range[1]}\t{'hangul' if f.hangul else 'latin'}")
+        return 0
     if a.cmd == "synth":
         out = Path(a.out)
         scene = make_synthetic_scene(out, seed=a.seed, frames=a.frames, with_text=not a.no_text)

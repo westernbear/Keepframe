@@ -9,6 +9,7 @@ dependencies = [
   "opencv-python-headless>=4.9",
   "playwright>=1.44",
   "pillow>=10",
+  "fonttools[woff]>=4.50",
 ]
 [project.optional-dependencies]
 gpu = ["torch>=2.2"]
@@ -31,6 +32,9 @@ keepframe = [
   "web/static/css/*",
   "web/static/js/*",
   "web/static/js/review/*",
+  "fonts/manifest.json",
+  "fonts/files/*",
+  "fonts/LICENSES/*",
 ]
 [tool.pytest.ini_options]
 markers = [
