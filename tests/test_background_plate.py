@@ -1,6 +1,6 @@
 import json, pickle
 import cv2, numpy as np, pytest
-from keepframe.analyze.background import PLATE_PATH, background_plate, estimate_background, foreground_mask_plate, needs_plate
+from keepframe.analyze.background import PASS1_PATH, PLATE_PATH, background_plate, estimate_background, foreground_mask_plate, needs_plate
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
 from keepframe.compose.composer import compose
@@ -235,8 +235,10 @@ def test_analyze_stores_plate_without_gradient_elements(analyzed_plate):
     assert scene.background == Background(kind="image", value=PLATE_PATH, confidence=bgj["confidence"])
     assert bgj["plate"] is True and bgj["confidence"] < 0.30
     assert bgj["rgb"] == [int(v) for v in plate.reshape(-1, 3).mean(0)]
-    saved = cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB)
-    assert np.array_equal(saved, plate)
+    assert np.array_equal(cv2.cvtColor(cv2.imread(str(sd / PASS1_PATH)), cv2.COLOR_BGR2RGB), plate)   # pass 1
+    ramp = np.linspace(0, 255, 640, dtype=np.uint8)
+    clean = np.broadcast_to(np.stack([ramp, ramp[::-1], np.full(640, 80, np.uint8)], -1), (320, 640, 3))
+    assert np.array_equal(cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB), clean)   # pass 2
     assert len(scene.elements) == 1
     assert all(el.canonical.texture != scene.background.value for el in scene.elements)
     regions = pickle.loads((sd / "stages" / "regions.pkl").read_bytes())

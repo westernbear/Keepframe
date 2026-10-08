@@ -4,15 +4,16 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Background, Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, Track, UIModel, Version
+from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
-from .background import PLATE_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, rgb_to_lab
+from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
+from .plate import PlateModel, background_for, build_plate, fallback_plate, load_plate, save_plate
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
 from .semantics import assign_roles, group_by_motion
@@ -61,10 +62,6 @@ class AnalyzeOptions:
     generate_3d: bool = True
 
 
-def _hex(rgb) -> str:
-    return "#%02x%02x%02x" % tuple(int(v) for v in rgb)
-
-
 def _rgb(hexs: str):
     h = hexs.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
@@ -100,7 +97,7 @@ def _stage_background(frames, opts, sd):
         candidate = background_plate(frames)
         if needs_plate(candidate, bg, bconf):
             plate = candidate
-            path = sd / PLATE_PATH
+            path = sd / PASS1_PATH
             path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(path), cv2.cvtColor(plate, cv2.COLOR_RGB2BGR))
             bg = tuple(int(v) for v in plate.reshape(-1, 3).mean(0))   # Representative cache colour; measurements/refine use the local plate.
@@ -135,6 +132,22 @@ def _stage_text(frames, bg, opts, ocr, sd):
             log.info("text boxes=%s tracks=%s shapes=%s", sum(len(b) for b in boxes), len(tracks), len(shape_tracks))
     _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "shape_tracks": shape_tracks, "message": msg})
     return boxes, tracks, shape_tracks, msg
+
+
+def _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
+    try:
+        model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
+                            bg_override=opts.bg_override, pass1=pass1)
+    except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
+        log.exception("plate v2 failed")
+        model = fallback_plate(pass1, bg, bconf, frames.shape[1:3], f"plate v2 skipped: {type(e).__name__}: {e}"[:200])
+    save_plate(sd, model)
+    return model
+
+
+def _plate_inputs(model: PlateModel):
+    """(bg, plate) for the stages after the plate: a flat colour has no plate image."""
+    return model.rgb, (model.image if model.kind != "color" else None)
 
 
 def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, shape_tracks=None):
@@ -448,6 +461,10 @@ def analyze_scene_frames(
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
     t = _stage_done("tracking", t)
+    report_stage("plate")
+    model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, plate, opts, sd)
+    bg, plate = _plate_inputs(model)
+    t = _stage_done("plate", t)
     report_stage("solids")
     solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
     t = _stage_done("solids", t)
@@ -459,10 +476,8 @@ def analyze_scene_frames(
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
-                  elements=elements)
-    messages = [m for m in (msg, props.get("_message")) if m]
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
+    messages = [m for m in (msg, model.stats.get("message"), props.get("_message")) if m]
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
@@ -627,10 +642,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         bgj = json.loads((sd / "stages" / "background.json").read_text())
         bg, bconf = tuple(bgj["rgb"]), bgj.get("confidence", 1.0)
         if bgj.get("plate", False):
-            plate = cv2.imread(str(sd / PLATE_PATH), cv2.IMREAD_COLOR)
-            if plate is None:
-                raise FileNotFoundError(sd / PLATE_PATH)
-            plate = cv2.cvtColor(plate, cv2.COLOR_BGR2RGB)
+            plate = pass1_plate(sd)
     t = _stage_done("background", t)
     msg = None
     if boundary <= STAGES.index("text"):
@@ -653,6 +665,12 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     else:
         obj_tracks = _pk(sd, "tracks")
     t = _stage_done("tracking", t)
+    model = load_plate(sd) if boundary > STAGES.index("plate") else None
+    if model is None:   # rerun from the plate or earlier, or a project analysed before plate v2
+        report_stage("plate")
+        model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, plate, opts, sd)
+    bg, plate = _plate_inputs(model)
+    t = _stage_done("plate", t)
     missing_solids = not (sd / "stages" / "solids.pkl").exists()
     if boundary <= STAGES.index("solids") or missing_solids:
         report_stage("solids")
@@ -671,10 +689,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     report_stage("keyframes")
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
-    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n,
-                  background=Background(kind="image", value=PLATE_PATH, confidence=bconf) if plate is not None else Background(kind="color", value=_hex(bg), confidence=bconf),
-                  elements=elements)
-    messages = [m for m in (msg, props.get("_message")) if m]
+    scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
+    messages = [m for m in (msg, model.stats.get("message"), props.get("_message")) if m]
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)

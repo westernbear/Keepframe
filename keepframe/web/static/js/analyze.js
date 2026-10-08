@@ -1,6 +1,6 @@
-import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261006l";
-import { T, Tf } from "/static/js/i18n.js?v=20261006l";
-import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261006l";
+import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261008a";
+import { T, Tf } from "/static/js/i18n.js?v=20261008a";
+import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261008a";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
 const SECONDS_PER_MINUTE = 60;
@@ -23,10 +23,10 @@ const statusEl = document.querySelector("[data-status]");
 const stageEl = document.querySelector("[data-stage]");
 const etaEl = document.querySelector("[data-eta]");
 
-const PIPELINE = ["frames", "background", "text", "regions", "tracking", "solids", "sprites", "keyframes", "semantics", "constraints", "report"];
+const PIPELINE = ["frames", "background", "text", "regions", "tracking", "plate", "solids", "sprites", "keyframes", "semantics", "constraints", "report"];
 const STEP_STAGES = {
   shots: ["frames"],
-  bg: ["background"],
+  bg: ["background", "plate"],
   text: ["text"],
   regions: ["regions", "tracking", "solids"],
   sprites: ["sprites"],
@@ -40,6 +40,7 @@ const STAGE_I18N = {
   text: "analyze.step.text",
   regions: "analyze.step.regions",
   tracking: "analyze.step.regions",
+  plate: "analyze.step.bg",
   solids: "analyze.step.regions",
   sprites: "analyze.step.sprites",
   keyframes: "analyze.step.keyframes",
