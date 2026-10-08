@@ -456,3 +456,19 @@ def test_mover_cover_failure_in_solids_drops_the_movers(tmp_path, monkeypatch):
     assert len(_movers(tmp_path)) == 1   # found by the plate stage, then dropped
     assert not any(k.startswith("m") for k in _props(tmp_path))
     assert "movers dropped: RuntimeError: cover exploded" in _messages(tmp_path)
+
+
+def test_faint_layer_beside_mover_without_overlap_is_not_claimed():
+    import keepframe.analyze.movers as mv
+    frames = _globe_clip(n=24)
+    box = (CX + R + 18, 80, CX + R + 32, 112)   # ΔE76 ≈ 6.8, within the halo reach, outside the dilated component
+    faint = _track(7, range(24), box)
+    _lift(frames, box, range(24))
+    sample = sample_frames(len(frames))
+    est = established_mask((H, W), [], [faint], len(frames), sample)
+    u = instability(frames, sample, est)
+    (core,) = mv._components(frames, sample, u, est, 0.04, 0.40, 0.60)
+    region = cv2.dilate(core, mv._kernel(mv.REFILL_PX)) > 0
+    assert not region[box[1]:box[3], box[0]:box[2]].any()
+    (m,) = find_movers(frames, sample, u, [faint], [], plate=_plate(), established=est)
+    assert m.claimed == []

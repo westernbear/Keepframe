@@ -175,8 +175,9 @@ def _components(frames, sample, u, established, min_area, min_unstable, max_area
 def _inside(region, near, frames, behind_lab, real_de, noisy, f, bbox, mask=None) -> float:
     """Share of a track's pixels at frame f (region mask, or the whole OCR box) inside the dilated component,
     counting only pixels that differ from the plate behind (ΔE76 > real_de: 8, or the noise floor above it; opened
-    like the masks when noise sets it): a pass 1 halo around a baked mover is plate. When none does (a halo, or a faint layer), the share of all its pixels within HALO_PX of the component:
-    halos lie there, a faint layer elsewhere does not."""
+    like the masks when noise sets it): a pass 1 halo around a baked mover is plate. When none does (a halo, or a
+    faint layer): 0 unless the track overlaps the dilated component, else the share of all its pixels within
+    HALO_PX of the component, where pass 1's halos lie."""
     H, W = region.shape
     x0, y0, x1, y1 = bbox
     a0, b0, a1, b1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
@@ -189,7 +190,9 @@ def _inside(region, near, frames, behind_lab, real_de, noisy, f, bbox, mask=None
     real &= own
     if real.any():
         return float(region[b0:b1, a0:a1][real].mean())
-    return float(near[b0:b1, a0:a1][own].mean()) if own.any() else 0.0
+    if not (region[b0:b1, a0:a1] & own).any():   # a track must overlap the dilated component
+        return 0.0
+    return float(near[b0:b1, a0:a1][own].mean())
 
 
 def _claims(region, tracks, taken, items, share) -> list:
