@@ -1,6 +1,7 @@
 """Plate v2 (after tracking): the temporal median over only the frames where a pixel is uncovered; pixels
-no frame shows are filled from their surroundings and recorded as synthetic. The plate is then classified:
-flat colour, editable gradient (static, or animated with keys), still image, or video candidate."""
+no frame shows are filled from their surroundings and recorded as synthetic. Large elements animating in place
+(movers) are then found and taken out of it. The plate is classified: flat colour, editable gradient (static,
+or animated with keys), still image, or video candidate."""
 from __future__ import annotations
 import json, math, os, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -44,6 +45,7 @@ TEMPORAL_PX = 20000       # pixels the temporal statistics look at, at most
 ANIM_WORK = 64            # work size (px) of the per-sample fits
 KEY_PX = 48               # render size (px) for the key-dropping comparison
 MIN_VALID = 0.25          # a sample needs this share of uncovered pixels to be fitted
+MOVER_PAD = 24            # the median is recomputed in the movers' bbox ± this
 SYNTH_PATH = "assets/background_synthetic.png"
 PLATE_JSON = "stages/plate.json"
 VERSION = 2
@@ -60,6 +62,7 @@ class PlateModel:
     gradient: Gradient | None = None
     gradient_keys: list[GradientKey] = field(default_factory=list)
     frames: np.ndarray | None = None  # per-frame plates of an animated background
+    movers: list = field(default_factory=list)   # movers.Mover taken out of this plate (cached in stages/movers.pkl)
     _cache: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
@@ -173,10 +176,10 @@ def masked_median(frames, sample, occ, band=BAND) -> tuple[np.ndarray, np.ndarra
     return plate, counts
 
 
-def find_holes(counts, frames, rbf, boxes, reveal_boxes, *, skip=()) -> tuple[np.ndarray, np.ndarray]:
+def find_holes(counts, frames, rbf, boxes, reveal_boxes, *, skip=(), extra=None) -> tuple[np.ndarray, np.ndarray]:
     """Pixels no sample showed (count == 0) are checked against every frame (`skip`: frames known to cover
-    them, i.e. the samples). Returns the true holes and `uncovered`: the median of up to RECOVER frames that
-    do show a candidate pixel (SENTINEL elsewhere)."""
+    them, i.e. the samples; `extra(f)`: more coverage, the movers). Returns the true holes and `uncovered`: the
+    median of up to RECOVER frames that do show a candidate pixel (SENTINEL elsewhere)."""
     cand = counts == 0
     uncovered = np.full(counts.shape + (3,), SENTINEL, np.uint16)
     if not cand.any():
@@ -188,7 +191,8 @@ def find_holes(counts, frames, rbf, boxes, reveal_boxes, *, skip=()) -> tuple[np
     todo = [f for f in range(len(frames)) if f not in skip]
 
     def covered(f):
-        return _occ_frame(counts.shape, rbf[f], boxes[f], reveal_boxes.get(f, ()), DILATE_PX).ravel()[pos]
+        m = _occ_frame(counts.shape, rbf[f], boxes[f], reveal_boxes.get(f, ()), DILATE_PX)
+        return (m | extra(f) if extra is not None else m).ravel()[pos]
 
     with ThreadPoolExecutor(_workers()) as ex:
         for f, occ in zip(todo, ex.map(covered, todo)):
@@ -387,7 +391,42 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
     return replace(model, kind="image", stats=st)
 
 
-def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1) -> PlateModel:
+def _without_movers(frames, sample, occ, raw, counts, movers, rbf, boxes, reveal):
+    """Add the mover masks to the occupancy, recompute the median in their bbox ± MOVER_PAD, refill the holes."""
+    from .movers import mover_cover
+    H, W = counts.shape
+    bb = np.array([b for m in movers for b, _ in m.frames.values()])
+    x0, y0 = max(0, int(bb[:, 0].min()) - MOVER_PAD), max(0, int(bb[:, 1].min()) - MOVER_PAD)
+    x1, y1 = min(W, int(bb[:, 2].max()) + MOVER_PAD), min(H, int(bb[:, 3].max()) + MOVER_PAD)
+    win = occ[:, y0:y1, x0:x1].copy()
+    for j, f in enumerate(sample):
+        win[j] |= mover_cover(movers, f, (H, W))[y0:y1, x0:x1]
+    sub, sub_counts = masked_median(frames[:, y0:y1, x0:x1], sample, win)
+    raw, counts = raw.copy(), counts.copy()
+    raw[y0:y1, x0:x1], counts[y0:y1, x0:x1] = sub, sub_counts
+    holes, uncovered = find_holes(counts, frames, rbf, boxes, reveal, skip=sample,
+                                  extra=lambda f: mover_cover(movers, f, (H, W)))
+    out = fill_holes(raw, holes, uncovered)
+    occ[:, y0:y1, x0:x1] = win   # the temporal statistics no longer see the movers either
+    return out
+
+
+def _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tracks, shape_tracks, obj_tracks):
+    """The movers in this shot and the plate without them (None when there are none)."""
+    from .movers import established_mask, find_movers, instability
+    n, H, W = frames.shape[:3]
+    est = established_mask((H, W), text_tracks, obj_tracks, n, sample)
+    u = instability(frames, sample, est)
+    movers = find_movers(frames, sample, u, obj_tracks, shape_tracks, plate=plate, text_tracks=text_tracks, established=est)
+    del est
+    if not movers:
+        return [], None
+    return movers, _without_movers(frames, sample, occ, raw, counts, movers, rbf, boxes, reveal)
+
+
+def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1,
+                obj_tracks=None) -> PlateModel:
+    """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none."""
     n, H, W = frames.shape[:3]
     if bg_override:
         rgb = hex_to_rgb8(bg_override)
@@ -397,16 +436,31 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
     sample = sample_frames(n)
     occ = occupancy((H, W), rbf, boxes, reveal, sample)
     t.append(time.perf_counter())
-    plate, counts = masked_median(frames, sample, occ)
+    raw, counts = masked_median(frames, sample, occ)
     t.append(time.perf_counter())
     holes, uncovered = find_holes(counts, frames, rbf, boxes, reveal, skip=sample)
     t.append(time.perf_counter())
-    plate, synthetic, filled = fill_holes(plate, holes, uncovered)
+    plate, synthetic, filled = fill_holes(raw, holes, uncovered)
     t.append(time.perf_counter())
     kind, rgb, p95 = _still_kind(plate, bg_rgb, pass1)
+    movers, mover_msg, search = [], None, obj_tracks is not None and kind != "color"
+    if search:
+        try:
+            movers, without = _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tracks,
+                                      shape_tracks, obj_tracks)
+            if without is not None:
+                plate, synthetic, filled = without
+                kind, rgb, p95 = _still_kind(plate, bg_rgb, pass1)
+        except Exception as e:   # fail soft: keep the plate without the mover search, at lower confidence
+            log.exception("mover search failed")
+            movers, mover_msg = [], f"movers skipped: {type(e).__name__}: {e}"[:200]
+        log.info("plate movers %.2fs count=%s", time.perf_counter() - t[-1], len(movers))
+    t.append(time.perf_counter())
     frac = float(synthetic.mean())
     stats = {"samples": len(sample), "holes": filled, "synthetic_fraction": frac, "p95_flat_de": round(p95, 3)}
-    model, failed = PlateModel(kind, plate, rgb, synthetic, float(bconf), stats), False
+    if search:
+        stats.update({"movers": len(movers)} if mover_msg is None else {"movers_message": mover_msg})
+    model, failed = PlateModel(kind, plate, rgb, synthetic, float(bconf), stats, movers=movers), False
     try:
         model = classify(model, temporal_stats(frames, sample, occ, plate), frames, sample, occ)
     except Exception as e:   # fail soft: keep the still kind, at lower confidence, and say so
@@ -418,9 +472,9 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         model.synthetic = None
     else:
         model.confidence *= 1 - 0.5 * frac
-    if failed:
+    if failed or mover_msg:
         model.confidence *= FALLBACK_CONF
-    secs = dict(zip(("occupancy", "median", "holes", "fill", "classify"), (round(b - a, 3) for a, b in zip(t, t[1:]))))
+    secs = dict(zip(("occupancy", "median", "holes", "fill", "movers", "classify"), (round(b - a, 3) for a, b in zip(t, t[1:]))))
     model.stats["seconds"] = secs
     log.info("plate classify %.2fs kind=%s temporal_p95=%s rank2=%s gradient_p95=%s keys=%s", t[-1] - t[-2], model.kind,
              model.stats.get("temporal_p95_de"), model.stats.get("rank2_ratio"), model.stats.get("gradient_p95_de"),

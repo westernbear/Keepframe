@@ -13,6 +13,7 @@ from .background import PASS1_PATH, background_plate, estimate_background, foreg
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
+from .movers import mover_cover, mover_props
 from .plate import PlateModel, background_for, build_plate, fallback_plate, load_plate, save_plate
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
@@ -134,15 +135,38 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, shape_tracks, msg
 
 
-def _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
+def _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
     try:
         model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
-                            bg_override=opts.bg_override, pass1=pass1)
+                            bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks)
     except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
         log.exception("plate v2 failed")
         model = fallback_plate(pass1, bg, bconf, frames.shape[1:3], f"plate v2 skipped: {type(e).__name__}: {e}"[:200])
+    _pk(sd, "movers", model.movers)   # before plate.json, which marks the plate stage complete
     save_plate(sd, model)
     return model
+
+
+def _cached_plate(sd: Path) -> PlateModel | None:
+    """The plate stage's cache (plate.json + movers.pkl), or None when it must be rebuilt."""
+    model = load_plate(sd)
+    try:
+        model.movers = _pk(sd, "movers") if model is not None else None
+    except (OSError, pickle.UnpicklingError, EOFError, AttributeError):
+        return None
+    return model if model is not None and isinstance(model.movers, list) else None
+
+
+def _unclaimed(obj_tracks, shape_tracks, movers):
+    """The object and shape tracks no mover claimed as its fragments."""
+    objs = {i for m in movers for i in m.claimed}
+    shapes = {i for m in movers for i in m.claimed_shapes}
+    return [t for t in obj_tracks if t.id not in objs], [t for t in shape_tracks if t.id not in shapes]
+
+
+def _mover_messages(props: dict, ids: dict) -> list[str]:
+    return [f"{ids[k]} animates in place; kept as a still sprite" for k, p in props.items()
+            if not k.startswith("_") and p.get("mover") and not p.get("stable") and k in ids]
 
 
 def _plate_inputs(model: PlateModel):
@@ -193,14 +217,15 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None):
+def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=()):
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     fg = (foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames)
-    text_masks = (text_exclusion_mask(b, frames.shape[1:3]) for b in boxes)
+    shape = frames.shape[1:3]   # movers are layers already: never a 3D candidate too
+    text_masks = (text_exclusion_mask(b, shape) | mover_cover(movers, f, shape) for f, b in enumerate(boxes))
     return _pk(sd, "solids", find_solids(frames, fg, obj_tracks, text_masks))
 
 
-def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=()):
+def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=()):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
@@ -232,6 +257,12 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             props[f"o{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": z[t.id], "first": t.first, "last": t.last}
     log.info("sprites sprite_props objects=%s workers=%s ecc=%s %.2fs", len(obj_tracks), workers, opts.use_ecc,
              time.perf_counter() - t0)
+    if movers:
+        t0 = time.perf_counter()
+        behind = plate if plate is not None else np.full((*frames.shape[1:3], 3), bg, np.uint8)
+        for m in movers:
+            props[f"m{m.id}"] = mover_props(m, frames, behind, n_frames)
+        log.info("sprites movers=%s %.2fs", len(movers), time.perf_counter() - t0)
     ov = _load_overrides(sd)
     for a, b in ov.get("merge", []):   # merge object b into a (element ids resolved via ids.json at correction time)
         if a in props and b in props:
@@ -247,7 +278,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             m = np.isnan(pa["raw"][:, 0]) & ~np.isnan(pb["raw"][:, 0])
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
-    if opts.refine and any(p["kind"] == "sprite" for p in props.values()):
+    if opts.refine and any(p["kind"] == "sprite" and not p.get("mover") for p in props.values()):
         try:
             from .device import resolve_device
             from .refine import refine_affine, torch_available
@@ -260,7 +291,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
                         torch.cuda.empty_cache()
                 except ImportError:
                     pass
-                keys = [k for k, p in props.items() if p["kind"] == "sprite"]
+                keys = [k for k, p in props.items() if p["kind"] == "sprite" and not p.get("mover")]   # movers hold their centroid track
                 dev = resolve_device()
                 n, hh, ww = frames.shape[:3]
                 log.info("refine start device=%s sprites=%s frames=%s %sx%s iters=%s",
@@ -462,14 +493,16 @@ def analyze_scene_frames(
     obj_tracks = _stage_tracking(rbf, sd)
     t = _stage_done("tracking", t)
     report_stage("plate")
-    model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, plate, opts, sd)
+    model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
+    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, model.movers)
     t = _stage_done("plate", t)
     report_stage("solids")
-    solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
+    solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers)
     t = _stage_done("solids", t)
     report_stage("sprites")
-    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
+    props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
+                           movers=model.movers)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -477,7 +510,8 @@ def analyze_scene_frames(
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), props.get("_message")) if m]
+    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), props.get("_message")) if m]
+    messages += _mover_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
@@ -665,22 +699,25 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     else:
         obj_tracks = _pk(sd, "tracks")
     t = _stage_done("tracking", t)
-    model = load_plate(sd) if boundary > STAGES.index("plate") else None
-    if model is None:   # rerun from the plate or earlier, or a project analysed before plate v2
+    model = _cached_plate(sd) if boundary > STAGES.index("plate") else None
+    rebuilt = model is None   # rerun from the plate or earlier, or a project analysed before plate v2 / movers
+    if rebuilt:
         report_stage("plate")
-        model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg, bconf, plate, opts, sd)
+        model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
+    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, model.movers)
     t = _stage_done("plate", t)
-    missing_solids = not (sd / "stages" / "solids.pkl").exists()
-    if boundary <= STAGES.index("solids") or missing_solids:
+    redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
+    if boundary <= STAGES.index("solids") or redo:
         report_stage("solids")
-        solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
+        solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers)
     else:
         solids = _pk(sd, "solids")
     t = _stage_done("solids", t)
-    if boundary <= STAGES.index("sprites") or missing_solids:
+    if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
-        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
+        props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
+                               movers=model.movers)
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)
@@ -690,7 +727,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), props.get("_message")) if m]
+    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), props.get("_message")) if m]
+    messages += _mover_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
