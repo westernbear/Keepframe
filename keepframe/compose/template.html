@@ -1,7 +1,7 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>{{ID}}</title>
 <style>
-  html,body{margin:0;padding:0;background:{{BG}};overflow:hidden}
+  html,body{margin:0;padding:0;background:{{PAGEBG}};overflow:hidden}
   #stage{position:relative;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
   .el{position:absolute;will-change:transform;transition:none!important}
   .el img{display:block;width:100%;height:100%;image-rendering:auto}
@@ -90,7 +90,33 @@ for (const el of SCENE.elements) {
     node.style.zIndex = String(zAt(f));
   });
 }
+const BG = SCENE.background, STAGE = document.getElementById('stage');
+const num = (v) => { const s = (+v).toFixed(4).replace(/0+$/, '').replace(/\.$/, ''); return s === '-0' ? '0' : s; };
+const hex8 = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const mixGradient = (a, b, u) => {
+  if (a.kind !== b.kind || a.stops.length !== b.stops.length) return a;
+  const L = (p, q) => p + (q - p) * u;
+  return {kind: a.kind, angle: L(a.angle, b.angle), radius: L(a.radius, b.radius),
+    center: [L(a.center[0], b.center[0]), L(a.center[1], b.center[1])],
+    stops: a.stops.map((p, i) => {
+      const q = b.stops[i], x = hex8(p.color), y = hex8(q.color);
+      return {offset: L(p.offset, q.offset), color: '#' + x.map((v, j) => Math.floor(L(v, y[j]) + 0.5).toString(16).padStart(2, '0')).join('')};
+    })};
+};
+const gradientAt = (f) => {
+  const keys = BG.gradient_keys;
+  if (!keys.length) return BG.gradient;
+  if (f <= keys[0].t) return keys[0].gradient;
+  for (let i = 0; i < keys.length - 1; i++) if (f < keys[i + 1].t) return mixGradient(keys[i].gradient, keys[i + 1].gradient, (f - keys[i].t) / (keys[i + 1].t - keys[i].t));
+  return keys[keys.length - 1].gradient;
+};
+const gradientCss = (g) => {
+  const stops = g.stops.map(s => `${s.color} ${num(s.offset * 100)}%`).join(', ');
+  if (g.kind === 'radial') return `radial-gradient(circle ${num(g.radius * Math.hypot(SCENE.size[0], SCENE.size[1]) / 2)}px at ${num(g.center[0] * 100)}% ${num(g.center[1] * 100)}%, ${stops})`;
+  return `linear-gradient(${num(g.angle)}deg, ${stops})`;
+};
 window.__seek = (f) => {
+  if (BG.kind === 'gradient' && BG.gradient_keys.length) STAGE.style.background = gradientCss(gradientAt(f));
   tl.time(f / FPS, false); for (const a of appliers) a(f);
   for (const [node, label, ranges, baseText, baseBackground, baseColor] of uiStates) {
     const state = (ranges.find(item => f >= item.frames[0] && f <= item.frames[1]) || {}).state || {};

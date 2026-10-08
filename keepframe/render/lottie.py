@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 from typing import Callable
 
+import cv2
+
+from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import DEFAULTS, Element, Scene, Track, UIComponent
 from ..ir.paths import scene_asset_path
 from ..ir.tracks import eval_track
@@ -24,8 +27,11 @@ AssetResolver = Callable[[str], tuple[bytes, str]]
 
 
 def preflight_lottie(scene: Scene) -> None:
-    if scene.background.kind not in {"color", "image"}:
-        raise PlanConflict(f"Lottie does not support background kind {scene.background.kind}")
+    bg = scene.background
+    if bg.kind not in {"color", "image", "gradient", "video"}:
+        raise PlanConflict(f"Lottie does not support background kind {bg.kind}")
+    if bg.kind == "video" or (bg.kind == "gradient" and len(bg.gradient_keys) > 1):
+        raise PlanConflict(f"Lottie does not animate a {bg.kind} background; export HTML or After Effects")
     for element in scene.elements:
         if element.kind == "3d" and not element.canonical.texture:
             raise PlanConflict(f"Lottie 3D element {element.id} requires a canonical texture fallback")
@@ -219,8 +225,12 @@ def animation_from_scene(scene: Scene, resolve_asset: AssetResolver) -> dict:
         "sc": scene.background.value, "ks": {"o": {"a": 0, "k": 100}, "r": {"a": 0, "k": 0}, "p": {"a": 0, "k": [0, 0, 0]}, "a": {"a": 0, "k": [0, 0, 0]}, "s": {"a": 0, "k": [100, 100, 100]}},
         "ip": 0, "op": scene.frames, "st": 0, "bm": 0,
     }]
-    if scene.background.kind == "image":
-        content, mime = resolve_asset(scene.background.value)
+    if scene.background.kind in {"image", "gradient"}:
+        if scene.background.kind == "image":
+            content, mime = resolve_asset(scene.background.value)
+        else:
+            buf = cv2.imencode(".png", cv2.cvtColor(render_gradient(gradient_at(scene.background, 0), *scene.size), cv2.COLOR_RGB2BGR))[1]
+            content, mime = buf.tobytes(), "image/png"
         asset_id = "image-background"
         assets.append({"id": asset_id, "w": scene.size[0], "h": scene.size[1], "u": "",
                        "p": f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}", "e": 1})

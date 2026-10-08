@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Element, Scene
 from ..ir.paths import scene_asset_path
+from ..ir.gradient import gradient_at, render_gradient
 from ..ir.tracks import affine_matrix, eval_props, eval_z
 
 
@@ -73,15 +74,26 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
     W, H = scene.size
     canvas = np.empty((H, W, 3), np.float32)
     cache = {} if cache is None else cache
-    if scene.background.kind == "image":
-        path = scene_asset_path(scene_dir, scene.background.value)
-        key = ("background", scene.background.value, scene.size)
+    bgd = scene.background
+    image = bgd.value if bgd.kind == "image" else bgd.poster if bgd.kind == "video" else None
+    if image:
+        path = scene_asset_path(scene_dir, image)
+        key = ("background", image, scene.size)
         bg = cache.get(key)
         if bg is None:
             bg = cache[key] = cv2.resize(load_texture(path)[..., :3], (W, H))
         canvas[:] = bg
+    elif bgd.kind == "gradient":
+        g = gradient_at(bgd, f)
+        key = ("background", "gradient", scene.size)
+        hit = cache.get(key)
+        if hit is None or hit[0] != g:
+            hit = cache[key] = (g, render_gradient(g, W, H).astype(np.float32) / 255.0)
+        canvas[:] = hit[1]
+    elif bgd.kind == "video":
+        canvas[:] = 0.0
     else:
-        canvas[:] = hex_to_rgb(scene.background.value)
+        canvas[:] = hex_to_rgb(bgd.value)
     order = sorted((e for e in scene.elements if e.visible[0] <= f <= e.visible[1]), key=lambda e: eval_z(e, f))
     for el in order:
         if not el.canonical.texture:

@@ -250,11 +250,17 @@ def image_format(path):
     raise ValueError(f"{path.name} is not a supported image (PNG, JPEG or WebP)")
 
 
+def _bg_image(background) -> str | None:
+    if background.kind == "image":
+        return background.value
+    return background.poster if background.kind in {"video", "gradient"} else None
+
+
 def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
     """Map only exported asset names to their scene-contained source files."""
     sources = []
-    if scene.background.kind == "image":
-        sources.append((scene.background.value, "background", None))
+    if _bg_image(scene.background):
+        sources.append((_bg_image(scene.background), "background", None))
     for el in scene.elements:
         if el.kind == "text" and el.canonical.font is not None:
             continue
@@ -326,17 +332,22 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
 
 def _background(scene, scene_dir, assets):
     background = scene.background
-    kind, fix, anchor = "solid", [1, 1], [0, 0]
-    if background.kind == "image":
+    kind, fix, anchor, warnings = "solid", [1, 1], [0, 0], []
+    image = _bg_image(background)
+    if image:
         kind = "image"
-        source, anchor = _image(background.value, "background", scene.size, (0, 0), scene_dir, assets)
+        source, anchor = _image(image, "background", scene.size, (0, 0), scene_dir, assets)
         fix = source["scale_fix"]
+        if background.kind != "image":
+            warnings.append(f"{background.kind} background exported as its poster image")
     else:
-        source = {"color": _color(background.value)}
+        source = {"color": _color(background.value if background.kind in {"color", "gradient"} else "#000000")}
+        if background.kind != "color":
+            warnings.append(f"{background.kind} background exported as a flat colour")
     return {"id": "kf:background", "kind": kind, "name": f"background · {background.kind}", "label": None,
             "in": 0, "out": scene.frames - 1, "order": 0, "source": source, "anchor": anchor,
             "props": _props(_tracks({}), fix, scene.fps, [], "background"),
-            "effects": {"skew": None, "reveal": None}, "warnings": []}
+            "effects": {"skew": None, "reveal": None}, "warnings": warnings}
 
 
 def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, version: str,
@@ -346,6 +357,7 @@ def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, ver
         for member in group.members:
             labels.setdefault(member, (i % 16) + 1)
     layers = [_background(scene, scene_dir, assets)]
+    warnings.extend(layers[0]["warnings"])
     ordered = sorted(scene.elements, key=lambda el: eval_z(el, el.visible[0]))
     for el in ordered:
         layer = _layer(el, scene_dir, assets, scene.fps, fonts, labels.get(el.id))

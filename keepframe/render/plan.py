@@ -590,8 +590,12 @@ def create_render_plan(
             refs.append((element.canonical.model, "texture"))
         if element.raw:
             refs.append((element.raw, "raw"))
-    if scene.background.kind == "image":
-        refs.append((scene.background.value, "texture"))
+    background = scene.background
+    if background.kind in {"image", "video"}:
+        refs.append((background.value, "texture"))
+    for extra in (background.poster, background.synthetic):
+        if extra:
+            refs.append((extra, "texture"))
     refs.extend(
         _substitution_asset_paths(
             substitutions,
