@@ -24,6 +24,27 @@ from .video import read_frames
 from ..assets import AssetClient
 
 log = get("keepframe.analyze")
+try:
+    import resource
+except ImportError:   # Windows
+    resource = None
+
+
+def _rss_mb() -> tuple[float, float]:
+    """Current and peak resident set size in MB."""
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024 if resource else 0.0   # KiB on Linux
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2 ** 20, peak
+    except (OSError, ValueError):
+        return peak, peak
+
+
+def _stage_done(name: str, t0: float) -> float:
+    rss, peak = _rss_mb()
+    now = time.perf_counter()
+    log.info("stage %s done %.1fs rss %.0f MB peak %.0f MB", name, now - t0, rss, peak)
+    return now
 
 
 @dataclass
@@ -119,7 +140,9 @@ def _stage_text(frames, bg, opts, ocr, sd):
 def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, shape_tracks=None):
     reveal_boxes = reveal_exclusion_boxes((text_tracks or []) + (shape_tracks or []))
     plate_lab = rgb_to_lab(plate) if plate is not None else None
-    fg = np.stack([foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames])
+    fg = np.empty(frames.shape[:3], bool)   # filled in place: a list + np.stack held the masks twice
+    for i, f in enumerate(frames):
+        fg[i] = foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg)
     pal = build_palette(frames, fg)
     ov = _load_overrides(sd)
     ov_by_frame: dict[int, list] = {}
@@ -277,10 +300,12 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
 
 
 def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: list[str], previous: Scene | None = None, captioner=None,
-            props=None, ids=None, generate_3d=True, generation_skipped=None) -> Scene:
+            props=None, ids=None, generate_3d=True, generation_skipped=None, kf_secs=0.0) -> Scene:
     from .solid_assets import finish_solid_assets
+    t = time.perf_counter() - kf_secs
     solids_report = finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=generate_3d,
                                         previous=previous, generation_skipped=generation_skipped) if props is not None else []
+    t = _stage_done("keyframes", t)
     report_stage("semantics")
     assign_roles(scene.elements)
     if captioner is not None:
@@ -295,10 +320,12 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
         except Exception as e:  # captions are optional suggestions; analysis never fails on them
             messages.append(f"captions skipped: {type(e).__name__}: {e}"[:200])
     scene.groups = [] if scene.ui is not None else group_by_motion(scene.elements, raws)  # ponytail: parsed UI has no measured motion tracks.
+    t = _stage_done("semantics", t)
     report_stage("constraints")
     scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
     if previous is not None:
         scene.constraints = carry_keep(scene.constraints, previous.constraints)
+    t = _stage_done("constraints", t)
     report_stage("report")
     from .report import reconstruction_and_confidence
     rec, conf = reconstruction_and_confidence(scene, sd, frames, 0)
@@ -306,13 +333,15 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
         e.confidence = conf[e.id]
     write_report(sd, {"reconstruction": rec, "confidence": conf, "messages": messages,
                       "solids": solids_report, "elements": len(scene.elements), "fit_error_max_px": max([e.fit_error.max_px for e in scene.elements] or [0])})
+    _stage_done("report", t)
     return scene
 
 
 def _parse_ui(frames: np.ndarray, scene: Scene, sd: Path) -> Scene:
     if not os.environ.get("KEEPFRAME_ASSET_API_URL"):
         return scene
-    change = np.mean(np.abs(frames[1:].astype(np.int16) - frames[:-1].astype(np.int16)), axis=(1, 2, 3)) if len(frames) > 1 else np.array([])
+    # Per frame pair, not two int16 copies of the stack; integer sums are exact in float64, so the means match.
+    change = np.array([np.mean(np.abs(b.astype(np.int16) - a.astype(np.int16))) for a, b in zip(frames, frames[1:])])
     picks = [0, *([int(np.argmax(change)) + 1] if change.size else []), len(frames) - 1]
     selected = [frames[index] for index in dict.fromkeys(picks)]
     sheet = np.concatenate(selected, axis=1)
@@ -405,19 +434,26 @@ def analyze_scene_frames(
     np.save(sd / "stages" / "frames.npy", frames)
     n, H, W = frames.shape[:3]
     log.info("frames n=%s size=%sx%s fps=%s", n, W, H, fps)
+    t = time.perf_counter()
     report_stage("background")
     bg, bconf, plate = _stage_background(frames, opts, sd)
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
+    t = _stage_done("background", t)
     report_stage("text")
     boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
+    t = _stage_done("text", t)
     report_stage("regions")
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
+    t = _stage_done("regions", t)
     report_stage("tracking")
     obj_tracks = _stage_tracking(rbf, sd)
+    t = _stage_done("tracking", t)
     report_stage("solids")
     solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
+    t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
+    t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
     report_stage("keyframes")
@@ -431,7 +467,7 @@ def analyze_scene_frames(
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
     finish_args = dict(sd=sd, scene=scene, frames=frames, raws=raws, messages=messages, captioner=captioner,
-                       props=props, ids=ids, generate_3d=opts.generate_3d, previous=previous)
+                       props=props, ids=ids, generate_3d=opts.generate_3d, previous=previous, kf_secs=time.perf_counter() - t)
     if _deferred_finish is None:
         scene = _finish(**finish_args)
     else:
@@ -517,7 +553,9 @@ def analyze(
     out_root = Path(out_root)
     log.info("pipeline start video=%s range=[%s,%s] out=%s", video, start, end, out_root)
     existing = load_project(out_root) if (out_root / "project.json").exists() else None
+    t = time.perf_counter()
     frames, fps = read_frames(video, start, end)
+    _stage_done("frames", t)
     layout = scenes or [{"id": "s1", "frames": [start, end]}]
     by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
     analyzed: list[Scene] = []
@@ -568,7 +606,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     prev, _ = current_scene(root, scene_id)
     opts = options or AnalyzeOptions(**json.loads((sd / "stages" / "options.json").read_text()))
     boundary = STAGES.index(from_stage)
-
+    t = time.perf_counter()
     if boundary <= STAGES.index("frames"):
         source = Path(project.source["file"])
         ref = next((item for item in project.scenes if item.id == scene_id), None)
@@ -581,7 +619,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     from .solid_assets import index_legacy_solid_models
     index_legacy_solid_models(sd)
     n, H, W = frames.shape[:3]
-
+    t = _stage_done("frames", t)
     plate = None
     if boundary <= STAGES.index("background"):
         bg, bconf, plate = _stage_background(frames, opts, sd)
@@ -593,7 +631,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             if plate is None:
                 raise FileNotFoundError(sd / PLATE_PATH)
             plate = cv2.cvtColor(plate, cv2.COLOR_BGR2RGB)
-
+    t = _stage_done("background", t)
     msg = None
     if boundary <= STAGES.index("text"):
         report_stage("text")
@@ -602,27 +640,32 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]
         shape_tracks = text.get("shape_tracks", [])
+    t = _stage_done("text", t)
     if boundary <= STAGES.index("regions"):
         report_stage("regions")
         rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
     else:
         rbf = _pk(sd, "regions")
+    t = _stage_done("regions", t)
     if boundary <= STAGES.index("tracking"):
         report_stage("tracking")
         obj_tracks = _stage_tracking(rbf, sd)
     else:
         obj_tracks = _pk(sd, "tracks")
+    t = _stage_done("tracking", t)
     missing_solids = not (sd / "stages" / "solids.pkl").exists()
     if boundary <= STAGES.index("solids") or missing_solids:
         report_stage("solids")
         solids = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate)
     else:
         solids = _pk(sd, "solids")
+    t = _stage_done("solids", t)
     if boundary <= STAGES.index("sprites") or missing_solids:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids)
     else:
         props = _pk(sd, "props")
+    t = _stage_done("sprites", t)
     ids = json.loads((sd / "stages" / "ids.json").read_text())
     ids.update(_load_overrides(sd).get("ids", {}))
     report_stage("keyframes")
@@ -644,5 +687,5 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         except KeyError:
             pass
     scene = _finish(sd, scene, frames, raws, messages, previous=prev, captioner=captioner,
-                    props=props, ids=ids, generate_3d=False)
+                    props=props, ids=ids, generate_3d=False, kf_secs=time.perf_counter() - t)
     return new_version(root, scene_id, scene, note=note, auto=False, analysis_file=snapshot_from_stages(sd, scene))

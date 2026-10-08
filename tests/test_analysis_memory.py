@@ -59,3 +59,34 @@ def test_analysis_output_unchanged_by_memory_work(tmp_path):
     if got["inputs"] != want["inputs"]:
         pytest.skip("synthetic clips encode differently here (ffmpeg build); golden not comparable")
     assert got["projects"] == want["projects"]
+
+
+def test_read_frames_peak_is_one_stack(tmp_path):
+    import tracemalloc
+    from keepframe.analyze.video import read_frames
+    scene = make_synthetic_scene(tmp_path / "s", seed=3, frames=60, with_text=False)
+    video = render_scene_video(scene, tmp_path / "s", tmp_path / "s.mp4")
+    tracemalloc.start()
+    try:
+        frames, _ = read_frames(video, 0, 59)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert frames.shape == (60, 360, 640, 3)
+    assert peak <= 1.3 * frames.nbytes
+
+
+def test_stage_log_has_rss(tmp_path, caplog):
+    import logging, re
+    from keepframe.analyze.pipeline import rerun
+    from keepframe.progress import STAGES
+    scene = make_synthetic_scene(tmp_path / "s", seed=5, frames=12, with_text=False)
+    video = render_scene_video(scene, tmp_path / "s", tmp_path / "s.mp4")
+    line = re.compile(r"stage (\w+) done \d+\.\ds rss \d+ MB peak \d+ MB$")
+    caplog.set_level(logging.INFO, logger="keepframe.analyze")
+    analyze(video, 0, 11, tmp_path / "proj", AnalyzeOptions(ocr=False, refine=False))
+    done = [m.group(1) for r in caplog.records if (m := line.match(r.getMessage()))]
+    assert done == list(STAGES)
+    caplog.clear()
+    rerun(tmp_path / "proj", "s1", "regions", note="rerun")
+    assert [m.group(1) for r in caplog.records if (m := line.match(r.getMessage()))] == list(STAGES)
