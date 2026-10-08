@@ -469,6 +469,8 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
     core = _glyph_core_mask(crop, sm, bg_rgb, local_plate)
     stroke_px = crop[core].astype(np.float32) if core.any() else crop.reshape(-1, 3).astype(np.float32)
+    # The core-mask colour is only the fallback (and the opacity reference below): the style phase (textstyle)
+    # measures the fill on the matted texture against the local plate and replaces it.
     col = np.median(stroke_px, axis=0)
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))

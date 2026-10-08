@@ -4,12 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextureMeta, Track, UIModel, Version
+from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
-from . import matting
+from . import matting, textstyle
 from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
@@ -188,6 +188,8 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: not matted, {p['texture_note']}; kept the binary texture")
         elif p.get("mover") and not p.get("stable") and p.get("texture_meta"):
             out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
+        if p.get("style_error"):
+            out.append(f"{ids[k]}: text style failed ({p['style_error']}); kept the core-mask colour")
     return out
 
 
@@ -368,6 +370,13 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     except Exception as e:   # fail soft: every element keeps its binary texture
         log.exception("textures v2 failed")
         props["_textures_message"] = f"textures v2 skipped: {type(e).__name__}: {e}"[:200]
+    # Text style: fill, gradient, fade and effects from the matted texture and the local plate (Task 9).
+    report_stage("sprites", "text style")
+    try:
+        textstyle.style_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind), workers=workers)
+    except Exception as e:   # fail soft: every text keeps its core-mask colour and no style
+        log.exception("text style failed")
+        props["_style_message"] = f"text style skipped: {type(e).__name__}: {e}"[:200]
     for i, solid in enumerate(solids):
         p = solid_props(solid, frames)
         p["fragments"] = {k: props.pop(k) for mid in solid.members if (k := f"o{mid}") in props}
@@ -395,6 +404,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         meta = p.get("texture_meta")
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
                               text=p.get("text"), font=p.get("font"), color=p.get("color"),
+                              style=TextStyle(**p["style"]) if p.get("style") else None,
                               texture_meta=TextureMeta(**meta) if meta else None)
         elements.append(Element(id=eid, kind=p["kind"], canonical=canonical, visible=(first, last), tracks=tracks,
                                 z=Track(keys=[Keyframe(t=0, v=p.get("z", 0))]), raw=f"assets/{eid}_raw.npz", fit_error=fe,
@@ -571,7 +581,8 @@ def analyze_scene_frames(
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message")) if m]
+                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
+                            props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
@@ -790,7 +801,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message")) if m]
+                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
+                            props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
@@ -800,6 +812,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             old = prev.element(e.id)
             if old.provenance == "manual" and old.kind == "text":
                 e.canonical.text, e.canonical.font, e.provenance = old.canonical.text, old.canonical.font, "manual"
+                e.canonical.style = old.canonical.style
             e.label, e.caption = old.label, old.caption
         except KeyError:
             pass
