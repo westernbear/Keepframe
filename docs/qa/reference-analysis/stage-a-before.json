@@ -1,0 +1,1401 @@
+{
+  "date": "2026-10-08",
+  "renderer": "numpy",
+  "vlm_calls": 0,
+  "max_frames": 150,
+  "strict": false,
+  "options": {
+    "synthetic": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": false,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": false
+    },
+    "clips": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": true,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": true
+    }
+  },
+  "gates": {
+    "synthetic": {
+      "title_outside_glyph_delta": {
+        "value": 1.3787385486066341,
+        "worst": 3.785048325856527,
+        "threshold": 1.0,
+        "op": "le",
+        "samples": 6,
+        "failed": 4,
+        "passed": false
+      },
+      "title_smear_score": {
+        "value": 9.587205312736879,
+        "worst": 33.305941581726074,
+        "threshold": 3.0,
+        "op": "le",
+        "samples": 6,
+        "failed": 3,
+        "passed": false
+      },
+      "title_glyph_de": {
+        "value": 14.31415215258797,
+        "worst": 32.1091019709905,
+        "threshold": 5.0,
+        "op": "lt",
+        "samples": 6,
+        "failed": 4,
+        "passed": false
+      },
+      "hide_plate_de": {
+        "value": 10.404154231927567,
+        "worst": 27.061281204223633,
+        "threshold": 2.0,
+        "op": "le",
+        "samples": 10,
+        "failed": 7,
+        "passed": false
+      },
+      "hide_hf_ratio": {
+        "value": 1.6569135447343188,
+        "worst": 4.178515990575154,
+        "threshold": [
+          0.5,
+          2.0
+        ],
+        "op": "in",
+        "samples": 10,
+        "failed": 2,
+        "passed": false
+      },
+      "hide_residue": {
+        "value": 0.3156662238385294,
+        "worst": 0.6644663930786476,
+        "threshold": 0.02,
+        "op": "le",
+        "samples": 10,
+        "failed": 7,
+        "passed": false
+      },
+      "recolour_halo_ring": {
+        "value": 30.1663072903951,
+        "worst": 59.5373789469401,
+        "threshold": 2.0,
+        "op": "lt",
+        "samples": 6,
+        "failed": 6,
+        "passed": false
+      },
+      "alpha_sad_edge": {
+        "value": 0.29994469512435507,
+        "worst": 0.4258441934362054,
+        "threshold": 0.03,
+        "op": "le",
+        "samples": 6,
+        "failed": 6,
+        "passed": false
+      },
+      "f_de_interior": {
+        "value": 2.786604967361523,
+        "worst": 5.56099328584969,
+        "threshold": 3.0,
+        "op": "lt",
+        "samples": 6,
+        "failed": 2,
+        "passed": false
+      },
+      "f_de_edge": {
+        "value": 15.852802013421162,
+        "worst": 26.408598688932564,
+        "threshold": 6.0,
+        "op": "lt",
+        "samples": 6,
+        "failed": 6,
+        "passed": false
+      },
+      "font_top3": {
+        "value": 0.375,
+        "threshold": 0.9,
+        "op": "ge",
+        "samples": 8,
+        "passed": false
+      }
+    }
+  },
+  "synthetic": {
+    "n": 6,
+    "rows": [
+      {
+        "seed": 1,
+        "plate": "gradient",
+        "mover": false,
+        "frames": [
+          14,
+          30,
+          59
+        ],
+        "seconds": 48.08,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Liberation Serif",
+            "colour": "#ffd166"
+          }
+        ],
+        "elements": {
+          "truth": 5,
+          "analysed": 13
+        },
+        "matched": 4,
+        "pairs": {
+          "e2": "title1",
+          "e7": "s1",
+          "e3": "s2",
+          "e8": "s3"
+        },
+        "unmatched_truth": [
+          "logo"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": true,
+            "element": "e2",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          23.486433029174805
+        ],
+        "font_hits": [
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.32356385615738953,
+          "mse": 0.28190849255770445,
+          "f_de_interior": 2.349630425373713,
+          "f_de_edge": 22.333003997802734,
+          "layers": 11
+        },
+        "leak": {
+          "bg_leak_fraction": 0.6623527419627955,
+          "leak_correlation": 0.4851268541026159
+        },
+        "plate_de": {
+          "overall": 2.065856695175171,
+          "under_title": 15.563020706176758,
+          "under_logo": 19.360462188720703
+        },
+        "ring_floor": 0.2253521978855133,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e2",
+          "text": "Fall Drop Sale",
+          "colour": "#c3a95f",
+          "visible_frames": 3,
+          "outside_glyph_delta": 3.785048325856527,
+          "smear_score": 2.5714775721232095,
+          "glyph_de": 23.49615024526914,
+          "frames": [
+            {
+              "frame": 14,
+              "visible": true,
+              "outside_glyph_delta": 2.689708709716797,
+              "smear_score": 2.122251510620117,
+              "glyph_de": 69.30426788330078
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 4.495855331420898,
+              "smear_score": 2.729375123977661,
+              "glyph_de": 0.7520354986190796
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 4.169580936431885,
+              "smear_score": 2.8628060817718506,
+              "glyph_de": 0.432147353887558
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e2",
+            "truth": "title1",
+            "mean_de": 8.610829830169678,
+            "p95_de": 15.53692658742269,
+            "hf_ratio": 1.20436692237854,
+            "residue_fraction": 0.3855941730785159,
+            "truth_de": 10.847553730010986,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 4.496438503265381,
+                "p95_de": 11.023762702941895,
+                "hf_ratio": 1.3669555187225342,
+                "residue_fraction": 0.07801888355143283,
+                "pixels": 12074,
+                "fit_degree": 2,
+                "truth_de": 5.351635456085205
+              },
+              {
+                "frame": 30,
+                "mean_de": 10.076030731201172,
+                "p95_de": 17.071884155273438,
+                "hf_ratio": 1.1041773557662964,
+                "residue_fraction": 0.49718097355673785,
+                "pixels": 12593,
+                "fit_degree": 2,
+                "truth_de": 13.40516185760498
+              },
+              {
+                "frame": 59,
+                "mean_de": 11.26002025604248,
+                "p95_de": 18.515132904052734,
+                "hf_ratio": 1.1419678926467896,
+                "residue_fraction": 0.5815826621273769,
+                "pixels": 12043,
+                "fit_degree": 2,
+                "truth_de": 13.785863876342773
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 30.314659754435223,
+            "frames": [
+              {
+                "frame": 14,
+                "halo_ring": 30.701353073120117
+              },
+              {
+                "frame": 30,
+                "halo_ring": 32.12434387207031
+              },
+              {
+                "frame": 59,
+                "halo_ring": 28.118282318115234
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.01148842399319013,
+        "sheet": "sheets/synthetic-seed1.png",
+        "messages": [
+          "text tracks reclassified as shapes: 4",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 2,
+        "plate": "flat",
+        "mover": true,
+        "frames": [
+          15,
+          30,
+          59
+        ],
+        "seconds": 43.82,
+        "titles": [
+          {
+            "text": "Fresh Picks",
+            "font": "Liberation Sans",
+            "colour": "#ffd166"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 6
+        },
+        "matched": 4,
+        "pairs": {
+          "e3": "title1",
+          "e4": "s1",
+          "e2": "s2",
+          "e1": "logo"
+        },
+        "unmatched_truth": [
+          "mover",
+          "s3"
+        ],
+        "integrity": [
+          {
+            "text": "Fresh Picks",
+            "role": "title",
+            "whole": true,
+            "element": "e3",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          0.6336275339126587
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.1738987696977953,
+          "mse": 0.13437078726322702,
+          "f_de_interior": 5.56099328584969,
+          "f_de_edge": 7.27646950383981,
+          "layers": 12
+        },
+        "leak": {
+          "bg_leak_fraction": 3.733154141934521e-05,
+          "leak_correlation": 0.0
+        },
+        "plate_de": {
+          "overall": 0.0,
+          "under_title": 0.0,
+          "under_logo": 0.0
+        },
+        "ring_floor": 0.0,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e3",
+          "text": "Fall Drop Sale",
+          "colour": "#ffd266",
+          "visible_frames": 3,
+          "outside_glyph_delta": 5.190571149190267e-06,
+          "smear_score": 0.018564153067472944,
+          "glyph_de": 1.2998536427815754,
+          "frames": [
+            {
+              "frame": 15,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.1628084394033067e-05,
+              "glyph_de": 1.4649173021316528
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 7.778406143188477e-06,
+              "smear_score": 0.055679067969322205,
+              "glyph_de": 1.217292070388794
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 7.793307304382324e-06,
+              "smear_score": 1.7631487025937531e-06,
+              "glyph_de": 1.2173515558242798
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e3",
+            "truth": "title1",
+            "mean_de": 0.1316546378709139,
+            "p95_de": 0.26809349314620096,
+            "hf_ratio": 0.9752697149912516,
+            "residue_fraction": 0.0,
+            "truth_de": 0.0,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 2.815660309352097e-07,
+                "p95_de": 6.556510925292969e-07,
+                "hf_ratio": 0.9999891519546509,
+                "residue_fraction": 0.0,
+                "pixels": 6512,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.39441731572151184,
+                "p95_de": 0.8028842210769653,
+                "hf_ratio": 0.9275316596031189,
+                "residue_fraction": 0.0,
+                "pixels": 6720,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.000546316325198859,
+                "p95_de": 0.001395602710545063,
+                "hf_ratio": 0.9982883334159851,
+                "residue_fraction": 0.0,
+                "pixels": 6720,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          },
+          {
+            "element": "e1",
+            "truth": "logo",
+            "mean_de": 0.0,
+            "p95_de": 0.0,
+            "hf_ratio": 1.0,
+            "residue_fraction": 0.0,
+            "truth_de": 0.0,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1782,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1781,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 7.094113667805989,
+            "frames": [
+              {
+                "frame": 15,
+                "halo_ring": 7.529998779296875
+              },
+              {
+                "frame": 30,
+                "halo_ring": 7.520843029022217
+              },
+              {
+                "frame": 59,
+                "halo_ring": 6.231499195098877
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.012882593087852001,
+        "sheet": "sheets/synthetic-seed2.png",
+        "messages": [
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 3,
+        "plate": "animated",
+        "mover": false,
+        "frames": [
+          15,
+          30,
+          59
+        ],
+        "seconds": 59.06,
+        "titles": [
+          {
+            "text": "Big Launch",
+            "font": "DejaVu Serif",
+            "colour": "#ffffff"
+          },
+          {
+            "text": "Limited edition",
+            "font": "DejaVu Sans",
+            "colour": "#ab0004"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 17
+        },
+        "matched": 4,
+        "pairs": {
+          "e5": "title1",
+          "e6": "title2",
+          "e12": "s2",
+          "e13": "logo"
+        },
+        "unmatched_truth": [
+          "s1",
+          "s3"
+        ],
+        "integrity": [
+          {
+            "text": "Big Launch",
+            "role": "title",
+            "whole": true,
+            "element": "e5",
+            "ratio": 1.0,
+            "duplicates": 1,
+            "fragments": 1,
+            "fragment_ids": [
+              "e7"
+            ]
+          },
+          {
+            "text": "Limited edition",
+            "role": "title",
+            "whole": true,
+            "element": "e6",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          75.1633529663086,
+          1.2224843502044678
+        ],
+        "font_hits": [
+          false,
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.3560681394301355,
+          "mse": 0.3107410642163207,
+          "f_de_interior": 1.4093319574991863,
+          "f_de_edge": 16.96187472343445,
+          "layers": 12
+        },
+        "leak": {
+          "bg_leak_fraction": 0.4571806938914603,
+          "leak_correlation": 0.40147703828083986
+        },
+        "plate_de": {
+          "overall": 17.85106873512268,
+          "under_title": 22.248252550760906,
+          "under_logo": 25.955443064371746
+        },
+        "ring_floor": 0.1838507999976476,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e5",
+          "text": "Fall Drop Sale",
+          "colour": "#2d3f4e",
+          "visible_frames": 0,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 15,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 30,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 59,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e5",
+            "truth": "title1",
+            "mean_de": 10.927034934361776,
+            "p95_de": 23.321780522664387,
+            "hf_ratio": 1.9143665432929993,
+            "residue_fraction": 0.2929657618007488,
+            "truth_de": 21.261987050374348,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 3.1645867824554443,
+                "p95_de": 6.197269439697266,
+                "hf_ratio": 1.1687966585159302,
+                "residue_fraction": 0.03634957463263728,
+                "pixels": 5172,
+                "fit_degree": 2,
+                "truth_de": 15.934287071228027
+              },
+              {
+                "frame": 30,
+                "mean_de": 7.690376281738281,
+                "p95_de": 11.727193832397461,
+                "hf_ratio": 0.7252119183540344,
+                "residue_fraction": 0.18838248436103663,
+                "pixels": 5595,
+                "fit_degree": 2,
+                "truth_de": 13.573216438293457
+              },
+              {
+                "frame": 59,
+                "mean_de": 21.9261417388916,
+                "p95_de": 52.04087829589844,
+                "hf_ratio": 3.849091053009033,
+                "residue_fraction": 0.6541652264085724,
+                "pixels": 5786,
+                "fit_degree": 2,
+                "truth_de": 34.27845764160156
+              }
+            ]
+          },
+          {
+            "element": "e13",
+            "truth": "logo",
+            "mean_de": 27.061281204223633,
+            "p95_de": 38.7877254486084,
+            "hf_ratio": 1.306577205657959,
+            "residue_fraction": 0.6644663930786476,
+            "truth_de": 27.58723513285319,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 50.28533172607422,
+                "p95_de": 70.43895721435547,
+                "hf_ratio": 1.6848294734954834,
+                "residue_fraction": 0.8692220969560316,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 35.4527473449707
+              },
+              {
+                "frame": 30,
+                "mean_de": 6.91448974609375,
+                "p95_de": 15.327472686767578,
+                "hf_ratio": 1.018193006515503,
+                "residue_fraction": 0.3034330011074197,
+                "pixels": 1806,
+                "fit_degree": 2,
+                "truth_de": 22.996728897094727
+              },
+              {
+                "frame": 59,
+                "mean_de": 23.98402214050293,
+                "p95_de": 30.59674644470215,
+                "hf_ratio": 1.2167091369628906,
+                "residue_fraction": 0.8207440811724915,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 24.31222915649414
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 33.226890563964844,
+            "frames": [
+              {
+                "frame": 15,
+                "halo_ring": 36.427616119384766
+              },
+              {
+                "frame": 30,
+                "halo_ring": 18.860286712646484
+              },
+              {
+                "frame": 59,
+                "halo_ring": 44.39276885986328
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.059153235207001366,
+        "sheet": "sheets/synthetic-seed3.png",
+        "messages": [
+          "text tracks reclassified as shapes: 3",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 4,
+        "plate": "image",
+        "mover": true,
+        "frames": [
+          12,
+          30,
+          59
+        ],
+        "seconds": 50.93,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "DejaVu Sans",
+            "colour": "#ab0004"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 20
+        },
+        "matched": 5,
+        "pairs": {
+          "e6": "title1",
+          "e18": "s1",
+          "e3": "s2",
+          "e19": "s3",
+          "e5": "logo"
+        },
+        "unmatched_truth": [
+          "mover"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": true,
+            "element": "e6",
+            "ratio": 0.957,
+            "duplicates": 1,
+            "fragments": 1,
+            "fragment_ids": [
+              "e14"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          32.62076187133789
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.2704171158373356,
+          "mse": 0.23507985851416985,
+          "f_de_interior": 3.6373873561620713,
+          "f_de_edge": 26.408598688932564,
+          "layers": 15
+        },
+        "leak": {
+          "bg_leak_fraction": 0.44720702634880805,
+          "leak_correlation": 0.15818074965104897
+        },
+        "plate_de": {
+          "overall": 3.9327759742736816,
+          "under_title": 25.304183959960938,
+          "under_logo": 14.201839447021484
+        },
+        "ring_floor": 0.5031626224517822,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e6",
+          "text": "Fall Drop Sale",
+          "colour": "#862d28",
+          "visible_frames": 3,
+          "outside_glyph_delta": 1.7299006779988606,
+          "smear_score": 33.305941581726074,
+          "glyph_de": 32.1091019709905,
+          "frames": [
+            {
+              "frame": 12,
+              "visible": true,
+              "outside_glyph_delta": 1.1738481521606445,
+              "smear_score": 20.289569854736328,
+              "glyph_de": 0.6481066942214966
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 75.8774185180664,
+              "glyph_de": 95.67919921875
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 4.0158538818359375,
+              "smear_score": 3.7508363723754883,
+              "glyph_de": 0.0
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e6",
+            "truth": "title1",
+            "mean_de": 17.65310573577881,
+            "p95_de": 66.56079546610515,
+            "hf_ratio": 2.7770869731903076,
+            "residue_fraction": 0.5737284018626626,
+            "truth_de": 23.081837336222332,
+            "frames": [
+              {
+                "frame": 12,
+                "mean_de": 15.982284545898438,
+                "p95_de": 64.12816619873047,
+                "hf_ratio": 2.6254560947418213,
+                "residue_fraction": 0.5596765498652291,
+                "pixels": 9275,
+                "fit_degree": 2,
+                "truth_de": 23.534366607666016
+              },
+              {
+                "frame": 30,
+                "mean_de": 22.218055725097656,
+                "p95_de": 106.843505859375,
+                "hf_ratio": 4.429651737213135,
+                "residue_fraction": 0.5099749133914706,
+                "pixels": 8371,
+                "fit_degree": 2,
+                "truth_de": 25.13223648071289
+              },
+              {
+                "frame": 59,
+                "mean_de": 14.758976936340332,
+                "p95_de": 28.71071434020996,
+                "hf_ratio": 1.2761530876159668,
+                "residue_fraction": 0.6515337423312884,
+                "pixels": 14670,
+                "fit_degree": 2,
+                "truth_de": 20.578908920288086
+              }
+            ]
+          },
+          {
+            "element": "e5",
+            "truth": "logo",
+            "mean_de": 7.785747687021892,
+            "p95_de": 13.692695617675781,
+            "hf_ratio": 1.1628413200378418,
+            "residue_fraction": 0.3540022547914317,
+            "truth_de": 12.67724323272705,
+            "frames": [
+              {
+                "frame": 12,
+                "mean_de": 7.785757064819336,
+                "p95_de": 13.692707061767578,
+                "hf_ratio": 1.1628414392471313,
+                "residue_fraction": 0.35400225479143177,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 12.67724323272705
+              },
+              {
+                "frame": 30,
+                "mean_de": 7.785741806030273,
+                "p95_de": 13.69268798828125,
+                "hf_ratio": 1.1628413200378418,
+                "residue_fraction": 0.35400225479143177,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 12.67724323272705
+              },
+              {
+                "frame": 59,
+                "mean_de": 7.7857441902160645,
+                "p95_de": 13.692691802978516,
+                "hf_ratio": 1.1628412008285522,
+                "residue_fraction": 0.35400225479143177,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 12.67724323272705
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 59.5373789469401,
+            "frames": [
+              {
+                "frame": 12,
+                "halo_ring": 58.14902877807617
+              },
+              {
+                "frame": 30,
+                "halo_ring": 61.64403533935547
+              },
+              {
+                "frame": 59,
+                "halo_ring": 58.81907272338867
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.025913003211220104,
+        "sheet": "sheets/synthetic-seed4.png",
+        "messages": [
+          "text tracks reclassified as shapes: 5",
+          "3D \ud6c4\ubcf4 1\uac1c",
+          "3D \ud6c4\ubcf4 1\uac1c: \uc0dd\uc131\uae30 \ubbf8\uc124\uc815",
+          "3D \ucda9\uc2e4\ub3c4 e7: fragments=0.084240, still=0.136559, model=None; fragments"
+        ]
+      },
+      {
+        "seed": 5,
+        "plate": "gradient",
+        "mover": false,
+        "frames": [
+          11,
+          30,
+          59
+        ],
+        "seconds": 47.76,
+        "titles": [
+          {
+            "text": "Fresh Picks",
+            "font": "Liberation Serif",
+            "colour": "#ffffff"
+          }
+        ],
+        "elements": {
+          "truth": 5,
+          "analysed": 17
+        },
+        "matched": 3,
+        "pairs": {
+          "e6": "title1",
+          "e3": "s1",
+          "e9": "s3"
+        },
+        "unmatched_truth": [
+          "s2",
+          "logo"
+        ],
+        "integrity": [
+          {
+            "text": "Fresh Picks",
+            "role": "title",
+            "whole": true,
+            "element": "e6",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e11"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          0.8857274055480957
+        ],
+        "font_hits": [
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.4258441934362054,
+          "mse": 0.38246976770460606,
+          "f_de_interior": 2.711364269256592,
+          "f_de_edge": 15.436861515045166,
+          "layers": 8
+        },
+        "leak": {
+          "bg_leak_fraction": 0.5553727142703351,
+          "leak_correlation": 0.34688472062329984
+        },
+        "plate_de": {
+          "overall": 2.1406848430633545,
+          "under_title": 12.733757019042969,
+          "under_logo": 29.964231491088867
+        },
+        "ring_floor": 0.22980909049510956,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e6",
+          "text": "Fall Drop Sale",
+          "colour": "#fffdfd",
+          "visible_frames": 3,
+          "outside_glyph_delta": 0.0,
+          "smear_score": 2.4528379440307617,
+          "glyph_de": 0.3515027513106664,
+          "frames": [
+            {
+              "frame": 11,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.911220908164978,
+              "glyph_de": 0.5394734144210815
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 3.5125534534454346,
+              "glyph_de": 0.2667921483516693
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.9347394704818726,
+              "glyph_de": 0.24824269115924835
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e6",
+            "truth": "title1",
+            "mean_de": 8.101751486460367,
+            "p95_de": 15.527103106180826,
+            "hf_ratio": 1.0501107772191365,
+            "residue_fraction": 0.33208768333164357,
+            "truth_de": 11.6553316116333,
+            "frames": [
+              {
+                "frame": 11,
+                "mean_de": 7.952113628387451,
+                "p95_de": 15.214681625366211,
+                "hf_ratio": 1.014452576637268,
+                "residue_fraction": 0.32296108137530616,
+                "pixels": 11023,
+                "fit_degree": 2,
+                "truth_de": 11.4287109375
+              },
+              {
+                "frame": 30,
+                "mean_de": 8.456255912780762,
+                "p95_de": 16.246253967285156,
+                "hf_ratio": 1.1204785108566284,
+                "residue_fraction": 0.35700094112726133,
+                "pixels": 9563,
+                "fit_degree": 2,
+                "truth_de": 11.997516632080078
+              },
+              {
+                "frame": 59,
+                "mean_de": 7.896884918212891,
+                "p95_de": 15.120373725891113,
+                "hf_ratio": 1.0154012441635132,
+                "residue_fraction": 0.3163010274923632,
+                "pixels": 10803,
+                "fit_degree": 2,
+                "truth_de": 11.539767265319824
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 34.760918935139976,
+            "frames": [
+              {
+                "frame": 11,
+                "halo_ring": 33.66666030883789
+              },
+              {
+                "frame": 30,
+                "halo_ring": 33.599063873291016
+              },
+              {
+                "frame": 59,
+                "halo_ring": 37.017032623291016
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.015889516410728294,
+        "sheet": "sheets/synthetic-seed5.png",
+        "messages": [
+          "text tracks reclassified as shapes: 6",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 6,
+        "plate": "flat",
+        "mover": true,
+        "frames": [
+          13,
+          30,
+          59
+        ],
+        "seconds": 48.24,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Liberation Sans",
+            "colour": "#333138"
+          },
+          {
+            "text": "Up to 50% off",
+            "font": "DejaVu Serif",
+            "colour": "#118ab2"
+          }
+        ],
+        "elements": {
+          "truth": 7,
+          "analysed": 20
+        },
+        "matched": 6,
+        "pairs": {
+          "e19": "title1",
+          "e16": "title2",
+          "e11": "s1",
+          "e2": "s2",
+          "e5": "s3",
+          "e1": "logo"
+        },
+        "unmatched_truth": [
+          "mover"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": true,
+            "element": "e19",
+            "ratio": 0.909,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e15"
+            ]
+          },
+          {
+            "text": "Up to 50% off",
+            "role": "title",
+            "whole": true,
+            "element": "e16",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e8"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          1.6007790565490723,
+          35.021026611328125
+        ],
+        "font_hits": [
+          true,
+          false
+        ],
+        "font_top3": 0.5,
+        "alpha": {
+          "sad": 0.249876096187269,
+          "mse": 0.21378830798408566,
+          "f_de_interior": 1.0509225100278854,
+          "f_de_edge": 6.7000036514722385,
+          "layers": 17
+        },
+        "leak": {
+          "bg_leak_fraction": 0.0,
+          "leak_correlation": 0.0
+        },
+        "plate_de": {
+          "overall": 0.9289324283599854,
+          "under_title": 0.9289324283599854,
+          "under_logo": 0.9289324879646301
+        },
+        "ring_floor": 0.0,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e19",
+          "text": "Fall Drop Sale",
+          "colour": "#31313a",
+          "visible_frames": 1,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 13,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 30,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.055020298808813095,
+              "glyph_de": 0.0
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e19",
+            "truth": "title1",
+            "mean_de": 23.770136803388596,
+            "p95_de": 43.023082756747804,
+            "hf_ratio": 4.178515990575154,
+            "residue_fraction": 0.5538175704416438,
+            "truth_de": 25.11725111802419,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 43.019290924072266,
+                "p95_de": 75.62353515625,
+                "hf_ratio": 6.788052082061768,
+                "residue_fraction": 0.9104579630895421,
+                "pixels": 2926,
+                "fit_degree": 2,
+                "truth_de": 36.7136344909668
+              },
+              {
+                "frame": 30,
+                "mean_de": 27.82146453857422,
+                "p95_de": 53.44380569458008,
+                "hf_ratio": 4.3047356605529785,
+                "residue_fraction": 0.7399041752224503,
+                "pixels": 1461,
+                "fit_degree": 2,
+                "truth_de": 37.12767028808594
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.46965494751930237,
+                "p95_de": 0.0019074194133281708,
+                "hf_ratio": 1.4427602291107178,
+                "residue_fraction": 0.011090573012939002,
+                "pixels": 6492,
+                "fit_degree": 2,
+                "truth_de": 1.5104485750198364
+              }
+            ]
+          },
+          {
+            "element": "e1",
+            "truth": "logo",
+            "mean_de": 0.0,
+            "p95_de": 0.0,
+            "hf_ratio": 1.0,
+            "residue_fraction": 0.0,
+            "truth_de": 0.9289324879646301,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.9289324879646301
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.9289324879646301
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.9289324879646301
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 16.063881874084473,
+            "frames": [
+              {
+                "frame": 13,
+                "halo_ring": 18.072660446166992
+              },
+              {
+                "frame": 30,
+                "halo_ring": 16.58298110961914
+              },
+              {
+                "frame": 59,
+                "halo_ring": 13.536004066467285
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.030661581705013912,
+        "sheet": "sheets/synthetic-seed6.png",
+        "messages": [
+          "text tracks reclassified as shapes: 3",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      }
+    ]
+  },
+  "passed": false
+}
