@@ -5,7 +5,8 @@ the known per-frame plate B (`PlateModel.at(f)`) with the layers drawn below the
 
 - frames are filtered (on screen, not under a layer above, opaque, revealed), scored (contrast × sharpness × slow
   motion), aligned to the best one (sub-pixel ECC), and dropped when something unmodelled covers the element;
-- the mask is re-decided against the per-frame plate (pixels no frame tells apart from the plate leave it);
+- the mask is re-decided against the per-frame plate: pixels no frame tells apart from the plate leave it (it never
+  grows: what the region left out stays out);
 - triangulation, per pixel, where B varies behind the element over ≥ 6 frames (it moves over a gradient or a
   picture, or the plate animates): I = G + kB, α = 1 − k, F = G / α;
 - the two-colour model for flat glyphs and shapes: α the projection of I − B on F − B, F the interior colour;
@@ -51,6 +52,7 @@ EVIDENCE_SHARE = 0.5        # … in this share of the (weighted) frames, for it
 OUTLIER_DE = 20.0           # a solid pixel this far from its median colour is covered by something unmodelled …
 OUTLIER_SHARE = 0.1         # … and a frame with more of them than this is dropped
 ODD_DE = 15.0               # a band pixel the fitted model misses by this much keeps its binary edge
+AGREE_SHARE = 0.3           # a frame whose core differs from the canonical frame's (ΔE > 12) here is dropped
 BAND = 3                    # px around the mask where α is solved
 CORE_PX = 2                 # keyed: the mask eroded by this is solid
 EXTEND_THR = 0.05           # F under α below this is extended from its neighbours
@@ -153,6 +155,19 @@ def _stroke_px(own: np.ndarray) -> float:
     return 2.0 * float(np.percentile(v, 90)) if v.size else 1.0
 
 
+def _whole_pixel(M: np.ndarray, corners: np.ndarray) -> np.ndarray:
+    """A transform within half a pixel of a plain translation (scale and rotation noise of a held element) becomes
+    a whole-pixel crop: positions are measured to about half a pixel (box centres), and bilinear resampling at a
+    half pixel averages neighbours, which blurs every frame fused into the texture."""
+    if np.abs(M[:, :2] - np.eye(2)).max() > 0.05:
+        return M
+    c = M @ corners
+    t = np.floor(c.mean(1) - corners[:2].mean(1) + 0.5)
+    if np.abs(c - (corners[:2] + t[:, None])).max() > 0.5 + 1e-9:
+        return M
+    return np.array([[1.0, 0.0, t[0]], [0.0, 1.0, t[1]]])
+
+
 def _plate_B(plate, f: int, M: np.ndarray, ii: np.ndarray, jj: np.ndarray) -> np.ndarray:
     th, tw = ii.shape
     keys = getattr(plate, "gradient_keys", None)
@@ -191,10 +206,7 @@ def gather_samples(raw, canon_binary, frames, plate, others_at: Callable[[int], 
         M = element_affine(raw[f], (th, tw), (tw, th))
         if offsets and f in offsets:
             M = M @ np.array([[1.0, 0.0, offsets[f][0]], [0.0, 1.0, offsets[f][1]], [0.0, 0.0, 1.0]])
-        if np.abs(M[:, :2] - np.eye(2)).max() < 1e-3:
-            # A plain translation is measured to about half a pixel (box centres); a whole-pixel crop keeps the frame
-            # sharp where bilinear resampling at a half pixel would average neighbours.
-            M[:, 2] = np.floor(M[:, 2] + 0.5)
+        M = _whole_pixel(M, corners)
         I = cv2.warpAffine(frames[f], M, (tw, th), flags=_FLAGS, borderMode=cv2.BORDER_REPLICATE)
         B = _plate_B(plate, f, M, ii, jj)
         c = M @ corners
@@ -391,11 +403,12 @@ def _core(own: np.ndarray) -> np.ndarray:
     return own.copy()
 
 
-def keyed(samples: list[Sample]) -> list[tuple[np.ndarray, np.ndarray]]:
+def keyed(samples: list[Sample], own: np.ndarray | None = None) -> list[tuple[np.ndarray, np.ndarray]]:
     """Per sample (α, F): solid inside the mask eroded by 2 px (F = I); in the 3 px band around the mask edge α is
     the projection of I − B on F_near − B, F_near the colour of the nearest solid pixel; where F_near is within
-    ΔE 15 of B the binary edge stays (α = mask, F = I). NaN α where the sample is not valid."""
-    own = samples[0].own
+    ΔE 15 of B the binary edge stays (α = mask, F = I). NaN α where the sample is not valid. `own`: the mask
+    (default: the first sample's)."""
+    own = samples[0].own if own is None else own
     core = _core(own)
     band = _grow(own, BAND) & ~core
     idx = _nearest(core)
@@ -466,18 +479,22 @@ def _median_colour(top: list[Sample], w: np.ndarray, mask: np.ndarray) -> np.nda
     return _wmedian(np.stack(vals).astype(np.float32), w)
 
 
-def _core_colour(top: list[Sample], w: np.ndarray, core: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """F inside the solid core, and where it is known: the sharpest frame's colour (fusing frames that disagree by
-    a fraction of a pixel blurs detail), the per-pixel median where that frame strays from it by ΔE > 20."""
+def _core_colour(top: list[Sample], w: np.ndarray, core: np.ndarray, ref: Sample, anchored: bool) -> tuple[np.ndarray, np.ndarray]:
+    """F inside the solid core, and where it is known: the reference frame's colour (fusing frames that disagree by
+    a fraction of a pixel blurs detail), the per-pixel median where that frame does not see the pixel. `anchored`
+    (the reference is the canonical frame): its colour stands; else (the best frame) the median also replaces it
+    where it strays by ΔE > 20."""
     th, tw = core.shape
     F = np.full((th, tw, 3), np.nan, np.float32)
     if not core.any():
         return F, np.zeros((th, tw), bool)
     med = _median_colour(top, w, core)
-    I, B, o = _defade(top[0])
+    I, B, o = _defade(ref)
     best = np.clip((I - (1 - o) * B) / o, 0, 255)[core] if o < 1 else I[core]
-    use = top[0].valid[core] & ~np.isnan(med).any(-1)
-    use[use] = delta_e(srgb_to_lab(best[use]), srgb_to_lab(med[use])) <= OUTLIER_DE
+    use = ref.valid[core].copy()
+    if not anchored:
+        use &= ~np.isnan(med).any(-1)
+        use[use] = delta_e(srgb_to_lab(best[use]), srgb_to_lab(med[use])) <= OUTLIER_DE
     vals = np.where(use[:, None], best, med)
     F[core] = vals
     known = np.zeros((th, tw), bool)
@@ -503,6 +520,18 @@ def _unexplained(top: list[Sample], w: np.ndarray, alpha: np.ndarray, F: np.ndar
     return out
 
 
+def _unmixed(top: list[Sample], w: np.ndarray, alpha: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Per pixel of `mask`, the weighted median over the samples of (I − (1 − α)B) / α (opacity divided out)."""
+    a = alpha[mask][:, None]
+    vals = []
+    for s in top:
+        I, B, o = _defade(s)
+        ao = a * o
+        Fu = np.clip((I[mask] - (1 - ao) * B[mask]) / np.maximum(ao, 1e-3), 0, 255)
+        vals.append(np.where(s.valid[mask][:, None], Fu, np.nan))
+    return _wmedian(np.stack(vals).astype(np.float32), w)
+
+
 def _flat_fill(top: list[Sample], w: np.ndarray, interior: np.ndarray, own: np.ndarray) -> tuple[np.ndarray | None, bool]:
     """The interior's median colour, and whether the two-colour model applies: the per-pixel medians of the
     interior within ΔE 6 of it at p90, and the plate ≥ ΔE 15 from it at ≥ 80 % of the edge pixels."""
@@ -520,6 +549,22 @@ def _flat_fill(top: list[Sample], w: np.ndarray, interior: np.ndarray, own: np.n
     step = max(1, len(Bs) // 20000)
     share = float((delta_e(srgb_to_lab(Bs[::step]), flab) >= EDGE_DE).mean())
     return fill, flat and share >= EDGE_SHARE
+
+
+def _agree(ranked: list[Sample], ref: Sample, core: np.ndarray) -> list[Sample]:
+    """The frames whose solid core matches the canonical frame's: more than 30 % of the core pixels (seen in both)
+    over ΔE 12 from it means the transform followed something else, or something covers the element. The
+    canonical frame always stays; with no other frame agreeing, it is the texture on its own."""
+    out = []
+    for s in ranked:
+        if s is not ref:
+            m = core & s.valid & ref.valid
+            if m.sum() >= 8:
+                de = delta_e(srgb_to_lab(s.I[m].astype(np.float32)), srgb_to_lab(ref.I[m].astype(np.float32)))
+                if float((de > FG_DE).mean()) > AGREE_SHARE:
+                    continue
+        out.append(s)
+    return out
 
 
 def _consistent(ranked: list[Sample], core: np.ndarray) -> list[Sample]:
@@ -589,14 +634,19 @@ def _offsets(ranked: list[Sample], ref: Sample, canon: np.ndarray) -> dict:
 
 
 def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = PAD, top_k: int = TOP_K, kind_hint: str | None = None,
-               candidates: Sequence[int] | None = None, keep: tuple[np.ndarray, np.ndarray] | None = None
-               ) -> tuple[np.ndarray, TextureMeta]:
+               candidates: Sequence[int] | None = None, keep: tuple[np.ndarray, np.ndarray] | None = None,
+               ref_frame: int | None = None) -> tuple[np.ndarray, TextureMeta]:
     """The matted, padded RGBA texture (uint8, straight colour) and its TextureMeta. `kind_hint` "mover": its mask
     (Task 5, noise-adaptive) stays and nothing is triangulated (an element animating in place changes against the
     plate on its own). `candidates` limits the frames; `keep` = (mask, rgb) in canonical space stays opaque with that
-    colour (a mover's filled-in pixels). Raises NotMatted when no frame shows enough of it."""
+    colour (a mover's filled-in pixels). `ref_frame`, the canonical frame (where the binary texture came from and the
+    transform is exact by construction), anchors the texture when it passes the filters: frames align to it, frames
+    whose core disagrees with it are dropped, and the solid colour is its own. Raises NotMatted when no frame shows
+    enough of it."""
     plate = as_plate(plate)
     samples = gather_samples(raw, canon_binary, frames, plate, others_at, pad, candidates=candidates)
+    if ref_frame is not None and all(s.frame != ref_frame for s in samples) and (candidates is None or ref_frame in candidates):
+        samples += gather_samples(raw, canon_binary, frames, plate, others_at, pad, candidates=[ref_frame])   # thinned out
     top, relaxed = score_samples(samples, raw, top_k)
     if not top:
         raise NotMatted("no frame shows it")
@@ -604,7 +654,9 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
     if (np.any([s.valid for s in top], axis=0) & canon).sum() < SEEN_MIN * canon.sum():
         raise NotMatted("other layers cover it (or it is off-frame) in every usable frame")
     ranked = sorted((s for s in samples if s.score > 0), key=lambda s: (-s.score, s.frame))
-    offsets = _offsets(ranked, ranked[0], canon)   # onto the best frame
+    cf = next((s for s in ranked if s.frame == ref_frame), None)   # the canonical frame, when it passes the filters
+    ref = cf or ranked[0]
+    offsets = _offsets(ranked, ref, canon)   # onto the reference frame
     if offsets:   # re-warp those frames aligned to the reference; they keep their scores
         moved = {s.frame: s for s in gather_samples(raw, canon_binary, frames, plate, others_at, pad, candidates=sorted(offsets),
                                                     offsets=offsets)}
@@ -613,8 +665,13 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
             if m is not None:
                 m.score, m.speed = s.score, s.speed
                 ranked[i] = m
-    ranked = _consistent(ranked, _core(canon))
-    top = ranked[:top_k]
+    if cf is not None:
+        ranked = _agree(ranked, cf, _core(canon))
+        top = [cf] + [s for s in ranked if s is not cf][:top_k - 1]
+    else:
+        ranked = _consistent(ranked, _core(canon))
+        ref = ranked[0]
+        top = ranked[:top_k]
     th, tw = canon.shape
     w = np.array([s.score for s in top], np.float64)
     # A mover's mask (Task 5) follows the measured noise, below ΔE 12: keep it. Other masks were cut against the
@@ -622,26 +679,31 @@ def texture_v2(raw, canon_binary, frames, plate, *, others_at=None, pad: int = P
     if kind_hint == "mover":
         own = canon.copy()
     else:
-        fg, judged = _evidence(top, w, _grow(canon, BAND))
-        own = _grow(canon, BAND) & np.where(judged, fg, canon)
+        # The mask only loses pixels: one that the region left out (another palette colour, an unmodelled layer
+        # crossing it) stays out; the band around the mask still solves the soft edge.
+        fg, judged = _evidence(top, w, canon)
+        own = canon & (fg | ~judged)
     if not own.any():
         own = canon.copy()
-    for s in samples:
+    for s in (*samples, *ranked):
         s.own = own
     region = _grow(own, BAND)
     interior = _erode(own, max(1, int(round(INTERIOR_K * _stroke_px(own)))))
     fill, flat = _flat_fill(top, w, interior, own)
     core = _core(own)
-    F_core, solid = _core_colour(top, w, core)
+    F_core, solid = _core_colour(top, w, core, ref, anchored=cf is not None)
     if flat:   # α from the projection on the fill, F the fill; solid inside, where F keeps its own detail
         method = "two_colour"
         alpha, _ = fuse(two_colour(top, fill), None, w)
         F = np.empty((th, tw, 3), np.float32)
         F[:] = fill
-    else:      # α from the projection on the nearest solid colour; F that colour
+    else:      # α from the projection on the nearest solid colour; F unmixed from the frames where α ≥ 0.5, else that colour
         method = "keyed"
-        alpha, _ = fuse([a for a, _ in keyed(top)], None, w)
+        alpha, _ = fuse([a for a, _ in keyed(top, own)], None, w)
         F = np.full((th, tw, 3), np.nan, np.float32)
+        rim = region & ~solid & (np.nan_to_num(alpha) >= 0.5)
+        if rim.any():
+            F[rim] = _unmixed(top, w, alpha, rim)
     alpha[solid] = 1.0
     F[solid] = F_core[solid]
     if np.isnan(F).any():
@@ -806,12 +868,14 @@ def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad
     def run(k):
         p = props[k]
         mover = bool(p.get("mover"))
+        pk = 0 if p.get("kind") == "text" else pad   # R27: text keeps its box (HTML, AE and Lottie set glyphs in it)
         try:
             hidden = p.get("hidden")
             keep = (hidden, p["canon"][..., :3]) if mover and hidden is not None and np.any(hidden) else None
-            rgba, meta = texture_v2(p["raw"], p["canon"][..., 3] > 127, frames, plate, others_at=others_for(k), pad=pad,
+            rgba, meta = texture_v2(p["raw"], p["canon"][..., 3] > 127, frames, plate, others_at=others_for(k), pad=pk,
                                     kind_hint="mover" if mover else p.get("kind"),
-                                    candidates=[int(p["cf"])] if mover and not p.get("stable") else None, keep=keep)
+                                    candidates=[int(p["cf"])] if mover and not p.get("stable") else None, keep=keep,
+                                    ref_frame=int(p["cf"]) if p.get("cf") is not None else None)
             return k, rgba, meta, None
         except NotMatted as e:
             return k, None, None, ("note", str(e))
@@ -830,7 +894,7 @@ def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad
             p["texture_error" if err[0] == "error" else "texture_note"] = err[1]
             stats["binary"] = stats.get("binary", 0) + 1
             continue
-        pad_reveal(p["raw"], p["canon"].shape[1], pad)
+        pad_reveal(p["raw"], p["canon"].shape[1], meta.padding)
         p["canon"], p["texture_meta"] = rgba, meta.model_dump()
         stats[meta.method] = stats.get(meta.method, 0) + 1
     log.info("sprites textures v2 elements=%s workers=%s methods=%s %.2fs", len(keys), workers, stats, time.perf_counter() - t0)

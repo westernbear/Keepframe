@@ -9,8 +9,10 @@ from keepframe.analyze.plate import PlateModel
 from keepframe.analyze.text import TextBox, TextTrack, text_props
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb_to_lab
 from keepframe.ir.gradient import render_gradient
-from keepframe.ir.schema import Background, Canonical, Element, Gradient, GradientKey, GradientStop, Keyframe, Scene, Track
+from keepframe.ir.schema import (Background, Canonical, Element, FontGuess, Gradient, GradientKey, GradientStop, Keyframe, Scene,
+                                 Track)
 from keepframe.ir.store import current_scene, scene_dir
+from keepframe.analyze import text as text_module
 from keepframe.ir.synth import ground_truth, render_frames
 from keepframe.ir.tracks import eval_props
 from keepframe.qa.metrics import alpha_errors, bg_leak_fraction, foreground_errors, glyph_colour_delta, halo_ring
@@ -46,13 +48,15 @@ def _glow(size=64, sigma=10.0, peak=0.9, rgb=(255, 236, 190)):
     return rgba
 
 
-def _disc(d=40, rgb=(6, 214, 160), accent=(255, 209, 102)):
+def _disc(d=40, rgb=(6, 214, 160), accent=(255, 209, 102), outline=None):
     s = 4
     a = np.zeros((d * s, d * s), np.uint8)
     cv2.circle(a, (d * s // 2, d * s // 2), d * s // 2 - s, 255, -1, cv2.LINE_AA)
     c = np.zeros((d * s, d * s, 3), np.uint8)
     c[:] = rgb
     cv2.circle(c, (d * s // 3, d * s // 3), d * s // 6, accent, -1, cv2.LINE_AA)
+    if outline is not None:   # a rim ~2.5 px wide in its own colour, out to (beyond) the α edge
+        cv2.circle(c, (d * s // 2, d * s // 2), d * s // 2 - s, outline, 5 * s, cv2.LINE_AA)
     af = a.astype(np.float32) / 255
     A = cv2.resize(af, (d, d), interpolation=cv2.INTER_AREA)
     Pm = cv2.resize(c.astype(np.float32) * af[..., None], (d, d), interpolation=cv2.INTER_AREA)
@@ -198,6 +202,116 @@ def test_foreground_extended_under_zero_alpha(tmp_path):
     ag[5:15, 5:15] = 1
     ext = matting.extend_foreground(Fg, ag)
     assert np.abs(ext - np.float32((200, 40, 40))).max() < 1e-3
+
+
+def _placed(scene, root, eid, rgba):
+    """The scene with element `eid` drawn from `rgba` (canonical = its size), same tracks and background."""
+    name = f"assets/{eid}_v2.png"
+    cv2.imwrite(str(root / name), cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))
+    els = [e.model_copy(update={"canonical": Canonical(width=rgba.shape[1], height=rgba.shape[0], texture=name)}) if e.id == eid else e
+           for e in scene.elements]
+    return scene.model_copy(update={"elements": els})
+
+
+def test_keyed_path_recovers_alpha_and_rim_colour(tmp_path):
+    """A disc with an off-centre accent and a light rim (not flat: the keyed path) held over a gradient: α in the edge
+    band and F against the double-render truth; the rim keeps its own colour, unmixed from the plate (R29)."""
+    n, disc = 12, _disc(48, outline=(250, 240, 225))
+    bg = Background(kind="gradient", gradient=_grad("#2b1b3d", "#c06c84", 60.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    out, meta = matting.texture_v2(raw, _binary(frames, plate, raw, disc.shape[:2], 0), frames, plate, ref_frame=0)
+    assert meta.method == "keyed"
+    f = 6
+    ta, tF = ground_truth(scene, tmp_path, [f])["d"][f]
+    a, F = ground_truth(_placed(scene, tmp_path, "d", out), tmp_path, [f])["d"][f]
+    assert alpha_errors(a, ta)["sad"] < 0.03
+    fe = foreground_errors(F, tF, a, ta)
+    assert fe["f_de_interior"] < 1.5 and fe["f_de_edge"] < 1.2   # the rim filled from the core colour: 1.5
+
+
+def test_mistracked_frames_keep_the_canonical_frames_colour(tmp_path):
+    """R28: most frames carry a transform that jumped 9 px (the tracker followed something else); the texture keeps
+    the canonical frame's colour and no plate."""
+    n, disc = 12, _disc(40)
+    bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    raw[1:9, 0] += 9.0
+    out, meta = matting.texture_v2(raw, disc[..., 3] > 127, frames, plate, ref_frame=0)
+    assert 0 in meta.frames and not set(meta.frames) & set(range(1, 9))
+    F, a = _split(out)
+    tF, ta = _split(_pad(disc))
+    assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
+    assert foreground_errors(F, tF, a, ta)["f_de_interior"] < 3
+
+
+def test_keyed_uses_the_redecided_mask_after_realignment(tmp_path, monkeypatch):
+    """R30: frames re-warped by the alignment get the re-decided mask too. A mask cut against the pass-1 plate keeps
+    plate around the element; realign every frame (zero shift) and the keyed path must still drop that plate."""
+    n, disc = 12, _disc(40)
+    bg = Background(kind="gradient", gradient=_grad("#ffe1ea", "#ff6f91", 90.0))
+    scene = _scene(tmp_path, [("d", disc, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    polluted = np.ones(disc.shape[:2], bool)          # the whole box: plate in the corners
+    monkeypatch.setattr(matting, "_offsets", lambda ranked, ref, canon: {s.frame: (0.0, 0.0) for s in ranked})
+    out, meta = matting.texture_v2(raw, polluted, frames, plate, ref_frame=0)
+    assert meta.method == "keyed"
+    F, a = _split(out)
+    tF, ta = _split(_pad(disc))
+    assert bg_leak_fraction(out, plate.image[90 - 20 - P:90 + 20 + P, 160 - 20 - P:160 + 20 + P]) <= 0.01
+    assert alpha_errors(a, ta)["sad"] < 0.005                  # with the stale box mask: 0.027
+    assert foreground_errors(F, tF, a, ta)["f_de_edge"] < 1.5
+
+
+def test_mask_never_grows_into_pixels_the_region_left_out(tmp_path):
+    """A navy card whose region left out a pink badge in its middle (another palette colour: another layer, or one
+    the analysis missed): the matte keeps the badge out, as today's binary texture does, and solves only the rim."""
+    n = 12
+    card = np.zeros((40, 60, 4), np.uint8)
+    card[..., :3], card[..., 3] = (20, 40, 110), 255
+    card[12:28, 22:38, :3] = (255, 110, 160)
+    bg = Background(kind="gradient", gradient=_grad("#e8d5b7", "#f4efe6", 90.0))
+    scene = _scene(tmp_path, [("c", card, _still(160, 90), 1)], bg, n)
+    frames, plate, raw = _frames(scene, tmp_path), _plate(bg), _raw(scene.elements[0], n)
+    region = np.ones((40, 60), bool)
+    region[12:28, 22:38] = False
+    out, meta = matting.texture_v2(raw, region, frames, plate, ref_frame=0)
+    a = out[P:-P, P:-P, 3] / 255
+    assert a[12:28, 22:38].mean() < 0.05 and a[~(cv2.dilate((~region).astype(np.uint8), np.ones((7, 7), np.uint8)) > 0)].min() > 0.95
+
+
+@pytest.mark.browser
+def test_text_keeps_its_box_and_html_glyphs_match_numpy(tmp_path, monkeypatch):
+    """R27: a text element keeps its unpadded canonical box, so the HTML span (left-aligned, line-height = box
+    height) puts the glyphs where the numpy texture does (within 1 px)."""
+    from keepframe.compose.composer import compose   # noqa: F401  (browser renderer dependency)
+    truth_root, n = tmp_path / "truth", 6
+    font = FontGuess(family_guess="DejaVu Sans", weight=400, size_px=40.0)
+    el = Element(id="t", kind="text", role="text", visible=(0, n - 1), z=Track(keys=[Keyframe(t=0, v=1)]),
+                 canonical=Canonical(width=200, height=50, text="Sale", font=font, color="#f0e0a0"), tracks=_still(160, 60))
+    truth = Scene(id="s", size=(W, 120), fps=30, frames=n, background=Background(kind="color", value="#203040"), elements=[el])
+    truth_root.mkdir()
+    frames = np.stack([np.clip(np.rint(f), 0, 255).astype(np.uint8)
+                       for f in render_frames(truth, truth_root, range(n), renderer="browser")])
+    box = (60, 35, 260, 85)
+    monkeypatch.setattr(text_module, "font_candidates", lambda *a: ["DejaVu Sans"])
+    monkeypatch.setattr(text_module, "font_family_guess", lambda *a: "DejaVu Sans")
+    root = tmp_path / "proj"
+    scene = analyze_scene_frames(frames, 30, root, "s1", AnalyzeOptions(refine=False, use_ecc=False, generate_3d=False),
+                                 ocr=lambda frame: [("Sale", box, 0.99)])
+    (t,) = [e for e in scene.elements if e.kind == "text"]
+    assert (t.canonical.width, t.canonical.height) == (200, 50) and t.canonical.texture_meta.padding == 0
+    sd = scene_dir(root, "s1")
+    html = render_frames(scene, sd, [3], renderer="browser")[0]
+    num = render_frames(scene, sd, [3])[0]
+
+    def ink(img):
+        on = delta_e(srgb_to_lab(img), srgb_to_lab(np.float32(hex_to_rgb8("#203040")))) > 30
+        ys, xs = np.nonzero(on)
+        return np.array([xs.min(), ys.min(), xs.max(), ys.max()])
+
+    assert np.abs(ink(html) - ink(num)).max() <= 1, (ink(html), ink(num))
 
 
 # --- frame choice ---------------------------------------------------------------------------------------------
