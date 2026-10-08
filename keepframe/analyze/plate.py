@@ -32,7 +32,8 @@ INPAINT_PAD = 32
 INPAINT_RADIUS = 5
 FALLBACK_CONF = 0.5
 STATIC_P95 = 1.5          # temporal ΔE76 p95 below which the plate holds still
-GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient (at fit size) is that gradient
+GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient (at fit size) is that gradient …
+GRADIENT_FULL_P95 = 3.0   # … when it also stays within this at ≤ 640 px (R19, without its 3×3 blur)
 MIN_STOP_RANGE = 3.0      # ΔE76 between the most different stops, else it is not a gradient
 RANK2 = 0.95              # variance share of the top two temporal components of an animated gradient
 ANIM_P95 = 3.0            # per-sample fit p95 of an animated gradient
@@ -358,7 +359,8 @@ def _animated_keys(frames, sample, occ, size) -> tuple[list[GradientKey], float]
 
 def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
     """Static plate (temporal p95 < STATIC_P95): color when flat; gradient when a ≤ 4-stop linear or ≤ 3-stop
-    radial gradient fits within GRADIENT_P95 and its stops span ≥ MIN_STOP_RANGE; else image. Moving plate:
+    radial gradient fits within GRADIENT_P95 at ≤ 160 px and GRADIENT_FULL_P95 at ≤ 640 px and its stops
+    span ≥ MIN_STOP_RANGE; else image. Moving plate:
     gradient with keys when rank 2 over time and fitted per sample; else a video candidate, kept as a still
     image with a message until video plates exist."""
     p95, r2 = stats["p95_dE"], stats["rank2_ratio"]
@@ -370,10 +372,11 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
         valid = ~model.synthetic if model.synthetic is not None and model.synthetic.any() else None
         g, gp = fit_gradient(model.image, valid)
         st["gradient_p95_de"] = round(gp, 3) if math.isfinite(gp) else None
-        if g is not None:   # per pixel at full size, for the record (8-bit banding included)
-            st["gradient_full_p95_de"] = round(measure(g, model.image, valid), 3)
         if g is not None and gp <= GRADIENT_P95 and stop_range(g) >= MIN_STOP_RANGE:
-            return replace(model, kind="gradient", image=render_gradient(g, W, H), gradient=g, stats=st)
+            full = measure(g, model.image, valid)   # the ≤ 160 px fit must not have erased grain or patterns
+            st["gradient_full_p95_de"] = round(full, 3)
+            if full <= GRADIENT_FULL_P95:
+                return replace(model, kind="gradient", image=render_gradient(g, W, H), gradient=g, stats=st)
         return replace(model, kind="image", stats=st)
     keys, share = _animated_keys(frames, sample, occ, (W, H)) if r2 >= RANK2 else ([], 0.0)
     st["animated_fit_share"] = round(share, 3)

@@ -134,6 +134,27 @@ def test_photo_texture_is_image(tmp_path):
     assert not model.stats.get("video_candidate") and "message" not in model.stats
 
 
+_RAMP = Gradient(kind="linear", angle=120.0, stops=[GradientStop(offset=0, color="#3a6186"), GradientStop(offset=1, color="#89253e")])
+
+
+def test_fine_grain_720p_stays_image():
+    """A ≤ 160 px fit averages grain away (fit p95 ≈ 1.0); the ≤ 640 px bound keeps it a picture (R19)."""
+    clean = render_gradient(_RAMP, 1280, 720).astype(np.float32)
+    grain = (clean + np.random.default_rng(1).normal(0, 4, clean.shape)).round().clip(0, 255).astype(np.uint8)
+    model = _build(np.repeat(grain[None], 4, 0))
+    assert model.stats["gradient_p95_de"] <= 1.5 and model.stats["gradient_full_p95_de"] > 3.0
+    assert model.kind == "image" and np.array_equal(model.image, grain)
+
+
+def test_two_pixel_checker_stays_image():
+    yy, xx = np.mgrid[0:360, 0:640]
+    chk = ((xx // 2 + yy // 2) % 2 * 2 - 1)[..., None].astype(np.float32)
+    plate = (render_gradient(_RAMP, 640, 360).astype(np.float32) + 12 * chk).round().clip(0, 255).astype(np.uint8)
+    model = _build(np.repeat(plate[None], 4, 0))
+    assert model.stats["gradient_p95_de"] <= 1.5 and model.stats["gradient_full_p95_de"] > 3.0
+    assert model.kind == "image" and np.array_equal(model.image, plate)
+
+
 def test_compression_noise_still_static(tmp_path):
     truth = Gradient(kind="linear", angle=120.0, stops=[GradientStop(offset=0, color="#0f2027"), GradientStop(offset=1, color="#2c5364")])
     clean = render_gradient(truth, 640, 360).astype(np.float32)

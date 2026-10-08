@@ -121,13 +121,17 @@ def _logo_scene(root, frames=24, plate="gradient", seed=1):
     return scene.model_copy(update={"elements": [e for e in scene.elements if e.id == "logo"]})
 
 
-def test_always_covered_logo_hole_poly_on_gradient(tmp_path):
+def test_always_covered_logo_hole_poly_on_gradient(tmp_path, monkeypatch):
+    from keepframe.analyze import plate as plate_mod
     scene = _logo_scene(tmp_path)
     assert scene.background.kind == "gradient"
     frames = _render(scene, tmp_path)
     n = len(frames)
     rbf, gt = _truth_regions(scene, tmp_path, {"logo"})
     bg, conf = estimate_background(frames)
+    filled = []   # the plate as hole filling left it, before classification replaces it with the render
+    classify = plate_mod.classify
+    monkeypatch.setattr(plate_mod, "classify", lambda m, *a: filled.append(m.image.copy()) or classify(m, *a))
     model = build_plate(frames, rbf, [[] for _ in range(n)], [], [], bg_rgb=bg, bconf=conf, bg_override=None,
                         pass1=background_plate(frames))
     assert model.kind == "gradient"   # D4; the hole stats and the synthetic mask stay
@@ -137,7 +141,8 @@ def test_always_covered_logo_hole_poly_on_gradient(tmp_path):
     iou = (model.synthetic & want).sum() / (model.synthetic | want).sum()
     assert iou >= 0.95
     truth = true_plate(scene, tmp_path, 0)
-    assert np.percentile(_de(model.image, truth)[model.synthetic], 95) < 1.0
+    assert np.percentile(_de(filled[0], truth)[model.synthetic], 95) < 1.0   # the poly fill itself
+    assert np.percentile(_de(filled[0], truth), 95) < 1.0
     assert np.percentile(_de(model.image, truth), 95) < 1.0
     frac = model.synthetic.mean()
     assert model.stats["synthetic_fraction"] == pytest.approx(frac)

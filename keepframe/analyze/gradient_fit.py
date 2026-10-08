@@ -2,14 +2,14 @@
 from __future__ import annotations
 import math
 import cv2, numpy as np
-from ..ir.colour import delta_e, hex_to_rgb8, lab_to_srgb, rgb8_to_hex, srgb8_to_lab, srgb_to_lab
+from ..ir.colour import delta_e, hex_to_rgb8, lab_to_srgb, rgb8_to_hex, srgb_to_lab
 from ..ir.gradient import gradient_t, render_gradient
 from ..ir.schema import Gradient, GradientStop
 
 BINS = 64
 DP_TOL = 1.0              # ΔE76: a bin further than this from the stops' interpolation becomes a stop
 WORK = 160
-MEASURE = 640             # the returned p95 is measured on a full-frame grid of at most this many px per side
+MEASURE = 640             # long side (px) of the full-size check
 ANGLES = np.arange(0.0, 360.0, 5.0)
 REFINE = np.arange(-2.5, 2.51, 0.5)
 WARM = np.arange(-10.0, 10.1, 2.5)    # angles around the previous key's
@@ -185,28 +185,39 @@ def shrink(img, valid, work: int = WORK):
     if (w, h) == (W, H):
         return img.astype(np.float32), (None if valid is None else np.asarray(valid, bool))
     small = cv2.resize(img.astype(np.float32), (w, h), interpolation=cv2.INTER_AREA)
-    if valid is None:
-        return small, None
-    return small, cv2.resize(np.asarray(valid, np.uint8) * 255, (w, h), interpolation=cv2.INTER_AREA) == 255
+    return small, (None if valid is None else _footprint(valid, (w, h)))
+
+
+def _footprint(valid, size) -> np.ndarray:
+    """Pixels of the `size` (w, h) area reduction of a mask whose whole footprint is valid."""
+    return cv2.resize(np.asarray(valid, np.uint8) * 255, size, interpolation=cv2.INTER_AREA) == 255
 
 
 def measure(g: Gradient, plate, valid=None) -> float:
-    """p95 ΔE76 between the full-size render of g and the plate, on a grid of at most MEASURE px per side."""
+    """p95 ΔE76 between the plate and the render of g, both area-resized to ≤ MEASURE px long side, over
+    pixels whose footprint is valid: the full-size check that a fit made on ≤ 160 px averages has not erased
+    fine structure. No blur: a 3×3 blur would erase a 2-px pattern (±12 → 0.57 ΔE) along with the codec
+    noise, which stays well inside the bound anyway (yuv420p crf 23: 1.3–1.6)."""
     H, W = plate.shape[:2]
-    s = max(1, math.ceil(max(W, H) / MEASURE))
-    ys, xs = np.mgrid[0:H:s, 0:W:s].astype(np.float64)
-    m = np.ones(xs.shape, bool) if valid is None else np.asarray(valid, bool)[::s, ::s]
+    s = min(1.0, MEASURE / max(W, H))
+    size = (max(1, round(W * s)), max(1, round(H * s)))
+
+    def prep(img):
+        img = img.astype(np.float32)
+        return cv2.resize(img, size, interpolation=cv2.INTER_AREA) if size != (W, H) else img
+
+    m = np.ones(size[::-1], bool) if valid is None else _footprint(valid, size)
     if not m.any():
         return math.inf
-    got = render_gradient(g, W, H, (xs[m] + 0.5, ys[m] + 0.5))
-    return float(np.percentile(delta_e(srgb8_to_lab(got), srgb8_to_lab(plate[::s, ::s][m])), 95))
+    a, b = prep(plate)[m], prep(render_gradient(g, W, H))[m]
+    return float(np.percentile(delta_e(srgb_to_lab(a), srgb_to_lab(b)), 95))
 
 
 def fit_gradient(plate, valid, *, work=WORK, size=None):
     """The better of a ≤ 4-stop linear and a ≤ 3-stop radial fit at ≤ `work` px (linear unless radial is
     clearly better) and its p95 ΔE76 there: render and plate both area-averaged to the work size, so 8-bit
     banding and codec noise do not count (per pixel, a dark gradient a few levels deep misses by ~1.6 ΔE
-    unless the fit is bit-exact; `measure` gives that full-size number). `size`: the frame (W, H) when `plate`
+    unless the fit is bit-exact); `measure` is the full-size check. `size`: the frame (W, H) when `plate`
     is already reduced. Returns (Gradient | None, p95)."""
     H, W = plate.shape[:2]
     small, v = shrink(plate, valid, work)
