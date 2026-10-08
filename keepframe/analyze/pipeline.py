@@ -4,11 +4,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, Track, UIModel, Version
+from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextureMeta, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import get
 from ..progress import STAGES, report_stage
+from . import matting
 from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
@@ -176,6 +177,20 @@ def _mover_messages(props: dict, ids: dict) -> list[str]:
     return out
 
 
+def _texture_messages(props: dict, ids: dict) -> list[str]:
+    out = []
+    for k, p in props.items():
+        if k.startswith("_") or k not in ids or not isinstance(p, dict):
+            continue
+        if p.get("texture_error"):
+            out.append(f"{ids[k]}: matted texture failed ({p['texture_error']}); kept the binary texture")
+        elif p.get("texture_note"):
+            out.append(f"{ids[k]}: not matted, {p['texture_note']}; kept the binary texture")
+        elif p.get("mover") and not p.get("stable") and p.get("texture_meta"):
+            out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
+    return out
+
+
 def _plate_inputs(model: PlateModel):
     """(bg, plate) for the stages after the plate: a flat colour has no plate image."""
     return model.rgb, (model.image if model.kind != "color" else None)
@@ -248,7 +263,8 @@ def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), note
     return _pk(sd, "solids", solids), list(movers)
 
 
-def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=()):
+def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=(),
+                   plate_model: PlateModel | None = None):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     kept, failed = [], []
@@ -342,6 +358,16 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         except Exception as e:
             log.error("refine skipped: %s", e)
             props["_message"] = f"refine skipped: {e}"
+    # Textures v2: matted against the per-frame plate, after refine, before solids. A solid's fragments keep today's
+    # textures: they are pieces of a turning surface, and the still/fragments fidelity choice compares like with like.
+    report_stage("sprites", "textures")
+    members = {f"o{mid}" for solid in solids for mid in solid.members}
+    try:
+        matting.matte_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind),
+                            workers=workers, skip=members)
+    except Exception as e:   # fail soft: every element keeps its binary texture
+        log.exception("textures v2 failed")
+        props["_textures_message"] = f"textures v2 skipped: {type(e).__name__}: {e}"[:200]
     for i, solid in enumerate(solids):
         p = solid_props(solid, frames)
         p["fragments"] = {k: props.pop(k) for mid in solid.members if (k := f"o{mid}") in props}
@@ -365,9 +391,11 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         (sd / "assets").mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(sd / "assets" / f"{eid}.png"), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA))
         np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]]))
-        h, w = p["canon"].shape[:2]
+        h, w = p["canon"].shape[:2]   # textures v2 pad the canonical by 2p; centre and anchor stay
+        meta = p.get("texture_meta")
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
-                              text=p.get("text"), font=p.get("font"), color=p.get("color"))
+                              text=p.get("text"), font=p.get("font"), color=p.get("color"),
+                              texture_meta=TextureMeta(**meta) if meta else None)
         elements.append(Element(id=eid, kind=p["kind"], canonical=canonical, visible=(first, last), tracks=tracks,
                                 z=Track(keys=[Keyframe(t=0, v=p.get("z", 0))]), raw=f"assets/{eid}_raw.npz", fit_error=fe,
                                 pending_asset=p.get("pending_asset")))
@@ -534,7 +562,7 @@ def analyze_scene_frames(
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                           movers=movers)
+                           movers=movers, plate_model=model)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -543,8 +571,8 @@ def analyze_scene_frames(
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message")) if m]
-    messages += _mover_messages(props, ids)
+                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message")) if m]
+    messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)
@@ -751,7 +779,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                               movers=movers)
+                               movers=movers, plate_model=model)
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)
@@ -762,8 +790,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message")) if m]
-    messages += _mover_messages(props, ids)
+                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message")) if m]
+    messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
         scene = _apply_ui(frames, scene, sd, scene_id, messages=messages)

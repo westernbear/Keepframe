@@ -111,7 +111,8 @@ def _assert_clean_scene(root):
     sprites = [e for e in scene.elements if e.kind == "sprite"]
     assert len(sprites) == 1 and sprites[0].visible == (2, 2)
     sprite = sprites[0]
-    assert (sprite.canonical.width, sprite.canonical.height) == (28, 28)
+    pad = sprite.canonical.texture_meta.padding   # textures v2 pad the canonical by 2p
+    assert pad == 3 and (sprite.canonical.width, sprite.canonical.height) == (28 + 2 * pad, 28 + 2 * pad)
     assert sprite.canonical.text is None and sprite.canonical.font is None and sprite.canonical.color is None
     sd = scene_dir(root, "s1")
     text = pickle.loads((sd / "stages/text.pkl").read_bytes())
@@ -127,8 +128,10 @@ def _assert_clean_scene(root):
     frames = np.load(sd / "stages/frames.npy")
     crop = frames[2, 52:80, 98:126]
     rgba = cv2.cvtColor(cv2.imread(str(sd / sprite.canonical.texture), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
-    np.testing.assert_array_equal(rgba[..., :3], crop)
-    np.testing.assert_array_equal(rgba[..., 3], np.any(crop != 255, axis=2).astype(np.uint8) * 255)
+    inner, on = rgba[pad:-pad, pad:-pad], np.any(crop != 255, axis=2)   # matted: the circle, not its box
+    np.testing.assert_array_equal(inner[..., 3], on.astype(np.uint8) * 255)
+    np.testing.assert_array_equal(inner[..., :3][on], crop[on])
+    assert rgba[..., 3].sum() == inner[..., 3].sum()   # nothing in the padding
     np.testing.assert_allclose(composite_scene(scene, sd, 2)[52:80, 98:126] * 255, crop, atol=1e-4)
     overlay = frame_overlay(root, scene, version, 2)
     assert [entry["text"] for obj in overlay["objects"] for entry in obj["ocr"]] == ["Sale"]

@@ -442,4 +442,5 @@ def mover_props(m: Mover, frames, plate, n_frames) -> dict:
     for f in fs:
         raw[f] = [cx + d[f][0], cy + d[f][1], 1.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     return {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": Z, "first": fs[0], "last": fs[-1],
-            "mover": True, "stable": m.stable, "residual": round(m.residual, 3), "synthetic": int(hidden.sum())}
+            "mover": True, "stable": m.stable, "residual": round(m.residual, 3), "synthetic": int(hidden.sum()),
+            "hidden": hidden}   # filled-in (inpainted) pixels: textures v2 keeps them opaque

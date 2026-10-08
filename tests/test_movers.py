@@ -90,9 +90,12 @@ def test_rotating_globe_on_gradient_becomes_mover_not_plate(globe):
     ids = json.loads((_sd(root) / "stages" / "ids.json").read_text())
     el = scene.element(ids["m1"])
     assert el.kind == "sprite" and el.z.keys[0].v == -1 and el.visible == (0, len(frames) - 1)
-    assert abs(el.canonical.width - 2 * R) <= 6 and abs(el.canonical.height - 2 * R) <= 6
+    pad = el.canonical.texture_meta.padding   # textures v2 pad the canonical by 2p
+    assert abs(el.canonical.width - 2 * pad - 2 * R) <= 6 and abs(el.canonical.height - 2 * pad - 2 * R) <= 6
+    assert el.canonical.texture_meta.frames == [p["cf"]]   # a still mover is matted from its canonical frame only
     hits = [MESSAGE.match(s) for s in _messages(root)]
     assert [h.group(1) for h in hits if h] == [ids["m1"]]
+    assert f"{ids['m1']}: still texture matted from frame {p['cf']} only" in _messages(root)
 
 
 def test_globe_fragments_are_claimed(globe):
@@ -348,7 +351,8 @@ def test_mover_texture_covers_the_globe(globe):
     root, scene, frames = globe
     p = _props(root)["m1"]
     (m,) = _movers(root)
-    x0, y0, x1, y1 = m.frames[p["cf"]][0]
+    pad = p["texture_meta"]["padding"]   # textures v2 grow the texture by pad px a side
+    x0, y0, x1, y1 = np.add(m.frames[p["cf"]][0], (-pad, -pad, pad, pad))
     a = np.zeros((H, W))
     a[y0:y1, x0:x1] = p["canon"][..., 3] / 255.0
     assert a[DISC].mean() >= 0.95   # the dark body is the globe, not plate
@@ -425,8 +429,9 @@ def test_text_over_mover_is_filled_in(tmp_path):
     bx0, by0, bx1, by1 = m.frames[cf][0] if m.cut.get(cf) is None else (
         min(m.frames[cf][0][0], m.cut[cf][0][0]), min(m.frames[cf][0][1], m.cut[cf][0][1]),
         max(m.frames[cf][0][2], m.cut[cf][0][2]), max(m.frames[cf][0][3], m.cut[cf][0][3]))
+    pad = p["texture_meta"]["padding"]   # textures v2 grow the texture by pad px a side
     alpha = np.zeros((H, W))
-    alpha[by0:by1, bx0:bx1] = p["canon"][..., 3]
+    alpha[by0 - pad:by1 + pad, bx0 - pad:bx1 + pad] = p["canon"][..., 3]
     assert (alpha[gaps] == 255).all()   # opaque: the plate does not show between the glyphs
     ring = np.zeros((H, W), bool)
     ring[y0 - 8:y1 + 8, x0 - 8:x1 + 8] = True

@@ -11,6 +11,11 @@ from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.review.corrections import reassign_id
 
 
+def _on_padded(r, width=200, pad=3):
+    """A reveal fraction of the unpadded text box, on the texture textures v2 pad by `pad` px a side."""
+    return r if r >= 1 else (pad + r * width) / (width + 2 * pad)
+
+
 def _pixel_ocr(frames, readings):
     """Model deterministic OCR: equal pixels must produce equal detections."""
     detections = {}
@@ -40,10 +45,12 @@ def test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments(tmp_pa
     assert len(texts) == 1
     text = texts[0]
     assert text.canonical.text == "You just"
-    assert text.tracks["reveal"].keys[0].v == pytest.approx(0.1, abs=0.01)
+    pad = text.canonical.texture_meta.padding
+    assert pad == 3 and text.tracks["reveal"].keys[0].v == pytest.approx(_on_padded(0.1), abs=0.01)
     assert text.tracks["reveal"].keys[-1].v == 1.0
-    assert [eval_props(text, frame)["reveal"] for frame in (0, 4, 7, 9)] == pytest.approx([0.1, 0.3, 0.6, 1.0], abs=0.01)
-    assert element_bbox(text, 0) == element_bbox(text, 9) == (20, 20, 220, 50)
+    assert [eval_props(text, frame)["reveal"] for frame in (0, 4, 7, 9)] == pytest.approx(
+        [_on_padded(r) for r in (0.1, 0.3, 0.6, 1.0)], abs=0.01)
+    assert element_bbox(text, 0) == element_bbox(text, 9) == (20 - pad, 20 - pad, 220 + pad, 50 + pad)
     assert not [element for element in scene.elements if element.kind == "sprite"]
     for f, width in ((0, 20), (4, 60), (7, 120), (9, 200)):
         expected = np.full((80, 260, 3), 255, np.uint8)
@@ -246,7 +253,7 @@ def test_region_rerun_keeps_full_reveal_exclusion_during_ocr_gaps(tmp_path, monk
     after, _ = current_scene(root, "s1")
     assert [(element.id, element.kind) for element in after.elements] == [(element.id, element.kind) for element in before.elements]
     assert (sd / "stages/text.pkl").read_bytes() == cached_text
-    assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(0.1)
+    assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(_on_padded(0.1))
 
 
 def test_reclassified_shape_reveal_excludes_fragments_on_analysis_and_region_rerun(tmp_path, monkeypatch):
@@ -269,7 +276,7 @@ def test_reclassified_shape_reveal_excludes_fragments_on_analysis_and_region_rer
     before, _ = current_scene(root, "s1")
     assert len(before.elements) == 1 and before.elements[0].kind == "sprite"
     assert all(regions == [] for regions in _pk(sd, "regions"))
-    assert eval_props(before.elements[0], 0)["reveal"] == pytest.approx(0.1)
+    assert eval_props(before.elements[0], 0)["reveal"] == pytest.approx(_on_padded(0.1))
 
     # Restore cached fragment regions to prove the rerun rebuilds exclusions from shape tracks.
     _stage_regions(frames, (255, 255, 255), cached["boxes"], AnalyzeOptions(), sd)
@@ -278,7 +285,7 @@ def test_reclassified_shape_reveal_excludes_fragments_on_analysis_and_region_rer
     after, _ = current_scene(root, "s1")
     assert [(element.id, element.kind) for element in after.elements] == [(before.elements[0].id, "sprite")]
     assert all(regions == [] for regions in _pk(sd, "regions"))
-    assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(0.1)
+    assert eval_props(after.elements[0], 0)["reveal"] == pytest.approx(_on_padded(0.1))
 
 
 @pytest.mark.parametrize("shape_is_target", [False, True])
