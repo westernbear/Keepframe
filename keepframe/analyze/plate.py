@@ -23,6 +23,7 @@ RECOVER = 16              # unsampled frames kept per candidate pixel for its me
 FLAT_P95 = 2.0            # ΔE76 vs the plate mean
 POLY_MAX_RMS = 2.0        # ring RMS ΔE76 for the degree-2 fit
 MIN_RING = 30
+ENCLOSED_MAX = 0.25       # enclosed interiors up to this share of the frame count as covered
 INPAINT_PAD = 32
 INPAINT_RADIUS = 5
 FALLBACK_CONF = 0.5
@@ -65,40 +66,42 @@ def _kernel(px: int) -> np.ndarray:
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * px + 1, 2 * px + 1))
 
 
-def _occ_window(win, regions, boxes, reveal, dilate_px) -> np.ndarray:
-    """Occupancy inside win = (x0, y0, x1, y1), painted from everything within dilate_px of it."""
-    x0, y0, x1, y1 = win
-    p = dilate_px
-    ox, oy = x0 - p, y0 - p
-    m = np.zeros((y1 - y0 + 2 * p, x1 - x0 + 2 * p), np.uint8)
-    h, w = m.shape
+def _fill_enclosed(m: np.ndarray, max_area: float) -> None:
+    """Mark free components (4-connected) that do not reach the frame edge and are at most max_area as covered."""
+    n, lab, stats, _ = cv2.connectedComponentsWithStats((m == 0).astype(np.uint8), connectivity=4)
+    if n <= 2:
+        return
+    fill = stats[:, cv2.CC_STAT_AREA] <= max_area
+    fill[0] = False
+    fill[np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])] = False
+    if fill.any():
+        m[fill[lab]] = 1
 
-    def clip(bx0, by0, bx1, by1):
-        return max(bx0, ox), max(by0, oy), min(bx1, ox + w), min(by1, oy + h)
 
+def _occ_frame(shape, regions, boxes, reveal, dilate_px) -> np.ndarray:
+    H, W = shape
+    m = np.zeros((H, W), np.uint8)
     for r in regions:
-        rx0, ry0, _, _ = r.bbox
-        cx0, cy0, cx1, cy1 = clip(*r.bbox)
-        if cx1 > cx0 and cy1 > cy0:
-            m[cy0 - oy:cy1 - oy, cx0 - ox:cx1 - ox] |= r.mask[cy0 - ry0:cy1 - ry0, cx0 - rx0:cx1 - rx0]
+        x0, y0, x1, y1 = r.bbox
+        m[y0:y1, x0:x1] |= r.mask
     rects = [(b.bbox[0] - OCR_PAD, b.bbox[1] - OCR_PAD, b.bbox[2] + OCR_PAD, b.bbox[3] + OCR_PAD) for b in boxes]
-    for cx0, cy0, cx1, cy1 in (clip(*b) for b in rects + list(reveal)):
-        if cx1 > cx0 and cy1 > cy0:
-            m[cy0 - oy:cy1 - oy, cx0 - ox:cx1 - ox] = 1
-    if p:
-        m = cv2.dilate(m, _kernel(p))[p:-p, p:-p]
+    for x0, y0, x1, y1 in rects + list(reveal):
+        m[max(0, y0):max(0, y1), max(0, x0):max(0, x1)] = 1
+    if dilate_px:
+        m = cv2.dilate(m, _kernel(dilate_px))
+    _fill_enclosed(m, ENCLOSED_MAX * H * W)
     return m.astype(bool)
 
 
 def occupancy(shape, rbf, boxes, reveal_boxes, frames, dilate_px=DILATE_PX) -> np.ndarray:
-    """Per listed frame: region masks, OCR boxes (+2 px) and reveal boxes, dilated. The raw difference to
-    the pass-1 plate is left out on purpose: that plate holds the smears pass 2 removes."""
-    H, W = shape
-    out = np.empty((len(frames), H, W), bool)
+    """Per listed frame: region masks, OCR boxes (+2 px) and reveal boxes, dilated, with enclosed interiors
+    (≤ 25 % of the frame) filled — pass 1 absorbs a large flat element's inside, so only its rim is a region.
+    The raw difference to the pass-1 plate is left out on purpose: that plate holds the smears pass 2 removes."""
+    out = np.empty((len(frames), *shape), bool)
 
     def run(j):
         f = frames[j]
-        out[j] = _occ_window((0, 0, W, H), rbf[f], boxes[f], reveal_boxes.get(f, ()), dilate_px)
+        out[j] = _occ_frame(shape, rbf[f], boxes[f], reveal_boxes.get(f, ()), dilate_px)
 
     with ThreadPoolExecutor(_workers()) as ex:
         list(ex.map(run, range(len(frames))))
@@ -137,32 +140,36 @@ def masked_median(frames, sample, occ, band=BAND) -> tuple[np.ndarray, np.ndarra
     return plate, counts
 
 
-def find_holes(counts, frames, rbf, boxes, reveal_boxes) -> tuple[np.ndarray, np.ndarray]:
-    """Pixels no sample showed (count == 0) are checked against every frame. Returns the true holes and
-    `uncovered`: the median of up to RECOVER frames that do show a candidate pixel (SENTINEL elsewhere)."""
+def find_holes(counts, frames, rbf, boxes, reveal_boxes, *, skip=()) -> tuple[np.ndarray, np.ndarray]:
+    """Pixels no sample showed (count == 0) are checked against every frame (`skip`: frames known to cover
+    them, i.e. the samples). Returns the true holes and `uncovered`: the median of up to RECOVER frames that
+    do show a candidate pixel (SENTINEL elsewhere)."""
     cand = counts == 0
     uncovered = np.full(counts.shape + (3,), SENTINEL, np.uint16)
     if not cand.any():
         return cand, uncovered
-    ys, xs = np.nonzero(cand)
-    win = x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
-    pos = np.flatnonzero(cand[y0:y1, x0:x1])
+    pos = np.flatnonzero(cand)
     slots = np.full((RECOVER, len(pos), 3), SENTINEL, np.uint16)
     k = np.zeros(len(pos), np.int32)
-    for f in range(len(frames)):
-        free = ~_occ_window(win, rbf[f], boxes[f], reveal_boxes.get(f, ()), DILATE_PX).ravel()[pos] & (k < RECOVER)
-        if free.any():
-            j = np.flatnonzero(free)
-            slots[k[j], j] = frames[f, y0:y1, x0:x1].reshape(-1, 3)[pos[j]]
-            k[j] += 1
+    skip = set(skip)
+    todo = [f for f in range(len(frames)) if f not in skip]
+
+    def covered(f):
+        return _occ_frame(counts.shape, rbf[f], boxes[f], reveal_boxes.get(f, ()), DILATE_PX).ravel()[pos]
+
+    with ThreadPoolExecutor(_workers()) as ex:
+        for f, occ in zip(todo, ex.map(covered, todo)):
+            free = ~occ & (k < RECOVER)
+            if free.any():
+                j = np.flatnonzero(free)
+                slots[k[j], j] = frames[f].reshape(-1, 3)[pos[j]]
+                k[j] += 1
     holes = cand.copy()
     seen = k > 0
     if seen.any():
         v = np.sort(slots[:, seen], axis=0, kind="stable")
-        med = _median_sorted(v, k[seen])
-        wy, wx = np.unravel_index(pos[seen], (y1 - y0, x1 - x0))
-        uncovered[wy + y0, wx + x0] = med
-        holes[wy + y0, wx + x0] = False
+        uncovered.reshape(-1, 3)[pos[seen]] = _median_sorted(v, k[seen])
+        holes.ravel()[pos[seen]] = False
     return holes, uncovered
 
 
@@ -254,7 +261,7 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
     t.append(time.perf_counter())
     plate, counts = masked_median(frames, sample, occ)
     t.append(time.perf_counter())
-    holes, uncovered = find_holes(counts, frames, rbf, boxes, reveal)
+    holes, uncovered = find_holes(counts, frames, rbf, boxes, reveal, skip=sample)
     t.append(time.perf_counter())
     plate, synthetic, filled = fill_holes(plate, holes, uncovered)
     t.append(time.perf_counter())
@@ -294,34 +301,41 @@ def save_plate(sd, model: PlateModel) -> None:
         _write_png(sd / PLATE_PATH, cv2.cvtColor(model.image, cv2.COLOR_RGB2BGR))
     if synth:
         _write_png(sd / SYNTH_PATH, model.synthetic.astype(np.uint8) * 255)
-    (sd / PLATE_JSON).parent.mkdir(parents=True, exist_ok=True)
-    (sd / PLATE_JSON).write_text(json.dumps({"version": VERSION, "kind": model.kind, "rgb": list(model.rgb),
-                                             "confidence": model.confidence, "size": [W, H], "synthetic": synth,
-                                             "stats": model.stats}))
+    path = sd / PLATE_JSON
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps({"version": VERSION, "kind": model.kind, "rgb": list(model.rgb), "confidence": model.confidence,
+                               "size": [W, H], "synthetic": synth, "stats": model.stats}))
+    os.replace(tmp, path)
 
 
 def load_plate(sd) -> PlateModel | None:
-    """The cached plate, or None when it must be rebuilt (legacy project, other version, missing file)."""
+    """The cached plate, or None when it must be rebuilt: legacy project, other version, corrupt or partial
+    plate.json, missing or mismatched image."""
     sd = Path(sd)
-    p = sd / PLATE_JSON
-    if not p.is_file():
+    try:
+        j = json.loads((sd / PLATE_JSON).read_text())
+        if j.get("version") != VERSION:
+            return None
+        kind, (W, H), rgb = j["kind"], (int(v) for v in j["size"]), tuple(int(v) for v in j["rgb"])
+        confidence, stats, synth = float(j["confidence"]), j.get("stats", {}), bool(j.get("synthetic"))
+        if kind not in ("color", "image") or len(rgb) != 3 or not all(0 <= v <= 255 for v in rgb) \
+                or W <= 0 or H <= 0 or not isinstance(stats, dict):
+            return None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
-    j = json.loads(p.read_text())
-    if j.get("version") != VERSION:
-        return None
-    (W, H), rgb = j["size"], tuple(j["rgb"])
-    if j["kind"] == "color":
-        return PlateModel("color", np.full((H, W, 3), rgb, np.uint8), rgb, None, j["confidence"], j.get("stats", {}))
+    if kind == "color":
+        return PlateModel("color", np.full((H, W, 3), rgb, np.uint8), rgb, None, confidence, stats)
     img = cv2.imread(str(sd / PLATE_PATH), cv2.IMREAD_COLOR)
-    if img is None:
+    if img is None or img.shape[:2] != (H, W):
         return None
     synthetic = np.zeros((H, W), bool)
-    if j.get("synthetic"):
+    if synth:
         m = cv2.imread(str(sd / SYNTH_PATH), cv2.IMREAD_GRAYSCALE)
-        if m is None:
+        if m is None or m.shape != (H, W):
             return None
         synthetic = m > 127
-    return PlateModel(j["kind"], cv2.cvtColor(img, cv2.COLOR_BGR2RGB), rgb, synthetic, j["confidence"], j.get("stats", {}))
+    return PlateModel(kind, cv2.cvtColor(img, cv2.COLOR_BGR2RGB), rgb, synthetic, confidence, stats)
 
 
 def background_for(model: PlateModel, sd) -> Background:

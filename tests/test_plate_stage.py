@@ -4,7 +4,7 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.background import PASS1_PATH, PLATE_PATH, background_plate
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
-from keepframe.analyze.plate import PLATE_JSON, SYNTH_PATH
+from keepframe.analyze.plate import PLATE_JSON, SYNTH_PATH, load_plate
 from keepframe.ir.colour import delta_e, srgb_to_lab
 from keepframe.ir.store import current_scene, init_project, scene_dir
 from keepframe.ir.synth import make_reference_scene, render_frames, true_plate
@@ -36,8 +36,12 @@ def logo_project(tmp_path):
 def test_stage_order_has_plate_between_tracking_and_solids():
     assert STAGES.index("tracking") + 1 == STAGES.index("plate") == STAGES.index("solids") - 1
     js = (STATIC / "js" / "analyze.js").read_text()
-    assert json.loads(re.search(r"const PIPELINE = (\[.*?\]);", js).group(1)) == list(STAGES)
-    assert 'bg: ["background", "plate"]' in js and 'plate: "analyze.step.bg"' in js
+    pipeline_js = json.loads(re.search(r"const PIPELINE = (\[.*?\]);", js).group(1))
+    assert pipeline_js == list(STAGES)
+    steps = json.loads(re.sub(r"(\w+):", r'"\1":', re.search(r"const STEP_STAGES = (\{.*?\});", js, re.S).group(1)).replace(",\n}", "\n}"))
+    assert [s for group in steps.values() for s in group] == list(STAGES)   # contiguous groups, one step active at a time
+    assert steps["bg"] == ["background"] and steps["regions"] == ["regions", "tracking", "plate", "solids"]
+    assert 'plate: "analyze.step.regions"' in js
 
 
 def test_analysis_writes_pass1_and_v2_plate(logo_project):
@@ -60,6 +64,47 @@ def test_analysis_writes_pass1_and_v2_plate(logo_project):
     ramp = np.linspace(0, 255, 640, dtype=np.uint8)
     want = np.stack([ramp, ramp[::-1], np.full(640, 80, np.uint8)], -1)[320:360].astype(int)
     assert np.abs(plate[80:120, 320:360].astype(int) - want[None]).max() <= 2   # the logo is gone, the ramp continues
+
+
+def _block_clip(present, n=24, h=320, w=640):
+    ramp = np.linspace(0, 255, w, dtype=np.uint8)
+    clean = np.stack([np.stack([ramp, ramp[::-1], np.full(w, 80, np.uint8)], -1)] * h)
+    frames = np.repeat(clean[None], n, 0).copy()
+    for i in range(n):
+        if present(i, n):
+            frames[i, 120:240, 200:420] = (240, 200, 30)   # pass 1 absorbs its flat interior
+        frames[i, 20:36, 5 + i * 8: 21 + i * 8] = (255, 255, 255)
+    return frames, clean
+
+
+@pytest.mark.parametrize("present", [lambda i, n: True, lambda i, n: i >= int(n * 0.3)], ids=["static", "held70"])
+def test_large_uniform_block_is_not_baked_into_the_plate(tmp_path, present):
+    frames, clean = _block_clip(present)
+    analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
+    plate = cv2.cvtColor(cv2.imread(str(scene_dir(tmp_path, "s1") / PLATE_PATH)), cv2.COLOR_BGR2RGB)
+    under = np.s_[120:240, 200:420]
+    assert np.percentile(delta_e(srgb_to_lab(background_plate(frames)[under]), srgb_to_lab(clean[under])), 95) > 30
+    assert np.percentile(delta_e(srgb_to_lab(plate[under]), srgb_to_lab(clean[under])), 95) <= 3
+
+
+@pytest.mark.parametrize("bad", ["", '{"version": 2, "kind": "image"', '{"version": 2, "kind": "image", "rgb": [1, 2, 3]}',
+                                 '{"version": 2, "kind": "color", "rgb": 5, "confidence": 1, "size": [4, 4]}', "[]"])
+def test_corrupt_plate_json_is_rebuilt(logo_project, monkeypatch, bad):
+    root, scene, _ = logo_project
+    sd = scene_dir(root, "s1")
+    good = (sd / PLATE_JSON).read_text()
+    (sd / PLATE_JSON).write_text(bad)
+    assert load_plate(sd) is None
+    calls = []
+    real = pipeline.build_plate
+    monkeypatch.setattr(pipeline, "build_plate", lambda *a, **k: calls.append(1) or real(*a, **k))
+    rerun(root, "s1", "sprites", note="corrupt plate.json")
+    rebuilt = json.loads((sd / PLATE_JSON).read_text())
+    good = json.loads(good)
+    rebuilt["stats"].pop("seconds"), good["stats"].pop("seconds")
+    assert len(calls) == 1 and rebuilt == good
+    assert current_scene(root, "s1")[0].background == scene.background
+    assert not list((sd / "stages").glob("*.tmp"))
 
 
 def test_plate_stage_cached_and_rerun_from_sprites_reuses_it(logo_project, monkeypatch):

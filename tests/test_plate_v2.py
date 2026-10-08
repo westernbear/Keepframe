@@ -70,6 +70,21 @@ def test_occupancy_paints_regions_ocr_boxes_and_reveals_then_dilates():
     assert np.array_equal(grown, _dilated(mask, 8))
 
 
+def test_occupancy_fills_enclosed_interiors_up_to_a_quarter_of_the_frame():
+    def ring(y0, y1, x0, x1, h=100, w=100):
+        m = np.zeros((h, w), bool)
+        m[y0:y1, x0:x1] = True
+        m[y0 + 2:y1 - 2, x0 + 2:x1 - 2] = False
+        return m
+
+    small, big, open_ = ring(10, 50, 10, 60), ring(5, 95, 5, 95), ring(60, 104, 50, 90)   # open_: no bottom edge
+    occ = occupancy((100, 100), [[_region(0, small)], [_region(1, big)], [_region(2, open_)]], [[], [], []], {}, [0, 1, 2],
+                    dilate_px=0)
+    assert occ[0][10:50, 10:60].all() and occ[0].sum() == 40 * 50   # enclosed, 46×36 < 25 % → filled
+    assert np.array_equal(occ[1], big)                               # 86×86 > 25 % → left open
+    assert np.array_equal(occ[2], open_)                             # its inside reaches the frame edge → open
+
+
 def test_masked_median_ignores_title_present_in_70pct_of_frames(tmp_path):
     scene = _held_title_scene(tmp_path)
     frames = _render(scene, tmp_path)

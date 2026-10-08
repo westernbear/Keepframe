@@ -26,9 +26,9 @@ const etaEl = document.querySelector("[data-eta]");
 const PIPELINE = ["frames", "background", "text", "regions", "tracking", "plate", "solids", "sprites", "keyframes", "semantics", "constraints", "report"];
 const STEP_STAGES = {
   shots: ["frames"],
-  bg: ["background", "plate"],
+  bg: ["background"],
   text: ["text"],
-  regions: ["regions", "tracking", "solids"],
+  regions: ["regions", "tracking", "plate", "solids"],
   sprites: ["sprites"],
   keyframes: ["keyframes"],
   predicates: ["semantics", "constraints"],
@@ -40,7 +40,7 @@ const STAGE_I18N = {
   text: "analyze.step.text",
   regions: "analyze.step.regions",
   tracking: "analyze.step.regions",
-  plate: "analyze.step.bg",
+  plate: "analyze.step.regions",
   solids: "analyze.step.regions",
   sprites: "analyze.step.sprites",
   keyframes: "analyze.step.keyframes",
