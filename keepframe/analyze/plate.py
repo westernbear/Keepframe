@@ -13,7 +13,7 @@ from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import Background, Gradient, GradientKey
 from ..log import get
 from .background import PLATE_PATH
-from .gradient_fit import fit_gradient, fit_like, follow, shrink, stop_range
+from .gradient_fit import fit_gradient, fit_like, follow, measure, shrink, stop_range
 from .text import reveal_exclusion_boxes
 
 log = get("keepframe.analyze")
@@ -32,7 +32,7 @@ INPAINT_PAD = 32
 INPAINT_RADIUS = 5
 FALLBACK_CONF = 0.5
 STATIC_P95 = 1.5          # temporal ΔE76 p95 below which the plate holds still
-GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient is that gradient
+GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient (at fit size) is that gradient
 MIN_STOP_RANGE = 3.0      # ΔE76 between the most different stops, else it is not a gradient
 RANK2 = 0.95              # variance share of the top two temporal components of an animated gradient
 ANIM_P95 = 3.0            # per-sample fit p95 of an animated gradient
@@ -370,6 +370,8 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
         valid = ~model.synthetic if model.synthetic is not None and model.synthetic.any() else None
         g, gp = fit_gradient(model.image, valid)
         st["gradient_p95_de"] = round(gp, 3) if math.isfinite(gp) else None
+        if g is not None:   # per pixel at full size, for the record (8-bit banding included)
+            st["gradient_full_p95_de"] = round(measure(g, model.image, valid), 3)
         if g is not None and gp <= GRADIENT_P95 and stop_range(g) >= MIN_STOP_RANGE:
             return replace(model, kind="gradient", image=render_gradient(g, W, H), gradient=g, stats=st)
         return replace(model, kind="image", stats=st)

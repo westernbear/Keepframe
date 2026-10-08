@@ -22,11 +22,13 @@ PRUNE_DE = 0.25           # ΔE: an inner stop whose removal raises p95 by at mo
 Q = 1024                  # Lab quantisation levels for the per-bin medians
 _QS = np.array([10.0, 4.0, 4.0])
 _QO = np.array([0.0, 128.0, 128.0])
+_T = np.linspace(0.0, 1.0, 1025)
 _DUMMY = [GradientStop(offset=0, color="#000000"), GradientStop(offset=1, color="#ffffff")]
 
 
 class _Data:
-    """Valid pixels of a work-size plate: frame coordinates, sRGB, Lab and quantised Lab."""
+    """Valid pixels of a work-size plate (float: area averages keep sub-level precision, so even a gradient
+    spanning a few 8-bit levels has a well-defined angle): frame coordinates, sRGB, Lab, quantised Lab."""
 
     def __init__(self, plate_small, valid, size):
         h, w = plate_small.shape[:2]
@@ -36,7 +38,7 @@ class _Data:
         self.x = (xs[m] + 0.5) * self.W / w
         self.y = (ys[m] + 0.5) * self.H / h
         self.rgb = plate_small[m].astype(np.float64)
-        self.lab = srgb8_to_lab(plate_small[m])
+        self.lab = srgb_to_lab(self.rgb)
         self.q = np.clip(np.rint((self.lab + _QO) * _QS), 0, Q - 1).astype(np.int64)
 
     def every(self, k: int) -> "_Data":
@@ -97,13 +99,15 @@ def _knots(t, data, max_stops, n_stops=None, tail=False):
 
 def _solve(t, data, offs):
     """Least-squares sRGB stop colours for fixed offsets (render_gradient is linear in them), rounded to 8 bit;
-    returns the colours and the p95 ΔE of the rounded render on the valid pixels."""
+    returns the colours and the p95 ΔE on the valid pixels of the render (averaged to work size, i.e. not
+    rounded per pixel)."""
     t = np.clip(t, 0.0, 1.0)
     eye = np.eye(len(offs))
     a = np.stack([np.interp(t, offs, eye[k]) for k in range(len(offs))], -1)
     cols = np.clip(np.rint(np.linalg.lstsq(a.T @ a, a.T @ data.rgb, rcond=None)[0]), 0, 255)
-    pred = np.floor(a @ cols + 0.5).astype(np.uint8)
-    return cols.astype(int), float(np.percentile(delta_e(srgb8_to_lab(pred), data.lab), 95))
+    curve = srgb_to_lab(np.stack([np.interp(_T, offs, cols[:, c]) for c in range(3)], -1))   # the colour is a function of t
+    pred = np.stack([np.interp(t, _T, curve[:, c]) for c in range(3)], -1)
+    return cols.astype(int), float(np.percentile(delta_e(pred, data.lab), 95))
 
 
 def _try(data, kind, max_stops, n_stops, prune=False, offsets=None, **geom):
@@ -174,13 +178,13 @@ def fit_radial(plate_small, valid, max_stops=3, *, size=None, center=None, n_sto
 
 
 def shrink(img, valid, work: int = WORK):
-    """Area-resized image (max side ≤ work) and the pixels whose whole footprint is valid."""
+    """Area-resized float image (max side ≤ work) and the pixels whose whole footprint is valid."""
     H, W = img.shape[:2]
     s = min(1.0, work / max(W, H))
     w, h = max(1, round(W * s)), max(1, round(H * s))
     if (w, h) == (W, H):
-        return img, (None if valid is None else np.asarray(valid, bool))
-    small = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+        return img.astype(np.float32), (None if valid is None else np.asarray(valid, bool))
+    small = cv2.resize(img.astype(np.float32), (w, h), interpolation=cv2.INTER_AREA)
     if valid is None:
         return small, None
     return small, cv2.resize(np.asarray(valid, np.uint8) * 255, (w, h), interpolation=cv2.INTER_AREA) == 255
@@ -198,18 +202,20 @@ def measure(g: Gradient, plate, valid=None) -> float:
     return float(np.percentile(delta_e(srgb8_to_lab(got), srgb8_to_lab(plate[::s, ::s][m])), 95))
 
 
-def fit_gradient(plate, valid, *, work=WORK):
+def fit_gradient(plate, valid, *, work=WORK, size=None):
     """The better of a ≤ 4-stop linear and a ≤ 3-stop radial fit at ≤ `work` px (linear unless radial is
-    clearly better), and its p95 ΔE76 against the plate at full size. Returns (Gradient | None, p95)."""
+    clearly better) and its p95 ΔE76 there: render and plate both area-averaged to the work size, so 8-bit
+    banding and codec noise do not count (per pixel, a dark gradient a few levels deep misses by ~1.6 ΔE
+    unless the fit is bit-exact; `measure` gives that full-size number). `size`: the frame (W, H) when `plate`
+    is already reduced. Returns (Gradient | None, p95)."""
     H, W = plate.shape[:2]
     small, v = shrink(plate, valid, work)
-    data = _Data(small, v, (W, H))
+    data = _Data(small, v, size or (W, H))
     if len(data.x) < 16:
         return None, math.inf
     lin, p_lin = fit_linear(None, None, data=data)
     rad, p_rad = fit_radial(None, None, data=data)
-    g = rad if p_rad < p_lin - PREFER_LINEAR else lin
-    return (None, math.inf) if g is None else (g, measure(g, plate, valid))
+    return (rad, p_rad) if p_rad < p_lin - PREFER_LINEAR else (lin, p_lin)
 
 
 def stop_range(g: Gradient) -> float:
@@ -222,13 +228,11 @@ def fit_like(small, valid, size, like: Gradient | None = None, *, warm: bool = T
     """Fit a work-size image (frame geometry `size`): a fresh search, or one with `like`'s kind and stop count
     (keys of an animated gradient must match to interpolate): warm-started from its geometry with its stop
     offsets, or (warm=False) a full search. p95 is on the work-size valid pixels."""
+    if like is None:
+        return fit_gradient(small, valid, work=max(small.shape[:2]), size=size)   # `small` is at work size already
     data = _Data(small, valid, size)
     if len(data.x) < 16:
         return None, math.inf
-    if like is None:
-        lin, p_lin = fit_linear(None, None, data=data)
-        rad, p_rad = fit_radial(None, None, data=data)
-        return (rad, p_rad) if p_rad < p_lin - PREFER_LINEAR else (lin, p_lin)
     n, offs = len(like.stops), (np.array([s.offset for s in like.stops]) if warm else None)
     if like.kind == "linear":
         return fit_linear(None, None, data=data, n_stops=n, offsets=offs, angles=like.angle + WARM if warm else None)
