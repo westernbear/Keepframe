@@ -6,9 +6,12 @@ from .colour import hex_to_rgb8, rgb8_to_hex
 from .schema import Background, Gradient, GradientStop
 
 
-def gradient_t(g: Gradient, w: int, h: int) -> np.ndarray:
-    ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
-    x, y = xs + 0.5, ys + 0.5
+def gradient_t(g: Gradient, w: int, h: int, xy: tuple[np.ndarray, np.ndarray] | None = None) -> np.ndarray:
+    """t at every pixel centre of a w×h frame, or at the frame coordinates xy = (x, y)."""
+    if xy is None:
+        ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
+        xy = (xs + 0.5, ys + 0.5)
+    x, y = xy
     if g.kind == "radial":
         r = g.radius * math.hypot(w, h) / 2
         return np.hypot(x - g.center[0] * w, y - g.center[1] * h) / r
@@ -18,8 +21,8 @@ def gradient_t(g: Gradient, w: int, h: int) -> np.ndarray:
     return ((x - w / 2) * dx + (y - h / 2) * dy) / length + 0.5
 
 
-def render_gradient(g: Gradient, w: int, h: int) -> np.ndarray:
-    t = np.clip(gradient_t(g, w, h), 0.0, 1.0)
+def render_gradient(g: Gradient, w: int, h: int, xy: tuple[np.ndarray, np.ndarray] | None = None) -> np.ndarray:
+    t = np.clip(gradient_t(g, w, h, xy), 0.0, 1.0)
     offs = [s.offset for s in g.stops]
     cols = np.array([hex_to_rgb8(s.color) for s in g.stops], np.float64)
     out = np.stack([np.interp(t, offs, cols[:, c]) for c in range(3)], -1)

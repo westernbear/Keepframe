@@ -205,7 +205,7 @@ def test_plate_analysis_and_rerun_refine_when_torch_available(tmp_path, monkeypa
     monkeypatch.setattr("keepframe.analyze.refine.refine_affine", fake_refine)
     monkeypatch.setattr("keepframe.analyze.device.resolve_device", lambda: "cpu")
     opts = AnalyzeOptions(ocr=False, refine=stage == "analyze", use_ecc=False)
-    frames = _gradient_clip(h=320, w=640)
+    frames = _gradient_clip(h=320, w=640, picture=True)   # a picture plate (a plain ramp is a gradient, D4)
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", opts)
     if stage == "rerun":
         init_project(tmp_path, {"file": "ref.mp4"}, scene)

@@ -130,7 +130,7 @@ def test_always_covered_logo_hole_poly_on_gradient(tmp_path):
     bg, conf = estimate_background(frames)
     model = build_plate(frames, rbf, [[] for _ in range(n)], [], [], bg_rgb=bg, bconf=conf, bg_override=None,
                         pass1=background_plate(frames))
-    assert model.kind == "image"
+    assert model.kind == "gradient"   # D4; the hole stats and the synthetic mask stay
     holes = model.stats["holes"]
     assert [h["method"] for h in holes] == ["poly"] and holes[0]["rms"] <= 2.0
     want = _dilated(gt["logo"][0][0] > 0.02)

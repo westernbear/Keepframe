@@ -10,9 +10,23 @@ _WHITE = _M @ np.ones(3)
 _EPS, _KAPPA = 216 / 24389, 24389 / 27
 
 
+def _linear(c: np.ndarray) -> np.ndarray:
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+_LIN8 = _linear(np.arange(256, dtype=np.float64) / 255.0)
+
+
 def srgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-    c = np.asarray(rgb, np.float64) / 255.0
-    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    return _lin_to_lab(_linear(np.asarray(rgb, np.float64) / 255.0))
+
+
+def srgb8_to_lab(rgb: np.ndarray) -> np.ndarray:
+    """srgb_to_lab for uint8 input through a 256-entry linearisation table (hot loops)."""
+    return _lin_to_lab(_LIN8[np.asarray(rgb, np.uint8)])
+
+
+def _lin_to_lab(lin: np.ndarray) -> np.ndarray:
     t = (lin @ _M.T) / _WHITE
     f = np.where(t > _EPS, np.cbrt(t), (_KAPPA * t + 16) / 116)
     L = 116 * f[..., 1] - 16

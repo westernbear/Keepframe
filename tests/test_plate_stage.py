@@ -15,9 +15,17 @@ OPTS = AnalyzeOptions(ocr=False, refine=False, use_ecc=False)
 STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
 
 
-def _logo_clip(n=12, h=320, w=640, logo=True):
+def _plate(h=320, w=640, picture=False):
+    """A horizontal ramp (a linear gradient); picture=True adds a vertical blue ramp no single gradient fits."""
     ramp = np.linspace(0, 255, w, dtype=np.uint8)
-    frames = np.repeat(np.stack([np.stack([ramp, ramp[::-1], np.full(w, 80, np.uint8)], -1)] * h)[None], n, 0).copy()
+    out = np.stack([np.stack([ramp, ramp[::-1], np.full(w, 80, np.uint8)], -1)] * h)
+    if picture:
+        out[..., 2] = np.linspace(40, 140, h, dtype=np.uint8)[:, None]
+    return out
+
+
+def _logo_clip(n=12, h=320, w=640, logo=True, picture=False):
+    frames = np.repeat(_plate(h, w, picture)[None], n, 0).copy()
     if logo:
         frames[:, 80:120, 320:360] = (250, 20, 20)   # static logo: never shows the plate behind it
     for i in range(n):
@@ -44,8 +52,9 @@ def test_stage_order_has_plate_between_tracking_and_solids():
     assert 'plate: "analyze.step.regions"' in js
 
 
-def test_analysis_writes_pass1_and_v2_plate(logo_project):
-    root, scene, frames = logo_project
+def test_analysis_writes_pass1_and_v2_plate(tmp_path):
+    frames = _logo_clip(picture=True)   # a picture: the image plate and its synthetic mask are stored
+    root, scene = tmp_path, analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
     sd = scene_dir(root, "s1")
     pass1 = cv2.cvtColor(cv2.imread(str(sd / PASS1_PATH)), cv2.COLOR_BGR2RGB)
     assert np.array_equal(pass1, background_plate(frames))
@@ -61,9 +70,8 @@ def test_analysis_writes_pass1_and_v2_plate(logo_project):
     assert scene.background.synthetic == SYNTH_PATH and scene.background.confidence == pj["confidence"]
     assert pj["confidence"] == pytest.approx(json.loads((sd / "stages" / "background.json").read_text())["confidence"]
                                              * (1 - 0.5 * synthetic.mean()))
-    ramp = np.linspace(0, 255, 640, dtype=np.uint8)
-    want = np.stack([ramp, ramp[::-1], np.full(640, 80, np.uint8)], -1)[320:360].astype(int)
-    assert np.abs(plate[80:120, 320:360].astype(int) - want[None]).max() <= 2   # the logo is gone, the ramp continues
+    want = _plate(picture=True)[80:120, 320:360].astype(int)
+    assert np.abs(plate[80:120, 320:360].astype(int) - want).max() <= 2   # the logo is gone, the ramps continue
 
 
 def _block_clip(present, n=24, h=320, w=640):
@@ -197,6 +205,6 @@ def test_ig2_like_smear_removed(tmp_path):
     assert np.percentile(smear, 99) > 10   # pass 1 holds the title, logo and mover
     scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", OPTS)
     sd = scene_dir(tmp_path / "proj", "s1")
-    assert scene.background.kind == "image"
+    assert scene.background.kind == "gradient" and scene.background.poster == PLATE_PATH   # D4
     plate = cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB)
     assert np.percentile(delta_e(srgb_to_lab(plate), truth), 95) < 1.5
