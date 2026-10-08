@@ -26,6 +26,8 @@ SOLID_A = 0.5
 INK_A = 0.05                 # α above this is glyph; effects are measured outside it
 GRADIENT_DROP = 0.40         # a linear fill gradient must cut the interior SSE by this …
 GRADIENT_DE = 6.0            # … and its stops differ by at least this ΔE76
+GROW_DE = 12.0               # interior pixels within this ΔE76 of the fitted ramp join it (rounds below) …
+GROW_ROUNDS = 3              # … so a strong ramp is followed across the fill, not extrapolated from one band
 FADE_RANGE = 0.3             # interior α range (p95 − p5) above which a fade is tried …
 FADE_DROP = 0.40             # … and kept when a linear α ramp cuts the residual by this
 EFFECT_DROP = 0.30           # an effect must cut the residual energy outside the glyphs by this
@@ -252,22 +254,64 @@ def _ramp(values: np.ndarray, mask: np.ndarray, drop: float):
     return angle, c[0], c[0] + c[1], t
 
 
-def fit_fill_gradient(F, interior) -> Gradient | None:
-    """A two-stop linear gradient (Lab ≈ a + Bx·x + By·y) over the texture box when it cuts the interior SSE by > 40 %
-    and its stops differ by ΔE ≥ 6; None for a flat fill."""
+def _srgb_ramp(F: np.ndarray, mask: np.ndarray, angle: float) -> tuple[float, np.ndarray, np.ndarray]:
+    """Direction (sRGB plane fit, the sign kept toward `angle`) and the stops at t = 0 and 1 of a ramp over the box,
+    fitted in sRGB along the CSS t: the renderer interpolates gradients in sRGB, so this is its exact model."""
+    h, w = mask.shape
+    x, y = _xy(mask)
+    v = F[mask].astype(np.float64)
+    X = np.stack([np.ones_like(x), x - w / 2, y - h / 2], 1)
+    slope = np.linalg.lstsq(X, v, rcond=None)[0][1:3].T              # channels × (d/dx, d/dy)
+    if np.linalg.norm(slope) > 1e-9:
+        d = np.linalg.svd(slope)[2][0]
+        th = math.radians(angle)
+        if d[0] * math.sin(th) - d[1] * math.cos(th) < 0:
+            d = -d
+        angle = math.degrees(math.atan2(d[0], -d[1])) % 360.0
+    g = Gradient(kind="linear", angle=angle, stops=[GradientStop(offset=0, color="#000000"), GradientStop(offset=1, color="#000000")])
+    t = gradient_t(g, w, h, (x, y))
+    c = np.linalg.lstsq(np.stack([np.ones_like(t), t], 1), v, rcond=None)[0]
+    return angle, c[0], c[0] + c[1]
+
+
+def _ramp_at(mask: np.ndarray, angle: float, c0: np.ndarray, c1: np.ndarray) -> np.ndarray:
+    h, w = mask.shape
+    g = Gradient(kind="linear", angle=angle, stops=[GradientStop(offset=0, color="#000000"), GradientStop(offset=1, color="#000000")])
+    t = np.clip(gradient_t(g, w, h, _xy(mask)), 0.0, 1.0)[:, None]
+    return np.clip(c0 + (c1 - c0) * t, 0.0, 255.0).astype(np.float32)
+
+
+def fit_fill_gradient(F, interior, candidates=None) -> Gradient | None:
+    """A two-stop linear gradient over the texture box. Detected on `interior` (Lab ≈ a + Bx·x + By·y cutting the SSE
+    by > 40 %); then followed: pixels of `candidates` (default: the interior) within ΔE 12 of the ramp join and the
+    direction and stops are refitted in sRGB (3 rounds), so a strong ramp is fitted across the whole fill rather
+    than extrapolated from the band it was found in. Kept when the final ramp still cuts the SSE by > 40 % and its
+    stops differ by ΔE ≥ 6; None for a flat fill."""
     interior = np.asarray(interior, bool)
+    F = np.asarray(F, np.float32)
     if interior.sum() < 30:
         return None
-    lab = srgb_to_lab(np.asarray(F, np.float32)[interior])
-    fit = _ramp(lab, interior, GRADIENT_DROP)
+    fit = _ramp(srgb_to_lab(F[interior]), interior, GRADIENT_DROP)
     if fit is None:
         return None
-    angle, lab0, lab1, _ = fit
-    if float(delta_e(lab0, lab1)) < GRADIENT_DE:
+    cand = interior if candidates is None else np.asarray(candidates, bool) | interior
+    angle, inl = fit[0], interior
+    for _ in range(GROW_ROUNDS):
+        angle, c0, c1 = _srgb_ramp(F, inl, angle)
+        grown = np.zeros_like(cand)
+        grown[cand] = delta_e(srgb_to_lab(F[cand]), srgb_to_lab(_ramp_at(cand, angle, c0, c1))) < GROW_DE
+        if grown.sum() < 30 or np.array_equal(grown, inl):
+            break
+        inl = grown
+    angle, c0, c1 = _srgb_ramp(F, inl, angle)
+    lab = srgb_to_lab(F[inl])
+    sse0 = float(((lab - lab.mean(0)) ** 2).sum())
+    sse1 = float((delta_e(lab, srgb_to_lab(_ramp_at(inl, angle, c0, c1))) ** 2).sum())
+    s0, s1 = np.clip(np.rint(c0), 0, 255), np.clip(np.rint(c1), 0, 255)
+    if sse0 <= 1e-9 or sse1 > (1 - GRADIENT_DROP) * sse0 or float(delta_e(srgb_to_lab(s0), srgb_to_lab(s1))) < GRADIENT_DE:
         return None
-    c0, c1 = lab_to_srgb(np.float32(lab0)), lab_to_srgb(np.float32(lab1))
     return Gradient(kind="linear", angle=round(angle, 2),
-                    stops=[GradientStop(offset=0.0, color=rgb8_to_hex(c0)), GradientStop(offset=1.0, color=rgb8_to_hex(c1))])
+                    stops=[GradientStop(offset=0.0, color=rgb8_to_hex(s0)), GradientStop(offset=1.0, color=rgb8_to_hex(s1))])
 
 
 def fit_fade(alpha, interior) -> Fade | None:
@@ -599,7 +643,7 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     plateau = (a_tex > INK_A) & (a_tex >= 0.85 * cv2.dilate(a_tex, _disc(2)))
     plateau = cv2.erode(plateau.astype(np.uint8), _K3) > 0 if plateau.sum() > 200 else plateau
     a_g = a_tex * sim
-    grad = fit_fill_gradient(F, interior_mask(a_g, sw0))
+    grad = fit_fill_gradient(F, interior_mask(a_g, sw0), interior_mask(a_tex, sw0))
     fade = None
     if grad is not None and B_box is not None:   # a colour ramp toward the plate: one colour fading out?
         two = _ramp_to_plate(F, a_tex, B_box, interior_mask(a_tex, sw0), grad)

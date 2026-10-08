@@ -75,7 +75,7 @@ def _binary(frames, plate, box, f=0):
 
 
 def _case(tmp_path, text="Sale", family="Inter", weight=700, size=48, fill="#a8001c", effects=(), fade=None,
-          bg=None, n=8, noise=1.0, seed=0, grain=0.0, others=()):
+          bg=None, n=8, noise=1.0, seed=0, grain=0.0, others=(), ghost=None):
     """A styled title (glyph_alpha + compose_text, the renderer's own model) held at the frame centre, matted the
     way the pipeline mattes text (detector box, padding 0), then analysed."""
     bg = bg or Background(kind="gradient", gradient=_grad("#f6e7c8", "#6fa8bf"))
@@ -97,7 +97,13 @@ def _case(tmp_path, text="Sale", family="Inter", weight=700, size=48, fill="#a80
         bx0, by0, bx1, by1 = tbox
         rgba[by0:by1, bx0:bx1, 3] *= fade_alpha(fade, bx1 - bx0, by1 - by0)
     tex = np.clip(np.rint(rgba * 255), 0, 255).astype(np.uint8)
-    frames = _render(tmp_path, [*others, ("t", tex, CX, CY, 5)], bg, n, noise, seed)
+    extra = []
+    if ghost is not None:   # an unmodelled copy of the title: (dx, dy, opacity), drawn under it, no layer for it
+        gdx, gdy, gop = ghost
+        g = tex.copy()
+        g[..., 3] = np.rint(g[..., 3] * gop).astype(np.uint8)
+        extra = [("ghost", g, CX + gdx, CY + gdy, 4)]
+    frames = _render(tmp_path, [*others, *extra, ("t", tex, CX, CY, 5)], bg, n, noise, seed)
     plate = _plate(bg)
     others_at = None
     if others:
@@ -175,6 +181,41 @@ def test_fill_ignores_a_baked_blob(tmp_path):
     assert _de(colour, "#ab0004") < 5 and style.fill is None
 
 
+def test_fill_is_the_dominant_colour_not_the_median(tmp_path):
+    """Thin stripes of three other colours over 60 % of the glyph interior (a striped mover crossing the title, baked
+    in): no one colour is a majority, so a per-channel median mixes them; the dominant colour is still the fill."""
+    c = _case(tmp_path, text="New Arrivals", size=44, fill="#ab0004",
+              bg=Background(kind="gradient", gradient=_grad("#101a3a", "#2c4a6e")))
+    rgba = c.rgba.copy()
+    for k, rgb in ((0, (6, 214, 160)), (1, (255, 255, 255)), (2, (255, 209, 102))):
+        rgba[:, k::5, :3] = rgb
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, c.plate, c.raw, c.text)
+    assert _de(colour, "#ab0004") < 5
+
+
+def test_texture_pixels_that_are_plate_are_not_fill(tmp_path):
+    """A texture that kept the plate between its glyphs but not over its whole box (a clear 2 px margin): pixels
+    within ΔE 12 of the local plate are plate, so the fill is the glyphs' colour, not the plate's."""
+    c = _case(tmp_path, text="Limited edition", weight=400, size=36, fill="#ab0004",
+              bg=Background(kind="gradient", gradient=_grad("#e6a8c8", "#d494b8")))
+    x0, y0, x1, y1 = c.box
+    alpha = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    alpha[2:-2, 2:-2] = 255
+    rgba = np.dstack([c.frames[0][y0:y1, x0:x1], alpha])
+    assert (alpha == 255).mean() < textstyle.BOX_SHARE
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, c.plate, c.raw, c.text)
+    assert _de(colour, "#ab0004") < 5 and style.fill is None
+
+
+def test_no_effect_in_the_fill_colour(tmp_path):
+    """An unmodelled copy of the title a few px off at half opacity (a duplicate text track, a misregistered frame):
+    the residual is the title's own colour — not a shadow (seed 4's false shadow was this)."""
+    c = _case(tmp_path, text="Arrivals", size=48, weight=700, fill="#ab0004",
+              bg=Background(kind="gradient", gradient=_grad("#fdf6e3", "#d8c9a7")), ghost=(-3, -2, 0.5))
+    style, colour, _ = _analyse(c)
+    assert style.effects == [] and _de(colour, "#ab0004") < 5
+
+
 def test_no_false_effects_over_a_wrong_plate(tmp_path):
     """The plate behind the title is off by a smooth field (an animated background kept as a still): no glow or
     shadow explains that."""
@@ -185,6 +226,16 @@ def test_no_false_effects_over_a_wrong_plate(tmp_path):
     assert style.effects == [] and _de(colour, "#ab0004") < 5
 
 
+def _gradient_p90(c, g: Gradient, truth: Gradient) -> float:
+    """p90 ΔE76 between the analysed and the true fill over the solid glyph interior (box coordinates)."""
+    bx0, by0, bx1, by1 = c.tbox
+    want = render_gradient(truth, c.tex_shape[1], c.tex_shape[0])[by0:by1, bx0:bx1]
+    got = render_gradient(g, bx1 - bx0, by1 - by0)
+    inner = cv2.erode((c.alpha > 0.5).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    de = delta_e(srgb_to_lab(got[inner].astype(np.float32)), srgb_to_lab(want[inner].astype(np.float32)))
+    return float(np.percentile(de, 90))
+
+
 def test_two_stop_gradient_detected(tmp_path):
     truth = _grad("#ff3d00", "#ffd600", angle=180.0)
     c = _case(tmp_path, text="HOT DEAL", size=56, weight=800, fill=truth,
@@ -193,12 +244,19 @@ def test_two_stop_gradient_detected(tmp_path):
     g = style.fill
     assert g is not None and g.kind == "linear" and len(g.stops) == 2
     assert min(g.angle % 180, 180 - g.angle % 180) < 15   # vertical, either direction (stops follow)
-    bx0, by0, bx1, by1 = c.tbox
-    want = render_gradient(truth, c.tex_shape[1], c.tex_shape[0])[by0:by1, bx0:bx1]
-    got = render_gradient(g, bx1 - bx0, by1 - by0)
-    inner = cv2.erode((c.alpha > 0.5).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    de = delta_e(srgb_to_lab(got[inner].astype(np.float32)), srgb_to_lab(want[inner].astype(np.float32)))
-    assert float(np.percentile(de, 90)) < 6
+    assert _gradient_p90(c, g, truth) < 6
+
+
+@pytest.mark.parametrize("a,b,angle", [("#ffffff", "#ff3d00", 90.0), ("#ff0080", "#00c0ff", 90.0), ("#ff0080", "#00c0ff", 180.0)])
+def test_strong_gradients_get_their_stops(tmp_path, a, b, angle):
+    """Stops far apart (ΔE 50–110): the ramp is followed across the whole fill, not extrapolated from the band around
+    the dominant colour, and fitted in sRGB, where the renderer interpolates."""
+    truth = _grad(a, b, angle=angle)
+    c = _case(tmp_path, text="SUMMER SALE", size=56, weight=800, fill=truth,
+              bg=Background(kind="gradient", gradient=_grad("#101a3a", "#2c4a6e")))
+    style, _, _ = _analyse(c)
+    assert style.fill is not None and style.fade is None
+    assert _gradient_p90(c, style.fill, truth) < 6
 
 
 def test_flat_noisy_text_has_no_gradient(tmp_path):
