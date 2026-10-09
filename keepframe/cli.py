@@ -46,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     ee.add_argument("--clips", default=None); ee.add_argument("--gold", default=None); ee.add_argument("--out", required=True)
     ee.add_argument("--max-frames", type=int, default=150); ee.add_argument("--baseline", default=None)
     ee.add_argument("--synthetic", type=int, default=6); ee.add_argument("--reuse", action="store_true")
+    ee.add_argument("--font-samples", type=int, default=60, help="font-matching samples (make_font_sample) with the synthetic set")
     ee.add_argument("--clip", action="extend", nargs="+", default=None, help="only these clips (stem or file name)")
     ee.add_argument("--renderer", choices=["browser", "numpy"], default="browser"); ee.add_argument("--strict", action="store_true")
     ee.add_argument("--refine", action=argparse.BooleanOptionalAction, default=None,
@@ -157,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         from .qa.edits import eval_edits
         m = eval_edits(Path(a.clips) if a.clips else None, Path(a.gold) if a.gold else None, Path(a.out), max_frames=a.max_frames,
                        baseline=Path(a.baseline) if a.baseline else None, synthetic=a.synthetic, reuse=a.reuse,
-                       renderer=a.renderer, strict=a.strict, only=a.clip, refine=a.refine)
+                       renderer=a.renderer, strict=a.strict, only=a.clip, refine=a.refine, font_samples=a.font_samples)
         print(Path(a.out) / "metrics.json")
         print(json.dumps({g: {k: v["passed"] for k, v in gates.items()} for g, gates in m["gates"].items()}, indent=2))
         return 1 if a.strict and not m["passed"] else 0

@@ -363,8 +363,6 @@ def test_text_keeps_its_box_and_html_glyphs_match_numpy(tmp_path, monkeypatch):
     frames = np.stack([np.clip(np.rint(f), 0, 255).astype(np.uint8)
                        for f in render_frames(truth, truth_root, range(n), renderer="browser")])
     box = (60, 35, 260, 85)
-    monkeypatch.setattr(text_module, "font_candidates", lambda *a: ["DejaVu Sans"])
-    monkeypatch.setattr(text_module, "font_family_guess", lambda *a: "DejaVu Sans")
     root = tmp_path / "proj"
     scene = analyze_scene_frames(frames, 30, root, "s1", AnalyzeOptions(refine=False, use_ecc=False, generate_3d=False),
                                  ocr=lambda frame: [("Sale", box, 0.99)])

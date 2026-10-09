@@ -46,7 +46,7 @@ def test_eval_edits_cli_writes_metrics_and_sheet(tmp_path, monkeypatch):
         schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
     out = tmp_path / "out"
     assert main(["eval-edits", "--clips", str(clips), "--gold", str(gold), "--out", str(out), "--synthetic", "1",
-                 "--renderer", "numpy", "--no-refine", "--max-frames", "40"]) == 0
+                 "--renderer", "numpy", "--no-refine", "--max-frames", "40", "--font-samples", "2"]) == 0
     m = json.loads((out / "metrics.json").read_text())
     assert m["vlm_calls"] == 0 and m["renderer"] == "numpy"
     assert m["options"]["synthetic"]["refine"] is False and m["options"]["clips"]["refine"] is False
@@ -61,7 +61,11 @@ def test_eval_edits_cli_writes_metrics_and_sheet(tmp_path, monkeypatch):
     gates = m["gates"]["synthetic"]
     assert {"title_outside_glyph_delta", "title_smear_score", "title_glyph_de", "hide_plate_de", "hide_hf_ratio",
             "hide_residue", "hide_truth_de", "plate_de_title", "plate_de_logo", "recolour_halo_ring", "alpha_sad_edge",
-            "f_de_interior", "f_de_edge", "font_top3"} == set(gates)
+            "f_de_interior", "f_de_edge", "font_top3", "font_set_top3"} == set(gates)
+    fs = m["synthetic"]["font_set"]   # Task 10: the matcher on make_font_sample (the eval runs 60 by default)
+    assert fs["n"] == 2 and len(fs["rows"]) == 2 and gates["font_set_top3"]["samples"] == 2
+    assert {"family", "hit", "weight_err", "size_err", "tracking_err", "seconds"} <= set(fs["rows"][0])
+    assert "font set" in (out / "summary.md").read_text()
     assert gates["hide_truth_de"]["limits"] and all(lim >= 2.0 for lim in gates["hide_truth_de"]["limits"])
     assert all({"value", "threshold", "passed"} <= set(g) for g in gates.values())
     clip = m["clips"]["rows"][0]
@@ -164,3 +168,11 @@ def test_gate_aggregation_fails_unmeasured_samples():
     assert not overall_passed({}) and not overall_passed({"clips": {"render_l1": {"passed": None}}})
     assert overall_passed({"s": {"a": {"passed": True}, "b": {"passed": None}}})
     assert not overall_passed({"s": {"a": {"passed": True}, "b": {"passed": None}}}, strict=True)
+
+
+def test_font_set_scores_the_matcher():
+    from keepframe.qa.edits import FONT_SAMPLES, font_set
+    fs = font_set(3)
+    assert FONT_SAMPLES >= 60 and fs["n"] == 3 and len(fs["rows"]) == 3
+    assert all(r["hit"] for r in fs["rows"]) and fs["top3"] == 1.0
+    assert {"weight_ok", "size_ok", "tracking_ok", "median_seconds"} <= set(fs)

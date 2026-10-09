@@ -192,7 +192,21 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: text style failed ({p['style_error']}); kept the core-mask colour")
         if p.get("fade_note"):
             out.append(f"{ids[k]}: {p['fade_note']}")
+        if p.get("font_error"):
+            family = p["font"].family_guess if p.get("font") is not None else "sans-serif"
+            out.append(f"{ids[k]}: font match failed ({p['font_error']}); kept {family}")
     return out
+
+
+def _font_registry(sd: Path):
+    """The project's fonts (uploads + bundled) for a scene directory `<root>/scenes/<id>`; bundled only elsewhere."""
+    from ..fonts.registry import FontRegistry
+    sd = Path(sd)
+    try:
+        return FontRegistry.for_project(sd.parent.parent if sd.parent.name == "scenes" else None)
+    except Exception as e:   # an unreadable font index: bundled fonts only
+        log.warning("project fonts unusable (%s); bundled fonts only", e)
+        return FontRegistry()
 
 
 def _plate_inputs(model: PlateModel):
@@ -379,7 +393,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     # Text style: fill, gradient, fade and effects from the matted texture and the local plate (Task 9).
     report_stage("sprites", "text style")
     try:
-        textstyle.style_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind), workers=workers)
+        textstyle.style_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind), workers=workers,
+                              fonts=_font_registry(sd))
     except Exception as e:   # fail soft: every text keeps its core-mask colour and no style
         log.exception("text style failed")
         props["_style_message"] = f"text style skipped: {type(e).__name__}: {e}"[:200]

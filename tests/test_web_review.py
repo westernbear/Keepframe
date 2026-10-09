@@ -47,7 +47,7 @@ def test_review_scene_exposes_current_font_for_correction_preview(tmp_path):
     text = next(el for el in scene.elements if el.kind == "text")
     slim = next(el for el in _slim_scene(scene)["elements"] if el["id"] == text.id)
     assert slim["canonical"]["font"] == text.canonical.font.model_dump(
-        include={"family_guess", "weight", "size_px", "candidates"},
+        include={"family_guess", "weight", "size_px", "candidates", "scores", "confidence"},
     )
 
 
@@ -87,25 +87,31 @@ def test_state_exposes_text_font_candidates(font_candidates_project):
     assert element["canonical"]["font"]["candidates"] == ["sans-serif", "Noto Sans", "Arial"]
 
 
-@pytest.mark.parametrize("candidates,expected", [
-    (["Arial", None, 42, {}, ["serif"], True, "Noto Sans", "serif", "extra"],
-     ["Arial", "Noto Sans", "serif"]),
-    ("Arial", []),
-    ({"family": "Arial"}, []),
-    (None, []),
+@pytest.mark.parametrize("candidates,scores,expected,expected_scores", [
+    (["Arial", None, 42, {}, ["serif"], True, "Noto Sans", "serif", "extra"], [0.9, 0.8, 0.7],
+     ["Arial", "Noto Sans", "serif"], [0.9, None, None]),
+    (["Arial", None, "Noto Sans"], [0.9, 0.8, 0.7], ["Arial", "Noto Sans"], [0.9, 0.7]),
+    (["Arial", "Noto Sans"], [], ["Arial", "Noto Sans"], []),
+    (["Arial", "Noto Sans"], [0.91234, float("nan"), 0.5], ["Arial", "Noto Sans"], [0.9123, None]),
+    (["Arial"], "bad", ["Arial"], []),
+    ("Arial", [0.9], [], []),
+    ({"family": "Arial"}, None, [], []),
+    (None, None, [], []),
 ])
-def test_review_scene_limits_font_candidates_to_three_strings(candidates, expected):
+def test_review_scene_limits_font_candidates_to_three_strings(candidates, scores, expected, expected_scores):
     from types import SimpleNamespace
     from keepframe.web.server import _slim_scene
 
-    # Exercise the serialized boundary, including malformed candidate metadata.
+    # Exercise the serialized boundary, including malformed candidate metadata. Scores (Task 10) go with the
+    # candidates they belong to (by position): finite numbers only, None where a candidate has none.
     scene = SimpleNamespace(model_dump=lambda **kwargs: {"elements": [{"canonical": {"font": {
         "family_guess": "Arial", "weight": 400, "size_px": 32,
-        "candidates": candidates, "confidence": 0.9,
+        "candidates": candidates, "scores": scores, "confidence": 0.9,
     }}}]})
     font = _slim_scene(scene)["elements"][0]["canonical"]["font"]
     assert font == {
-        "family_guess": "Arial", "weight": 400, "size_px": 32, "candidates": expected,
+        "family_guess": "Arial", "weight": 400, "size_px": 32, "candidates": expected, "scores": expected_scores,
+        "confidence": 0.9,
     }
 
 

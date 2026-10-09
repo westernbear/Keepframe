@@ -463,13 +463,51 @@ def overall_passed(gates: dict, strict: bool = False) -> bool:
     return bool(ran) and all(ran) and not (strict and None in verdicts)
 
 
-def eval_synthetic(out, n=6, *, renderer: Renderer, options: AnalyzeOptions | None = None, reuse: bool = False) -> dict:
+FONT_SAMPLES = 60   # the font set's size (Task 10: the scenes' 8 titles alone are too few for a rate)
+
+
+def font_set(n: int = FONT_SAMPLES) -> dict:
+    """The font matcher on seeded `make_font_sample`s (bundled families, weights, sizes, tracking, shear), with the
+    measures the style phase hands it: top-3 hits and, on the true family's fit, weight (±100), size (3 %) and
+    tracking (0.02 em)."""
+    import time as _time
+    from ..analyze.textstyle import cap_height, glyph_centres, stroke_width
+    from ..fonts.match import fit_family, match_font
+    from ..fonts.registry import FontRegistry
+    from ..ir.synth import make_font_sample
+    reg, rows = FontRegistry(), []
+    for seed in range(1, n + 1):
+        smp = make_font_sample(seed)
+        sw, cap = stroke_width(smp.alpha), cap_height(smp.alpha)
+        kw = {"stroke_ratio": sw / cap if cap > 0 and sw > 0 else None, "centres": glyph_centres(smp.alpha, smp.text)}
+        t0 = _time.perf_counter()
+        fits, conf = match_font(smp.alpha, smp.text, reg, **kw)
+        secs = _time.perf_counter() - t0
+        fit = next((f for f in fits if f.family == smp.family), None) or fit_family(smp.alpha, smp.text, smp.family, reg, **kw)
+        rows.append({"seed": seed, "family": smp.family, "text": smp.text, "top3": [f.family for f in fits],
+                     "hit": smp.family in [f.family for f in fits[:3]], "confidence": conf,
+                     "weight_err": fit.weight - smp.weight, "size_err": fit.size_px / smp.size_px - 1,
+                     "tracking_err": fit.tracking_em - smp.tracking_em, "seconds": round(secs, 3)})
+    share = lambda key, lim: float(np.mean([abs(r[key]) <= lim for r in rows])) if rows else None
+    return {"n": n, "rows": rows, "top3": float(np.mean([r["hit"] for r in rows])) if rows else None,
+            "weight_ok": share("weight_err", 100), "size_ok": share("size_err", 0.03), "tracking_ok": share("tracking_err", 0.02),
+            "median_seconds": float(np.median([r["seconds"] for r in rows])) if rows else None}
+
+
+def eval_synthetic(out, n=6, *, renderer: Renderer, options: AnalyzeOptions | None = None, reuse: bool = False,
+                   font_samples: int = FONT_SAMPLES) -> dict:
     opts = options or AnalyzeOptions(refine=False, generate_3d=False)
     rows = []
     for i in range(n):
         log.info("eval-edits synthetic %s/%s", i + 1, n)
         rows.append(_eval_seed(Path(out), i + 1, PLATES[i % len(PLATES)], renderer, opts, reuse))
-    return {"n": n, "rows": rows, "gates": synthetic_gates(rows)}
+    gates = synthetic_gates(rows)
+    fonts = None
+    if font_samples:
+        log.info("eval-edits font set %s samples", font_samples)
+        fonts = font_set(font_samples)
+        gates["font_set_top3"] = _gate([r["hit"] for r in fonts["rows"]], "rate", 0.90)
+    return {"n": n, "rows": rows, "gates": gates, "font_set": fonts}
 
 
 def _baseline(baseline, stem: str) -> dict:
@@ -583,6 +621,11 @@ def summary_markdown(m: dict) -> str:
             lines.append(f"| {name} | {op} {thr} | {_fmt(g.get('value'), 3)} | {_fmt(g.get('worst'), 3)} | "
                          f"{g.get('failed', '—')} / {g.get('samples', '—')} | {_fmt(g.get('passed'))} |")
         lines.append("")
+    fs = m.get("synthetic", {}).get("font_set")
+    if fs:
+        lines += ["## font set", "", f"{fs['n']} samples · top-3 {_fmt(fs['top3'])} · weight ±100 {_fmt(fs['weight_ok'])} · "
+                  f"size 3 % {_fmt(fs['size_ok'])} · tracking 0.02 em {_fmt(fs['tracking_ok'])} · "
+                  f"median {_fmt(fs['median_seconds'])} s per text", ""]
     rows = m.get("synthetic", {}).get("rows", [])
     if rows:
         lines += ["## synthetic scenes", "",
@@ -616,7 +659,8 @@ def summary_markdown(m: dict) -> str:
 
 
 def eval_edits(clips_dir, gold_dir, out, *, max_frames=150, baseline=None, synthetic=6, reuse=False,
-               renderer: Renderer = "browser", strict=False, only=None, refine: bool | None = None) -> dict:
+               renderer: Renderer = "browser", strict=False, only=None, refine: bool | None = None,
+               font_samples: int = FONT_SAMPLES) -> dict:
     """Synthetic set (refine off unless asked) and/or every clip in `clips_dir` with gold titles in `gold_dir`
     (default analysis options, matching the baseline). Writes metrics.json, summary.md and sheets/ under `out`.
     `strict`: gates that could not be evaluated (no baseline) count as failures."""
@@ -627,8 +671,8 @@ def eval_edits(clips_dir, gold_dir, out, *, max_frames=150, baseline=None, synth
     m: dict = {"date": date.today().isoformat(), "renderer": renderer, "vlm_calls": 0, "max_frames": max_frames, "strict": strict,
                "options": {"synthetic": asdict(syn_opts), "clips": asdict(clip_opts)}, "gates": {}}
     if synthetic:
-        res = eval_synthetic(out, synthetic, renderer=renderer, options=syn_opts, reuse=reuse)
-        m["synthetic"] = {"n": res["n"], "rows": res["rows"]}
+        res = eval_synthetic(out, synthetic, renderer=renderer, options=syn_opts, reuse=reuse, font_samples=font_samples)
+        m["synthetic"] = {"n": res["n"], "rows": res["rows"], "font_set": res["font_set"]}
         m["gates"]["synthetic"] = res["gates"]
     if clips_dir:
         rows, missing = [], []

@@ -13,14 +13,11 @@ import numpy as np
 import pytest
 
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.fonts import installed_families
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
-from keepframe.analyze.text import TextBox, TextTrack, text_props
 from keepframe.compose.composer import compose
 from keepframe.edit.agent import EditResult
 from keepframe.edit.apply import apply_edit
 from keepframe.edit.intent import Target
-from keepframe.edit.textraster import render_lines
 from keepframe.ir.schema import Background, Canonical, Constraint, Element, Scene, load_scene_json
 from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
 from keepframe.render.lottie import preflight_lottie, write_lottie
@@ -132,39 +129,6 @@ def test_alternating_texture_swaps_fit_analysis_crop(tmp_path):
         assert (canonical.width, canonical.height) == pytest.approx((w * scale, h * scale))
         assert canonical.width <= 70 and canonical.height <= 115
     assert (assets / "e1.png").read_bytes() == original_bytes
-
-
-@pytest.mark.parametrize("family", ["sans-serif", "DejaVu Serif"])
-def test_font_guess_requires_clear_improvement_over_sans(family):
-    if family != "sans-serif" and family not in installed_families():
-        pytest.skip("needs installed DejaVu Serif")
-    text, size = "Launch faster", 40
-    img = render_lines([text], size, (255, 255, 255), family)
-    assert img is not None
-    alpha = img[..., 3] > 127
-    ys, xs = np.nonzero(alpha)
-    stroke = alpha[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    h, w = max(50, stroke.shape[0]), stroke.shape[1]
-    frames = np.zeros((1, h, w, 3), np.uint8)
-    frames[0, :stroke.shape[0]] = stroke[..., None] * 255
-    track = TextTrack(id=1, boxes={0: TextBox(0, text, (0, 0, w, h), 0.99)}, text=text)
-    font = text_props(track, frames, (0, 0, 0), 1, 0)[3]
-    assert font.candidates
-    assert font.family_guess == family
-
-
-@pytest.mark.parametrize("holes,expected", [(4, "sans-serif"), (5, "DejaVu Serif")])
-def test_font_guess_clear_margin_boundary(monkeypatch, holes, expected):
-    from keepframe.analyze import fonts
-    candidate = np.full((1, 100, 4), 255, np.uint8)
-    baseline = candidate.copy()
-    baseline[0, 1:holes + 1, 3] = 0
-    monkeypatch.setattr(fonts, "installed_families", lambda: ("DejaVu Serif",))
-    monkeypatch.setattr(fonts, "render_lines", lambda lines, size, rgb, family: baseline if family == "sans-serif" else candidate)
-    frames = np.full((1, 1, 100, 3), 255, np.uint8)
-    track = TextTrack(id=1, boxes={0: TextBox(0, "Text", (0, 0, 100, 1), 0.99)}, text="Text")
-    font = text_props(track, frames, (0, 0, 0), 1, 0)[3]
-    assert font.family_guess == expected and font.candidates == ["DejaVu Serif"]
 
 
 def test_lottie_plate_is_embedded_bottom_image_layer(tmp_path):

@@ -457,3 +457,35 @@ def test_rerun_keeps_manual_text_style(styled_clip):
     _, after = _title(styled_clip)
     assert after.provenance == "manual" and after.canonical.text == "Mega"
     assert after.canonical.style == el.canonical.style
+
+
+def test_pipeline_sets_matched_font_and_layout(styled_clip):
+    """Task 10: the style phase matches the font on the matted alpha and stores FontGuess plus the layout that
+    places the matched font's glyphs on the texture's."""
+    scene, el = _title(styled_clip)
+    font, style = el.canonical.font, el.canonical.style
+    assert "Inter" in font.candidates and len(font.candidates) == 3 and len(font.scores) == 3
+    assert font.scores == sorted(font.scores, reverse=True) and font.confidence in (0.5, 1.0)
+    assert font.family_guess == font.candidates[0] and font.source == "bundled"
+    assert abs(font.weight - 700) <= 100 and abs(font.size_px / 44 - 1) <= 0.03
+    face = REG.face(font.family_guess, font.weight)
+    w, h = int(el.canonical.width), int(el.canonical.height)
+    redraw = glyph_alpha(["Sale"], font.size_px, [face], weight=font.weight, tracking_em=style.tracking_em,
+                         shear_deg=style.shear_deg, box=(w, h), dx=style.dx, dy=style.dy)
+    tex = cv2.imread(str(scene_dir(styled_clip, "s1") / el.canonical.texture), cv2.IMREAD_UNCHANGED)[..., 3] / 255.0
+    fill = np.clip((tex - 0.0), 0, 1)
+    assert np.minimum(redraw, fill).sum() / np.maximum(redraw, fill).sum() >= 0.6   # the shadow stays in the texture
+    report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
+    assert not [m for m in report["messages"] if "font" in m]
+
+
+def test_font_match_failure_keeps_preliminary_font_with_message(styled_clip, monkeypatch):
+    from keepframe.fonts import match as fontmatch
+    monkeypatch.setattr(fontmatch, "match_font", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    rerun(styled_clip, "s1", "sprites", note="font match fails")
+    _, el = _title(styled_clip)
+    assert el.canonical.font.family_guess == "sans-serif" and el.canonical.font.candidates == []
+    assert el.canonical.font.confidence <= 0.5
+    assert el.canonical.style is not None and el.canonical.style.tracking_em == 0 and el.canonical.style.dx == 0
+    report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
+    assert any(m.startswith(f"{el.id}: font match failed (RuntimeError: boom)") for m in report["messages"])

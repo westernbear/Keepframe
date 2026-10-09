@@ -116,8 +116,6 @@ def test_solid_plate_matches_colour_background(local_plate_clip):
 
 def test_sprite_stage_passes_plate_to_text_shapes_and_objects(local_plate_clip, tmp_path, monkeypatch):
     frames, plate, bg, mask, text, obj = local_plate_clip
-    monkeypatch.setattr("keepframe.analyze.text.font_candidates", lambda *args: [])
-    monkeypatch.setattr("keepframe.analyze.text.font_family_guess", lambda *args: "sans-serif")
     shape = TextTrack(id=2, text=text.text, boxes=text.boxes.copy())
     props = _stage_sprites(frames, bg, [text], [shape], [obj],
                            AnalyzeOptions(refine=False, use_ecc=False), tmp_path, len(frames), plate=plate)

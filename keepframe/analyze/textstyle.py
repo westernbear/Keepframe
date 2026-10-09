@@ -697,10 +697,27 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
 
 # --- the pipeline phase -------------------------------------------------------------------------------------------
 
-def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4) -> dict:
+def _match_font(p: dict, style: TextStyle | None, info: dict | None, registry):
+    """(FontGuess, layout) for a text element: matched on the fill coverage the style analysis left (the texture's
+    alpha when it failed), with its stroke ratio and glyph centres."""
+    from ..fonts import match as fontmatch
+    text = p.get("text") or ""
+    if info is not None:
+        alpha, centres, ratio = info["alpha"], info.get("centres"), style.stroke_ratio if style is not None else None
+    else:
+        alpha = np.asarray(p["canon"])[..., 3].astype(np.float32) / 255.0
+        centres, ratio = glyph_centres(alpha, text), None
+    return fontmatch.font_guess(alpha, text, registry, stroke_ratio=ratio, centres=centres, prior=p.get("font"))
+
+
+def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fonts=None) -> dict:
     """The text style of every text element in `props` (in place), after textures v2: `style` (TextStyle dump),
     `color` (the analysed fill), `core_color` (today's core-mask colour, the fallback) and `style_info`. An element
-    whose analysis fails keeps the core-mask colour, no style, and `style_error`."""
+    whose analysis fails keeps the core-mask colour, no style, and `style_error`.
+    Then its font (Task 10, `fonts`: the project's FontRegistry): `font` (FontGuess) and the style's tracking, shear and
+    offset; when matching fails the first guess stays at confidence ≤ 0.5, with `font_error`."""
+    from ..fonts.registry import FontRegistry
+    registry = fonts or FontRegistry()
     t0 = time.perf_counter()
     elements = [k for k, p in props.items() if not k.startswith("_") and isinstance(p, dict) and "canon" in p and "raw" in p]
     keys = [k for k in elements if props[k].get("kind") == "text"]
@@ -712,22 +729,41 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4) -> 
     def run(k):
         p = props[k]
         meta = TextureMeta(**p["texture_meta"]) if p.get("texture_meta") else None
+        style = colour = info = err = None
         try:
             style, colour, info = analyse_text_style(p["canon"], meta, frames, plate, p["raw"], p.get("text") or "",
                                                      others_at=others_for(k))
-            return k, style, colour, info, None
         except Exception as e:   # fail soft: today's core-mask colour, no style, a message
             log.exception("text style failed for %s", k)
-            return k, None, None, None, f"{type(e).__name__}: {e}"[:160]
+            err = f"{type(e).__name__}: {e}"[:160]
+        t1 = time.perf_counter()
+        try:
+            font, layout, font_err = *_match_font(p, style, info, registry), None
+        except Exception as e:   # fail soft: the first guess, lower confidence, a message
+            log.exception("font match failed for %s", k)
+            font, layout, font_err = None, None, f"{type(e).__name__}: {e}"[:160]
+        return k, style, colour, info, err, font, layout, font_err, time.perf_counter() - t1
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         results = list(ex.map(run, keys))
-    failed, per = 0, []
-    for k, style, colour, info, err in results:
+    failed, per, font_failed, font_secs = 0, [], 0, []
+    for k, style, colour, info, err, font, layout, font_err, fsec in results:
         p = props[k]
         p.setdefault("core_color", p.get("color"))
         p.pop("style", None)
         p.pop("style_error", None)
+        p.pop("font_error", None)
+        font_secs.append(fsec)
+        if font_err is not None:
+            prior = p.get("font")
+            if prior is not None:
+                p["font"] = prior.model_copy(update={"confidence": min(0.5, prior.confidence)})
+            p["font_error"] = font_err
+            font_failed += 1
+        else:
+            p["font"] = font
+            if style is not None:
+                style = style.model_copy(update=layout)
         if err is not None:
             p["color"] = p["core_color"]
             p["style_error"] = err
@@ -738,4 +774,6 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4) -> 
         per.append(info["seconds"])
     log.info("sprites text style elements=%s failed=%s per-element max %.3fs %.2fs", len(keys), failed,
              max(per, default=0.0), time.perf_counter() - t0)
-    return {"elements": len(keys), "failed": failed}
+    log.info("sprites text font elements=%s failed=%s per-element max %.3fs", len(keys), font_failed,
+             max(font_secs, default=0.0))
+    return {"elements": len(keys), "failed": failed, "font_failed": font_failed}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Sequence
 import cv2
@@ -113,7 +114,66 @@ def make_synthetic_scene(scene_root: Path, seed: int, n_elements: int = 4, frame
 
 # --- reference scenes with exact ground truth (Stage A eval) ---------------------------------------------
 
-REFERENCE_FONTS = ("DejaVu Sans", "Liberation Serif", "Liberation Sans", "DejaVu Serif")
+SAMPLE_TEXTS = ("Summer Sale", "A Weekend Away", "Big Launch", "New Arrivals", "Grand Opening", "Fresh Picks", "City Lights",
+                "Open Studio", "Up to 50% off", "This Friday only", "Limited edition", "Join us today", "Night Market",
+                "Coming Soon", "Best of 2026", "Free Shipping", "Motion Design", "Hello Autumn", "Keepframe Studio",
+                "Last Chance")
+
+
+@dataclass
+class FontSample:
+    """A text drawn by the production raster in a bundled font, with its truth (Task 10 eval set)."""
+    seed: int
+    text: str
+    family: str
+    weight: int
+    size_px: float
+    tracking_em: float
+    shear_deg: float
+    alpha: np.ndarray                 # H×W float32 coverage, the "texture" box
+    origin: tuple[float, float]       # pen x and first baseline y of the text inside `alpha`
+
+
+def pick_font(rng: random.Random, registry=None) -> tuple[str, int]:
+    """A bundled family and a weight it has (variable: a multiple of 50 in 200–900; static: one of its files)."""
+    from ..fonts.registry import FontRegistry
+    registry = registry or FontRegistry()
+    family = rng.choice(sorted(registry.families()))
+    faces = registry.faces(family)
+    weights = sorted({w for f in faces for w in range(max(200, -(-f.weight_range[0] // 50) * 50), min(900, f.weight_range[1]) + 1, 50)}
+                     | {f.weight_range[0] for f in faces if f.weight_range[0] == f.weight_range[1]})
+    return family, rng.choice(weights)
+
+
+def make_font_sample(seed: int, *, text: str | None = None, family: str | None = None, weight: int | None = None,
+                     size_px: float | None = None, tracking_em: float | None = None, shear_deg: float | None = None,
+                     registry=None) -> FontSample:
+    """Seeded font-matching sample over the bundled fonts: family, weight, size 24–72 px, tracking (half the time,
+    −0.04…0.10 em), shear (a fifth, 6–12°), drawn with `glyph_alpha` in its natural box plus 6 px, a sub-pixel x
+    offset and a light blur, quantised to 8 bits. Keywords pin any of them."""
+    from ..fonts.raster import first_baseline, glyph_alpha, natural_box, resolve_fonts, text_size
+    from ..fonts.registry import FontRegistry
+    registry = registry or FontRegistry()
+    rng = random.Random(seed * 7919 + 13)
+    fam, w = pick_font(rng, registry)
+    family = family or fam
+    weight = int(weight if weight is not None else (w if family == fam else 400))
+    text = text or (lambda t: t.upper() if rng.random() < 0.25 else t)(rng.choice(SAMPLE_TEXTS))
+    size = float(size_px if size_px is not None else round(rng.uniform(24, 72) * 2) / 2)
+    t = float(tracking_em if tracking_em is not None else (0.0 if rng.random() < 0.5 else round(rng.uniform(-0.04, 0.10) * 200) / 200))
+    sh = float(shear_deg if shear_deg is not None else (0.0 if rng.random() < 0.8 else rng.choice([-1, 1]) * round(rng.uniform(6, 12), 1)))
+    dx, pad = round(rng.random(), 3), 6
+    fonts = resolve_fonts(FontGuess(family_guess=family, weight=weight, size_px=size), text, registry)
+    faces = [fonts.primary] + ([fonts.fallback] if fonts.fallback else [])
+    a = glyph_alpha([text], size, faces, weight=weight, tracking_em=t, shear_deg=sh, dx=dx, pad=pad,
+                    fallback_weight=fonts.fallback_weight)
+    _, nat_h = natural_box([text], size, fonts, tracking_em=t, shear_deg=sh, dx=dx)
+    a = cv2.GaussianBlur(a, (0, 0), 0.4)
+    a = (np.round(np.clip(a, 0, 1) * 255) / 255).astype(np.float32)
+    origin = (pad + dx, float(pad + first_baseline(fonts.primary, text_size(size), float(nat_h))))
+    return FontSample(seed, text, family, weight, size, t, sh, a, origin)
+
+
 TITLES = ("Summer Sale", "A Weekend Away", "Big Launch", "New Arrivals", "Grand Opening", "Fresh Picks", "City Lights",
           "Open Studio")
 SUBTITLES = ("Up to 50% off", "This Friday only", "Limited edition", "Join us today")
@@ -211,25 +271,26 @@ def _readable(rng: random.Random, plate_rgb: np.ndarray) -> tuple[int, int, int]
     return (255, 255, 255) if lab[:, 0].mean() < 50 else (0, 0, 0)
 
 
-def _title(root: Path, rng: random.Random, eid: str, text: str, size_px: int, family: str, rgb, frames: int,
+def _title(root: Path, rng: random.Random, eid: str, text: str, size_px: int, font: tuple[str, int, float], rgb, frames: int,
            x: float, y: float, start: int, z: int) -> Element:
-    from ..edit.textraster import render_lines
-    img = render_lines([text], size_px, rgb, family)
+    """A title drawn by the styled raster in a bundled font (family, weight, tracking): the truth the analysis'
+    font matcher is scored against."""
+    from ..fonts.raster import render_styled
+    from ..ir.schema import TextStyle
+    family, weight, tracking = font
+    guess = FontGuess(family_guess=family, weight=weight, size_px=size_px, source="bundled")
+    style = TextStyle(tracking_em=tracking) if tracking else None
+    rgba = render_styled([text], guess, rgb8_to_hex(rgb), style)
     path = root / "assets" / f"{eid}.png"
-    if img is None:   # no fontconfig: Hershey glyphs
-        w, h = make_text_texture(path, text, size_px, rgb)
-        family = "sans-serif"
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(path), img)
-        h, w = img.shape[:2]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(path), cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))
+    h, w = rgba.shape[:2]
     intro = max(2, round(frames * rng.uniform(0.12, 0.2)))
     dy = rng.choice([18.0, -18.0, 24.0])
     tracks = {"x": Track(keys=[Keyframe(t=0, v=round(x, 2))]),
               "y": Track(keys=[Keyframe(t=start, v=round(y + dy, 2), ease=PRESET_EASES["out_cubic"]), Keyframe(t=start + intro, v=round(y, 2))]),
               "opacity": Track(keys=[Keyframe(t=start, v=0.0, ease=PRESET_EASES["out_quad"]), Keyframe(t=start + intro, v=1.0)])}
-    canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", text=text, color=rgb8_to_hex(rgb),
-                          font=FontGuess(family_guess=family, weight=400, size_px=size_px, source="system"))
+    canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", text=text, color=rgb8_to_hex(rgb), font=guess, style=style)
     return Element(id=eid, kind="text", role="text", canonical=canonical, visible=(start, frames - 1), tracks=tracks,
                    z=Track(keys=[Keyframe(t=0, v=z)]))
 
@@ -240,14 +301,12 @@ def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradi
                          fps: float = 30.0) -> Scene:
     """A motion-graphics reference with known layers: a plate (flat, gradient, animated gradient or picture),
     anti-aliased sprites, a static logo that always covers the same spot, an optional big mover behind the
-    title, and titles in named fonts that ease in and then hold still for most of the shot."""
-    from ..edit.textraster import resolve_families
+    title, and titles that ease in and then hold still for most of the shot. Titles use a seeded bundled font
+    (family, weight, sometimes tracking; `fonts` pins the families) drawn by the styled raster."""
     root = Path(root)
     rng = random.Random(seed)
     W, H = size
     background, plate_rgb = _reference_plate(root, rng, plate, frames, W, H)
-    if fonts is None:
-        fonts = [f for f in REFERENCE_FONTS if f.casefold() in {n.casefold() for n in resolve_families(f)}] or ["sans-serif"]
     elements: list[Element] = []
     if mover:
         m = rng.randint(100, 140)
@@ -275,7 +334,10 @@ def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradi
     start = rng.randint(0, max(0, frames // 15))
     for i, text in enumerate(texts):
         size_px = rng.randint(44, 56) if i == 0 else rng.randint(22, 28)
-        elements.append(_title(root, rng, f"title{i + 1}", text, size_px, fonts[(seed + i) % len(fonts)], _readable(rng, plate_rgb),
+        frng = random.Random(seed * 1009 + i)   # the font draw leaves the scene's own sequence alone
+        family, weight = pick_font(frng) if fonts is None else (fonts[(seed + i) % len(fonts)], 400)
+        tracking = 0.0 if frng.random() < 0.5 else round(frng.uniform(-0.03, 0.08) * 200) / 200
+        elements.append(_title(root, rng, f"title{i + 1}", text, size_px, (family, weight, tracking), _readable(rng, plate_rgb),
                                frames, x, y + (0 if i == 0 else 1.6 * size_px), start + (0 if i == 0 else frames // 10), 8))
     if logo:
         _shape_texture(root / "assets" / "logo.png", "disc", 44, 44, rng.choice(PALETTE), rng.choice(PALETTE))

@@ -11,7 +11,6 @@ from ..ir.schema import FontGuess
 from ..log import get
 from .background import foreground_mask, foreground_mask_plate, opacity_against_plate, rgb_to_lab
 from .device import ocr_cuda, ocr_cuda_expected
-from .fonts import font_candidates, font_family_guess
 
 log = get("keepframe.analyze")
 
@@ -574,10 +573,8 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None
-    ys, xs = np.nonzero(sm)
-    tight = sm[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(xs) else sm
+    # A first guess only: the style phase matches the font on the matted texture (fonts.match, Task 10) and
+    # replaces it; this one stays when that fails.
     size = float(min(ch, track_h) * 0.8)
-    cands = font_candidates(tight, track.text, size)
-    font = FontGuess(family_guess=font_family_guess(tight, track.text, size, cands), weight=700 if sm.mean() > 0.35 else 400,
-                     size_px=size, candidates=cands)
+    font = FontGuess(family_guess="sans-serif", weight=700 if sm.mean() > 0.35 else 400, size_px=size, confidence=0.5)
     return raw, canon, cf, font, color

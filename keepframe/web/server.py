@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import re
 import tempfile
 import threading
@@ -299,6 +300,13 @@ def _slim_project(project, scene_id: str) -> dict:
     }
 
 
+def _finite_number(value, digits: int):
+    """A rounded finite float, else None (stored scene JSON is untrusted)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return round(float(value), digits)
+
+
 def _slim_scene(scene) -> dict:
     data = scene.model_dump(by_alias=True)
     for el in data.get("elements", []):
@@ -314,10 +322,13 @@ def _slim_scene(scene) -> dict:
         if font:
             slim_font = {key: font[key] for key in ("family_guess", "weight", "size_px")}
             candidates = font.get("candidates")
-            slim_font["candidates"] = (
-                [family for family in candidates if isinstance(family, str)][:3]
-                if isinstance(candidates, list) else []
-            )
+            kept = ([i for i, family in enumerate(candidates) if isinstance(family, str)][:3]
+                    if isinstance(candidates, list) else [])
+            slim_font["candidates"] = [candidates[i] for i in kept]
+            scores = font.get("scores")   # the matcher's soft IoU per candidate (Task 10), kept with its candidate
+            slim_font["scores"] = ([_finite_number(scores[i], 4) if i < len(scores) else None for i in kept]
+                                   if isinstance(scores, list) and scores else [])
+            slim_font["confidence"] = _finite_number(font.get("confidence"), 3)
         el["canonical"] = {
             "text": can.get("text"),
             "texture": tex.split("/")[-1] if tex else None,

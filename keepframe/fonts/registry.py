@@ -129,6 +129,11 @@ class FontRegistry:
                 return min(faces, key=lambda f: (f.italic != italic, _distance(f, weight)))
         return self._system_face(family)
 
+    def faces(self, family: str) -> tuple[FontFace, ...]:
+        """Every file of an uploaded or bundled family (empty for system names)."""
+        key = family.casefold()
+        return self._uploaded.get(key) or _bundled().get(key) or ()
+
     def families(self, *, script: str | None = None) -> list[str]:
         """Uploaded then bundled family names (the system set is not enumerated)."""
         names: dict[str, str] = {}

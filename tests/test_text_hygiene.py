@@ -4,6 +4,8 @@ from keepframe.analyze import text as text_module
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.pipeline import AnalyzeOptions, _stage_text, analyze, rerun
 from keepframe.analyze.text import TextBox, TextTrack, keep_text_track
+from keepframe.fonts import match as fontmatch
+from keepframe.ir.schema import FontGuess
 from keepframe.ir.store import current_scene, scene_dir
 from keepframe.review.overlay import frame_overlay
 
@@ -63,14 +65,12 @@ def test_shape_props_keep_geometry_without_font_inference(monkeypatch):
     frames = np.full((3, 40, 50, 3), 255, np.uint8)
     frames[:, 15:25, 20:30] = (0, 80, 220)
     track = _track("O", [0, 1, 2])
-    calls = []
-    monkeypatch.setattr(text_module, "font_candidates", lambda *args: calls.append(args) or ["DejaVu Sans"])
     text_raw, text_canon, text_cf, font, _ = text_module.text_props(track, frames, (255, 255, 255), 3, 0)
     raw, canon, cf, shape_font, color = text_module.text_props(track, frames, (255, 255, 255), 3, 0, infer_font=False)
     np.testing.assert_array_equal(raw, text_raw)
     np.testing.assert_array_equal(canon, text_canon)
     assert cf == text_cf and shape_font is None and color is None
-    assert len(calls) == 1 and font.candidates == ["DejaVu Sans"]
+    assert font.family_guess == "sans-serif" and font.candidates == []   # the style phase matches the font
 
 
 @pytest.fixture
@@ -93,11 +93,12 @@ def noisy_ocr_clip(tmp_path, monkeypatch):
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
     monkeypatch.setattr("keepframe.analyze.text.RapidOcr", FakeOcr)
 
-    def rank(stroke, text, size):
-        assert text == "Sale", "shape tracks must skip font candidates"
-        return ["DejaVu Sans", "Liberation Sans", "DejaVu Serif"]
+    def guess(alpha, text, registry, **kw):   # the style phase's font match (Task 10), text elements only
+        assert text == "Sale", "shape tracks must skip font matching"
+        return (FontGuess(family_guess="DejaVu Sans", size_px=18, candidates=["DejaVu Sans", "Liberation Sans", "DejaVu Serif"]),
+                {"tracking_em": 0.0, "shear_deg": 0.0, "dx": 0.0, "dy": 0.0})
 
-    monkeypatch.setattr(text_module, "font_candidates", rank)
+    monkeypatch.setattr(fontmatch, "font_guess", guess)
     root = tmp_path / "project"
     options = AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False)
     analyze(tmp_path / "clip.mp4", 0, 5, root, options, ocr=FakeOcr())
@@ -143,7 +144,6 @@ def test_analyze_reclassifies_noise_without_losing_pixels(noisy_ocr_clip, monkey
     report = _assert_clean_scene(noisy_ocr_clip)
     assert report["messages"] == ["text tracks reclassified as shapes: 1", "3D 후보 0개"]
     monkeypatch.setattr(text_module, "keep_text_track", lambda track: True)
-    monkeypatch.setattr(text_module, "font_candidates", lambda *args: [])
     baseline = noisy_ocr_clip.parent / "hygiene-disabled"
     analyze(noisy_ocr_clip.parent / "clip.mp4", 0, 5, baseline,
             AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=text_module.RapidOcr())
