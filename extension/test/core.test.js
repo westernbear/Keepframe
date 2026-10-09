@@ -143,6 +143,8 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     assert.equal(request.path, '/api/ae/pair');
     assert.equal(request.method, 'POST');
     assert.equal(request.headers['x-keepframe-extension'], '1.1.0');
+    // The spec level says what this panel draws (2: footage, ramps, shadows, text styles); the server gates on it.
+    assert.equal(request.headers['x-keepframe-spec-level'], '2');
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers['content-type'], 'application/json');
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
@@ -1497,4 +1499,23 @@ test('final: JPEG and WebP spec assets keep their real cache suffix', () => {
         const destination = core.assetCachePath('/tmp', 'demo', {...spec.assets[0], name}, path);
         assert.equal(path.extname(destination), path.extname(name));
     }
+});
+
+test('sync asks for the spec again while the server prepares video footage', async t => {
+    let specs = 0;
+    const f = await oneJob(t, {deps: {sleep: ms => ms === 15000 ? never() : Promise.resolve()}, route: (req, reply) => {
+        if (req.path.endsWith('/spec') && specs++ < 2) { reply(202, {preparing: true}); return true; }
+    }});
+    assert.equal(f.result.ok, true, JSON.stringify(f.result));
+    assert.equal(f.requests.filter(req => req.path.endsWith('/spec')).length, 3);
+    assert.ok(f.requests.filter(req => req.path.endsWith('/spec')).every(req => req.headers['x-keepframe-spec-level'] === '2'));
+    assert.ok(f.statuses.some(status => status.message === 'Preparing video for demo / s1 v7…'
+        && status.details.progress.stage === 'preparing video'));
+});
+
+test('panel translates the video preparation status into Korean', () => {
+    const p = panelHarness('ko_KR'), deps = p.runs[0].deps;
+    deps.setStatus('Preparing video for demo / s1 v7…', {job, progress: {stage: 'preparing video', done: 0, total: 0}});
+    assert.equal(p.nodes.status.textContent, 'demo / s1 v7 영상 준비 중…');
+    assert.ok(p.nodes['current-job'].textContent.includes('영상 준비 중'));
 });

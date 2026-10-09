@@ -1846,3 +1846,20 @@ def test_postscript_preferred(tmp_path):
 
 def layers_spec_font(spec):
     return next(item for item in spec["layers"] if item["id"] == "kf:t")["source"]["font"]
+
+
+def test_removing_a_text_style_clears_the_stroke_and_tracking_keepframe_set(tmp_path):
+    spec, assets = styled_spec(tmp_path)
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    plain = copy.deepcopy(spec)
+    source = plain["layers"][1]["source"]
+    del source["tracking"], source["stroke"]
+    plain["layers"][1]["effects"] = {"skew": None, "reveal": None}
+    response = sync(path, plain, assets)
+    assert response["value"]["updated"] == ["kf:t"] and "hand_edited" not in response["value"], response
+    text = layers(read_state(path))["kf:t"]
+    doc = prop(text, "ADBE Text Document")["value"]
+    assert (doc["tracking"], doc["applyStroke"]) == (0, False)
+    assert effects(text) == []
+    assert sync(path, plain, assets)["writes"] == 0

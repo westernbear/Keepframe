@@ -1,6 +1,5 @@
 """Describe a scene as deterministic data for the After Effects extension."""
 
-import hashlib
 import json
 import math
 import re
@@ -15,6 +14,12 @@ from ..fonts.raster import bounded_style, hex_rgb
 from ..ir.paths import scene_asset_path
 from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
 from ..ir.tracks import eval_track, eval_z
+from ..log import get
+
+log = get("keepframe.ae")
+# What a panel must draw for a spec: 1 = Keepframe AE 1.0 (images, solids, text, models, reveal, skew);
+# 2 = Task 14 (footage, Ramp gradients, Drop Shadows, Ramp + Set Matte fills, text stroke/tracking, baseline shear).
+SPEC_LEVEL = 2
 
 
 def _rounded(value):
@@ -238,8 +243,8 @@ def _font(guess, fonts, warnings, text):
 
 
 def _asset(path, name, assets):
-    data = path.read_bytes()
-    entry = {"name": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+    # Streamed and memoised: the spec is rebuilt for every asset download and footage can be gigabytes.
+    entry = {"name": name, "sha256": footage.file_sha256(path), "bytes": path.stat().st_size}
     if name in assets and assets[name] != entry:
         raise ValueError(f"conflicting assets named {name}")
     assets[name] = entry
@@ -311,7 +316,7 @@ def _dims(path):
         raise ValueError(f"{path.name} is not a valid image: {exc}") from None
 
 
-def _plan_background(scene, scene_dir):
+def _plan_background(scene, scene_dir, wait=True):
     """How the background is exported: ("footage", clip) | ("ramp", effect) | ("image", value) | ("solid", hex),
     plus warnings. Video and >2-stop gradients fall back to their poster, else a flat colour."""
     background = scene.background
@@ -319,7 +324,8 @@ def _plan_background(scene, scene_dir):
         return "image", background.value, []
     if background.kind == "video":
         try:
-            clip = footage.derive(scene_asset_path(scene_dir, background.value), "plate", scene.fps, scene.size)
+            clip = footage.derive(scene_asset_path(scene_dir, background.value), "plate", scene.fps, scene.size,
+                                  scene.frames / scene.fps, wait=wait)
             return "footage", clip, []
         except footage.FootageError as exc:
             reason = f"video background exported as {{}} ({exc})"
@@ -336,19 +342,53 @@ def _plan_background(scene, scene_dir):
     return "solid", background.value if background.kind == "gradient" else "#000000", [reason.format("a flat colour")]
 
 
-def _sprite_clip(el, scene_dir, fps):
+def _clips(scene, scene_dir):
+    """(source, kind, fps, size, seconds) of every clip the spec exports as AE footage."""
+    clips = []
+    if scene.background.kind == "video":
+        clips.append((scene_asset_path(scene_dir, scene.background.value), "plate", scene.fps, scene.size,
+                      scene.frames / scene.fps))
+    for el in scene.elements:
+        if el.canonical.video and el.canonical.texture and not (el.kind == "text" and el.canonical.font is not None) \
+                and not (el.kind == "3d" and el.canonical.model):
+            clips.append(_sprite_args(el, scene_dir, scene.fps))
+    return clips
+
+
+def _sprite_args(el, scene_dir, fps):
+    texture = scene_asset_path(scene_dir, el.canonical.texture)
+    return (scene_asset_path(scene_dir, el.canonical.video), "sprite", fps, _dims(texture),
+            (el.visible[1] - el.visible[0] + 1) / fps)
+
+
+def prepare_footage(scene: Scene, scene_dir: Path) -> bool:
+    """Start deriving the scene's AE footage in the background; True while any clip is still being made."""
+    pending = False
+    try:
+        clips = _clips(scene, scene_dir)
+    except (OSError, ValueError) as exc:   # the spec reports a bad asset itself
+        log.warning("AE footage not prepared: %s", type(exc).__name__)
+        return False
+    for clip in clips:
+        try:
+            pending = footage.prepare(*clip) or pending
+        except OSError as exc:   # unreadable source: the spec falls back to the poster with its code
+            log.warning("AE footage not prepared: %s", type(exc).__name__)
+    return pending
+
+
+def _sprite_clip(el, scene_dir, fps, wait=True):
     """The derived footage of a video sprite (texture = poster), or (None, code)."""
     try:
-        texture = scene_asset_path(scene_dir, el.canonical.texture)
-        return footage.derive(scene_asset_path(scene_dir, el.canonical.video), "sprite", fps, _dims(texture)), None
+        return footage.derive(*_sprite_args(el, scene_dir, fps), wait=wait), None
     except footage.FootageError as exc:
         return None, str(exc)
 
 
-def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
+def spec_asset_paths(scene: Scene, scene_dir: Path, *, derive: bool = True) -> dict[str, Path]:
     """Map only exported asset names to their scene-contained source files (derived AE footage for videos)."""
     sources = []
-    kind, value, _ = _plan_background(scene, scene_dir)
+    kind, value, _ = _plan_background(scene, scene_dir, derive)
     if kind == "image":
         sources.append((_asset_source(value, "background", scene_dir), None))
     elif kind == "footage":
@@ -359,7 +399,7 @@ def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
         if el.kind == "3d" and el.canonical.model:
             sources.append((_asset_source(el.canonical.model, el.id, scene_dir, "glb"), None))
         elif el.canonical.texture:
-            clip = _sprite_clip(el, scene_dir, scene.fps)[0] if el.canonical.video else None
+            clip = _sprite_clip(el, scene_dir, scene.fps, derive)[0] if el.canonical.video else None
             sources.append((_asset_source(el.canonical.texture, el.id, scene_dir, "mov"), clip) if clip
                            else (_asset_source(el.canonical.texture, el.id, scene_dir), None))
     assets, paths = {}, {}
@@ -385,10 +425,11 @@ def _image(value, sid, size, anchor, scene_dir, assets, pad=0.0):
     return {"asset": _asset(path, name, assets), "scale_fix": fix}, anchor
 
 
-def _footage(clip, sid, size, anchor, poster, scene_dir, assets, start_time):
-    """A footage layer source: placed by its poster's size (the clip is scaled to it), starting at start_time."""
+def _footage(clip, sid, size, anchor, poster, scene_dir, assets, start_time, pad=0.0):
+    """A footage layer source: placed by its poster's size (the clip is scaled to it; its box inside `pad`, as
+    `_image`), starting at start_time."""
     width, height = _dims(scene_asset_path(scene_dir, poster)) if poster else size
-    fix, anchor = _placement(width, height, size, anchor)
+    fix, anchor = _placement(width, height, size, anchor, pad)
     name = re.sub(r"[^A-Za-z0-9_-]", "_", sid) + clip.suffix
     return {"asset": _asset(clip, name, assets), "scale_fix": fix, "start_time": start_time}, anchor
 
@@ -429,7 +470,7 @@ def _text_style(el, source, effects, warnings):
     return style.shear_deg
 
 
-def _layer(el: Element, scene_dir, assets, fps, fonts, label):
+def _layer(el: Element, scene_dir, assets, fps, fonts, label, wait=True):
     canonical = el.canonical
     sid = el.id
     warnings = []
@@ -452,11 +493,12 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
         if el.kind == "3d":
             warnings.append("3D candidate")
         if canonical.texture:
-            clip, code = _sprite_clip(el, scene_dir, fps) if canonical.video else (None, None)
+            clip, code = _sprite_clip(el, scene_dir, fps, wait) if canonical.video else (None, None)
             if clip is not None:
                 kind = "footage"
                 source, anchor = _footage(clip, sid, (canonical.width, canonical.height), canonical.anchor,
-                                          canonical.texture, scene_dir, assets, el.visible[0] / fps)
+                                          canonical.texture, scene_dir, assets, el.visible[0] / fps,
+                                          canonical.texture_pad)
             else:
                 kind = "image"
                 source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
@@ -479,10 +521,10 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
             "effects": {**_effects(tracks, fps, warnings, el.id, shear), **styled}, "warnings": warnings}
 
 
-def _background(scene, scene_dir, assets):
+def _background(scene, scene_dir, assets, wait=True):
     background = scene.background
     fix, anchor, effects = [1, 1], [0, 0], {"skew": None, "reveal": None}
-    kind, value, warnings = _plan_background(scene, scene_dir)
+    kind, value, warnings = _plan_background(scene, scene_dir, wait)
     if kind == "image":
         source, anchor = _image(value, "background", scene.size, (0, 0), scene_dir, assets)
         fix = source["scale_fix"]
@@ -501,16 +543,18 @@ def _background(scene, scene_dir, assets):
 
 
 def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, version: str,
-              fonts: list[dict] | None = None) -> dict:
+              fonts: list[dict] | None = None, derive: bool = True) -> dict:
+    """The AE comp spec. With `derive=False` video footage is only looked up (see footage.prepare); a clip that is
+    not ready exports its poster."""
     assets, labels, warnings = {}, {}, []
     for i, group in enumerate(scene.groups):
         for member in group.members:
             labels.setdefault(member, (i % 16) + 1)
-    layers = [_background(scene, scene_dir, assets)]
+    layers = [_background(scene, scene_dir, assets, derive)]
     warnings.extend(layers[0]["warnings"])
     ordered = sorted(scene.elements, key=lambda el: eval_z(el, el.visible[0]))
     for el in ordered:
-        layer = _layer(el, scene_dir, assets, scene.fps, fonts, labels.get(el.id))
+        layer = _layer(el, scene_dir, assets, scene.fps, fonts, labels.get(el.id), derive)
         layers.append(layer)
         if el.kind == "text" and el.canonical.font is None and layer["kind"] == "image":
             canonical = el.canonical.model_copy(update={
@@ -520,7 +564,7 @@ def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, ver
                 "color": png_mean_color(scene_asset_path(scene_dir, el.canonical.texture)),
             })
             companion = _layer(el.model_copy(update={"canonical": canonical}), scene_dir, assets,
-                               scene.fps, fonts, labels.get(el.id))
+                               scene.fps, fonts, labels.get(el.id), derive)
             companion.update(id=f"kf:{el.id}~text", name=f"{layer['name']} · editable text", hidden=True)
             layers.append(companion)
     for order, layer in enumerate(layers):
@@ -537,7 +581,22 @@ def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, ver
     })
 
 
-def comp_spec_json(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, version: str,
-                   fonts: list[dict] | None = None) -> str:
-    spec = comp_spec(scene, scene_dir, project=project, scene_id=scene_id, version=version, fonts=fonts)
+def spec_json(spec: dict) -> str:
     return json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def comp_spec_json(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, version: str,
+                   fonts: list[dict] | None = None, derive: bool = True) -> str:
+    return spec_json(comp_spec(scene, scene_dir, project=project, scene_id=scene_id, version=version, fonts=fonts,
+                               derive=derive))
+
+
+def spec_level(spec: dict) -> int:
+    """The SPEC_LEVEL a panel needs to draw `spec` (older panels ignore or reject what they do not know)."""
+    for layer in spec["layers"]:
+        effects = layer["effects"]
+        if (layer["kind"] == "footage" or {"gradient", "fill", "shadows"} & effects.keys()
+                or "baseline_shear" in (effects["skew"] or {})
+                or (layer["kind"] == "text" and "tracking" in layer["source"])):
+            return 2
+    return 1

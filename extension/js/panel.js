@@ -11,6 +11,7 @@
             copyFailed: 'Could not copy the log', storageFailed: 'Could not save settings: pair again',
             download: 'Download extension', connected: 'Connected · {host}',
             syncing: 'Syncing {project} / {scene} {version}…',
+            preparing: 'Preparing video for {project} / {scene} {version}…', stagePrepare: 'Preparing video',
             rendering: 'Rendering {n} frames of {project} / {scene} {version}…',
             uploading: 'Uploading frame {i}/{n}…',
             rendered: 'Rendered {n} frames — Keepframe is comparing them',
@@ -41,6 +42,7 @@
             copyFailed: '로그를 복사할 수 없습니다', storageFailed: '설정을 저장할 수 없습니다: 다시 페어링하세요',
             download: '확장 다운로드', connected: '연결됨 · {host}',
             syncing: '{project} / {scene} {version} 동기화 중…',
+            preparing: '{project} / {scene} {version} 영상 준비 중…', stagePrepare: '영상 준비 중',
             rendering: '{project} / {scene} {version} 프레임 {n}개 렌더링 중…',
             uploading: '프레임 업로드 중 {i}/{n}…',
             rendered: '프레임 {n}개 렌더링 완료 — Keepframe에서 비교 중',
@@ -88,6 +90,8 @@
         if ((match = /^Connected · (.*)$/.exec(message))) return t('connected', {host: match[1]});
         if ((match = /^Syncing (.*) \/ (.*) (.*)…$/.exec(message)))
             return t('syncing', {project: match[1], scene: match[2], version: match[3]});
+        if ((match = /^Preparing video for (.*) \/ (.*) (.*)…$/.exec(message)))
+            return t('preparing', {project: match[1], scene: match[2], version: match[3]});
         if ((match = /^Rendering (\d+) frames of (.*) \/ (.*) (.*)…$/.exec(message)))
             return t('rendering', {n: match[1], project: match[2], scene: match[3], version: match[4]});
         if ((match = /^Uploading frame (\d+)\/(\d+)…$/.exec(message)))
@@ -129,7 +133,8 @@
             if (progress) {
                 const stage = progress.stage.startsWith('downloading ') ?
                     t('downloading', {name: progress.stage.slice(12)}) :
-                    progress.stage === 'rendering' ? table.stageRender : progress.stage === 'uploading' ? table.stageUpload : table.stageSync;
+                    progress.stage === 'rendering' ? table.stageRender : progress.stage === 'uploading' ? table.stageUpload :
+                    progress.stage === 'preparing video' ? table.stagePrepare : table.stageSync;
                 text += '\n' + stage + ' · ' + progress.done + '/' + progress.total;
             }
             el('current-job').textContent = core.redact(text, secrets);

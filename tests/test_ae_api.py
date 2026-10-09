@@ -1400,3 +1400,107 @@ def test_older_verification_cannot_replace_newer_report(server, project, fake_ve
         assert state(server)["verify"]["job"] == second["id"]
     finally:
         release.set()
+
+
+# --- Task 14 fix round: panel capability gate and background footage -----------------------------------------------
+
+LEVEL2 = {"X-Keepframe-Spec-Level": "2"}
+OLD = {"X-Keepframe-Extension": "1.20261007.95826219"}   # a stamped build from before Task 14 sends no level
+
+
+def _job_for(server, headers):
+    status, sent = send(server)
+    assert status == 202, sent
+    status, value = poll(server, headers)
+    assert status == 200 and value["job"]["id"] == sent["job"]["id"]
+    return value["job"]
+
+
+def _job_state(server, job):
+    return next(item for item in state(server)["jobs"] if item["id"] == job["id"])
+
+
+def test_old_panel_gets_426_for_a_spec_it_cannot_draw(server, project, tmp_path):
+    from keepframe.ir.schema import Gradient, GradientStop
+    _, headers = pair(server)
+    old = headers | OLD
+    assert poll(server, old)[0] == 204
+    job = _job_for(server, old)
+    status, _, body = request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=old)
+    assert status == 200 and json.loads(body)["layers"][0]["kind"] == "solid"   # a legacy spec still works
+    assert finish(server, old, job, ok=True, result={"applied": True})[0] == 200
+    stops = [GradientStop(offset=0, color="#ff0000"), GradientStop(offset=1, color="#0000ff")]
+    edited = project.model_copy(deep=True)
+    edited.background = Background(kind="gradient", value="#808080", gradient=Gradient(stops=stops))
+    new_version(tmp_path / "p1", "s1", edited, "gradient")
+    job = _job_for(server, old)
+    status, error = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=old)
+    assert (status, error) == (426, {"error": "update the Keepframe extension", "download": "/ae/keepframe.zxp"})
+    failed = _job_state(server, job)
+    assert failed["state"] == "failed" and failed["error"].startswith("update the Keepframe extension")
+    job = _job_for(server, headers | LEVEL2)
+    status, _, body = request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=headers | LEVEL2)
+    assert status == 200 and json.loads(body)["layers"][0]["effects"]["gradient"]["shape"] == 1
+
+
+def _video_project(tmp_path):
+    from tests.test_ae_spec import _video_scene
+    root = tmp_path / "p1"
+    value = _video_scene(scene_dir(root, "s1")).model_copy(update={"id": "s1"})
+    init_project(root, {"file": "source.mp4"}, value)
+    return value
+
+
+@pytest.fixture
+def slow_encode(monkeypatch):
+    """Footage encodes wait for `release`; `started` lists (kind suffix, timeout) as they begin."""
+    from keepframe.ae import footage
+    release, started, original = threading.Event(), [], footage._encode
+
+    def encode(command, timeout):
+        started.append(("plate" if "libx264" in command else "sprite", timeout))
+        assert release.wait(20)
+        return original(command, timeout)
+
+    monkeypatch.setattr(footage, "_encode", encode)
+    yield release, started
+    release.set()
+
+
+def test_spec_waits_for_footage_prepared_in_the_background(server, tmp_path, slow_encode):
+    from keepframe.ae import footage
+    release, started = slow_encode
+    _video_project(tmp_path)
+    _, headers = pair(server)
+    headers |= LEVEL2
+    assert poll(server, headers)[0] == 204
+    job = _job_for(server, headers)   # the send starts both encodes
+    deadline = time.monotonic() + 5
+    while len(started) < 2 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    # One lock per clip: the plate and the sprite encode at the same time, each bounded by its clip's length.
+    assert sorted(started) == [("plate", footage.encode_timeout(6 / 30)), ("sprite", footage.encode_timeout(4 / 30))]
+    began = time.monotonic()
+    status, value = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=headers)
+    assert (status, value) == (202, {"preparing": True}) and time.monotonic() - began < 2
+    release.set()
+    deadline = time.monotonic() + 20
+    while status == 202 and time.monotonic() < deadline:
+        time.sleep(0.05)
+        status, value = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=headers)
+    assert status == 200, value
+    assert [layer["kind"] for layer in value["layers"]] == ["footage", "footage"]
+    assert len(started) == 2   # never derived again
+    status, response_headers, body = request(server, "GET", f'/api/ae/jobs/{job["id"]}/assets/e1.mov', headers=headers)
+    assert status == 200 and response_headers["X-Keepframe-Sha256"] == hashlib.sha256(body).hexdigest()
+
+
+def test_old_panel_gets_426_while_footage_is_prepared(server, tmp_path, slow_encode):
+    _video_project(tmp_path)
+    _, headers = pair(server)
+    old = headers | OLD
+    assert poll(server, old)[0] == 204
+    job = _job_for(server, old)
+    status, error = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=old)
+    assert (status, error["error"]) == (426, "update the Keepframe extension")
+    assert _job_state(server, job)["state"] == "failed"

@@ -822,3 +822,46 @@ def test_texture_pad_places_the_box_not_the_padding(tmp_path):
     result = layer(describe(scene(el), tmp_path), "p")
     assert result["source"] == {"asset": "p.png", "scale_fix": [0.5, 1]}
     assert result["anchor"] == [10, 8]
+
+
+def test_footage_hashes_stream_and_are_memoised(tmp_path, monkeypatch):
+    """Videos and derived clips are hashed from disk in chunks, once per (path, size, mtime)."""
+    from keepframe.ae import footage
+    value = _video_scene(tmp_path)
+    original_read = Path.read_bytes
+
+    def read_bytes(path):
+        assert path.suffix not in {".webm", ".mp4", ".mov"}, f"whole video read: {path.name}"
+        return original_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    digests = []
+    original_digest = footage.hashlib.file_digest
+    monkeypatch.setattr(footage.hashlib, "file_digest", lambda f, name: digests.append(f.name) or original_digest(f, name))
+    spec = describe(value, tmp_path)
+    assert {Path(name).suffix for name in digests} >= {".webm", ".mp4", ".mov"}
+    digests.clear()
+    assert describe(value, tmp_path) == spec and spec_asset_paths(value, tmp_path)
+    assert digests == []
+
+
+@pytest.mark.parametrize("cap,code", [("MAX_BYTES", "footage_too_large"), ("MAX_SECONDS", "footage_too_long")])
+def test_footage_over_its_caps_exports_posters_with_codes(tmp_path, monkeypatch, cap, code):
+    from keepframe.ae import footage
+    monkeypatch.setattr(footage, cap, 10 if cap == "MAX_BYTES" else 0.1)
+    value = _video_scene(tmp_path)
+    spec = describe(value, tmp_path)
+    assert spec["warnings"] == [f"video background exported as its poster image ({code})"]
+    assert layer(spec, "e1")["warnings"] == [f"e1 video sprite exported as its poster image ({code})"]
+    assert not list((tmp_path / "assets").glob("*.ae.*"))
+    calls = []
+    monkeypatch.setattr(footage, "_encode", lambda *args: calls.append(args))
+    assert describe(value, tmp_path) == spec and calls == []   # the failure is remembered, not retried per request
+
+
+def test_footage_sprite_places_its_box_inside_texture_pad(tmp_path):
+    value = _video_scene(tmp_path)
+    value.elements[0].canonical.texture_pad = 2.0
+    sprite = layer(describe(value, tmp_path), "e1")
+    assert sprite["kind"] == "footage"
+    assert (sprite["source"]["scale_fix"], sprite["anchor"]) == ([10 / 16, 6 / 8], [2 + 0.25 * 16, 2 + 0.75 * 8])

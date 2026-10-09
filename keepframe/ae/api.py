@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, unquote
 
 from .devices import Devices
 from .jobs import Jobs
-from .spec import comp_spec, comp_spec_json, spec_asset_paths
+from .spec import comp_spec, prepare_footage, spec_asset_paths, spec_json, spec_level
 from .verify import sample_frames, verify
 from ..log import get
 from ..ir.store import load_project, load_scene, scene_dir
@@ -30,6 +30,9 @@ _BROWSER = {"/api/ae/codes", "/api/ae/devices", "/api/ae/send", "/api/ae/state",
             "/api/ae/verify", "/api/ae/verify-image"}
 _VERIFY_IMAGE = re.compile(r"f[0-9]{4,6}_(ae|kf|diff)\.png")
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_LEVEL = re.compile(r"[1-9][0-9]{0,2}")
+_UPDATE = {"error": "update the Keepframe extension", "download": "/ae/keepframe.zxp"}
+_OUTDATED = "update the Keepframe extension: this scene uses video, gradients or text styles it cannot draw"
 _SEMVER = re.compile(
     r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
@@ -118,7 +121,7 @@ class AERoutes:
         version = handler.headers.get("X-Keepframe-Extension", "")
         match = _SEMVER.fullmatch(version)
         if match is None or match[1] != str(EXTENSION_PROTOCOL_MAJOR):
-            handler._json(426, {"error": "update the Keepframe extension", "download": "/ae/keepframe.zxp"})
+            handler._json(426, _UPDATE)
             return None
         if pair:
             return ""
@@ -181,6 +184,22 @@ class AERoutes:
         if job is None or job.device != device:
             raise FileNotFoundError
         return job
+
+    @staticmethod
+    def _panel_level(handler):
+        """What the panel can draw (spec.SPEC_LEVEL); panels from before Task 14 send no level."""
+        level = handler.headers.get("X-Keepframe-Spec-Level", "")
+        return int(level) if _LEVEL.fullmatch(level) else 1
+
+    def _outdated(self, handler, job):
+        """Fail the job with a readable reason, and tell the panel to update (it stops and offers the download)."""
+        with self._progress_lock:
+            try:
+                self.jobs.finish(job.id, False, error=_OUTDATED)
+            except ValueError:   # no longer running
+                pass
+            self._progress.pop(job.id, None)
+        handler._json(426, _UPDATE)
 
     def _scene(self, project_id, scene_id, version_id=None):
         identities = (project_id, scene_id) if version_id is None else (project_id, scene_id, version_id)
@@ -295,7 +314,7 @@ class AERoutes:
                                     path.unlink()
                         scene, scene_dir, version = self._scene(job.project, job.scene, job.version)
                         spec = comp_spec(scene, scene_dir, project=job.project, scene_id=job.scene,
-                                         version=version, fonts=self.devices.fonts(job.device))
+                                         version=version, fonts=self.devices.fonts(job.device), derive=False)
                         elements = {el.id: el for el in scene.elements}
                         masked = {}
                         for layer in spec["layers"]:
@@ -406,19 +425,31 @@ class AERoutes:
             if match[2] == "spec" and job.kind != "sync":
                 raise FileNotFoundError
             scene, directory, version = self._scene(job.project, job.scene, job.version)
-            spec = comp_spec_json(scene, directory, project=job.project, scene_id=job.scene,
-                                  version=version, fonts=self.devices.fonts(device))
+            level = self._panel_level(handler)
+            # Footage is derived in the background (started when the job was sent), never inside this request:
+            # the panel asks again on 202. An older panel cannot draw footage at all.
+            if match[2] == "spec" and prepare_footage(scene, directory):
+                if level < 2:
+                    self._outdated(handler, job)
+                else:
+                    handler._json(202, {"preparing": True})
+                return
+            spec = comp_spec(scene, directory, project=job.project, scene_id=job.scene,
+                             version=version, fonts=self.devices.fonts(device), derive=False)
             if match[2] == "spec":
-                handler._send(200, spec.encode("utf-8"), "application/json")
+                if spec_level(spec) > level:
+                    self._outdated(handler, job)
+                else:
+                    handler._send(200, spec_json(spec).encode("utf-8"), "application/json")
             else:
                 name = unquote(match[3])
                 if ".." in name or "/" in name or "\\" in name or Path(name).is_absolute():
                     raise FileNotFoundError
-                asset = next((asset for asset in json.loads(spec)["assets"] if asset["name"] == name), None)
+                asset = next((asset for asset in spec["assets"] if asset["name"] == name), None)
                 if asset is None:
                     raise FileNotFoundError
-                self._stream(handler, spec_asset_paths(scene, directory)[name], content_type=mimetypes.guess_type(name)[0], headers=(
-                    ("X-Keepframe-Sha256", asset["sha256"]),))
+                self._stream(handler, spec_asset_paths(scene, directory, derive=False)[name],
+                             content_type=mimetypes.guess_type(name)[0], headers=(("X-Keepframe-Sha256", asset["sha256"]),))
             return
         _error(handler, 404, "not found")
 
@@ -517,7 +548,7 @@ class AERoutes:
             self.devices.update_info(device, data.get("info"))
             handler._send(204, b"", "application/json")
         else:
-            scene, _, version = self._scene(data.get("project"), data.get("scene"), data.get("version"))
+            scene, directory, version = self._scene(data.get("project"), data.get("scene"), data.get("version"))
             devices = self.devices.list()
             if data.get("device") is not None:
                 device = next((row["id"] for row in devices if row["id"] == data["device"]), None)
@@ -534,6 +565,8 @@ class AERoutes:
                 kind, params = "render_frames", {"frames": sample_frames(scene.frames),
                                                  "tag": f"keepframe:{data['project']}/{data['scene']}"}
             job = self.jobs.enqueue(device, kind, data["project"], data["scene"], version, params=params)
+            if kind == "sync":
+                prepare_footage(scene, directory)   # AE footage for the scene's videos, in the background
             handler._json(202, {"job": job.to_dict()})
 
     def _put(self, handler, u, device):

@@ -570,7 +570,7 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
-    function writeLayer(layer, s, fps, force, timings) {
+    function writeLayer(layer, s, fps, force, timings, wasStyled) {
         var t, rect, anchor = s.anchor, doc, i, factor = 1, origin = [0, 0], start, stroke, end;
         if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
         t = transform(layer);
@@ -598,6 +598,10 @@ if (typeof JSON !== "object" || JSON === null) {
                     doc.strokeWidth = stroke.width;
                     doc.strokeOverFill = stroke.over_fill;
                 }
+            } else if (wasStyled === true) {
+                // The style was removed: clear what Keepframe set (unstyled text leaves these to the user).
+                doc.tracking = 0;
+                doc.applyStroke = false;
             }
             staticValue(layer.property("ADBE Text Properties").property("ADBE Text Document"), doc);
             rect = layer.sourceRectAtTime(s["in"] / fps, false);
@@ -953,11 +957,12 @@ if (typeof JSON !== "object" || JSON === null) {
                 fps = Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001 ? spec.comp.fps : rounded(comp.frameRate);
                 record.fps = fps;
                 record.kind = kind(record.layer);
-                record.current = readFingerprint(record.layer, fps, false, timings, styledText(s));
+                record.styled = styledText(s);
+                record.current = readFingerprint(record.layer, fps, false, timings, record.styled);
                 if (record.kind === "text" && record.fp !== null && record.current !== record.fp) {
-                    // Synced before its text was styled (or after the style was removed): the other variant.
-                    other = readFingerprint(record.layer, fps, false, timings, !styledText(s));
-                    if (other !== null && other === record.fp) { record.current = other; }
+                    // Synced before its text was styled (or with a style since removed): the other variant.
+                    other = readFingerprint(record.layer, fps, false, timings, !record.styled);
+                    if (other !== null && other === record.fp) { record.current = other; record.styled = !record.styled; }
                 }
                 record.asset = record.kind === "model" ? record.layer.source.comment : null;
                 record.upgrade = record.fp !== null && record.current !== null && record.current !== record.fp
@@ -1043,7 +1048,7 @@ if (typeof JSON !== "object" || JSON === null) {
                             if (record) { updateSource(layer, comp, s, assets); }
                             else { placeNew(layer, s, ordered, existing); }
                         }
-                        writeLayer(layer, s, spec.comp.fps, force === "true", timings);
+                        writeLayer(layer, s, spec.comp.fps, force === "true", timings, record ? record.styled : false);
                         (record ? result.updated : result.created).push(s.id);
                     }
                     result.keys[s.id] = keyCount(layer);
