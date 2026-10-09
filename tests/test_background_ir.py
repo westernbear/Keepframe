@@ -244,17 +244,16 @@ def test_ae_spec_gradient_and_video_use_poster_with_warning(tmp_path):
     assert spec_asset_paths(s, tmp_path) == {"background.png": (tmp_path / "assets" / "poster.png").resolve()}
     spec = comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")
     bg = spec["layers"][0]
+    # the clip cannot become AE footage (here: no file), so its poster is used, with the reason's code
     assert bg["kind"] == "image" and bg["source"]["asset"] == "background.png"
-    assert any("video" in w and "poster" in w for w in bg["warnings"]) and spec["warnings"]
-    # a gradient keeps the solid layer of its mean colour and warns; a poster, when present, is used
+    assert bg["warnings"] == spec["warnings"] == ["video background exported as its poster image (footage_failed)"]
+    # a 2-stop gradient is a solid of its mean colour with an ADBE Ramp (Task 14), poster or not
     g = lin("#ff0000", "#0000ff")
-    s = scene_with(Background(kind="gradient", value="#800080", gradient=g, poster="assets/poster.png"))
-    spec = comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")
-    assert spec["layers"][0]["kind"] == "image" and spec["warnings"]
-    s = scene_with(Background(kind="gradient", value="#800080", gradient=g))
-    spec = comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")
-    assert spec["layers"][0]["kind"] == "solid" and spec["layers"][0]["source"] == {"color": "#800080"}
-    assert any("gradient" in w for w in spec["warnings"])
+    for poster in ("assets/poster.png", None):
+        s = scene_with(Background(kind="gradient", value="#800080", gradient=g, poster=poster))
+        spec = comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")
+        assert spec["layers"][0]["kind"] == "solid" and spec["layers"][0]["source"] == {"color": "#800080"}
+        assert spec["layers"][0]["effects"]["gradient"]["shape"] == 1 and spec["warnings"] == []
 
 
 def test_solid_assets_plate_uses_poster(tmp_path):
@@ -280,4 +279,4 @@ def test_ae_spec_video_sprite_uses_poster_with_warning(tmp_path):
                  canonical=Canonical(width=20, height=16, texture="assets/e1.png", video="assets/e1.video.webm"))
     s = scene_with(Background(kind="color", value="#000000")).model_copy(update={"elements": [el]})
     layer = next(l for l in comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")["layers"] if l["id"] == "kf:e1")
-    assert layer["kind"] == "image" and "e1 video sprite exported as its poster image" in layer["warnings"]
+    assert layer["kind"] == "image" and "e1 video sprite exported as its poster image (footage_failed)" in layer["warnings"]

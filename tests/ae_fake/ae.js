@@ -144,9 +144,10 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   const KeyframeInterpolationType = enumObject("KeyframeInterpolationType", ["LINEAR", "BEZIER", "HOLD"]);
   const ParagraphJustification = enumObject("ParagraphJustification", ["LEFT_JUSTIFY", "CENTER_JUSTIFY", "RIGHT_JUSTIFY"]);
   const PropertyValueType = enumObject("PropertyValueType", ["NO_VALUE", "OneD", "TwoD", "TwoD_SPATIAL",
-    "ThreeD", "ThreeD_SPATIAL", "COLOR", "TEXT_DOCUMENT"]);
+    "ThreeD", "ThreeD_SPATIAL", "COLOR", "LAYER_INDEX", "TEXT_DOCUMENT"]);
   const PropertyType = enumObject("PropertyType", ["PROPERTY", "INDEXED_GROUP", "NAMED_GROUP"]);
   const TrackMatteType = enumObject("TrackMatteType", ["ALPHA"]);
+  const AlphaMode = enumObject("AlphaMode", ["IGNORE", "STRAIGHT", "PREMULTIPLIED"]);
 
   // File/Folder: ported from 2c1c8d1:tests/ae_panel_host.js, with strict surfaces.
   function File(p) {
@@ -229,12 +230,20 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       if (!values.applyFill) throw Error("fake AE: text fill is disabled");
       vector(v, 3, "fillColor", true); values.fillColor = copy(v).map(Math.fround);
     });
-    // These are real TextDocument fields; preserve them when only managed styling changes.
-    for (const [name, initial] of Object.entries({ tracking: 0, applyStroke: false, strokeColor: [0, 0, 0] })) {
-      field(api, name, () => copy(values[name] ?? initial), (v) => {
+    // These are real TextDocument fields; preserve them when only managed styling changes. Like fillColor, the
+    // stroke fields throw while applyStroke is false.
+    if (values.strokeColor) values.strokeColor = values.strokeColor.map(Math.fround);
+    for (const [name, initial] of Object.entries({ tracking: 0, applyStroke: false, strokeColor: [0, 0, 0],
+      strokeWidth: 1, strokeOverFill: false })) {
+      const stroke = name.startsWith("stroke"), disabled = () => {
+        if (stroke && !values.applyStroke) throw Error("fake AE: text stroke is disabled");
+      };
+      field(api, name, () => { disabled(); return copy(values[name] ?? initial); }, (v) => {
+        disabled();
         if (name === "tracking") finite(v, name);
-        if (name === "applyStroke" && typeof v !== "boolean") throw Error("fake AE: invalid applyStroke");
-        if (name === "strokeColor") vector(v, 3, name, true);
+        if (["applyStroke", "strokeOverFill"].includes(name) && typeof v !== "boolean") throw Error(`fake AE: invalid ${name}`);
+        if (name === "strokeWidth") { finite(v, name); if (v < 0) throw Error("fake AE: invalid strokeWidth"); }
+        if (name === "strokeColor") { vector(v, 3, name, true); v = copy(v).map(Math.fround); }
         values[name] = copy(v);
       });
     }
@@ -256,7 +265,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   }
 
   // Properties: data is JSON-safe; TextDocuments/eases cross the API as copies.
-  function property(matchName, name, value, valueType, saved, isHidden = () => false) {
+  const pendingRefs = [];
+  function property(matchName, name, value, valueType, saved, isHidden = () => false, context) {
     const data = saved ? copy(saved) : { matchName, name, value: copy(value), keys: [],
       expression: "", expressionEnabled: false, propertyValueType: valueType || (Array.isArray(value) ? value.length === 3 ? "ThreeD" : "TwoD" : "OneD") };
     const avVector = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale"].includes(matchName);
@@ -271,7 +281,14 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         }
       });
     }
-    const easeDimensions = () => /_SPATIAL$/.test(data.propertyValueType) || !Array.isArray(data.value) ? 1 : data.value.length;
+    const easeDimensions = () => /_SPATIAL$/.test(data.propertyValueType) || data.propertyValueType === "COLOR"
+      || !Array.isArray(data.value) ? 1 : data.value.length;
+    // A layer parameter references its layer (AE follows moves); `value` is that layer's current index, 0 if none.
+    let ref = null;
+    const layerStack = () => context?.stack() || [];
+    const layerIndex = () => ref && layerStack().includes(ref) ? layerStack().indexOf(ref) + 1 : 0;
+    const layerParam = data.propertyValueType === "LAYER_INDEX";
+    if (layerParam && data.value) pendingRefs.push(() => { ref = layerStack()[data.value - 1] || null; });
     const writable = () => {
       if (isHidden()) throw Error('After Effects error: Can\'t "set value" on this property because the property or a parent property is hidden.');
     };
@@ -287,7 +304,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       }
       v = pad(v);
       if (Array.isArray(data.value)) {
-        vector(v, data.value.length, name);
+        vector(v, data.value.length, name, data.propertyValueType === "COLOR");
       }
       else finite(v, name);
       return copy(v);
@@ -327,11 +344,16 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       writable();
       fault("write", matchName);
       if (data.keys.length) throw Error("fake AE: setValue on a keyframed property");
+      if (layerParam) {
+        if (!Number.isInteger(v) || v < 0 || v > layerStack().length) throw Error("fake AE: invalid layer index");
+        ref = v ? layerStack()[v - 1] : null;
+      }
       data.value = encode(v); changed();
     };
     const writeValues = (times, values) => {
       writable();
       fault("write", matchName);
+      if (layerParam) throw Error("fake AE: layer properties cannot be keyed");
       const byTime = new Map(data.keys.map((k) => [k.time, k]));
       for (let i = 0; i < times.length; i++) {
         const t = times[i];
@@ -366,7 +388,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     api.valueAtTime = (t, preExpression) => {
       fault("read", matchName);
       if (data.expressionEnabled && !preExpression) return unsupported("Property", "expression evaluation");
-      return decode(sample(t));
+      return layerParam ? layerIndex() : decode(sample(t));
     };
     api.setInterpolationTypeAtKey = (i, incoming, outgoing = incoming) => {
       writable();
@@ -405,7 +427,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         return operation(...args);
       };
     }
-    return host("Property", api, { data, api });
+    return host("Property", api, { data, api, layerIndex: layerParam ? layerIndex : null });
   }
 
   // Groups/effects/masks use the same 1-based property lookup.
@@ -414,8 +436,17 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     "ADBE Geometry2": ["Transform", [["0001", "Anchor Point", [0, 0]], ["0002", "Position", [0, 0]],
       ["0003", "Scale Height", 100], ["0004", "Scale Width", 100], ["0005", "Skew", 0],
       ["0006", "Skew Axis", 0], ["0007", "Rotation", 0], ["0008", "Opacity", 100], ["0011", "Uniform Scale", 1]]],
+    "ADBE Ramp": ["Gradient Ramp", [["0001", "Start of Ramp", [0, 0], "TwoD_SPATIAL"], ["0002", "Start Color", [0, 0, 0, 1], "COLOR"],
+      ["0003", "End of Ramp", [0, 100], "TwoD_SPATIAL"], ["0004", "End Color", [1, 1, 1, 1], "COLOR"],
+      ["0005", "Ramp Shape", 1], ["0006", "Ramp Scatter", 0], ["0007", "Blend With Original", 0]]],
+    // Opacity is stored 0-255, as AE's Drop Shadow reports it to scripts (the panel shows a percentage).
+    "ADBE Drop Shadow": ["Drop Shadow", [["0001", "Shadow Color", [0, 0, 0, 1], "COLOR"], ["0002", "Opacity", 127.5],
+      ["0003", "Direction", 135], ["0004", "Distance", 5], ["0005", "Softness", 0], ["0006", "Shadow Only", 0]]],
+    "ADBE Set Matte3": ["Set Matte", [["0001", "Take Matte From Layer", 0, "LAYER_INDEX"], ["0002", "Use For Matte", 4],
+      ["0003", "Invert Matte", 0], ["0004", "If Layer Sizes Differ", 1], ["0005", "Composite Matte with Original", 1],
+      ["0006", "Premultiply Matte Layer", 1]]],
   };
-  function group(matchName, name, children = [], additions, saved) {
+  function group(matchName, name, children = [], additions, saved, context) {
     const values = { name: saved?.name ?? name }, api = {};
     field(api, "matchName", () => matchName);
     field(api, "propertyType", () => additions ? "INDEXED_GROUP" : "NAMED_GROUP");
@@ -432,15 +463,15 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     api.addProperty = (match) => {
       if (!additions?.includes(match)) return unsupported("PropertyGroup", match);
       const definition = effectDefinitions[match];
-      const child = group(match, definition?.[0] || `Mask ${children.length + 1}`,
-        definition ? definition[1].map(([suffix, label, value]) => property(`${match}-${suffix}`, label, value)) : []);
+      const child = group(match, definition?.[0] || `Mask ${children.length + 1}`, definition ? definition[1].map(
+        ([suffix, label, value, type]) => property(`${match}-${suffix}`, label, value, type, undefined, undefined, context)) : []);
       removable(child);
       children.push(child); changed(); return child;
     };
     const proxy = host("PropertyGroup", api, { api, values, children, matchName });
     if (saved) {
       for (const childState of saved.properties) {
-        const child = restoreProperty(childState);
+        const child = restoreProperty(childState, context);
         if (additions) removable(child);
         children.push(child);
       }
@@ -452,20 +483,28 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     }
     return proxy;
     function removable(child) {
-      records.get(child).api.remove = () => {
+      const api = records.get(child).api;
+      api.remove = () => {
         const index = children.indexOf(child);
         if (index < 0) throw Error("fake AE: removed property group");
         children.splice(index, 1); changed();
       };
+      field(api, "propertyIndex", () => children.indexOf(child) + 1);
+      api.moveTo = (index) => {
+        const at = children.indexOf(child);
+        if (at < 0) throw Error("fake AE: removed property group");
+        if (!Number.isInteger(index) || index < 1 || index > children.length) throw Error("fake AE: invalid property index");
+        children.splice(at, 1); children.splice(index - 1, 0, child); changed();
+      };
     }
   }
-  function restoreProperty(saved) {
-    return saved.properties ? group(saved.matchName, saved.name, [], undefined, saved)
-      : property(saved.matchName, saved.name, saved.value, saved.propertyValueType, saved);
+  function restoreProperty(saved, context) {
+    return saved.properties ? group(saved.matchName, saved.name, [], undefined, saved, context)
+      : property(saved.matchName, saved.name, saved.value, saved.propertyValueType, saved, undefined, context);
   }
   function serializeProperty(p) {
     const r = records.get(p);
-    if (r.type === "Property") return copy(r.data);
+    if (r.type === "Property") return { ...copy(r.data), ...(r.layerIndex ? { value: r.layerIndex() } : {}) };
     return { matchName: r.matchName, name: r.values.name,
       ...(r.values.enabled !== undefined ? {enabled: r.values.enabled} : {}), properties: r.children.map(serializeProperty) };
   }
@@ -572,6 +611,18 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       addFolder(name) { return add("FolderItem", { name }); },
     });
   }
+  // Video footage lasts as long as its movie header says (mp4/mov `mvhd`); AE cannot import anything else here.
+  function mediaDuration(filename) {
+    let data;
+    try { data = fs.readFileSync(filename); } catch { throw Error("fake AE: unsupported footage"); }
+    const at = data.indexOf("mvhd");
+    if (at < 4 || at + (data[at + 4] === 1 ? 36 : 24) > data.length) throw Error("fake AE: unsupported footage");
+    const [scale, duration] = data[at + 4] === 1 ? [data.readUInt32BE(at + 24), Number(data.readBigUInt64BE(at + 28))]
+      : [data.readUInt32BE(at + 16), data.readUInt32BE(at + 20)];
+    if (!scale || !duration) throw Error("fake AE: unsupported footage");
+    return duration / scale;
+  }
+  const isVideo = (name) => /\.(mp4|mov)$/i.test(name);
   function item(type, saved) {
     const values = { name: "", comment: "", ...copy(saved), parentFolder: root || null };
     const api = Object.create(constructors[type].prototype);
@@ -604,12 +655,19 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         const sourceAPI = {};
         field(sourceAPI, "file", () => values.mainSource.file);
         if (source.color) field(sourceAPI, "color", () => copy(values.mainSource.color));
+        else field(sourceAPI, "alphaMode", () => values.mainSource.alphaMode ?? "PREMULTIPLIED", (v) => {
+          if (!["IGNORE", "STRAIGHT", "PREMULTIPLIED"].includes(v)) throw Error("fake AE: invalid alphaMode");
+          values.mainSource.alphaMode = v; changed();
+        });
         api.mainSource = host(source.color ? "SolidSource" : "FileSource", sourceAPI);
         field(api, "file", () => values.mainSource.file);
+        field(api, "duration", () => values.duration ?? 0);
         api.replace = (file) => {
           if (records.get(file)?.type !== "File") throw Error("fake AE: replace requires a File");
+          const duration = isVideo(file.fsName) ? mediaDuration(file.fsName) : undefined;
           values.mainSource.file = file;
           values.isModel = /\.glb$/i.test(file.name);
+          if (duration === undefined) delete values.duration; else values.duration = duration;
           changed();
         };
       } else {
@@ -662,7 +720,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         api.layers = collection("LayerCollection", () => layers, {
           add(sourceItem) {
             if (!["FootageItem", "CompItem"].includes(records.get(sourceItem)?.type)) throw Error("fake AE: layers.add requires footage or comp");
-            return addLayer("AVLayer", sourceItem, sourceItem.name);
+            const clip = records.get(sourceItem).type === "FootageItem" ? records.get(sourceItem).values.duration : undefined;
+            return addLayer("AVLayer", sourceItem, sourceItem.name, clip);
           },
           addText(text) { return addLayer("TextLayer", null, String(text), undefined, String(text)); },
           addSolid(color, name, w, h, pixelAspect, duration) {
@@ -685,9 +744,24 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     for (const name of ["name", "comment"]) setting(api, values, name);
     setting(api, values, "enabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid enabled"); });
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
-    for (const name of ["inPoint", "outPoint", "startTime"]) setting(api, values, name, (v) => {
-      finite(v, name);
-      if (name === "inPoint" && v >= values.outPoint) throw Error("fake AE: inPoint must be below outPoint");
+    // A video footage layer plays its clip once (no time remapping): in/out clamp to [startTime, startTime + clip];
+    // moving startTime slides the layer.
+    const clip = () => { const v = source && records.get(source)?.values; return v?.duration > 0 ? v.duration : null; };
+    field(api, "inPoint", () => values.inPoint, (v) => {
+      finite(v, "inPoint");
+      if (clip() !== null) v = Math.max(v, values.startTime);
+      if (v >= values.outPoint) throw Error("fake AE: inPoint must be below outPoint");
+      values.inPoint = v; changed();
+    });
+    field(api, "outPoint", () => values.outPoint, (v) => {
+      finite(v, "outPoint");
+      if (clip() !== null) v = Math.min(v, values.startTime + clip());
+      values.outPoint = v; changed();
+    });
+    field(api, "startTime", () => values.startTime, (v) => {
+      finite(v, "startTime");
+      const delta = v - values.startTime;
+      values.startTime = v; values.inPoint += delta; values.outPoint += delta; changed();
     });
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
@@ -717,7 +791,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     };
     const findGroup = (match) => saved.properties?.find((p) => p.matchName === match);
     const groups = [transformGroup(values, comp, source, findGroup("ADBE Transform Group")),
-      group("ADBE Effect Parade", "Effects", [], Object.keys(effectDefinitions), findGroup("ADBE Effect Parade")),
+      group("ADBE Effect Parade", "Effects", [], Object.keys(effectDefinitions), findGroup("ADBE Effect Parade"),
+        { stack: () => records.get(comp).layers }),
       group("ADBE Mask Parade", "Masks", [], ["ADBE Mask Atom"], findGroup("ADBE Mask Parade"))];
     field(api, "threeDLayer", () => values.threeDLayer, (v) => {
       if (typeof v !== "boolean") throw Error("fake AE: invalid threeDLayer");
@@ -780,7 +855,8 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     const file = options.file;
     // ponytail: fixed imported dimensions; add metadata decoding when asset-size tests need it.
     const footage = item("FootageItem", { name: file.name, width: 1920, height: 1080,
-      mainSource: { file: file.fsName }, isModel: /\.glb$/i.test(file.name) });
+      mainSource: { file: file.fsName }, isModel: /\.glb$/i.test(file.name),
+      ...(isVideo(file.fsName) ? { duration: mediaDuration(file.fsName) } : {}) });
     items.push(footage); changed(); return footage;
   };
   const projectFile = state.project?.file ? File(state.project.file) : null;
@@ -806,6 +882,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       });
     }
   });
+  pendingRefs.splice(0).forEach((resolve) => resolve());
   const appAPI = {
     version: state.app?.version ?? "24.6.0x45", project,
     fonts: host("Fonts", { allFonts: fonts.map((family) => family.map((font) => host("Font", {
@@ -819,7 +896,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
     CompItem: host("CompItem", CompItem), FootageItem: host("FootageItem", FootageItem), FolderItem: host("FolderItem", FolderItem),
     AVLayer: host("AVLayer", AVLayer), TextLayer: host("TextLayer", TextLayer),
     TextDocument: host("TextDocument", TextDocument), KeyframeEase: host("KeyframeEase", KeyframeEase),
-    KeyframeInterpolationType, ParagraphJustification, PropertyValueType, PropertyType, TrackMatteType };
+    KeyframeInterpolationType, ParagraphJustification, PropertyValueType, PropertyType, TrackMatteType, AlphaMode };
   const dollar = { getenv: (name) => Object.hasOwn(env, name) ? env[name] : null, line: 0,
     sleep(ms) { finite(ms, "sleep"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } };
   sandbox.$ = host("$", dollar);
@@ -835,6 +912,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
         const r = records.get(current), v = r.values;
         const result = { type: r.type, id: v.id, name: v.name, comment: v.comment, parentFolder: reference(v.parentFolder) };
         if (r.type === "FootageItem") Object.assign(result, { width: v.width, height: v.height, isModel: v.isModel,
+          ...(v.duration !== undefined ? { duration: v.duration } : {}),
           mainSource: { ...v.mainSource, file: v.mainSource.file?.fsName || null,
             ...(v.mainSource.color ? { color: copy(v.mainSource.color) } : {}) } });
         if (r.type === "CompItem") Object.assign(result, { width: v.width, height: v.height, pixelAspect: v.pixelAspect,

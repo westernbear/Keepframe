@@ -4,7 +4,7 @@
     if (typeof window !== 'undefined') root.KeepframeCore = core;
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
-    const EXTENSION_VERSION = '1.0.0';
+    const EXTENSION_VERSION = '1.1.0';
     const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
     const FRAME_WAIT_MS = 60000;
@@ -263,7 +263,7 @@
     function assetCachePath(documentsDir, project, asset, path) {
         validateProject(project);
         if (!asset || typeof asset.name !== 'string' || /[\/\\\x00-\x1f:]/.test(asset.name) ||
-            asset.name.includes('..') || !/\.(png|jpg|webp|glb)$/.test(asset.name)) throw failure('Invalid asset name or extension');
+            asset.name.includes('..') || !/\.(png|jpg|webp|glb|mp4|mov)$/.test(asset.name)) throw failure('Invalid asset name or extension');
         if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256)) throw failure('Invalid asset SHA-256');
         if (!Number.isSafeInteger(asset.bytes) || asset.bytes < 0) throw failure('Invalid asset byte count');
         const folder = path.resolve(documentsDir, 'Keepframe', project, 'assets');

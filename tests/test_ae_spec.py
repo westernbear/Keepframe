@@ -1,9 +1,14 @@
 import hashlib
+import math
+import os
 import json
 import struct
 import zlib
+from pathlib import Path
 
+import numpy as np
 import pytest
+import subprocess
 
 from keepframe.ae.spec import comp_spec, comp_spec_json, ease_to_ae, png_size, spec_asset_paths
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Group, Keyframe, Scene, Track
@@ -576,3 +581,244 @@ def test_final_texture_edit_with_real_bytes_under_png_name(tmp_path, format, ext
     assert layer(spec)["source"] == {"asset": name, "scale_fix": [0.25, 0.25]}
     assert layer(spec)["anchor"] == [20, 12]
     assert spec_asset_paths(edited, tmp_path) == {name: texture}
+
+
+# --- Task 14: native AE export of gradients, video and styled text -------------------------------------------------
+
+GOLDEN = Path(__file__).parent / "golden" / "ae_spec_legacy.json"
+GLB = (struct.pack("<III", 0x46546C67, 2, 48) + struct.pack("<II", 28, 0x4E4F534A)
+       + b'{"asset":{"version":"2.0"}}' + b" ")
+
+
+def legacy_scene(root):
+    """A scene with none of Task 14's features: image plate, sprite, plain text, fontless text, group, model."""
+    png(root / "assets" / "plate.png", 32, 18)
+    png(root / "assets" / "sprite.png", 20, 12)
+    png(root / "assets" / "glyphs.png", 30, 10)
+    (root / "assets" / "model.glb").write_bytes(GLB)
+    return scene(
+        element("sprite", texture="assets/sprite.png", anchor=(0.25, 0.75), tracks={
+            "x": track((3, 10, EASE), (33, 110)), "sx": track((0, 1, EASE), (30, 3)), "sy": track((0, 2), (30, 4)),
+            "opacity": track((0, 0.2, EASE), (30, 0.8)), "skx": track((0, 10), (30, 20)),
+            "reveal": track((0, 0, EASE), (30, 1))}),
+        element("title", kind="text", text="Hello 한", color="#f80", tracks={"skx": track((0, 8))},
+                font=FontGuess(family_guess="Inter", weight=700, size_px=24, postscript="Inter-Bold")),
+        element("glyphs", kind="text", text="Glyphs", texture="assets/glyphs.png"),
+        element("box", kind="group"),
+        element("model", kind="3d", model="assets/model.glb", tracks={"rx": track((0, 10), (30, 90))}),
+        background=Background(kind="image", value="assets/plate.png"),
+        groups=[Group(id="g", members=["sprite", "title"])])
+
+
+def test_spec_unchanged_for_legacy_scene(tmp_path):
+    fonts = [{"family": "Inter", "style": "Bold", "postscript": "Inter-Bold"}]
+    text = comp_spec_json(legacy_scene(tmp_path), tmp_path, **CONTEXT, fonts=fonts)
+    if os.environ.get("KEEPFRAME_WRITE_GOLDEN"):
+        GOLDEN.write_text(text + "\n", encoding="utf-8")
+    assert (text + "\n").encode() == GOLDEN.read_bytes()
+
+
+def _gradient(kind="linear", *stops, **geometry):
+    from keepframe.ir.schema import Gradient, GradientStop
+    return Gradient(kind=kind, stops=[GradientStop(offset=o, color=c) for o, c in stops], **geometry)
+
+
+def _keyed(keys):
+    """The value of single-key (static) AE keys."""
+    assert len(keys) == 1 and keys[0][2:] == [None, None]
+    return keys[0][1]
+
+
+def test_gradient_background_ramp_points_from_css_angle(tmp_path):
+    from keepframe.ir.gradient import gradient_t
+    from keepframe.ir.schema import GradientKey
+
+    def hd(bg):
+        return Scene(id="s", size=(1920, 1080), fps=30, frames=60, background=bg, elements=[])
+
+    g = _gradient("linear", (0, "#ff0000"), (1, "#0000ff"), angle=135)
+    spec = describe(hd(Background(kind="gradient", value="#808080", gradient=g)), tmp_path)
+    bg = layer(spec, "background")
+    assert (bg["kind"], bg["source"], bg["anchor"]) == ("solid", {"color": "#808080"}, [0, 0])
+    ramp = bg["effects"]["gradient"]
+    assert ramp["shape"] == 1
+    assert _keyed(ramp["start"]) == pytest.approx([210, -210], abs=0.5)
+    assert _keyed(ramp["end"]) == pytest.approx([1710, 1290], abs=0.5)
+    assert (_keyed(ramp["start_color"]), _keyed(ramp["end_color"])) == ([1, 0, 0, 1], [0, 0, 1, 1])
+    assert spec["assets"] == bg["warnings"] == spec["warnings"] == []
+    assert (bg["effects"]["skew"], bg["effects"]["reveal"]) == (None, None)
+
+    # Stop offsets move the ramp ends: the Ramp's t is CSS's t between the two stops, at any pixel.
+    g = _gradient("linear", (0.2, "#102030"), (0.7, "#f0e0d0"), angle=200)
+    ramp = layer(describe(hd(Background(kind="gradient", value="#808080", gradient=g)), tmp_path), "background")["effects"]["gradient"]
+    start, end = (_keyed(ramp[k]) for k in ("start", "end"))
+    xs, ys = [0.5, 333.5, 1919.5, 960.5], [0.5, 1079.5, 77.5, 540.5]
+    css = (gradient_t(g, 1920, 1080, (np.array(xs), np.array(ys))) - 0.2) / 0.5
+    d = [end[0] - start[0], end[1] - start[1]]
+    for x, y, t in zip(xs, ys, css):
+        assert ((x - start[0]) * d[0] + (y - start[1]) * d[1]) / (d[0] ** 2 + d[1] ** 2) == pytest.approx(t, abs=1e-3)
+
+    # Radial: the start is the centre, the end lies one radius away; animated keys keep their frames.
+    a = _gradient("radial", (0, "#000000"), (1, "#ffffff"), center=(0.25, 0.5), radius=1.0)
+    b = _gradient("radial", (0, "#ff0000"), (1, "#ffffff"), center=(0.75, 0.5), radius=0.5)
+    bg = layer(describe(hd(Background(kind="gradient", value="#808080", gradient_keys=[
+        GradientKey(t=0, gradient=a), GradientKey(t=30, gradient=b)])), tmp_path), "background")
+    ramp, r = bg["effects"]["gradient"], math.hypot(1920, 1080) / 2
+    assert ramp["shape"] == 2
+    assert [k[0] for k in ramp["start"]] == [k[0] for k in ramp["end_color"]] == [0, 30]
+    assert [k[1] for k in ramp["start"]] == [[480, 540], [1440, 540]]
+    assert [v for k in ramp["end"] for v in k[1]] == pytest.approx([480 + r, 540, 1440 + r / 2, 540], abs=1e-3)
+    assert [k[1] for k in ramp["start_color"]] == [[0, 0, 0, 1], [1, 0, 0, 1]]
+    assert bg["warnings"] == []
+
+
+def test_multistop_gradient_exports_poster_with_warning(tmp_path):
+    from keepframe.ir.schema import GradientKey
+    data = png(tmp_path / "assets" / "poster.png", 32, 18)
+    three = _gradient("linear", (0, "#ff0000"), (0.5, "#00ff00"), (1, "#0000ff"))
+    two = _gradient("linear", (0, "#ff0000"), (1, "#0000ff"))
+    for bg in (Background(kind="gradient", value="#808080", gradient=three, poster="assets/poster.png"),
+               Background(kind="gradient", value="#808080", poster="assets/poster.png", gradient_keys=[
+                   GradientKey(t=0, gradient=two), GradientKey(t=9, gradient=three)])):
+        spec = describe(scene(background=bg), tmp_path)
+        result = layer(spec, "background")
+        assert (result["kind"], result["source"]) == ("image", {"asset": "background.png", "scale_fix": [10, 10]})
+        assert "gradient" not in result["effects"]
+        assert result["warnings"] == spec["warnings"] == ["gradient background has more than 2 stops; exported as its poster image"]
+        assert spec["assets"] == [{"name": "background.png", "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}]
+        assert spec_asset_paths(scene(background=bg), tmp_path) == {"background.png": tmp_path / "assets" / "poster.png"}
+    spec = describe(scene(background=Background(kind="gradient", value="#808080", gradient=three)), tmp_path)
+    assert (layer(spec, "background")["kind"], layer(spec, "background")["source"]) == ("solid", {"color": "#808080"})
+    assert spec["warnings"] == ["gradient background has more than 2 stops; exported as a flat colour"]
+
+
+def _video_scene(root, fail=None):
+    from keepframe.analyze.videoasset import encode_webm
+    assets = root / "assets"
+    encode_webm([np.full((48, 64, 3), (40 * i, 90, 200 - 30 * i), np.uint8) for i in range(6)], 30,
+                assets / "background.webm", alpha=False)
+    sprite = []
+    for i in range(4):
+        frame = np.zeros((12, 20, 4), np.uint8)
+        frame[:, :10] = (200, 40 * i, 60, 255)
+        sprite.append(frame)
+    encode_webm(sprite, 30, assets / "e1.video.webm", alpha=True)
+    png(assets / "background.png", 64, 48)
+    png(assets / "e1.png", 20, 12)
+    el = Element(id="e1", kind="sprite", visible=(2, 5), canonical=Canonical(
+        width=10, height=6, anchor=(0.25, 0.75), texture="assets/e1.png", video="assets/e1.video.webm"))
+    return Scene(id="s", size=(64, 48), fps=30, frames=6, elements=[el], background=Background(
+        kind="video", value="assets/background.webm", poster="assets/background.png"))
+
+
+def _probe(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries",
+                          "stream=codec_name,pix_fmt,width,height,nb_read_frames", "-of", "json", str(path)],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)["streams"][0]
+
+
+def test_video_layers_use_derived_footage_and_start_time(tmp_path, monkeypatch):
+    from keepframe.ae import footage
+    value = _video_scene(tmp_path)
+    spec = describe(value, tmp_path)
+    bg, sprite = layer(spec, "background"), layer(spec, "e1")
+    assert (bg["kind"], bg["source"], bg["anchor"]) == (
+        "footage", {"asset": "background.mp4", "scale_fix": [1, 1], "start_time": 0}, [0, 0])
+    assert (bg["in"], bg["out"], bg["warnings"]) == (0, 5, [])
+    assert (sprite["kind"], sprite["source"], sprite["anchor"]) == (
+        "footage", {"asset": "e1.mov", "scale_fix": [0.5, 0.5], "start_time": 0.0667}, [5, 9])
+    assert (sprite["in"], sprite["out"], sprite["warnings"], spec["warnings"]) == (2, 5, [], [])
+    paths = spec_asset_paths(value, tmp_path)
+    plate_sha = hashlib.sha256((tmp_path / "assets" / "background.webm").read_bytes()).hexdigest()
+    sprite_sha = hashlib.sha256((tmp_path / "assets" / "e1.video.webm").read_bytes()).hexdigest()
+    assert paths == {"background.mp4": tmp_path / "assets" / f"background.{plate_sha[:16]}.ae.mp4",
+                     "e1.mov": tmp_path / "assets" / f"e1.video.{sprite_sha[:16]}.ae.mov"}
+    assert spec["assets"] == [{"name": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                               "bytes": path.stat().st_size} for name, path in sorted(paths.items())]
+    plate, clip = _probe(paths["background.mp4"]), _probe(paths["e1.mov"])
+    assert (plate["codec_name"], plate["pix_fmt"], plate["width"], plate["height"], plate["nb_read_frames"]) == (
+        "h264", "yuv420p", 64, 48, "6")
+    assert (clip["codec_name"], clip["width"], clip["height"], clip["nb_read_frames"]) == ("prores", 20, 12, "4")
+    assert clip["pix_fmt"].startswith("yuva444p")
+    # Cached by the source's SHA: a second export never runs ffmpeg.
+    monkeypatch.setattr(footage.subprocess, "run", lambda *a, **k: pytest.fail("derived again"))
+    assert describe(value, tmp_path) == spec
+
+
+def test_video_footage_failure_exports_posters_with_codes(tmp_path, monkeypatch):
+    from keepframe.ae import footage
+    value = _video_scene(tmp_path)
+
+    def fail(*args, **kwargs):
+        raise footage.FootageError("footage_failed")
+
+    monkeypatch.setattr(footage, "derive", fail)
+    spec = describe(value, tmp_path)
+    bg, sprite = layer(spec, "background"), layer(spec, "e1")
+    assert (bg["kind"], bg["source"]["asset"], sprite["kind"], sprite["source"]["asset"]) == (
+        "image", "background.png", "image", "e1.png")
+    assert spec["warnings"] == ["video background exported as its poster image (footage_failed)"]
+    assert sprite["warnings"] == ["e1 video sprite exported as its poster image (footage_failed)"]
+    assert set(spec_asset_paths(value, tmp_path)) == {"background.png", "e1.png"}
+
+
+def _styled(**style):
+    from keepframe.ir.schema import TextStyle
+    return element("t", kind="text", text="Sale", color="#ffffff", style=TextStyle(**style),
+                   font=FontGuess(family_guess="Inter", weight=700, size_px=40, postscript="Inter-Bold"))
+
+
+def test_text_stroke_tracking_shadow_glow_fill_spec(tmp_path):
+    from keepframe.ir.schema import AlphaStop, Fade, TextEffect
+    fill = _gradient("linear", (0, "#ff3d00"), (1, "#ffd600"), angle=180)
+    el = _styled(tracking_em=0.12, shear_deg=10, fill=fill, fade=Fade(stops=[AlphaStop(offset=0, alpha=1), AlphaStop(offset=1, alpha=0.2)]),
+                 effects=[TextEffect(kind="shadow", color="#1a0a3a", opacity=0.7, dx=4, dy=5, blur=4),
+                          TextEffect(kind="stroke", color="#112233", width=1.5),
+                          TextEffect(kind="glow", color="#ffd27a", opacity=0.9, blur=3)])
+    result = layer(describe(scene(el), tmp_path), "t")
+    assert result["kind"] == "text"
+    source = result["source"]
+    assert source["tracking"] == 120
+    assert source["stroke"] == {"color": "#112233", "width": 3, "over_fill": False}
+    assert source["font"]["postscript"] is None and source["color"] == "#ffffff"
+    shadow, glow = result["effects"]["shadows"]
+    assert shadow == {"color": pytest.approx([26 / 255, 10 / 255, 58 / 255, 1], abs=1e-4), "opacity": 70,
+                      "direction": pytest.approx(math.degrees(math.atan2(4, -5)), abs=1e-4),
+                      "distance": pytest.approx(math.hypot(4, 5), abs=1e-4), "softness": 4}
+    assert glow == {"color": pytest.approx([1, 210 / 255, 122 / 255, 1], abs=1e-4), "opacity": 90,
+                    "direction": 0, "distance": 0, "softness": 3}
+    ramp = result["effects"]["fill"]
+    assert ramp["shape"] == 1
+    assert (_keyed(ramp["start"]), _keyed(ramp["end"])) == ([5, 0], [5, 6])   # box coordinates, 180deg = down
+    assert (_keyed(ramp["start_color"]), _keyed(ramp["end_color"])) == (
+        pytest.approx([1, 61 / 255, 0, 1], abs=1e-4), pytest.approx([1, 214 / 255, 0, 1], abs=1e-4))
+    # Shear folds into the skew effect (CSS skewX(-shear) about the first baseline, the text layer's y = 0).
+    skew = result["effects"]["skew"]
+    assert _keyed(skew["skew"]) == pytest.approx(-10, abs=1e-4)
+    assert skew["baseline_shear"] == pytest.approx(-math.tan(math.radians(10)), abs=1e-4)
+    assert result["warnings"] == ["text t stroke takes the gradient fill in AE", "text fade not exported"]
+
+    # With an element skew and non-uniform scale: tan(skew) = tan(skx)·sy/sx − tan(shear).
+    el = _styled(shear_deg=-8)
+    el.tracks = {"skx": track((0, 12)), "sx": track((0, 2)), "sy": track((0, 3))}
+    result = layer(describe(scene(el), tmp_path), "t")
+    k = math.tan(math.radians(12)) * 3 / 2 + math.tan(math.radians(8))
+    assert _keyed(result["effects"]["skew"]["skew"]) == pytest.approx(math.degrees(math.atan(k)), abs=1e-4)
+    assert result["source"]["stroke"] is None and result["source"]["tracking"] == 0
+    assert "shadows" not in result["effects"] and "fill" not in result["effects"]
+    assert result["warnings"] == []
+
+    # Unstyled text keeps today's source and effects exactly.
+    plain = layer(describe(scene(element("t", kind="text", text="Sale", font=FontGuess())), tmp_path), "t")
+    assert set(plain["source"]) == {"text", "font", "size_px", "color", "anchor_fraction", "box"}
+    assert plain["effects"] == {"skew": None, "reveal": None}
+
+
+def test_texture_pad_places_the_box_not_the_padding(tmp_path):
+    """A texture padded past its box (R41) maps its box, not the whole PNG, onto the canonical size (as numpy)."""
+    png(tmp_path / "t.png", 30, 16)
+    el = element("p", texture="t.png", anchor=(0.25, 0.5), texture_pad=5.0)
+    result = layer(describe(scene(el), tmp_path), "p")
+    assert result["source"] == {"asset": "p.png", "scale_fix": [0.5, 1]}
+    assert result["anchor"] == [10, 8]

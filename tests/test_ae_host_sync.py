@@ -1,5 +1,6 @@
 """Execute the production ES3 entry points against persisted fake AE projects."""
 import copy
+import math
 import json
 import re
 import struct
@@ -312,7 +313,7 @@ def test_layers_synced_with_name_and_label_fingerprints_upgrade_without_a_hand_e
     spec, assets = full_spec
     # Builds up to 1.0.238 fingerprinted name and label.
     legacy = HOST.read_text().replace(
-        "return fingerprint(layer, fps, legacy, timings);", "return fingerprint(layer, fps, true, timings);")
+        "return fingerprint(layer, fps, legacy, timings, styled === true);", "return fingerprint(layer, fps, true, timings, styled === true);")
     assert legacy != HOST.read_text()
     legacy_host = tmp_path / "legacy.jsx"
     legacy_host.write_text(legacy)
@@ -337,7 +338,7 @@ def test_layers_synced_with_v1_ease_fingerprints_upgrade_without_a_hand_edit(tmp
     spec, assets = solid_spec_with_x_keys(tmp_path, [[f, 320.0 + f, None, None] for f in range(600)])
     # Run the producer with the original all-key-ease form (without name/label).
     legacy = HOST.read_text().replace(
-        "return fingerprint(layer, fps, legacy, timings);", 'return fingerprint(layer, fps, "ease", timings);')
+        "return fingerprint(layer, fps, legacy, timings, styled === true);", 'return fingerprint(layer, fps, "ease", timings, styled === true);')
     legacy_host = tmp_path / "v1-ease.jsx"
     legacy_host.write_text(legacy)
     path = tmp_path / "ae.json"
@@ -1664,3 +1665,184 @@ def test_final_info_omits_fonts_when_not_requested(tmp_path):
     without_fonts = run_jsx(path, HOST, "kfInfo", "false")["value"]
     assert "fonts" not in without_fonts
     assert without_fonts == {key: value for key, value in with_fonts.items() if key != "fonts"}
+
+
+# --- Task 14: gradients, footage and styled text --------------------------------------------------------------------
+
+def effect_named(item, name):
+    return next(effect for effect in effects(item) if effect["name"] == name)
+
+
+def params(effect):
+    return {child["matchName"].rsplit("-", 1)[-1]: child for child in effect["properties"] if "matchName" in child
+            and "-" in child["matchName"]}
+
+
+def f32(value):
+    return struct.unpack("f", struct.pack("f", value))[0]
+
+
+def styled_spec(root, end="#0000ff"):
+    from keepframe.ir.schema import AlphaStop, Background, Fade, Gradient, GradientKey, GradientStop, TextEffect, TextStyle
+    stops = lambda a, b: [GradientStop(offset=0, color=a), GradientStop(offset=1, color=b)]
+    background = Background(kind="gradient", value="#808080", gradient_keys=[
+        GradientKey(t=0, gradient=Gradient(kind="linear", angle=90, stops=stops("#ff0000", "#00ff00"))),
+        GradientKey(t=30, gradient=Gradient(kind="linear", angle=180, stops=stops("#ff0000", end)))])
+    style = TextStyle(tracking_em=0.1, shear_deg=6, fade=Fade(stops=[AlphaStop(offset=0, alpha=1), AlphaStop(offset=1, alpha=0.5)]),
+                      fill=Gradient(kind="linear", angle=180, stops=stops("#ff3d00", "#ffd600")),
+                      effects=[TextEffect(kind="stroke", color="#112233", width=2),
+                               TextEffect(kind="shadow", color="#1a0a3a", opacity=0.7, dx=4, dy=5, blur=4),
+                               TextEffect(kind="glow", color="#ffd27a", opacity=0.9, blur=3)])
+    text = element("t", kind="text", text="Sale", color="#ffffff", style=style,
+                   font=FontGuess(family_guess="Inter", weight=700, size_px=40))
+    return spec_for(root, text, background=background)
+
+
+def test_gradient_background_and_styled_text_create_then_resync_is_a_no_op(tmp_path):
+    spec, assets = styled_spec(tmp_path)
+    path = tmp_path / "ae.json"
+    response = sync(path, spec, assets)
+    result = response["value"]
+    assert result["ok"] and result["created"] == ["kf:background", "kf:t"], result
+    assert result["warnings"] == ["text t stroke takes the gradient fill in AE", "text fade not exported"]
+    state = read_state(path)
+    bg, text = layers(state)["kf:background"], layers(state)["kf:t"]
+    assert [e["name"] for e in effects(bg)] == ["Keepframe Gradient"]
+    ramp = params(effect_named(bg, "Keepframe Gradient"))
+    assert [(k["time"], k["value"]) for k in ramp["0001"]["keys"]] == [(0, [0, 90]), (1, [160, 0])]
+    assert [(k["time"], k["value"]) for k in ramp["0003"]["keys"]] == [(0, [320, 90]), (1, [160, 180])]
+    assert [k["value"] for k in ramp["0002"]["keys"]] == [[1, 0, 0, 1], [1, 0, 0, 1]]
+    assert [k["value"] for k in ramp["0004"]["keys"]] == [[0, 1, 0, 1], [0, 0, 1, 1]]
+    assert ramp["0005"]["value"] == 1 and ramp["0005"]["keys"] == []
+
+    assert [e["name"] for e in effects(text)] == [
+        "Keepframe Fill", "Keepframe Fill Matte", "Keepframe Skew", "Keepframe Shadow 1", "Keepframe Shadow 2"]
+    doc = prop(text, "ADBE Text Document")["value"]
+    assert (doc["font"], doc["tracking"], doc["applyStroke"], doc["strokeWidth"], doc["strokeOverFill"]) == (
+        "Inter", 100, True, 4, False)
+    assert doc["strokeColor"] == [f32(v / 255) for v in (0x11, 0x22, 0x33)]
+    anchor = prop(text, "ADBE Anchor Point")["value"][:2]
+    assert anchor == [5, -12]   # fake "Sale" at 40 px: rect top -32, height 40; box 10x6 centred
+    fill = params(effect_named(text, "Keepframe Fill"))
+    assert (fill["0001"]["value"], fill["0003"]["value"], fill["0005"]["value"]) == ([5, -15], [5, -9], 1)
+    assert fill["0002"]["value"] == pytest.approx([1, 61 / 255, 0, 1], abs=1e-4)
+    matte = params(effect_named(text, "Keepframe Fill Matte"))
+    stack = comp(state)["layers"]
+    assert matte["0001"]["value"] == stack.index(text) + 1 and matte["0002"]["value"] == 4
+    skew = params(effect_named(text, "Keepframe Skew"))
+    assert skew["0005"]["value"] == pytest.approx(-6, abs=1e-3)
+    assert skew["0001"]["value"] == [5, -12]
+    assert skew["0002"]["value"] == pytest.approx([5 + 12 * math.tan(math.radians(6)), -12], abs=1e-3)
+    shadow, glow = (params(effect_named(text, f"Keepframe Shadow {i}")) for i in (1, 2))
+    assert shadow["0001"]["value"] == pytest.approx([26 / 255, 10 / 255, 58 / 255, 1], abs=1e-4)
+    assert (shadow["0002"]["value"], shadow["0003"]["value"], shadow["0004"]["value"], shadow["0005"]["value"]) == \
+        pytest.approx((0.7 * 255, math.degrees(math.atan2(4, -5)), math.hypot(4, 5), 4), abs=1e-3)
+    assert (glow["0002"]["value"], glow["0004"]["value"], glow["0005"]["value"]) == pytest.approx((0.9 * 255, 0, 3))
+
+    before = read_state(path)
+    response = sync(path, spec, assets)
+    assert response["writes"] == 0 and response["value"]["unchanged"] == 2, response
+    assert read_state(path) == before
+
+
+def test_stop_colour_change_updates_only_that_effect(tmp_path):
+    spec, assets = styled_spec(tmp_path)
+    path = tmp_path / "ae.json"
+    sync(path, spec, assets)
+    before = read_state(path)
+    changed, _ = styled_spec(tmp_path, end="#ffff00")
+    response = sync(path, changed, assets)
+    assert response["value"]["updated"] == ["kf:background"] and response["value"]["unchanged"] == 1, response
+    after = read_state(path)
+    assert layers(after)["kf:t"] == layers(before)["kf:t"]
+    def visible(effect):   # a keyed property's static value is not shown (AE keeps the last removed key's there)
+        return {m: {k: v for k, v in p.items() if not (k == "value" and p["keys"])} for m, p in params(effect).items()}
+
+    old, new = (visible(effect_named(layers(s)["kf:background"], "Keepframe Gradient")) for s in (before, after))
+    assert [k["value"] for k in new["0004"]["keys"]] == [[0, 1, 0, 1], [1, 1, 0, 1]]
+    assert {m: p for m, p in new.items() if m != "0004"} == {m: p for m, p in old.items() if m != "0004"}
+    old_bg, new_bg = layers(before)["kf:background"], layers(after)["kf:background"]
+    assert [p for p in new_bg["properties"] if p["matchName"] != "ADBE Effect Parade"] == \
+        [p for p in old_bg["properties"] if p["matchName"] != "ADBE Effect Parade"]
+    assert sync(path, changed, assets)["writes"] == 0
+
+
+def test_styled_text_hand_edits_are_detected_and_unstyled_text_upgrades(tmp_path):
+    spec, assets = styled_spec(tmp_path)
+    plain = copy.deepcopy(spec)
+    source = plain["layers"][1]["source"]
+    del source["tracking"], source["stroke"]
+    plain["layers"][1]["effects"] = {"skew": None, "reveal": None}
+    path = tmp_path / "ae.json"
+    sync(path, plain, assets)
+    # A layer synced before the text was styled (or by an older host) takes the styled spec without a hand edit.
+    response = sync(path, spec, assets)
+    assert response["value"]["updated"] == ["kf:t"] and "hand_edited" not in response["value"], response
+    assert sync(path, spec, assets)["writes"] == 0
+    for edit in ("tracking", "strokeWidth", "shadow", "matte"):
+        state = read_state(path)
+        text = layers(state)["kf:t"]
+        if edit == "shadow":
+            params(effect_named(text, "Keepframe Shadow 1"))["0004"]["value"] = 50
+        elif edit == "matte":
+            params(effect_named(text, "Keepframe Fill Matte"))["0002"]["value"] = 1
+        else:
+            prop(text, "ADBE Text Document")["value"][edit] = 9
+        save_state(path, state)
+        response = sync(path, spec, assets)
+        assert response["value"].get("hand_edited") == ["kf:t"], (edit, response)
+        assert sync(path, spec, assets, force=True)["value"]["updated"] == ["kf:t"]
+        assert sync(path, spec, assets)["writes"] == 0
+    # Moving the layer keeps the self matte (AE references the layer, not its index).
+    state = read_state(path)
+    comp(state)["layers"].insert(0, user_copy(layers(state)["kf:background"], "USER"))
+    save_state(path, state)
+    assert sync(path, spec, assets)["writes"] == 0
+
+
+def test_footage_layers_start_at_their_first_visible_frame(tmp_path):
+    from tests.test_ae_spec import _video_scene
+    value = _video_scene(tmp_path)
+    spec = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
+    assets = {name: str(p) for name, p in spec_asset_paths(value, tmp_path).items()}
+    path = tmp_path / "ae.json"
+    result = sync(path, spec, assets)["value"]
+    assert result["ok"] and result["created"] == ["kf:background", "kf:e1"], result
+    state = read_state(path)
+    items = state["project"]["items"]
+    bg, sprite = layers(state)["kf:background"], layers(state)["kf:e1"]
+    assert items[bg["source"] - 1]["mainSource"]["file"] == assets["background.mp4"]
+    assert items[sprite["source"] - 1]["mainSource"]["file"] == assets["e1.mov"]
+    assert items[sprite["source"] - 1]["duration"] == pytest.approx(4 / 30, abs=1e-3)
+    assert items[sprite["source"] - 1]["mainSource"]["alphaMode"] == "STRAIGHT"
+    assert "alphaMode" not in items[bg["source"] - 1]["mainSource"]
+    assert (bg["startTime"], bg["inPoint"], bg["outPoint"]) == pytest.approx((0, 0, 6 / 30))
+    assert (sprite["startTime"], sprite["inPoint"], sprite["outPoint"]) == pytest.approx((2 / 30, 2 / 30, 6 / 30))
+    assert sync(path, spec, assets)["writes"] == 0
+    # A retimed sprite slides its clip; a hand-moved clip is a hand edit.
+    value.elements[0].visible = (3, 5)
+    moved = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
+    assert sync(path, moved, assets)["value"]["updated"] == ["kf:e1"]
+    sprite = layers(read_state(path))["kf:e1"]
+    assert (sprite["startTime"], sprite["inPoint"], sprite["outPoint"]) == pytest.approx((0.1, 0.1, 0.2))
+    state = read_state(path)
+    layers(state)["kf:e1"]["startTime"] = 0.2
+    save_state(path, state)
+    assert sync(path, moved, assets)["value"]["hand_edited"] == ["kf:e1"]
+
+
+def test_postscript_preferred(tmp_path):
+    fonts = [{"family": "Brand Wide", "style": "Bold", "postscript": "BrandWide-Bold"},
+             {"family": "BrandWide AE", "style": "Book", "postscript": "BrandWide-Regular"}]
+    el = element("t", kind="text", text="Sale", font=FontGuess(
+        family_guess="Brand Wide", weight=700, source="uploaded", postscript="BrandWide-Regular"))
+    spec = comp_spec(scene(el), tmp_path, project="demo", scene_id="s1", version="v1", fonts=fonts)
+    assert layers_spec_font(spec) == {"postscript": "BrandWide-Regular", "family": "BrandWide AE", "style": "Book",
+                                      "substituted": False}
+    path = tmp_path / "ae.json"
+    assert sync(path, spec)["value"]["ok"]
+    assert prop(layers(read_state(path))["kf:t"], "ADBE Text Document")["value"]["font"] == "BrandWide-Regular"
+
+
+def layers_spec_font(spec):
+    return next(item for item in spec["layers"] if item["id"] == "kf:t")["source"]["font"]

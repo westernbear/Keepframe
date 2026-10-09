@@ -126,7 +126,7 @@ test('URL policy table and normalization', () => {
 
 test('manifest bundle and extension versions equal EXTENSION_VERSION', () => {
     const xml = fs.readFileSync(path.join(__dirname, '../CSXS/manifest.xml'), 'utf8');
-    assert.equal(core.EXTENSION_VERSION, '1.0.0');
+    assert.equal(core.EXTENSION_VERSION, '1.1.0');   // 1.1: footage layers, Ramp, Drop Shadow, Set Matte, text stroke
     assert.equal(core.HOST_BUILD, 'dev');
     assert.equal(xml.match(/ExtensionBundleVersion="([^"]+)"/)[1], core.EXTENSION_VERSION);
     assert.equal(xml.match(/<Extension Id="com.keepframe.ae.panel" Version="([^"]+)"/)[1], core.EXTENSION_VERSION);
@@ -142,11 +142,11 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     const request = f.requests[0];
     assert.equal(request.path, '/api/ae/pair');
     assert.equal(request.method, 'POST');
-    assert.equal(request.headers['x-keepframe-extension'], '1.0.0');
+    assert.equal(request.headers['x-keepframe-extension'], '1.1.0');
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers['content-type'], 'application/json');
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
-        extension_version: '1.0.0', host_build: 'dev', panel_build: 'dev',
+        extension_version: '1.1.0', host_build: 'dev', panel_build: 'dev',
         os: os.platform() + ' ' + os.release(), fonts: info.fonts}});
     assert.deepEqual(f.scripts, ['kfInfo("true")']);
     assertPrivate(f);
@@ -265,7 +265,7 @@ test('backoff sequence caps at 30 seconds and resets after success', async t => 
     assert.equal(poll.headers['x-keepframe-project'], encodeURIComponent(info.project_name));
     assert.equal(poll.headers['x-keepframe-project-saved'], '1');
     assert.equal(poll.headers.authorization, 'Bearer ' + TOKEN);
-    assert.deepEqual(f.requests[0].body.info, {ae_version: info.ae_version, extension_version: '1.0.0',
+    assert.deepEqual(f.requests[0].body.info, {ae_version: info.ae_version, extension_version: '1.1.0',
         host_build: 'dev', panel_build: 'dev', os: os.platform() + ' ' + os.release(), fonts: info.fonts});
     assertPrivate(f);
 });
@@ -344,6 +344,12 @@ test('test_asset_cache_paths_stay_inside_folder', async t => {
         const result = core.assetCachePath('C:/Documents', 'demo', spec.assets[0], p);
         assert.equal(p.dirname(result), p.resolve('C:/Documents', 'Keepframe', 'demo', 'assets'));
     }
+    // AE footage derived from video plates (H.264) and sprites (ProRes 4444) keeps its extension.
+    for (const name of ['background.mp4', 'e1.mov']) {
+        const result = core.assetCachePath('/docs', 'demo', {name, sha256: sha, bytes: 4}, path);
+        assert.equal(result, path.resolve('/docs', 'Keepframe', 'demo', 'assets', sha + path.extname(name)));
+    }
+    assert.throws(() => core.assetCachePath('/docs', 'demo', {name: 'e1.webm', sha256: sha, bytes: 4}, path), /Invalid asset/);
 });
 
 test('cached matching asset skips download; evalScript string round-trips data and force', async t => {
@@ -1317,7 +1323,7 @@ test('panel glue restores pairing, translates status, pairs, forgets credentials
         assert.equal(p.runs.length, 1);
         assert.equal(p.runs[0].options.token, TOKEN);
         assert.equal(p.browser.document.documentElement.lang, locale.startsWith('ko') ? 'ko' : 'en');
-        assert.equal(p.nodes.version.textContent, locale.startsWith('ko') ? '1.0.0 · 빌드 dev' : '1.0.0 · build dev');
+        assert.equal(p.nodes.version.textContent, locale.startsWith('ko') ? '1.1.0 · 빌드 dev' : '1.1.0 · build dev');
         p.runs[0].deps.setStatus('Connected · studio.example.ts.net');
         assert.equal(p.nodes.status.textContent, locale.startsWith('ko') ?
             '연결됨 · studio.example.ts.net' : 'Connected · studio.example.ts.net');

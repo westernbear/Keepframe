@@ -1203,3 +1203,100 @@ test('final: AE rejects inPoint at or beyond outPoint', () => {
   f.layer.inPoint = 5;
   assert.equal(f.layer.inPoint, 5);
 });
+
+test("task14: Ramp, Drop Shadow and Set Matte parameters, typed colours, self matte that follows the layer", () => {
+  const f = fixture(), c = f.context;
+  const ramp = f.layer.Effects.addProperty("ADBE Ramp");
+  assert.deepEqual(Array.from({length: 7}, (_, i) => ramp.property(i + 1).matchName),
+    ["0001", "0002", "0003", "0004", "0005", "0006", "0007"].map((s) => `ADBE Ramp-${s}`));
+  assert.equal(ramp.property("ADBE Ramp-0001").propertyValueType, c.PropertyValueType.TwoD_SPATIAL);
+  assert.equal(ramp.property("ADBE Ramp-0002").propertyValueType, c.PropertyValueType.COLOR);
+  ramp.property("ADBE Ramp-0002").setValue([1, 0.5, 0, 1]);
+  assert.throws(() => ramp.property("ADBE Ramp-0002").setValue([1, 0, 0]), /dimensions/);
+  assert.throws(() => ramp.property("ADBE Ramp-0004").setValue([2, 0, 0, 1]), /range/);
+  ramp.property("ADBE Ramp-0001").setValuesAtTimes([0, 1], [[0, 0], [10, 20]]);
+  const shadow = f.layer.Effects.addProperty("ADBE Drop Shadow");
+  assert.deepEqual(Array.from({length: 6}, (_, i) => shadow.property(i + 1).name),
+    ["Shadow Color", "Opacity", "Direction", "Distance", "Softness", "Shadow Only"]);
+  const matte = f.layer.Effects.addProperty("ADBE Set Matte3");
+  const from = matte.property("ADBE Set Matte3-0001");
+  assert.equal(from.propertyValueType, c.PropertyValueType.LAYER_INDEX);
+  assert.equal(from.value, 0);
+  assert.throws(() => from.setValue(2), /layer index/);
+  assert.throws(() => from.setValueAtTime(0, 1), /cannot be keyed/);
+  from.setValue(f.layer.index);
+  assert.equal(matte.property("ADBE Set Matte3-0002").value, 4);
+  // Effects reorder; the reference follows its layer through moves, persistence and removal.
+  assert.equal(matte.propertyIndex, 3);
+  matte.moveTo(1);
+  assert.deepEqual([1, 2, 3].map((i) => f.layer.Effects.property(i).matchName), ["ADBE Set Matte3", "ADBE Ramp", "ADBE Drop Shadow"]);
+  assert.equal(ramp.propertyIndex, 2);
+  assert.throws(() => matte.moveTo(4), /index/);
+  const other = f.comp.layers.addText("Other");
+  assert.equal(f.layer.index, 2);
+  assert.equal(from.value, 2);
+  const restored = createAE({state: JSON.parse(JSON.stringify(f.serialize()))}).context.app.project.items[1];
+  const again = restored.layers[2].Effects.property(1).property("ADBE Set Matte3-0001");
+  assert.equal(again.value, 2);
+  restored.layers[1].moveAfter(restored.layers[2]);
+  assert.equal(again.value, 1);
+  restored.layers[1].remove();
+  assert.equal(again.value, 0);
+  assert.equal(other.index, 1);
+});
+
+test("task14: TextDocument stroke fields need applyStroke and survive persistence", () => {
+  const f = fixture(), p = f.layer.property("Text").property("Source Text"), doc = p.value;
+  for (const name of ["strokeColor", "strokeWidth", "strokeOverFill"]) {
+    assert.throws(() => doc[name], /stroke is disabled/);
+  }
+  assert.throws(() => { doc.strokeWidth = 2; }, /stroke is disabled/);
+  doc.applyStroke = true; doc.strokeColor = [0.2, 0.4, 0.6]; doc.strokeWidth = 4; doc.strokeOverFill = false;
+  doc.tracking = 120;
+  assert.throws(() => { doc.strokeWidth = -1; }, /strokeWidth/);
+  assert.throws(() => { doc.strokeOverFill = 1; }, /strokeOverFill/);
+  p.setValue(doc);
+  const restored = createAE({state: f.serialize()}).context.app.project.items[1].layers[1].property("Text").property("Source Text").value;
+  assert.deepEqual([restored.tracking, restored.strokeWidth, restored.strokeOverFill], [120, 4, false]);
+  assert.deepEqual(Array.from(restored.strokeColor), [0.2, 0.4, 0.6].map(Math.fround));
+});
+
+test("task14: video footage has its file's duration; layers clamp to it and slide with startTime", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-footage-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const mvhd = (version, timescale, duration) => {
+    const body = Buffer.alloc(version ? 32 : 20);
+    body[0] = version;
+    if (version) { body.writeUInt32BE(timescale, 20); body.writeBigUInt64BE(BigInt(duration), 24); }
+    else { body.writeUInt32BE(timescale, 12); body.writeUInt32BE(duration, 16); }
+    const header = Buffer.alloc(8); header.writeUInt32BE(8 + body.length); header.write("mvhd", 4);
+    return Buffer.concat([Buffer.from("....ftypisom"), header, body]);
+  };
+  fs.writeFileSync(path.join(dir, "a.mp4"), mvhd(0, 15360, 3072));
+  fs.writeFileSync(path.join(dir, "b.mov"), mvhd(1, 600, 80));
+  fs.writeFileSync(path.join(dir, "c.mp4"), "no movie header");
+  const f = fixture(), c = f.context;
+  const plate = c.app.project.importFile(new c.ImportOptions(new c.File(path.join(dir, "a.mp4"))));
+  const clip = c.app.project.importFile(new c.ImportOptions(new c.File(path.join(dir, "b.mov"))));
+  assert.equal(plate.duration, 0.2); assert.ok(Math.abs(clip.duration - 80 / 600) < 1e-9);
+  assert.throws(() => c.app.project.importFile(new c.ImportOptions(new c.File(path.join(dir, "c.mp4")))), /footage/);
+  const layer = f.comp.layers.add(clip);
+  assert.deepEqual([layer.startTime, layer.inPoint, layer.outPoint], [0, 0, clip.duration]);
+  layer.startTime = 0.5;
+  assert.deepEqual([layer.inPoint, layer.outPoint], [0.5, 0.5 + clip.duration]);
+  layer.inPoint = 0.1; layer.outPoint = 9;
+  assert.deepEqual([layer.inPoint, layer.outPoint], [0.5, 0.5 + clip.duration]);
+  const restored = createAE({state: JSON.parse(JSON.stringify(f.serialize()))}).context.app.project;
+  assert.ok(Math.abs(restored.items[3].duration - 80 / 600) < 1e-9);
+  assert.equal(restored.items[1].layers[1].startTime, 0.5);
+});
+
+test("task14: the ES3 checker rejects regex flags and groups ExtendScript lacks", () => {
+  for (const [source, rule] of [["var r = /a/u;", "regex flag"], ["var r = /a/s;", "regex flag"], ["var r = /a/y;", "regex flag"],
+    ["var r = /(?<=a)b/;", "regex lookbehind or named group"], ["var r = /(?<n>a)/;", "regex lookbehind or named group"],
+    ["var r = /(?<!a)b/;", "regex lookbehind or named group"]]) {
+    assert.throws(() => checkES3Syntax(source), new RegExp(rule));
+  }
+  checkES3Syntax("var r = /^(text|footage)$/gi, s = /\\.(mp4|mov)$/i, q = /(?:a)(?=b)(?!c)/m;");
+  checkES3Syntax(fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8"));
+});

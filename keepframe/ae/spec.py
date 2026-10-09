@@ -10,6 +10,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from . import footage
+from ..fonts.raster import bounded_style, hex_rgb
 from ..ir.paths import scene_asset_path
 from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
 from ..ir.tracks import eval_track, eval_z
@@ -166,21 +168,30 @@ def _props(tracks, fix, fps, warnings, eid):
             "opacity": _scalar(tracks["opacity"], fps, 100)}
 
 
-def _effects(tracks, fps, warnings, eid):
+def _effects(tracks, fps, warnings, eid, shear_deg=0.0):
+    """Skew and reveal. A styled text's shear (CSS skewX(−shear) about its first baseline, the text layer's y = 0)
+    folds into the skew: tan(skew) = tan(skx)·sy/sx − tan(shear); `baseline_shear` moves the pivot to y = 0."""
     effects = {"skew": None, "reveal": None}
     if any(key.v != 0 for key in tracks["sky"].keys):
         warnings.append(f"y skew of {eid} is not represented")
-    if any(key.v != 0 for key in tracks["skx"].keys):
-        frames = sorted({key.t for prop in ("skx", "sx", "sy") for key in tracks[prop].keys})
+    baseline = -math.tan(math.radians(shear_deg)) if shear_deg else 0.0
+    skewed = any(key.v != 0 for key in tracks["skx"].keys)
+    if skewed or baseline:
+        frames = sorted({key.t for prop in ("skx", "sx", "sy") for key in tracks[prop].keys}) if skewed \
+            else [tracks["skx"].keys[0].t]
         samples = []
         for frame in frames:
             skew, sx, sy = (eval_track(tracks[prop], frame) for prop in ("skx", "sx", "sy"))
             shear = math.tan(math.radians(skew)) * sy
+            if baseline:
+                shear += baseline * sx
             if sx == 0 and shear != 0:
                 raise ValueError(f"x scale of {eid} is zero; skew cannot be represented")
             angle = math.degrees(math.atan(shear / sx)) if sx else 0
             samples.append((frame, angle, None))
         effects["skew"] = {"skew": _keys(samples, fps), "axis": 0}
+        if baseline:
+            effects["skew"]["baseline_shear"] = baseline
     if any(key.v != 1 for key in tracks["reveal"].keys):
         effects["reveal"] = {"completion": _scalar(tracks["reveal"], fps, -100, 100),
                              "angle": 270, "feather": 0}
@@ -254,45 +265,166 @@ def image_format(path):
     raise ValueError(f"{path.name} is not a supported image (PNG, JPEG or WebP)")
 
 
-def _bg_image(background) -> str | None:
+def _rgba(value) -> list[float]:
+    return [channel / 255 for channel in hex_rgb(value)] + [1]
+
+
+def _ramp_points(g, w, h):
+    """Start/end of an AE Ramp drawing the CSS gradient `g` over w×h: the gradient line between its 2 stops."""
+    o0, o1 = g.stops[0].offset, g.stops[1].offset
+    if g.kind == "radial":
+        cx, cy, r = g.center[0] * w, g.center[1] * h, g.radius * math.hypot(w, h) / 2
+        return [cx, cy], [cx + r * o1, cy]
+    th = math.radians(g.angle)
+    dx, dy = math.sin(th), -math.cos(th)
+    length = abs(w * dx) + abs(h * dy)
+    x0, y0 = w / 2 - dx * length / 2, h / 2 - dy * length / 2
+    return [x0 + dx * length * o0, y0 + dy * length * o0], [x0 + dx * length * o1, y0 + dy * length * o1]
+
+
+def _ramp(keys, w, h, what):
+    """ADBE Ramp keys for [(frame, Gradient)], or (None, warning) when a Ramp cannot draw them."""
+    if any(len(g.stops) != 2 for _, g in keys):
+        return None, f"{what} has more than 2 stops"
+    if len({g.kind for _, g in keys}) != 1:
+        return None, f"{what} changes kind over time"
+    ramp = {"shape": 2 if keys[0][1].kind == "radial" else 1, "start": [], "end": [], "start_color": [], "end_color": []}
+    for frame, g in keys:
+        start, end = _ramp_points(g, w, h)
+        for name, value in (("start", start), ("end", end), ("start_color", _rgba(g.stops[0].color)),
+                            ("end_color", _rgba(g.stops[1].color))):
+            ramp[name].append([frame, value, None, None])
+    if ramp["shape"] == 2 and any(g.stops[0].offset > 0 for _, g in keys):
+        return ramp, f"{what} inner radial stop not exported"
+    return ramp, None
+
+
+def _dims(path):
+    if image_format(path) == "png":
+        return png_size(path)
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{path.name} is not a valid image: {exc}") from None
+
+
+def _plan_background(scene, scene_dir):
+    """How the background is exported: ("footage", clip) | ("ramp", effect) | ("image", value) | ("solid", hex),
+    plus warnings. Video and >2-stop gradients fall back to their poster, else a flat colour."""
+    background = scene.background
     if background.kind == "image":
-        return background.value
-    return background.poster if background.kind in {"video", "gradient"} else None
+        return "image", background.value, []
+    if background.kind == "video":
+        try:
+            clip = footage.derive(scene_asset_path(scene_dir, background.value), "plate", scene.fps, scene.size)
+            return "footage", clip, []
+        except footage.FootageError as exc:
+            reason = f"video background exported as {{}} ({exc})"
+    elif background.kind == "gradient":
+        keys = [(key.t, key.gradient) for key in background.gradient_keys] or [(0, background.gradient)]
+        ramp, warning = _ramp(keys, *scene.size, "gradient background")
+        if ramp is not None:
+            return "ramp", ramp, [warning] if warning else []
+        reason = warning + "; exported as {}"
+    else:
+        return "solid", background.value, []
+    if background.poster:
+        return "image", background.poster, [reason.format("its poster image")]
+    return "solid", background.value if background.kind == "gradient" else "#000000", [reason.format("a flat colour")]
+
+
+def _sprite_clip(el, scene_dir, fps):
+    """The derived footage of a video sprite (texture = poster), or (None, code)."""
+    try:
+        texture = scene_asset_path(scene_dir, el.canonical.texture)
+        return footage.derive(scene_asset_path(scene_dir, el.canonical.video), "sprite", fps, _dims(texture)), None
+    except footage.FootageError as exc:
+        return None, str(exc)
 
 
 def spec_asset_paths(scene: Scene, scene_dir: Path) -> dict[str, Path]:
-    """Map only exported asset names to their scene-contained source files."""
+    """Map only exported asset names to their scene-contained source files (derived AE footage for videos)."""
     sources = []
-    if _bg_image(scene.background):
-        sources.append((_bg_image(scene.background), "background", None))
+    kind, value, _ = _plan_background(scene, scene_dir)
+    if kind == "image":
+        sources.append((_asset_source(value, "background", scene_dir), None))
+    elif kind == "footage":
+        sources.append(((value, "background.mp4"), None))
     for el in scene.elements:
         if el.kind == "text" and el.canonical.font is not None:
             continue
         if el.kind == "3d" and el.canonical.model:
-            sources.append((el.canonical.model, el.id, "glb"))
+            sources.append((_asset_source(el.canonical.model, el.id, scene_dir, "glb"), None))
         elif el.canonical.texture:
-            sources.append((el.canonical.texture, el.id, None))
+            clip = _sprite_clip(el, scene_dir, scene.fps)[0] if el.canonical.video else None
+            sources.append((_asset_source(el.canonical.texture, el.id, scene_dir, "mov"), clip) if clip
+                           else (_asset_source(el.canonical.texture, el.id, scene_dir), None))
     assets, paths = {}, {}
-    for value, sid, extension in sources:
-        path, name = _asset_source(value, sid, scene_dir, extension)
+    for (path, name), clip in sources:
+        path = clip or path
         _asset(path, name, assets)  # Apply the spec's collision check too.
         paths[name] = path
     return paths
 
 
-def _image(value, sid, size, anchor, scene_dir, assets):
+def _placement(width, height, size, anchor, pad=0.0):
+    """scale_fix and pixel anchor mapping a width×height picture's box (inside `pad`, R41) onto `size`."""
+    pad = pad if pad > 0 and min(width, height) - 2 * pad >= 1 else 0.0
+    if not pad:
+        return [size[0] / width, size[1] / height], [anchor[0] * width, anchor[1] * height]
+    w, h = width - 2 * pad, height - 2 * pad
+    return [size[0] / w, size[1] / h], [pad + anchor[0] * w, pad + anchor[1] * h]
+
+
+def _image(value, sid, size, anchor, scene_dir, assets, pad=0.0):
     path, name = _asset_source(value, sid, scene_dir)
-    if name.endswith(".png"):
-        width, height = png_size(path)
-    else:
-        try:
-            with Image.open(path) as image:
-                width, height = image.size
-        except (OSError, ValueError) as exc:
-            raise ValueError(f"{path.name} is not a valid image: {exc}") from None
-    name = _asset(path, name, assets)
-    return ({"asset": name, "scale_fix": [size[0] / width, size[1] / height]},
-            [anchor[0] * width, anchor[1] * height])
+    fix, anchor = _placement(*_dims(path), size, anchor, pad)
+    return {"asset": _asset(path, name, assets), "scale_fix": fix}, anchor
+
+
+def _footage(clip, sid, size, anchor, poster, scene_dir, assets, start_time):
+    """A footage layer source: placed by its poster's size (the clip is scaled to it), starting at start_time."""
+    width, height = _dims(scene_asset_path(scene_dir, poster)) if poster else size
+    fix, anchor = _placement(width, height, size, anchor)
+    name = re.sub(r"[^A-Za-z0-9_-]", "_", sid) + clip.suffix
+    return {"asset": _asset(clip, name, assets), "scale_fix": fix, "start_time": start_time}, anchor
+
+
+def _text_style(el, source, effects, warnings):
+    """TextDocument tracking/stroke, Drop Shadows and the Ramp + Set Matte fill of styled text (R41: effects
+    may reach past the box; AE draws them past it)."""
+    canonical = el.canonical
+    style = bounded_style(canonical.style, (canonical.width, canonical.height))
+    strokes = [e for e in style.effects if e.kind == "stroke" and e.width > 0]
+    source["tracking"] = style.tracking_em * 1000
+    source["stroke"] = None
+    if strokes:
+        source["stroke"] = {"color": "#{:02x}{:02x}{:02x}".format(*hex_rgb(strokes[0].color)),
+                            "width": 2 * strokes[0].width, "over_fill": False}
+        if len(strokes) > 1:
+            warnings.append(f"text {el.id} keeps only its first stroke")
+        if strokes[0].opacity < 1:
+            warnings.append(f"text {el.id} stroke opacity not exported")
+    shadows = [{"color": _rgba(e.color), "opacity": e.opacity * 100,
+                "direction": math.degrees(math.atan2(e.dx, -e.dy + 0.0)) % 360 if e.kind == "shadow" else 0,
+                "distance": math.hypot(e.dx, e.dy) if e.kind == "shadow" else 0, "softness": e.blur}
+               for e in style.effects if e.kind in ("shadow", "glow")]
+    if shadows:
+        effects["shadows"] = shadows
+    if style.fill is not None:
+        ramp, warning = _ramp([(0, style.fill)], canonical.width, canonical.height, f"text {el.id} gradient fill")
+        if ramp is not None:
+            effects["fill"] = ramp
+            if warning:
+                warnings.append(warning)
+            if strokes:   # Set Matte takes the whole text alpha, the TextDocument stroke's ring included
+                warnings.append(f"text {el.id} stroke takes the gradient fill in AE")
+        else:
+            warnings.append(warning + "; exported as a flat colour")
+    if style.fade is not None:
+        warnings.append("text fade not exported")
+    return style.shear_deg
 
 
 def _layer(el: Element, scene_dir, assets, fps, fonts, label):
@@ -301,12 +433,15 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
     warnings = []
     kind, source, fix = "null", None, [1, 1]
     anchor = [canonical.anchor[0] * canonical.width, canonical.anchor[1] * canonical.height]
+    styled, shear = {}, 0.0
     if el.kind == "text" and canonical.font is not None:
         kind, anchor = "text", None
         guess = canonical.font
         source = {"text": canonical.text or "", "font": _font(guess, fonts, warnings, canonical.text or ""),
                   "size_px": guess.size_px, "color": _color(canonical.color or "#000"),
                   "anchor_fraction": list(canonical.anchor), "box": [canonical.width, canonical.height]}
+        if canonical.style is not None:
+            shear = _text_style(el, source, styled, warnings)
     elif el.kind == "3d" and canonical.model:
         kind = "model"
         source = {"asset": _asset(*_asset_source(canonical.model, sid, scene_dir, "glb"), assets),
@@ -315,12 +450,18 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
         if el.kind == "3d":
             warnings.append("3D candidate")
         if canonical.texture:
-            kind = "image"
-            source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
-                                    canonical.anchor, scene_dir, assets)
+            clip, code = _sprite_clip(el, scene_dir, fps) if canonical.video else (None, None)
+            if clip is not None:
+                kind = "footage"
+                source, anchor = _footage(clip, sid, (canonical.width, canonical.height), canonical.anchor,
+                                          canonical.texture, scene_dir, assets, el.visible[0] / fps)
+            else:
+                kind = "image"
+                source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
+                                        canonical.anchor, scene_dir, assets, canonical.texture_pad)
             fix = source["scale_fix"]
-            if canonical.video:   # ponytail: AE footage lands with Task 14
-                warnings.append(f"{sid} video sprite exported as its poster image")
+            if code:
+                warnings.append(f"{sid} video sprite exported as its poster image ({code})")
             if el.kind == "text":
                 source["text"] = canonical.text or ""
                 warnings.append(f"text {sid} kept as an image (no font detected)")
@@ -333,27 +474,28 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
     return {"id": f"kf:{el.id}", "kind": kind, "name": f"{el.id} · {el.label or el.kind}",
             "label": label, "in": el.visible[0], "out": el.visible[1],
             "source": source, "anchor": anchor, "props": props,
-            "effects": _effects(tracks, fps, warnings, el.id), "warnings": warnings}
+            "effects": {**_effects(tracks, fps, warnings, el.id, shear), **styled}, "warnings": warnings}
 
 
 def _background(scene, scene_dir, assets):
     background = scene.background
-    kind, fix, anchor, warnings = "solid", [1, 1], [0, 0], []
-    image = _bg_image(background)
-    if image:
-        kind = "image"
-        source, anchor = _image(image, "background", scene.size, (0, 0), scene_dir, assets)
+    fix, anchor, effects = [1, 1], [0, 0], {"skew": None, "reveal": None}
+    kind, value, warnings = _plan_background(scene, scene_dir)
+    if kind == "image":
+        source, anchor = _image(value, "background", scene.size, (0, 0), scene_dir, assets)
         fix = source["scale_fix"]
-        if background.kind != "image":
-            warnings.append(f"{background.kind} background exported as its poster image")
+    elif kind == "footage":
+        source, anchor = _footage(value, "background", scene.size, (0, 0), None, scene_dir, assets, 0)
+        fix = source["scale_fix"]
     else:
-        source = {"color": _color(background.value if background.kind in {"color", "gradient"} else "#000000")}
-        if background.kind != "color":
-            warnings.append(f"{background.kind} background exported as a flat colour")
+        source = {"color": _color(background.value if kind == "ramp" else value)}
+        if kind == "ramp":
+            effects["gradient"] = value
+        kind = "solid"
     return {"id": "kf:background", "kind": kind, "name": f"background · {background.kind}", "label": None,
             "in": 0, "out": scene.frames - 1, "order": 0, "source": source, "anchor": anchor,
             "props": _props(_tracks({}), fix, scene.fps, [], "background"),
-            "effects": {"skew": None, "reveal": None}, "warnings": warnings}
+            "effects": effects, "warnings": warnings}
 
 
 def comp_spec(scene: Scene, scene_dir: Path, *, project: str, scene_id: str, version: str,
