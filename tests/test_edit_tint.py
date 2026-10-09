@@ -227,3 +227,27 @@ def test_apply_cancel_and_colour_background_tint(tmp_path):
     flat = _scene(Background(kind="color", value="#ffffff"))
     out = apply_edit(flat, sd, [Target(property="background", value=NAVY)], {"background": "tint"}, None)
     assert out.background == Background(kind="color", value=NAVY, confidence=1.0)
+
+
+@pytest.mark.parametrize("payload", [b"not a picture", None])
+def test_tint_of_an_unreadable_picture_fails_with_a_code(tmp_path, payload):
+    """A missing or corrupt picture: TintError('tint_failed'), no asset written, no exception text."""
+    from keepframe.edit.tint import TintError, tint_background
+    sd = tmp_path / "s1"
+    (sd / "assets").mkdir(parents=True)
+    if payload is not None:
+        (sd / "assets" / "background.png").write_bytes(payload)
+    with pytest.raises(TintError) as err:
+        tint_background(Background(kind="image", value="assets/background.png"), sd, NAVY)
+    assert err.value.code == "tint_failed" and str(err.value) == "tint_failed"
+    assert sorted(p.name for p in (sd / "assets").iterdir()) == (["background.png"] if payload else [])
+
+
+def test_tint_refuses_a_huge_picture_before_decoding(tmp_path, monkeypatch):
+    from keepframe.edit import tint
+    sd = tmp_path / "s1"
+    _write(sd / "assets" / "background.png", _picture())
+    monkeypatch.setattr(tint, "MAX_PIXELS", W * H - 1)
+    monkeypatch.setattr(tint.cv2, "imread", lambda *_a, **_k: pytest.fail("decoded a picture over the cap"))
+    with pytest.raises(tint.TintError):
+        tint.tint_background(Background(kind="image", value="assets/background.png"), sd, NAVY)

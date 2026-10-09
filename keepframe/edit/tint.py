@@ -163,11 +163,13 @@ def _gradients(bg: Background) -> list[Gradient]:
 
 
 def _read_rgb(scene_dir: Path, rel: str) -> np.ndarray:
+    from PIL import Image
     path = scene_asset_path(Path(scene_dir), rel)
+    with Image.open(path) as im:   # the header first: a huge picture is refused before it is decoded
+        if im.size[0] * im.size[1] > MAX_PIXELS:
+            raise TintError("tint_failed")
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if img is None:
-        raise TintError("tint_failed")
-    if img.shape[0] * img.shape[1] > MAX_PIXELS:
         raise TintError("tint_failed")
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -252,13 +254,13 @@ def tint_background(bg: Background, scene_dir: Path, target_hex: str, *, size: t
             if bg.poster:
                 try:
                     update["poster"] = _new_asset(scene_dir, tint_rgb(_read_rgb(scene_dir, bg.poster), target, stats))
-                except (TintError, OSError, ValueError) as e:   # the gradient is the background; the still follows it
+                except Exception as e:   # the gradient is the background; the still follows it
                     log.warning("gradient poster not tinted: %s", describe(e))
                     update["poster"] = None
             out = bg.model_copy(update=update)
     except TintError:
         raise
-    except (OSError, ValueError, cv2.error) as e:
+    except Exception as e:   # fail soft: no tint, nothing written, a code for the client
         log.warning("background tint failed: %s", describe(e))
         raise TintError("tint_failed") from None
     log.info("background tint %.2fs kind=%s", time.perf_counter() - t0, bg.kind)
