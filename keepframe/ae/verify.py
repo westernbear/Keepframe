@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 
 from ..compose.composer import compose
+from ..fonts.css import FINAL_WAIT_S
+from ..fonts.registry import FontRegistry
 from ..ir.schema import Scene
 from ..render.renderer import render
 
@@ -56,7 +58,10 @@ def verify(
     masked_errors = {eid: 0.0 for eid in masked}
     with tempfile.TemporaryDirectory(prefix="keepframe-ae-verify-") as tmp:
         tmp = Path(tmp)
-        html = compose(scene, scene_dir, tmp / "composition.html")
+        # compared against AE like a final render: the project's fonts, waited for, never a fallback (R39)
+        root = Path(scene_dir).parent.parent if Path(scene_dir).parent.name == "scenes" else None
+        html = compose(scene, scene_dir, tmp / "composition.html", fonts=FontRegistry.for_project(root),
+                       font_wait=FINAL_WAIT_S)
         rendered = render(html, scene, tmp / "render", frames=frames, probe=True)
         for i, frame in enumerate(frames):
             ae_path = Path(ae_frames[frame])

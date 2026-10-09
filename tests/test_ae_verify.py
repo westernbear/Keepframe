@@ -24,7 +24,7 @@ def _png(path, image):
 def _stub_render(monkeypatch, images, bboxes=None):
     work_paths = []
 
-    def compose(scene, scene_dir, out_html):
+    def compose(scene, scene_dir, out_html, **_):
         out_html.write_text("synthetic composition")
         work_paths.append(out_html)
         return out_html

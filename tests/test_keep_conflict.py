@@ -95,7 +95,7 @@ def test_successful_generated_candidate_does_not_report_previous_keep_release(tm
             generated.append(data)
             return AssetResponse("image/png", data)
 
-    def apply_candidate(scene, directory, items, choices, attachment):
+    def apply_candidate(scene, directory, items, choices, attachment, **_):
         assert items[0].property == "texture"
         out = _shifted(scene) if attachment == b"candidate-1" else scene.model_copy(deep=True)
         assets = directory / "assets"
@@ -113,7 +113,7 @@ def test_successful_generated_candidate_does_not_report_previous_keep_release(tm
 
     monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
     monkeypatch.setattr("keepframe.edit.agent.apply_edit", apply_candidate)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda scene, directory, out: out)
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda scene, directory, out, **_: out)
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *args, **kwargs: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", verify_candidate)
     done = edit(root, "s1", "generate image", confirm=True, choices={"keep_violation": "release_keep"},

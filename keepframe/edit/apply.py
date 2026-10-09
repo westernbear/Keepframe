@@ -15,6 +15,7 @@ from ..ir.synth import make_text_texture
 from ..assets import AssetAPIError, validate_glb
 from ..fonts.raster import MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts
 from ..fonts.registry import FontRegistry
+from ..fonts.upload import pin_face
 from ..log import get
 from .retime import apply_timing
 from .svgraster import rasterize_svg
@@ -186,6 +187,17 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 face = fonts.face(t.value)
                 update.update(source=face.source if face else "generic", file=None, postscript=None, fallback=None,
                               fallback_weight=None, fallback_scale=1.0)
+            family = update.get("family_guess", base.family_guess)
+            face = fonts.face(family, update.get("weight", base.weight))
+            if face is not None and face.source == "uploaded":
+                # the uploaded face for this family and weight, copied into the scene (plans pin FontGuess.file)
+                try:
+                    pinned = pin_face(scene_dir, face)
+                except (OSError, ValueError) as e:   # the registry still resolves the family
+                    log.warning("uploaded font %s not copied into the scene: %s", family, e)
+                    pinned = None
+                update.update(source="uploaded", file=pinned,
+                              postscript=face.postscript if face.weight_range[0] == face.weight_range[1] else None)
             el.canonical.font = base.model_copy(update=update)
             _apply_text(el, scene_dir, el.canonical.text, choice_of.get("overflow") or choice_of.get(el.id), fonts)
         elif t.property == "color":

@@ -323,11 +323,11 @@ def test_edit_preserves_plate_and_promotes_only_element_assets(analyzed_plate, m
     assets = {p.name for p in (sd / "assets").iterdir()}
     composed = []
 
-    def candidate_compose(edited, directory, out):
+    def candidate_compose(edited, directory, out, **kw):
         assert edited.background == scene.background
         assert (directory / edited.background.value).read_bytes() == before
         assert all(el.canonical.texture != edited.background.value for el in edited.elements)
-        result = compose(edited, directory, out)
+        result = compose(edited, directory, out, **kw)
         assert 'url("data:image/png;base64,' in result.read_text()
         composed.append(result)
         return result

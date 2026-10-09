@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from ..assets import validate_glb
-from ..fonts.css import font_face_css, text_html
+from ..fonts.css import FontEmbedError, font_face_css, text_html
 from ..fonts.registry import FontRegistry
 from ..log import get
 from ..ir.gradient import gradient_at, gradient_css
@@ -127,9 +127,11 @@ def _styled_text(c, scene_dir: Path, fonts: FontRegistry | None) -> str | None:
         return None
 
 
-def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry) -> str:
+def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: float | None = None) -> str:
     try:
-        css = font_face_css(scene, scene_dir, fonts)
+        css = font_face_css(scene, scene_dir, fonts, wait=font_wait, strict=font_wait is not None)
+    except FontEmbedError:   # a final render never bakes a fallback font (R39)
+        raise
     except Exception as e:   # fail soft: system fonts instead of the embedded faces
         log.warning("font embedding failed (%s)", e)
         css = ""
@@ -137,8 +139,11 @@ def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry) -> str:
     return f"<style>\n{css}\n</style><script>for(const f of document.fonts)f.load();</script>" if css else ""
 
 
-def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None) -> Path:
-    """`fonts`: the project's registry (uploads); bundled fonts only when None."""
+def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None,
+            font_wait: float | None = None) -> Path:
+    """`fonts`: the project's registry (uploads); bundled fonts only when None. `font_wait`: final renders wait this
+    long (css.FINAL_WAIT_S) for every embedded face and raise css.FontEmbedError instead of falling back; previews
+    (None) wait css.SUBSET_WAIT_S and embed what is ready."""
     scene_dir, out_html = Path(scene_dir), Path(out_html)
     fonts = fonts or FontRegistry()
     elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
@@ -161,7 +166,7 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistr
         "{{CUSTOMEASE_JS}}": (VENDOR / "CustomEase.min.js").read_text(),
         "{{THREE_JS}}": (VENDOR / "three-0.128.0.min.js").read_text(),
         "{{GLTFLOADER_JS}}": (VENDOR / "GLTFLoader-0.128.0.js").read_text(),
-        "{{FONTS}}": _fonts_block(scene, scene_dir, fonts),
+        "{{FONTS}}": _fonts_block(scene, scene_dir, fonts, font_wait),
         "{{ELEMENTS}}": elements,
         "{{SCENE_JSON}}": scene_json,
     }.items():

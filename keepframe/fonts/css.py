@@ -43,6 +43,7 @@ SUBSET_VERSION = "1"
 # SUBSET_RETRY_S (R36).
 SUBSET_WORKERS = 2
 SUBSET_WAIT_S = 20.0
+FINAL_WAIT_S = 300.0               # final renders wait this long and fail rather than fall back (R39)
 SUBSET_RETRY_S = 600.0
 MAX_PENDING = 32
 MAX_SOURCE_BYTES = 20 * 2**20      # uploads are <= 20 MiB (Task 11); bundled files <= 5.9 MB
@@ -194,6 +195,10 @@ def _source_sha(face: FontFace) -> str:
 
 class SubsetUnavailable(RuntimeError):
     """No subset now (too large, failed recently, busy or still running): the face is not embedded."""
+
+
+class FontEmbedError(ValueError):
+    """A final render's face could not be embedded: the render stops instead of baking a fallback font (R39)."""
 
 
 _STATE = threading.Lock()
@@ -351,8 +356,9 @@ def _evict(root: Path) -> None:
 
 
 def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry | None = None, *,
-                  cache_dir: Path | str | None = None) -> str:
-    """@font-face rules for every bundled/uploaded face the scene's styled text uses ("" when none)."""
+                  cache_dir: Path | str | None = None, wait: float | None = None, strict: bool = False) -> str:
+    """@font-face rules for every bundled/uploaded face the scene's styled text uses ("" when none), waiting at most
+    `wait` (SUBSET_WAIT_S) for all of them; `strict` (final renders) raises FontEmbedError for a face not embedded."""
     registry = registry or FontRegistry()
     used: dict[tuple, dict] = {}
     for el in scene.elements:
@@ -388,7 +394,7 @@ def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry |
             requests.append(_request(entry["face"], entry["cps"], entry["wght"], cache_dir))
         except Exception as e:
             requests.append(e)
-    deadline = time.monotonic() + SUBSET_WAIT_S
+    deadline = time.monotonic() + (SUBSET_WAIT_S if wait is None else wait)
     rules = []
     for entry, got in zip(entries, requests):
         try:
@@ -396,6 +402,9 @@ def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry |
                 raise got
             data = _wait(got, deadline - time.monotonic())
         except Exception as e:   # never embed a whole (possibly uploaded, megabytes) file: the browser falls back
+            if strict:
+                raise FontEmbedError(f"font {entry['face'].family} could not be embedded for the final render ({e}); "
+                                     "nothing was rendered") from e
             log.warning("font %s not embedded (%s)", entry["face"].family, e)
             continue
         rules.append(f"@font-face{{font-family:{entry['alias']};src:url(data:font/woff2;base64,{base64.b64encode(data).decode('ascii')});"

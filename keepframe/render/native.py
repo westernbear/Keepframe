@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from keepframe.compose.composer import compose
+from keepframe.fonts.css import FINAL_WAIT_S, FontEmbedError
+from keepframe.fonts.registry import FontRegistry
 from keepframe.ir.store import load_project, load_scene
 from keepframe.jobs.spec import JobSpec
 
@@ -452,7 +454,11 @@ def _stage_native(root: Path, plan):
         staged_scene = staged_snapshot / relative_scene
         composition = staged_snapshot / "composition.html"
         _safe_path(staged_snapshot, staged_scene, "staged scene file", kind="file")
-        compose(load_scene(staged_scene), staged_scene.parent, composition)
+        try:   # a final render waits for its fonts and never bakes a fallback (R39)
+            compose(load_scene(staged_scene), staged_scene.parent, composition, fonts=FontRegistry.for_project(root),
+                    font_wait=FINAL_WAIT_S if plan.mode == "final" else None)
+        except FontEmbedError as exc:
+            raise PlanConflict(str(exc)) from exc
         _safe_path(staged_snapshot, composition, "staged composition", kind="file")
         manifest = _write_stage_manifest(staging, staged_snapshot, plan, relative_scene, source_present=source_present)
         _verify_stage_files(root, plan, staging, staged_snapshot, manifest, staged_output, relative_scene, scene=staged_scene, html=composition)

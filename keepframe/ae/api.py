@@ -20,6 +20,7 @@ from .spec import comp_spec, comp_spec_json, spec_asset_paths
 from .verify import sample_frames, verify
 from ..log import get
 from ..ir.store import load_project, load_scene, scene_dir
+from ..web.bodies import LengthError, content_length
 
 
 EXTENSION_PROTOCOL_MAJOR = 1
@@ -41,24 +42,11 @@ def _error(handler, status, message):
 
 
 def _length(handler, cap, *, required=False):
-    lengths = handler.headers.get_all("Content-Length") or []
-    if not lengths and required:
-        _error(handler, 411, "Content-Length is required")
-        return None
-    if len(lengths) > 1 or handler.headers.get("Transfer-Encoding"):
-        _error(handler, 400, "invalid Content-Length")
-        return None
     try:
-        length = int(lengths[0]) if lengths else 0
-        if length < 0:
-            raise ValueError
-    except ValueError:
-        _error(handler, 400, "invalid Content-Length")
+        return content_length(handler.headers, cap, required=required)
+    except LengthError as exc:
+        _error(handler, exc.status, str(exc))
         return None
-    if length > cap:
-        _error(handler, 413, "request body is too large")
-        return None
-    return length
 
 
 def _bad_constant(value):

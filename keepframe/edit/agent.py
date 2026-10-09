@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 from ..compose.composer import compose
+from ..fonts.registry import FontRegistry
 from ..render.renderer import render
 from ..ir.schema import Scene, Version
 from ..ir.paths import scene_asset_path
@@ -144,6 +145,7 @@ def edit(
     root = Path(root)
     scene, parent = _load(root, scene_id, version)
     sd = scene_dir(root, scene_id)
+    fonts = FontRegistry.for_project(root)   # uploads > bundled for the text rasters and the composition
     parsed = Intent.model_validate(intent) if intent is not None else interpret(
         prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
@@ -225,7 +227,7 @@ def edit(
             if (sd / "assets").is_dir():
                 shutil.copytree(sd / "assets", candidate / "assets")
             try:
-                edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment)
+                edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment, fonts=fonts)
             except AssetAPIError as exc:
                 return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, attempts=attempts_run, error=exc.code)
             except ValueError as exc:
@@ -252,7 +254,7 @@ def edit(
                 break
             seen.add(digest)
             attempts_run += 1
-            html = compose(edited, candidate, candidate / "composition.html")
+            html = compose(edited, candidate, candidate / "composition.html", fonts=fonts)
             probes = render(html, edited, candidate / "render")
             last_rep = verify(edited, candidate, render_result=probes, reference=expected, reference_dir=sd)
             if _passed(last_rep):

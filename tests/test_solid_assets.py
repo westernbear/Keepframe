@@ -167,7 +167,7 @@ def test_explicit_edit_has_its_own_two_request_job_budget(tmp_path, monkeypatch)
 
     sd = tmp_path / "scenes/s1"
     scene = pending_scene(sd, count=5)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p, **_: d / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(schema_ok=True, passed=False))
     with asset_server() as (url, calls):
@@ -217,7 +217,7 @@ def test_reference_edit_waits_for_confirm_and_sends_crop(tmp_path, monkeypatch, 
     sd = tmp_path / "scenes" / "s1"
     scene = pending_scene(sd)
     init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [100, 80]}, scene)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p, **_: d / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
         schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
@@ -381,7 +381,7 @@ def test_reference_edit_of_solid_obeys_fidelity_guard(tmp_path, monkeypatch):
     init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
     monkeypatch.setattr("keepframe.analyze.solid_assets.solid_errors",
                         lambda *_a, **_k: {"fragments": 0.2, "still": 0.1, "model": 0.8})
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p, **_: d / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
         schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
@@ -412,7 +412,7 @@ def test_regenerated_fragment_model_survives_repeated_reruns(tmp_path, monkeypat
         bg_override="#101418", ocr=False, refine=False, use_ecc=False, generate_3d=False))
     target = next(e for e in scene.elements if e.pending_asset == "3d")
     init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p, **_: d / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
         schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
@@ -526,7 +526,7 @@ def test_solid_reference_edit_uses_whole_crop_and_preserves_current_state(tmp_pa
     before = {e.id: e.model_dump() for e in scene.elements}
     init_project(tmp_path, {"file": "unused.mp4", "fps": 30, "size": [240, 180]}, scene)
     scores.update(fragments=0.01 if choice == "fragments" else 0.2, model=0.0 if choice == "model" else 0.8)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p: d / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _s, d, _p, **_: d / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_a, **_k: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
         schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))

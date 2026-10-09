@@ -210,6 +210,25 @@ def _font_registry(sd: Path):
         return FontRegistry()
 
 
+def _pin_font(font, sd: Path, registry):
+    """An uploaded face the analysis chose, copied into the scene's flat assets (`assets/font-<sha16>.<ext>`, which
+    render plans pin) and named by `FontGuess.file`; the guess unchanged otherwise or on any error."""
+    if font is None or font.source != "uploaded":
+        return font
+    from ..fonts.upload import pin_face
+    try:
+        face = registry.face(font.family_guess, font.weight)
+        asset = pin_face(sd, face)
+    except Exception as e:   # fail soft: the composer still finds the family in the project's registry
+        log.warning("uploaded font %s not copied into the scene: %s", font.family_guess, e)
+        return font
+    if asset is None:
+        return font
+    static = face.weight_range[0] == face.weight_range[1]
+    return font.model_copy(update={"file": asset, "source": "uploaded",
+                                   "postscript": face.postscript if static else font.postscript})
+
+
 def _plate_inputs(model: PlateModel):
     """(bg, plate) for the stages after the plate: a flat colour has no plate image."""
     return model.rgb, (model.image if model.kind != "color" else None)
@@ -411,6 +430,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
     keys = [k for k in props if not k.startswith("_")]
     keys.sort(key=lambda k: (props[k]["first"], float(np.nanmean(props[k]["raw"][:, 0]))))
     elements, raws = [], {}
+    registry = _font_registry(sd) if any(getattr(props[k].get("font"), "source", None) == "uploaded" for k in keys) else None
     for k in keys:
         eid = ids.get(k) or f"e{len(ids) + 1}"
         ids[k] = eid
@@ -425,7 +445,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         h, w = p["canon"].shape[:2]   # textures v2 pad the canonical by 2p; centre and anchor stay
         meta = p.get("texture_meta")
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
-                              text=p.get("text"), font=p.get("font"), color=p.get("color"),
+                              text=p.get("text"), font=_pin_font(p.get("font"), sd, registry), color=p.get("color"),
                               style=TextStyle(**p["style"]) if p.get("style") else None,
                               texture_meta=TextureMeta(**meta) if meta else None)
         elements.append(Element(id=eid, kind=p["kind"], canonical=canonical, visible=(first, last), tracks=tracks,

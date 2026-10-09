@@ -85,6 +85,8 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
         if not args.get("package_root"):
             raise PlanConflict("native final stage package root is missing")
     from keepframe.compose.composer import compose
+    from keepframe.fonts.css import FINAL_WAIT_S
+    from keepframe.fonts.registry import FontRegistry
     from keepframe.ir.store import load_scene
     from keepframe.render.renderer import render
 
@@ -95,8 +97,9 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     sd = scene_path.parent
     html_arg = args.get("html")
     html = Path(html_arg) if html_arg else sd / "composition.export.html"
-    if not html_arg:
-        compose(scene, sd, html)
+    if not html_arg:   # an export is a final render: the project's fonts, waited for, never a fallback (R39)
+        compose(scene, sd, html, fonts=FontRegistry.for_project(sd.parent.parent if sd.parent.name == "scenes" else None),
+                font_wait=FINAL_WAIT_S)
     res = render(html, scene, out, mp4=True)
     package_root_arg = args.get("package_root")
     root = Path(package_root_arg) if package_root_arg else sd.parent.parent

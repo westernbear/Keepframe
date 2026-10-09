@@ -190,6 +190,10 @@ def _effects(tracks, fps, warnings, eid):
 def _font(guess, fonts, warnings, text):
     if fonts is None:
         return {"postscript": None, "family": guess.family_guess, "style": None, "substituted": False}
+    exact = next((font for font in fonts if guess.postscript and font["postscript"] == guess.postscript), None)
+    if exact is not None:   # the device has the very face (e.g. the brand font uploaded to the project)
+        return {"postscript": exact["postscript"], "family": exact["family"], "style": exact["style"],
+                "substituted": False}
 
     def rank(font):
         style = re.sub(r"[^a-z]", "", (font["style"] or "Regular").casefold())
