@@ -104,11 +104,8 @@ def _envelope(cap: np.ndarray) -> np.ndarray:
 
 
 @functools.lru_cache(maxsize=1)
-def _cap_table() -> np.ndarray:
-    """Chroma limit per (L, hue) grid node. Raw: the first sRGB boundary seen from neutral grey along the hue
-    (scan, then bisection). Clipping to that boundary would turn smooth backgrounds into steps: it is steep near
-    black (CIELAB's linear segment gives ~20 chroma per unit L toward blue) and dented near the yellow cusp above
-    L≈94 (a ray from grey leaves sRGB and re-enters it). The Lipschitz envelope (`_envelope`) removes both."""
+def _first_crossing() -> np.ndarray:
+    """Per (L, hue) grid node: the first sRGB boundary seen from neutral grey along the hue (scan, then bisection)."""
     t0 = time.perf_counter()
     ls = np.arange(0, 100 + 1e-9, CAP_L_STEP)
     hs = np.arange(CAP_HUES) * 2 * np.pi / CAP_HUES
@@ -125,32 +122,49 @@ def _cap_table() -> np.ndarray:
             ok = _in_gamut(np.stack([np.full(CAP_HUES, L), ca * mid, sa * mid], -1))
             lo, hi = np.where(ok, mid, lo), np.where(ok, hi, mid)
         raw[i] = np.where(first < len(cs), lo, CAP_C_MAX)
-    cap = _envelope(raw)
     log.info("tint gamut table %.2fs", time.perf_counter() - t0)
-    return cap
+    return raw
 
 
-def _cap(L: np.ndarray, h: np.ndarray) -> np.ndarray:
-    """Bilinear lookup of the chroma limit."""
-    table = _cap_table()
-    fi = np.clip(L / CAP_L_STEP, 0, len(table) - 1 - 1e-9)
-    i0 = np.floor(fi).astype(int)
-    wi = fi - i0
+@functools.lru_cache(maxsize=32)
+def _cap_rows(i0: int, i1: int) -> np.ndarray:
+    """The chroma limit for the lightness rows i0..i1 a tint can produce. Clipping to the raw boundary would turn
+    smooth backgrounds into steps: it is steep near black (CIELAB's linear segment: ~20 chroma per unit L toward
+    blue) and near white (the yellow cusp), and dented above L≈94 (a ray from grey leaves sRGB and re-enters).
+    The Lipschitz envelope (`_envelope`) removes all three; taken over the tint's own lightness range only, it
+    costs no chroma where the picture never goes (a light yellow on a white plate stays saturated)."""
+    return _envelope(_first_crossing()[i0:i1 + 1])
+
+
+def _rows(l_range: tuple[float, float]) -> tuple[int, int]:
+    lo, hi = sorted(min(max(v, 0.0), 100.0) for v in l_range)
+    return int(np.floor(lo / CAP_L_STEP)), int(np.ceil(hi / CAP_L_STEP))
+
+
+def _cap(L: np.ndarray, h: np.ndarray, l_range: tuple[float, float]) -> np.ndarray:
+    """Bilinear lookup of the chroma limit (L clamped into the tint's range)."""
+    i0, i1 = _rows(l_range)
+    table = _cap_rows(i0, i1)
+    fi = np.clip(L / CAP_L_STEP - i0, 0, len(table) - 1)
+    a = np.minimum(np.floor(fi).astype(int), len(table) - 1)
+    b = np.minimum(a + 1, len(table) - 1)
+    wi = fi - a
     fj = np.mod(h, 2 * np.pi) / (2 * np.pi / CAP_HUES)
     j0 = np.floor(fj).astype(int) % CAP_HUES
     wj = fj - np.floor(fj)
     j1 = (j0 + 1) % CAP_HUES
-    top = (1 - wj) * table[i0, j0] + wj * table[i0, j1]
-    bottom = (1 - wj) * table[i0 + 1, j0] + wj * table[i0 + 1, j1]
+    top = (1 - wj) * table[a, j0] + wj * table[a, j1]
+    bottom = (1 - wj) * table[b, j0] + wj * table[b, j1]
     return np.maximum((1 - wi) * top + wi * bottom - CAP_MARGIN, 0.0)
 
 
-def _fit_gamut(lab: np.ndarray) -> np.ndarray:
+def _fit_gamut(lab: np.ndarray, l_range: tuple[float, float]) -> np.ndarray:
     """Colours past the chroma limit keep L and hue and drop to it (toward neutral grey). The limit is continuous
-    and Lipschitz in L and hue, so neighbouring colours stay neighbours (no false edges); it lies inside sRGB up to
-    the grid's interpolation (the 8-bit conversion clips that remainder)."""
+    and Lipschitz in L and hue over `l_range` (the lightness the tint produces), so neighbouring colours stay
+    neighbours (no false edges); it lies inside sRGB up to the grid's interpolation (the 8-bit conversion clips
+    that remainder)."""
     c = np.hypot(lab[:, 1], lab[:, 2])
-    limit = _cap(lab[:, 0], np.arctan2(lab[:, 2], lab[:, 1]))
+    limit = _cap(lab[:, 0], np.arctan2(lab[:, 2], lab[:, 1]), l_range)
     over = c > limit
     lab[over, 1:] *= (limit[over] / c[over])[:, None]
     return lab
@@ -173,10 +187,12 @@ def tint_lab(lab: np.ndarray, target_lab, stats: TintStats) -> np.ndarray:
     t = np.array([min(max(t[0], 0.0), 100.0), t[1], t[2]])
     shape = lab.shape
     lab = lab.reshape(-1, 3)
-    pure = _fit_gamut(_d5(lab, t, stats))
+    k = _gain(stats, t[0])
+    l_range = (t[0] + k * (stats.l_min - stats.mean[0]), t[0] + k * (stats.l_max - stats.mean[0]))
+    pure = _fit_gamut(_d5(lab, t, stats), l_range)
     if not any(stats.shift):
         return pure.reshape(shape)
-    out = _fit_gamut(_d5(lab, t, stats, stats.shift))
+    out = _fit_gamut(_d5(lab, t, stats, stats.shift), l_range)
     cp, co = np.hypot(pure[:, 1], pure[:, 2]), np.hypot(out[:, 1], out[:, 2])
     over = co > cp
     out[over, 1:] *= (cp[over] / co[over])[:, None]
@@ -193,16 +209,18 @@ def balance(stats: TintStats, sample_lab: np.ndarray, target_lab, result=None) -
     if len(sample) > BALANCE_PX:
         sample = sample[np.linspace(0, len(sample) - 1, BALANCE_PX).astype(int)]
     result = result or (lambda s: tint_lab(sample, t, s))
-    shift = np.zeros(2)
+    shift, best = np.zeros(2), (np.inf, np.zeros(2))
     for _ in range(BALANCE_STEPS):
         got = np.asarray(result(replace(stats, shift=tuple(shift))), np.float64).reshape(-1, 3)[:, 1:].mean(0)
         err = t[1:] - got
+        if np.hypot(*err) < best[0]:   # never worse than no shift at all
+            best = (float(np.hypot(*err)), shift)
         if np.hypot(*err) < BALANCE_TOL:
             break
         shift = shift + err
         if np.hypot(*shift) > BALANCE_MAX:
-            shift *= BALANCE_MAX / np.hypot(*shift)
-    return replace(stats, shift=(float(shift[0]), float(shift[1])))
+            shift = shift * (BALANCE_MAX / np.hypot(*shift))
+    return replace(stats, shift=(float(best[1][0]), float(best[1][1])))
 
 
 def image_stats(rgb: np.ndarray) -> TintStats:
