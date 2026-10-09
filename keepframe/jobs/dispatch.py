@@ -70,13 +70,42 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
     return {"frames": len(res.frames), "mp4": str(res.mp4) if res.mp4 else None}
 
 
+_FONT_SUFFIXES = (".ttf", ".otf", ".woff", ".woff2", ".ttc")
+
+
+def _private_font(relative: Path) -> bool:
+    """Uploaded font bytes never leave the server in a ZIP (R46): the project's `fonts/`, scene `font-*` copies and
+    any font file (the composition carries the embedded subset)."""
+    name = relative.name
+    return (relative.parts[:1] == ("fonts",) or name.startswith(("font-", ".font-"))
+            or name.lower().endswith(_FONT_SUFFIXES))
+
+
+def project_zip(root: Path, zip_path: Path) -> None:
+    """`root` as a ZIP without uploaded font bytes, symlinks or the ZIP itself."""
+    import os
+    import zipfile
+    root, zip_path = Path(root), Path(zip_path)
+    tmp = zip_path.with_name(f".{zip_path.name}.tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dirpath, dirnames, filenames in os.walk(root):
+            here = Path(dirpath)
+            dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink()
+                                 and not _private_font((here / d).relative_to(root)))
+            for name in sorted(filenames):
+                path = here / name
+                relative = path.relative_to(root)
+                if path in (zip_path, tmp) or path.is_symlink() or _private_font(relative):
+                    continue
+                zf.write(path, relative.as_posix())
+    os.replace(tmp, zip_path)
+
+
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     if args.get("lottie_plan_id"):
         from keepframe.render.lottie import export_lottie_plan
 
         return export_lottie_plan(Path(args["project_root"]), args["lottie_plan_id"], args["execution_id"])
-    import shutil
-
     if args.get("stage_manifest"):
         from keepframe.render.native import verify_native_stage
         from keepframe.render.plan import PlanConflict
@@ -105,6 +134,6 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     root = Path(package_root_arg) if package_root_arg else sd.parent.parent
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / "project.zip"
-    shutil.make_archive(str(zip_path.with_suffix("")), "zip", root)
+    project_zip(root, zip_path)
     log.info("export done mp4=%s zip=%s", res.mp4, zip_path)
     return {"mp4": str(res.mp4) if res.mp4 else None, "zip": str(zip_path), "frames": len(res.frames)}

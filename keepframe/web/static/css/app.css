@@ -581,6 +581,7 @@ a { color: inherit; text-decoration: none; }
 }
 .render-card__head h2 { margin: 0; font-size: var(--fs-caption); }
 .render-card__lock { margin: 3px 0 0; color: var(--muted); font-size: var(--fs-micro); }
+.render-card__warnings { list-style: none; margin: 8px 0 0; padding: 0; color: var(--gradient-orange); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 .render-card__status {
   padding: 3px 8px; border: 1px solid var(--hairline); border-radius: var(--r-pill);
   color: var(--muted); font: 600 var(--fs-micro) ui-monospace, monospace;

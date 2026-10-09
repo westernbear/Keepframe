@@ -90,3 +90,26 @@ def test_fonts_disclosure_fits_the_viewport(agent, width, height):
     box = upload.bounding_box()
     assert box["x"] >= 0 and box["x"] + box["width"] <= width and box["height"] >= 32
     assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+def test_render_card_names_a_substituted_uploaded_font(agent):
+    """R47: a preview plan drawn with a stand-in for a missing uploaded font says so on the render card (ko/en)."""
+    from playwright.sync_api import expect
+    page, _ = agent
+    plan = {"id": "plan1", "backend": "native", "mode": "preview", "version_id": "v1",
+            "artifact_contract": {"outputs": ["mp4"]}}
+    payload = {"plan": plan, "status": "done", "state": {"status": "approved", "revision": 1}, "artifacts": [],
+               "warnings": [{"kind": "font_substituted", "element": "t1", "family": "Ghost Brand", "used": "Inter"},
+                            {"kind": "font_file_missing", "element": "t2", "family": "Brand Wide",
+                             "file": "assets/font-0123456789abcdef.ttf"}]}
+    page.route("**/api/render-plans?*", lambda route: route.fulfill(json={"plans": [payload]}))
+    page.reload()
+    items = page.locator("#render-warnings li")
+    expect(items).to_have_text(["올린 폰트가 없어 다른 폰트로 그렸습니다: Ghost Brand → Inter",
+                                "장면에 폰트 파일이 없어 프로젝트에 올린 폰트를 썼습니다: Brand Wide"])
+    page.locator("[data-lang-toggle]").click()
+    expect(items).to_have_text(["Uploaded font Ghost Brand is missing; drawn with Inter",
+                                "The Brand Wide font file is not in the scene; used the project's uploaded font"])
+    payload["warnings"] = []
+    page.reload()
+    expect(page.locator("#render-warnings")).to_be_hidden()

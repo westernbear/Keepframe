@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from ..assets import validate_glb
-from ..fonts.css import FontEmbedError, font_face_css, text_html
+from ..fonts.css import FontEmbedError, font_face_css, text_html, uploaded_font_issues
 from ..fonts.registry import FontRegistry
 from ..log import get
 from ..ir.gradient import gradient_at, gradient_css
@@ -139,13 +139,34 @@ def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: 
     return f"<style>\n{css}\n</style><script>for(const f of document.fonts)f.load();</script>" if css else ""
 
 
+def _font_issues(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: float | None, warnings) -> None:
+    """A final render stops on an uploaded family it would draw with a stand-in (R47); otherwise each issue is
+    logged and reported through `warnings`."""
+    try:
+        issues = uploaded_font_issues(scene, scene_dir, fonts)
+    except Exception as e:   # the check itself failing never blocks a preview; a final render stops
+        if font_wait is not None:
+            raise FontEmbedError(f"uploaded fonts could not be checked ({e}); nothing was rendered") from e
+        log.warning("uploaded font check failed (%s)", e)
+        return
+    for issue in issues:
+        if issue["kind"] == "font_substituted" and font_wait is not None:
+            raise FontEmbedError(f"uploaded font {issue['family']} is not in this project any more (it would be drawn "
+                                 f"with {issue['used']}); upload it again or choose another font. Nothing was rendered")
+        log.warning("font issue %s", issue)
+    if warnings is not None:
+        warnings.extend(issues)
+
+
 def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None,
-            font_wait: float | None = None) -> Path:
+            font_wait: float | None = None, warnings: list | None = None) -> Path:
     """`fonts`: the project's registry (uploads); bundled fonts only when None. `font_wait`: final renders wait this
-    long (css.FINAL_WAIT_S) for every embedded face and raise css.FontEmbedError instead of falling back; previews
-    (None) wait css.SUBSET_WAIT_S and embed what is ready."""
+    long (css.FINAL_WAIT_S) for every embedded face and raise css.FontEmbedError instead of falling back (also for an
+    uploaded family that is gone); previews (None) wait css.SUBSET_WAIT_S and embed what is ready. `warnings`
+    collects the uploaded-font issues (css.uploaded_font_issues) the composition was made with."""
     scene_dir, out_html = Path(scene_dir), Path(out_html)
     fonts = fonts or FontRegistry()
+    _font_issues(scene, scene_dir, fonts, font_wait, warnings)
     elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()

@@ -122,6 +122,8 @@ def _promote_assets(source: Path, destination: Path, baseline: set[str]) -> None
     destination.mkdir(parents=True, exist_ok=True)
     assets = source / "assets"
     for path in assets.iterdir() if assets.is_dir() else []:
+        if path.name.startswith(".") or path.is_symlink() or not path.is_file():   # temporaries never become assets
+            continue
         if path.name not in baseline:
             target = destination / path.name
             if target.exists():

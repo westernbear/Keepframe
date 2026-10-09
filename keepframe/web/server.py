@@ -37,7 +37,7 @@ from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
-from keepframe.render.native import prepare_native_job
+from keepframe.render.native import native_warnings, prepare_native_job
 from keepframe.render.lottie import prepare_lottie_job
 from keepframe.render.plan import (
     PlanConflict,
@@ -193,6 +193,7 @@ def _render_state_payload(root: Path, plan) -> dict:
         "job": job.to_json() if job is not None else None,
         "status": _render_status(state, job),
         "artifacts": _local_artifacts(root, plan, job),
+        "warnings": native_warnings(root, plan.id) if plan.backend == "native" else [],
     }
 
 
@@ -1184,24 +1185,28 @@ def make_server(
             if length == 0:
                 return self._json(400, {"error": "bad_type"})
             t0 = time.perf_counter()
-            previous = self.connection.gettimeout()
-            self.connection.settimeout(FONT_UPLOAD_IDLE_S)
-            try:
-                tmp = receive_font(root, self.rfile, length)
-            except (UploadIncomplete, OSError) as exc:
-                log.warning("font upload project=%s incomplete: %s", project_id, type(exc).__name__)
-                return self._json(400, {"error": "incomplete"})
-            finally:
-                self.connection.settimeout(previous)
-            try:
+            tmp = None
+            try:   # every outcome answers: only a short body is `incomplete`, anything unexpected `bad_tables` (R48)
+                previous = self.connection.gettimeout()
+                self.connection.settimeout(FONT_UPLOAD_IDLE_S)
+                try:
+                    tmp = receive_font(root, self.rfile, length)
+                finally:
+                    self.connection.settimeout(previous)
                 entry, created = store_font(root, tmp, names[0])
+            except UploadIncomplete as exc:
+                log.warning("font upload project=%s incomplete: %s", project_id, exc)
+                return self._json(400, {"error": "incomplete"})
             except FontRejected as exc:
                 log.info("font upload project=%s rejected %s (%s) %.2fs", project_id, exc.code, exc.reason,
                          time.perf_counter() - t0)
                 return self._json(413 if exc.code == "too_large" else 400, {"error": exc.code})
-            except OSError as exc:
-                log.error("font upload project=%s failed: %s", project_id, exc)
-                return self._json(500, {"error": "upload_failed"})
+            except Exception:
+                log.exception("font upload project=%s failed", project_id)
+                return self._json(400, {"error": "bad_tables"})
+            finally:
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
             log.info("font upload project=%s %s created=%s %.2fs", project_id, entry["file"], created,
                      time.perf_counter() - t0)
             return self._json(201 if created else 200, {"font": entry, "created": created})
@@ -1355,6 +1360,7 @@ def make_server(
                             "job": job.to_json(),
                             "status": _render_status(state, job),
                             "artifacts": _local_artifacts(root, plan, job),
+                            "warnings": native_warnings(root, plan.id) if plan.backend == "native" else [],
                         },
                     )
                 except FileNotFoundError:

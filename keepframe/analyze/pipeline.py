@@ -430,6 +430,8 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
     keys = [k for k in props if not k.startswith("_")]
     keys.sort(key=lambda k: (props[k]["first"], float(np.nanmean(props[k]["raw"][:, 0]))))
     elements, raws = [], {}
+    from ..fonts.upload import sweep_scene_assets
+    sweep_scene_assets(sd)   # an interrupted font copy left behind
     registry = _font_registry(sd) if any(getattr(props[k].get("font"), "source", None) == "uploaded" for k in keys) else None
     for k in keys:
         eid = ids.get(k) or f"e{len(ids) + 1}"

@@ -30,7 +30,7 @@ from ..ir.gradient import gradient_css
 from ..ir.schema import Canonical, FontGuess, Gradient, GradientStop, Scene, TextStyle
 from ..log import get
 from .raster import (TextFonts, bounded_style, embedded_face, fade_stops, first_baseline, hex_rgb, resolve_fonts,
-                     split_runs, text_size)
+                     scene_font_file, split_runs, text_size)
 from .registry import FontFace, FontRegistry, safe_alias
 
 log = get("keepframe.fonts")
@@ -353,6 +353,26 @@ def _evict(root: Path) -> None:
             total -= size
             if total <= MAX_CACHE_BYTES * 0.9:
                 break
+
+
+def uploaded_font_issues(scene: Scene, scene_dir: Path | None, registry: FontRegistry | None = None) -> list[dict]:
+    """Text in an uploaded family that a composition cannot draw as analysed (R46/R47): `font_substituted` (no
+    uploaded face for the family any more; `used` names what draws it instead) or, when the project's registry still
+    has the family, `font_file_missing` (its FontGuess.file is gone, e.g. a project unpacked from a ZIP)."""
+    registry = registry or FontRegistry()
+    out = []
+    for el in scene.elements:
+        c = el.canonical
+        f = c.font
+        if el.kind != "text" or f is None or f.source != "uploaded" or not c.text:
+            continue
+        fonts = resolve_fonts(f, c.text, registry, scene_dir) if styled(c, registry, scene_dir) else None
+        if fonts is None or fonts.primary.source != "uploaded":
+            out.append({"kind": "font_substituted", "element": el.id, "family": f.family_guess,
+                        "used": fonts.primary.family if fonts is not None else "sans-serif"})
+        elif f.file and scene_font_file(f, scene_dir) is None:
+            out.append({"kind": "font_file_missing", "element": el.id, "family": f.family_guess, "file": f.file})
+    return out
 
 
 def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry | None = None, *,

@@ -508,3 +508,256 @@ def test_ae_missing_postscript_keeps_substitution_warning():
     bold = FontGuess(family_guess="Brand Wide", weight=700, source="uploaded", postscript="BrandWide-Regular")
     layer, _ = _ae_layer(bold, [{"family": "Brand Wide", "style": "Bold", "postscript": "BrandWide-Bold"}])
     assert layer["source"]["font"]["postscript"] == "BrandWide-Bold"   # no exact name: the family match, as before
+
+
+# --- fix round 1: R46 (no font bytes in ZIPs), R47 (gone uploads), R48 (hardening) ---------------------------------
+
+def _font_free(zip_path: Path, data: bytes) -> list[str]:
+    import zipfile
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        assert not [n for n in names if n.startswith("fonts/") or "/font-" in n or ".font-" in n], names
+        assert not [n for n in names if data[:256] in zf.read(n) or data[-256:] in zf.read(n)], names
+    return names
+
+
+def _native_project(tmp_path: Path, *, family="Brand Wide", pinned=True, approved=True):
+    """test_native_plan's project whose v1 also has a text element in an uploaded family (its face stored and, when
+    `pinned`, copied into the scene's assets)."""
+    from keepframe.ir.store import save_scene
+    from tests.test_native_plan import _project
+    root = _project(tmp_path, approved=approved)
+    entry, _ = store_font(root, _write(tmp_path / "up.ttf", _ttf()), "brand.ttf")
+    scene, version = current_scene(root, "s1")
+    sd = scene_dir(root, "s1")
+    font = FontGuess(family_guess=family, size_px=40, source="uploaded",
+                     file=scene_font_asset(sd, entry, root) if pinned else None)
+    el = Element(id="t1", kind="text", canonical=Canonical(width=300, height=60, text="Brand", color="#ffffff",
+                 font=font), visible=(0, scene.frames - 1))
+    save_scene(scene.model_copy(update={"elements": [*scene.elements, el]}), root / version.scene_file)
+    return root
+
+
+def test_project_zips_carry_no_font_bytes(tmp_path, monkeypatch):
+    """R46: neither the final render's Project ZIP (staged snapshot) nor a whole-root export carries the uploaded font
+    (the composition embeds the subset)."""
+    from keepframe.jobs import dispatch, run_job
+    from keepframe.render.native import prepare_native_job
+    from tests.test_native_plan import _approved_plan
+    data = _ttf()
+    root = _native_project(tmp_path)
+
+    class Result:
+        frames, mp4 = [0], None
+
+    monkeypatch.setattr("keepframe.render.renderer.render", lambda *a, **k: Result())
+    plan = _approved_plan(root, "final")
+    spec = prepare_native_job(root, plan.id)
+    assert (Path(spec.args["snapshot"]) / "scenes/s1/assets").is_dir()
+    names = _font_free(Path(run_job(spec)["zip"]), data)
+    assert "composition.html" in names and "scenes/s1/scene.v1.json" in names
+    assert re.search(r"font-family:kf-brand-wide-[0-9a-f]{8};src:url\(data:font/woff2;base64,",
+                     (Path(spec.args["snapshot"]) / "composition.html").read_text())
+    whole = dispatch._run_export({"scene": str(scene_dir(root, "s1") / "scene.v1.json"), "out": str(tmp_path / "export")})
+    names = _font_free(Path(whole["zip"]), data)
+    assert "project.json" in names and not [n for n in names if n.endswith(".part")]
+
+
+def test_reimported_project_without_font_file_falls_back_with_a_message(tmp_path, monkeypatch):
+    """R46: a project unpacked from the ZIP keeps FontGuess.file pointing at a missing asset: plans still build, the
+    composer takes the project's registry, and the render names what happened."""
+    from keepframe.compose.composer import compose
+    from keepframe.render.native import native_warnings, prepare_native_job
+    from keepframe.render.plan import create_render_plan, approve_render_plan
+    root = _native_project(tmp_path)
+    for p in (scene_dir(root, "s1") / "assets").glob("font-*"):
+        p.unlink()
+    for p in (root / "fonts").iterdir():
+        p.unlink()
+    plan = create_render_plan(root, project_id="p1", scene_id="s1", version_id="v1", backend="native", mode="preview")
+    assert not [a for a in plan.assets if "font-" in a.project_path]
+    approve_render_plan(root, plan.id, digest=plan.digest, revision=0)
+    prepare_native_job(root, plan.id)
+    warnings = native_warnings(root, plan.id)
+    assert [(w["kind"], w["family"]) for w in warnings] == [("font_substituted", "Brand Wide")], warnings
+    store_font(root, _write(tmp_path / "again.ttf", _ttf()), "brand.ttf")   # uploaded again: the registry serves it
+    scene, _ = current_scene(root, "s1")
+    notes: list = []
+    html = compose(scene, scene_dir(root, "s1"), tmp_path / "c.html", fonts=FontRegistry.for_project(root),
+                   font_wait=300, warnings=notes)
+    assert [w["kind"] for w in notes] == ["font_file_missing"] and "kf-brand-wide-" in Path(html).read_text()
+
+
+def test_final_render_fails_when_an_uploaded_font_is_gone(tmp_path):
+    """R47: an uploaded family that no longer resolves to an uploaded face stops a final render with its name; the
+    preview composition falls back and reports the stand-in."""
+    from keepframe.compose.composer import compose
+    from keepframe.fonts import css
+    from keepframe.render.native import prepare_native_job
+    from keepframe.render.plan import PlanConflict
+    from tests.test_native_plan import _approved_plan
+    root = _native_project(tmp_path, family="Ghost Brand", pinned=False)
+    scene, _ = current_scene(root, "s1")
+    with pytest.raises(css.FontEmbedError, match="Ghost Brand"):
+        compose(scene, scene_dir(root, "s1"), tmp_path / "f.html", fonts=FontRegistry.for_project(root), font_wait=300)
+    notes: list = []
+    compose(scene, scene_dir(root, "s1"), tmp_path / "p.html", fonts=FontRegistry.for_project(root), warnings=notes)
+    assert notes == [{"kind": "font_substituted", "element": "t1", "family": "Ghost Brand", "used": notes[0]["used"]}]
+    assert notes[0]["used"] and notes[0]["used"] != "Ghost Brand"
+    with pytest.raises(PlanConflict, match="Ghost Brand"):
+        prepare_native_job(root, _approved_plan(root, "final").id)
+
+
+def test_preview_plan_warns_when_an_uploaded_font_is_gone(tmp_path):
+    """R47: a preview-mode native plan renders with the stand-in and its state names the substituted family."""
+    from keepframe.render.native import prepare_native_job
+    from keepframe.web.server import _render_state_payload
+    from tests.test_native_plan import _approved_plan
+    root = _native_project(tmp_path, family="Ghost Brand", pinned=False, approved=False)
+    plan = _approved_plan(root, "preview")
+    prepare_native_job(root, plan.id)
+    prepare_native_job(root, plan.id)   # the published stage is reused: the warning stays
+    warnings = _render_state_payload(root, plan)["warnings"]
+    assert [(w["kind"], w["family"]) for w in warnings] == [("font_substituted", "Ghost Brand")] and warnings[0]["used"]
+
+
+def test_unexpected_upload_failures_answer_bad_tables(server, monkeypatch):
+    """R48: nothing in the receive/store path drops the connection; only a short body is `incomplete`."""
+    import errno
+    from keepframe.web import server as web
+    srv, ws = server
+    data = _ttf()
+
+    def boom(*a, **k):
+        raise RuntimeError("surprise")
+
+    monkeypatch.setattr(web, "store_font", boom)
+    assert _upload(srv, data) == (400, {"error": "bad_tables"})
+    monkeypatch.setattr(web, "receive_font", lambda *a, **k: (_ for _ in ()).throw(OSError(errno.ENOSPC, "No space")))
+    assert _upload(srv, data) == (400, {"error": "bad_tables"})
+    monkeypatch.undo()
+    import shutil
+    shutil.rmtree(ws / "p1" / "fonts")
+    (ws / "p1" / "fonts").write_text("not a directory")
+    assert _upload(srv, data) == (400, {"error": "bad_tables"})
+    (ws / "p1" / "fonts").unlink()
+    port = srv.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+        s.sendall((f"POST /api/projects/p1/fonts?name=short.ttf HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                   f"Origin: http://127.0.0.1:{port}\r\nContent-Length: 5000\r\n\r\n").encode() + data[:100])
+        s.shutdown(socket.SHUT_WR)
+        out = b""
+        while chunk := s.recv(65536):
+            out += chunk
+    assert out.split(b"\r\n", 1)[0].split(b" ")[1] == b"400"
+    assert json.loads(out.split(b"\r\n\r\n", 1)[1]) == {"error": "incomplete"}
+    assert _stray(ws) == []
+
+
+def test_brotli_with_bounded_output_is_required():
+    import brotli
+    assert '"brotli>=1.2"' in Path("pyproject.toml").read_text()
+    assert hasattr(brotli.Decompressor(), "can_accept_more_data")
+
+
+def test_check_child_is_confined(tmp_path, monkeypatch):
+    """R48: the check child gets a minimal environment, no stdin, CPU/file/size limits and bounded output; the parent
+    re-validates what it reports."""
+    import subprocess
+    from keepframe.fonts import upload
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret-value")
+    monkeypatch.setenv("KEEPFRAME_ADMIN_TOKEN", "tok-secret-value")
+    seen = []
+    real = subprocess.run
+
+    def spy(cmd, **kw):
+        seen.append(kw)
+        return real(cmd, **kw)
+
+    monkeypatch.setattr(upload.subprocess, "run", spy)
+    path = _write(tmp_path / "brand.ttf", _ttf())
+    assert inspect_font(path, "brand.ttf")["family"] == "Brand Wide"
+    kw = seen[0]
+    assert kw["stdin"] == subprocess.DEVNULL and "secret-value" not in json.dumps(kw["env"])
+    assert set(kw["env"]) <= {"PATH", "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "LC_ALL", "LANG",
+                              "SYSTEMROOT"}
+    limits = real([__import__("sys").executable, "-P", "-c",
+                   "from keepframe.fonts.upload import _confine; _confine(); import resource as r; "
+                   "print([r.getrlimit(x)[0] for x in (r.RLIMIT_AS, r.RLIMIT_CPU, r.RLIMIT_NOFILE, r.RLIMIT_FSIZE)])"],
+                  capture_output=True, text=True, env=upload._child_env(), stdin=subprocess.DEVNULL)
+    mem, cpu, files, size = json.loads(limits.stdout)
+    assert mem == upload.INSPECT_MEMORY and 0 < cpu <= upload.INSPECT_TIMEOUT_S and 0 < files <= 64
+    assert 0 < size <= upload.CHILD_OUTPUT_BYTES
+    # a child that floods stderr and stdout stays bounded and is refused
+    monkeypatch.setattr(upload, "_CHILD_CODE", "import sys; sys.stderr.write('x' * 50_000_000); "
+                        "sys.stdout.write('{\"meta\": {}}' + ' ' * 50_000_000)")
+    with pytest.raises(FontRejected) as err:
+        upload._inspect_child(path)
+    assert err.value.code == "bad_tables"
+    for bad in ({"original_family": 5}, {"weight_range": [900, 100]}, {"postscript": "bad name!"}, {"category": "x"},
+                {"latin": "yes"}, {"latin": False, "hangul": False}, {"style": "s" * 500}):
+        meta = {"original_family": "Brand", "style": "Regular", "weight_range": [400, 400], "postscript": None,
+                "category": "serif", "latin": True, "hangul": False, **bad}
+        monkeypatch.setattr(upload, "_CHILD_CODE", f"import json, sys; sys.stdout.write(json.dumps({{'meta': {meta!r}}}))")
+        with pytest.raises(FontRejected) as err:
+            upload._inspect_child(path)
+        assert err.value.code == "bad_tables", bad
+
+
+@pytest.mark.parametrize("change", ["upm_small", "upm_large", "head_bbox", "glyph_bbox"])
+def test_absurd_metrics_rejected(tmp_path, change):
+    """R48: unitsPerEm outside 16-16384 or outlines far outside the em are refused (glyphs are later rasterised
+    in-process)."""
+    from fontTools.ttLib import TTFont
+    font = TTFont(io.BytesIO(_ttf()))
+    font.recalcBBoxes = font.recalcTimestamp = False
+    head = font["head"]
+    if change == "upm_small":
+        head.unitsPerEm = 8
+    elif change == "upm_large":
+        head.unitsPerEm = 20000
+    elif change == "head_bbox":
+        head.yMax = min(32000, head.unitsPerEm * 12)
+    else:
+        glyph = font["glyf"]["A"]
+        glyph.yMax = min(32000, head.unitsPerEm * 12)
+    buf = io.BytesIO()
+    font.save(buf)
+    with pytest.raises(FontRejected) as err:
+        inspect_font(_write(tmp_path / "x.ttf", buf.getvalue()), "x.ttf")
+    assert err.value.code == "bad_tables"
+
+
+def test_stale_temporaries_are_swept(tmp_path):
+    """R48: abandoned upload parts and asset copies older than an hour go on the next upload / copy."""
+    import os
+    import time as _time
+    root = tmp_path / "proj"
+    fonts = root / "fonts"
+    fonts.mkdir(parents=True)
+    old, fresh = fonts / ".upload-old.part", fonts / ".upload-fresh.part"
+    assets = root / "scenes" / "s1" / "assets"
+    assets.mkdir(parents=True)
+    stale_copy = assets / ".font-0123456789abcdef.ttf.x.tmp"
+    for p in (old, fresh, stale_copy):
+        p.write_bytes(b"x")
+    hours_ago = _time.time() - 7200
+    os.utime(old, (hours_ago, hours_ago))
+    os.utime(stale_copy, (hours_ago, hours_ago))
+    entry, _ = store_font(root, _write(tmp_path / "up.ttf", _ttf()), "brand.ttf")
+    from keepframe.fonts.upload import receive
+    receive(root, io.BytesIO(b"abc"), 3).unlink()
+    assert not old.exists() and fresh.exists()
+    scene_font_asset(assets.parent, entry, root)
+    assert not stale_copy.exists()
+
+
+def test_promoted_assets_skip_dotfiles(tmp_path):
+    from keepframe.edit.agent import _promote_assets
+    src, dest = tmp_path / "cand", tmp_path / "scene" / "assets"
+    (src / "assets").mkdir(parents=True)
+    for name in ("e1.txt1.png", ".font-abc.ttf.1.tmp", ".hidden"):
+        (src / "assets" / name).write_bytes(b"x")
+    (src / "assets" / "subdir").mkdir()
+    _promote_assets(src, dest, set())
+    assert sorted(p.name for p in dest.iterdir()) == ["e1.txt1.png"]

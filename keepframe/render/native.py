@@ -21,6 +21,7 @@ from .plan import PlanConflict, _state_lock, load_render_plan, load_render_plan_
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _MANIFEST_NAME = "stage-manifest.json"
+_WARNINGS_NAME = "warnings.json"
 _MANIFEST_VERSION = 1
 
 
@@ -454,11 +455,14 @@ def _stage_native(root: Path, plan):
         staged_scene = staged_snapshot / relative_scene
         composition = staged_snapshot / "composition.html"
         _safe_path(staged_snapshot, staged_scene, "staged scene file", kind="file")
-        try:   # a final render waits for its fonts and never bakes a fallback (R39)
+        notes: list[dict] = []
+        try:   # a final render waits for its fonts and never bakes a fallback (R39, R47)
             compose(load_scene(staged_scene), staged_scene.parent, composition, fonts=FontRegistry.for_project(root),
-                    font_wait=FINAL_WAIT_S if plan.mode == "final" else None)
+                    font_wait=FINAL_WAIT_S if plan.mode == "final" else None, warnings=notes)
         except FontEmbedError as exc:
             raise PlanConflict(str(exc)) from exc
+        if notes:   # beside the snapshot (not a member): the render card names the substituted families
+            (staging / _WARNINGS_NAME).write_bytes(_canonical_json(notes))
         _safe_path(staged_snapshot, composition, "staged composition", kind="file")
         manifest = _write_stage_manifest(staging, staged_snapshot, plan, relative_scene, source_present=source_present)
         _verify_stage_files(root, plan, staging, staged_snapshot, manifest, staged_output, relative_scene, scene=staged_scene, html=composition)
@@ -564,4 +568,21 @@ def prepare_native_job(root: Path, plan_id: str) -> JobSpec:
         return JobSpec(kind="render", args=args)
 
 
-__all__ = ["prepare_native_job", "verify_native_stage"]
+def native_warnings(root: Path, plan_id: str) -> list[dict[str, str]]:
+    """The font warnings a native plan's composition was made with (empty when none or unreadable)."""
+    if not isinstance(plan_id, str) or not _ID_RE.fullmatch(plan_id):
+        return []
+    path = Path(root) / "renders" / plan_id / "native" / _WARNINGS_NAME
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024:
+            return []
+        items = json.loads(path.read_bytes())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(items, list):
+        return []
+    return [{k: v for k, v in item.items() if isinstance(k, str) and isinstance(v, str)}
+            for item in items[:64] if isinstance(item, dict)]
+
+
+__all__ = ["native_warnings", "prepare_native_job", "verify_native_stage"]

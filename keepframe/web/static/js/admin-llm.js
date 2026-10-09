@@ -1,4 +1,4 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261009a";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261009b";
 
 const MODEL_RELOAD_DEBOUNCE_MS = 400;
 const AZURE_SCOPE = "https://cognitiveservices.azure.com/.default";

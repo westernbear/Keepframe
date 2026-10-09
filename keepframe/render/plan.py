@@ -532,6 +532,14 @@ def _normalize_substitutions(
     return tuple(normalized)
 
 
+def _font_file_present(scene_dir: Path, value: str) -> bool:
+    from ..ir.paths import scene_asset_path
+    try:
+        return scene_asset_path(scene_dir, value).is_file()
+    except ValueError:
+        return False
+
+
 def create_render_plan(
     root: Path,
     *,
@@ -593,7 +601,9 @@ def create_render_plan(
         if element.canonical.model:
             refs.append((element.canonical.model, "texture"))
         if element.canonical.font is not None and element.canonical.font.file:
-            refs.append((element.canonical.font.file, "texture"))   # uploaded face the composer embeds
+            if _font_file_present(scene_dir, element.canonical.font.file):
+                refs.append((element.canonical.font.file, "texture"))   # uploaded face the composer embeds
+            # else (e.g. a project unpacked from a ZIP, R46): the composer takes the project's registry and says so
         if element.raw:
             refs.append((element.raw, "raw"))
     background = scene.background

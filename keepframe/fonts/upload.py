@@ -38,7 +38,15 @@ CODES = ("too_large", "bad_type", "bad_tables", "unsupported")
 REQUIRED_TABLES = ("cmap", "head", "hhea", "hmtx", "maxp", "name")
 INSPECT_TIMEOUT_S = 120
 INSPECT_MEMORY = 2 * 2**30
+INSPECT_FILES = 64
+CHILD_OUTPUT_BYTES = 256 * 2**10   # the child's stdout and stderr files, each (RLIMIT_FSIZE)
 INSPECT_SLOTS = threading.BoundedSemaphore(2)   # fontTools decodes are CPU- and memory-heavy: two at a time
+UPM_RANGE = (16, 16384)
+MAX_EM_EXTENT = 8                  # outlines (head and glyph boxes) within ±8 em
+STALE_S = 3600                     # temporaries older than this are abandoned
+CATEGORIES = ("condensed_sans", "display", "geometric_sans", "handwriting", "humanist_sans", "mono", "neo_grotesque",
+              "rounded_sans", "script", "serif", "slab")
+_CHILD_CODE = "from keepframe.fonts.upload import _child; _child()"
 _MAGIC = {"ttf": (b"\0\1\0\0", b"true"), "otf": (b"OTTO",), "woff2": (b"wOF2",)}
 _FLAVORS = (0x00010000, 0x4F54544F, 0x74727565)   # \0\1\0\0, OTTO, true (WOFF2 'ttcf' collections are refused)
 _HANGUL_PROBE = "가나다라마바사아자차카타파하"
@@ -91,14 +99,19 @@ def receive(project_root: Path, stream: BinaryIO, length: int) -> Path:
     """Copy exactly `length` request-body bytes, in 1 MiB chunks, to `fonts/.upload-*.part`."""
     if length > MAX_FONT_BYTES:
         raise FontRejected("too_large")
-    fd, name = tempfile.mkstemp(dir=_fonts_dir(project_root, create=True), prefix=".upload-", suffix=".part")
+    fonts_dir = _fonts_dir(project_root, create=True)
+    sweep(fonts_dir, ".upload-*.part", ".index-*.tmp")
+    fd, name = tempfile.mkstemp(dir=fonts_dir, prefix=".upload-", suffix=".part")
     path = Path(name)
     try:
         with os.fdopen(fd, "wb") as out:
             remaining = length
+            read = getattr(stream, "read1", stream.read)
             while remaining:
-                read = getattr(stream, "read1", stream.read)
-                chunk = read(min(remaining, CHUNK_BYTES))
+                try:   # the socket: a timeout or reset is a short body; file errors below stay OSError
+                    chunk = read(min(remaining, CHUNK_BYTES))
+                except OSError as e:
+                    raise UploadIncomplete(f"upload ended early ({type(e).__name__})") from e
                 if not chunk:
                     raise UploadIncomplete("upload ended early")
                 out.write(chunk)
@@ -107,6 +120,23 @@ def receive(project_root: Path, stream: BinaryIO, length: int) -> Path:
         path.unlink(missing_ok=True)
         raise
     return path
+
+
+def sweep(directory: Path, *patterns: str, max_age: float = STALE_S) -> None:
+    """Remove abandoned temporaries (`patterns`, older than `max_age`) from `directory`; never fails."""
+    cutoff = time.time() - max_age
+    for pattern in patterns:
+        for p in Path(directory).glob(pattern):
+            try:
+                if p.is_file() and not p.is_symlink() and p.stat().st_mtime < cutoff:
+                    p.unlink()
+            except OSError:
+                pass
+
+
+def sweep_scene_assets(scene_dir: Path) -> None:
+    """Abandoned `assets/.font-*.tmp` copies (an interrupted `scene_font_asset`)."""
+    sweep(Path(scene_dir) / "assets", ".font-*.tmp")
 
 
 # --- checks on the raw bytes --------------------------------------------------------------------------------------
@@ -230,6 +260,17 @@ def _tables(path: Path) -> dict:
         if missing or not (("glyf" in f and "loca" in f) or "CFF " in f or "CFF2" in f):
             raise FontRejected("bad_tables", "missing " + (", ".join(missing) or "outlines"))
         f.ensureDecompiled()
+        head = f["head"]
+        upm = head.unitsPerEm
+        if not UPM_RANGE[0] <= upm <= UPM_RANGE[1]:
+            raise FontRejected("bad_tables", f"unitsPerEm {upm}")
+        extent = MAX_EM_EXTENT * upm
+        boxes = [(head.xMin, head.yMin, head.xMax, head.yMax)]
+        if "glyf" in f:
+            glyf = f["glyf"]
+            boxes += [(g.xMin, g.yMin, g.xMax, g.yMax) for g in (glyf[n] for n in glyf.keys()) if hasattr(g, "xMin")]
+        if any(abs(v) > extent for box in boxes for v in box):
+            raise FontRejected("bad_tables", "outlines far outside the em")
         glyphs = f["maxp"].numGlyphs
         if not 0 < glyphs <= MAX_GLYPHS or len(f.getGlyphOrder()) > MAX_GLYPHS:
             raise FontRejected("bad_tables", f"{glyphs} glyphs")
@@ -264,13 +305,29 @@ def _tables(path: Path) -> dict:
     return meta
 
 
-def _child() -> None:
-    """Child process entry: argv = path; prints {"meta": ...} or {"code", "reason"}."""
+def _confine() -> None:
+    """Limits for the check child, set before it touches the font: address space, CPU seconds, open files, and the
+    size of any file it writes (its stdout/stderr files; SIGXFSZ ignored so writes past it just fail)."""
     try:
         import resource
-        resource.setrlimit(resource.RLIMIT_AS, (INSPECT_MEMORY, INSPECT_MEMORY))
-    except (ImportError, ValueError, OSError):
-        pass
+        import signal
+    except ImportError:   # no resource module (Windows): the parent's timeout and output cap still hold
+        return
+    if hasattr(signal, "SIGXFSZ"):
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    for limit, value in ((resource.RLIMIT_AS, INSPECT_MEMORY), (resource.RLIMIT_CPU, INSPECT_TIMEOUT_S),
+                         (resource.RLIMIT_NOFILE, INSPECT_FILES), (resource.RLIMIT_FSIZE, CHILD_OUTPUT_BYTES),
+                         (resource.RLIMIT_CORE, 0)):
+        try:
+            _, hard = resource.getrlimit(limit)
+            value = value if hard == resource.RLIM_INFINITY else min(value, hard)
+            resource.setrlimit(limit, (value, value))
+        except (ValueError, OSError):
+            pass
+
+
+def _child() -> None:
+    """Child process entry (already confined): argv = path; prints {"meta": ...} or {"code", "reason"}."""
     try:
         out = {"meta": _tables(Path(sys.argv[1]))}
     except FontRejected as e:
@@ -280,25 +337,57 @@ def _child() -> None:
     sys.stdout.write(json.dumps(out))
 
 
+def _child_env() -> dict[str, str]:
+    """Only what the interpreter needs: no API keys, tokens or other server settings reach the child."""
+    paths = [str(Path(__file__).resolve().parents[2])] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
+    env = {"PATH": os.environ.get("PATH", os.defpath), "PYTHONPATH": os.pathsep.join(paths),
+           "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1", "LC_ALL": "C.UTF-8"}
+    if os.name == "nt" and os.environ.get("SYSTEMROOT"):
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    return env
+
+
+def _valid_meta(meta) -> bool:
+    """The child's report, re-checked: types, lengths and ranges the index and the registry rely on."""
+    if not isinstance(meta, dict):
+        return False
+    wr = meta.get("weight_range")
+    ps = meta.get("postscript")
+    return (isinstance(meta.get("original_family"), str) and len(meta["original_family"]) <= 128
+            and isinstance(meta.get("style"), str) and 0 < len(meta["style"]) <= 72
+            and isinstance(wr, list) and len(wr) == 2 and all(type(v) is int and 1 <= v <= 1000 for v in wr)
+            and wr[0] <= wr[1]
+            and (ps is None or isinstance(ps, str) and POSTSCRIPT_RE.fullmatch(ps) is not None)
+            and meta.get("category") in CATEGORIES
+            and type(meta.get("latin")) is bool and type(meta.get("hangul")) is bool
+            and (meta["latin"] or meta["hangul"]))
+
+
 def _inspect_child(path: Path) -> dict:
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
-        [str(Path(__file__).resolve().parents[2])] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
-    with INSPECT_SLOTS:
+    cmd = [sys.executable, "-P", "-B", "-c", "from keepframe.fonts.upload import _confine; _confine()\n" + _CHILD_CODE,
+           str(path)]
+    with INSPECT_SLOTS, tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            r = subprocess.run([sys.executable, "-P", "-c", "from keepframe.fonts.upload import _child; _child()", str(path)],
-                               env=env, capture_output=True, timeout=INSPECT_TIMEOUT_S)
+            r = subprocess.run(cmd, env=_child_env(), stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                               timeout=INSPECT_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             raise FontRejected("bad_tables", f"not decoded within {INSPECT_TIMEOUT_S} s") from None
+        out.seek(0)
+        raw = out.read(CHILD_OUTPUT_BYTES + 1)
+        err.seek(max(0, err.seek(0, 2) - 2048))
+        tail = err.read(2048).decode("utf-8", "replace")
     try:
-        out = json.loads(r.stdout.decode("utf-8"))
+        report = json.loads(raw.decode("utf-8")) if len(raw) <= CHILD_OUTPUT_BYTES else None
     except (UnicodeDecodeError, ValueError):
-        out = {}
-    if r.returncode != 0 or not isinstance(out, dict) or ("meta" not in out and out.get("code") not in CODES):
-        log.warning("font inspection exited %s: %s", r.returncode, r.stderr.decode("utf-8", "replace")[-300:])
+        report = None
+    if r.returncode != 0 or not isinstance(report, dict) or ("meta" not in report and report.get("code") not in CODES):
+        log.warning("font inspection exited %s: %s", r.returncode, _clean(tail, 300))
         raise FontRejected("bad_tables", "the font could not be decoded")
-    if "meta" not in out:
-        raise FontRejected(out["code"], _clean(str(out.get("reason", "")), 200))
-    return out["meta"]
+    if "meta" not in report:
+        raise FontRejected(report["code"], _clean(str(report.get("reason", "")), 200))
+    if not _valid_meta(report["meta"]):
+        raise FontRejected("bad_tables", "the font's metadata is out of range")
+    return report["meta"]
 
 
 def _family(original: str, sha: str) -> str:
@@ -427,6 +516,7 @@ def scene_font_asset(scene_dir: Path, entry: dict, project_root: Path) -> str:
         raise ValueError("not a stored font entry")
     asset = f"font-{sha[:16]}.{name.rsplit('.', 1)[1]}"
     assets = Path(scene_dir) / "assets"
+    sweep_scene_assets(scene_dir)
     dest = assets / asset
     if dest.is_file() and not dest.is_symlink() and _sha256(dest) == sha:
         return f"assets/{asset}"

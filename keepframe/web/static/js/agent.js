@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261009a";
-import { T, Tf } from "/static/js/i18n.js?v=20261009a";
-import { initAECard } from "/static/js/ae.js?v=20261009a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009a";
+} from "/static/js/api.js?v=20261009b";
+import { T, Tf } from "/static/js/i18n.js?v=20261009b";
+import { initAECard } from "/static/js/ae.js?v=20261009b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261009a";
+} from "/static/js/playback.js?v=20261009b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -262,6 +262,24 @@ function updateRenderControls() {
     || planState.status !== "awaiting_approval";
 }
 
+const RENDER_WARNINGS = {
+  font_substituted: (w) => Tf("agent.renderFontSubstituted", {family: w.family, used: w.used}),
+  font_file_missing: (w) => Tf("agent.renderFontFileMissing", {family: w.family}),
+};
+
+function paintRenderWarnings(warnings) {
+  const el = document.getElementById("render-warnings");
+  const lines = (Array.isArray(warnings) ? warnings : [])
+    .filter((w) => w && RENDER_WARNINGS[w.kind])
+    .map((w) => {
+      const item = document.createElement("li");
+      item.textContent = RENDER_WARNINGS[w.kind](w);   // family names come from font files: text only
+      return item;
+    });
+  el.replaceChildren(...lines);
+  el.hidden = !lines.length;
+}
+
 function paintRenderCard() {
   const plan = renderPayload && renderPayload.plan;
   const planState = renderPayload && renderPayload.state;
@@ -285,6 +303,7 @@ function paintRenderCard() {
     renderModeEl.value = plan.mode;
   }
   renderOutputsEl.textContent = outputs.join(", ");
+  paintRenderWarnings(renderPayload && renderPayload.warnings);
   paintPlanSelector();
   paintArtifacts(plan, renderPayload);
   updateRenderControls();
