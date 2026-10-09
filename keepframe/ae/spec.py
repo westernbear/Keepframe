@@ -279,7 +279,9 @@ def _ramp_points(g, w, h):
     dx, dy = math.sin(th), -math.cos(th)
     length = abs(w * dx) + abs(h * dy)
     x0, y0 = w / 2 - dx * length / 2, h / 2 - dy * length / 2
-    return [x0 + dx * length * o0, y0 + dy * length * o0], [x0 + dx * length * o1, y0 + dy * length * o1]
+    clean = lambda v: round(v, 6) + 0.0   # float noise around 0 would print as "-0.0"
+    return ([clean(x0 + dx * length * o0), clean(y0 + dy * length * o0)],
+            [clean(x0 + dx * length * o1), clean(y0 + dy * length * o1)])
 
 
 def _ramp(keys, w, h, what):
