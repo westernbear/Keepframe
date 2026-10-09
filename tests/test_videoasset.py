@@ -159,3 +159,17 @@ def test_colour_edit_on_a_video_sprite_draws_the_edited_still(tmp_path):
     assert scene.element("e1").canonical.video == "assets/e1.video.webm"   # the stored scene is untouched
     img = composite_scene(out, tmp_path, 3) * 255
     assert np.abs(img[20, 26] - (200, 0, 0)).max() <= 2                     # the tinted poster, all over its box
+
+
+def test_encode_capped_reencodes_smaller_then_gives_up(tmp_path, monkeypatch):
+    clip = _bars(6, 64, 48)
+    crfs = []
+    real = videoasset.encode_webm
+    monkeypatch.setattr(videoasset, "encode_webm", lambda *a, crf, **k: crfs.append(crf) or real(*a, crf=crf, **k))
+    path, code = videoasset.encode_capped(lambda: iter(clip), 30.0, tmp_path / "a.webm", alpha=False)
+    assert (path, code, crfs) == (tmp_path / "a.webm", None, [30])
+    monkeypatch.setattr(videoasset, "MAX_BYTES", 10)   # over the cap at any quality
+    path, code = videoasset.encode_capped(lambda: iter(clip), 30.0, tmp_path / "b.webm", alpha=False)
+    assert (path, code, crfs[1:]) == (None, "video_too_large", [30, 36]) and not (tmp_path / "b.webm").exists()
+    path, code = videoasset.encode_capped(lambda: iter([np.zeros((4, 4), np.uint8)]), 30.0, tmp_path / "c.webm", alpha=False)
+    assert (path, code) == (None, "encode_failed") and not list(tmp_path.glob("*c.webm*"))

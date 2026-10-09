@@ -38,17 +38,17 @@ def encode_webm(frames, fps: float, out, *, alpha: bool, crf: int = CRF) -> Path
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(f".{out.name}.tmp")
-    it = iter(frames)
-    first = np.ascontiguousarray(next(it), np.uint8)
-    h, w = first.shape[:2]
-    if first.shape != (h, w, 4 if alpha else 3):
-        raise ValueError("frames must be H×W×4 (alpha) or H×W×3")
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba" if alpha else "rgb24",
-           "-s", f"{w}x{h}", "-r", repr(float(fps)), "-i", "-", "-an", "-c:v", "libvpx-vp9",
-           "-pix_fmt", "yuva420p" if alpha else "yuv420p", "-b:v", "0", "-crf", str(int(crf)),
-           "-deadline", "good", "-cpu-used", "4", "-row-mt", "1", "-f", "webm", str(tmp)]
     proc = None
     try:
+        it = iter(frames)
+        first = np.ascontiguousarray(next(it), np.uint8)
+        h, w = first.shape[:2]
+        if first.shape != (h, w, 4 if alpha else 3):
+            raise ValueError("frames must be H×W×4 (alpha) or H×W×3")
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba" if alpha else "rgb24",
+               "-s", f"{w}x{h}", "-r", repr(float(fps)), "-i", "-", "-an", "-c:v", "libvpx-vp9",
+               "-pix_fmt", "yuva420p" if alpha else "yuv420p", "-b:v", "0", "-crf", str(int(crf)),
+               "-deadline", "good", "-cpu-used", "4", "-row-mt", "1", "-f", "webm", str(tmp)]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         frame = first
         while frame is not None:
