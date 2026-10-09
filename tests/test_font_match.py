@@ -354,9 +354,9 @@ def test_scene_work_cap_keeps_first_guesses_in_cap_height_order():
     assert [v[0] for v in font_guesses(jobs, REG, max_renders=0).values()] == ["skipped"] * 3
 
 
-def test_repeated_text_takes_the_first_match():
-    """A text repeated in the scene (e.g. one title tracked twice) is fitted on its own coverage with the first
-    match's family, not matched again."""
+def test_repeated_text_is_matched_on_its_own_pixels_with_less_work():
+    """A text repeated in the scene (e.g. one title tracked twice) whose own prefilter agrees with the first match
+    fits only a few families — candidates, scores and confidence its own — and is not matched in full again."""
     from keepframe.fonts import match as M
     a = make_font_sample(811, family="Montserrat", weight=700, text="Big Launch", size_px=56.0, tracking_em=0.0,
                          shear_deg=0.0)
@@ -371,9 +371,69 @@ def test_repeated_text_takes_the_first_match():
     finally:
         M.font_guess = orig
     assert len(calls) == 1
+    gb = out["b"][1]
+    alone = M.font_guess(b.alpha, b.text, REG, **_inputs(b.alpha, b.text))[0]
+    assert gb.family_guess == alone.family_guess == "Montserrat" and abs(gb.size_px / 40 - 1) <= 0.03
+    assert gb.scores == sorted(gb.scores, reverse=True) and gb.scores[0] == alone.scores[0]
+    assert gb.confidence == (1.0 if gb.scores[0] >= 0.8 and gb.scores[0] - gb.scores[1] >= 0.02 else 0.5)
+
+
+@pytest.mark.parametrize("first,copy", [("Inter", "Roboto"), ("Montserrat", "Poppins")])
+def test_repeated_text_in_a_similar_family_keeps_its_own_family(first, copy):
+    """The same string drawn in two similar families in one scene: the copy is not given the first one's family."""
+    from keepframe.fonts import match as M
+    a = make_font_sample(901, family=first, weight=600, text="Summer Sale", size_px=60.0, tracking_em=0.0, shear_deg=0.0)
+    b = make_font_sample(902, family=copy, weight=600, text="Summer Sale", size_px=40.0, tracking_em=0.0, shear_deg=0.0)
+    jobs = [M.TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text)) for k, s in (("a", a), ("b", b))]
+    out = M.font_guesses(jobs, REG)
     ga, gb = out["a"][1], out["b"][1]
-    assert gb.family_guess == ga.family_guess == "Montserrat" and gb.candidates == ga.candidates
-    assert abs(gb.size_px / 40 - 1) <= 0.03 and abs(ga.size_px / 56 - 1) <= 0.03
+    assert ga.family_guess == first and gb.family_guess == copy, (ga.candidates, gb.candidates, gb.scores)
+    assert gb.scores == sorted(gb.scores, reverse=True)
+    assert gb.confidence == (1.0 if gb.scores[0] >= 0.8 and gb.scores[0] - gb.scores[1] >= 0.02 else 0.5)
+
+
+def test_repeated_text_whose_fit_fails_is_matched_in_full(monkeypatch):
+    from keepframe.fonts import match as M
+    s = make_font_sample(811, family="Montserrat", weight=700, text="Big Launch", size_px=56.0, tracking_em=0.0,
+                         shear_deg=0.0)
+    jobs = [M.TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text)) for k in ("a", "b")]
+    monkeypatch.setattr(M, "_copy_guess", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("copy")))
+    out = M.font_guesses(jobs, REG)
+    assert out["b"][0] == "ok" and out["b"][1].model_dump() == out["a"][1].model_dump()
+
+
+@pytest.mark.parametrize("change", ["pillow", "freetype", "raqm", "harfbuzz", "fonttools", "constant", "code"])
+def test_cache_key_follows_libraries_constants_and_code(monkeypatch, change):
+    """R45: a different library, measuring constant or measuring code selects a different cache file."""
+    import PIL, fontTools
+    from PIL import features
+    from keepframe.analyze import textstyle
+    from keepframe.fonts import match as M
+    face = REG.face("Inter")
+    M._current_tag.cache_clear()
+    before = M._cache_file(face, "calib")
+    real = features.version
+    if change == "pillow":
+        monkeypatch.setattr(PIL, "__version__", "0.0.0")
+    elif change in ("freetype", "raqm", "harfbuzz"):
+        lib = {"freetype": "freetype2"}.get(change, change)
+        monkeypatch.setattr(features, "version", lambda name: "0.0" if name == lib else real(name))
+    elif change == "fonttools":
+        monkeypatch.setattr(fontTools, "version", "0.0")
+    elif change == "constant":
+        monkeypatch.setattr(M, "CALIB_TEXT", "Hamburgefonstiv")
+    else:
+        def stroke_width(alpha):   # the same name, other code
+            return 1.0
+        monkeypatch.setattr(textstyle, "stroke_width", stroke_width)
+    M._current_tag.cache_clear()
+    try:
+        assert M._cache_file(face, "calib") != before and M._cache_file(face, "face").name.endswith(
+            M._cache_file(face, "calib").name.split("-")[-1])
+    finally:
+        monkeypatch.undo()
+        M._current_tag.cache_clear()
+    assert M._cache_file(face, "calib") == before
 
 
 def test_weight_search_evaluates_each_weight_once(monkeypatch):

@@ -81,7 +81,7 @@ WEIGHT_STEP = 25.0               # … on a grid of this many wght units (shared
 ROUND2_K = 4                     # the second round of coordinate descent refines this many families
 MIN_FITS, PRUNE = 3, 0.15        # families past the first MIN_FITS whose coarse score trails the best by PRUNE: skipped
 SCENE_RENDERS = 5000             # a scene's texts are matched (largest cap height first) until this many candidate renders
-DUP_MARGIN = 0.10                # a repeated text takes the first one's family unless its own fit trails by this
+DUP_FITS = 3                     # a repeated text whose own prefilter puts the first match's family on top fits this many
 SHEARS = (-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0)
 SHEAR_FINE = 2.0
 SHEAR_MIN = 4.0                  # a smaller shear is stored as 0
@@ -93,8 +93,8 @@ FALLBACK_SCALES = (0.78, 1.06)
 FALLBACK_SEARCH = (0.86, 0.89, 0.92, 0.95, 0.98, 1.01)   # the fit's first round tries these fallback scales …
 COARSE_FB = (0.88, 0.92, 0.96, 1.0)                     # … the prefilter's second stage these
 CALIB_TEXT = "Hamburg"
-CALIB_VERSION = 1                # bump when CALIB_TEXT, WEIGHTS or the stroke-ratio measure change …
-STORE_VERSION = 1                # … or the prefilter's stored glyph metrics change (both files carry R too)
+CALIB_VERSION = 1                # the cache files' key carries these, the measuring constants, a hash of the measuring
+STORE_VERSION = 1                # code and the library versions (`_cache_parts`)
 STORE_MAX = 50_000               # entries of a kind per font kept on disk
 WEIGHTS = (100, 900)
 GOLDEN = (math.sqrt(5) - 1) / 2
@@ -259,7 +259,7 @@ def _store(face: FontFace) -> _FaceStore | None:
         st = _STORES.get(key)
         if st is None:
             try:
-                st = _STORES[key] = _FaceStore(_cache_file(face, "face", STORE_VERSION))
+                st = _STORES[key] = _FaceStore(_cache_file(face, "face"))
             except OSError as e:
                 log.warning("font match cache unavailable (%s)", e)
                 return None
@@ -939,12 +939,55 @@ def _file_sha(path: str, mtime: float) -> str:
     return h.hexdigest()
 
 
-def _cache_file(face: FontFace, kind: str, version: int) -> Path:
-    """A per-font file next to the font subsets (`css.cache_root()/match`), keyed by the font file's sha256: the
-    manifest's for bundled fonts, hashed here for any other file."""
+def _cache_parts() -> dict:
+    """Everything a cached measure depends on besides the font file: the rasterising libraries' versions (Pillow and
+    the FreeType / raqm / HarfBuzz / FriBiDi it reports, fontTools for coverage), the measuring constants, the
+    keepframe version and a hash of the measuring code."""
+    import inspect
+    import PIL
+    import fontTools
+    from PIL import features
+    from .. import __version__ as kf_version
+    from ..analyze import textstyle
+    from . import raster
+
+    def version(name: str):
+        try:
+            return features.version(name)
+        except Exception:   # not built in
+            return None
+
+    code = hashlib.sha256()
+    for fn in (_measure_calibration, _render_glyph, _with_parts, _compose, _layout, _layout_with, glyph_set, advances,
+               _coverage, raster._length, raster.cmap, textstyle.stroke_width, textstyle.cap_height,
+               textstyle._components, textstyle._line_groups):
+        try:
+            code.update(inspect.getsource(fn).encode())
+        except (OSError, TypeError):   # no source shipped: the keepframe version stands for it
+            code.update(getattr(fn, "__qualname__", repr(fn)).encode())
+    return {"pillow": PIL.__version__, "freetype": version("freetype2"), "raqm": version("raqm"),
+            "harfbuzz": version("harfbuzz"), "fribidi": version("fribidi"), "fonttools": fontTools.version,
+            "keepframe": kf_version, "code": code.hexdigest(),
+            "constants": [R, CALIB_TEXT, list(WEIGHTS), FIXED_WEIGHT, ADV_STEP, list(LIGA_OFF), CALIB_VERSION,
+                          STORE_VERSION]}
+
+
+def _cache_tag(parts: dict) -> str:
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:20]
+
+
+@functools.lru_cache(maxsize=1)
+def _current_tag() -> str:
+    return _cache_tag(_cache_parts())
+
+
+def _cache_file(face: FontFace, kind: str) -> Path:
+    """A per-font file next to the font subsets (`css.cache_root()/match`), keyed by the font file's sha256 (the
+    manifest's for bundled fonts, hashed here for any other file) and `_cache_parts`, so what a file holds never
+    depends on which library or code version measured it."""
     from .css import cache_root
     sha = face.sha256 if face.source == "bundled" and face.sha256 else _file_sha(str(face.path), _mtime(face.path))
-    return cache_root() / "match" / f"{kind}-{sha}-{face.index}-r{R}-v{version}.json"
+    return cache_root() / "match" / f"{kind}-{sha}-{face.index}-{_current_tag()}.json"
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -985,7 +1028,7 @@ def _calibration(face: FontFace, mtime: float) -> tuple[tuple[float, float], ...
     """(weight, stroke ratio) of CALIB_TEXT at the ends (and middle) of the face's weight range; cached on disk per
     font file (the prefilter needs every family's on a process's first match)."""
     try:
-        path = _cache_file(face, "calib", CALIB_VERSION)
+        path = _cache_file(face, "calib")
     except OSError as e:
         log.warning("font calibration cache unavailable (%s)", e)
         return _measure_calibration(face)
@@ -1658,8 +1701,12 @@ def match_font(alpha, text: str, registry: FontRegistry, *, k: int = 3, stroke_r
     """Top-k fits (best first) and a confidence (1.0 when the best scores ≥ 0.80 and leads by ≥ 0.02, else 0.5).
     `alpha`: the text's coverage in its box; `centres`: native x of every non-space glyph (Task 9)."""
     obs = _observe(alpha, text, stroke_ratio, centres)
+    return _fit_kept(obs, _prefilter(obs, registry, K_PREFILTER), k)
+
+
+def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
+    """The prefilter's families fitted (two rounds of coordinate descent), the top k and the confidence."""
     searches = []
-    kept = _prefilter(obs, registry, K_PREFILTER)
     for i, (name, fam, start, coarse) in enumerate(kept):
         if i >= MIN_FITS and coarse < kept[0][3] - PRUNE:   # far behind the best coarse render: not fitted
             continue
@@ -1770,12 +1817,26 @@ class TextJob:
     prior: object = None              # the first guess (FontGuess) kept when the text is not matched
 
 
+def _copy_guess(job: TextJob, guess, registry: FontRegistry) -> tuple | None:
+    """A repeated text, on its own pixels: its prefilter must put the first match's family on top, then only its
+    DUP_FITS best families are fitted (not K_PREFILTER, and no Hangul refit when that family stays first). Its
+    candidates, scores and confidence are its own. None: match it in full."""
+    obs = _observe(job.alpha, job.text, job.stroke_ratio, job.centres)
+    kept = _prefilter(obs, registry, K_PREFILTER)
+    if not kept or kept[0][0] != guess.family_guess:
+        return None
+    fits, conf = _fit_kept(obs, kept[:DUP_FITS])
+    if fits[0].family != guess.family_guess:
+        return None
+    return _guess(fits, conf, (guess.fallback, guess.fallback_weight, guess.fallback_scale), registry, job.prior)
+
+
 def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: int | None = None) -> dict:
     """A scene's texts matched one after another — largest cap height first, ties in the given order — until
     `max_renders` candidate renders: per key ("ok", FontGuess, layout), ("error", message) or ("skipped",
     message). Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
-    (same string) takes the first one's family and candidates, refitted on its own coverage for weight, size and
-    layout, unless that fit trails the first's score by DUP_MARGIN."""
+    (same string) is matched on its own pixels with less work when its prefilter agrees with the first match
+    (`_copy_guess`), else in full."""
     from ..analyze.textstyle import _a01, cap_height
 
     def cap(job: TextJob) -> float:
@@ -1789,28 +1850,26 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
     counter = [0]
     token = _RENDERS.set(counter)
     out: dict = {}
-    first: dict = {}   # text -> (FontGuess, layout) of its first match
+    first: dict = {}   # text -> FontGuess of its first match
     try:
         for i in order:
             job = jobs[i]
             if counter[0] >= max_renders:
                 out[job.key] = ("skipped", f"scene work cap ({max_renders} candidate renders) reached")
                 continue
-            kw = {"stroke_ratio": job.stroke_ratio, "centres": job.centres}
-            try:
-                prev = first.get((job.text or "").strip())
-                if prev is not None:
-                    guess, _ = prev
-                    fit = fit_family(job.alpha, job.text, guess.family_guess, registry, **kw)
-                    if fit.score >= guess.scores[0] - DUP_MARGIN:
-                        fits = [fit] + [FontFit(n, 0, 0.0, 0.0, 0.0, sc, 0.0, 0.0)
-                                        for n, sc in zip(guess.candidates[1:], guess.scores[1:])]
-                        fb = (guess.fallback, guess.fallback_weight, guess.fallback_scale)
-                        conf = guess.confidence if fit.score >= CONF_TOP else 0.5
-                        out[job.key] = ("ok", *_guess(fits, conf, fb, registry, job.prior))
+            key = (job.text or "").strip()
+            if key in first:
+                try:
+                    res = _copy_guess(job, first[key], registry)
+                    if res is not None:
+                        out[job.key] = ("ok", *res)
                         continue
-                g, layout = font_guess(job.alpha, job.text, registry, prior=job.prior, **kw)
-                first.setdefault((job.text or "").strip(), (g, layout))
+                except Exception as e:   # matched in full below
+                    log.warning("font match of repeated %s: %s; matching it in full", job.key, e)
+            try:
+                g, layout = font_guess(job.alpha, job.text, registry, prior=job.prior, stroke_ratio=job.stroke_ratio,
+                                       centres=job.centres)
+                first.setdefault(key, g)
                 out[job.key] = ("ok", g, layout)
             except Exception as e:   # fail soft: the caller keeps the first guess
                 log.warning("font match failed for %s: %s", job.key, e)
