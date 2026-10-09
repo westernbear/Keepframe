@@ -534,3 +534,19 @@ def test_video_sprite_plays_the_same_in_chromium(globe):
         ref = composite_scene(scene, _sd(root), f) * 255
         assert np.abs(img[y0:y1, x0:x1] - ref[y0:y1, x0:x1]).mean() <= 1.5, f
         assert np.abs(img[y0:y1, x0:x1] - frames[f, y0:y1, x0:x1]).mean() <= 6, f   # the globe turns in Chromium too
+
+
+def test_mover_video_failure_keeps_still_sprite_at_lower_confidence(still_globe, tmp_path, monkeypatch):
+    """R58: an unstable mover whose video cannot be made is the still sprite with the code, at lower confidence
+    than the still sprite of a machine without VP9."""
+    from keepframe.analyze import pipeline
+    monkeypatch.setattr(videoasset, "ffmpeg_vp9_ok", lambda: True)
+    monkeypatch.setattr(pipeline, "mover_video", lambda *a, **k: (None, "encode_failed"))
+    scene = analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    ids = json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())
+    el = scene.element(ids["m1"])
+    assert el.canonical.video is None
+    assert f"{ids['m1']} animates in place; kept as a still sprite (encode_failed)" in _messages(tmp_path)
+    root, still, _ = still_globe
+    base = still.element(json.loads((_sd(root) / "stages" / "ids.json").read_text())["m1"]).confidence
+    assert el.confidence == pytest.approx(base * 0.5, abs=0.02)

@@ -3,14 +3,14 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import plate as plate_mod
 from keepframe.analyze.background import PLATE_PATH
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
+from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
 from keepframe.analyze.plate import build_plate, load_plate
 from keepframe.analyze.regions import Region
 from keepframe.analyze.video import read_frames
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb_to_lab
 from keepframe.ir.gradient import gradient_at, render_gradient
 from keepframe.ir.schema import Background, Gradient, GradientKey, GradientStop
-from keepframe.ir.store import scene_dir
+from keepframe.ir.store import init_project, scene_dir
 from keepframe.ir.synth import make_reference_scene, render_frames, true_plate
 
 OPTS = AnalyzeOptions(ocr=False, refine=False, use_ecc=False)
@@ -291,19 +291,126 @@ def test_busy_animated_gradient_is_found_again_not_full_frame_sprites(tmp_path):
         assert np.percentile(_de(render_gradient(gradient_at(bg, f), 640, 360), true_plate(ref, tmp_path / "ref", f)), 95) < 3, f
     area = [e.canonical.width * e.canonical.height / (640 * 360) for e in scene.elements]
     assert max(area) < 0.1 and sum(area) < 0.4, area   # layers (titles in pieces: no OCR here), no plate copies
+    # R58: a rerun that reuses the regions found again classifies the same way (the busy decision is stored)
+    assert json.loads((sd / "stages" / "busy.json").read_text())["kind"] == "gradient"
+    init_project(tmp_path / "proj", {"file": "ref.mp4", "fps": 30, "size": [640, 360]}, scene)
+    for stage in ("plate", "tracking"):
+        rerun(tmp_path / "proj", "s1", stage, "again")
+        again = load_plate(sd)
+        assert again.kind == "gradient" and len(again.gradient_keys) >= 2, stage
+        assert again.stats["resegmented"] == "gradient" and again.stats["busy_pass1"] > 0.5, stage
 
 
-@pytest.mark.skipif(not plate_mod.videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
-def test_busy_moving_plate_without_a_gradient_plays_as_video(tmp_path, monkeypatch):
-    """The same busy clip when no gradient fits: its layers play in the background video (said so), and no sprite
-    copies the plate."""
+def _best_iou(truth, scene) -> float:
+    """The best mean bbox IoU (over shared visible frames) of an analysed element with a truth element."""
+    from keepframe.ir.tracks import element_bbox
+
+    def iou(a, b):
+        w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+        i = max(0.0, w) * max(0.0, h)
+        return i / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - i)
+
+    best = 0.0
+    for e in scene.elements:
+        fs = range(max(truth.visible[0], e.visible[0]), min(truth.visible[1], e.visible[1]) + 1)
+        if len(fs):
+            best = max(best, float(np.mean([iou(element_bbox(truth, f), element_bbox(e, f)) for f in fs])))
+    return best
+
+
+class _TruthOcr:
+    """Fake OCR reading a reference's titles where they are drawn at ≥ 50 % opacity (frames known by content)."""
+
+    def __init__(self, ref, frames):
+        import hashlib
+        self.key = lambda img: hashlib.sha1(np.ascontiguousarray(img).tobytes()).hexdigest()
+        self.index = {self.key(f): i for i, f in enumerate(frames)}
+        self.titles = [e for e in ref.elements if e.kind == "text"]
+
+    def __call__(self, frame):
+        from keepframe.ir.tracks import element_bbox, eval_props
+        f = self.index.get(self.key(frame))
+        if f is None:
+            return []
+        return [(t.canonical.text, tuple(int(round(v)) for v in element_bbox(t, f)), 0.99) for t in self.titles
+                if t.visible[0] <= f <= t.visible[1] and eval_props(t, f)["opacity"] >= 0.5]
+
+
+def test_busy_pass_without_a_gradient_keeps_tracked_layers(tmp_path, monkeypatch):
+    """R57: the busy pass wins only with a fitted gradient. Its gate firing (forced) on a seed-3-like clip whose
+    gradient turns gently, and no gradient fitting (forced): pass 1's regions stand, so the sprites and the logo it
+    tracked stay separate elements and nothing joins the plate."""
+    from keepframe.ir.colour import rgb8_to_hex
+    monkeypatch.setattr(plate_mod, "BUSY", 0.0)
     monkeypatch.setattr(plate_mod, "_animated_keys", lambda *a, **k: ([], 0.0))
+    ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, frames=16)
+    g0 = ref.background.gradient_keys[0].gradient
+    g1 = g0.model_copy(update={"angle": g0.angle + 20, "stops": [
+        s.model_copy(update={"color": rgb8_to_hex(np.clip(np.add(hex_to_rgb8(s.color), 18), 0, 255))}) for s in g0.stops]})
+    ref.background = ref.background.model_copy(update={"gradient_keys": [GradientKey(t=0, gradient=g0), GradientKey(t=15, gradient=g1)]})
+    frames = np.stack([f.round().clip(0, 255).astype(np.uint8) for f in render_frames(ref, tmp_path / "ref", range(ref.frames))])
+    scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", AnalyzeOptions(refine=False, use_ecc=False, generate_3d=False),
+                                 ocr=_TruthOcr(ref, frames))
+    sd = scene_dir(tmp_path / "proj", "s1")
+    assert "resegmented" not in load_plate(sd).stats and not (sd / "stages" / "busy.json").exists()
+    found = {t.id: round(_best_iou(t, scene), 2) for t in ref.elements}
+    for eid in ("s1", "s2", "logo", "title1", "title2"):   # what pass 1 separates on this clip (s3 it never does)
+        assert found[eid] >= 0.5, found
+
+
+def test_busy_regions_failure_keeps_pass1_regions(tmp_path, monkeypatch):
+    """R58: finding the regions again against the busy gradient failing keeps pass 1's regions and tracks (and their
+    caches); the analysis goes on and stores no busy decision."""
+    import pickle
+    from keepframe.analyze import pipeline
+    real = pipeline._stage_regions
+
+    def regions(*a, plate_at=None, **k):
+        if plate_at is not None:
+            raise RuntimeError("boom")
+        return real(*a, **k)
+
+    monkeypatch.setattr(pipeline, "_stage_regions", regions)
     ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, frames=16)
     frames = np.stack([f.round().clip(0, 255).astype(np.uint8) for f in render_frames(ref, tmp_path / "ref", range(ref.frames))])
     scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", OPTS)
     sd = scene_dir(tmp_path / "proj", "s1")
-    assert scene.background.kind == "video" and load_plate(sd).stats["resegmented"] == "video"
-    assert not (sd / "stages" / ".plate_busy.npy").exists()
-    messages = json.loads((sd / "report.json").read_text())["messages"]
-    assert "background animates; the layers it hid play in the background video" in messages, messages
-    assert all(e.canonical.width * e.canonical.height < 0.1 * 640 * 360 for e in scene.elements)
+    stats = load_plate(sd).stats
+    assert scene.elements and "resegmented" not in stats and not (sd / "stages" / "busy.json").exists()
+    rbf = pickle.loads((sd / "stages" / "regions.pkl").read_bytes())
+    cover = np.mean([sum(r.area for r in regions) / (640 * 360) for regions in rbf])
+    assert cover > 0.5 and pickle.loads((sd / "stages" / "tracks.pkl").read_bytes())   # pass 1's regions, cached
+
+
+def test_video_plate_failure_lowers_confidence(tmp_path, monkeypatch):
+    """R58: a video plate that fails keeps the still image with its code, at lower confidence than the still a
+    machine without VP9 keeps."""
+    frames, _ = _texture_with_square()
+    n = len(frames)
+    rbf = [[] for _ in range(n)]
+    build = lambda: build_plate(frames, rbf, [[] for _ in range(n)], [], [], bg_rgb=(0, 0, 0), bconf=0.6, bg_override=None,
+                                pass1=frames[0], frames_out=tmp_path / "plate_frames.npy")
+    monkeypatch.setattr(plate_mod.videoasset, "ffmpeg_vp9_ok", lambda: False)
+    still = build()
+    monkeypatch.setattr(plate_mod.videoasset, "ffmpeg_vp9_ok", lambda: True)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(plate_mod.videoasset, "fill_video_plate", boom)
+    failed = build()
+    assert failed.kind == "image" and failed.stats["message"].endswith("kept as a still image (video_failed)")
+    assert failed.confidence == pytest.approx(still.confidence * plate_mod.FALLBACK_CONF)
+    assert not (tmp_path / "plate_frames.npy").exists()
+
+
+def test_video_encode_failure_lowers_confidence(tmp_path, monkeypatch):
+    model = plate_mod.PlateModel("video", np.zeros((8, 8, 3), np.uint8), (0, 0, 0), None, 0.8, {"temporal_p95_de": 4.2},
+                                 frames=np.zeros((3, 8, 8, 3), np.uint8))
+    (tmp_path / "stages").mkdir()
+    (tmp_path / plate_mod.FRAMES_PATH).write_bytes(b"x")
+    monkeypatch.setattr(plate_mod.videoasset, "encode_capped", lambda *a, **k: (None, "video_too_large"))
+    out = plate_mod.write_video(tmp_path, model, 30.0)
+    assert (out.kind, out.frames, out.confidence) == ("image", None, pytest.approx(0.8 * plate_mod.FALLBACK_CONF))
+    assert out.stats["message"] == "background animates (p95 ΔE 4.2); kept as a still image (video_too_large)"
+    assert not (tmp_path / plate_mod.FRAMES_PATH).exists()

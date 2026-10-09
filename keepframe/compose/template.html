@@ -118,7 +118,8 @@ const gradientCss = (g) => {
   return `linear-gradient(${num(g.angle)}deg, ${stops})`;
 };
 // Video layers seek to the middle of frame f − start, then wait for `seeked` and one animation frame (headless
-// Chromium never runs requestVideoFrameCallback); a seek to the frame already shown is skipped.
+// Chromium never runs requestVideoFrameCallback); a seek to the frame already shown is skipped. A seek that errors
+// or does not land within __seekTimeoutMs (20 s) resolves false: __seek then returns {error: 'video_seek_failed'}.
 const VIDEOS = [...document.querySelectorAll('video[data-start]')].map(v => ({v, start: +v.dataset.start, t: -1}));
 const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
   if (v.readyState >= 2 || v.error) return resolve();
@@ -127,12 +128,24 @@ const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
 }));
 const seekVideo = (item, f) => new Promise(resolve => {
   const v = item.v;
-  if (v.error || v.readyState < 1) return resolve();
+  if (v.error || v.readyState < 1) return resolve(true);   // never loaded: the poster stays (as in numpy)
   const mid = (Math.max(f - item.start, 0) + 0.5) / FPS;
   const t = Number.isFinite(v.duration) ? Math.min(mid, v.duration) : mid;   // past its end: the last frame
-  if (t === item.t) return resolve();
+  if (t === item.t) return resolve(true);
   item.t = t;
-  v.addEventListener('seeked', () => requestAnimationFrame(() => resolve()), {once: true});
+  let timer = 0;
+  const done = (ok) => {
+    clearTimeout(timer);
+    v.removeEventListener('seeked', landed);
+    v.removeEventListener('error', failed);
+    if (!ok) item.t = -1;   // the next seek tries again
+    resolve(ok);
+  };
+  const landed = () => requestAnimationFrame(() => done(true));
+  const failed = () => done(false);
+  v.addEventListener('seeked', landed, {once: true});
+  v.addEventListener('error', failed, {once: true});
+  timer = setTimeout(failed, window.__seekTimeoutMs || 20000);
   v.currentTime = t;
 });
 window.__seek = (f) => {
@@ -146,7 +159,8 @@ window.__seek = (f) => {
     node.style.color = /^#[0-9a-f]{3,8}$/i.test(state.color || '') ? state.color : baseColor;
   }
   for (const draw of modelRenders) draw();
-  return VIDEOS.length ? Promise.all(VIDEOS.map(item => seekVideo(item, f))).then(() => f) : f;
+  if (!VIDEOS.length) return f;
+  return Promise.all(VIDEOS.map(item => seekVideo(item, f))).then(ok => ok.every(Boolean) ? f : {error: 'video_seek_failed'});
 };
 window.__bbox = (id) => {
   const r = document.getElementById('el-' + id).getBoundingClientRect();

@@ -16,7 +16,7 @@ from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, ext
 from .keyframes import fill_gaps, tracks_from_raw
 from . import videoasset
 from .movers import mover_cover, mover_frames, mover_props, mover_video
-from .plate import FRAMES_PATH, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
+from .plate import FALLBACK_CONF, FRAMES_PATH, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
 from .semantics import assign_roles, group_by_motion
@@ -138,17 +138,16 @@ def _stage_text(frames, bg, opts, ocr, sd):
 
 
 def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd,
-                 busy: PlateModel | None = None) -> PlateModel:
-    """`busy`: the moving plate the regions were found again against (busy_plate); its kind guides this one."""
+                 busy: dict | None = None) -> PlateModel:
+    """`busy`: the decision of the busy pass (`_plate_stage`) when the regions were found again against its
+    gradient: keys are then tried whatever the rank-2 share, and its numbers stay in the stats."""
     (sd / FRAMES_PATH).unlink(missing_ok=True)   # a stage cache: only a video plate writes it again
     try:
         model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
                             bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks, frames_out=sd / FRAMES_PATH,
-                            try_keys=busy is not None and busy.kind == "gradient")
+                            try_keys=busy is not None)
         if busy is not None:
-            model.stats.update(busy_pass1=busy.stats["busy_pass1"], resegmented=busy.kind)
-            if busy.kind == "video" and model.kind == "video":   # found against the frames themselves: nothing moves apart
-                model.stats["message"] = "background animates; the layers it hid play in the background video"
+            model.stats.update(busy_pass1=busy["busy_pass1"], moved_de=busy["moved_de"], resegmented=busy["kind"])
         model = write_video(sd, model, fps)
     except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
         log.exception("plate v2 failed")
@@ -158,27 +157,51 @@ def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
     return model
 
 
-BUSY_PATH = "stages/.plate_busy.npy"
+BUSY_JSON = "stages/busy.json"
 
 
-def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd):
-    """The plate stage: (model, rbf, obj_tracks). When pass 1 missed a background that keeps changing (busy_plate),
-    the regions and tracks are found again against that moving plate first."""
-    busy = None
-    if not opts.bg_override:
+def _busy_decision(sd: Path) -> dict | None:
+    """The busy pass's decision an earlier run stored with the regions it found again (None: pass 1's regions)."""
+    try:
+        d = json.loads((sd / BUSY_JSON).read_text())
+        return d if d.get("kind") == "gradient" and {"busy_pass1", "moved_de"} <= d.keys() else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, fresh=True):
+    """The plate stage: (model, rbf, obj_tracks). `fresh`: `rbf` are pass 1's. When pass 1 missed a gradient that
+    keeps changing (busy_plate), the regions and tracks are found again against it first, and that decision is
+    stored (BUSY_JSON) for reruns that reuse those regions (`fresh` False). Only a fitted gradient wins (R57);
+    anything failing there keeps pass 1's regions and tracks."""
+    path = sd / BUSY_JSON
+    if not fresh:
+        busy = _busy_decision(sd)
+    else:
+        busy = None
+        path.unlink(missing_ok=True)
         try:
-            busy = busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, bconf=bconf, frames_out=sd / BUSY_PATH)
-        except Exception:   # fail soft: today's regions
+            moving = None if opts.bg_override else busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, bconf=bconf)
+        except Exception:   # fail soft: pass 1's regions
             log.exception("busy plate failed")
-    if busy is not None:
-        t0 = time.perf_counter()
-        report_stage("regions")
-        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate_at=busy.at, text_tracks=text_tracks, shape_tracks=shape_tracks)
-        obj_tracks = _stage_tracking(rbf, sd)
-        report_stage("plate")
-        log.info("plate busy regions again %.2fs objects=%s", time.perf_counter() - t0, len(obj_tracks))
+            moving = None
+        if moving is not None:
+            t0 = time.perf_counter()
+            report_stage("regions")
+            try:
+                again = _stage_regions(frames, bg, boxes, opts, sd, plate_at=moving.at, text_tracks=text_tracks,
+                                       shape_tracks=shape_tracks)
+                tracks = _stage_tracking(again, sd)
+                rbf, obj_tracks = again, tracks
+                busy = {"kind": moving.kind, "busy_pass1": moving.stats["busy_pass1"], "moved_de": moving.stats["moved_de"]}
+                path.write_text(json.dumps(busy))
+                log.info("plate busy regions again %.2fs objects=%s", time.perf_counter() - t0, len(obj_tracks))
+            except Exception:   # fail soft: pass 1's regions and tracks, in the caches too
+                log.exception("busy plate regions failed; pass 1 regions kept")
+                _pk(sd, "regions", rbf)
+                _pk(sd, "tracks", obj_tracks)
+            report_stage("plate")
     model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, busy)
-    (sd / BUSY_PATH).unlink(missing_ok=True)
     return model, rbf, obj_tracks
 
 
@@ -566,9 +589,11 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     report_stage("report")
     from .report import reconstruction_and_confidence
     rec, conf = reconstruction_and_confidence(scene, sd, frames, 0)
+    failed = {ids[k] for k, p in (props or {}).items()   # a video sprite that could not be made: the still, less sure
+              if not k.startswith("_") and isinstance(p, dict) and p.get("video_error") and k in (ids or {})}
     for e in scene.elements:
-        e.confidence = conf[e.id]
-    write_report(sd, {"reconstruction": rec, "confidence": conf, "messages": messages,
+        e.confidence = conf[e.id] * (FALLBACK_CONF if e.id in failed else 1.0)
+    write_report(sd, {"reconstruction": rec, "confidence": {e.id: e.confidence for e in scene.elements}, "messages": messages,
                       "solids": solids_report, "elements": len(scene.elements), "fit_error_max_px": max([e.fit_error.max_px for e in scene.elements] or [0])})
     _stage_done("report", t)
     return scene
@@ -900,7 +925,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     if rebuilt:
         report_stage("plate")
         model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate,
-                                              opts, sd)
+                                              opts, sd, fresh=boundary <= STAGES.index("regions"))
     bg, plate = _plate_inputs(model)
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers

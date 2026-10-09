@@ -427,7 +427,8 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ, try_keys: bool
 
 def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateModel:
     """A video candidate as a video plate: every frame's occupancy (movers included) in a temporary memmap, then
-    fill_video_plate behind the still plate. Without a VP9 encoder, or on any error, the still image and its message."""
+    fill_video_plate behind the still plate. Without a VP9 encoder: the still image and its message; on any error,
+    that too with the code and at lower confidence."""
     if not videoasset.ffmpeg_vp9_ok():
         return model
     from .movers import mover_cover
@@ -446,10 +447,10 @@ def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateMod
         with ThreadPoolExecutor(_workers()) as ex:
             list(ex.map(run, range(n)))
         per_frame = videoasset.fill_video_plate(frames, occ, model.image, out)
-    except Exception:   # fail soft: the still image keeps its message
+    except Exception:   # fail soft: the still image, its message with the code, lower confidence
         log.exception("video plate failed")
         out.unlink(missing_ok=True)
-        return model
+        return _still_video(model, "video_failed")
     finally:
         occ_path.unlink(missing_ok=True)
     st = {k: v for k, v in model.stats.items() if k != "message"}
@@ -457,9 +458,17 @@ def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateMod
     return replace(model, kind="video", frames=per_frame, stats={**st, "video": True})
 
 
+def _still_video(model: PlateModel, code: str) -> PlateModel:
+    """A video candidate kept as its still image because the video failed: the message names the code, and the
+    confidence drops (FALLBACK_CONF)."""
+    p95 = float(model.stats.get("temporal_p95_de") or 0.0)
+    st = {**model.stats, "video": False, "message": f"background animates (p95 ΔE {p95:.1f}); kept as a still image ({code})"}
+    return replace(model, kind="image", frames=None, stats=st, confidence=model.confidence * FALLBACK_CONF)
+
+
 def write_video(sd, model: PlateModel, fps: float) -> PlateModel:
-    """VIDEO_PATH from a video plate's frames (size-capped). When it cannot be made: the still image with a message
-    naming the code, and the per-frame plate is removed."""
+    """VIDEO_PATH from a video plate's frames (size-capped). When it cannot be made: the still image (_still_video),
+    and the per-frame plate is removed."""
     if model.kind != "video":
         return model
     sd = Path(sd)
@@ -467,11 +476,8 @@ def write_video(sd, model: PlateModel, fps: float) -> PlateModel:
     n = len(model.frames)
     path, code = videoasset.encode_capped(lambda: (model.frames[f] for f in range(n)), fps, sd / VIDEO_PATH, alpha=False)
     if path is None:
-        p95 = float(model.stats.get("temporal_p95_de") or 0.0)
-        st = {**model.stats, "video": False,
-              "message": f"background animates (p95 ΔE {p95:.1f}); kept as a still image ({code})"}
         (sd / FRAMES_PATH).unlink(missing_ok=True)
-        return replace(model, kind="image", frames=None, stats=st)
+        return _still_video(model, code)
     size = path.stat().st_size
     log.info("plate video encode %.2fs bytes=%s", time.perf_counter() - t0, size)
     return replace(model, stats={**model.stats, "video_bytes": size})
@@ -573,12 +579,12 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
     return model
 
 
-def busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bconf, frames_out=None) -> PlateModel | None:
-    """A background pass 1 missed because it keeps changing: its regions then cover more than BUSY of the sampled
+def busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bconf) -> PlateModel | None:
+    """A gradient pass 1 missed because it keeps changing: its regions then cover more than BUSY of the sampled
     pixels, and the median of the early samples and of the late ones (text boxes aside) differ by MOVED_DE at the
-    median pixel. That background judged on the text boxes only: an animated gradient fitted robustly per sample
-    (the elements are outliers), else (`frames_out`) a video plate of the frames themselves. The caller finds the
-    regions and tracks again against its `at(f)`. None when pass 1 is not busy or the background holds still."""
+    median pixel. That background judged on the text boxes only, as a gradient fitted robustly per sample (the
+    elements are outliers); the caller finds the regions and tracks again against its `at(f)`. None when pass 1 is
+    not busy, nothing moves, or no gradient fits (R57: then pass 1's regions stand; no layer joins the plate)."""
     t0 = time.perf_counter()
     n, H, W = frames.shape[:3]
     reveal = reveal_exclusion_boxes(list(text_tracks) + list(shape_tracks))
@@ -606,9 +612,6 @@ def busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bconf, frames_o
     if keys:
         model = PlateModel("gradient", plate, rgb, synthetic, float(bconf), {**st, "animated_fit_share": round(share, 3)},
                            gradient=keys[0].gradient, gradient_keys=keys)
-    elif frames_out is not None:
-        model = _video_plate(PlateModel("image", plate, rgb, synthetic, float(bconf), st), frames, none, boxes, reveal, frames_out)
-        model = model if model.kind == "video" else None
     log.info("plate busy %.2fs kind=%s keys=%s", time.perf_counter() - t0, model.kind if model else None, len(keys))
     return model
 

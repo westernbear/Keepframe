@@ -7,6 +7,14 @@ from playwright.sync_api import sync_playwright
 from ..ir.schema import Scene
 
 
+class RenderError(RuntimeError):
+    """A render that cannot be made frame-exact: `code` (also the message), e.g. "video_seek_failed"."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 @dataclass
 class RenderResult:
     frames_dir: Path
@@ -52,7 +60,10 @@ def render(html: Path, scene: Scene, out_dir: Path, frames: list[int] | None = N
         page.goto(Path(html).resolve().as_uri())
         page.wait_for_function("window.__ready === true")
         for i, f in enumerate(frames):
-            page.evaluate("f => window.__seek(f)", f)
+            got = page.evaluate("f => window.__seek(f)", f)
+            if isinstance(got, dict) and got.get("error"):   # a video frame did not land: never a wrong frame
+                browser.close()
+                raise RenderError(str(got["error"]))
             png = page.screenshot(type="png", clip={"x": 0, "y": 0, "width": W, "height": H}, animations="disabled")
             (frames_dir / f"f_{i:05d}.png").write_bytes(png)
             hashes.append(frame_hash(png))

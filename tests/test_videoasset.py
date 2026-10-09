@@ -173,3 +173,19 @@ def test_encode_capped_reencodes_smaller_then_gives_up(tmp_path, monkeypatch):
     assert (path, code, crfs[1:]) == (None, "video_too_large", [30, 36]) and not (tmp_path / "b.webm").exists()
     path, code = videoasset.encode_capped(lambda: iter([np.zeros((4, 4), np.uint8)]), 30.0, tmp_path / "c.webm", alpha=False)
     assert (path, code) == (None, "encode_failed") and not list(tmp_path.glob("*c.webm*"))
+
+
+@pytest.mark.browser
+def test_video_seek_that_never_lands_fails_with_a_code(tmp_path):
+    """R58: a seek whose `seeked` never comes ends in a timeout, and the renderer stops with a code instead of
+    waiting forever."""
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import RenderError, render
+    scene = _video_scene(tmp_path)
+    html = compose(scene, tmp_path, tmp_path / "c.html")
+    stub = ("<script>window.__seekTimeoutMs = 300; for (const v of document.querySelectorAll('video'))"
+            " Object.defineProperty(v, 'currentTime', {get() { return 0; }, set(t) {}});</script></body>")
+    html.write_text(html.read_text().replace("</body>", stub))
+    with pytest.raises(RenderError) as e:
+        render(html, scene, tmp_path / "r", frames=[3], probe=False)
+    assert e.value.code == "video_seek_failed" and str(e.value) == "video_seek_failed"
