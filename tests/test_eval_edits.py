@@ -56,9 +56,13 @@ def test_eval_edits_cli_writes_metrics_and_sheet(tmp_path, monkeypatch):
     assert {"outside_glyph_delta", "smear_score", "glyph_de"} <= set(row["title"])
     assert row["hide"] and {"mean_de", "p95_de", "hf_ratio", "residue_fraction", "truth_de"} <= set(row["hide"][0])
     assert row["background"][0]["mode"] == "replace" and row["background"][0]["halo_ring"] is not None
+    tint = row["background"][1]                                                  # Task 12 (R2): tint is measured too
+    assert tint["mode"] == "tint" and tint["status"] == "done" and tint["halo_ring"] is not None
+    assert tint["plate_l_err"] <= 3 and tint["plate_ab_de"] <= 3 and tint["l_rho"] >= 0.98, tint
     assert {"sad", "mse", "f_de_interior", "f_de_edge"} <= set(row["alpha"]) and row["matched"] >= 3
     assert row["integrity"][0]["whole"] and row["font_top3"] is not None and row["seconds"] > 0
     gates = m["gates"]["synthetic"]
+    assert gates["recolour_halo_ring"]["samples"] == 2                          # replace and tint
     assert {"title_outside_glyph_delta", "title_smear_score", "title_glyph_de", "hide_plate_de", "hide_hf_ratio",
             "hide_residue", "hide_truth_de", "plate_de_title", "plate_de_logo", "recolour_halo_ring", "alpha_sad_edge",
             "f_de_interior", "f_de_edge", "font_top3", "font_set_top3"} == set(gates)

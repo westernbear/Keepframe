@@ -86,16 +86,16 @@ def test_apply_font_rejects_nontext_elements(tmp_path, kind, text):
 
 def test_missing_font_is_a_conflict(monkeypatch):
     monkeypatch.setattr("keepframe.edit.intent.resolve_families", lambda name: ("DejaVu Sans",))
-    built = plan(_scene(), Intent(targets=[Target(element="e1", property="font", value="Pretendard")]))
+    built = plan(_scene(), Intent(targets=[Target(element="e1", property="font", value="Brand Sans")]))
     conflict = next(c for c in built.conflicts if c.id == "font_missing")
     assert conflict.element == "e1" and conflict.choices == ["use_fallback"]
-    assert conflict.reason == "Pretendard 폰트가 설치되어 있지 않습니다. DejaVu Sans(으)로 그려집니다."
+    assert conflict.reason == "Brand Sans 폰트가 설치되어 있지 않습니다. DejaVu Sans(으)로 그려집니다."
 
 
 @pytest.mark.parametrize("family,names,missing", [
     ("dejavu serif", ("DejaVu Serif",), False),
     ("나눔고딕", ("NanumGothic", "나눔고딕"), False),
-    ("Pretendard", ("DejaVu Sans", "다른 폰트"), True),
+    ("Brand Sans", ("DejaVu Sans", "다른 폰트"), True),
 ])
 def test_font_installation_matches_any_family_name_case_insensitively(monkeypatch, family, names, missing):
     from keepframe.edit import textraster
@@ -195,7 +195,7 @@ def test_font_missing_waits_for_explicit_fallback_then_creates_version(tmp_path,
         frames_dir=out_dir / "frames", frames=list(range(scene.frames)), hashes=[],
         bboxes={"e1": [[-100, -20, 100, 20]] * scene.frames}))
     ctx = SessionContext(root, "s1")
-    args = {"prompt": "폰트를 바꿔줘", "targets": [{"element": "e1", "property": "font", "value": "Pretendard", "weight": 700}]}
+    args = {"prompt": "폰트를 바꿔줘", "targets": [{"element": "e1", "property": "font", "value": "Brand Sans", "weight": 700}]}
     preview = run_tool("edit", ctx, args)
     assert preview["ok"] and preview["needs_confirm"]
     model_choice = run_tool("edit", ctx, {**args, "confirm": True, "choices": {"font_missing": "use_fallback"}})
@@ -210,7 +210,7 @@ def test_font_missing_waits_for_explicit_fallback_then_creates_version(tmp_path,
     assert done.status == "done" and done.version.id == "v2", done
     edited, version = current_scene(root, "s1")
     assert version.id == "v2"
-    assert edited.element("e1").canonical.font.family_guess == "Pretendard"
+    assert edited.element("e1").canonical.font.family_guess == "Brand Sans"
     assert edited.element("e1").canonical.font.weight == 700
 
 

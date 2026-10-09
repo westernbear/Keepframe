@@ -520,12 +520,13 @@ def _grid(w: int, h: int, pad: int = 0) -> tuple[np.ndarray, np.ndarray]:
     return xs - pad + 0.5, ys - pad + 0.5
 
 
-def fade_alpha(fade: Fade, w: int, h: int, box: tuple[float, float] | None = None) -> np.ndarray:
-    """The fade mask over w×h pixels of a (possibly fractional) box, as the wrapper's CSS mask draws it."""
+def fade_alpha(fade: Fade, w: int, h: int, box: tuple[float, float] | None = None, pad: int = 0) -> np.ndarray:
+    """The fade mask over w×h pixels of a (possibly fractional) box plus `pad` on every side (clamped there), as
+    the CSS mask draws it."""
     angle, stops = fade_stops(fade)
     g = Gradient(kind="linear", angle=angle, stops=[GradientStop(offset=0, color="#000000"), GradientStop(offset=1, color="#000000")])
     bw, bh = box or (w, h)
-    t = np.clip(gradient_t(g, float(bw), float(bh), _grid(w, h)), 0.0, 1.0)
+    t = np.clip(gradient_t(g, float(bw), float(bh), _grid(w, h, pad)), 0.0, 1.0)
     return np.interp(t, [o for o, _ in stops], [a for _, a in stops]).astype(np.float32)
 
 
@@ -540,10 +541,18 @@ def gradient_fill(g: Gradient, box: tuple[float, float], w: int, h: int, pad: in
     return render_gradient(g, float(box[0]), float(box[1]), (x, y)).astype(np.float32) / 255.0
 
 
+def text_canvas(box: tuple[float, float], style: TextStyle | None) -> tuple[int, int, int]:
+    """Texture width, height and effect padding of styled text in `box` (the raster's canvas; the CSS clips its
+    effect layers to the same padding)."""
+    style = bounded_style(style, box)
+    return bounded_canvas(box, effect_pad(style.effects))
+
+
 def render_styled(lines: Sequence[str], font: FontGuess, color: str | None, style: TextStyle | None, *,
                   registry: FontRegistry | None = None, scene_dir: Path | None = None,
-                  box: tuple[float, float] | None = None) -> np.ndarray:
-    """Un-premultiplied RGBA uint8 texture of the styled text, box-sized (natural box when None)."""
+                  box: tuple[float, float] | None = None, padded: bool = False):
+    """Un-premultiplied RGBA uint8 texture of the styled text, box-sized (natural box when None). `padded`: the
+    whole effect canvas instead (effects past the box kept, R41) and its padding: (texture, pad)."""
     lines = _cap_chars(list(lines) or [""])
     style = bounded_style(style)
     fonts = resolve_fonts(font, "\n".join(lines), registry, scene_dir)
@@ -556,7 +565,7 @@ def render_styled(lines: Sequence[str], font: FontGuess, color: str | None, styl
     style = bounded_style(style, box)
     line_h = round(float(box[1]) / len(lines), 4)
     size = text_size(font.size_px, line_h)
-    w, h, pad = bounded_canvas(box, effect_pad(style.effects))
+    w, h, pad = text_canvas(box, style)
     alpha = _render_alpha(lines, size, fonts, tracking_em=style.tracking_em, shear_deg=style.shear_deg, box=box,
                           dx=style.dx, dy=style.dy, pad=pad)
     if style.fill is not None:
@@ -564,7 +573,10 @@ def render_styled(lines: Sequence[str], font: FontGuess, color: str | None, styl
         fill = gradient_fill(style.fill, box, w, h, pad, shear_deg=style.shear_deg, y0=y0)
     else:
         fill = np.array(hex_rgb(color), np.float32) / 255
-    rgba = compose_text(alpha, fill, style.effects)[pad:pad + h, pad:pad + w]
+    rgba = compose_text(alpha, fill, style.effects)
+    if not padded:
+        rgba = rgba[pad:pad + h, pad:pad + w]
     if style.fade is not None:
-        rgba[..., 3] *= fade_alpha(style.fade, w, h, box)
-    return np.round(np.clip(rgba, 0.0, 1.0) * 255).astype(np.uint8)
+        rgba[..., 3] *= fade_alpha(style.fade, w, h, box, pad if padded else 0)
+    out = np.round(np.clip(rgba, 0.0, 1.0) * 255).astype(np.uint8)
+    return (out, pad) if padded else out

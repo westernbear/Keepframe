@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..ir.schema import Element, Scene, validate_font_family
+from ..ir.schema import Element, FontGuess, Scene, validate_font_family
 from .retime import apply_timing, retimed_range, timing_args
 from .textraster import resolve_families
 
@@ -210,9 +210,13 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
     return Intent(targets=targets, summary=describe(targets, has_attachment))
 
 
-def plan(scene: Scene, intent: Intent) -> Plan:
-    from .apply import measure_text
+def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
+    """`fonts`: the project's registry (uploads); bundled fonts only when None. `scene_dir` resolves pinned font
+    files for the overflow measurement."""
+    from ..fonts.registry import FontRegistry
+    from .apply import text_width
 
+    fonts = fonts or FontRegistry()
     items: list[Target] = []
     conflicts: list[Conflict] = []
     timing_scene = scene.model_copy(deep=True) if any(t.property == "timing" for t in intent.targets) else scene
@@ -234,10 +238,7 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                                               reason=f"장면 끝({timing_scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
             apply_timing(timing_scene, [t], {"timing_overflow": "extend_scene"})
         if t.property == "text" and t.value and el is not None:
-            font = el.canonical.font
-            size = font.size_px if font else 32.0
-            w, _ = measure_text(t.value, size, font.family_guess if font else "sans-serif")
-            if w > el.canonical.width * 1.15:
+            if text_width(el, t.value, fonts=fonts, scene_dir=scene_dir) > el.canonical.width * 1.15:
                 conflicts.append(Conflict(
                     id="overflow",
                     element=el.id,
@@ -245,13 +246,16 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                     reason="새 문구가 원래 상자보다 깁니다.",
                 ))
         if t.property == "font" and el is not None and el.canonical.text:
-            family = t.value or (el.canonical.font.family_guess if el.canonical.font else "sans-serif")
-            resolved = resolve_families(t.value) if t.value else ()
+            base = el.canonical.font or FontGuess()
+            update = {k: v for k, v in (("family_guess", t.value), ("weight", t.weight)) if v}
+            if t.value and t.value.casefold() != base.family_guess.casefold():   # as apply_edit: the old file goes
+                update.update(file=None, postscript=None, fallback=None, fallback_weight=None, fallback_scale=1.0)
+            resolved = resolve_families(t.value) if t.value and not fonts.faces(t.value) else ()   # uploads/bundled first
             if t.value and resolved and t.value.casefold() not in {name.casefold() for name in resolved}:
                 conflicts.append(Conflict(id="font_missing", element=el.id, choices=["use_fallback"],
                                           reason=f"{t.value} 폰트가 설치되어 있지 않습니다. {resolved[0]}(으)로 그려집니다."))
-            size = el.canonical.font.size_px if el.canonical.font else 32.0
-            if measure_text(el.canonical.text, size, family)[0] > el.canonical.width * 1.15:
+            new = base.model_copy(update=update)
+            if text_width(el, el.canonical.text, new, fonts=fonts, scene_dir=scene_dir) > el.canonical.width * 1.15:
                 conflicts.append(Conflict(id="overflow", element=el.id, choices=["shrink_font", "wrap", "expand_box"],
                                           reason="바꾼 폰트로는 문구가 원래 상자보다 깁니다."))
     return Plan(items=items, conflicts=conflicts)

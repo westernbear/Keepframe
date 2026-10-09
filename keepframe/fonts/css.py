@@ -1,7 +1,8 @@
 """Composer CSS for styled text: the HTML side of `fonts/raster.py`, drawn the same way (browser-tested).
 
-One element = a clipping wrapper (box-sized, fade as a mask) holding one absolutely positioned layer per effect
-under the fill layer: shadows/glows (text in the effect colour, blurred σ = blur/2, offset, opacity), strokes
+One element = a wrapper at the text box holding one absolutely positioned layer per effect under the fill layer,
+all clipped (fade as a mask) to the box, or, when effects reach past it (R41), to the raster's effect canvas (the
+box grown by `effect_pad`): shadows/glows (text in the effect colour, blurred σ = blur/2, offset, opacity), strokes
 (text and `-webkit-text-stroke: 2w` in the stroke colour, so the stroke covers dilate(α, w)), then the fill
 (colour, or the gradient through `background-clip: text`). Every layer shares `text_css`'s layout
 (geometricPrecision, LayoutUnit line height, letter-spacing in em, skewX about the first baseline).
@@ -30,7 +31,7 @@ from ..ir.gradient import gradient_css
 from ..ir.schema import Canonical, FontGuess, Gradient, GradientStop, Scene, TextStyle
 from ..log import get, scrub_paths
 from .raster import (TextFonts, bounded_style, embedded_face, fade_stops, first_baseline, hex_rgb, resolve_fonts,
-                     scene_font_file, split_runs, text_size)
+                     scene_font_file, split_runs, text_canvas, text_size)
 from .registry import FontFace, FontRegistry, safe_alias
 
 log = get("keepframe.fonts")
@@ -115,10 +116,27 @@ def _padded(g: Gradient, w: float, h: float, p: float) -> Gradient:
         r = g.radius * math.hypot(w, h) / 2
         return g.model_copy(update={"center": ((g.center[0] * w + p) / w2, (g.center[1] * h + p) / h2),
                                     "radius": r / (math.hypot(w2, h2) / 2)})
-    th = math.radians(g.angle)
-    s, c = abs(math.sin(th)), abs(math.cos(th))
-    ratio = (w * s + h * c) / (w2 * s + h2 * c)
+    ratio = _pad_ratio(g.angle, w, h, p)
     return g.model_copy(update={"stops": [GradientStop(offset=0.5 + (st.offset - 0.5) * ratio, color=st.color) for st in g.stops]})
+
+
+def _pad_ratio(angle: float, w: float, h: float, p: float) -> float:
+    """Gradient-line length of a w×h box over that of the box grown by p on every side (same angle)."""
+    th = math.radians(angle)
+    s, c = abs(math.sin(th)), abs(math.cos(th))
+    return (w * s + h * c) / ((w + 2 * p) * s + (h + 2 * p) * c)
+
+
+def _fade_mask(style: TextStyle, box_wh: tuple[float, float], pad: int) -> list[str]:
+    """The fade as a CSS mask over the box grown by `pad` (equal inside the box, clamped outside, as the raster)."""
+    if style.fade is None:
+        return []
+    angle, stops = fade_stops(style.fade)
+    if pad:
+        ratio = _pad_ratio(angle, float(box_wh[0]), float(box_wh[1]), pad)
+        stops = [(0.5 + (o - 0.5) * ratio, a) for o, a in stops]
+    mask = f"linear-gradient({_n(angle)}deg, " + ", ".join(f"rgba(0,0,0,{_n(a)}) {_n(o * 100)}%" for o, a in stops) + ")"
+    return [f"-webkit-mask-image:{mask}", f"mask-image:{mask}"]
 
 
 def _fill_css(color: str | None, style: TextStyle, box_wh: tuple[float, float]) -> list[str]:
@@ -179,12 +197,17 @@ def text_html(c: Canonical, *, registry: FontRegistry | None = None, scene_dir: 
         inner = f"{base};color:{col};-webkit-text-stroke:{_n(2 * e.width)}px {col}"
         layers.append(f'<span aria-hidden="true" style="{attr(outer)}"><span style="{attr(inner)}">{text}</span></span>')
     fill = base + ";" + ";".join(_fill_css(c.color, style, box))
-    wrapper = ["position:relative", "overflow:hidden"]
-    if style.fade is not None:
-        angle, stops = fade_stops(style.fade)
-        mask = f"linear-gradient({_n(angle)}deg, " + ", ".join(f"rgba(0,0,0,{_n(a)}) {_n(o * 100)}%" for o, a in stops) + ")"
-        wrapper += [f"-webkit-mask-image:{mask}", f"mask-image:{mask}"]
-    return f'<span class="kf-text" style="{attr(wrapper)}">{"".join(layers)}<span style="{attr(fill)}">{text}</span></span>'
+    inner = f'{"".join(layers)}<span style="{attr(fill)}">{text}</span>'
+    pad = text_canvas(box, style)[2]
+    if not pad:   # no effects: the box clips, as before
+        return f'<span class="kf-text" style="{attr(["position:relative", "overflow:hidden", *_fade_mask(style, box, 0)])}">{inner}</span>'
+    # R41: effects reach past the box; every layer is clipped to the raster's effect canvas (the box + pad)
+    w, h = float(box[0]), float(box[1])
+    clip = ["position:absolute", f"left:{-pad}px", f"top:{-pad}px", f"width:{_n(w + 2 * pad)}px",
+            f"height:{_n(h + 2 * pad)}px", "overflow:hidden", *_fade_mask(style, box, pad)]
+    frame = ["position:absolute", f"left:{pad}px", f"top:{pad}px", f"width:{_n(w)}px", f"height:{_n(h)}px"]
+    return (f'<span class="kf-text" style="position:relative;overflow:visible"><span style="{attr(clip)}">'
+            f'<span style="{attr(frame)}">{inner}</span></span></span>')
 
 
 # --- @font-face ---------------------------------------------------------------------------------------------

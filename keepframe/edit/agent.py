@@ -158,7 +158,7 @@ def edit(
     if unresolved and not parsed.ambiguous:
         parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
     try:
-        built = plan(scene, parsed)
+        built = plan(scene, parsed, fonts=fonts, scene_dir=sd)
     except ValueError as exc:
         if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
             raise

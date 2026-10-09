@@ -13,7 +13,7 @@ from ..ir.colour import rgb8_to_hex
 from ..ir.schema import Background, Element, FontGuess, Scene, TextStyle
 from ..ir.synth import make_text_texture
 from ..assets import AssetAPIError, validate_glb
-from ..fonts.raster import MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts
+from ..fonts.raster import _HANGUL, MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts, text_size
 from ..fonts.registry import FontRegistry
 from ..fonts.upload import pin_face
 from ..log import get, scrub_paths
@@ -68,29 +68,45 @@ def _split_wrap(text: str) -> list[str]:
     return [p for p in (a, b) if p] or [text]
 
 
+def edit_size(size_px: float, line_h: float | None = None) -> float:
+    """A font size an edit may rasterise (R40): `text_size`'s bounds (≤ MAX_TEXT_PX and 8× the line box);
+    a non-positive or non-finite size draws at the default 32 px (within the same bounds)."""
+    try:
+        return text_size(size_px, line_h)
+    except ValueError:
+        return text_size(32.0, line_h)
+
+
 def write_text_texture(path: Path, text: str, size_px: float, color: tuple[int, int, int], lines: list[str] | None = None,
                        family: str = "sans-serif", *, font: FontGuess | None = None, style: TextStyle | None = None,
                        fonts: FontRegistry | None = None, scene_dir: Path | None = None,
-                       box: tuple[float, float] | None = None) -> tuple[int, int]:
-    """With `font`: the styled raster the composer CSS matches (box-sized; natural box when None). Without it, or
-    if that fails: today's measured texture."""
+                       box: tuple[float, float] | None = None, info: dict | None = None) -> tuple[int, int]:
+    """With `font`: the styled raster the composer CSS matches, box-sized (natural box when None) with its effect
+    canvas around it (`info["pad"]`, R41). Without it, or if that fails: today's measured texture (pad 0).
+    Every size is clamped first (R40)."""
+    rows = lines or [text]
+    line_h = box[1] / len(rows) if box is not None and box[1] > 0 else None
+    size_px = edit_size(size_px, line_h)
+    if info is not None:
+        info["pad"] = 0
     if font is not None:
         try:
-            img = render_styled(lines or [text], font.model_copy(update={"size_px": float(size_px)}), rgb8_to_hex(color),
-                                style, registry=fonts, scene_dir=scene_dir, box=box)
+            img, pad = render_styled(rows, font.model_copy(update={"size_px": float(size_px)}), rgb8_to_hex(color),
+                                     style, registry=fonts, scene_dir=scene_dir, box=box, padded=True)
             path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(path), img[..., [2, 1, 0, 3]])
+            if info is not None:
+                info["pad"] = pad
             h, w = img.shape[:2]
-            return w, h
+            return w - 2 * pad, h - 2 * pad
         except Exception as e:   # fail soft: a texture without the style beats no edit
-            log.warning("styled text raster failed (%s); writing a plain texture", e)
-    img = render_lines(lines or [text], size_px, color, family)
+            log.warning("styled text raster failed (%s); writing a plain texture", scrub_paths(e))
+    img = render_lines(rows, size_px, color, family)
     if img is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), img)
         h, w = img.shape[:2]
         return w, h
-    rows = lines or [text]
     if len(rows) == 1:
         return make_text_texture(path, rows[0], int(round(size_px)), color)
     sizes = [measure_text(row, size_px, family) for row in rows]
@@ -243,14 +259,54 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
     return out
 
 
-def _styled(el: Element, fonts: FontRegistry, scene_dir: Path) -> bool:
+def _styled(el: Element, fonts: FontRegistry, scene_dir: Path, text: str | None = None) -> bool:
+    """Text an edit draws with the styled raster: analysed style or an uploaded/bundled face (the composer draws
+    those the same way), or text with Hangul (the bundled fallback draws it, ahead of system fonts)."""
     c = el.canonical
-    return c.font is not None and (c.style is not None or embedded_face(c.font, fonts, scene_dir))
+    if c.font is None:
+        return False
+    return c.style is not None or embedded_face(c.font, fonts, scene_dir) or bool(_HANGUL.search(text or c.text or ""))
+
+
+def _line_h(c) -> float:
+    return c.height / max(1, (c.text or "").count("\n") + 1)
+
+
+def text_width(el: Element, text: str, font: FontGuess | None = None, *, fonts: FontRegistry | None = None,
+               scene_dir: Path | None = None) -> float:
+    """Width `text` takes as an edit would draw it (`font` replaces the element's): the styled layout (weight,
+    tracking, shear, dx, fallback) or, for legacy text, the measured texture."""
+    fonts = fonts or FontRegistry()
+    c = el.canonical
+    font = font or c.font or FontGuess()
+    probe = el.model_copy(update={"canonical": c.model_copy(update={"font": font})})
+    lines = text.split("\n")
+    size = edit_size(font.size_px, _line_h(c))   # R40: measuring rasterises too
+    if _styled(probe, fonts, scene_dir, text):
+        resolved = resolve_fonts(font, text, fonts, scene_dir)
+        if resolved is not None:
+            st = c.style or TextStyle()
+            return float(natural_box(lines, size, resolved, tracking_em=st.tracking_em, shear_deg=st.shear_deg, dx=st.dx)[0])
+    return float(max(measure_text(line, size, font.family_guess)[0] for line in lines))
+
+
+def _write_styled(el: Element, scene_dir: Path, lines: list[str], font: FontGuess, color: tuple[int, int, int],
+                  fonts: FontRegistry, box: tuple[float, float]) -> None:
+    """Writes the element's styled texture and records it (texture, padding)."""
+    c = el.canonical
+    dest = _next_asset(scene_dir, el.id, "txt")
+    info: dict = {}
+    write_text_texture(dest, "\n".join(lines), font.size_px, color, lines=lines, family=font.family_guess, font=font,
+                       style=c.style, fonts=fonts, scene_dir=scene_dir, box=box, info=info)
+    c.texture = f"assets/{dest.name}"
+    c.texture_pad = float(info.get("pad", 0))
+    if c.style is None:   # the composer draws it the styled way too (same faces, fallback included)
+        c.style = TextStyle()
 
 
 def _apply_styled_text(el: Element, scene_dir: Path, text: str, overflow: str | None, fonts: FontRegistry) -> bool:
     """Re-render styled text in its box: same line height, analysed fill/effects/tracking; the box widens (and
-    gains lines) only when the new text needs it."""
+    gains lines) only when the new text needs it. Effects past the box stay in the texture's padding (R41)."""
     c = el.canonical
     font, style = c.font, c.style or TextStyle()
     lines = _split_wrap(text) if overflow == "wrap" else text.split("\n")
@@ -258,41 +314,45 @@ def _apply_styled_text(el: Element, scene_dir: Path, text: str, overflow: str | 
     if resolved is None:
         return False
     natural = lambda size: natural_box(lines, size, resolved, tracking_em=style.tracking_em, shear_deg=style.shear_deg, dx=style.dx)
-    size = font.size_px
+    size = edit_size(font.size_px, _line_h(c))   # R40: scene sizes are untrusted
     if overflow == "shrink_font":
         size = _shrink(size, lambda s: natural(s)[0] <= c.width)
+    if size != font.size_px:
         font = font.model_copy(update={"size_px": float(size)})
     need_w = float(natural(size)[0])
     width = need_w if overflow == "expand_box" or need_w > c.width else c.width
-    height = float(round(c.height / max(1, (c.text or "").count("\n") + 1) * len(lines)))   # keeps the line height
-    dest = _next_asset(scene_dir, el.id, "txt")
-    write_text_texture(dest, text, size, _rgb(c.color or "#ffffff"), lines=lines, font=font, style=c.style, fonts=fonts,
-                       scene_dir=scene_dir, box=(width, height))
-    c.text = "\n".join(lines)   # the composer draws live text: keep the wrap it was rendered with
+    height = float(round(_line_h(c) * len(lines)))   # keeps the line height
     c.font = font
-    c.texture = f"assets/{dest.name}"
+    _write_styled(el, scene_dir, lines, font, _rgb(c.color or "#ffffff"), fonts, (width, height))
+    c.text = "\n".join(lines)   # the composer draws live text: keep the wrap it was rendered with
     c.width, c.height = width, height
     return True
 
 
 def _apply_text(el: Element, scene_dir: Path, text: str, overflow: str | None, fonts: FontRegistry | None = None) -> None:
+    """Fonts: uploaded > bundled > the bundled Hangul fallback > system (fontconfig) > Hershey; the analysed
+    colour, style, effects and tracks are kept."""
     fonts = fonts or FontRegistry()
-    if _styled(el, fonts, scene_dir) and _apply_styled_text(el, scene_dir, text, overflow, fonts):
+    if _HANGUL.search(text) and el.canonical.font is None:
+        el.canonical.font = FontGuess()
+    if _styled(el, fonts, scene_dir, text) and _apply_styled_text(el, scene_dir, text, overflow, fonts):
         return
     font = el.canonical.font or FontGuess()
     color = _rgb(el.canonical.color or "#ffffff")
-    size = font.size_px
+    size = edit_size(font.size_px, _line_h(el.canonical))   # R40
     lines = None
     if overflow == "wrap":
         lines = _split_wrap(text)
     elif overflow == "shrink_font":
         size = _shrink(size, lambda s: measure_text(text, s, font.family_guess)[0] <= el.canonical.width)
+    if size != font.size_px:
         font = font.model_copy(update={"size_px": size})
     dest = _next_asset(scene_dir, el.id, "txt")
     w, h = write_text_texture(dest, text, font.size_px, color, lines=lines, family=font.family_guess)
     el.canonical.text = text
     el.canonical.font = font
     el.canonical.texture = f"assets/{dest.name}"
+    el.canonical.texture_pad = 0.0
     if overflow == "expand_box" or overflow == "wrap" or w > el.canonical.width or h > el.canonical.height:
         el.canonical.width = float(w)
         el.canonical.height = float(h)
@@ -305,17 +365,15 @@ def _apply_color(el: Element, scene_dir: Path, hexs: str, fonts: FontRegistry | 
     c = el.canonical
     if el.kind == "text" and c.text and _styled(el, fonts, scene_dir):
         if c.style is not None and c.style.fill is not None:
-            c.style = c.style.model_copy(update={"fill": None})   # a solid colour replaces the gradient
-        dest = _next_asset(scene_dir, el.id, "txt")
-        write_text_texture(dest, c.text, c.font.size_px, color, lines=c.text.split("\n"), font=c.font, style=c.style,
-                           fonts=fonts, scene_dir=scene_dir, box=(c.width, c.height))
-        c.texture = f"assets/{dest.name}"
+            c.style = c.style.model_copy(update={"fill": None})   # a solid colour replaces the gradient; effects stay
+        _write_styled(el, scene_dir, c.text.split("\n"), c.font, color, fonts, (c.width, c.height))
         return
     if el.kind == "text" and el.canonical.text:
         dest = _next_asset(scene_dir, el.id, "txt")
         font = el.canonical.font or FontGuess()
-        w, h = write_text_texture(dest, el.canonical.text, font.size_px, color, family=font.family_guess)
+        w, h = write_text_texture(dest, el.canonical.text, edit_size(font.size_px, _line_h(c)), color, family=font.family_guess)
         el.canonical.texture = f"assets/{dest.name}"
+        el.canonical.texture_pad = 0.0
         el.canonical.width = float(w)
         el.canonical.height = float(h)
         return

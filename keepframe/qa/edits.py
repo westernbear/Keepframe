@@ -1,4 +1,4 @@
-"""`keepframe eval-edits`: analyse references, edit a temp copy (title text, hide an element, replace the
+"""`keepframe eval-edits`: analyse references, edit a temp copy (title text, hide an element, replace or tint the
 background) and measure what pixel L1 cannot see. Synthetic scenes carry exact ground truth (double render);
 real clips carry gold titles (docs/qa/reference-analysis/gold)."""
 from __future__ import annotations
@@ -10,9 +10,11 @@ from typing import Literal, Sequence
 import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from scipy.stats import spearmanr
 from ..analyze.pipeline import AnalyzeOptions, analyze
 from ..edit.agent import edit
 from ..edit.intent import Intent, Target
+from ..edit.tint import tint_background
 from ..ir.colour import delta_e, hex_to_rgb8, srgb_to_lab
 from ..ir.schema import Background, Scene
 from ..ir.store import current_scene, load_project, save_scene, scene_dir
@@ -25,7 +27,7 @@ from .sheets import comparison_sheet
 log = get("keepframe.qa")
 Renderer = Literal["numpy", "browser"]
 TITLE_TEXT = "Fall Drop Sale"
-BACKGROUND_EDITS: list[tuple[str, str]] = [("replace", "#1a2a6c")]   # Task 12 adds ("tint", …) with the background choice
+BACKGROUND_EDITS: list[tuple[str, str]] = [("replace", "#1a2a6c"), ("tint", "#1a2a6c")]   # the background choice (Task 12)
 SHEET_LABELS = ("source", "rebuilt", "title edited", "element hidden", "background replaced")
 PLATES = ("gradient", "flat", "animated", "image")
 # name: (sample key, op, threshold[, True: add the scene's ring_floor]). Every sample must pass, except "rate" gates
@@ -229,28 +231,44 @@ def edit_checks(root, scene_id, *, title, hide, frames, renderer: Renderer, trut
         result["hide"].append({"element": h, "truth": tid, "missed": h is None,
                                **_strict(shown, ("mean_de", "p95_de", "hf_ratio", "residue_fraction", "truth_de")), "frames": per})
 
+    old_plate: dict | None = None
     for mode, colour in BACKGROUND_EDITS:
         with tempfile.TemporaryDirectory(prefix="keepframe-eval-") as temp:
             check, edited, esd = _agent_edit(root, scene_id, temp, Target(property="background", value=colour), {"background": mode})
             check.update(mode=mode, colour=colour, halo_ring=None)
             if edited is not None:
                 imgs = dict(zip(frames, render_frames(edited, esd, frames, renderer=renderer)))
-                if truth:
-                    recoloured = truth["scene"].model_copy(update={"background": Background(kind="color", value=colour)})
-                    ideal = dict(zip(frames, render_frames(recoloured, truth["dir"], frames, renderer=renderer)))
+                if old_plate is None:
+                    old_plate = dict(zip(frames, render_frames(scene.model_copy(update={"elements": []}), sd, frames, renderer=renderer)))
+                new_plate = dict(zip(frames, render_frames(edited.model_copy(update={"elements": []}), esd, frames, renderer=renderer)))
+                if truth:   # the true layers over the true plate given the same edit
+                    tdir = Path(temp) / "truth"
+                    shutil.copytree(truth["dir"] / "assets", tdir / "assets")
+                    tbg = truth["scene"].background
+                    bg = tint_background(tbg, tdir, colour, size=scene.size) if mode == "tint" and tbg.kind != "color" \
+                        else Background(kind="color", value=colour)
+                    ideal = dict(zip(frames, render_frames(truth["scene"].model_copy(update={"background": bg}), tdir, frames, renderer=renderer)))
                     W, H = scene.size
                     union = {f: np.ones((H, W), np.float32) for f in frames}
                     for per_frame in truth["layers"].values():
                         for f in frames:
                             union[f] *= 1 - per_frame[f][0]
                     alpha_scene = {f: 1 - union[f] for f in frames}
-                else:   # no truth: swap the analysed plate for the new colour under the analysed coverage
-                    old = dict(zip(frames, render_frames(scene.model_copy(update={"elements": []}), sd, frames, renderer=renderer)))
-                    new = np.float32(hex_to_rgb8(colour))
-                    ideal = {f: src[f] + (new - old[f]) * (1 - cover[f])[..., None] for f in frames}
+                else:   # no truth: swap the analysed plate for the edited one under the analysed coverage
+                    ideal = {f: src[f] + (new_plate[f] - old_plate[f]) * (1 - cover[f])[..., None] for f in frames}
                     alpha_scene = cover
                 per = [{"frame": f, "halo_ring": halo_ring(imgs[f], ideal[f], alpha_scene[f])} for f in frames]
-                check.update(**_strict(per, ("halo_ring",)), frames=per)
+                keys = ("halo_ring",)
+                if mode == "tint":   # D5 on the plate: mean L and (a, b) on the target, light/dark order kept
+                    target = srgb_to_lab(np.float32(hex_to_rgb8(colour)))
+                    for p in per:
+                        lab, lab0 = srgb_to_lab(new_plate[p["frame"]]).reshape(-1, 3), srgb_to_lab(old_plate[p["frame"]]).reshape(-1, 3)
+                        mean = lab.mean(0)
+                        rho = spearmanr(lab0[::7, 0], lab[::7, 0]).statistic if np.ptp(lab0[:, 0]) > 0 else None
+                        p.update(plate_l_err=float(abs(mean[0] - target[0])), plate_ab_de=float(delta_e(mean[1:], target[1:])),
+                                 l_rho=float(rho) if _finite(rho) else None)
+                    keys += ("plate_l_err", "plate_ab_de", "l_rho")
+                check.update(**_strict(per, keys), frames=per)
                 if mode == BACKGROUND_EDITS[0][0]:
                     for f in frames:
                         images[f][4] = imgs[f]
@@ -631,10 +649,13 @@ def summary_markdown(m: dict) -> str:
     if rows:
         lines += ["## synthetic scenes", "",
                   "| seed | plate | s | matched | title whole | title ΔE | font top-3 | α SAD | F ΔE int / edge | bg leak | leak slope | "
-                  "plate ΔE under title / logo | title outside / smear / glyph | hide ΔE / hf / residue (truth ΔE) | halo | render L1 |",
-                  "|" + "---|" * 16]
+                  "plate ΔE under title / logo | title outside / smear / glyph | hide ΔE / hf / residue (truth ΔE) | halo replace / tint | "
+                  "tint L err / ab ΔE / L ρ | render L1 |",
+                  "|" + "---|" * 17]
         for r in rows:
             t, a = r["title"] or {}, r["alpha"]
+            bgs = {b.get("mode"): b for b in r["background"]}
+            tint = bgs.get("tint", {})
             hides = "; ".join(f"{h['element'] or 'missed ' + h['truth']}: {_fmt(h['mean_de'])} / {_fmt(h['hf_ratio'])} / "
                               f"{_fmt(h['residue_fraction'], 3)} ({_fmt(h['truth_de'])})" for h in r["hide"])
             lines.append(f"| {r['seed']} | {r['plate']} | {r['seconds']:.0f} | {r['matched']}/{r['elements']['truth']} | "
@@ -642,19 +663,21 @@ def summary_markdown(m: dict) -> str:
                          f"{_fmt(a['f_de_interior'])} / {_fmt(a['f_de_edge'])} | {_fmt(r['leak']['bg_leak_fraction'], 3)} | "
                          f"{_fmt(r['leak']['leak_correlation'])} | {_fmt(r['plate_de']['under_title'])} / {_fmt(r['plate_de']['under_logo'])} | "
                          f"{_fmt(t.get('outside_glyph_delta'))} / {_fmt(t.get('smear_score'))} / {_fmt(t.get('glyph_de'))} "
-                         f"({t.get('status', '—')}) | {hides} | {_fmt(r['background'][0].get('halo_ring') if r['background'] else None)} | "
+                         f"({t.get('status', '—')}) | {hides} | {_fmt(bgs.get('replace', {}).get('halo_ring'))} / {_fmt(tint.get('halo_ring'))} | "
+                         f"{_fmt(tint.get('plate_l_err'))} / {_fmt(tint.get('plate_ab_de'))} / {_fmt(tint.get('l_rho'), 3)} | "
                          f"{_fmt(r['render_l1'], 4)} |")
         lines.append("")
     rows = m.get("clips", {}).get("rows", [])
     if rows:
-        lines += ["## clips", "", "| clip | s | elements | titles whole | colour ΔE | render L1 | bg leak | title outside / smear / glyph | hide ΔE | halo |",
-                  "|" + "---|" * 10]
+        lines += ["## clips", "", "| clip | s | elements | titles whole | colour ΔE | render L1 | bg leak | title outside / smear / glyph | hide ΔE | "
+                  "halo replace / tint |", "|" + "---|" * 10]
         for r in rows:
             t = r["title"] or {}
             lines.append(f"| {r['clip']} | {r['seconds']:.0f} | {r['elements']} | {sum(i['whole'] for i in r['integrity'])}/{len(r['integrity'])} | "
                          f"{', '.join(_fmt(c['de']) for c in r['colour'])} | {_fmt(r['render_l1'], 4)} | {_fmt(r['leak']['bg_leak_fraction'], 3)} | "
                          f"{_fmt(t.get('outside_glyph_delta'))} / {_fmt(t.get('smear_score'))} / {_fmt(t.get('glyph_de'))} | "
-                         f"{_fmt(r['hide'][0]['mean_de'] if r['hide'] else None)} | {_fmt(r['background'][0].get('halo_ring') if r['background'] else None)} |")
+                         f"{_fmt(r['hide'][0]['mean_de'] if r['hide'] else None)} | "
+                         f"{' / '.join(_fmt(b.get('halo_ring')) for b in r['background']) or '—'} |")
         lines.append("")
     return "\n".join(lines)
 

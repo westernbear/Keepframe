@@ -165,3 +165,39 @@ def test_generic_and_unknown_families_match(tmp_path):
         iou, d = _mask_stats(a, b)
         print(f"generic {family}: IoU {iou:.3f} bbox {d:.2f}")
         assert iou >= 0.90 and d <= 1.5
+
+
+@pytest.mark.parametrize("effect,fade", [
+    (TextEffect(kind="glow", color="#ffe060", opacity=1.0, blur=24), None),
+    (TextEffect(kind="shadow", color="#000000", opacity=0.8, dx=8, dy=10, blur=6), None),
+    (TextEffect(kind="shadow", color="#000000", opacity=0.8, dx=8, dy=10, blur=6),
+     {"angle": 90, "stops": [{"offset": 0.2, "alpha": 1}, {"offset": 1, "alpha": 0.2}]})])
+def test_css_matches_raster_effects_past_the_box(tmp_path, effect, fade):
+    """R41: a glow or shadow reaching past the (tight, R27) text box is drawn there by both sides — the CSS effect
+    canvas (its fade mask clamped past the box) and the padded raster the numpy compositor places by `texture_pad`."""
+    from keepframe.fonts.raster import natural_box, render_styled, resolve_fonts
+    from keepframe.render.renderer import load_frame, render
+    font, style = _font(weight=800, size=56.0), TextStyle(effects=[effect], dx=4, fade=fade)
+    box = natural_box(["Glow 42"], 56.0, resolve_fonts(font, "Glow 42", REG), dx=4)
+    scene = _scene("Glow 42", font, style, box, color="#f0f0f0", bg="#5a6a7a")
+    el = scene.elements[0]
+    x, y = 80, 70
+    el.tracks = {"x": Track(keys=[Keyframe(t=0, v=float(x))]), "y": Track(keys=[Keyframe(t=0, v=float(y))])}
+    rgba, pad = render_styled(["Glow 42"], font, "#f0f0f0", style, registry=REG, box=box, padded=True)
+    (tmp_path / "assets").mkdir(exist_ok=True)
+    cv2.imwrite(str(tmp_path / el.canonical.texture), rgba[..., [2, 1, 0, 3]])
+    el.canonical.texture_pad = float(pad)
+    a = composite_scene(scene, tmp_path, 0)
+    r = render(compose(scene, tmp_path, tmp_path / "c.html"), scene, tmp_path / "r", frames=[0], probe=False)
+    b = load_frame(r.frames_dir / "f_00000.png")
+    region = (slice(y - pad, y + box[1] + pad), slice(x - pad, x + box[0] + pad))
+    a, b = a[region], b[region]
+    inside = np.zeros(a.shape[:2], bool)
+    inside[pad:pad + box[1], pad:pad + box[0]] = True
+    bg = np.float32([0x5a, 0x6a, 0x7a]) / 255
+    drawn = [int((np.abs(img - bg).max(-1)[~inside] > 0.03).sum()) for img in (a, b)]
+    print(f"{effect.kind}: pixels past the box raster {drawn[0]} css {drawn[1]}")
+    assert min(drawn) > 100   # both draw the effect past the box
+    l1, l1_out = float(np.abs(a - b).mean()), float(np.abs(a - b)[~inside].mean())
+    print(f"{effect.kind} past the box: pad {pad} L1 {l1:.4f} outside {l1_out:.4f}")
+    assert l1 <= 0.03 and l1_out <= 0.03

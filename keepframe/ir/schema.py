@@ -181,6 +181,9 @@ class Canonical(BaseModel):
     style: Optional[TextStyle] = None
     texture_meta: Optional[TextureMeta] = None
     video: Optional[str] = None
+    # Styled text textures carry their effects past the box (R41): the texture covers the box grown by this many
+    # box pixels on every side.
+    texture_pad: float = Field(default=0.0, ge=0.0, le=512.0, exclude_if=lambda v: not v)   # absent when 0
 
 
 class FitError(BaseModel):

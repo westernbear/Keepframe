@@ -28,10 +28,18 @@ def texture_to_scene_affine(el: Element, props: dict[str, float], tex_shape: tup
     th, tw = tex_shape
     c = el.canonical
     ax, ay = c.anchor
-    # texture pixel -> local canonical coords (anchor at origin)
-    L = np.array([[c.width / tw, 0.0, -ax * c.width], [0.0, c.height / th, -ay * c.height], [0.0, 0.0, 1.0]])
+    p = _pad(c, tex_shape)
+    # texture pixel -> local canonical coords (anchor at origin); a padded texture's box starts at (p, p) (R41)
+    sx, sy = c.width / (tw - 2 * p), c.height / (th - 2 * p)
+    L = np.array([[sx, 0.0, -p * sx - ax * c.width], [0.0, sy, -p * sy - ay * c.height], [0.0, 0.0, 1.0]])
     M = affine_matrix(props) @ L
     return M[:2, :]
+
+
+def _pad(c, tex_shape: tuple[int, int]) -> float:
+    """The texture's padding past the box (styled text effects, R41); 0 when it would leave no box."""
+    p = float(c.texture_pad or 0.0)
+    return p if p > 0 and min(tex_shape) - 2 * p >= 1 else 0.0
 
 
 def composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacity: float) -> None:
@@ -113,6 +121,9 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
         reveal = float(np.clip(p["reveal"], 0.0, 1.0))
         if reveal < 1.0:
             prem = prem.copy()  # never clip either shared full-texture cache
-            prem[:, int(round(prem.shape[1] * reveal)):] = 0
+            pad = int(round(_pad(el.canonical, prem.shape[:2])))
+            if pad:   # the composer's reveal clips to the box (clip-path inset), effects past it included
+                prem[:pad], prem[prem.shape[0] - pad:], prem[:, :pad] = 0, 0, 0
+            prem[:, pad + int(round((prem.shape[1] - 2 * pad) * reveal)):] = 0
         _composite_premultiplied(canvas, prem, texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
     return canvas
