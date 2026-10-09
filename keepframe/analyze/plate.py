@@ -1,7 +1,8 @@
 """Plate v2 (after tracking): the temporal median over only the frames where a pixel is uncovered; pixels
 no frame shows are filled from their surroundings and recorded as synthetic. Large elements animating in place
 (movers) are then found and taken out of it. The plate is classified: flat colour, editable gradient (static,
-or animated with keys), still image, or video candidate."""
+or animated with keys), still image, or video: a plate that keeps moving gets a per-frame plate (the nearest frame
+that shows each pixel, `stages/plate_frames.npy`) played as `assets/background.webm` with the median as its poster."""
 from __future__ import annotations
 import json, math, os, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from ..ir.colour import delta_e, hex_to_rgb8, rgb8_to_hex, srgb8_to_lab, srgb_to
 from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import Background, Gradient, GradientKey
 from ..log import get
+from . import videoasset
 from .background import PLATE_PATH
 from .gradient_fit import fit_gradient, fit_like, follow, measure, shrink, stop_range
 from .text import reveal_exclusion_boxes
@@ -47,21 +49,24 @@ KEY_PX = 48               # render size (px) for the key-dropping comparison
 MIN_VALID = 0.25          # a sample needs this share of uncovered pixels to be fitted
 MOVER_PAD = 24            # the median is recomputed in the movers' bbox ± this
 SYNTH_PATH = "assets/background_synthetic.png"
+VIDEO_PATH = "assets/background.webm"
+FRAMES_PATH = "stages/plate_frames.npy"
 PLATE_JSON = "stages/plate.json"
 VERSION = 2
 
 
 @dataclass
 class PlateModel:
-    kind: str                         # color | gradient | image (video later)
-    image: np.ndarray                 # H×W×3 uint8 still plate: the render of a static gradient, else the median
+    kind: str                         # color | gradient | image | video
+    image: np.ndarray                 # H×W×3 uint8 still plate: the render of a static gradient, else the median (a
+                                      # video's poster)
     rgb: tuple[int, int, int]         # flat colour, or the representative colour of a picture
     synthetic: np.ndarray | None      # H×W bool: filled, never-visible pixels
     confidence: float = 1.0
     stats: dict = field(default_factory=dict)
     gradient: Gradient | None = None
     gradient_keys: list[GradientKey] = field(default_factory=list)
-    frames: np.ndarray | None = None  # per-frame plates of an animated background
+    frames: np.ndarray | None = None  # per-frame plates of a video background (memmap of FRAMES_PATH)
     movers: list = field(default_factory=list)   # movers.Mover taken out of this plate (cached in stages/movers.pkl)
     _cache: dict = field(default_factory=dict, init=False, repr=False, compare=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
@@ -365,8 +370,8 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
     """Static plate (temporal p95 < STATIC_P95): color when flat; gradient when a ≤ 4-stop linear or ≤ 3-stop
     radial gradient fits within GRADIENT_P95 at ≤ 160 px and GRADIENT_FULL_P95 at ≤ 640 px and its stops
     span ≥ MIN_STOP_RANGE; else image. Moving plate:
-    gradient with keys when rank 2 over time and fitted per sample; else a video candidate, kept as a still
-    image with a message until video plates exist."""
+    gradient with keys when rank 2 over time and fitted per sample; else a video candidate: a still image with a
+    message, until build_plate makes it a video plate."""
     p95, r2 = stats["p95_dE"], stats["rank2_ratio"]
     st = {**model.stats, "temporal_p95_de": round(p95, 3), "rank2_ratio": round(r2, 4)}
     H, W = model.image.shape[:2]
@@ -389,6 +394,58 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
     st["video_candidate"] = True
     st["message"] = f"background animates (p95 ΔE {p95:.1f}); kept as a still image"
     return replace(model, kind="image", stats=st)
+
+
+def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateModel:
+    """A video candidate as a video plate: every frame's occupancy (movers included) in a temporary memmap, then
+    fill_video_plate behind the still plate. Without a VP9 encoder, or on any error, the still image and its message."""
+    if not videoasset.ffmpeg_vp9_ok():
+        return model
+    from .movers import mover_cover
+    t0 = time.perf_counter()
+    n, H, W = frames.shape[:3]
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    occ_path = out.with_name(".plate_occ.npy")
+    try:
+        occ = np.lib.format.open_memmap(occ_path, mode="w+", dtype=bool, shape=(n, H, W))
+
+        def run(f):
+            m = _occ_frame((H, W), rbf[f], boxes[f], reveal.get(f, ()), DILATE_PX)
+            occ[f] = m | mover_cover(model.movers, f, (H, W)) if model.movers else m
+
+        with ThreadPoolExecutor(_workers()) as ex:
+            list(ex.map(run, range(n)))
+        per_frame = videoasset.fill_video_plate(frames, occ, model.image, out)
+    except Exception:   # fail soft: the still image keeps its message
+        log.exception("video plate failed")
+        out.unlink(missing_ok=True)
+        return model
+    finally:
+        occ_path.unlink(missing_ok=True)
+    st = {k: v for k, v in model.stats.items() if k != "message"}
+    log.info("plate video frames %.2fs n=%s", time.perf_counter() - t0, n)
+    return replace(model, kind="video", frames=per_frame, stats={**st, "video": True})
+
+
+def write_video(sd, model: PlateModel, fps: float) -> PlateModel:
+    """VIDEO_PATH from a video plate's frames (size-capped). When it cannot be made: the still image with a message
+    naming the code, and the per-frame plate is removed."""
+    if model.kind != "video":
+        return model
+    sd = Path(sd)
+    t0 = time.perf_counter()
+    n = len(model.frames)
+    path, code = videoasset.encode_capped(lambda: (model.frames[f] for f in range(n)), fps, sd / VIDEO_PATH, alpha=False)
+    if path is None:
+        p95 = float(model.stats.get("temporal_p95_de") or 0.0)
+        st = {**model.stats, "video": False,
+              "message": f"background animates (p95 ΔE {p95:.1f}); kept as a still image ({code})"}
+        (sd / FRAMES_PATH).unlink(missing_ok=True)
+        return replace(model, kind="image", frames=None, stats=st)
+    size = path.stat().st_size
+    log.info("plate video encode %.2fs bytes=%s", time.perf_counter() - t0, size)
+    return replace(model, stats={**model.stats, "video_bytes": size})
 
 
 def _without_movers(frames, sample, occ, raw, counts, movers, rbf, boxes, reveal):
@@ -425,8 +482,9 @@ def _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tr
 
 
 def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1,
-                obj_tracks=None) -> PlateModel:
-    """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none."""
+                obj_tracks=None, frames_out=None) -> PlateModel:
+    """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none.
+    `frames_out` (FRAMES_PATH) enables video plates."""
     n, H, W = frames.shape[:3]
     if bg_override:
         rgb = hex_to_rgb8(bg_override)
@@ -467,6 +525,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         log.exception("plate classification failed")
         model.stats["message"] = f"plate classification skipped: {type(e).__name__}: {e}"[:200]
         failed = True
+    if model.stats.get("video_candidate") and frames_out is not None:
+        model = _video_plate(model, frames, rbf, boxes, reveal, frames_out)
     t.append(time.perf_counter())
     if model.kind == "color":   # a flat colour never shows the filled pixels
         model.synthetic = None
@@ -530,7 +590,7 @@ def load_plate(sd) -> PlateModel | None:
         confidence, stats, synth = float(j["confidence"]), j.get("stats", {}), bool(j.get("synthetic"))
         gradient = Gradient.model_validate(j["gradient"]) if j.get("gradient") is not None else None
         keys = [GradientKey.model_validate(k) for k in j.get("gradient_keys") or []]
-        if kind not in ("color", "image", "gradient") or len(rgb) != 3 or not all(0 <= v <= 255 for v in rgb) \
+        if kind not in ("color", "image", "gradient", "video") or len(rgb) != 3 or not all(0 <= v <= 255 for v in rgb) \
                 or W <= 0 or H <= 0 or not isinstance(stats, dict) or (kind == "gradient" and gradient is None):
             return None
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
@@ -546,7 +606,15 @@ def load_plate(sd) -> PlateModel | None:
         if m is None or m.shape != (H, W):
             return None
         synthetic = m > 127
-    return PlateModel(kind, cv2.cvtColor(img, cv2.COLOR_BGR2RGB), rgb, synthetic, confidence, stats, gradient, keys)
+    frames = None
+    if kind == "video":   # the per-frame plate and its WebM must both be there
+        try:
+            frames = np.load(sd / FRAMES_PATH, mmap_mode="r")
+        except (OSError, ValueError):
+            return None
+        if frames.ndim != 4 or frames.shape[1:] != (H, W, 3) or not (sd / VIDEO_PATH).is_file():
+            return None
+    return PlateModel(kind, cv2.cvtColor(img, cv2.COLOR_BGR2RGB), rgb, synthetic, confidence, stats, gradient, keys, frames)
 
 
 def background_for(model: PlateModel, sd) -> Background:
@@ -557,4 +625,7 @@ def background_for(model: PlateModel, sd) -> Background:
         return Background(kind="gradient", value=rgb8_to_hex(model.rgb), confidence=model.confidence, gradient=model.gradient,
                           gradient_keys=list(model.gradient_keys), poster=poster)
     synth = model.synthetic is not None and model.synthetic.any() and (Path(sd) / SYNTH_PATH).is_file()
+    if model.kind == "video":   # plays the WebM; the median is the poster (stills, AE until Task 14)
+        return Background(kind="video", value=VIDEO_PATH, poster=PLATE_PATH, confidence=model.confidence,
+                          synthetic=SYNTH_PATH if synth else None)
     return Background(kind="image", value=PLATE_PATH, confidence=model.confidence, synthetic=SYNTH_PATH if synth else None)

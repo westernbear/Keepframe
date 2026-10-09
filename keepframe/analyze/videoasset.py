@@ -36,6 +36,7 @@ def encode_webm(frames, fps: float, out, *, alpha: bool, crf: int = CRF) -> Path
     quality (`-b:v 0 -crf`), `-deadline good -cpu-used 4 -row-mt 1`. Written beside `out` and renamed into place;
     raises RuntimeError("encode_failed") on any error (nothing left behind)."""
     out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(f".{out.name}.tmp")
     it = iter(frames)
     first = np.ascontiguousarray(next(it), np.uint8)

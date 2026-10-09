@@ -840,10 +840,12 @@ def _seen_alpha(p: dict, frames: np.ndarray, plate) -> np.ndarray:
     return np.where(_grow(fg, 1), canon[..., 3], 0).astype(np.uint8)
 
 
-def _layers(props: dict, keys: list[str], frames: np.ndarray | None = None, plate=None):
+def _layers(props: dict, keys: list[str], frames: np.ndarray | None = None, plate=None, layers_at=None):
     """Every element's binary texture placed at every frame it is drawn (gap-filled raw), in render order (z, then
     first frame and mean x, as `_elements_from_props` orders them). Returns others_for(key) → others_at(f). With
-    `frames` and `plate`, a layer above hides only where its canonical frame differs from the plate."""
+    `frames` and `plate`, a layer above hides only where its canonical frame differs from the plate. `layers_at`
+    (key → f → RGBA in that texture's geometry): a video sprite is its own frame f, not its texture."""
+    layers_at = layers_at or {}
     order = sorted(keys, key=lambda k: (props[k]["first"], float(np.nanmean(props[k]["raw"][:, 0]))))
     order.sort(key=lambda k: props[k].get("z", 0))
     rank = {k: i for i, k in enumerate(order)}
@@ -876,6 +878,9 @@ def _layers(props: dict, keys: list[str], frames: np.ndarray | None = None, plat
                 if a1 < x0 or a0 > x1 or b1 < y0 or b0 > y1:
                     continue
                 prem, a8 = placed[j][0], placed[j][1]
+                if j in layers_at:
+                    rgba = layers_at[j](f)
+                    prem, a8 = _premultiplied(rgba), np.ascontiguousarray(rgba[..., 3])
                 if q[3] < 1.0:
                     cut = int(round(prem.shape[1] * max(q[3], 0.0)))
                     prem, a8 = prem.copy(), a8.copy()
@@ -888,7 +893,7 @@ def _layers(props: dict, keys: list[str], frames: np.ndarray | None = None, plat
     return others_for
 
 
-def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad: int = PAD, skip=()) -> dict:
+def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad: int = PAD, skip=(), layers_at=None) -> dict:
     """Textures v2 for every element in `props` (in place): `canon` becomes the matted padded texture, `texture_meta`
     records method, frames, confidence and padding, and a text reveal column is mapped onto the padded width. An
     element that fails keeps its binary texture (`texture_meta` method "binary", `texture_error` set). A still
@@ -898,7 +903,7 @@ def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad
     keys = [k for k, p in props.items() if not k.startswith("_") and isinstance(p, dict) and "canon" in p and "raw" in p]
     if not keys:
         return {}
-    others_for = _layers(props, keys, frames, as_plate(plate))
+    others_for = _layers(props, keys, frames, as_plate(plate), layers_at)
 
     def run(k):
         p = props[k]

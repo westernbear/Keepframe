@@ -1,8 +1,9 @@
 """Movers: large elements that animate in place (the rotating globe behind a title). Pass 1 bakes them into the
 plate or shreds them into fragments; here they are found from per-pixel temporal instability, claim the object
 and shape tracks that are their fragments, get a per-frame mask and their own sprite layer at z −1 (below every
-other layer, above the plate), and leave the plate. A stable mover gets a median-crop texture; an unstable one stays
-a still sprite (with a message) until video sprites exist. Mask thresholds follow the measured frame noise."""
+other layer, above the plate), and leave the plate. A stable mover gets a median-crop texture; an unstable one becomes
+a video sprite (Task 13: its per-frame masked crops as RGBA WebM, the still texture its poster), or stays a still
+sprite with a message when the video cannot be made. Mask thresholds follow the measured frame noise."""
 from __future__ import annotations
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -427,9 +428,9 @@ def _canonical(m: Mover, frames, cf, d):
 
 def mover_props(m: Mover, frames, plate, n_frames) -> dict:
     """Sprite props at z −1 (below every other layer), translated by its mask centroid. Stable: the
-    temporal-median crop (Task 6 mattes it); unstable: the canonical frame's crop, a still until video sprites
-    exist. Pixels text boxes hid are inpainted and opaque (`synthetic` counts them), so the gaps between glyphs
-    show the mover, not the plate."""
+    temporal-median crop (Task 6 mattes it); unstable: the canonical frame's crop (the poster of its video sprite,
+    whose frames are cut at whole pixels: its track moves by whole pixels too). Pixels text boxes hid are inpainted
+    and opaque (`synthetic` counts them), so the gaps between glyphs show the mover, not the plate."""
     fs = sorted(m.frames)
     cf, d = _offsets(m)
     box, rgb, mask, hidden = _canonical(m, frames, cf, d)
@@ -440,7 +441,56 @@ def mover_props(m: Mover, frames, plate, n_frames) -> dict:
     raw = np.full((n_frames, len(RAW_COLS)), np.nan)
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
     for f in fs:
-        raw[f] = [cx + d[f][0], cy + d[f][1], 1.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        dx, dy = d[f] if m.stable else np.rint(d[f])
+        raw[f] = [cx + dx, cy + dy, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     return {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": Z, "first": fs[0], "last": fs[-1],
             "mover": True, "stable": m.stable, "residual": round(m.residual, 3), "synthetic": int(hidden.sum()),
             "hidden": hidden}   # filled-in (inpainted) pixels: textures v2 keeps them opaque
+
+
+def mover_frames(m: Mover, frames, plate, pad: int = 0):
+    """An unstable mover at each frame as f → RGBA uint8 in its texture's geometry grown by `pad` a side: frame f
+    cut at the canonical box moved by that frame's whole-pixel centroid shift (as its track), opaque on the frame's
+    mask (pixels within its threshold of the plate behind, `plate.at(f)`, that reach the outside peeled; pixels text
+    hid filled in and opaque), clear where the mover is not there. What its video plays, and what matting puts
+    under the layers above it."""
+    cf, d = _offsets(m)
+    box = _canonical(m, frames, cf, d)[0]
+    th, tw = box[3] - box[1] + 2 * pad, box[2] - box[0] + 2 * pad
+    H, W = frames.shape[1:3]
+
+    def frame(f: int) -> np.ndarray:
+        out = np.zeros((th, tw, 4), np.uint8)
+        if f not in m.frames:
+            return out
+        dx, dy = (int(v) for v in np.rint(d[f]))
+        X0, Y0 = box[0] - pad + dx, box[1] - pad + dy
+        a0, b0, a1, b1 = max(0, X0), max(0, Y0), min(W, X0 + tw), min(H, Y0 + th)
+        if a1 <= a0 or b1 <= b0:
+            return out
+        rgb = np.zeros((th, tw, 3), np.uint8)
+        rgb[b0 - Y0:b1 - Y0, a0 - X0:a1 - X0] = frames[f, b0:b1, a0:a1]
+        mask = np.zeros((th, tw), bool)
+        _paste(mask, (X0, Y0), *m.frames[f])
+        alpha = _peel(rgb, mask, plate.at(f), (X0, Y0, X0 + tw, Y0 + th), m.threshold)
+        if f in m.cut:
+            hid = np.zeros((th, tw), bool)
+            _paste(hid, (X0, Y0), *m.cut[f])
+            if hid.any():
+                rgb = cv2.inpaint(rgb, hid.astype(np.uint8), 5, cv2.INPAINT_TELEA)
+                alpha |= hid
+        out[..., :3] = rgb
+        out[..., 3] = alpha.astype(np.uint8) * 255
+        return out
+
+    return frame
+
+
+def mover_video(m: Mover, p: dict, frames, plate, fps: float, out) -> tuple[str | None, str | None]:
+    """An unstable mover as an RGBA WebM (mover_frames in its matted, padded texture's geometry), frame i being
+    frame first + i. Returns (path, None) or (None, code)."""
+    from . import videoasset
+    frame = mover_frames(m, frames, plate, int((p.get("texture_meta") or {}).get("padding") or 0))
+    first, last = int(p["first"]), int(p["last"])
+    path, code = videoasset.encode_capped(lambda: (frame(f) for f in range(first, last + 1)), fps, out, alpha=True)
+    return (str(path), None) if path is not None else (None, code)

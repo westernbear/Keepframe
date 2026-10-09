@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, pickle, os, time, unicodedata
+import json, pickle, os, shutil, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -14,8 +14,9 @@ from .background import PASS1_PATH, background_plate, estimate_background, foreg
 from .captions import MAX_TILES, caption_scene
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
-from .movers import mover_cover, mover_props
-from .plate import PlateModel, background_for, build_plate, fallback_plate, load_plate, save_plate
+from . import videoasset
+from .movers import mover_cover, mover_frames, mover_props, mover_video
+from .plate import FRAMES_PATH, PlateModel, background_for, build_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
 from .semantics import assign_roles, group_by_motion
@@ -136,10 +137,12 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, shape_tracks, msg
 
 
-def _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
+def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
+    (sd / FRAMES_PATH).unlink(missing_ok=True)   # a stage cache: only a video plate writes it again
     try:
         model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
-                            bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks)
+                            bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks, frames_out=sd / FRAMES_PATH)
+        model = write_video(sd, model, fps)
     except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
         log.exception("plate v2 failed")
         model = fallback_plate(pass1, bg, bconf, frames.shape[1:3], f"plate v2 skipped: {type(e).__name__}: {e}"[:200])
@@ -170,8 +173,9 @@ def _mover_messages(props: dict, ids: dict) -> list[str]:
     for k, p in props.items():
         if k.startswith("_") or not p.get("mover") or k not in ids:
             continue
-        if not p.get("stable"):
-            out.append(f"{ids[k]} animates in place; kept as a still sprite")
+        if not p.get("stable") and not p.get("video"):
+            code = p.get("video_error")
+            out.append(f"{ids[k]} animates in place; kept as a still sprite" + (f" ({code})" if code else ""))
         if p.get("synthetic"):
             out.append(f"{ids[k]}: {p['synthetic']} px of its texture under text are filled in (synthetic)")
     return out
@@ -186,7 +190,7 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: matted texture failed ({p['texture_error']}); kept the binary texture")
         elif p.get("texture_note"):
             out.append(f"{ids[k]}: not matted, {p['texture_note']}; kept the binary texture")
-        elif p.get("mover") and not p.get("stable") and p.get("texture_meta"):
+        elif p.get("mover") and not p.get("stable") and not p.get("video") and p.get("texture_meta"):
             out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
         if p.get("style_error"):   # fixed text: the stored value is a code (exception text in older stages)
             out.append(f"{ids[k]}: text style failed; kept the core-mask colour")
@@ -302,8 +306,28 @@ def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), note
     return _pk(sd, "solids", solids), list(movers)
 
 
+def _mover_videos(props: dict, movers, frames, plate, fps: float, sd: Path) -> None:
+    """Unstable movers become video sprites (stages/m<id>.video.webm, copied into the assets with the element id);
+    one whose video cannot be made keeps its still texture and records the code."""
+    for m in movers:
+        p = props.get(f"m{m.id}")
+        if p is None:
+            continue
+        t0 = time.perf_counter()
+        try:
+            path, code = mover_video(m, p, frames, plate, fps, sd / "stages" / f"m{m.id}.video.webm")
+        except Exception:   # fail soft: the still sprite
+            log.exception("mover m%s video failed", m.id)
+            path, code = None, "video_failed"
+        if path is None:
+            p["video_error"] = code
+        else:
+            p["video"] = f"stages/m{m.id}.video.webm"
+        log.info("sprites mover m%s video %.2fs %s", m.id, time.perf_counter() - t0, code or "ok")
+
+
 def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=(),
-                   plate_model: PlateModel | None = None):
+                   plate_model: PlateModel | None = None, fps: float | None = None):
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     kept, failed = [], []
@@ -405,9 +429,12 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     # textures: they are pieces of a turning surface, and the still/fragments fidelity choice compares like with like.
     report_stage("sprites", "textures")
     members = {f"o{mid}" for solid in solids for mid in solid.members}
-    try:
-        matting.matte_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind),
-                            workers=workers, skip=members)
+    plate_at = plate_model if plate_model is not None else matting.as_plate(behind)
+    videos = {f"m{m.id}": m for m in kept if not props[f"m{m.id}"].get("stable")} \
+        if fps is not None and videoasset.ffmpeg_vp9_ok() else {}
+    try:   # a video sprite under a layer is its own frame there, not its poster
+        matting.matte_props(props, frames, plate_at, workers=workers, skip=members,
+                            layers_at={k: mover_frames(m, frames, plate_at) for k, m in videos.items()})
     except Exception as e:   # fail soft: every element keeps its binary texture
         log.exception("textures v2 failed")
         props["_textures_message"] = f"textures v2 skipped: {type(e).__name__}: {e}"[:200]
@@ -419,6 +446,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     except Exception as e:   # fail soft: every text keeps its core-mask colour and no style
         log.exception("text style failed")
         props["_style_message"] = f"text style skipped: {type(e).__name__}: {e}"[:200]
+    _mover_videos(props, list(videos.values()), frames, plate_at, fps, sd)
     for i, solid in enumerate(solids):
         p = solid_props(solid, frames)
         p["fragments"] = {k: props.pop(k) for mid in solid.members if (k := f"o{mid}") in props}
@@ -447,7 +475,11 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]]))
         h, w = p["canon"].shape[:2]   # textures v2 pad the canonical by 2p; centre and anchor stay
         meta = p.get("texture_meta")
-        canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png",
+        video = None
+        if p.get("video") and (sd / p["video"]).is_file():   # a video sprite: its WebM beside the poster
+            video = f"assets/{eid}.video.webm"
+            shutil.copyfile(sd / p["video"], sd / video)
+        canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", video=video,
                               text=p.get("text"), font=_pin_font(p.get("font"), sd, registry), color=p.get("color"),
                               style=TextStyle(**p["style"]) if p.get("style") else None,
                               texture_meta=TextureMeta(**meta) if meta else None)
@@ -608,7 +640,7 @@ def analyze_scene_frames(
     obj_tracks = _stage_tracking(rbf, sd)
     t = _stage_done("tracking", t)
     report_stage("plate")
-    model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
+    model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
     t = _stage_done("plate", t)
     report_stage("solids")
@@ -617,7 +649,7 @@ def analyze_scene_frames(
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                           movers=movers, plate_model=model)
+                           movers=movers, plate_model=model, fps=fps)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -820,7 +852,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     rebuilt = model is None   # rerun from the plate or earlier, or a project analysed before plate v2 / movers
     if rebuilt:
         report_stage("plate")
-        model = _stage_plate(frames, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
+        model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
@@ -835,7 +867,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                               movers=movers, plate_model=model)
+                               movers=movers, plate_model=model, fps=fps)
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)

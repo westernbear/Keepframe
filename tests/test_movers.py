@@ -1,5 +1,6 @@
 import json, pickle, re
 import cv2, numpy as np, pytest
+from keepframe.analyze import videoasset
 from keepframe.analyze.movers import established_mask, find_movers, instability
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
 from keepframe.analyze.plate import load_plate, sample_frames
@@ -72,6 +73,17 @@ def globe(tmp_path_factory):
     return root, scene, frames
 
 
+@pytest.fixture(scope="module")
+def still_globe(tmp_path_factory):
+    """The globe analysed without a VP9 encoder: Task 5's still sprite."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(videoasset, "ffmpeg_vp9_ok", lambda: False)
+        root = tmp_path_factory.mktemp("still_globe")
+        frames = _globe_clip()
+        scene = analyze_scene_frames(frames, 30, root, "s1", OPTS)
+    return root, scene, frames
+
+
 def test_rotating_globe_on_gradient_becomes_mover_not_plate(globe):
     root, scene, frames = globe
     movers = _movers(root)
@@ -92,10 +104,40 @@ def test_rotating_globe_on_gradient_becomes_mover_not_plate(globe):
     assert el.kind == "sprite" and el.z.keys[0].v == -1 and el.visible == (0, len(frames) - 1)
     pad = el.canonical.texture_meta.padding   # textures v2 pad the canonical by 2p
     assert abs(el.canonical.width - 2 * pad - 2 * R) <= 6 and abs(el.canonical.height - 2 * pad - 2 * R) <= 6
-    assert el.canonical.texture_meta.frames == [p["cf"]]   # a still mover is matted from its canonical frame only
+    assert el.canonical.texture_meta.frames == [p["cf"]]   # its poster is matted from its canonical frame only
+
+
+def test_no_ffmpeg_keeps_still_sprite_with_message(still_globe):
+    root, scene, _ = still_globe
+    p = _props(root)["m1"]
+    ids = json.loads((_sd(root) / "stages" / "ids.json").read_text())
+    el = scene.element(ids["m1"])
+    assert el.canonical.video is None and not list((_sd(root) / "assets").glob("*.webm"))
+    assert scene.background.kind != "video"
     hits = [MESSAGE.match(s) for s in _messages(root)]
     assert [h.group(1) for h in hits if h] == [ids["m1"]]
     assert f"{ids['m1']}: still texture matted from frame {p['cf']} only" in _messages(root)
+
+
+@pytest.mark.skipif(not videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_rotating_globe_is_video_sprite(globe, still_globe):
+    from keepframe.analyze.composite import composite_scene
+    root, scene, frames = globe
+    sd = _sd(root)
+    ids = json.loads((sd / "stages" / "ids.json").read_text())
+    el = scene.element(ids["m1"])
+    assert el.canonical.video == f"assets/{ids['m1']}.video.webm" and (sd / el.canonical.video).is_file()
+    assert (sd / el.canonical.texture).is_file()   # the poster
+    assert not any(MESSAGE.match(s) or "still texture" in s for s in _messages(root)), _messages(root)
+    x0, y0, x1, y1 = GLOBE_BOX
+
+    def l1(root, scene):
+        cache = {}
+        return np.mean([np.abs(composite_scene(scene, _sd(root), f, cache)[y0:y1, x0:x1] * 255 - frames[f, y0:y1, x0:x1]).mean()
+                        for f in range(len(frames))])
+
+    video, still = l1(root, scene), l1(*still_globe[:2])
+    assert video <= 0.6 * still, (video, still)
 
 
 def test_globe_fragments_are_claimed(globe):
@@ -186,7 +228,7 @@ def test_full_frame_animation_is_plate_not_mover(tmp_path):
     assert np.nanmean(u >= 0.4) > 0.6
     assert find_movers(frames, sample, u, [], [], plate=frames[0]) == []
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
-    assert _movers(tmp_path) == [] and scene.background.kind == "image"
+    assert _movers(tmp_path) == [] and scene.background.kind == ("video" if videoasset.ffmpeg_vp9_ok() else "image")
     assert load_plate(_sd(tmp_path)).stats["video_candidate"] is True
 
 
@@ -377,7 +419,8 @@ def test_mover_draws_below_text(tmp_path):
     got = composite_scene(scene, _sd(tmp_path), 5) * 255
     over = np.zeros((H, W), bool)
     over[box[1] + 4:box[3] - 4, CX - R + 4:box[2] - 4] = True   # the title where it covers the globe
-    assert np.percentile(delta_e(srgb_to_lab(got[over]), srgb_to_lab(frames[5][over])), 95) < 3
+    lossy = mover.canonical.video is not None   # VP9 4:2:0 at the filled-in white/blue edge under the title
+    assert np.percentile(delta_e(srgb_to_lab(got[over]), srgb_to_lab(frames[5][over])), 95) < (4 if lossy else 3)
 
 
 @pytest.mark.browser

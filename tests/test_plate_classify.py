@@ -198,18 +198,6 @@ def _scrolling_texture(n=16, W=160, H=96, amp=16, speed=3):
     return np.stack([tex[:, speed * f:speed * f + W] for f in range(n)]).round().clip(0, 255).astype(np.uint8)
 
 
-def test_textured_motion_is_video_candidate_kept_as_image_with_message(tmp_path):
-    frames = _scrolling_texture()
-    model = _build(frames)
-    assert model.kind == "image" and model.gradient is None and model.stats["video_candidate"] is True
-    assert MESSAGE.match(model.stats["message"]), model.stats["message"]
-    assert model.at(3) is model.image
-    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
-    assert scene.background.kind == "image"
-    messages = json.loads((scene_dir(tmp_path, "s1") / "report.json").read_text())["messages"]
-    assert any(MESSAGE.match(m) for m in messages), messages
-
-
 def test_classify_failure_keeps_still_kind_with_message(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("fit exploded")
@@ -237,3 +225,69 @@ def test_gradient_reaches_scene_and_composites(tmp_path):
     assert np.abs(got - want).mean() < 0.01
     cached = load_plate(sd)
     assert cached.kind == "gradient" and cached.gradient == bg.gradient and cached.gradient_keys == bg.gradient_keys
+
+
+def _texture_with_square(n=24, W=160, H=96, step=16):
+    """_scrolling_texture drifting 1 px a frame with an opaque square crossing it fast: (frames, plates)."""
+    plates = _scrolling_texture(n, W, H, amp=24, speed=1)
+    frames = plates.copy()
+    for f in range(n):
+        x = 4 + (f * step) % (W - 28)
+        frames[f, 36:60, x:x + 24] = (250, 120, 30)
+    return frames, plates
+
+
+@pytest.mark.skipif(not plate_mod.videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_textured_motion_background_is_video_plate(tmp_path):
+    from keepframe.analyze.videoasset import VideoReader
+    frames, plates = _texture_with_square()
+    n, H, W = frames.shape[:3]
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
+    sd = scene_dir(tmp_path, "s1")
+    bg = scene.background
+    assert (bg.kind, bg.value, bg.poster) == ("video", "assets/background.webm", PLATE_PATH)
+    assert (sd / bg.value).is_file() and (sd / PLATE_PATH).is_file()
+    per_frame = np.load(sd / "stages" / "plate_frames.npy", mmap_mode="r")
+    assert per_frame.shape == frames.shape
+    messages = json.loads((sd / "report.json").read_text())["messages"]
+    assert not any("background animates" in m for m in messages), messages
+    assert any(e.kind == "sprite" for e in scene.elements)   # the square is a layer, not part of the plate
+    under = (frames != plates).any(-1)
+    with VideoReader(sd / bg.value, (W, H)) as video:
+        for f in range(n):
+            for plate in (per_frame[f], video.frame(f)):   # the stage cache and what renders play
+                assert np.percentile(_de(plate[under[f]], plates[f][under[f]]), 95) <= 3, f
+    cached = load_plate(sd)
+    assert cached.kind == "video" and np.array_equal(cached.at(5), per_frame[5])
+
+
+def test_no_ffmpeg_falls_back_with_message(tmp_path, monkeypatch):
+    monkeypatch.setattr(plate_mod.videoasset, "ffmpeg_vp9_ok", lambda: False)
+    frames, _ = _texture_with_square()
+    model = _build(frames)
+    assert model.kind == "image" and model.gradient is None and model.stats["video_candidate"] is True
+    assert MESSAGE.match(model.stats["message"]), model.stats["message"]
+    assert model.at(3) is model.image
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
+    sd = scene_dir(tmp_path, "s1")
+    assert scene.background.kind == "image" and not (sd / "assets" / "background.webm").exists()
+    assert not (sd / "stages" / "plate_frames.npy").exists()
+    messages = json.loads((sd / "report.json").read_text())["messages"]
+    assert any(MESSAGE.match(m) for m in messages), messages
+
+
+def test_busy_animated_gradient_is_found_again_not_full_frame_sprites(tmp_path):
+    """Eval seed 3: a gradient turning from navy to pink. Pass 1's still plate misses it everywhere, so its regions
+    cover most of every frame; the plate stage fits the moving gradient robustly, finds the layers again against it
+    and ends as an animated gradient, without full-frame sprites copying the background."""
+    ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, size=(320, 180), frames=24)
+    frames = np.stack([f.round().clip(0, 255).astype(np.uint8) for f in render_frames(ref, tmp_path / "ref", range(ref.frames))])
+    scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", OPTS)
+    sd = scene_dir(tmp_path / "proj", "s1")
+    bg = scene.background
+    assert bg.kind == "gradient" and len(bg.gradient_keys) >= 2, bg.kind
+    assert load_plate(sd).stats.get("busy_pass1", 0) > 0.5
+    for f in (0, 12, 23):
+        assert np.percentile(_de(render_gradient(gradient_at(bg, f), 320, 180), true_plate(ref, tmp_path / "ref", f)), 95) < 3, f
+    assert all(e.canonical.width * e.canonical.height < 0.25 * 320 * 180 for e in scene.elements)
+    assert len(scene.elements) <= 2 * len(ref.elements)
