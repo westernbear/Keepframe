@@ -33,12 +33,17 @@ def _lin_to_lab(lin: np.ndarray) -> np.ndarray:
     return np.stack([L, 500 * (f[..., 0] - f[..., 1]), 200 * (f[..., 1] - f[..., 2])], -1).astype(np.float32)
 
 
-def lab_to_srgb(lab: np.ndarray) -> np.ndarray:
+def lab_to_linear(lab: np.ndarray) -> np.ndarray:
+    """Linear-light sRGB, unclipped: a channel outside 0..1 means the colour is out of the sRGB gamut."""
     lab = np.asarray(lab, np.float64)
     fy = (lab[..., 0] + 16) / 116
     f = np.stack([fy + lab[..., 1] / 500, fy, fy - lab[..., 2] / 200], -1)
     t = np.where(f ** 3 > _EPS, f ** 3, (116 * f - 16) / _KAPPA)
-    lin = np.clip((t * _WHITE) @ _MI.T, 0.0, 1.0)
+    return (t * _WHITE) @ _MI.T
+
+
+def lab_to_srgb(lab: np.ndarray) -> np.ndarray:
+    lin = np.clip(lab_to_linear(lab), 0.0, 1.0)
     c = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
     return np.clip(np.rint(c * 255.0), 0, 255).astype(np.uint8)
 

@@ -1,7 +1,7 @@
-import { postEdit } from "/static/js/api.js?v=20261009d";
-import { T, Tf } from "/static/js/i18n.js?v=20261009d";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009d";
-import { isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261009d";
+import { postEdit } from "/static/js/api.js?v=20261009e";
+import { T, Tf } from "/static/js/i18n.js?v=20261009e";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009e";
+import { conflictReason, editErrorText, isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261009e";
 
 export function attachEditForm(ws) {
   const { dom } = ws;
@@ -21,7 +21,7 @@ export function attachEditForm(ws) {
       const wrap = document.createElement("div");
       wrap.className = "form-row";
       const lab = document.createElement("label");
-      lab.textContent = c.reason || c.element;
+      lab.textContent = conflictReason(c);
       wrap.appendChild(lab);
       (c.choices || []).forEach((ch) => {
         const row = document.createElement("label");
@@ -96,7 +96,7 @@ export function attachEditForm(ws) {
     try {
       const res = await postEdit(await editBody(false));
       paintEditResult(res);
-      if (res.status === "failed") ws.setJobBanner(res.error || T("review.editFailed"), true);
+      if (res.status === "failed") ws.setJobBanner(res.error ? editErrorText(res.error) : T("review.editFailed"), true);
     } catch (err) {
       ws.setJobBanner(err.message || T("review.editFailed"), true);
     }
@@ -107,6 +107,11 @@ export function attachEditForm(ws) {
     dom.editConfirm.disabled = true;
     try {
       const res = await postEdit(await editBody(true));
+      if (res.status === "cancelled") {   // nothing was applied
+        resetEditUi();
+        ws.setJobBanner(T("agent.cancelled"), false);
+        return;
+      }
       paintEditResult(res);
       if (res.status === "done" && res.version) {
         ws.setJobBanner(Tf("review.editOk", formatVerifyPair(res)), false);
@@ -114,7 +119,7 @@ export function attachEditForm(ws) {
         await ws.refreshState(res.version.id);
         return;
       }
-      if (res.status === "failed") ws.setJobBanner(res.error || T("review.editFailed"), true);
+      if (res.status === "failed") ws.setJobBanner(res.error ? editErrorText(res.error) : T("review.editFailed"), true);
     } catch (err) {
       ws.setJobBanner(err.message || T("review.editFailed"), true);
     } finally {

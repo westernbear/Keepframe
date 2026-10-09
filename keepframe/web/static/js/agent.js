@@ -15,14 +15,15 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261009d";
-import { T, Tf } from "/static/js/i18n.js?v=20261009d";
-import { initAECard } from "/static/js/ae.js?v=20261009d";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009d";
+} from "/static/js/api.js?v=20261009e";
+import { T, Tf } from "/static/js/i18n.js?v=20261009e";
+import { initAECard } from "/static/js/ae.js?v=20261009e";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009e";
+import { conflictReason, editErrorText } from "/static/js/edit-status.js?v=20261009e";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261009d";
+} from "/static/js/playback.js?v=20261009e";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -522,7 +523,7 @@ function appendChoices(plan) {
   conflicts.forEach((c) => {
     const title = document.createElement("div");
     title.className = "mono agent-choice__reason";
-    title.textContent = c.reason || c.element;
+    title.textContent = conflictReason(c);
     wrap.appendChild(title);
     (c.choices || []).forEach((ch, i) => {
       const label = document.createElement("label");
@@ -541,7 +542,11 @@ function appendChoices(plan) {
   confirm.className = "btn btn--primary";
   confirm.type = "button";
   confirm.textContent = T("agent.choose");
-  confirm.addEventListener("click", () => runConfirmWithChoices());
+  confirm.addEventListener("click", async () => {
+    if (confirm.disabled) return;
+    confirm.disabled = true;
+    confirm.disabled = await runConfirmWithChoices() === true;   // stays off once applied or cancelled
+  });
   wrap.appendChild(confirm);
   logEl.appendChild(wrap);
   logEl.scrollTop = logEl.scrollHeight;
@@ -838,6 +843,10 @@ async function applyConfirmedEdit(res) {
     return false;
   }
   pendingIntent = null;
+  if (res.status === "cancelled") {
+    appendAgent(T("agent.cancelled"));
+    return true;
+  }
   const editDone = res.status === "done" && res.version;
   if (editDone) {
     pendingAttachment = pendingAttachmentFile = null;
@@ -851,7 +860,7 @@ async function applyConfirmedEdit(res) {
   const errorMessage = res.error === "attachment_required" ? T("agent.attachmentRequired")
     : res.error === "invalid_glb" ? T("agent.invalidGlb")
     : res.error === "unsafe_svg" || res.error === "invalid_svg" ? T("agent.invalidSvg")
-    : (res.error || T("agent.failed"));
+    : (res.error ? editErrorText(res.error) : T("agent.failed"));
   setBanner(errorMessage, true);
   return false;
 }

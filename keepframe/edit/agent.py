@@ -20,6 +20,7 @@ from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
 from .apply import apply_edit
 from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
+from .tint import TintError
 from ..assets import ASSET_GEN_CAP, AssetAPIError, AssetClient
 
 MAX_TRIES = 4
@@ -166,6 +167,9 @@ def edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
+    pick = lambda c: (choices or {}).get(c.id) or (choices or {}).get(c.element)
+    if any(pick(c) == "cancel" and "cancel" in c.choices for c in built.conflicts):
+        return EditResult(status="cancelled", summary=parsed.summary, intent=parsed, plan=built)   # nothing applied
     gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
     # ponytail: edits share one asset payload; retain mixed generation batches until per-target attachments exist.
     if attachment is None and any(t.value == "attachment" and
@@ -230,7 +234,7 @@ def edit(
                 shutil.copytree(sd / "assets", candidate / "assets")
             try:
                 edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment, fonts=fonts)
-            except AssetAPIError as exc:
+            except (AssetAPIError, TintError) as exc:
                 return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, attempts=attempts_run, error=exc.code)
             except ValueError as exc:
                 if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":

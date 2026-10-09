@@ -18,6 +18,8 @@ COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white"
                               "녹색": "#2e7d32", "그린": "#2e7d32", "블루": "#1e66f5", "레드": "#e53935", "화이트": "#ffffff", "블랙": "#000000",
                               "옐로": "#fdd835", "퍼플": "#8e24aa", "오렌지": "#fb8c00", "그레이": "#9e9e9e"}
 _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
+BACKGROUND_CHOICES = ("tint", "replace", "cancel")   # a colour on a picture/gradient/video background (D5)
+_BG_KIND_KO = {"image": "그림", "gradient": "그라데이션", "video": "영상"}
 
 
 class Target(BaseModel):
@@ -220,6 +222,10 @@ def plan(scene: Scene, intent: Intent) -> Plan:
         source = timing_scene if t.property == "timing" else scene
         el = source.element(t.element) if t.element else None
         items.append(t)
+        if t.property == "background" and scene.background.kind != "color":
+            conflicts.append(Conflict(id="background_kind", element="background", choices=list(BACKGROUND_CHOICES),
+                                      reason=f"배경이 {_BG_KIND_KO.get(scene.background.kind, '그림')}입니다. "
+                                             "색을 입힐까요(밝고 어두운 결은 유지), 단색으로 바꿀까요?"))
         if t.property == "timing":
             if el is not None:
                 _, end = retimed_range(el, *timing_args(t, el, timing_scene.fps))

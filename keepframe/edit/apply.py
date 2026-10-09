@@ -19,6 +19,7 @@ from ..fonts.upload import pin_face
 from ..log import get, scrub_paths
 from .retime import apply_timing
 from .svgraster import rasterize_svg
+from .tint import tint_background
 from .textraster import measure as _measure, render_lines
 
 log = get("keepframe.edit")
@@ -172,7 +173,13 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 out.element(t.element).provenance = "manual"
             continue
         if t.property == "background":
-            out.background = Background(kind="color", value=t.value, confidence=1.0)
+            mode = choice_of.get("background_kind") or choice_of.get("background")
+            if mode == "cancel":
+                continue
+            if mode == "tint" and out.background.kind != "color":
+                out.background = tint_background(out.background, scene_dir, t.value, size=out.size)
+            else:
+                out.background = Background(kind="color", value=t.value, confidence=1.0)
             continue
         el = out.element(t.element)
         if t.property == "text":

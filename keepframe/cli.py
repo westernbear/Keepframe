@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
             choices=choices or None,
         )
         print(json.dumps(res.to_json(), ensure_ascii=False, indent=2))
-        return 0 if res.status in ("done", "needs_confirm", "needs_choice") else 1
+        return 0 if res.status in ("done", "needs_confirm", "needs_choice", "cancelled") else 1
     if a.cmd == "gate-m3":
         from .gates import m3_gate
         res = m3_gate(Path(a.out), n=a.n)
