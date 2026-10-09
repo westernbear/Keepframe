@@ -584,7 +584,7 @@ def test_runtime_assets_share_updated_cache_stamp():
     stamps = set()
     for path in [*STATIC.glob("*.html"), *STATIC.rglob("*.js")]:
         stamps.update(re.findall(r"\?v=([a-zA-Z0-9]+)", path.read_text(encoding="utf-8")))
-    assert stamps == {"20261009f"}
+    assert stamps == {"20261009g"}
 
 
 def test_ae_card_static_contract():
@@ -598,7 +598,7 @@ def test_ae_card_static_contract():
     assert 'data-ai-private' in html[html.index('id="ae-pairing"'):html.index('id="ae-devices"')]
     assert 'id="ae-status"' in html and 'id="ae-jobs"' in html
     agent = static_src("js/agent.js")
-    assert 'import { initAECard } from "/static/js/ae.js?v=20261009f"' in agent
+    assert 'import { initAECard } from "/static/js/ae.js?v=20261009g"' in agent
     assert agent.count("initAECard({") == 1
     refresh = agent[agent.index("async function refreshAfterEdit("):agent.index("\nfunction paintToolCalls(")]
     assert "aeCard.refresh()" in refresh
@@ -657,7 +657,7 @@ const ws={dom,projectId:'p1',sceneId:'s1',versionId:'v1',selectedId:'e1',
   state:{scene:{elements:[item]},project:{versions:[{id:'v1'}]}},setJobBanner(){}};
 const context=vm.createContext({ws,document:{createElement:tag=>new Element(tag)},T:k=>k,
   postEdit:async body=>{requests.push(body);return {status:'needs_confirm',summary:'preview',intent:body.intent};},
-  readFileAsDataUrl:async()=>null,isEditNeedsConfirm:s=>s==='needs_confirm',backgroundSummary:()=>null});
+  readFileAsDataUrl:async()=>null,isEditNeedsConfirm:s=>s==='needs_confirm'});
 vm.runInContext(''' + json.dumps(form + '\n' + inspector + '\nattachEditForm(ws);attachInspector(ws);') + ''',context);
 ws.renderObjectDetail();
 const button=dom.objectDetail.children.find(el=>el.tagName==='button');
@@ -723,7 +723,6 @@ for (const conflict of ['keep_violation', 'timing_overflow', 'font_missing']) {
       appendChoices:plan => choices.push(plan), editChoices:() => ({[conflict]:'release_keep'}),
       setBanner:(message, failure) => banners.push({message, failure}),
       appendVerify:() => {}, appendAgent:() => {}, refreshAfterEdit:async id => refreshed.push(id),
-      backgroundSummary:() => null, resolvePendingEdit:() => {},
     });
     vm.runInContext(''' + json.dumps(confirm) + ''', context);
     await context.runConfirm(false);

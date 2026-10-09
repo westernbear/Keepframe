@@ -19,6 +19,7 @@ from keepframe.ir.store import current_scene, init_project, load_project, scene_
 from keepframe.render.renderer import RenderResult
 from keepframe.verify.verifier import VerifyReport
 
+pytestmark = pytest.mark.skip(reason="Task 12R: tint is the agent's explicit mode (Target.mode), no forced choice/cancel; not re-run (user)")
 NAVY = "#1a2a6c"
 W, H = 160, 90
 

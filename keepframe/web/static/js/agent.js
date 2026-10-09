@@ -15,15 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261009f";
-import { T, Tf } from "/static/js/i18n.js?v=20261009f";
-import { initAECard } from "/static/js/ae.js?v=20261009f";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009f";
-import { backgroundSummary, conflictReason, editErrorText } from "/static/js/edit-status.js?v=20261009f";
+} from "/static/js/api.js?v=20261009g";
+import { T, Tf } from "/static/js/i18n.js?v=20261009g";
+import { initAECard } from "/static/js/ae.js?v=20261009g";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009g";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261009f";
+} from "/static/js/playback.js?v=20261009g";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -436,12 +435,10 @@ function appendToolCall(name, args, result, reply = "") {
   nameEl.className = "toolcall__name";
   nameEl.textContent = name;
   const status = document.createElement("span");
-  const state = !result.ok ? "fail" : result.needs_confirm || result.needs_choice ? "pending" : "ok";
   status.className = "toolcall__status" + (result.ok ? " toolcall__status--ok" : " toolcall__status--fail");
   el.dataset.tool = name;
   el.dataset.ok = String(Boolean(result.ok));
-  el.dataset.state = state;
-  status.textContent = toolStatus(name, state);
+  status.textContent = toolStatus(name, result.ok);
   head.append(status);
   const argsEl = document.createElement("div");
   argsEl.className = "toolcall__args";
@@ -467,25 +464,10 @@ function appendToolCall(name, args, result, reply = "") {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// state: ok | fail | pending (an edit previewed, waiting for the browser) | cancelled
-function toolStatus(name, state) {
-  const ok = state !== "fail";
-  if (name === "edit") {
-    if (state === "pending") return T("agent.toolPending");
-    if (state === "cancelled") return T("agent.toolCancelled");
-    return T(ok ? "agent.toolApplied" : "agent.toolFailed");
-  }
+function toolStatus(name, ok) {
+  if (name === "edit") return T(ok ? "agent.toolApplied" : "agent.toolFailed");
   const tool = T(`agent.tool.${name === "set_keep" ? "keep" : name}`);
   return Tf(ok ? "agent.toolCompleted" : "agent.toolActionFailed", {tool});
-}
-
-// The previewed edit the browser just applied or cancelled: its tool line says so.
-function resolvePendingEdit(state) {
-  const calls = logEl.querySelectorAll('.toolcall[data-tool="edit"][data-state="pending"]');
-  const call = calls[calls.length - 1];
-  if (!call) return;
-  call.dataset.state = state;
-  call.querySelector(".toolcall__status").textContent = toolStatus("edit", state);
 }
 
 function isKeepPassed(verify) {
@@ -540,7 +522,7 @@ function appendChoices(plan) {
   conflicts.forEach((c) => {
     const title = document.createElement("div");
     title.className = "mono agent-choice__reason";
-    title.textContent = conflictReason(c);
+    title.textContent = c.reason || c.element;
     wrap.appendChild(title);
     (c.choices || []).forEach((ch, i) => {
       const label = document.createElement("label");
@@ -559,11 +541,7 @@ function appendChoices(plan) {
   confirm.className = "btn btn--primary";
   confirm.type = "button";
   confirm.textContent = T("agent.choose");
-  confirm.addEventListener("click", async () => {
-    if (confirm.disabled) return;
-    confirm.disabled = true;
-    confirm.disabled = await runConfirmWithChoices() === true;   // stays off once applied or cancelled
-  });
+  confirm.addEventListener("click", () => runConfirmWithChoices());
   wrap.appendChild(confirm);
   logEl.appendChild(wrap);
   logEl.scrollTop = logEl.scrollHeight;
@@ -853,33 +831,27 @@ function confirmEditBody(withChoices) {
   };
 }
 
-async function applyConfirmedEdit(res, sent) {
+async function applyConfirmedEdit(res) {
   if (res.status === "needs_choice") {
     pendingIntent = res.intent || pendingIntent;
     appendChoices(res.plan);
     return false;
   }
   pendingIntent = null;
-  if (res.status === "cancelled") {
-    resolvePendingEdit("cancelled");
-    appendAgent(T("agent.cancelled"));
-    return true;
-  }
   const editDone = res.status === "done" && res.version;
   if (editDone) {
     pendingAttachment = pendingAttachmentFile = null;
     attachInput.value = "";
     document.getElementById("agent-attach-name").textContent = "";
-    resolvePendingEdit("ok");
     appendVerify(res.verify);
-    appendAgent(backgroundSummary(res, sent && sent.choices) || res.summary || EDIT_APPLIED);
+    appendAgent(res.summary || EDIT_APPLIED);
     await refreshAfterEdit(res.version.id);
     return true;
   }
   const errorMessage = res.error === "attachment_required" ? T("agent.attachmentRequired")
     : res.error === "invalid_glb" ? T("agent.invalidGlb")
     : res.error === "unsafe_svg" || res.error === "invalid_svg" ? T("agent.invalidSvg")
-    : (res.error ? editErrorText(res.error) : T("agent.failed"));
+    : (res.error || T("agent.failed"));
   setBanner(errorMessage, true);
   return false;
 }
@@ -887,9 +859,8 @@ async function applyConfirmedEdit(res, sent) {
 async function runConfirm(withChoices) {
   setBanner("");
   try {
-    const body = confirmEditBody(withChoices);
-    const res = await postEdit(body);
-    return await applyConfirmedEdit(res, body);
+    const res = await postEdit(confirmEditBody(withChoices));
+    return await applyConfirmedEdit(res);
   } catch (err) {
     setBanner(err.message || T("agent.failed"), true);
   }
@@ -1253,7 +1224,7 @@ window.addEventListener("keepframe:lang", () => {
   else countEl.textContent = Tf("agent.elementCount", {n: 0});
   paintRenderCard();
   logEl.querySelectorAll(".toolcall").forEach(call => {
-    call.querySelector(".toolcall__status").textContent = toolStatus(call.dataset.tool, call.dataset.state);
+    call.querySelector(".toolcall__status").textContent = toolStatus(call.dataset.tool, call.dataset.ok === "true");
   });
   logEl.querySelectorAll(".verify-chip").forEach(paintVerifyChip);
   paintFonts();

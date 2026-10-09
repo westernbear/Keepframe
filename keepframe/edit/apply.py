@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -23,6 +24,7 @@ from .tint import tint_background
 from .textraster import measure as _measure, render_lines
 
 log = get("keepframe.edit")
+MAX_BACKGROUND_PX = 1 << 26   # pixels of an attached background picture
 _DATA_URL = re.compile(r"^data:(?:image/[^;]+|model/gltf-binary|application/octet-stream);base64,(.+)$", re.S)
 
 
@@ -166,6 +168,29 @@ def _next_asset(scene_dir: Path, eid: str, suffix: str) -> Path:
         n += 1
 
 
+def _background_image(scene_dir: Path, attachment) -> str:
+    """The attached PNG as a new flat asset `assets/background.img<n>.png` (never an existing name); refused
+    (`invalid_attachment`) unless it decodes as a PNG within MAX_BACKGROUND_PX."""
+    from PIL import Image
+    if attachment is None:
+        raise ValueError("background image edit needs an attachment")
+    data = _attachment_data(attachment)
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise AssetAPIError("invalid_attachment")
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            if im.format != "PNG" or im.size[0] * im.size[1] > MAX_BACKGROUND_PX:
+                raise AssetAPIError("invalid_attachment")
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise AssetAPIError("invalid_attachment") from exc
+    if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
+        raise AssetAPIError("invalid_attachment")
+    dest = _next_asset(scene_dir, "background", "img")
+    with open(dest, "xb") as f:
+        f.write(data)
+    return f"assets/{dest.name}"
+
+
 def _next_model(scene_dir: Path, eid: str) -> Path:
     assets = scene_dir / "assets"
     assets.mkdir(parents=True, exist_ok=True)
@@ -189,10 +214,9 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 out.element(t.element).provenance = "manual"
             continue
         if t.property == "background":
-            mode = choice_of.get("background_kind") or choice_of.get("background_video") or choice_of.get("background")
-            if mode == "cancel":
-                continue
-            if mode == "tint" and out.background.kind != "color":
+            if t.value == "attachment":   # a picture (e.g. one the agent made) becomes the background
+                out.background = Background(kind="image", value=_background_image(scene_dir, attachment), confidence=1.0)
+            elif t.mode == "tint" and out.background.kind != "color":   # chosen by the agent, never by Keepframe
                 out.background = tint_background(out.background, scene_dir, t.value, size=out.size)
             else:
                 out.background = Background(kind="color", value=t.value, confidence=1.0)

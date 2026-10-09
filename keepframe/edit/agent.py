@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,18 +13,19 @@ from pydantic import BaseModel, Field, field_serializer
 from ..compose.composer import compose
 from ..fonts.registry import FontRegistry
 from ..render.renderer import render
-from ..ir.schema import Scene, Version
+from ..ir.schema import Background, Scene, Version
 from ..ir.paths import scene_asset_path
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
 from .apply import apply_edit
-from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, background_mode, describe, interpret, plan
+from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
 from .tint import TintError
 from ..assets import ASSET_GEN_CAP, AssetAPIError, AssetClient
 
 MAX_TRIES = 4
+_HEX = re.compile(r"#[0-9a-fA-F]{6}")
 TEMPORAL_MIN = 0.7
 TEMPORAL_ELEMENT_MIN = 0.5
 
@@ -38,6 +40,7 @@ class EditResult(BaseModel):
     attempts: int = 0
     error: str | None = None
     messages: list[str] = Field(default_factory=list)
+    background: dict | None = None   # a background edit's facts (`background_facts`): mode, colour, before, after
 
     @field_serializer("verify")
     def _compact_verify(self, report: VerifyReport | None) -> dict | None:
@@ -132,7 +135,43 @@ def _promote_assets(source: Path, destination: Path, baseline: set[str]) -> None
             shutil.copy2(path, target)
 
 
+def background_facts(bg: Background) -> dict[str, Any]:
+    """What a background is, as values only: its kind, its colour (flat, or a gradient's representative one) and
+    its file (picture, video, or a gradient's poster)."""
+    color = bg.value if bg.kind in ("color", "gradient") and _HEX.fullmatch(bg.value or "") else None
+    asset = bg.value if bg.kind in ("image", "video") else bg.poster if bg.kind == "gradient" else None
+    return {"kind": bg.kind, "color": color, "asset": asset}
+
+
 def edit(
+    root: Path,
+    scene_id: str,
+    prompt: str,
+    *,
+    attachment: str | Path | bytes | None = None,
+    has_attachment: bool = False,
+    element: str | None = None,
+    confirm: bool = False,
+    intent: Intent | dict | None = None,
+    choices: dict[str, str] | None = None,
+    version: str | None = None,
+) -> EditResult:
+    """Plans (and with `confirm`, applies) an edit. A background edit's result carries its facts for the agent:
+    the mode, the colour, the background before and, once applied, after (`background_facts`)."""
+    root = Path(root)
+    before = _load(root, scene_id, version)[0].background
+    res = _edit(root, scene_id, prompt, attachment=attachment, has_attachment=has_attachment, element=element,
+                confirm=confirm, intent=intent, choices=choices, version=version)
+    target = next((t for t in (res.intent.targets if res.intent else []) if t.property == "background"), None)
+    if target is not None:
+        image = target.value == "attachment"
+        res.background = {"mode": "image" if image else target.mode or "replace", "color": None if image else target.value,
+                          "before": background_facts(before),
+                          "after": background_facts(load_scene(root / res.version.scene_file).background) if res.version else None}
+    return res
+
+
+def _edit(
     root: Path,
     scene_id: str,
     prompt: str,
@@ -153,7 +192,7 @@ def edit(
         prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
     if intent is not None:
-        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment, scene=scene)
+        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment)
     unresolved = [t for t in parsed.targets if not t.element and t.property not in SCENE_LEVEL]
     if unresolved and not parsed.ambiguous:
         parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
@@ -167,16 +206,10 @@ def edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
-    pick = lambda c: (choices or {}).get(c.id) or (choices or {}).get(c.element)
-    if any(pick(c) == "cancel" and "cancel" in c.choices for c in built.conflicts):   # nothing applied
-        return EditResult(status="cancelled", summary="취소했습니다. 바뀐 것은 없습니다.", intent=parsed, plan=built)
-    if background_mode(scene, choices):   # the summary (and version note) says how the background changed
-        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment, scene=scene,
-                                  choices=choices)
     gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
     # ponytail: edits share one asset payload; retain mixed generation batches until per-target attachments exist.
     if attachment is None and any(t.value == "attachment" and
-            (t.property == "texture" or (t.property == "model" and gen_target is None)) for t in built.items):
+            (t.property in ("texture", "background") or (t.property == "model" and gen_target is None)) for t in built.items):
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="attachment_required")
     missing = [c for c in built.conflicts if not (choices or {}).get(c.id) and not (choices or {}).get(c.element)]
     if missing:

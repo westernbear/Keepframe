@@ -132,7 +132,7 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         unknown = sorted({t.element for t in parsed.targets if t.element and t.element not in known})
         if unknown:
             return _fail(f"없는 요소 {unknown}. 사용 가능한 id: {sorted(known)}")
-        parsed.summary = describe(parsed.targets, has_attachment=ctx.has_attachment, scene=scene)
+        parsed.summary = describe(parsed.targets, has_attachment=ctx.has_attachment)
         intent = parsed.model_dump()
     result = run_edit(
         ctx.root,
@@ -144,10 +144,11 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         version=ctx.version,
         has_attachment=ctx.has_attachment,
     )
+    facts = {"background": result.background} if result.background else {}   # values for the agent, no prose
     if result.status == "needs_confirm":
-        return _pending(result.summary or "실행 전 확인이 필요합니다.", confirm=True, intent=result.intent.model_dump(), plan=result.plan.model_dump() if result.plan else None)
+        return _pending(result.summary or "실행 전 확인이 필요합니다.", confirm=True, intent=result.intent.model_dump(), plan=result.plan.model_dump() if result.plan else None, **facts)
     if result.status == "needs_choice":
-        return _pending(result.summary or "충돌 선택지가 필요합니다.", choice=True, intent=result.intent.model_dump(), plan=result.plan.model_dump() if result.plan else None)
+        return _pending(result.summary or "충돌 선택지가 필요합니다.", choice=True, intent=result.intent.model_dump(), plan=result.plan.model_dump() if result.plan else None, **facts)
     return _fail(result.error or result.summary or "편집 실패")
 
 
@@ -294,7 +295,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     ),
     _fn(
         "edit",
-        "문구·색·이미지 등의 편집 해석과 계획만 준비한다. 실행은 브라우저의 확인 버튼으로만 이뤄진다. 가능하면 targets를 채운다.",
+        "문구·색·이미지 등의 편집 해석과 계획만 준비한다. 실행은 브라우저의 확인 버튼으로만 이뤄진다. 가능하면 targets를 채운다. "
+        "A background colour edit replaces the whole background, a picture, gradient or video included, with that flat "
+        "colour unless mode is \"tint\" (keeps a picture's or gradient's light and dark), and a PNG attached with "
+        "value \"attachment\" becomes the new background picture; the result's `background` facts give the "
+        "background before and after.",
         _edit_params(),
         ["prompt"],
     ),
