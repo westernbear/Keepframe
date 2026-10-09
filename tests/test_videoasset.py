@@ -145,3 +145,17 @@ def test_render_deterministic_with_video(tmp_path):
     b, _ = _chromium(scene, tmp_path, [23, 5, 0, 1, 17, 0], tmp_path / "b")
     ha, hb = dict(zip(a.frames, a.hashes)), dict(zip(b.frames, b.hashes))
     assert ha == hb and len(set(ha.values())) == 5
+
+
+def test_colour_edit_on_a_video_sprite_draws_the_edited_still(tmp_path):
+    """A recoloured video sprite is its recoloured poster: the clip is dropped (Keepframe never recolours video)."""
+    from keepframe.analyze.composite import composite_scene
+    from keepframe.edit.apply import apply_edit
+    from keepframe.edit.intent import Target
+    scene = _video_scene(tmp_path)
+    out = apply_edit(scene, tmp_path, [Target(element="e1", property="color", value="#ff0000")], {}, None)
+    el = out.element("e1")
+    assert el.canonical.video is None and el.canonical.texture != "assets/e1.png"
+    assert scene.element("e1").canonical.video == "assets/e1.video.webm"   # the stored scene is untouched
+    img = composite_scene(out, tmp_path, 3) * 255
+    assert np.abs(img[20, 26] - (200, 0, 0)).max() <= 2                     # the tinted poster, all over its box

@@ -8,7 +8,7 @@ so L' stays in 0..100 and the mean lands on the target. A colour outside sRGB ke
 (toward neutral grey, which always fits; monotone, so smooth backgrounds stay smooth). Where that pulls the mean
 (a, b) off the target, a shift of at most 10 ΔE turns hues back toward it without adding chroma (R53).
 Pictures and posters become new assets (`assets/background.tint<n>.png`, never an existing name); gradients map
-every stop and key through the same formula; video waits for Task 13 (TintError "tint_unavailable")."""
+every stop and key through the same formula; a video is never tinted (R55: TintError "tint_unavailable")."""
 from __future__ import annotations
 
 import functools
@@ -333,7 +333,7 @@ def tint_background(bg: Background, scene_dir: Path, target_hex: str, *, size: t
     target = srgb_to_lab(np.float32(hex_to_rgb8(target_hex))).astype(np.float64)
     if bg.kind == "color":
         return Background(kind="color", value=target_hex, confidence=1.0)
-    if bg.kind == "video":   # ponytail: per-frame re-encode lands with Task 13's video plates
+    if bg.kind == "video":   # R55: Keepframe does not make tinted pictures of a video
         raise TintError("tint_unavailable")
     try:
         if bg.kind == "image":
