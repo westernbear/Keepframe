@@ -48,6 +48,10 @@ ANIM_WORK = 64            # work size (px) of the per-sample fits
 KEY_PX = 48               # render size (px) for the key-dropping comparison
 MIN_VALID = 0.25          # a sample needs this share of uncovered pixels to be fitted
 MOVER_PAD = 24            # the median is recomputed in the movers' bbox ± this
+BUSY = 0.5                # pass 1 covering more than this share of the sampled pixels …
+MOVED_DE = 3.0            # … with early and late medians this far apart (median ΔE76): a background that moves
+OUTLIER_DE = 6.0          # robust per-sample fits refit on the pixels within this of the first fit …
+INLIER_SHARE = 0.6        # … which must be at least this share of the sample's valid pixels
 SYNTH_PATH = "assets/background_synthetic.png"
 VIDEO_PATH = "assets/background.webm"
 FRAMES_PATH = "stages/plate_frames.npy"
@@ -343,18 +347,43 @@ def _drop_keys(keys: list[GradientKey], size) -> list[GradientKey]:
     return kept
 
 
-def _animated_keys(frames, sample, occ, size) -> tuple[list[GradientKey], float]:
+def _refit(small, valid, size, g, fresh: bool = False) -> tuple[Gradient | None, float]:
+    """g fitted again without its outliers (elements nothing else separated): on the pixels within
+    max(OUTLIER_DE, their 70th percentile) of the fit (`fresh`: a full search there, not one warm-started from g),
+    then within OUTLIER_DE; inf when those are fewer than INLIER_SHARE of the valid pixels."""
+    (W, H), (h, w) = size, small.shape[:2]
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
+    xy = ((xs + 0.5) * W / w, (ys + 0.5) * H / h)
+    lab = srgb_to_lab(small)
+    valid = np.ones((h, w), bool) if valid is None else valid
+    p = math.inf
+    for trim in (True, False):
+        de = delta_e(lab, srgb8_to_lab(render_gradient(g, W, H, xy)))
+        inl = valid & (de <= (max(OUTLIER_DE, float(np.percentile(de[valid], 70))) if trim else OUTLIER_DE))
+        if inl.sum() < INLIER_SHARE * valid.sum():
+            return g, math.inf
+        g, p = fit_like(small, inl, size, None if fresh and trim else g)
+        if g is None:
+            return None, math.inf
+    return g, p
+
+
+def _animated_keys(frames, sample, occ, size, robust: bool = False) -> tuple[list[GradientKey], float]:
     """A gradient per sample (at ANIM_WORK px; the first a full search, then warm-started with its kind and
-    stop count) and the share of samples fitting within ANIM_P95. Keys are returned (then thinned) only when
-    that share reaches ANIM_SHARE."""
+    stop count; `robust`: refitted without its outliers) and the share of samples fitting within ANIM_P95. Keys
+    are returned (then thinned) only when that share reaches ANIM_SHARE."""
     fits, like = [], None
     for j, f in enumerate(sample):
         small, valid = shrink(frames[f], ~occ[j], ANIM_WORK)
-        if valid.mean() < MIN_VALID:
+        if valid is not None and valid.mean() < MIN_VALID:
             continue
-        g, p = fit_like(small, valid, size, like)
-        if like is not None and p > ANIM_P95:
-            g, p = fit_like(small, valid, size, like, warm=False)
+        if robust:   # outliers judged against the previous key (the plate changes smoothly), or a first fit
+            g = like if like is not None else fit_like(small, valid, size, None)[0]
+            g, p = _refit(small, valid, size, g, fresh=like is None) if g is not None else (None, math.inf)
+        else:
+            g, p = fit_like(small, valid, size, like)
+            if like is not None and p > ANIM_P95:
+                g, p = fit_like(small, valid, size, like, warm=False)
         g = follow(g, like)
         fits.append((f, g, p))
         if g is not None and p <= ANIM_P95:
@@ -366,12 +395,12 @@ def _animated_keys(frames, sample, occ, size) -> tuple[list[GradientKey], float]
     return _drop_keys([GradientKey(t=int(f), gradient=g) for f, g in good], size), share
 
 
-def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
+def classify(model: PlateModel, stats: dict, frames, sample, occ, try_keys: bool = False) -> PlateModel:
     """Static plate (temporal p95 < STATIC_P95): color when flat; gradient when a ≤ 4-stop linear or ≤ 3-stop
     radial gradient fits within GRADIENT_P95 at ≤ 160 px and GRADIENT_FULL_P95 at ≤ 640 px and its stops
     span ≥ MIN_STOP_RANGE; else image. Moving plate:
-    gradient with keys when rank 2 over time and fitted per sample; else a video candidate: a still image with a
-    message, until build_plate makes it a video plate."""
+    gradient with keys when rank 2 over time (or `try_keys`: busy_plate found one) and fitted per sample; else a
+    video candidate: a still image with a message, until build_plate makes it a video plate."""
     p95, r2 = stats["p95_dE"], stats["rank2_ratio"]
     st = {**model.stats, "temporal_p95_de": round(p95, 3), "rank2_ratio": round(r2, 4)}
     H, W = model.image.shape[:2]
@@ -387,7 +416,7 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ) -> PlateModel:
             if full <= GRADIENT_FULL_P95:
                 return replace(model, kind="gradient", image=render_gradient(g, W, H), gradient=g, stats=st)
         return replace(model, kind="image", stats=st)
-    keys, share = _animated_keys(frames, sample, occ, (W, H)) if r2 >= RANK2 else ([], 0.0)
+    keys, share = _animated_keys(frames, sample, occ, (W, H), robust=try_keys) if r2 >= RANK2 or try_keys else ([], 0.0)
     st["animated_fit_share"] = round(share, 3)
     if keys:
         return replace(model, kind="gradient", gradient=keys[0].gradient, gradient_keys=keys, stats=st)
@@ -482,9 +511,9 @@ def _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tr
 
 
 def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1,
-                obj_tracks=None, frames_out=None) -> PlateModel:
+                obj_tracks=None, frames_out=None, try_keys=False) -> PlateModel:
     """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none.
-    `frames_out` (FRAMES_PATH) enables video plates."""
+    `frames_out` (FRAMES_PATH) enables video plates; `try_keys`: see classify."""
     n, H, W = frames.shape[:3]
     if bg_override:
         rgb = hex_to_rgb8(bg_override)
@@ -520,7 +549,7 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         stats.update({"movers": len(movers)} if mover_msg is None else {"movers_message": mover_msg})
     model, failed = PlateModel(kind, plate, rgb, synthetic, float(bconf), stats, movers=movers), False
     try:
-        model = classify(model, temporal_stats(frames, sample, occ, plate), frames, sample, occ)
+        model = classify(model, temporal_stats(frames, sample, occ, plate), frames, sample, occ, try_keys)
     except Exception as e:   # fail soft: keep the still kind, at lower confidence, and say so
         log.exception("plate classification failed")
         model.stats["message"] = f"plate classification skipped: {type(e).__name__}: {e}"[:200]
@@ -541,6 +570,46 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
              len(model.gradient_keys))
     log.info("plate pass2 %.2fs samples=%s holes=%s synthetic=%.4f kind=%s %s", t[-1] - t[0], len(sample), len(filled),
              frac, model.kind, secs)
+    return model
+
+
+def busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bconf, frames_out=None) -> PlateModel | None:
+    """A background pass 1 missed because it keeps changing: its regions then cover more than BUSY of the sampled
+    pixels, and the median of the early samples and of the late ones (text boxes aside) differ by MOVED_DE at the
+    median pixel. That background judged on the text boxes only: an animated gradient fitted robustly per sample
+    (the elements are outliers), else (`frames_out`) a video plate of the frames themselves. The caller finds the
+    regions and tracks again against its `at(f)`. None when pass 1 is not busy or the background holds still."""
+    t0 = time.perf_counter()
+    n, H, W = frames.shape[:3]
+    reveal = reveal_exclusion_boxes(list(text_tracks) + list(shape_tracks))
+    sample = sample_frames(n)
+    busy = float(occupancy((H, W), rbf, boxes, reveal, sample).mean())
+    if busy <= BUSY:
+        return None
+    none = [()] * n
+    occ = occupancy((H, W), none, boxes, reveal, sample)
+    k = max(MIN_SEEN, len(sample) // 3)
+    early, ce = masked_median(frames, sample[:k], occ[:k])
+    late, cl = masked_median(frames, sample[-k:], occ[-k:])
+    seen = (ce > 0) & (cl > 0)
+    moved = float(np.median(delta_e(srgb8_to_lab(early[seen]), srgb8_to_lab(late[seen])))) if seen.any() else 0.0
+    log.info("plate busy pass1=%.3f moved=%.2f", busy, moved)
+    if moved < MOVED_DE:
+        return None
+    raw, counts = masked_median(frames, sample, occ)
+    holes, uncovered = find_holes(counts, frames, none, boxes, reveal, skip=sample)
+    plate, synthetic, _ = fill_holes(raw, holes, uncovered)
+    rgb = tuple(int(round(v)) for v in plate.reshape(-1, 3).mean(0))
+    st = {"busy_pass1": round(busy, 3), "moved_de": round(moved, 2)}
+    keys, share = _animated_keys(frames, sample, occ, (W, H), robust=True)
+    model = None
+    if keys:
+        model = PlateModel("gradient", plate, rgb, synthetic, float(bconf), {**st, "animated_fit_share": round(share, 3)},
+                           gradient=keys[0].gradient, gradient_keys=keys)
+    elif frames_out is not None:
+        model = _video_plate(PlateModel("image", plate, rgb, synthetic, float(bconf), st), frames, none, boxes, reveal, frames_out)
+        model = model if model.kind == "video" else None
+    log.info("plate busy %.2fs kind=%s keys=%s", time.perf_counter() - t0, model.kind if model else None, len(keys))
     return model
 
 

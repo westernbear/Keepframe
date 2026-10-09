@@ -280,7 +280,7 @@ def test_busy_animated_gradient_is_found_again_not_full_frame_sprites(tmp_path):
     """Eval seed 3: a gradient turning from navy to pink. Pass 1's still plate misses it everywhere, so its regions
     cover most of every frame; the plate stage fits the moving gradient robustly, finds the layers again against it
     and ends as an animated gradient, without full-frame sprites copying the background."""
-    ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, size=(320, 180), frames=24)
+    ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, frames=24)   # 640×360
     frames = np.stack([f.round().clip(0, 255).astype(np.uint8) for f in render_frames(ref, tmp_path / "ref", range(ref.frames))])
     scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", OPTS)
     sd = scene_dir(tmp_path / "proj", "s1")
@@ -288,6 +288,22 @@ def test_busy_animated_gradient_is_found_again_not_full_frame_sprites(tmp_path):
     assert bg.kind == "gradient" and len(bg.gradient_keys) >= 2, bg.kind
     assert load_plate(sd).stats.get("busy_pass1", 0) > 0.5
     for f in (0, 12, 23):
-        assert np.percentile(_de(render_gradient(gradient_at(bg, f), 320, 180), true_plate(ref, tmp_path / "ref", f)), 95) < 3, f
-    assert all(e.canonical.width * e.canonical.height < 0.25 * 320 * 180 for e in scene.elements)
-    assert len(scene.elements) <= 2 * len(ref.elements)
+        assert np.percentile(_de(render_gradient(gradient_at(bg, f), 640, 360), true_plate(ref, tmp_path / "ref", f)), 95) < 3, f
+    area = [e.canonical.width * e.canonical.height / (640 * 360) for e in scene.elements]
+    assert max(area) < 0.1 and sum(area) < 0.4, area   # layers (titles in pieces: no OCR here), no plate copies
+
+
+@pytest.mark.skipif(not plate_mod.videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_busy_moving_plate_without_a_gradient_plays_as_video(tmp_path, monkeypatch):
+    """The same busy clip when no gradient fits: its layers play in the background video (said so), and no sprite
+    copies the plate."""
+    monkeypatch.setattr(plate_mod, "_animated_keys", lambda *a, **k: ([], 0.0))
+    ref = make_reference_scene(tmp_path / "ref", 3, plate="animated", n_titles=2, frames=16)
+    frames = np.stack([f.round().clip(0, 255).astype(np.uint8) for f in render_frames(ref, tmp_path / "ref", range(ref.frames))])
+    scene = analyze_scene_frames(frames, 30, tmp_path / "proj", "s1", OPTS)
+    sd = scene_dir(tmp_path / "proj", "s1")
+    assert scene.background.kind == "video" and load_plate(sd).stats["resegmented"] == "video"
+    assert not (sd / "stages" / ".plate_busy.npy").exists()
+    messages = json.loads((sd / "report.json").read_text())["messages"]
+    assert "background animates; the layers it hid play in the background video" in messages, messages
+    assert all(e.canonical.width * e.canonical.height < 0.1 * 640 * 360 for e in scene.elements)

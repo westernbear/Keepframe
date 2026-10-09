@@ -16,7 +16,7 @@ from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, ext
 from .keyframes import fill_gaps, tracks_from_raw
 from . import videoasset
 from .movers import mover_cover, mover_frames, mover_props, mover_video
-from .plate import FRAMES_PATH, PlateModel, background_for, build_plate, fallback_plate, load_plate, save_plate, write_video
+from .plate import FRAMES_PATH, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
 from .semantics import assign_roles, group_by_motion
@@ -137,11 +137,18 @@ def _stage_text(frames, bg, opts, ocr, sd):
     return boxes, tracks, shape_tracks, msg
 
 
-def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd) -> PlateModel:
+def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd,
+                 busy: PlateModel | None = None) -> PlateModel:
+    """`busy`: the moving plate the regions were found again against (busy_plate); its kind guides this one."""
     (sd / FRAMES_PATH).unlink(missing_ok=True)   # a stage cache: only a video plate writes it again
     try:
         model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
-                            bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks, frames_out=sd / FRAMES_PATH)
+                            bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks, frames_out=sd / FRAMES_PATH,
+                            try_keys=busy is not None and busy.kind == "gradient")
+        if busy is not None:
+            model.stats.update(busy_pass1=busy.stats["busy_pass1"], resegmented=busy.kind)
+            if busy.kind == "video" and model.kind == "video":   # found against the frames themselves: nothing moves apart
+                model.stats["message"] = "background animates; the layers it hid play in the background video"
         model = write_video(sd, model, fps)
     except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
         log.exception("plate v2 failed")
@@ -149,6 +156,35 @@ def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
     _pk(sd, "movers", model.movers)   # before plate.json, which marks the plate stage complete
     save_plate(sd, model)
     return model
+
+
+BUSY_PATH = "stages/.plate_busy.npy"
+
+
+def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd):
+    """The plate stage: (model, rbf, obj_tracks). When pass 1 missed a background that keeps changing (busy_plate),
+    the regions and tracks are found again against that moving plate first."""
+    busy = None
+    if not opts.bg_override:
+        try:
+            busy = busy_plate(frames, rbf, boxes, text_tracks, shape_tracks, bconf=bconf, frames_out=sd / BUSY_PATH)
+        except Exception:   # fail soft: today's regions
+            log.exception("busy plate failed")
+    if busy is not None:
+        t0 = time.perf_counter()
+        report_stage("regions")
+        rbf = _stage_regions(frames, bg, boxes, opts, sd, plate_at=busy.at, text_tracks=text_tracks, shape_tracks=shape_tracks)
+        obj_tracks = _stage_tracking(rbf, sd)
+        report_stage("plate")
+        log.info("plate busy regions again %.2fs objects=%s", time.perf_counter() - t0, len(obj_tracks))
+    model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, busy)
+    (sd / BUSY_PATH).unlink(missing_ok=True)
+    return model, rbf, obj_tracks
+
+
+def _moving(model: PlateModel):
+    """The per-frame plate of a background that moves (video or animated gradient), else None."""
+    return model.at if model.frames is not None or len(model.gradient_keys) > 1 else None
 
 
 def _cached_plate(sd: Path) -> PlateModel | None:
@@ -239,12 +275,16 @@ def _plate_inputs(model: PlateModel):
     return model.rgb, (model.image if model.kind != "color" else None)
 
 
-def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, shape_tracks=None):
+def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, shape_tracks=None, plate_at=None):
+    """`plate_at(f)`: a per-frame plate (a background that moves), instead of `plate`."""
     reveal_boxes = reveal_exclusion_boxes((text_tracks or []) + (shape_tracks or []))
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     fg = np.empty(frames.shape[:3], bool)   # filled in place: a list + np.stack held the masks twice
     for i, f in enumerate(frames):
-        fg[i] = foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg)
+        if plate_at is not None:
+            fg[i] = foreground_mask_plate(f, plate_at(i))
+        else:
+            fg[i] = foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg)
     pal = build_palette(frames, fg)
     ov = _load_overrides(sd)
     ov_by_frame: dict[int, list] = {}
@@ -282,14 +322,20 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), notes=None):
+def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), notes=None, plate_at=None):
     """Solids (3D candidates) from the tracks no mover claimed; mover pixels are layers already, never a 3D
-    candidate too. Returns (solids, movers): when the movers cannot be applied they are dropped with a note."""
+    candidate too. Returns (solids, movers): when the movers cannot be applied they are dropped with a note.
+    `plate_at(f)`: a per-frame plate (a background that moves), instead of `plate`."""
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     shape = frames.shape[1:3]
 
+    def mask(i, f):
+        if plate_at is not None:
+            return foreground_mask_plate(f, plate_at(i))
+        return foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg)
+
     def run(movers):
-        fg = (foreground_mask_plate(f, plate, plate_lab=plate_lab) if plate is not None else foreground_mask(f, bg) for f in frames)
+        fg = (mask(i, f) for i, f in enumerate(frames))
         excluded = ((text_exclusion_mask(b, shape) | mover_cover(movers, f, shape)) if movers else text_exclusion_mask(b, shape)
                     for f, b in enumerate(boxes))
         return find_solids(frames, fg, _unclaimed(obj_tracks, [], movers)[0], excluded)
@@ -640,12 +686,13 @@ def analyze_scene_frames(
     obj_tracks = _stage_tracking(rbf, sd)
     t = _stage_done("tracking", t)
     report_stage("plate")
-    model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
+    model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
     t = _stage_done("plate", t)
     report_stage("solids")
     notes: list[str] = []
-    solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers, notes=notes)
+    solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers, notes=notes,
+                                   plate_at=_moving(model))
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
@@ -852,7 +899,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     rebuilt = model is None   # rerun from the plate or earlier, or a project analysed before plate v2 / movers
     if rebuilt:
         report_stage("plate")
-        model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
+        model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate,
+                                              opts, sd)
     bg, plate = _plate_inputs(model)
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
@@ -860,7 +908,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     movers = model.movers
     if boundary <= STAGES.index("solids") or redo:
         report_stage("solids")
-        solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=movers, notes=notes)
+        solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=movers, notes=notes,
+                                       plate_at=_moving(model))
     else:
         solids = _pk(sd, "solids")
     t = _stage_done("solids", t)
