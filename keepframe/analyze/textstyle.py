@@ -15,10 +15,12 @@ from ..fonts.raster import _blur, _dilate, _shift, compose_text
 from ..ir.colour import delta_e, hex_to_rgb8, lab_to_srgb, rgb8_to_hex, srgb_to_lab
 from ..ir.gradient import gradient_t, render_gradient
 from ..ir.schema import AlphaStop, Fade, Gradient, GradientStop, TextEffect, TextStyle, TextureMeta
-from ..log import get
+from ..log import describe, get
 from . import matting
 
 log = get("keepframe.analyze.textstyle")
+
+STYLE_FAILED = "style_failed"   # `style_error` of a text whose style analysis failed (a code: what clients see)
 
 INTERIOR_K = 0.35            # fill interior = α > 0.5 eroded by this × stroke width …
 THIN_PX = 3.0                # … unless strokes are thinner: then the most opaque decile
@@ -713,11 +715,13 @@ def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None):
 def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fonts=None) -> dict:
     """The text style of every text element in `props` (in place), after textures v2: `style` (TextStyle dump),
     `color` (the analysed fill), `core_color` (today's core-mask colour, the fallback) and `style_info`. An element
-    whose analysis fails keeps the core-mask colour, no style, and `style_error`.
+    whose analysis fails keeps the core-mask colour, no style, and `style_error` = STYLE_FAILED.
     Then the fonts (Task 10, `fonts`: the project's FontRegistry), one text after another outside the thread pool
     (`fonts.match.font_guesses`: deterministic, capped by work): `font` (FontGuess) and the style's tracking, shear
-    and offset. A text that fails keeps the first guess at confidence ≤ 0.5 with `font_error`; one past the scene's
-    work cap the same with `font_skipped`."""
+    and offset. A text that fails keeps the first guess at confidence ≤ 0.5 with `font_error` = MATCH_FAILED; one
+    past the scene's work cap the same with `font_skipped` = WORK_CAP. Stage data and report messages carry these
+    codes only (they ship in project ZIPs and reach the browser); exception details go to the server log, paths
+    cut."""
     from ..fonts import match as fontmatch
     from ..fonts.registry import FontRegistry
     registry = fonts or FontRegistry()
@@ -735,9 +739,9 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         try:
             return k, *analyse_text_style(p["canon"], meta, frames, plate, p["raw"], p.get("text") or "",
                                           others_at=others_for(k)), None
-        except Exception as e:   # fail soft: today's core-mask colour, no style, a message
-            log.exception("text style failed for %s", k)
-            return k, None, None, None, f"{type(e).__name__}: {e}"[:160]
+        except Exception as e:   # fail soft: today's core-mask colour, no style, a code (the detail is logged)
+            log.warning("text style failed for %s: %s", k, describe(e, trace=True))
+            return k, None, None, None, STYLE_FAILED
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         results = list(ex.map(run, keys))
@@ -746,8 +750,8 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         found = fontmatch.font_guesses([_font_job(k, props[k], style, info) for k, style, _, info, _ in results],
                                        registry)
     except Exception as e:   # fail soft: every text keeps its first guess
-        log.exception("font matching failed")
-        found = {k: ("error", f"{type(e).__name__}: {e}"[:160]) for k in keys}
+        log.warning("font matching failed: %s", describe(e, trace=True))
+        found = {k: ("error", fontmatch.MATCH_FAILED) for k in keys}
     t2 = time.perf_counter()
     failed, per, counts = 0, [], {"ok": 0, "error": 0, "skipped": 0}
     for k, style, colour, info, err in results:
@@ -755,7 +759,7 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         p.setdefault("core_color", p.get("color"))
         for name in ("style", "style_error", "font_error", "font_skipped"):
             p.pop(name, None)
-        res = found.get(k, ("error", "not matched"))
+        res = found.get(k, ("error", fontmatch.MATCH_FAILED))
         counts[res[0]] += 1
         if res[0] == "ok":
             p["font"] = res[1]

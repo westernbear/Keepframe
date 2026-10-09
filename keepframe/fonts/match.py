@@ -49,7 +49,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from ..log import get
+from ..log import describe, get
 from .raster import _FT_LOCK, _HANGUL, LIGA_OFF, _length, _mtime, cmap, first_baseline, font_info
 from .registry import FontFace, FontRegistry
 
@@ -80,6 +80,8 @@ WEIGHT_ITERS = (2, 2)            # … and its iterations …
 WEIGHT_STEP = 25.0               # … on a grid of this many wght units (shared by texts: glyphs cached per weight)
 ROUND2_K = 4                     # the second round of coordinate descent refines this many families
 MIN_FITS, PRUNE = 3, 0.15        # families past the first MIN_FITS whose coarse score trails the best by PRUNE: skipped
+MATCH_FAILED = "match_failed"    # font_guesses result codes (stage data and report messages carry no exception text)
+WORK_CAP = "work_cap"
 SCENE_RENDERS = 5000             # a scene's texts are matched (largest cap height first) until this many candidate renders
 DUP_FITS = 3                     # a repeated text whose own prefilter puts the first match's family on top fits this many
 SHEARS = (-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0)
@@ -261,7 +263,7 @@ def _store(face: FontFace) -> _FaceStore | None:
             try:
                 st = _STORES[key] = _FaceStore(_cache_file(face, "face"))
             except OSError as e:
-                log.warning("font match cache unavailable (%s)", e)
+                log.warning("font match cache unavailable (%s)", describe(e))
                 return None
         return st
 
@@ -1000,7 +1002,7 @@ def _atomic_write(path: Path, text: str) -> None:
         os.replace(tmp, path)
         tmp = None
     except OSError as e:   # read-only cache: recomputed next time
-        log.warning("font match cache unavailable (%s)", e)
+        log.warning("font match cache unavailable (%s)", describe(e))
     finally:
         if tmp is not None:
             try:
@@ -1030,7 +1032,7 @@ def _calibration(face: FontFace, mtime: float) -> tuple[tuple[float, float], ...
     try:
         path = _cache_file(face, "calib")
     except OSError as e:
-        log.warning("font calibration cache unavailable (%s)", e)
+        log.warning("font calibration cache unavailable (%s)", describe(e))
         return _measure_calibration(face)
     hit = _calib_read(path)
     if hit is None:
@@ -1453,7 +1455,7 @@ def _fit(obs: _Obs, family: str, registry: FontRegistry) -> FontFit:
     try:
         search.round(1)
     except Exception as e:   # the first round's fit stands
-        log.warning("font fit round 2 skipped %s: %s", family, e)
+        log.warning("font fit round 2 skipped %s: %s", family, describe(e))
         search.restore(first)
     return search.result()
 
@@ -1642,7 +1644,7 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
         try:
             fams.append((name, _Family(name, registry, obs.chars)))
         except Exception as e:   # an unreadable font drops out
-            log.warning("font prefilter skipped %s: %s", name, e)
+            log.warning("font prefilter skipped %s: %s", name, describe(e))
 
     def stage1():
         out = []
@@ -1650,7 +1652,7 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
             try:
                 out.append((*_stage1(obs, fam), name, fam))
             except Exception as e:
-                log.warning("font prefilter skipped %s: %s", name, e)
+                log.warning("font prefilter skipped %s: %s", name, describe(e))
         return sorted(out, key=lambda x: x[0])
 
     first = stage1()
@@ -1675,7 +1677,7 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
             sc, state = _start(obs, fam, w, s, t)
             second.append((sc, name, fam, state))
         except Exception as e:
-            log.warning("font prefilter skipped %s: %s", name, e)
+            log.warning("font prefilter skipped %s: %s", name, describe(e))
     second.sort(key=lambda x: -x[0])
     return [(name, fam, start, sc) for sc, name, fam, start in second[:k]]
 
@@ -1715,7 +1717,7 @@ def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
             search.round(0)
             searches.append(search)
         except Exception as e:   # one family failing never ends the match
-            log.warning("font fit skipped %s: %s", name, e)
+            log.warning("font fit skipped %s: %s", name, describe(e))
     searches.sort(key=lambda x: -x.score)
     fits = []
     for i, search in enumerate(searches):
@@ -1724,12 +1726,12 @@ def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
             try:
                 search.round(1)
             except Exception as e:   # the first round's fit stands
-                log.warning("font fit round 2 skipped %s: %s", search.fam.family, e)
+                log.warning("font fit round 2 skipped %s: %s", search.fam.family, describe(e))
                 search.restore(first)
         try:
             fits.append(search.result())
         except Exception as e:
-            log.warning("font fit skipped %s: %s", search.fam.family, e)
+            log.warning("font fit skipped %s: %s", search.fam.family, describe(e))
     if not fits:
         raise LookupError("no font could be fitted")
     fits.sort(key=lambda f: -f.score)
@@ -1802,7 +1804,7 @@ def font_guess(alpha, text: str, registry: FontRegistry, *, stroke_ratio: float 
         try:
             fb = fit_hangul_fallback(fits[0], alpha, text, registry)
         except Exception as e:   # the renderers pick the registry's fallback on their own
-            log.warning("Hangul fallback fit failed: %s", e)
+            log.warning("Hangul fallback fit failed: %s", describe(e))
     return _guess(fits, conf, fb, registry, prior)
 
 
@@ -1833,8 +1835,9 @@ def _copy_guess(job: TextJob, guess, registry: FontRegistry) -> tuple | None:
 
 def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: int | None = None) -> dict:
     """A scene's texts matched one after another — largest cap height first, ties in the given order — until
-    `max_renders` candidate renders: per key ("ok", FontGuess, layout), ("error", message) or ("skipped",
-    message). Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
+    `max_renders` candidate renders: per key ("ok", FontGuess, layout), ("error", MATCH_FAILED) or ("skipped",
+    WORK_CAP) — codes only: they reach stage data and report messages; exception details are logged, paths cut.
+    Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
     (same string) is matched on its own pixels with less work when its prefilter agrees with the first match
     (`_copy_guess`), else in full."""
     from ..analyze.textstyle import _a01, cap_height
@@ -1855,7 +1858,7 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
         for i in order:
             job = jobs[i]
             if counter[0] >= max_renders:
-                out[job.key] = ("skipped", f"scene work cap ({max_renders} candidate renders) reached")
+                out[job.key] = ("skipped", WORK_CAP)
                 continue
             key = (job.text or "").strip()
             if key in first:
@@ -1865,15 +1868,15 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
                         out[job.key] = ("ok", *res)
                         continue
                 except Exception as e:   # matched in full below
-                    log.warning("font match of repeated %s: %s; matching it in full", job.key, e)
+                    log.warning("font match of repeated %s: %s; matching it in full", job.key, describe(e))
             try:
                 g, layout = font_guess(job.alpha, job.text, registry, prior=job.prior, stroke_ratio=job.stroke_ratio,
                                        centres=job.centres)
                 first.setdefault(key, g)
                 out[job.key] = ("ok", g, layout)
-            except Exception as e:   # fail soft: the caller keeps the first guess
-                log.warning("font match failed for %s: %s", job.key, e)
-                out[job.key] = ("error", f"{type(e).__name__}: {e}"[:160])
+            except Exception as e:   # fail soft: the caller keeps the first guess; the detail stays in the log
+                log.warning("font match failed for %s: %s", job.key, describe(e, trace=True))
+                out[job.key] = ("error", MATCH_FAILED)
     finally:
         _RENDERS.reset(token)
         flush_cache()

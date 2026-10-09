@@ -388,6 +388,27 @@ def _valid_meta(meta) -> bool:
             and (meta["latin"] or meta["hangul"]))
 
 
+CHILD_LOG_TAIL = 4096   # bytes of the check child's log read back
+CHILD_LOG_CHARS = 240   # characters of it kept for the refusal reason and the server log
+
+
+def _log_tail(logs: BinaryIO) -> str:
+    """The end of the check child's log, safe to log: its last CHILD_LOG_TAIL bytes without the partial first line
+    when the window starts inside the log (it may begin mid-path), scrubbed whole, then cut to the last
+    CHILD_LOG_CHARS characters (the error is at the end)."""
+    start = max(0, logs.seek(0, 2) - CHILD_LOG_TAIL)
+    logs.seek(start)
+    text = logs.read(CHILD_LOG_TAIL).decode("utf-8", "replace")
+    if start:   # the window may begin inside a line (mid-path): drop that line (or word, in one long line)
+        first = re.search(r"\n", text) or re.search(r"\s", text)
+        text = text[first.end():] if first else ""
+    text = _clean(scrub_paths(text), CHILD_LOG_TAIL * 4)
+    tail = text[-CHILD_LOG_CHARS:]
+    if len(text) > CHILD_LOG_CHARS and not text[-CHILD_LOG_CHARS - 1].isspace():   # cut inside a word: drop it
+        tail = tail.partition(" ")[2]
+    return tail.strip()
+
+
 def _inspect_child(path: Path) -> dict:
     """Run the check child: its result comes back in a file of its own, its logs (stdout and stderr) in another."""
     with INSPECT_SLOTS, tempfile.TemporaryDirectory(prefix="kf-fontcheck-") as work, tempfile.TemporaryFile() as logs:
@@ -399,8 +420,7 @@ def _inspect_child(path: Path) -> dict:
                                timeout=INSPECT_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             raise FontRejected("bad_tables", f"not decoded within {INSPECT_TIMEOUT_S} s") from None
-        logs.seek(max(0, logs.seek(0, 2) - 2048))
-        tail = _clean(logs.read(2048).decode("utf-8", "replace"), 300)
+        tail = _log_tail(logs)
         try:
             with open(result, "rb") as f:
                 raw = f.read(CHILD_OUTPUT_BYTES + 1)
@@ -411,8 +431,7 @@ def _inspect_child(path: Path) -> dict:
     except (UnicodeDecodeError, ValueError):
         report = None
     if r.returncode != 0 or not isinstance(report, dict) or ("meta" not in report and report.get("code") not in CODES):
-        tail = scrub_paths(tail)
-        log.warning("font inspection exited %s: %s", r.returncode, tail)
+        log.warning("font inspection exited %s: %s", r.returncode, tail or "no output")
         raise FontRejected("bad_tables", f"the font could not be decoded (exit {r.returncode}: {tail or 'no output'})"[:300])
     if "meta" not in report:
         raise FontRejected(report["code"], _clean(str(report.get("reason", "")), 200))

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from keepframe.log import get
+from keepframe.log import describe, get
 
 from .spec import JobSpec
 
@@ -12,6 +12,15 @@ log = get("keepframe.jobs")
 
 # Closed cloud workers import this module and call run_job(JobSpec.from_json(payload)).
 # Do not reimplement analyze/render there.
+
+
+class JobFailed(RuntimeError):
+    """A job failure whose client-visible text is `code` only (`str()` is the code; runners store it as the job's
+    error); the detail was logged, paths cut."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 def run_job(spec: JobSpec) -> dict[str, Any]:
@@ -89,18 +98,22 @@ def project_zip(root: Path, zip_path: Path) -> None:
     import zipfile
     root, zip_path = Path(root), Path(zip_path)
     tmp = zip_path.with_name(f".{zip_path.name}.tmp")
-    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
-        for dirpath, dirnames, filenames in os.walk(root):
-            here = Path(dirpath)
-            dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink()
-                                 and not (here == root and d == "fonts"))   # only the project's fonts/ is skipped whole
-            for name in sorted(filenames):
-                path = here / name
-                relative = path.relative_to(root)
-                if path in (zip_path, tmp) or path.is_symlink() or _private_font(relative):
-                    continue
-                zf.write(path, relative.as_posix())
-    os.replace(tmp, zip_path)
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for dirpath, dirnames, filenames in os.walk(root):
+                here = Path(dirpath)
+                dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink()
+                                     and not (here == root and d == "fonts"))   # only the project's fonts/ whole
+                for name in sorted(filenames):
+                    path = here / name
+                    relative = path.relative_to(root)
+                    if path in (zip_path, tmp) or path.is_symlink() or _private_font(relative):
+                        continue
+                    zf.write(path, relative.as_posix())
+        os.replace(tmp, zip_path)
+    except BaseException:   # no partial ZIP left behind
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +149,10 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     root = Path(package_root_arg) if package_root_arg else sd.parent.parent
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / "project.zip"
-    project_zip(root, zip_path)
+    try:
+        project_zip(root, zip_path)
+    except Exception as e:   # unreadable, vanished or unwritable files, a full disk: a code for the render card
+        log.error("export project zip failed out=%s: %s", out.name, describe(e))
+        raise JobFailed("export_failed") from None
     log.info("export done mp4=%s zip=%s", res.mp4, zip_path)
     return {"mp4": str(res.mp4) if res.mp4 else None, "zip": str(zip_path), "frames": len(res.frames)}

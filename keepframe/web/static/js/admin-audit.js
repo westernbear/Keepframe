@@ -1,5 +1,5 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261009c";
-import { T } from "/static/js/i18n.js?v=20261009c";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261009d";
+import { T } from "/static/js/i18n.js?v=20261009d";
 
 const tbody = document.getElementById("audit-rows");
 const ACTION_KEYS = {

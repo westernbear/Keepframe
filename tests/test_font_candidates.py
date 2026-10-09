@@ -96,7 +96,7 @@ def test_font_match_failure_does_not_abort_sprites_stage(tmp_path, monkeypatch, 
     props = _stage_sprites(frames, (0, 0, 0), [track], [], [], AnalyzeOptions(refine=False), tmp_path, 1)
     assert props["t1"]["font"].family_guess == "sans-serif"
     assert props["t1"]["font"].candidates == [] and props["t1"]["font"].confidence <= 0.5
-    assert props["t1"]["font_error"].startswith(error.__name__)
+    assert props["t1"]["font_error"] == "match_failed"   # R51: a code; the exception is in the server log
     pad = props["t1"]["texture_meta"]["padding"]   # textures v2 pad the texture by pad px a side
     assert props["t1"]["canon"].shape == (20 + 2 * pad, 30 + 2 * pad, 4)
     assert (tmp_path / "stages/props.pkl").is_file()

@@ -350,7 +350,7 @@ def test_scene_work_cap_keeps_first_guesses_in_cap_height_order():
     jobs = [TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text)) for k, s in (("a", small), ("b", big), ("c", mid))]
     out = font_guesses(jobs, REG, max_renders=1)
     assert out["b"][0] == "ok" and out["a"][0] == out["c"][0] == "skipped"
-    assert "work cap" in out["a"][1]
+    assert out["a"][1] == out["c"][1] == "work_cap"   # R51: a code, as stage data and report messages carry
     assert [v[0] for v in font_guesses(jobs, REG, max_renders=0).values()] == ["skipped"] * 3
 
 

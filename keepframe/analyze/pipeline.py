@@ -4,10 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
+from ..ir.schema import FONT_FAMILY_RE, Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
-from ..log import get, scrub_paths
+from ..log import describe, get, scrub_paths
 from ..progress import STAGES, report_stage
 from . import matting, textstyle
 from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
@@ -188,14 +188,15 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: not matted, {p['texture_note']}; kept the binary texture")
         elif p.get("mover") and not p.get("stable") and p.get("texture_meta"):
             out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
-        if p.get("style_error"):
-            out.append(f"{ids[k]}: text style failed ({p['style_error']}); kept the core-mask colour")
+        if p.get("style_error"):   # fixed text: the stored value is a code (exception text in older stages)
+            out.append(f"{ids[k]}: text style failed; kept the core-mask colour")
         if p.get("fade_note"):
             out.append(f"{ids[k]}: {p['fade_note']}")
         if p.get("font_error") or p.get("font_skipped"):
-            family = p["font"].family_guess if p.get("font") is not None else "sans-serif"
-            out.append(f"{ids[k]}: font match failed ({p['font_error']}); kept {family}" if p.get("font_error")
-                       else f"{ids[k]}: font not matched ({p['font_skipped']}); kept {family}")
+            family = getattr(p.get("font"), "family_guess", None)
+            family = family if isinstance(family, str) and FONT_FAMILY_RE.fullmatch(family) else "sans-serif"
+            out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
+                       else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
     return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths
 
 
@@ -206,7 +207,7 @@ def _font_registry(sd: Path):
     try:
         return FontRegistry.for_project(sd.parent.parent if sd.parent.name == "scenes" else None)
     except Exception as e:   # an unreadable font index: bundled fonts only
-        log.warning("project fonts unusable (%s); bundled fonts only", e)
+        log.warning("project fonts unusable (%s); bundled fonts only", describe(e))
         return FontRegistry()
 
 

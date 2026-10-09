@@ -444,7 +444,8 @@ def test_style_failure_keeps_core_colour_with_message(styled_clip, monkeypatch):
     props = pickle.loads((sd / "stages/props.pkl").read_bytes())
     assert el.canonical.style is None and el.canonical.color == props[key]["core_color"]
     report = json.loads((sd / "report.json").read_text())
-    assert any(m.startswith(f"{el.id}: text style failed (RuntimeError: boom)") for m in report["messages"])
+    assert f"{el.id}: text style failed; kept the core-mask colour" in report["messages"]   # R51: no exception text
+    assert not [m for m in report["messages"] if "boom" in m]
 
 
 def test_rerun_keeps_manual_text_style(styled_clip):
@@ -488,7 +489,8 @@ def test_font_match_failure_keeps_preliminary_font_with_message(styled_clip, mon
     assert el.canonical.font.confidence <= 0.5
     assert el.canonical.style is not None and el.canonical.style.tracking_em == 0 and el.canonical.style.dx == 0
     report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
-    assert any(m.startswith(f"{el.id}: font match failed (RuntimeError: boom)") for m in report["messages"])
+    assert f"{el.id}: font match failed; kept sans-serif" in report["messages"]   # R51: no exception text
+    assert not [m for m in report["messages"] if "boom" in m]
 
 
 def test_font_work_cap_keeps_preliminary_font_with_message(styled_clip, monkeypatch):
@@ -500,4 +502,4 @@ def test_font_work_cap_keeps_preliminary_font_with_message(styled_clip, monkeypa
     assert el.canonical.font.family_guess == "sans-serif" and el.canonical.font.candidates == []
     assert el.canonical.font.confidence <= 0.5
     report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
-    assert any(m.startswith(f"{el.id}: font not matched (scene work cap") for m in report["messages"]), report["messages"]
+    assert f"{el.id}: font not matched (scene work cap reached); kept sans-serif" in report["messages"], report["messages"]

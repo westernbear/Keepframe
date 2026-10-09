@@ -931,3 +931,178 @@ def test_font_messages_reaching_clients_carry_no_paths(tmp_path, monkeypatch):
     scene, _ = current_scene(root, "s1")
     issues = css.uploaded_font_issues(scene, scene_dir(root, "s1"), FontRegistry.for_project(root))
     assert issues == [{"kind": "font_file_missing", "element": "t1", "family": "Brand Wide"}]
+
+
+# --- fix round 4: R51 (client-visible analysis/job text carries codes only; log tails and the scrubber hardened) -----
+
+BYPASS = [   # every path form the round-3 scrubber let through (R51)
+    repr(r"C:\Users\op\keepframe-ws\p1\fonts\a.ttf"),
+    "'/Users/John Doe/keepframe-ws/p1/fonts/a.ttf'",
+    "error:/home/secret-operator/keepframe-ws/a.ttf",
+    "PATH=/usr/bin:/home/secret-operator/bin",
+    r"\\fileserver\share\secret-operator\a.ttf",
+    "~/secret-operator/keepframe-ws/a.ttf",
+    "../../home/secret-operator/keepframe-ws/a.ttf",
+    "file:///home/secret-operator/keepframe-ws/a.html",
+    "%2Fhome%2Fsecret-operator%2Fkeepframe-ws%2Fa.ttf",
+    '{"p": "\\/home\\/secret-operator\\/keepframe-ws\\/a.ttf"}',
+    "keepframe-ws/p1/fonts/a.ttf",
+]
+LEAKS = ("secret-operator", "keepframe-ws", "John Doe", "Users", "fileserver", "share", "p1/", "usr/")
+
+
+def _leaks(text: str) -> list[str]:
+    return [frag for frag in LEAKS if frag in text]
+
+
+def test_font_and_style_failures_reach_clients_as_codes_only(tmp_path, monkeypatch, caplog):
+    """R51: a font match or text style failure whose exception carries any path form leaves a code in the stage
+    data and a fixed report message (family only); the detail goes to the server log, scrubbed."""
+    import logging
+    import pickle
+    from keepframe.analyze import textstyle
+    from keepframe.analyze.pipeline import AnalyzeOptions, _stage_sprites, _texture_messages
+    from keepframe.analyze.text import TextBox, TextTrack
+    from keepframe.fonts import match as fontmatch
+    detail = "No such file or directory: " + " ".join(BYPASS)
+
+    def font_boom(*a, **k):
+        raise FileNotFoundError(2, detail, r"C:\Users\op\keepframe-ws\p1\fonts\b.ttf")
+
+    def style_boom(*a, **k):
+        raise OSError(detail)
+
+    frames = np.zeros((1, 30, 50, 3), np.uint8)
+    frames[0, 8:12, 10:24] = 255
+    track = TextTrack(id=1, boxes={0: TextBox(0, "Text", (5, 3, 35, 23), 0.9)}, text="Text")
+    caplog.set_level(logging.INFO)
+    for target, name, boom in ((fontmatch, "match_font", font_boom), (textstyle, "analyse_text_style", style_boom),
+                               (fontmatch, "font_guesses", font_boom)):
+        with monkeypatch.context() as m:
+            m.setattr(target, name, boom)
+            sd = tmp_path / name
+            (sd / "stages").mkdir(parents=True)
+            props = _stage_sprites(frames, (0, 0, 0), [track], [], [], AnalyzeOptions(refine=False), sd, 1)
+        p = props["t1"]
+        stored = (sd / "stages/props.pkl").read_bytes()
+        assert not _leaks(stored.decode("latin-1")), name
+        msgs = [x for x in _texture_messages(props, {"t1": "e1"}) if "font" in x or "style" in x]
+        if name == "analyse_text_style":
+            assert p["style_error"] == "style_failed" and "font_error" not in p
+            assert msgs == ["e1: text style failed; kept the core-mask colour"], msgs
+        else:
+            assert p["font_error"] == "match_failed" and "style_error" not in p
+            assert msgs == ["e1: font match failed; kept sans-serif"], msgs
+        assert pickle.loads(stored)["t1"].get("font_error") == p.get("font_error")
+    assert "No such file or directory" in caplog.text and not _leaks(caplog.text), _leaks(caplog.text)
+    legacy = {"o1": {"font_error": f"FileNotFoundError: [Errno 2] {detail}", "style_error": f"OSError: {detail}",
+                     "font": FontGuess(family_guess="Inter", size_px=20)}}
+    assert _texture_messages(legacy, {"o1": "e1"}) == ["e1: text style failed; kept the core-mask colour",
+                                                       "e1: font match failed; kept Inter"]
+    skipped = {"o1": {"font_skipped": "work_cap", "font": None}}
+    assert _texture_messages(skipped, {"o1": "e1"}) == ["e1: font not matched (scene work cap reached); kept sans-serif"]
+
+
+def test_check_log_tail_starting_mid_path_leaks_no_fragment(monkeypatch, caplog):
+    """R51: the check child's log tail is read from an arbitrary byte offset; whatever the offset, the reason and
+    the log line keep no fragment of a path (the partial first line is dropped, the whole tail is scrubbed before
+    it is cut) and keep the end of the log, where the error is."""
+    import logging
+    import subprocess
+    import types
+    from keepframe.fonts import upload
+    path = f"{SECRET}/p1/fonts/.upload-abc.part"
+    caplog.set_level(logging.INFO)
+    for pad in range(0, len(path) + 2, 3):
+        payload = ("\n".join([path] * 80) + "\n" + "B" * pad + "\nOSError: boom\n").encode()
+
+        def run(cmd, *, stdout, **kw):
+            stdout.write(payload)
+            return subprocess.CompletedProcess(cmd, 1)
+
+        monkeypatch.setattr(upload, "subprocess", types.SimpleNamespace(
+            run=run, DEVNULL=subprocess.DEVNULL, TimeoutExpired=subprocess.TimeoutExpired))
+        caplog.clear()
+        with pytest.raises(FontRejected) as err:
+            upload._inspect_child(Path("/nonexistent.ttf"))
+        for text in [err.value.reason, *(r.getMessage() for r in caplog.records)]:
+            rest = text.replace("…/.upload-abc.part", "")
+            assert not re.search(r"secret|operator|keepframe|ws/|p1|fonts|/", rest), (pad, text)
+        assert "OSError: boom" in err.value.reason, (pad, err.value.reason)
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("No such file: '/Users/John Doe/keepframe-ws/p1/a.ttf'", "No such file: '…/a.ttf'"),
+    (repr(r"C:\Users\op\keepframe-ws\a.ttf"), "'…/a.ttf'"),
+    (str(FileNotFoundError(2, "No such file or directory", r"C:\Users\op\ws\a.ttf")),
+     "[Errno 2] No such file or directory: '…/a.ttf'"),
+    ("error:/home/secret-operator/keepframe-ws/a.ttf", "error:…/a.ttf"),
+    ("PATH=/usr/bin:/home/secret-operator/bin", "PATH=…/bin"),
+    (r"\\fileserver\share\secret-operator\a.ttf", "…/a.ttf"),
+    ("~/secret-operator/keepframe-ws/a.ttf", "…/a.ttf"),
+    ("x=~/secret-operator/a.ttf", "x=…/a.ttf"),
+    ("../../home/secret-operator/a.ttf", "…/a.ttf"),
+    ("file:///home/secret-operator/keepframe-ws/a.html", "file://…/a.html"),
+    ("%2Fhome%2Fsecret-operator%2Fa.ttf", "…/a.ttf"),
+    ('{"p": "\\/home\\/secret-operator\\/a.ttf"}', '{"p": "…/a.ttf"}'),
+    ("keepframe-ws/p1/fonts/a.ttf", "…/a.ttf"),
+    ("me/secret-operator/keepframe-ws/p1/fonts/.upload-abc.part x", "…/.upload-abc.part x"),
+    ("/home/x/My Fonts (copy)/a.ttf", "…/a.ttf"),
+    ("/home/secret-operator/한글 폰트/a.ttf", "…/a.ttf"),
+    ('File "/home/secret-operator/venv/lib/fontTools/ttFont.py", line 3', 'File "…/ttFont.py", line 3'),
+    ("copy /tmp/a/x.ttf to /home/secret-operator/y.ttf", "copy …/x.ttf to …/y.ttf"),
+    ("Brand /home/x", "Brand …/x"),
+    ("--workspace=/home/secret-operator/ws", "--workspace=…/ws"),
+    # ordinary log text and URLs stay as they are
+    ("https://example.com/a/b?x=1", None), ("see http://localhost:8765/api/projects/p1 now", None),
+    ("example.com/a/b", None), ("AC/DC Sans", None), ("Font 8/16", None), ("image/png", None),
+    ("2026/10/09", None), ("a / b", None), ("…/x.ttf", None), ("exit 1: …/result.json", None),
+])
+def test_scrub_paths_cuts_every_path_form(text, expected):
+    """R51 (defence in depth for the server log): paths with spaces, Windows repr, colon-prefixed, UNC, ~, ../,
+    file://, URL-encoded, JSON-escaped and relative workspace paths are cut to their last part; URLs and ordinary
+    text are kept."""
+    from keepframe.log import scrub_paths
+    assert scrub_paths(text) == (text if expected is None else expected)
+
+
+@pytest.mark.parametrize("method, error", [
+    ("write", PermissionError(13, "Permission denied", f"{SECRET}/p1/scenes/s1/a.png")),
+    ("write", FileNotFoundError(2, "No such file or directory", f"{SECRET}/p1/scenes/s1/gone.png")),
+    ("close", OSError(28, "No space left on device", f"{SECRET}/p1/renders/project.zip")),
+], ids=["permission", "vanished", "disk_full"])
+def test_project_zip_failure_is_a_code_only_job_error(tmp_path, monkeypatch, caplog, method, error):
+    """R51: a Project ZIP that cannot be written fails the export job with the code `export_failed` (what the
+    render card shows); the detail is in the server log without paths; no partial ZIP is left."""
+    import logging
+    import time
+    import zipfile
+    from keepframe.jobs import JobSpec, JobStore, ThreadRunner
+    from tests.test_native_plan import _project
+    root = _project(tmp_path)
+    html = tmp_path / "c.html"
+    html.write_text("<html></html>")
+
+    class Result:
+        frames, mp4 = [0], None
+
+    def fail(self, *a, **k):
+        raise error
+
+    monkeypatch.setattr("keepframe.render.renderer.render", lambda *a, **k: Result())
+    monkeypatch.setattr(zipfile.ZipFile, method, fail)
+    caplog.set_level(logging.INFO)
+    out = tmp_path / "export"
+    store = JobStore(runner=ThreadRunner())
+    job = store.submit("export", project_id="p1", spec=JobSpec(kind="export", args={
+        "scene": str(scene_dir(root, "s1") / "scene.v1.json"), "html": str(html), "out": str(out)}))
+    for _ in range(200):
+        if store.get(job.id).status in ("done", "error"):
+            break
+        time.sleep(0.05)
+    monkeypatch.undo()
+    job = store.get(job.id)
+    assert job.status == "error" and job.error == "export_failed", job.error
+    failure = "\n".join(r.getMessage() for r in caplog.records if "failed" in r.getMessage())
+    assert "project zip failed" in failure and type(error).__name__ in failure and not _leaks(failure), failure
+    assert not [p.name for p in out.iterdir() if "zip" in p.name], list(out.iterdir())

@@ -113,3 +113,24 @@ def test_render_card_names_a_substituted_uploaded_font(agent):
     payload["warnings"] = []
     page.reload()
     expect(page.locator("#render-warnings")).to_be_hidden()
+
+
+def test_render_card_translates_a_coded_export_failure(agent):
+    """R51: an export whose Project ZIP could not be written fails with the code `export_failed`; the render card
+    says so in ko/en (no exception text exists to show), and other job errors still show as sent."""
+    from playwright.sync_api import expect
+    page, _ = agent
+    plan = {"id": "plan1", "backend": "native", "mode": "final", "version_id": "v1",
+            "artifact_contract": {"outputs": ["mp4", "zip"]}}
+    payload = {"plan": plan, "status": "failed", "state": {"status": "approved", "revision": 1}, "artifacts": [],
+               "job": {"id": "j1", "status": "error", "error": "export_failed"}}
+    page.route("**/api/render-plans?*", lambda route: route.fulfill(json={"plans": [payload]}))
+    page.reload()
+    reason = page.locator("#render-reason")
+    expect(reason).to_have_text("프로젝트 ZIP을 만들지 못했습니다. 디스크 공간과 파일 권한을 확인하세요")
+    expect(page.locator("#render-reason-field")).to_be_visible()
+    page.locator("[data-lang-toggle]").click()
+    expect(reason).to_have_text("Could not write the project ZIP. Check disk space and file permissions")
+    payload["job"]["error"] = "font Ghost Brand could not be embedded for the final render; nothing was rendered"
+    page.reload()
+    expect(reason).to_have_text(payload["job"]["error"])
