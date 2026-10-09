@@ -252,3 +252,179 @@ def test_match_runtime():
         match_font(s.alpha, text, REG, **inputs)
         secs.append(time.perf_counter() - t0)
     assert statistics.median(secs) <= 1.0, secs
+
+
+# --- the scene: serial, deterministic, capped by work (fix round 1, R43 / R44) -------------------------------------
+
+WORDS = ("Night", "Market", "Best", "Sale", "Grand", "Open", "City", "Lights", "Summer", "Fresh", "Coming", "Soon",
+         "Last", "Chance", "Studio", "Away", "Motion", "Hello", "Big", "Launch", "Free", "Week", "Arts", "Show")
+
+
+def _texts(n: int) -> list[str]:
+    """n distinct 12-character texts: two words and a number."""
+    out = []
+    for i in range(10 * n):
+        a, b = WORDS[i % len(WORDS)], WORDS[(i * 7 + 3) % len(WORDS)]
+        t = f"{a} {b} {i:03d}"[:12].rstrip()
+        if len(t) == 12 and t not in out:
+            out.append(t)
+        if len(out) == n:
+            return out
+    raise AssertionError("not enough texts")
+
+
+def _jobs(n: int, seed0: int = 600):
+    from keepframe.fonts.match import TextJob
+    jobs = []
+    for i, text in enumerate(_texts(n)):
+        s = make_font_sample(seed0 + i, text=text)
+        jobs.append(TextJob(f"e{i}", s.alpha, s.text, **_inputs(s.alpha, s.text)))
+    return jobs
+
+
+def test_scene_of_44_texts_within_budget(tmp_path):
+    """44 distinct 12-character texts through the style phase's path (`font_guesses`) in a new process — imports
+    excluded, first match's cold start included — with the per-font data a previous process left on disk (the
+    steady state: it is measured once per font file)."""
+    import pickle, subprocess, sys
+    from keepframe.fonts import match as M
+    jobs = _jobs(44)
+    for job in jobs:   # a previous process's prefilter data: stage 1 over every eligible family
+        obs = M._observe(job.alpha, job.text, job.stroke_ratio, job.centres)
+        for name in M._eligible(REG, obs.chars):
+            M._stage1(obs, M._Family(name, REG, obs.chars))
+    M.flush_cache()
+    (tmp_path / "jobs.pkl").write_bytes(pickle.dumps([(j.key, j.alpha, j.text, j.stroke_ratio, j.centres) for j in jobs]))
+    script = (
+        "import json, pickle, sys, time\n"
+        "from keepframe.fonts.match import TextJob, font_guesses\n"
+        "from keepframe.fonts.registry import FontRegistry\n"
+        "jobs = [TextJob(*j) for j in pickle.loads(open(sys.argv[1], 'rb').read())]\n"
+        "t0 = time.perf_counter()\n"
+        "out = font_guesses(jobs, FontRegistry())\n"
+        "print(json.dumps({'seconds': time.perf_counter() - t0, 'status': [out[j.key][0] for j in jobs]}))\n")
+    run = subprocess.run([sys.executable, "-c", script, str(tmp_path / "jobs.pkl")], capture_output=True, text=True,
+                         timeout=300)
+    assert run.returncode == 0, run.stderr[-2000:]
+    res = json.loads(run.stdout.strip().splitlines()[-1])
+    print(f"44 texts: {res['seconds']:.1f} s")
+    assert res["seconds"] <= 20.0, res["seconds"]
+    assert res["status"].count("ok") == 44, res["status"]
+
+
+def _same(a, b):
+    ga, la = a[1], a[2]
+    gb, lb = b[1], b[2]
+    return (ga.model_dump(), la) == (gb.model_dump(), lb)
+
+
+def test_pipeline_path_equals_serial_and_threads_change_nothing():
+    """The style phase's path (`font_guesses`), one text at a time, and the old pipeline's way (a 4-thread pool,
+    other matches competing for the GIL and FreeType) give identical candidates, scores and layouts: the search
+    never depends on how long anything took."""
+    from concurrent.futures import ThreadPoolExecutor
+    from keepframe.fonts.match import font_guess, font_guesses
+    jobs = _jobs(8, seed0=700)
+
+    def one(job):
+        return ("ok", *font_guess(job.alpha, job.text, REG, stroke_ratio=job.stroke_ratio, centres=job.centres))
+
+    serial = {job.key: one(job) for job in jobs}
+    scene = font_guesses(jobs, REG)
+    with ThreadPoolExecutor(4) as ex:
+        threaded = dict(zip([j.key for j in jobs], ex.map(one, jobs)))
+    for job in jobs:
+        assert scene[job.key][0] == "ok"
+        assert _same(scene[job.key], serial[job.key]), job.key
+        assert _same(threaded[job.key], serial[job.key]), job.key
+    assert all(len(serial[j.key][1].candidates) == 3 for j in jobs)
+
+
+def test_scene_work_cap_keeps_first_guesses_in_cap_height_order():
+    """Past the cap (counted candidate renders, never time) the remaining texts are reported skipped, largest cap
+    height first."""
+    from keepframe.fonts.match import TextJob, font_guesses
+    big = make_font_sample(801, text="Grand Opening", size_px=64.0)
+    small = make_font_sample(802, text="This Friday", size_px=28.0)
+    mid = make_font_sample(803, text="Last Chance", size_px=44.0)
+    jobs = [TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text)) for k, s in (("a", small), ("b", big), ("c", mid))]
+    out = font_guesses(jobs, REG, max_renders=1)
+    assert out["b"][0] == "ok" and out["a"][0] == out["c"][0] == "skipped"
+    assert "work cap" in out["a"][1]
+    assert [v[0] for v in font_guesses(jobs, REG, max_renders=0).values()] == ["skipped"] * 3
+
+
+def test_repeated_text_takes_the_first_match():
+    """A text repeated in the scene (e.g. one title tracked twice) is fitted on its own coverage with the first
+    match's family, not matched again."""
+    from keepframe.fonts import match as M
+    a = make_font_sample(811, family="Montserrat", weight=700, text="Big Launch", size_px=56.0, tracking_em=0.0,
+                         shear_deg=0.0)
+    b = make_font_sample(811, family="Montserrat", weight=700, text="Big Launch", size_px=40.0, tracking_em=0.0,
+                         shear_deg=0.0)
+    jobs = [M.TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text)) for k, s in (("a", a), ("b", b))]
+    calls = []
+    orig = M.font_guess
+    try:
+        M.font_guess = lambda *x, **k: calls.append(1) or orig(*x, **k)
+        out = M.font_guesses(jobs, REG)
+    finally:
+        M.font_guess = orig
+    assert len(calls) == 1
+    ga, gb = out["a"][1], out["b"][1]
+    assert gb.family_guess == ga.family_guess == "Montserrat" and gb.candidates == ga.candidates
+    assert abs(gb.size_px / 40 - 1) <= 0.03 and abs(ga.size_px / 56 - 1) <= 0.03
+
+
+def test_weight_search_evaluates_each_weight_once(monkeypatch):
+    """R44: a weight already in a round's cache is not drawn again — here the golden section also leaves the
+    weights one step past each end, which the search's edge extension then asks for."""
+    from keepframe.fonts import match as M
+    seen, rounds = [], []
+    orig_at, orig_round, orig_golden = M._Search._at_weight, M._Search.round, M._golden
+
+    def golden(fn, a, b, n, cache, step=5.0, key=None):
+        best = orig_golden(fn, a, b, n, cache, step, key)
+        for x in (a - 100, b + 100):
+            k = key(x) if key is not None else x
+            if k not in cache:
+                cache[k] = fn(k)
+        return best
+
+    monkeypatch.setattr(M, "_golden", golden)
+
+    def at(self, w):
+        seen.append(w)
+        return orig_at(self, w)
+
+    def rnd(self, r):
+        seen.clear()
+        try:
+            return orig_round(self, r)
+        finally:
+            rounds.append(list(seen))
+
+    monkeypatch.setattr(M._Search, "_at_weight", at)
+    monkeypatch.setattr(M._Search, "round", rnd)
+    for seed in (2, 4, 9):
+        s = make_font_sample(seed)
+        match_font(s.alpha, s.text, REG, **_inputs(s.alpha, s.text))
+    assert rounds and all(len(r) == len(set(r)) for r in rounds), [r for r in rounds if len(r) != len(set(r))]
+
+
+def test_failed_second_round_keeps_the_first_rounds_fit(monkeypatch):
+    """R44: an exception in a family's second round keeps its first-round fit."""
+    from keepframe.fonts import match as M
+    s = make_font_sample(5)
+    want, _ = match_font(s.alpha, s.text, REG, **_inputs(s.alpha, s.text))
+    orig = M._Search.round
+
+    def boom(self, rnd):
+        if rnd == 1:
+            self.w, self.score = -1.0, -1.0   # half-updated state must not leak into the result
+            raise RuntimeError("round 2")
+        return orig(self, rnd)
+
+    monkeypatch.setattr(M._Search, "round", boom)
+    fits, _ = match_font(s.alpha, s.text, REG, **_inputs(s.alpha, s.text))
+    assert len(fits) == 3 and s.family in [f.family for f in fits] and all(f.weight > 0 for f in fits)

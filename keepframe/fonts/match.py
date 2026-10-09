@@ -16,24 +16,35 @@ baseline.
   calibrated range (relative, capped: it varies with the text) — keep STAGE1_K; (2) a coarse render at the seed
   weight keeps k = 8. (The brief's width + stroke-ratio prefilter alone kept the true family in 10 of 30 synthetic
   samples: tracking and weight change the width as much as the family does.)
-- Fit per family, coordinate descent: weight (golden section on wght seeded by the stroke-ratio calibration; static
-  families try each file), tracking (least squares on the glyph positions, else a 1-D search −0.06…0.12 em step
-  0.01), size (cap height, then ±4 %), shear (−12…12° step 4, then ±2°; stored only when ≥ 4°). Every family gets
-  the first round; the best ROUND2_K the second.
+- Fit per family, coordinate descent: weight (golden section on wght, on a WEIGHT_STEP grid, seeded by the
+  stroke-ratio calibration; static families try each file), tracking (least squares on the glyph positions, else a
+  1-D search −0.06…0.12 em step 0.01), size (cap height, then ±4 %), shear (−12…12° step 4, then ±2°; stored only
+  when ≥ 4°). Every kept family gets the first round (past MIN_FITS, those whose coarse render trails the best by
+  PRUNE are not fitted); the best ROUND2_K the second, and a failing second round keeps the first's fit.
 - Confidence 1.0 when the best score ≥ 0.80 and leads the next by ≥ 0.02, else 0.5.
 - Strings over 24 characters are matched on their longest run of whole words (one line).
 - Hangul with a best face that lacks it: `registry.hangul_fallback`, then its weight and scale refitted
   (`fit_hangul_fallback`, default scale 0.92).
+- A scene (`font_guesses`, the style phase): texts one after another, largest cap height first, a repeated text
+  refitted with the first one's family, until SCENE_RENDERS candidate renders. Nothing depends on elapsed time, so
+  the output is the same on any host and under any load.
+- Per font file on disk (`css.cache_root()/match`, keyed by sha256): the stroke-ratio calibration and what stage 1
+  reads (glyph metrics, advances, kerning, coverage), so a new process opens only the families the fit reaches.
 """
 from __future__ import annotations
 
+import contextvars
 import functools
+import hashlib
+import json
 import math
+import os
 import re
+import tempfile
 import threading
-import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -66,9 +77,11 @@ RATIO_CAP = 0.02                 # … and its cap: the measure depends on the t
 LIG_T = 0.015                    # tracking this small is also tried as 0: whole runs with ligatures (raster's t = 0)
 WEIGHT_SPAN = (150.0, 60.0)      # golden-section bracket (± around the current weight) per round …
 WEIGHT_ITERS = (2, 2)            # … and its iterations …
-WEIGHT_ITERS_SLOW = (1, 0)       # … for faces slower than SLOW_MS per glyph
-SLOW_MS = 1.5
+WEIGHT_STEP = 25.0               # … on a grid of this many wght units (shared by texts: glyphs cached per weight)
 ROUND2_K = 4                     # the second round of coordinate descent refines this many families
+MIN_FITS, PRUNE = 3, 0.15        # families past the first MIN_FITS whose coarse score trails the best by PRUNE: skipped
+SCENE_RENDERS = 5000             # a scene's texts are matched (largest cap height first) until this many candidate renders
+DUP_MARGIN = 0.10                # a repeated text takes the first one's family unless its own fit trails by this
 SHEARS = (-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0)
 SHEAR_FINE = 2.0
 SHEAR_MIN = 4.0                  # a smaller shear is stored as 0
@@ -80,6 +93,9 @@ FALLBACK_SCALES = (0.78, 1.06)
 FALLBACK_SEARCH = (0.86, 0.89, 0.92, 0.95, 0.98, 1.01)   # the fit's first round tries these fallback scales …
 COARSE_FB = (0.88, 0.92, 0.96, 1.0)                     # … the prefilter's second stage these
 CALIB_TEXT = "Hamburg"
+CALIB_VERSION = 1                # bump when CALIB_TEXT, WEIGHTS or the stroke-ratio measure change …
+STORE_VERSION = 1                # … or the prefilter's stored glyph metrics change (both files carry R too)
+STORE_MAX = 50_000               # entries of a kind per font kept on disk
 WEIGHTS = (100, 900)
 GOLDEN = (math.sqrt(5) - 1) / 2
 CACHE_BYTES = 64 * 1024 * 1024
@@ -147,7 +163,11 @@ class _Glyph:
     oy: int = 0
     cx: float = 0.0                    # ink centroid from the pen (R px)
     cy: float = 0.0
-    parts: tuple | None = None         # (top, bottom) from the baseline of its solid parts (`_parts`, on demand)
+    parts: tuple | None = None         # (top, bottom) from the baseline of its solid (α ≥ 0.5) parts (`_with_parts`)
+    ink: bool = False                  # it draws something (img may be None: metrics only)
+
+    def metrics(self) -> "_Glyph":
+        return _Glyph(self.adv, self.box, None, self.ox, self.oy, self.cx, self.cy, self.parts, self.ink)
 
 
 @dataclass
@@ -178,25 +198,130 @@ class _LRU:
                 self.used -= n
 
 
-_CACHE = _LRU(CACHE_BYTES)
+_CACHE = _LRU(CACHE_BYTES)   # glyphs with bitmaps
 
 
+def _bounded(d: OrderedDict, n: int = 200_000) -> None:
+    while len(d) > n:
+        d.popitem(last=False)
+
+
+_METRICS: OrderedDict = OrderedDict()   # the same glyphs without bitmaps: the prefilter's stage 1 needs only these
 _KERN: OrderedDict = OrderedDict()
 _ADV: OrderedDict = OrderedDict()
-_COST: dict = {}                 # (path, index, mtime) -> recent ms per glyph render
 
 
-def slow_face(face: FontFace) -> bool:
-    """Faces whose glyphs take long to draw at a new weight (Noto Sans: ~4 ms) get a shorter weight search."""
-    return _COST.get((str(face.path), face.index, _mtime(face.path)), 0.0) > SLOW_MS
+# --- the prefilter's per-font data on disk --------------------------------------------------------------------
+# Stage 1 reads every eligible family: glyph metrics at its drawing weight, advances on the ADV_STEP grid, pair
+# kerning and coverage. They are kept per font file next to the calibration, so a new process draws (and opens) only
+# the families the fit reaches. Values are the computed ones, so results never depend on what was cached.
+
+class _FaceStore:
+    def __init__(self, path: Path):
+        self.path, self.lock, self.dirty = path, threading.Lock(), False
+        self.data: dict = {"g": {}, "k": {}, "a": {}, "c": None}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if all(isinstance(raw.get(k), dict) for k in ("g", "k", "a")):
+                self.data = {"g": raw["g"], "k": raw["k"], "a": raw["a"], "c": raw.get("c")}
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def get(self, kind: str, key: str):
+        return self.data[kind].get(key)
+
+    def put(self, kind: str, key: str, value) -> None:
+        with self.lock:
+            if kind == "c":
+                self.data["c"] = value
+            elif len(self.data[kind]) < STORE_MAX:
+                self.data[kind][key] = value
+            else:
+                return
+            self.dirty = True
+
+    def flush(self) -> None:
+        with self.lock:
+            if not self.dirty:
+                return
+            text = json.dumps({k: (dict(v) if isinstance(v, dict) else v) for k, v in self.data.items()})
+            self.dirty = False
+        _atomic_write(self.path, text)
+
+
+_STORES: dict = {}
+_STORES_LOCK = threading.Lock()
+
+
+def _store(face: FontFace) -> _FaceStore | None:
+    key = (str(face.path), face.index, _mtime(face.path))
+    with _STORES_LOCK:
+        st = _STORES.get(key)
+        if st is None:
+            try:
+                st = _STORES[key] = _FaceStore(_cache_file(face, "face", STORE_VERSION))
+            except OSError as e:
+                log.warning("font match cache unavailable (%s)", e)
+                return None
+        return st
+
+
+def flush_cache() -> None:
+    """Write the prefilter data measured since the last flush (the style phase calls it once per scene)."""
+    with _STORES_LOCK:
+        stores = list(_STORES.values())
+    for st in stores:
+        st.flush()
+
+
+def _coverage(face: FontFace) -> frozenset[int]:
+    """The face's cmap coverage, from the store when known."""
+    key = (str(face.path), face.index, _mtime(face.path))
+    hit = _COVER.get(key)
+    if hit is not None:
+        return hit
+    st = _store(face)
+    ranges = st.data.get("c") if st is not None else None
+    try:   # codepoint ranges within Unicode
+        ok = isinstance(ranges, list) and all(0 <= int(a) <= int(b) <= 0x10FFFF for a, b in ranges)
+        cps = frozenset(c for a, b in ranges for c in range(int(a), int(b) + 1)) if ok else None
+    except (TypeError, ValueError):
+        cps = None
+    if cps is None:
+        cps = cmap(face)
+        if st is not None and cps:
+            srt, ranges = sorted(cps), []
+            for c in srt:
+                if ranges and ranges[-1][1] == c - 1:
+                    ranges[-1][1] = c
+                else:
+                    ranges.append([c, c])
+            st.put("c", "", ranges)
+    _COVER[key] = cps
+    return cps
+
+
+_COVER: dict = {}
+_RENDERS: contextvars.ContextVar = contextvars.ContextVar("font_match_renders", default=None)   # [count] per scene
+
+
+def _wkey(weight: float) -> str:
+    return repr(round(float(weight), 2))
 
 
 def advances(face: FontFace, weight: float, chars) -> dict[str, float]:
-    """Advance widths (R px) only — far cheaper than bitmaps; cached per (face, weight, character)."""
+    """Advance widths (R px) only — far cheaper than bitmaps; cached per (face, weight, character), on disk too."""
     fkey = (str(face.path), face.index, _mtime(face.path), round(float(weight), 2), R)
+    st, wk = _store(face), _wkey(weight)
     out, todo = {}, []
     for ch in set(chars) - {"\n"}:
         v = _ADV.get(fkey + (ch,))
+        if v is None and st is not None:
+            v = st.get("a", wk + "|" + ch)
+            if isinstance(v, (int, float)):
+                _ADV[fkey + (ch,)] = v
+            else:
+                v = None
         if v is None:
             todo.append(ch)
         else:
@@ -206,15 +331,31 @@ def advances(face: FontFace, weight: float, chars) -> dict[str, float]:
             font = _font(face, weight)
             for ch in todo:
                 out[ch] = _ADV[fkey + (ch,)] = _length(font, ch, LIGA_OFF)
-            while len(_ADV) > 200_000:
-                _ADV.popitem(last=False)
+                if st is not None:
+                    st.put("a", wk + "|" + ch, out[ch])
+            _bounded(_ADV)
     return out
+
+
+def _encode(g: _Glyph) -> list:
+    return [g.adv, *g.box, g.ox, g.oy, g.cx, g.cy, int(g.ink), [v for part in g.parts for v in part]]
+
+
+def _decode(v) -> _Glyph | None:
+    try:
+        adv, l, t, r, b, ox, oy, cx, cy, ink, flat = v
+        parts = tuple((float(flat[i]), float(flat[i + 1])) for i in range(0, len(flat) - 1, 2))
+        return _Glyph(float(adv), (float(l), float(t), float(r), float(b)), None, int(ox), int(oy), float(cx), float(cy),
+                      parts, bool(ink))
+    except (TypeError, ValueError):
+        return None
 
 
 def _render_glyph(font, ch: str) -> _Glyph:
     from PIL import Image
     g = _Glyph(_length(font, ch, LIGA_OFF), (0.0, 0.0, 0.0, 0.0))
     if ch.isspace():
+        g.parts = ()
         return g
     mask, (ox, oy) = font.getmask2(ch, mode="L", anchor="ls")
     img = np.asarray(Image.Image()._new(mask)) if mask.size[0] and mask.size[1] else None
@@ -228,22 +369,25 @@ def _render_glyph(font, ch: str) -> _Glyph:
         g.box = (float(ox + cols[0]), float(oy + rows[0]), float(ox + cols[-1] + 1), float(oy + rows[-1] + 1))
         g.cx = float((wts.sum(0) * (np.arange(img.shape[1]) + 0.5)).sum() / m) + ox
         g.cy = float((wts.sum(1) * (np.arange(img.shape[0]) + 0.5)).sum() / m) + oy
+        g.ink = True
+    else:
+        g.parts = ()
     return g
 
 
-def _parts(g: _Glyph) -> tuple:
-    """(top, bottom) from the baseline of the glyph's solid (α ≥ 0.5) connected parts, R px; kept on the glyph."""
+def _with_parts(g: _Glyph) -> _Glyph:
+    """The glyph with its solid parts measured (the prefilter's cap height); needs the bitmap once."""
     if g.parts is None:
         parts = ()
-        if g.img is not None:
-            n, _, st, _ = cv2.connectedComponentsWithStats((g.img > 127).astype(np.uint8), connectivity=8)
-            if n > 1:
-                st = st[1:]
-                st = st[st[:, cv2.CC_STAT_AREA] >= max(2, 0.01 * st[:, cv2.CC_STAT_AREA].max())]
-                parts = tuple((float(g.oy + top), float(g.oy + top + h))
-                              for top, h in zip(st[:, cv2.CC_STAT_TOP], st[:, cv2.CC_STAT_HEIGHT]))
+        n, _, st, _ = (cv2.connectedComponentsWithStats((g.img > 127).astype(np.uint8), connectivity=8)
+                       if g.img is not None else (0, None, None, None))
+        if n > 1:
+            st = st[1:]
+            st = st[st[:, cv2.CC_STAT_AREA] >= max(2, 0.01 * st[:, cv2.CC_STAT_AREA].max())]
+            parts = tuple((float(g.oy + top), float(g.oy + top + h))
+                          for top, h in zip(st[:, cv2.CC_STAT_TOP], st[:, cv2.CC_STAT_HEIGHT]))
         g.parts = parts
-    return g.parts
+    return g
 
 
 def _cap_r(parts) -> float:
@@ -271,44 +415,68 @@ def run_glyph(face: FontFace, weight: float, text: str) -> _Glyph:
         mask, (ox, oy) = font.getmask2(text, mode="L", anchor="ls")
     img = np.asarray(Image.Image()._new(mask)) if mask.size[0] and mask.size[1] else None
     if img is not None and img.max() > 0:
-        g.img, g.ox, g.oy = img, int(ox), int(oy)
+        g.img, g.ox, g.oy, g.ink = img, int(ox), int(oy), True
         g.box = (float(ox), float(oy), float(ox + img.shape[1]), float(oy + img.shape[0]))
     _CACHE.put(key, g, (img.nbytes if img is not None else 0) + 200)
     return g
 
 
-def glyph_set(face: FontFace, weight: float, text: str) -> _GlyphSet:
-    """Advances, ink boxes, bitmaps and centroids of the characters of `text` and the pair kerning of its
-    neighbours, in `face` at `weight`, R px. Glyphs and pairs are cached one by one per (face, weight), so texts
-    and search steps share them."""
+def glyph_set(face: FontFace, weight: float, text: str, *, bitmaps: bool = True) -> _GlyphSet:
+    """Advances, ink boxes, centroids, solid parts and (with `bitmaps`) bitmaps of the characters of `text` and the
+    pair kerning of its neighbours, in `face` at `weight`, R px. Glyphs and pairs are cached one by one per (face,
+    weight), so texts and search steps share them; metrics outlive their bitmaps in the cache."""
     fkey = (str(face.path), face.index, _mtime(face.path), round(float(weight), 2), R)
     chars = sorted(set(text) - {"\n"})
     pairs = sorted({a + b for line in text.split("\n") for a, b in zip(line, line[1:])})
+    st, wk = (None, "") if bitmaps else (_store(face), _wkey(weight))   # metrics only: the disk store too
     glyphs, kern = {}, {}
     missing = []
     for ch in chars:
-        hit = _CACHE.get(fkey + (ch,))
-        if hit is None:
+        g = None if bitmaps else _METRICS.get(fkey + (ch,))
+        if (g is None or g.parts is None) and st is not None:
+            v = st.get("g", wk + "|" + ch)
+            stored = _decode(v) if v is not None else None
+            if stored is not None:
+                g = _METRICS[fkey + (ch,)] = stored
+        if g is None or g.parts is None:   # metrics without parts: from the bitmap, when it is still cached
+            hit = _CACHE.get(fkey + (ch,))
+            g = hit[0] if hit is not None else None
+            if g is not None and not bitmaps:
+                g = _METRICS[fkey + (ch,)] = _with_parts(g).metrics()
+                if st is not None:
+                    st.put("g", wk + "|" + ch, _encode(g))
+        if g is None:
             missing.append(ch)
         else:
-            glyphs[ch] = hit[0]
-    todo = [p for p in pairs if (fkey + (p,)) not in _KERN]
+            glyphs[ch] = g
+    todo = []
+    for p in pairs:
+        if (fkey + (p,)) in _KERN:
+            continue
+        v = st.get("k", wk + "|" + p) if st is not None else None
+        if isinstance(v, (int, float)):
+            _KERN[fkey + (p,)] = v
+        else:
+            todo.append(p)
     if missing or todo:
         with _FT_LOCK:
-            t0 = time.perf_counter()
             font = _font(face, weight)
             for ch in missing:
                 g = glyphs[ch] = _render_glyph(font, ch)
+                if not bitmaps:
+                    _with_parts(g)
                 _CACHE.put(fkey + (ch,), g, (g.img.nbytes if g.img is not None else 0) + 200)
-            if missing:
-                ms = (time.perf_counter() - t0) * 1000 / len(missing)
-                _COST[fkey[:3]] = ms if fkey[:3] not in _COST else 0.7 * _COST[fkey[:3]] + 0.3 * ms
+                _METRICS[fkey + (ch,)] = g.metrics()
+                if st is not None:
+                    st.put("g", wk + "|" + ch, _encode(g))
+            _bounded(_METRICS)
             for p in todo:
                 a = glyphs[p[0]].adv if p[0] in glyphs else _length(font, p[0], LIGA_OFF)
                 b = glyphs[p[1]].adv if p[1] in glyphs else _length(font, p[1], LIGA_OFF)
                 _KERN[fkey + (p,)] = _length(font, p, LIGA_OFF) - a - b
-                if len(_KERN) > 200_000:
-                    _KERN.popitem(last=False)
+                if st is not None:
+                    st.put("k", wk + "|" + p, _KERN[fkey + (p,)])
+            _bounded(_KERN)
     for p in pairs:
         kern[p] = _KERN.get(fkey + (p,), 0.0)
     return _GlyphSet(glyphs, kern)
@@ -340,11 +508,12 @@ class _Layout:
         return (self.fset if fb else self.pset).glyphs[ch]
 
 
-def _layout(text: str, fonts: _Fonts) -> _Layout:
+def _layout(text: str, fonts: _Fonts, *, bitmaps: bool = True) -> _Layout:
     lines = text.split("\n")
     fb_text = "".join(c for c in text if c in fonts.fb_chars)
-    pset = glyph_set(fonts.primary, fonts.weight, "\n".join("".join(c for c in ln if c not in fonts.fb_chars) for ln in lines))
-    fset = glyph_set(fonts.fallback, fonts.fb_weight, fb_text) if fonts.fallback and fb_text else None
+    pset = glyph_set(fonts.primary, fonts.weight, "\n".join("".join(c for c in ln if c not in fonts.fb_chars) for ln in lines),
+                     bitmaps=bitmaps)
+    fset = glyph_set(fonts.fallback, fonts.fb_weight, fb_text, bitmaps=bitmaps) if fonts.fallback and fb_text else None
     return _layout_with(fonts, text, pset, fset)
 
 
@@ -727,7 +896,7 @@ class _Family:
             self.range = None
             self.statics = tuple(sorted({max(WEIGHTS[0], min(WEIGHTS[1], f.weight_range[0])) for f in self.faces}))
         primary = self.face(400)
-        covered = cmap(primary)
+        covered = _coverage(primary)
         self.missing = frozenset(c for c in chars if ord(c) not in covered)
         self.hangul_missing = frozenset(c for c in self.missing if _HANGUL.match(c))
         self.category = primary.category
@@ -757,13 +926,78 @@ class _Family:
         if fface is None:
             return _Fonts(face, w)
         fw = min(max(fw, fface.weight_range[0]), fface.weight_range[1])
-        fcm = cmap(fface)
+        fcm = _coverage(fface)
         return _Fonts(face, w, fface, fw, scale, frozenset(c for c in self.hangul_missing if ord(c) in fcm))
+
+
+@functools.lru_cache(maxsize=4096)
+def _file_sha(path: str, mtime: float) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cache_file(face: FontFace, kind: str, version: int) -> Path:
+    """A per-font file next to the font subsets (`css.cache_root()/match`), keyed by the font file's sha256: the
+    manifest's for bundled fonts, hashed here for any other file."""
+    from .css import cache_root
+    sha = face.sha256 if face.source == "bundled" and face.sha256 else _file_sha(str(face.path), _mtime(face.path))
+    return cache_root() / "match" / f"{kind}-{sha}-{face.index}-r{R}-v{version}.json"
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+        tmp = None
+    except OSError as e:   # read-only cache: recomputed next time
+        log.warning("font match cache unavailable (%s)", e)
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def _calib_read(path: Path) -> tuple[tuple[float, float], ...] | None:
+    try:
+        pts = json.loads(path.read_text(encoding="utf-8"))["points"]
+        out = tuple((float(w), float(r)) for w, r in pts)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    ok = 1 <= len(out) <= 3 and all(math.isfinite(w) and math.isfinite(r) and r > 0 for w, r in out)
+    return out if ok else None
+
+
+def _calib_write(path: Path, points: tuple) -> None:
+    _atomic_write(path, json.dumps({"points": [list(p) for p in points]}))
 
 
 @functools.lru_cache(maxsize=1024)
 def _calibration(face: FontFace, mtime: float) -> tuple[tuple[float, float], ...]:
-    """(weight, stroke ratio) of CALIB_TEXT at the ends (and middle) of the face's weight range."""
+    """(weight, stroke ratio) of CALIB_TEXT at the ends (and middle) of the face's weight range; cached on disk per
+    font file (the prefilter needs every family's on a process's first match)."""
+    try:
+        path = _cache_file(face, "calib", CALIB_VERSION)
+    except OSError as e:
+        log.warning("font calibration cache unavailable (%s)", e)
+        return _measure_calibration(face)
+    hit = _calib_read(path)
+    if hit is None:
+        hit = _measure_calibration(face)
+        if hit:
+            _calib_write(path, hit)
+    return hit
+
+
+def _measure_calibration(face: FontFace) -> tuple[tuple[float, float], ...]:
     from ..analyze.textstyle import cap_height, stroke_width
     lo, hi = weight_range(face)
     weights = (lo, (lo + hi) / 2, hi) if hi > lo else (lo,)
@@ -843,6 +1077,10 @@ class _Fitter:
         return lay, tt
 
     def base(self, lay: _Layout, t: float, s: float, whole: bool = False) -> _Base | None:
+        """A candidate render (counted against the scene's work cap)."""
+        counter = _RENDERS.get()
+        if counter is not None:
+            counter[0] += 1
         obs = self.obs
         pitch_r = obs.pitch * R / max(s, 1e-6)
         q = s * min(obs.f, 1.0) / R
@@ -943,6 +1181,14 @@ def _centres_fit(obs: _Obs, lay: _Layout, s: float, shears, t: float = 0.0, *,
     if not A0[:, -1].any():
         return None
     solve_phi = fit_scale and has_fb and bool(np.ptp(Q) > 1e-6)
+    if not solve_phi:   # one solve for every shear: only the right-hand side depends on it
+        ks = np.tan(np.radians(np.asarray(shears, np.float64)))
+        Y = cs[:, None] - (P[:, None] - ks * ZP[:, None] + phi0 * (Q[:, None] - ks * ZF[:, None]))
+        sol, _, rank, _ = np.linalg.lstsq(A0, Y, rcond=None)
+        if rank < A0.shape[1]:
+            return None
+        rms = np.sqrt(np.mean((A0 @ sol - Y) ** 2, axis=0))
+        return [(float(np.clip(sol[n_lines, j], *TRACK_LS)), float(rms[j]), None) for j in range(len(shears))]
     out = []
     for shear in shears:
         k = math.tan(math.radians(shear))
@@ -979,9 +1225,10 @@ def _val(v) -> float:
     return v[0] if isinstance(v, tuple) else v
 
 
-def _golden(fn, a: float, b: float, n: int, cache: dict, step: float = 5.0) -> float:
+def _golden(fn, a: float, b: float, n: int, cache: dict, step: float = 5.0, key=None) -> float:
+    """Golden-section maximum of fn on [a, b], evaluated on a grid (`key`, else multiples of `step`) once per point."""
     def ev(x):
-        x = round(x / step) * step
+        x = key(x) if key is not None else round(x / step) * step
         if x not in cache:
             cache[x] = fn(x)
         return cache[x]
@@ -1031,23 +1278,28 @@ class _Search:
                 self.whole, self.t = True, 0.0
         cache: dict = {}
         if fam.variable:
+            grid = lambda x: fam.clamp(round(x / WEIGHT_STEP) * WEIGHT_STEP)
+
+            def at(x: float) -> None:   # each grid weight evaluated once
+                x = grid(x)
+                if x not in cache:
+                    cache[x] = self._at_weight(x)
+
             span = WEIGHT_SPAN[rnd]
             lo, hi = max(fam.range[0], self.w - span), min(fam.range[1], self.w + span)
             if hi - lo >= 1:
-                slow = slow_face(fam.face(self.w))
-                _golden(self._at_weight, lo, hi, (WEIGHT_ITERS_SLOW if slow else WEIGHT_ITERS)[rnd], cache)
+                _golden(self._at_weight, lo, hi, WEIGHT_ITERS[rnd], cache, key=grid)
                 for _ in range(2 if rnd == 0 else 0):   # the best at an edge: one step further out
                     top = max(cache, key=lambda x: cache[x][0])
                     if top <= lo + 15 and lo > fam.range[0]:
                         lo = max(fam.range[0], lo - 100)
-                        cache.setdefault(round(lo / 5) * 5, self._at_weight(lo))
+                        at(lo)
                     elif top >= hi - 15 and hi < fam.range[1]:
                         hi = min(fam.range[1], hi + 100)
-                        cache.setdefault(round(hi / 5) * 5, self._at_weight(hi))
+                        at(hi)
                     else:
                         break
-            if round(self.w / 5) * 5 not in cache:
-                cache[round(self.w / 5) * 5] = self._at_weight(self.w)
+            at(self.w)
         else:
             for sw in fam.statics:
                 cache[sw] = self._at_weight(sw)
@@ -1130,6 +1382,12 @@ class _Search:
         self.w, self.t, self.s, self.shear, self.b, self.score = w, t, s, shear, b, sc
         return sc
 
+    def state(self) -> tuple:
+        return self.w, self.s, self.t, self.shear, self.whole, self.b, self.score, self.ft.fb_scale
+
+    def restore(self, state: tuple) -> None:
+        self.w, self.s, self.t, self.shear, self.whole, self.b, self.score, self.ft.fb_scale = state
+
     def result(self) -> FontFit:
         ft, obs = self.ft, self.obs
         w, t, s, b = self.w, self.t, self.s, self.b
@@ -1148,7 +1406,12 @@ def _fit(obs: _Obs, family: str, registry: FontRegistry) -> FontFit:
     _, start = _start(obs, fam, w, s, t)
     search = _Search(obs, fam, start)
     search.round(0)
-    search.round(1)
+    first = search.state()
+    try:
+        search.round(1)
+    except Exception as e:   # the first round's fit stands
+        log.warning("font fit round 2 skipped %s: %s", family, e)
+        search.restore(first)
     return search.result()
 
 
@@ -1184,7 +1447,7 @@ def _eligible(registry: FontRegistry, chars: frozenset) -> list[str]:
         face = registry.face(name)
         if face is None:
             continue
-        cm = cmap(face)
+        cm = _coverage(face)
         if any(ord(c) not in cm for c in other):
             continue
         if hangul and not other and any(ord(c) not in cm for c in hangul):
@@ -1202,7 +1465,7 @@ def _stage1(obs: _Obs, fam: _Family) -> tuple[float, float, float, float, float 
     range beyond RATIO_TOL, capped (the measure varies with the text)."""
     seed = _seed_weight(fam, obs.ratio)
     w = fam.clamp(FIXED_WEIGHT) if fam.variable else seed
-    lay = _layout(obs.text, fam.fonts(w, fb_weight=seed))
+    lay = _layout(obs.text, fam.fonts(w, fb_weight=seed), bitmaps=False)
     if fam.variable and abs(seed - w) >= ADV_STEP / 2:   # the seed weight's advances, the fixed weight's shapes
         ws = fam.clamp(round(seed / ADV_STEP) * ADV_STEP)
         lay = _reshaped(lay, advances(fam.face(ws), ws, set(obs.text) - lay.fonts.fb_chars))
@@ -1211,7 +1474,7 @@ def _stage1(obs: _Obs, fam: _Family) -> tuple[float, float, float, float, float 
         lefts, rights = [], []
         for j, (ch, x, fb) in enumerate(row):
             g = lay.glyph(ch, fb)
-            if g.img is None:
+            if not g.ink:
                 continue
             sc = lay.fonts.fb_scale if fb else 1.0
             l, tp, r, bt = (v * sc for v in g.box)
@@ -1219,7 +1482,7 @@ def _stage1(obs: _Obs, fam: _Family) -> tuple[float, float, float, float, float 
             rights.append((x + r, j))
             if li == 0:   # the ink from the first line's top …
                 tops.append(tp)
-                parts += [(a * sc, b * sc) for a, b in _parts(g)]
+                parts += [(a * sc, b * sc) for a, b in g.parts]
             if li == len(lay.lines) - 1:   # … to the last line's bottom, less the observed pitches
                 bottoms.append(bt)
         if lefts:
@@ -1259,7 +1522,7 @@ def _reshaped(lay: _Layout, adv: dict[str, float]) -> _Layout:
         a = adv.get(ch, g.adv)
         k = a / g.adv if g.adv > 1e-6 else 1.0
         glyphs[ch] = _Glyph(a, (g.box[0] * k, g.box[1], g.box[2] * k, g.box[3]), g.img, g.ox, g.oy, g.cx * k, g.cy,
-                            _parts(g))
+                            g.parts, g.ink)
     pset = _GlyphSet(glyphs, lay.pset.kern)
     return _layout_with(lay.fonts, lay.text, pset, lay.fset)
 
@@ -1328,9 +1591,9 @@ def _start(obs: _Obs, fam: _Family, w: float, s: float, t: float) -> tuple[float
     return _coarse(obs, fam, w, s, t)
 
 
-def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Family, tuple]]:
+def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Family, tuple, float]]:
     """The k best (family, its _Family, (weight, size, tracking, whole runs, fallback scale) to start the fit
-    from)."""
+    from, coarse score), best first."""
     fams = []
     for name in _eligible(registry, obs.chars):
         try:
@@ -1362,7 +1625,7 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
     first = [x[:4] + x[5:] for x in first]
     n_glyphs = len([c for c in obs.text if not c.isspace()])
     k1 = STAGE1_K if n_glyphs > SHORT_TEXT else 3 * STAGE1_K   # a few glyphs place a family less surely
-    keep = first[:k1] if obs.positional else first   # touching glyphs: the width tells too little
+    keep = first[:k1 if obs.positional else 3 * STAGE1_K]   # touching glyphs: the width tells less
     second = []
     for d, w, s, t, name, fam in keep:
         try:
@@ -1371,7 +1634,7 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
         except Exception as e:
             log.warning("font prefilter skipped %s: %s", name, e)
     second.sort(key=lambda x: -x[0])
-    return [(name, fam, start) for _, name, fam, start in second[:k]]
+    return [(name, fam, start, sc) for sc, name, fam, start in second[:k]]
 
 
 # --- public API ----------------------------------------------------------------------------------------------
@@ -1381,7 +1644,7 @@ def prefilter(alpha, text: str, registry: FontRegistry, k: int = K_PREFILTER, *,
     """The k families (uploaded + bundled covering the text) to fit: stage 1 ranks every family by its glyph
     positions, ink width, tracking and stroke ratio against the observation (`_stage1`); the best STAGE1_K (all of
     them when the glyphs give no positions) are drawn coarsely (`_coarse`) and the k best soft IoUs kept."""
-    return [name for name, _, _ in _prefilter(_observe(alpha, text, stroke_ratio, centres), registry, k)]
+    return [name for name, _, _, _ in _prefilter(_observe(alpha, text, stroke_ratio, centres), registry, k)]
 
 
 def fit_family(alpha, text: str, family: str, registry: FontRegistry, *, stroke_ratio: float | None = None,
@@ -1396,7 +1659,10 @@ def match_font(alpha, text: str, registry: FontRegistry, *, k: int = 3, stroke_r
     `alpha`: the text's coverage in its box; `centres`: native x of every non-space glyph (Task 9)."""
     obs = _observe(alpha, text, stroke_ratio, centres)
     searches = []
-    for name, fam, start in _prefilter(obs, registry, K_PREFILTER):
+    kept = _prefilter(obs, registry, K_PREFILTER)
+    for i, (name, fam, start, coarse) in enumerate(kept):
+        if i >= MIN_FITS and coarse < kept[0][3] - PRUNE:   # far behind the best coarse render: not fitted
+            continue
         try:
             search = _Search(obs, fam, start)
             search.round(0)
@@ -1406,9 +1672,14 @@ def match_font(alpha, text: str, registry: FontRegistry, *, k: int = 3, stroke_r
     searches.sort(key=lambda x: -x.score)
     fits = []
     for i, search in enumerate(searches):
-        try:
-            if i < ROUND2_K:
+        if i < ROUND2_K:
+            first = search.state()
+            try:
                 search.round(1)
+            except Exception as e:   # the first round's fit stands
+                log.warning("font fit round 2 skipped %s: %s", search.fam.family, e)
+                search.restore(first)
+        try:
             fits.append(search.result())
         except Exception as e:
             log.warning("font fit skipped %s: %s", search.fam.family, e)
@@ -1456,22 +1727,10 @@ def fit_hangul_fallback(best: FontFit, alpha, text: str, registry: FontRegistry)
     return name, int(wf), round(scale, 3)
 
 
-def font_guess(alpha, text: str, registry: FontRegistry, *, stroke_ratio: float | None = None, centres=None,
-               prior=None) -> tuple["FontGuess", dict]:
-    """The analysis' FontGuess (best family, weight, size; top-3 candidates with scores; confidence; source; the
-    PostScript name of a static face; the Hangul fallback when the best face lacks the text's Hangul) and the layout
-    the style takes (tracking_em, shear_deg, dx, dy), from the matched alpha in the element's box. `prior`: the
-    FontGuess the other fields are kept from."""
+def _guess(fits: list[FontFit], conf: float, fb: tuple, registry: FontRegistry, prior) -> tuple["FontGuess", dict]:
     from ..ir.schema import FontGuess
-    fits, conf = match_font(alpha, text, registry, stroke_ratio=stroke_ratio, centres=centres)
     best = fits[0]
     face = registry.face(best.family, best.weight)
-    fb = (None, None, 1.0)
-    if any(_HANGUL.match(c) for c in text or ""):
-        try:
-            fb = fit_hangul_fallback(best, alpha, text, registry)
-        except Exception as e:   # the renderers pick the registry's fallback on their own
-            log.warning("Hangul fallback fit failed: %s", e)
     base = prior.model_dump() if prior is not None else {}
     base.update(family_guess=best.family, weight=int(best.weight), size_px=float(best.size_px),
                 candidates=[f.family for f in fits], scores=[float(f.score) for f in fits], confidence=float(conf),
@@ -1482,3 +1741,81 @@ def font_guess(alpha, text: str, registry: FontRegistry, *, stroke_ratio: float 
     layout = {"tracking_em": float(best.tracking_em), "shear_deg": float(best.shear_deg),
               "dx": float(best.dx), "dy": float(best.dy)}
     return FontGuess(**base), layout
+
+
+def font_guess(alpha, text: str, registry: FontRegistry, *, stroke_ratio: float | None = None, centres=None,
+               prior=None) -> tuple["FontGuess", dict]:
+    """The analysis' FontGuess (best family, weight, size; top-3 candidates with scores; confidence; source; the
+    PostScript name of a static face; the Hangul fallback when the best face lacks the text's Hangul) and the layout
+    the style takes (tracking_em, shear_deg, dx, dy), from the matched alpha in the element's box. `prior`: the
+    FontGuess the other fields are kept from."""
+    fits, conf = match_font(alpha, text, registry, stroke_ratio=stroke_ratio, centres=centres)
+    fb = (None, None, 1.0)
+    if any(_HANGUL.match(c) for c in text or ""):
+        try:
+            fb = fit_hangul_fallback(fits[0], alpha, text, registry)
+        except Exception as e:   # the renderers pick the registry's fallback on their own
+            log.warning("Hangul fallback fit failed: %s", e)
+    return _guess(fits, conf, fb, registry, prior)
+
+
+@dataclass
+class TextJob:
+    """One analysed text for `font_guesses`: its coverage in the element's box and Task 9's measures."""
+    key: str
+    alpha: np.ndarray
+    text: str
+    stroke_ratio: float | None = None
+    centres: list | None = None
+    prior: object = None              # the first guess (FontGuess) kept when the text is not matched
+
+
+def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: int | None = None) -> dict:
+    """A scene's texts matched one after another — largest cap height first, ties in the given order — until
+    `max_renders` candidate renders: per key ("ok", FontGuess, layout), ("error", message) or ("skipped",
+    message). Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
+    (same string) takes the first one's family and candidates, refitted on its own coverage for weight, size and
+    layout, unless that fit trails the first's score by DUP_MARGIN."""
+    from ..analyze.textstyle import _a01, cap_height
+
+    def cap(job: TextJob) -> float:
+        try:
+            return float(cap_height(_a01(job.alpha), max(1, (job.text or "").count("\n") + 1)))
+        except Exception:
+            return 0.0
+
+    max_renders = SCENE_RENDERS if max_renders is None else max_renders
+    order = sorted(range(len(jobs)), key=lambda i: (-cap(jobs[i]), i))
+    counter = [0]
+    token = _RENDERS.set(counter)
+    out: dict = {}
+    first: dict = {}   # text -> (FontGuess, layout) of its first match
+    try:
+        for i in order:
+            job = jobs[i]
+            if counter[0] >= max_renders:
+                out[job.key] = ("skipped", f"scene work cap ({max_renders} candidate renders) reached")
+                continue
+            kw = {"stroke_ratio": job.stroke_ratio, "centres": job.centres}
+            try:
+                prev = first.get((job.text or "").strip())
+                if prev is not None:
+                    guess, _ = prev
+                    fit = fit_family(job.alpha, job.text, guess.family_guess, registry, **kw)
+                    if fit.score >= guess.scores[0] - DUP_MARGIN:
+                        fits = [fit] + [FontFit(n, 0, 0.0, 0.0, 0.0, sc, 0.0, 0.0)
+                                        for n, sc in zip(guess.candidates[1:], guess.scores[1:])]
+                        fb = (guess.fallback, guess.fallback_weight, guess.fallback_scale)
+                        conf = guess.confidence if fit.score >= CONF_TOP else 0.5
+                        out[job.key] = ("ok", *_guess(fits, conf, fb, registry, job.prior))
+                        continue
+                g, layout = font_guess(job.alpha, job.text, registry, prior=job.prior, **kw)
+                first.setdefault((job.text or "").strip(), (g, layout))
+                out[job.key] = ("ok", g, layout)
+            except Exception as e:   # fail soft: the caller keeps the first guess
+                log.warning("font match failed for %s: %s", job.key, e)
+                out[job.key] = ("error", f"{type(e).__name__}: {e}"[:160])
+    finally:
+        _RENDERS.reset(token)
+        flush_cache()
+    return out

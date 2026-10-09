@@ -192,9 +192,10 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: text style failed ({p['style_error']}); kept the core-mask colour")
         if p.get("fade_note"):
             out.append(f"{ids[k]}: {p['fade_note']}")
-        if p.get("font_error"):
+        if p.get("font_error") or p.get("font_skipped"):
             family = p["font"].family_guess if p.get("font") is not None else "sans-serif"
-            out.append(f"{ids[k]}: font match failed ({p['font_error']}); kept {family}")
+            out.append(f"{ids[k]}: font match failed ({p['font_error']}); kept {family}" if p.get("font_error")
+                       else f"{ids[k]}: font not matched ({p['font_skipped']}); kept {family}")
     return out
 
 

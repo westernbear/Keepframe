@@ -489,3 +489,15 @@ def test_font_match_failure_keeps_preliminary_font_with_message(styled_clip, mon
     assert el.canonical.style is not None and el.canonical.style.tracking_em == 0 and el.canonical.style.dx == 0
     report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
     assert any(m.startswith(f"{el.id}: font match failed (RuntimeError: boom)") for m in report["messages"])
+
+
+def test_font_work_cap_keeps_preliminary_font_with_message(styled_clip, monkeypatch):
+    """R43: a text past the scene's work cap keeps its first guess, at confidence ≤ 0.5, with a report message."""
+    from keepframe.fonts import match as fontmatch
+    monkeypatch.setattr(fontmatch, "SCENE_RENDERS", 0)
+    rerun(styled_clip, "s1", "sprites", note="font work cap")
+    _, el = _title(styled_clip)
+    assert el.canonical.font.family_guess == "sans-serif" and el.canonical.font.candidates == []
+    assert el.canonical.font.confidence <= 0.5
+    report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
+    assert any(m.startswith(f"{el.id}: font not matched (scene work cap") for m in report["messages"]), report["messages"]

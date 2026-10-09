@@ -472,7 +472,7 @@ def font_set(n: int = FONT_SAMPLES) -> dict:
     tracking (0.02 em)."""
     import time as _time
     from ..analyze.textstyle import cap_height, glyph_centres, stroke_width
-    from ..fonts.match import fit_family, match_font
+    from ..fonts.match import fit_family, flush_cache, match_font
     from ..fonts.registry import FontRegistry
     from ..ir.synth import make_font_sample
     reg, rows = FontRegistry(), []
@@ -488,6 +488,7 @@ def font_set(n: int = FONT_SAMPLES) -> dict:
                      "hit": smp.family in [f.family for f in fits[:3]], "confidence": conf,
                      "weight_err": fit.weight - smp.weight, "size_err": fit.size_px / smp.size_px - 1,
                      "tracking_err": fit.tracking_em - smp.tracking_em, "seconds": round(secs, 3)})
+    flush_cache()
     share = lambda key, lim: float(np.mean([abs(r[key]) <= lim for r in rows])) if rows else None
     return {"n": n, "rows": rows, "top3": float(np.mean([r["hit"] for r in rows])) if rows else None,
             "weight_ok": share("weight_err", 100), "size_ok": share("size_err", 0.03), "tracking_ok": share("tracking_err", 0.02),
