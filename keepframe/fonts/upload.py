@@ -39,7 +39,7 @@ REQUIRED_TABLES = ("cmap", "head", "hhea", "hmtx", "maxp", "name")
 INSPECT_TIMEOUT_S = 120
 INSPECT_MEMORY = 2 * 2**30
 INSPECT_FILES = 64
-CHILD_OUTPUT_BYTES = 256 * 2**10   # the child's stdout and stderr files, each (RLIMIT_FSIZE)
+CHILD_OUTPUT_BYTES = 256 * 2**10   # the child's result and log files, each (RLIMIT_FSIZE)
 INSPECT_SLOTS = threading.BoundedSemaphore(2)   # fontTools decodes are CPU- and memory-heavy: two at a time
 UPM_RANGE = (16, 16384)
 MAX_EM_EXTENT = 8                  # outlines (head and glyph boxes) within ±8 em
@@ -95,29 +95,50 @@ def _fonts_dir(project_root: Path, *, create: bool = False) -> Path:
     return d
 
 
+def _part_writer(fd: int) -> BinaryIO:
+    return os.fdopen(fd, "wb")
+
+
 def receive(project_root: Path, stream: BinaryIO, length: int) -> Path:
-    """Copy exactly `length` request-body bytes, in 1 MiB chunks, to `fonts/.upload-*.part`."""
+    """Copy exactly `length` request-body bytes, in 1 MiB chunks, to `fonts/.upload-*.part`. When storing fails
+    (not a directory, disk full) the rest of the declared body is still read and dropped, so the client gets the
+    answer instead of a reset; the socket's own failures are UploadIncomplete."""
     if length > MAX_FONT_BYTES:
         raise FontRejected("too_large")
-    fonts_dir = _fonts_dir(project_root, create=True)
-    sweep(fonts_dir, ".upload-*.part", ".index-*.tmp")
-    fd, name = tempfile.mkstemp(dir=fonts_dir, prefix=".upload-", suffix=".part")
-    path = Path(name)
+    read = getattr(stream, "read1", stream.read)
+    remaining, path = length, None
+
+    def take(n: int) -> bytes:
+        try:
+            chunk = read(min(n, CHUNK_BYTES))
+        except OSError as e:   # timeout or reset
+            raise UploadIncomplete(f"upload ended early ({type(e).__name__})") from e
+        if not chunk:
+            raise UploadIncomplete("upload ended early")
+        return chunk
+
     try:
-        with os.fdopen(fd, "wb") as out:
-            remaining = length
-            read = getattr(stream, "read1", stream.read)
+        fonts_dir = _fonts_dir(project_root, create=True)
+        sweep(fonts_dir, ".upload-*.part", ".index-*.tmp")
+        fd, name = tempfile.mkstemp(dir=fonts_dir, prefix=".upload-", suffix=".part")
+        path = Path(name)
+        with _part_writer(fd) as out:
             while remaining:
-                try:   # the socket: a timeout or reset is a short body; file errors below stay OSError
-                    chunk = read(min(remaining, CHUNK_BYTES))
-                except OSError as e:
-                    raise UploadIncomplete(f"upload ended early ({type(e).__name__})") from e
-                if not chunk:
-                    raise UploadIncomplete("upload ended early")
-                out.write(chunk)
+                chunk = take(remaining)
                 remaining -= len(chunk)
+                out.write(chunk)
+    except UploadIncomplete:
+        if path is not None:
+            path.unlink(missing_ok=True)
+        raise
     except BaseException:
-        path.unlink(missing_ok=True)
+        if path is not None:
+            path.unlink(missing_ok=True)
+        try:   # bounded by the 20 MiB cap and the connection's idle timeout
+            while remaining:
+                remaining -= len(take(remaining))
+        except UploadIncomplete:
+            pass
         raise
     return path
 
@@ -327,14 +348,18 @@ def _confine() -> None:
 
 
 def _child() -> None:
-    """Child process entry (already confined): argv = path; prints {"meta": ...} or {"code", "reason"}."""
+    """Child process entry (already confined): argv = font path, result path. Writes {"meta": ...} or {"code",
+    "reason"} to the result file; stdout/stderr carry only logs (fontTools warns about many real fonts)."""
+    import logging
+    logging.basicConfig(stream=sys.stderr, level=logging.WARNING, force=True)
     try:
         out = {"meta": _tables(Path(sys.argv[1]))}
     except FontRejected as e:
         out = {"code": e.code, "reason": e.reason}
     except Exception as e:   # anything an untrusted font makes fontTools or Pillow raise, MemoryError included
         out = {"code": "bad_tables", "reason": f"{type(e).__name__}: {e}"[:200]}
-    sys.stdout.write(json.dumps(out))
+    with open(sys.argv[2], "w", encoding="utf-8") as f:
+        f.write(json.dumps(out))
 
 
 def _child_env() -> dict[str, str]:
@@ -364,25 +389,30 @@ def _valid_meta(meta) -> bool:
 
 
 def _inspect_child(path: Path) -> dict:
-    cmd = [sys.executable, "-P", "-B", "-c", "from keepframe.fonts.upload import _confine; _confine()\n" + _CHILD_CODE,
-           str(path)]
-    with INSPECT_SLOTS, tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+    """Run the check child: its result comes back in a file of its own, its logs (stdout and stderr) in another."""
+    with INSPECT_SLOTS, tempfile.TemporaryDirectory(prefix="kf-fontcheck-") as work, tempfile.TemporaryFile() as logs:
+        result = Path(work) / "result.json"
+        cmd = [sys.executable, "-P", "-B", "-c", "from keepframe.fonts.upload import _confine; _confine()\n" + _CHILD_CODE,
+               str(path), str(result)]
         try:
-            r = subprocess.run(cmd, env=_child_env(), stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+            r = subprocess.run(cmd, env=_child_env(), stdin=subprocess.DEVNULL, stdout=logs, stderr=logs,
                                timeout=INSPECT_TIMEOUT_S)
         except subprocess.TimeoutExpired:
             raise FontRejected("bad_tables", f"not decoded within {INSPECT_TIMEOUT_S} s") from None
-        out.seek(0)
-        raw = out.read(CHILD_OUTPUT_BYTES + 1)
-        err.seek(max(0, err.seek(0, 2) - 2048))
-        tail = err.read(2048).decode("utf-8", "replace")
+        logs.seek(max(0, logs.seek(0, 2) - 2048))
+        tail = _clean(logs.read(2048).decode("utf-8", "replace"), 300)
+        try:
+            with open(result, "rb") as f:
+                raw = f.read(CHILD_OUTPUT_BYTES + 1)
+        except OSError:
+            raw = b""
     try:
         report = json.loads(raw.decode("utf-8")) if len(raw) <= CHILD_OUTPUT_BYTES else None
     except (UnicodeDecodeError, ValueError):
         report = None
     if r.returncode != 0 or not isinstance(report, dict) or ("meta" not in report and report.get("code") not in CODES):
-        log.warning("font inspection exited %s: %s", r.returncode, _clean(tail, 300))
-        raise FontRejected("bad_tables", "the font could not be decoded")
+        log.warning("font inspection exited %s: %s", r.returncode, tail)
+        raise FontRejected("bad_tables", f"the font could not be decoded (exit {r.returncode}: {tail or 'no output'})"[:300])
     if "meta" not in report:
         raise FontRejected(report["code"], _clean(str(report.get("reason", "")), 200))
     if not _valid_meta(report["meta"]):

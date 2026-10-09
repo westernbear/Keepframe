@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -71,14 +72,15 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
 
 
 _FONT_SUFFIXES = (".ttf", ".otf", ".woff", ".woff2", ".ttc")
+_FONT_COPY = re.compile(r"font-[0-9a-f]{16}\.(ttf|otf|woff2?)|\.font-.*\.tmp")
 
 
 def _private_font(relative: Path) -> bool:
-    """Uploaded font bytes never leave the server in a ZIP (R46): the project's `fonts/`, scene `font-*` copies and
-    any font file (the composition carries the embedded subset)."""
-    name = relative.name
-    return (relative.parts[:1] == ("fonts",) or name.startswith(("font-", ".font-"))
-            or name.lower().endswith(_FONT_SUFFIXES))
+    """A file whose bytes never leave the server in a ZIP (R46): anything under the project's top-level `fonts/`, a
+    scene copy of an uploaded face (`font-<sha16>.<ext>` and its `.font-*.tmp`) and any font file. The composition
+    carries the embedded subset."""
+    return (relative.parts[:1] == ("fonts",) or _FONT_COPY.fullmatch(relative.name) is not None
+            or relative.name.lower().endswith(_FONT_SUFFIXES))
 
 
 def project_zip(root: Path, zip_path: Path) -> None:
@@ -91,7 +93,7 @@ def project_zip(root: Path, zip_path: Path) -> None:
         for dirpath, dirnames, filenames in os.walk(root):
             here = Path(dirpath)
             dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink()
-                                 and not _private_font((here / d).relative_to(root)))
+                                 and not (here == root and d == "fonts"))   # only the project's fonts/ is skipped whole
             for name in sorted(filenames):
                 path = here / name
                 relative = path.relative_to(root)

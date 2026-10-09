@@ -516,7 +516,8 @@ def _font_free(zip_path: Path, data: bytes) -> list[str]:
     import zipfile
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        assert not [n for n in names if n.startswith("fonts/") or "/font-" in n or ".font-" in n], names
+        assert not [n for n in names if n.startswith("fonts/") or re.search(r"(^|/)\.?font-[0-9a-f]{16}\.", n)
+                    or n.lower().endswith((".ttf", ".otf", ".woff", ".woff2", ".ttc"))], names
         assert not [n for n in names if data[:256] in zf.read(n) or data[-256:] in zf.read(n)], names
     return names
 
@@ -689,8 +690,8 @@ def test_check_child_is_confined(tmp_path, monkeypatch):
     assert mem == upload.INSPECT_MEMORY and 0 < cpu <= upload.INSPECT_TIMEOUT_S and 0 < files <= 64
     assert 0 < size <= upload.CHILD_OUTPUT_BYTES
     # a child that floods stderr and stdout stays bounded and is refused
-    monkeypatch.setattr(upload, "_CHILD_CODE", "import sys; sys.stderr.write('x' * 50_000_000); "
-                        "sys.stdout.write('{\"meta\": {}}' + ' ' * 50_000_000)")
+    monkeypatch.setattr(upload, "_CHILD_CODE", "import sys; sys.stdout.write('y' * 50_000_000); "
+                        "open(sys.argv[2], 'w').write('{\"meta\": {}}' + ' ' * 50_000_000)")
     with pytest.raises(FontRejected) as err:
         upload._inspect_child(path)
     assert err.value.code == "bad_tables"
@@ -698,7 +699,7 @@ def test_check_child_is_confined(tmp_path, monkeypatch):
                 {"latin": "yes"}, {"latin": False, "hangul": False}, {"style": "s" * 500}):
         meta = {"original_family": "Brand", "style": "Regular", "weight_range": [400, 400], "postscript": None,
                 "category": "serif", "latin": True, "hangul": False, **bad}
-        monkeypatch.setattr(upload, "_CHILD_CODE", f"import json, sys; sys.stdout.write(json.dumps({{'meta': {meta!r}}}))")
+        monkeypatch.setattr(upload, "_CHILD_CODE", f"import json, sys; open(sys.argv[2], 'w').write(json.dumps({{'meta': {meta!r}}}))")
         with pytest.raises(FontRejected) as err:
             upload._inspect_child(path)
         assert err.value.code == "bad_tables", bad
@@ -761,3 +762,78 @@ def test_promoted_assets_skip_dotfiles(tmp_path):
     (src / "assets" / "subdir").mkdir()
     _promote_assets(src, dest, set())
     assert sorted(p.name for p in dest.iterdir()) == ["e1.txt1.png"]
+
+
+
+# --- fix round 2: R49 ---------------------------------------------------------------------------------------------
+
+def test_font_with_fonttools_warnings_is_accepted(tmp_path, monkeypatch):
+    """R49: fontTools logging a warning about a real-world quirk (extra OS/2 bytes) does not reach the result channel;
+    a crashing check names its stderr tail in the reason."""
+    from fontTools.ttLib import TTFont
+    from fontTools.ttLib.tables.DefaultTable import DefaultTable
+    from keepframe.fonts import upload
+    font = TTFont(io.BytesIO(_ttf()))
+    extra = DefaultTable("OS/2")
+    extra.data = font.reader["OS/2"] + b"\0" * 16
+    font["OS/2"] = extra
+    buf = io.BytesIO()
+    font.save(buf)
+    meta = inspect_font(_write(tmp_path / "quirky.ttf", buf.getvalue()), "quirky.ttf")
+    assert meta["family"] == "Brand Wide" and meta["latin"]
+    monkeypatch.setattr(upload, "_CHILD_CODE", "import sys; sys.stderr.write('decoder-exploded-here'); sys.exit(3)")
+    with pytest.raises(FontRejected) as err:
+        upload._inspect_child(tmp_path / "quirky.ttf")
+    assert err.value.code == "bad_tables" and "exit 3" in err.value.reason and "decoder-exploded-here" in err.value.reason
+
+
+def test_storage_failures_answer_large_uploads(server, monkeypatch):
+    """R49: when the font cannot be stored (fonts is a file; disk full mid-stream) the rest of a multi-MiB body is read
+    and dropped so the client gets the JSON answer, not a reset."""
+    import errno
+    import shutil
+    from keepframe.fonts import upload
+    srv, ws = server
+    data = _ttf() + b"\0" * (8 * 2**20)
+    shutil.rmtree(ws / "p1" / "fonts", ignore_errors=True)
+    (ws / "p1" / "fonts").write_text("not a directory")
+    assert [_upload(srv, data) for _ in range(3)] == [(400, {"error": "bad_tables"})] * 3
+    (ws / "p1" / "fonts").unlink()
+
+    class Full:
+        def __init__(self, fd):
+            self.f = open(fd, "wb")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.f.close()
+
+        def write(self, chunk):
+            if self.f.tell() >= 2**20:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            return self.f.write(chunk)
+
+    monkeypatch.setattr(upload, "_part_writer", Full)
+    assert [_upload(srv, data) for _ in range(3)] == [(400, {"error": "bad_tables"})] * 3
+    assert _stray(ws) == []
+
+
+def test_zip_filter_takes_only_uploaded_font_files(tmp_path):
+    """R49: the R46 filter applies to files: font-<sha16> copies, their temporaries, font suffixes and the project's
+    fonts/ — a font-preview.png or a scene called font-demo survive."""
+    import zipfile
+    from keepframe.jobs.dispatch import project_zip
+    root = tmp_path / "p1"
+    keep = ["project.json", "scenes/s1/assets/font-preview.png", "scenes/font-demo/scene.v1.json",
+            "scenes/font-demo/assets/e1.png", "scenes/s1/fonts.json", "renders/x/native/snapshot/fonts/index.json"]
+    drop = ["fonts/index.json", "fonts/" + "a" * 64 + ".ttf", "scenes/s1/assets/font-0123456789abcdef.ttf",
+            "scenes/s1/assets/font-0123456789abcdef.woff2", "scenes/s1/assets/.font-0123456789abcdef.otf.x1.tmp",
+            "scenes/s1/assets/Brand.TTF", "scenes/font-demo/assets/x.Woff2", "scenes/s1/assets/legacy.ttc"]
+    for rel in keep + drop:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(b"x")
+    project_zip(root, tmp_path / "out.zip")
+    with zipfile.ZipFile(tmp_path / "out.zip") as zf:
+        assert sorted(zf.namelist()) == sorted(keep)
