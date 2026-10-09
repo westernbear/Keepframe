@@ -520,3 +520,17 @@ def test_faint_layer_beside_mover_without_overlap_is_not_claimed():
     assert not region[box[1]:box[3], box[0]:box[2]].any()
     (m,) = find_movers(frames, sample, u, [faint], [], plate=_plate(), established=est)
     assert m.claimed == []
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(not videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_video_sprite_plays_the_same_in_chromium(globe):
+    from keepframe.analyze.composite import composite_scene
+    from keepframe.ir.synth import render_frames
+    root, scene, frames = globe
+    x0, y0, x1, y1 = GLOBE_BOX
+    picks = [0, 13, len(frames) - 1]
+    for f, img in zip(picks, render_frames(scene, _sd(root), picks, renderer="browser")):
+        ref = composite_scene(scene, _sd(root), f) * 255
+        assert np.abs(img[y0:y1, x0:x1] - ref[y0:y1, x0:x1]).mean() <= 1.5, f
+        assert np.abs(img[y0:y1, x0:x1] - frames[f, y0:y1, x0:x1]).mean() <= 6, f   # the globe turns in Chromium too

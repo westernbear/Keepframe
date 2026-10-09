@@ -128,8 +128,8 @@ const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
 const seekVideo = (item, f) => new Promise(resolve => {
   const v = item.v;
   if (v.error || v.readyState < 1) return resolve();
-  const last = Number.isFinite(v.duration) ? Math.max(0, Math.round(v.duration * FPS) - 1) : Infinity;
-  const t = (Math.min(Math.max(f - item.start, 0), last) + 0.5) / FPS;
+  const mid = (Math.max(f - item.start, 0) + 0.5) / FPS;
+  const t = Number.isFinite(v.duration) ? Math.min(mid, v.duration) : mid;   // past its end: the last frame
   if (t === item.t) return resolve();
   item.t = t;
   v.addEventListener('seeked', () => requestAnimationFrame(() => resolve()), {once: true});
