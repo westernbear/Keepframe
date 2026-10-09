@@ -1519,3 +1519,17 @@ test('panel translates the video preparation status into Korean', () => {
     assert.equal(p.nodes.status.textContent, 'demo / s1 v7 영상 준비 중…');
     assert.ok(p.nodes['current-job'].textContent.includes('영상 준비 중'));
 });
+
+test('sync gives up when video preparation never finishes', async t => {
+    const f = await oneJob(t, {deps: {sleep: ms => ms === 15000 ? never() : Promise.resolve()}, route: (req, reply) => {
+        if (req.path.endsWith('/spec')) { reply(202, {preparing: true}); return true; }
+    }});
+    assert.equal(f.result.ok, false);
+    assert.equal(f.result.error, 'Video preparation took too long (footage_prepare_timeout) — send again');
+    assert.equal(f.requests.filter(req => req.path.endsWith('/spec')).length, core.PREPARE_MAX_TRIES + 1);
+    assert.ok(core.PREPARE_MAX_TRIES * 2000 <= 30 * 60 * 1000);
+    assert.ok(f.statuses.some(s => s.message === 'Sync failed: ' + f.result.error));
+    const p = panelHarness('ko_KR'), deps = p.runs[0].deps;
+    deps.setStatus('Sync failed: ' + f.result.error);
+    assert.equal(p.nodes.status.textContent, '동기화 실패: 영상 준비가 너무 오래 걸렸습니다 (footage_prepare_timeout) — 다시 보내세요');
+});

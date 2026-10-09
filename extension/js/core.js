@@ -8,7 +8,8 @@
     // What this panel draws (the server's spec.SPEC_LEVEL): 2 = footage, Ramp gradients, Drop Shadows, gradient
     // fills, text stroke/tracking. Builds are stamped by date, so the server gates on this, not on the version.
     const SPEC_LEVEL = 2;
-    const PREPARE_RETRY_MS = 2000;
+    // Video preparation is asked about every 2 s for at most 20 min (the server bounds each encode to 10 min).
+    const PREPARE_RETRY_MS = 2000, PREPARE_MAX_TRIES = 600;
     const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
     const FRAME_WAIT_MS = 60000;
@@ -324,9 +325,10 @@
 
         async function sync(job, progress) {
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
-            let response = await send('GET', prefix + '/spec');
+            let response = await send('GET', prefix + '/spec'), tries = 0;
             // 202: the server is still making AE footage from the scene's videos; ask again (heartbeats continue).
             while (response.status === 202) {
+                if (tries++ === PREPARE_MAX_TRIES) throw failure('Video preparation took too long (footage_prepare_timeout) — send again');
                 progress.stage = 'preparing video';
                 status('Preparing video for ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
                 await wait(PREPARE_RETRY_MS, stopped);
@@ -621,5 +623,5 @@
         return {start, stop};
     }
 
-    return {EXTENSION_VERSION, HOST_BUILD, HOST_TIMEOUT_MS, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
+    return {EXTENSION_VERSION, HOST_BUILD, HOST_TIMEOUT_MS, PREPARE_MAX_TRIES, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
 }));
