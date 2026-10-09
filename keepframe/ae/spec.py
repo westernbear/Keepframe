@@ -319,6 +319,8 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label):
             source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
                                     canonical.anchor, scene_dir, assets)
             fix = source["scale_fix"]
+            if canonical.video:   # ponytail: AE footage lands with Task 14
+                warnings.append(f"{sid} video sprite exported as its poster image")
             if el.kind == "text":
                 source["text"] = canonical.text or ""
                 warnings.append(f"text {sid} kept as an image (no font detected)")

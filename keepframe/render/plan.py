@@ -340,6 +340,7 @@ def _media_kind(path: Path) -> str:
         ".svg": "image/svg+xml",
         ".mp4": "video/mp4",
         ".mov": "video/quicktime",
+        ".webm": "video/webm",
         ".npz": "application/x-npz",
         ".json": "application/json",
         ".glb": "model/gltf-binary",
@@ -600,6 +601,8 @@ def create_render_plan(
             refs.append((element.canonical.texture, "texture"))
         if element.canonical.model:
             refs.append((element.canonical.model, "texture"))
+        if element.canonical.video:
+            refs.append((element.canonical.video, "texture"))   # a video sprite's WebM (its texture is the poster)
         if element.canonical.font is not None and element.canonical.font.file:
             if _font_file_present(scene_dir, element.canonical.font.file):
                 refs.append((element.canonical.font.file, "texture"))   # uploaded face the composer embeds

@@ -5,6 +5,9 @@ from ..ir.schema import Element, Scene
 from ..ir.paths import scene_asset_path
 from ..ir.gradient import gradient_at, render_gradient
 from ..ir.tracks import affine_matrix, eval_props, eval_z
+from ..log import get
+
+log = get("keepframe.analyze")
 
 
 def hex_to_rgb(s: str) -> tuple[float, float, float]:
@@ -78,13 +81,36 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
     roi += warped[..., :3] * opacity
 
 
+def _video_frame(cache: dict, scene_dir: Path, rel: str, size: tuple[int, int], alpha: bool, i: int) -> np.ndarray | None:
+    """Frame i of a video asset as float32 0..1 (RGB, or RGBA with `alpha`), None when it cannot be decoded (the
+    caller draws the poster). One reader per asset lives in `cache`; a failed one is remembered."""
+    from .videoasset import VideoReader
+    key = ("video", rel, size, alpha)
+    reader = cache.get(key)
+    if reader is False:
+        return None
+    try:
+        if reader is None:
+            reader = cache[key] = VideoReader(scene_asset_path(scene_dir, rel), size, alpha=alpha)
+        return reader.frame(i).astype(np.float32) / 255.0
+    except Exception as e:   # fail soft: the poster
+        log.warning("video %s not decoded (%s); poster drawn", Path(rel).name, type(e).__name__)
+        if reader is not None:
+            reader.close()
+        cache[key] = False
+        return None
+
+
 def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray:
     W, H = scene.size
     canvas = np.empty((H, W, 3), np.float32)
     cache = {} if cache is None else cache
     bgd = scene.background
     image = bgd.value if bgd.kind == "image" else bgd.poster if bgd.kind == "video" else None
-    if image:
+    video = _video_frame(cache, Path(scene_dir), bgd.value, (W, H), False, f) if bgd.kind == "video" else None
+    if video is not None:
+        canvas[:] = video
+    elif image:
         path = scene_asset_path(scene_dir, image)
         key = ("background", image, scene.size)
         bg = cache.get(key)
@@ -115,6 +141,12 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
             prem = tex.copy()
             prem[..., :3] *= prem[..., 3:4]
             cache[prem_key] = prem
+        if el.canonical.video:   # a video sprite: frame f − start of its video, in the texture's geometry
+            th, tw = tex.shape[:2]
+            frame = _video_frame(cache, Path(scene_dir), el.canonical.video, (tw, th), True, f - el.visible[0])
+            if frame is not None:
+                prem = frame
+                prem[..., :3] *= prem[..., 3:4]
         p = eval_props(el, f)
         # ponytail: kind "3d" uses canonical.texture as a static preview here;
         # animated GLB rotation belongs to the Three.js composer. Sprites ignore rx/ry.

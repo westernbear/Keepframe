@@ -5,6 +5,8 @@
   #stage{position:relative;isolation:isolate;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
   .el{position:absolute;will-change:transform;transition:none!important}
   .el img{display:block;width:100%;height:100%;image-rendering:auto}
+  .el video{display:block;width:100%;height:100%;object-fit:fill}
+  .bg-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:-2147483647}
   .el span{display:block;width:100%;height:100%;white-space:pre;overflow:visible}
   .model-canvas{display:block;width:100%;height:100%;background:transparent}
   .ui-component{box-sizing:border-box;margin:0;border:0;background:transparent;color:inherit;font:inherit;overflow:hidden}
@@ -115,6 +117,24 @@ const gradientCss = (g) => {
   if (g.kind === 'radial') return `radial-gradient(circle ${num(g.radius * Math.hypot(SCENE.size[0], SCENE.size[1]) / 2)}px at ${num(g.center[0] * 100)}% ${num(g.center[1] * 100)}%, ${stops})`;
   return `linear-gradient(${num(g.angle)}deg, ${stops})`;
 };
+// Video layers seek to the middle of frame f − start, then wait for `seeked` and one animation frame (headless
+// Chromium never runs requestVideoFrameCallback); a seek to the frame already shown is skipped.
+const VIDEOS = [...document.querySelectorAll('video[data-start]')].map(v => ({v, start: +v.dataset.start, t: -1}));
+const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
+  if (v.readyState >= 2 || v.error) return resolve();
+  v.addEventListener('loadeddata', resolve, {once: true});
+  v.addEventListener('error', resolve, {once: true});
+}));
+const seekVideo = (item, f) => new Promise(resolve => {
+  const v = item.v;
+  if (v.error || v.readyState < 1) return resolve();
+  const last = Number.isFinite(v.duration) ? Math.max(0, Math.round(v.duration * FPS) - 1) : Infinity;
+  const t = (Math.min(Math.max(f - item.start, 0), last) + 0.5) / FPS;
+  if (t === item.t) return resolve();
+  item.t = t;
+  v.addEventListener('seeked', () => requestAnimationFrame(() => resolve()), {once: true});
+  v.currentTime = t;
+});
 window.__seek = (f) => {
   if (BG.kind === 'gradient' && BG.gradient_keys.length) STAGE.style.background = gradientCss(gradientAt(f));
   tl.time(f / FPS, false); for (const a of appliers) a(f);
@@ -125,13 +145,14 @@ window.__seek = (f) => {
     node.style.backgroundColor = /^#[0-9a-f]{3,8}$/i.test(state.background || '') ? state.background : baseBackground;
     node.style.color = /^#[0-9a-f]{3,8}$/i.test(state.color || '') ? state.color : baseColor;
   }
-  for (const draw of modelRenders) draw(); return f;
+  for (const draw of modelRenders) draw();
+  return VIDEOS.length ? Promise.all(VIDEOS.map(item => seekVideo(item, f))).then(() => f) : f;
 };
 window.__bbox = (id) => {
   const r = document.getElementById('el-' + id).getBoundingClientRect();
   const s = document.getElementById('stage').getBoundingClientRect();
   return [r.left - s.left, r.top - s.top, r.right - s.left, r.bottom - s.top];
 };
-Promise.all([document.fonts.ready, ...modelPromises]).then(() => { window.__seek(0); window.__ready = true; });
+Promise.all([document.fonts.ready, ...modelPromises, ...videoReady]).then(() => window.__seek(0)).then(() => { window.__ready = true; });
 </script>
 </body></html>

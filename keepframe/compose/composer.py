@@ -111,12 +111,25 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
         )
     elif c.texture:
         inner = f'<img src="{_data_uri(scene_dir / c.texture)}" alt="{html.escape(el.id)}">'
+        clip = _video_uri(scene_dir, c.video) if c.video else None
+        if clip:   # a video sprite: frame f − start of its WebM; the texture is its poster
+            inner = (f'<video class="vid" muted playsinline preload="auto" data-start="{el.visible[0]}" '
+                     f'poster="{_data_uri(scene_dir / c.texture)}" src="{clip}"></video>')
     else:
         inner = ""
     return (
         f'<div class="el" id="el-{html.escape(el.id)}" data-start="{start:.4f}" data-duration="{dur:.4f}" '
         f'data-track-index="{eval_z(el, 0)}" style="{style}">{inner}</div>'
     )
+
+
+def _video_uri(scene_dir: Path, rel: str) -> str | None:
+    """A scene's WebM as a data URI, None when the file is gone (the poster is drawn instead)."""
+    try:
+        return _data_uri(scene_asset_path(scene_dir, rel), "video/webm")
+    except (OSError, ValueError) as e:   # fail soft: the poster
+        log.warning("video asset %s not embedded (%s)", Path(rel).name, type(e).__name__)
+        return None
 
 
 def _styled_text(c, scene_dir: Path, fonts: FontRegistry | None) -> str | None:
@@ -168,6 +181,9 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistr
     fonts = fonts or FontRegistry()
     _font_issues(scene, scene_dir, fonts, font_wait, warnings)
     elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
+    clip = _video_uri(scene_dir, scene.background.value) if scene.background.kind == "video" else None
+    if clip:   # under every layer; the stage keeps the poster behind it
+        elements = f'<video class="bg-video" muted playsinline preload="auto" data-start="0" src="{clip}"></video>\n' + elements
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
     bgd = scene.background

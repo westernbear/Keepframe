@@ -272,3 +272,12 @@ def test_brief_gradient_line():
     g = lin("#ffffff", "#f6c1d0", angle=135)
     text = scene_brief(scene_with(Background(kind="gradient", value="#808080", gradient=g)))
     assert "background gradient linear 135° #ffffff→#f6c1d0" in text
+
+
+def test_ae_spec_video_sprite_uses_poster_with_warning(tmp_path):
+    png(tmp_path / "assets" / "e1.png", (9, 90, 9), size=(20, 16))
+    el = Element(id="e1", kind="sprite", visible=(0, 9),
+                 canonical=Canonical(width=20, height=16, texture="assets/e1.png", video="assets/e1.video.webm"))
+    s = scene_with(Background(kind="color", value="#000000")).model_copy(update={"elements": [el]})
+    layer = next(l for l in comp_spec(s, tmp_path, project="p", scene_id="s1", version="v1")["layers"] if l["id"] == "kf:e1")
+    assert layer["kind"] == "image" and "e1 video sprite exported as its poster image" in layer["warnings"]

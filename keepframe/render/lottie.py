@@ -33,6 +33,8 @@ def preflight_lottie(scene: Scene) -> None:
     if bg.kind == "video" or (bg.kind == "gradient" and len(bg.gradient_keys) > 1):
         raise PlanConflict(f"Lottie does not animate a {bg.kind} background; export HTML or After Effects")
     for element in scene.elements:
+        if element.canonical.video:
+            raise PlanConflict(f"Lottie does not animate video sprite {element.id}; export HTML or After Effects")
         if element.kind == "3d" and not element.canonical.texture:
             raise PlanConflict(f"Lottie 3D element {element.id} requires a canonical texture fallback")
         if element.kind != "3d" and element.canonical.model and not element.canonical.texture:

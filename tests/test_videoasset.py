@@ -1,0 +1,147 @@
+import numpy as np, pytest
+from keepframe.analyze import videoasset
+from keepframe.analyze.videoasset import VideoReader, encode_webm, fill_video_plate
+from keepframe.ir.colour import delta_e, srgb8_to_lab
+
+pytestmark = pytest.mark.skipif(not videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+
+
+def _rgba_clip(n=8, w=97, h=61):
+    """A soft-edged disc moving over a transparent field (odd size: chroma rounding)."""
+    yy, xx = np.mgrid[:h, :w].astype(np.float64)
+    out = np.zeros((n, h, w, 4), np.uint8)
+    for f in range(n):
+        d = np.hypot(xx - (30 + 4 * f), yy - 30)
+        a = np.clip(22 - d, 0, 1)   # 1 px soft rim
+        out[f, ..., 0] = 40 + 3 * xx
+        out[f, ..., 1] = 200 - 2 * yy
+        out[f, ..., 2] = 90 + 10 * f
+        out[f, ..., 3] = np.rint(a * 255)
+    return out
+
+
+def test_webm_rgba_roundtrip(tmp_path):
+    clip = _rgba_clip()
+    out = encode_webm(clip, 30.0, tmp_path / "a.webm", alpha=True)
+    assert out.is_file() and out.read_bytes()[:4] == b"\x1a\x45\xdf\xa3"   # EBML: a WebM file
+    with VideoReader(out, (97, 61), alpha=True) as r:
+        got = np.stack([r.frame(f) for f in range(len(clip))])
+    assert got.shape == clip.shape and got.dtype == np.uint8
+    a, b = clip[..., 3] / 255.0, got[..., 3] / 255.0
+    assert np.abs(a - b).mean() <= 0.03
+    inner = clip[..., 3] == 255
+    de = delta_e(srgb8_to_lab(got[..., :3][inner]), srgb8_to_lab(clip[..., :3][inner]))
+    assert np.percentile(de, 95) <= 4
+
+
+def test_reader_sequential_and_backward_seek(tmp_path):
+    n = 12
+    clip = np.zeros((n, 32, 48, 3), np.uint8)
+    for f in range(n):
+        clip[f] = (20 * f, 255 - 20 * f, 128)
+    path = encode_webm(iter(clip), 25.0, tmp_path / "c.webm", alpha=False)   # any iterable of frames
+    near = lambda img, f: np.abs(img[16, 24].astype(int) - clip[f, 16, 24]).max() <= 3
+    with VideoReader(path, (48, 32), alpha=False) as r:
+        assert all(near(r.frame(f), f) for f in range(n)) and r.starts == 1   # one decoder, read in order
+        assert near(r.frame(9), 9) and r.starts == 1                            # recent frames come from the cache
+        assert near(r.frame(1), 1) and r.starts == 2                            # backward past the cache: restart
+        assert near(r.frame(2), 2) and r.starts == 2                            # then sequential again
+        assert near(r.frame(n + 5), n - 1)                                      # past the end: the last frame
+    assert r.frame(4).shape == (32, 48, 3)                                     # reopens after close
+
+
+def test_fill_video_plate_takes_the_nearest_uncovered_frame(tmp_path):
+    n, H, W = 7, 4, 5
+    frames = np.zeros((n, H, W, 3), np.uint8)
+    for f in range(n):
+        frames[f] = 10 * f
+    occ = np.zeros((n, H, W), bool)
+    occ[1:5, 0, 0] = True          # covered in frames 1..4: 1 → 0, 2 → 0 (tie: earlier), 3 → 5, 4 → 5
+    occ[:, 1, 1] = True            # never uncovered: the hole fill
+    hole = np.full((H, W, 3), 77, np.uint8)
+    out = fill_video_plate(frames, occ, hole, tmp_path / "p.npy", band=2)
+    assert out.shape == frames.shape and out.dtype == np.uint8
+    assert [int(out[f, 0, 0, 0]) for f in range(n)] == [0, 0, 0, 50, 50, 50, 60]
+    assert (out[:, 1, 1] == 77).all() and (out[:, 2, 3, 0] == 10 * np.arange(n)).all()
+    assert np.array_equal(np.load(tmp_path / "p.npy", mmap_mode="r"), out)
+
+
+def _bars(n, w, h, alpha=False):
+    """Frame f is one flat colour (and, with alpha, opaque on its left half only)."""
+    out = np.zeros((n, h, w, 4 if alpha else 3), np.uint8)
+    for f in range(n):
+        out[f, ..., :3] = ((37 * f) % 256, 255 - (23 * f) % 256, (90 + 41 * f) % 256)
+        if alpha:
+            out[f, :, : w // 2, 3] = 255
+    return out
+
+
+def _video_scene(tmp_path, n=6):
+    from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
+    import cv2
+    (tmp_path / "assets").mkdir(exist_ok=True)
+    encode_webm(_bars(n, 64, 48), 30.0, tmp_path / "assets" / "background.webm", alpha=False)
+    encode_webm(_bars(n, 20, 16, alpha=True), 30.0, tmp_path / "assets" / "e1.video.webm", alpha=True)
+    cv2.imwrite(str(tmp_path / "assets" / "background.png"), np.full((48, 64, 3), 9, np.uint8))
+    poster = np.full((16, 20, 4), 200, np.uint8)
+    poster[..., 3] = 255
+    cv2.imwrite(str(tmp_path / "assets" / "e1.png"), poster)
+    el = Element(id="e1", kind="sprite", visible=(2, n - 1), z=Track(keys=[Keyframe(t=0, v=-1)]),
+                 canonical=Canonical(width=20, height=16, texture="assets/e1.png", video="assets/e1.video.webm"),
+                 tracks={"x": Track(keys=[Keyframe(t=0, v=20.0)]), "y": Track(keys=[Keyframe(t=0, v=20.0)])})
+    return Scene(id="v", size=(64, 48), fps=30.0, frames=n, elements=[el],
+                 background=Background(kind="video", value="assets/background.webm", poster="assets/background.png"))
+
+
+def test_compositor_plays_video_background_and_sprite(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+    scene, cache = _video_scene(tmp_path), {}
+    bars = _bars(6, 64, 48)
+    for f in (0, 4, 1, 5, 3):   # out of order: the readers seek back
+        img = composite_scene(scene, tmp_path, f, cache) * 255
+        assert np.abs(img[2, 2] - bars[f, 0, 0]).max() <= 3                    # the plate is frame f of the video
+        if f >= 2:   # the sprite's frame f − start, opaque on its left half (x 10..20), clear on its right
+            assert np.abs(img[20, 14] - bars[f - 2, 0, 0]).max() <= 6   # crf 30 on a 20×16 clip
+            assert np.abs(img[20, 26] - bars[f, 0, 0]).max() <= 3
+
+
+def test_compositor_falls_back_to_poster_and_texture(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+    scene = _video_scene(tmp_path)
+    (tmp_path / "assets" / "background.webm").write_bytes(b"not a video")
+    (tmp_path / "assets" / "e1.video.webm").write_bytes(b"not a video")
+    img = composite_scene(scene, tmp_path, 3) * 255
+    assert np.abs(img[2, 2] - 9).max() <= 1 and np.abs(img[20, 26] - 200).max() <= 1
+
+
+def _chromium(scene, root, frames, out):
+    from keepframe.compose.composer import compose
+    from keepframe.render.renderer import load_frame, render
+    res = render(compose(scene, root, root / "c.html"), scene, out, frames=frames, probe=False)
+    return res, [load_frame(res.frames_dir / f"f_{i:05d}.png") * 255 for i in range(len(frames))]
+
+
+@pytest.mark.browser
+def test_video_frames_exact_in_chromium(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+    n = 24
+    scene = _video_scene(tmp_path, n)
+    bars = _bars(n, 64, 48)
+    frames = [0, 1, 17, n - 1, 1, 0]   # and back again
+    _, imgs = _chromium(scene, tmp_path, frames, tmp_path / "r")
+    for f, img in zip(frames, imgs):
+        assert np.abs(img[2, 2] - bars[f, 0, 0]).max() <= 3, f                  # the background's frame f, exactly
+        if f >= 2:
+            assert np.abs(img[20, 14] - bars[f - 2, 0, 0]).max() <= 6, f        # the sprite's frame f − start
+            assert np.abs(img[20, 26] - bars[f, 0, 0]).max() <= 3, f            # its clear half shows the plate
+        ref = composite_scene(scene, tmp_path, f) * 255
+        assert np.abs(img[2:46, 2:62] - ref[2:46, 2:62]).max() <= 6, f           # numpy and Chromium agree
+
+
+@pytest.mark.browser
+def test_render_deterministic_with_video(tmp_path):
+    scene = _video_scene(tmp_path, 24)
+    a, _ = _chromium(scene, tmp_path, [0, 17, 1, 23, 5, 5], tmp_path / "a")
+    b, _ = _chromium(scene, tmp_path, [23, 5, 0, 1, 17, 0], tmp_path / "b")
+    ha, hb = dict(zip(a.frames, a.hashes)), dict(zip(b.frames, b.hashes))
+    assert ha == hb and len(set(ha.values())) == 5
