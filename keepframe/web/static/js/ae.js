@@ -1,5 +1,5 @@
-import { api } from "/static/js/api.js?v=20261009b";
-import { T, Tf } from "/static/js/i18n.js?v=20261009b";
+import { api } from "/static/js/api.js?v=20261009c";
+import { T, Tf } from "/static/js/i18n.js?v=20261009c";
 
 const JOB_HISTORY_LIMIT = 4;
 

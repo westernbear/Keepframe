@@ -7,7 +7,7 @@ import cv2, numpy as np
 from ..ir.schema import Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
-from ..log import get
+from ..log import get, scrub_paths
 from ..progress import STAGES, report_stage
 from . import matting, textstyle
 from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
@@ -196,7 +196,7 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             family = p["font"].family_guess if p.get("font") is not None else "sans-serif"
             out.append(f"{ids[k]}: font match failed ({p['font_error']}); kept {family}" if p.get("font_error")
                        else f"{ids[k]}: font not matched ({p['font_skipped']}); kept {family}")
-    return out
+    return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths
 
 
 def _font_registry(sd: Path):
@@ -220,7 +220,7 @@ def _pin_font(font, sd: Path, registry):
         face = registry.face(font.family_guess, font.weight)
         asset = pin_face(sd, face)
     except Exception as e:   # fail soft: the composer still finds the family in the project's registry
-        log.warning("uploaded font %s not copied into the scene: %s", font.family_guess, e)
+        log.warning("uploaded font %s not copied into the scene: %s", font.family_guess, scrub_paths(e))
         return font
     if asset is None:
         return font

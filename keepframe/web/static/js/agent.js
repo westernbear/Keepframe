@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261009b";
-import { T, Tf } from "/static/js/i18n.js?v=20261009b";
-import { initAECard } from "/static/js/ae.js?v=20261009b";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009b";
+} from "/static/js/api.js?v=20261009c";
+import { T, Tf } from "/static/js/i18n.js?v=20261009c";
+import { initAECard } from "/static/js/ae.js?v=20261009c";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009c";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261009b";
+} from "/static/js/playback.js?v=20261009c";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -1044,7 +1044,7 @@ function paintFonts() {
     const family = document.createElement("span");
     family.className = "font-row__family";
     family.textContent = font.family;   // from the font file: text only, never markup
-    family.title = font.original_family || font.family;
+    family.title = font.family;
     const meta = document.createElement("span");
     meta.className = "font-row__meta mono";
     meta.textContent = fontMeta(font);

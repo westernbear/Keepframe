@@ -1,5 +1,5 @@
-import { postAdminLogin } from "/static/js/api.js?v=20261009b";
-import { T } from "/static/js/i18n.js?v=20261009b";
+import { postAdminLogin } from "/static/js/api.js?v=20261009c";
+import { T } from "/static/js/i18n.js?v=20261009c";
 
 const TENANTS_PATH = "/admin/tenants";
 

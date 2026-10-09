@@ -19,7 +19,8 @@ import numpy as np
 import pytest
 
 from keepframe.fonts.registry import FontRegistry
-from keepframe.fonts.upload import MAX_FONT_BYTES, FontRejected, inspect_font, list_fonts, scene_font_asset, store_font
+from keepframe.fonts.upload import (MAX_FONT_BYTES, FontRejected, inspect_font, list_fonts, public_font, scene_font_asset,
+                                    store_font)
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Scene
 from keepframe.ir.store import current_scene, init_project, scene_dir
 from tests.test_web_server import start
@@ -30,7 +31,7 @@ REG = FontRegistry()
 # --- font bytes ---------------------------------------------------------------------------------------------------
 
 @functools.lru_cache(maxsize=None)
-def _ttf(family="Brand Wide", *, factor=1.3, flavor=None, source="Varela Round", drop=()) -> bytes:
+def _ttf(family="Brand Wide", *, factor=1.3, flavor=None, source="Varela Round", drop=(), style="Regular") -> bytes:
     """A distinct 'brand' TrueType font: a bundled face stretched horizontally and renamed (same bytes every call)."""
     from fontTools.pens.transformPen import TransformPen
     from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -54,7 +55,7 @@ def _ttf(family="Brand Wide", *, factor=1.3, flavor=None, source="Varela Round",
     if "name" in font:
         table = font["name"]
         table.names = [r for r in table.names if r.nameID not in (1, 2, 3, 4, 6, 16, 17)]
-        for nid, value in ((1, family), (2, "Regular"), (3, f"{family};test"), (4, f"{family} Regular"),
+        for nid, value in ((1, family), (2, style), (3, f"{family};test"), (4, f"{family} {style}"),
                            (6, family.replace(" ", "") + "-Regular")):
             table.setName(value, nid, 3, 1, 0x409)
     font.flavor = flavor
@@ -266,10 +267,9 @@ def test_duplicate_upload_is_idempotent(server):
     sha = hashlib.sha256(data).hexdigest()
     code, first = _upload(srv, data, "brand.ttf")
     assert code == 201 and first["created"] is True
-    assert first["font"] == {"family": "Brand Wide", "original_family": "Brand Wide", "style": "Regular",
+    assert first["font"] == {"family": "Brand Wide", "style": "Regular",
                              "weight_range": [400, 400], "postscript": "BrandWide-Regular", "category": first["font"]["category"],
-                             "ext": "ttf", "sha256": sha, "bytes": len(data), "latin": True, "hangul": False,
-                             "file": f"{sha}.ttf"}
+                             "ext": "ttf", "sha256": sha, "bytes": len(data), "latin": True, "hangul": False}
     code, again = _upload(srv, data, "copy of brand.ttf")
     assert code == 200 and again == {"font": first["font"], "created": False}
     results, otf = [], _otf()
@@ -285,11 +285,13 @@ def test_duplicate_upload_is_idempotent(server):
     assert sorted(p.name for p in (root / "fonts").iterdir() if not p.name.startswith(".")) == sorted(
         [f"{sha}.ttf", f"{hashlib.sha256(_otf()).hexdigest()}.otf", "index.json"])
     code, body = _get(srv, "/api/projects/p1/fonts")
-    assert code == 200 and json.loads(body)["fonts"] == index["fonts"] == list_fonts(root)
+    assert index["fonts"] == list_fonts(root) and index["fonts"][0] == {**first["font"], "original_family": "Brand Wide",
+                                                                         "file": f"{sha}.ttf"}
+    assert code == 200 and json.loads(body)["fonts"] == [public_font(it) for it in index["fonts"]]
     reg = FontRegistry.for_project(root)
     assert reg.face("Brand Wide").source == "uploaded" and reg.face("Brand Block", 700).weight_range == (700, 700)
     entry, created = store_font(root, _write(root.parent / "dup.ttf", data), "dup.ttf")
-    assert entry == first["font"] and created is False and not (root.parent / "dup.ttf").exists()
+    assert entry == index["fonts"][0] and created is False and not (root.parent / "dup.ttf").exists()
 
 
 def _write(path: Path, data: bytes) -> Path:
@@ -837,3 +839,95 @@ def test_zip_filter_takes_only_uploaded_font_files(tmp_path):
     project_zip(root, tmp_path / "out.zip")
     with zipfile.ZipFile(tmp_path / "out.zip") as zf:
         assert sorted(zf.namelist()) == sorted(keep)
+
+
+
+# --- fix round 3: R50 (nothing internal reaches a client; logs keep a path-free reason) -----------------------------
+
+SECRET = "/home/secret-operator/keepframe-ws"
+
+
+def _raw_post(srv, data: bytes, name="brand.ttf") -> bytes:
+    """The response body bytes of a font upload, exactly as the browser gets them."""
+    base = _base(srv)
+    try:
+        with urlopen(Request(f"{base}/api/projects/p1/fonts?name={name}", data=data, method="POST",
+                             headers={"Origin": base})) as r:
+            return r.read()
+    except HTTPError as e:
+        return e.read()
+
+
+def test_rejection_details_stay_in_scrubbed_server_logs(server, monkeypatch, caplog):
+    """R50: a check that dies with a traceback full of server paths answers the code only; the index never sees it;
+    the server log keeps the reason with paths shortened."""
+    import logging
+    from keepframe.fonts import upload
+    from keepframe.web import server as web
+    srv, ws = server
+    trace = (f'Traceback (most recent call last):\n  File "{SECRET}/p1/fonts/.upload-abc.part", line 1\n'
+             f"OSError: [Errno 5] {ws}/p1/fonts/x /tmp/kf-fontcheck-zz/result.json")
+    monkeypatch.setattr(upload, "_CHILD_CODE", f"import sys; sys.stderr.write({trace!r}); sys.exit(1)")
+    caplog.set_level(logging.INFO)
+    assert _raw_post(srv, _ttf()) == b'{"error": "bad_tables"}'
+    assert not (ws / "p1" / "fonts" / "index.json").exists()
+    rejected = [r.getMessage() for r in caplog.records if "rejected bad_tables" in r.getMessage()]
+    assert rejected and "exit 1" in rejected[0] and "…/result.json" in rejected[0], rejected
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert SECRET not in log_text and str(ws) not in log_text and "/tmp/kf-fontcheck" not in log_text
+    assert str(FontRejected("bad_tables", f"{SECRET}/x.ttf")) == "bad_tables"
+    assert SECRET not in FontRejected("bad_tables", f"read {SECRET}/x.ttf").reason
+
+    def broken(*a, **k):
+        raise OSError(28, "No space left on device", f"{ws}/p1/fonts/.upload-zz.part")
+
+    monkeypatch.setattr(web, "store_font", broken)
+    caplog.clear()
+    assert _raw_post(srv, _ttf()) == b'{"error": "bad_tables"}'
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "failed" in log_text and str(ws) not in log_text and "…/.upload-zz.part" in log_text
+
+
+def test_font_metadata_reaching_clients_is_sanitised(server):
+    """R50: the browser gets the public fields only (codes and sanitised names); the index keeps the font's own name
+    without server-looking paths."""
+    srv, ws = server
+    data = _ttf(family="Brand " + SECRET + "/x", style="Bold/../../etc<script>")
+    code, body = _upload(srv, data, "brand.ttf")
+    assert code == 201
+    font = body["font"]
+    assert set(font) == {"family", "style", "weight_range", "postscript", "category", "ext", "sha256", "bytes",
+                         "latin", "hangul"}
+    assert "/" not in font["family"] + font["style"] and "<" not in font["style"] and font["postscript"] is None
+    _, listing = _get(srv, "/api/projects/p1/fonts")
+    assert json.loads(listing)["fonts"] == [font] and SECRET.encode() not in listing
+    index = (ws / "p1" / "fonts" / "index.json").read_text()
+    assert SECRET not in index and "…/x" in json.loads(index)["fonts"][0]["original_family"]
+
+
+def test_font_messages_reaching_clients_carry_no_paths(tmp_path, monkeypatch):
+    """R50: report messages, final-render errors and render warnings about fonts name families, never paths."""
+    from concurrent.futures import Future
+    from keepframe.analyze.pipeline import _texture_messages
+    from keepframe.compose.composer import compose
+    from keepframe.fonts import css
+    msgs = _texture_messages({"o1": {"font_error": f"FileNotFoundError: [Errno 2] No such file: '{SECRET}/p1/fonts/a.ttf'",
+                                     "font": None}}, {"o1": "e1"})
+    assert msgs and SECRET not in msgs[0] and msgs[0].startswith("e1: font match failed")
+    scene, sd = _styled_scene(tmp_path)
+
+    def failing(*a, **k):
+        f = Future()
+        f.set_exception(OSError(2, "No such file or directory", f"{SECRET}/cache/x.woff2"))
+        return f
+
+    monkeypatch.setattr(css, "_request", failing)
+    with pytest.raises(css.FontEmbedError) as err:
+        compose(scene, sd, sd / "final.html", font_wait=5)
+    assert "Inter" in str(err.value) and SECRET not in str(err.value) and "cache" not in str(err.value)
+    root = _native_project(tmp_path / "n")
+    for p in (scene_dir(root, "s1") / "assets").glob("font-*"):
+        p.unlink()
+    scene, _ = current_scene(root, "s1")
+    issues = css.uploaded_font_issues(scene, scene_dir(root, "s1"), FontRegistry.for_project(root))
+    assert issues == [{"kind": "font_file_missing", "element": "t1", "family": "Brand Wide"}]

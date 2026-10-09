@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ..ir.schema import FONT_FAMILY_RE, POSTSCRIPT_RE
-from ..log import get
+from ..log import get, scrub_paths
 from .registry import _FILE_RE
 from .sfnt import MAX_SFNT_BYTES
 
@@ -61,8 +61,8 @@ class FontRejected(ValueError):
 
     def __init__(self, code: str, reason: str = ""):
         assert code in CODES
-        super().__init__(f"{code}: {reason}" if reason else code)
-        self.code, self.reason = code, reason
+        super().__init__(code)   # str() is the code only: the reason is for the server log
+        self.code, self.reason = code, scrub_paths(reason)
 
 
 class UploadIncomplete(ValueError):
@@ -411,6 +411,7 @@ def _inspect_child(path: Path) -> dict:
     except (UnicodeDecodeError, ValueError):
         report = None
     if r.returncode != 0 or not isinstance(report, dict) or ("meta" not in report and report.get("code") not in CODES):
+        tail = scrub_paths(tail)
         log.warning("font inspection exited %s: %s", r.returncode, tail)
         raise FontRejected("bad_tables", f"the font could not be decoded (exit {r.returncode}: {tail or 'no output'})"[:300])
     if "meta" not in report:
@@ -426,6 +427,19 @@ def _family(original: str, sha: str) -> str:
     if not name or not FONT_FAMILY_RE.fullmatch(name):
         name = f"Uploaded {sha[:8]}"
     return f"{name[:59]} Font" if name.casefold() in _GENERIC else name
+
+
+def _style(style: str) -> str:
+    """The style name the browser and the registry see: the IR family rule's characters only."""
+    return " ".join(re.sub(r"[^A-Za-z0-9 \-가-힣]", " ", style).split())[:64].strip() or "Regular"
+
+
+PUBLIC_FIELDS = ("family", "style", "weight_range", "postscript", "category", "ext", "sha256", "bytes", "latin", "hangul")
+
+
+def public_font(entry: dict) -> dict:
+    """What a browser may see of an index entry: sanitised names, codes and numbers (no font-internal name, no file)."""
+    return {k: entry.get(k) for k in PUBLIC_FIELDS}
 
 
 def inspect_font(path: Path, filename: str) -> dict:
@@ -444,8 +458,8 @@ def inspect_font(path: Path, filename: str) -> dict:
         check_woff2(path.read_bytes())
     sha = _sha256(path)
     meta = _inspect_child(path)
-    return {"family": _family(meta["original_family"], sha), "original_family": meta["original_family"],
-            "style": meta["style"], "weight_range": meta["weight_range"], "postscript": meta["postscript"],
+    return {"family": _family(meta["original_family"], sha), "original_family": scrub_paths(meta["original_family"]),
+            "style": _style(meta["style"]), "weight_range": meta["weight_range"], "postscript": meta["postscript"],
             "category": meta["category"], "ext": ext, "sha256": sha, "bytes": size, "latin": bool(meta["latin"]),
             "hangul": bool(meta["hangul"])}
 
@@ -475,7 +489,7 @@ def _read_index(fonts_dir: Path) -> list[dict]:
             raise ValueError("fonts is not a list")
     except (OSError, ValueError, KeyError, TypeError) as e:
         aside = index.with_name(f"index.unreadable-{int(time.time())}.json")
-        log.warning("font index unreadable (%s); kept as %s, starting a new one", e, aside.name)
+        log.warning("font index unreadable (%s); kept as %s, starting a new one", scrub_paths(e), aside.name)
         os.replace(index, aside)
         return []
     return [it for it in items if isinstance(it, dict)]
@@ -532,7 +546,7 @@ def list_fonts(project_root: Path) -> list[dict]:
         with _index_lock(fonts_dir):
             items = _read_index(fonts_dir)
     except OSError as e:
-        log.warning("font index unreadable: %s", e)
+        log.warning("font index unreadable: %s", scrub_paths(e))
         return []
     return [it for it in items if isinstance(it.get("file"), str) and _FILE_RE.fullmatch(it["file"])
             and (fonts_dir / it["file"]).is_file()]

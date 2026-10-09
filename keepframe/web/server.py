@@ -24,13 +24,13 @@ from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
 from keepframe.ae.api import AERoutes
-from keepframe.fonts.upload import (MAX_FONT_BYTES, FontRejected, UploadIncomplete, font_ext, list_fonts,
+from keepframe.fonts.upload import (MAX_FONT_BYTES, FontRejected, UploadIncomplete, font_ext, list_fonts, public_font,
                                     receive as receive_font, store_font)
 from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
-from keepframe.log import configure, get
+from keepframe.log import configure, get, scrub_paths
 from keepframe.review import corrections
 from keepframe.web.bodies import LengthError, content_length
 from keepframe.web.estimate import consume_token, estimate, probe_video
@@ -801,7 +801,7 @@ def make_server(
                     root = _safe_render_project(workspace, m.group(1))
                 except (ValueError, FileNotFoundError):
                     return self._json(404, {"error": "not found"})
-                return self._json(200, {"fonts": list_fonts(root), "max_bytes": MAX_FONT_BYTES})
+                return self._json(200, {"fonts": [public_font(it) for it in list_fonts(root)], "max_bytes": MAX_FONT_BYTES})
 
             m = re.fullmatch(r"/api/projects/([^/]+)", u.path)
             if m:
@@ -1201,15 +1201,15 @@ def make_server(
                 log.info("font upload project=%s rejected %s (%s) %.2fs", project_id, exc.code, exc.reason,
                          time.perf_counter() - t0)
                 return self._json(413 if exc.code == "too_large" else 400, {"error": exc.code})
-            except Exception:
-                log.exception("font upload project=%s failed", project_id)
+            except Exception as exc:   # detail in the log (paths cut), the code to the client
+                log.error("font upload project=%s failed: %s", project_id, scrub_paths(f"{type(exc).__name__}: {exc}"))
                 return self._json(400, {"error": "bad_tables"})
             finally:
                 if tmp is not None:
                     tmp.unlink(missing_ok=True)
             log.info("font upload project=%s %s created=%s %.2fs", project_id, entry["file"], created,
                      time.perf_counter() - t0)
-            return self._json(201 if created else 200, {"font": entry, "created": created})
+            return self._json(201 if created else 200, {"font": public_font(entry), "created": created})
 
         def do_POST(self):
             u = urlparse(self.path)

@@ -28,7 +28,7 @@ from typing import Iterable
 
 from ..ir.gradient import gradient_css
 from ..ir.schema import Canonical, FontGuess, Gradient, GradientStop, Scene, TextStyle
-from ..log import get
+from ..log import get, scrub_paths
 from .raster import (TextFonts, bounded_style, embedded_face, fade_stops, first_baseline, hex_rgb, resolve_fonts,
                      scene_font_file, split_runs, text_size)
 from .registry import FontFace, FontRegistry, safe_alias
@@ -371,7 +371,7 @@ def uploaded_font_issues(scene: Scene, scene_dir: Path | None, registry: FontReg
             out.append({"kind": "font_substituted", "element": el.id, "family": f.family_guess,
                         "used": fonts.primary.family if fonts is not None else "sans-serif"})
         elif f.file and scene_font_file(f, scene_dir) is None:
-            out.append({"kind": "font_file_missing", "element": el.id, "family": f.family_guess, "file": f.file})
+            out.append({"kind": "font_file_missing", "element": el.id, "family": f.family_guess})
     return out
 
 
@@ -422,10 +422,10 @@ def font_face_css(scene: Scene, scene_dir: Path | None, registry: FontRegistry |
                 raise got
             data = _wait(got, deadline - time.monotonic())
         except Exception as e:   # never embed a whole (possibly uploaded, megabytes) file: the browser falls back
-            if strict:
-                raise FontEmbedError(f"font {entry['face'].family} could not be embedded for the final render ({e}); "
+            log.warning("font %s not embedded (%s)", entry["face"].family, scrub_paths(f"{type(e).__name__}: {e}"))
+            if strict:   # the client sees the family only; the detail stays in the log above
+                raise FontEmbedError(f"font {entry['face'].family} could not be embedded for the final render; "
                                      "nothing was rendered") from e
-            log.warning("font %s not embedded (%s)", entry["face"].family, e)
             continue
         rules.append(f"@font-face{{font-family:{entry['alias']};src:url(data:font/woff2;base64,{base64.b64encode(data).decode('ascii')});"
                      f"font-weight:{entry['weight']};font-style:normal;font-display:block{entry['extra']}}}")

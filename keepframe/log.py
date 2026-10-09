@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 
 _configured = False
@@ -27,3 +28,12 @@ def get(name: str = "keepframe") -> logging.Logger:
     if not _configured:
         configure()
     return logging.getLogger(name)
+
+
+_ABS_PATH = re.compile(r"(?<![\w.~:/\\])(?:[A-Za-z]:)?(?:[\\/][^\s'\"\\/:<>|,;()\[\]]+)+[\\/]?")
+
+
+def scrub_paths(text: object) -> str:
+    """`text` with every absolute path cut to its last part (`…/name`): workspace, temp and install paths stay out of
+    anything a client may see and out of the reasons the server logs."""
+    return _ABS_PATH.sub(lambda m: "…/" + re.split(r"[\\/]", m.group(0).rstrip("\\/"))[-1], str(text))

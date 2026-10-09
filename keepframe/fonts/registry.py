@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..log import get
+from ..log import get, scrub_paths
 
 log = get("keepframe.fonts")
 ROOT = Path(__file__).resolve().parent
@@ -76,7 +76,7 @@ def _load_uploaded(root: Path | None) -> dict[str, tuple[FontFace, ...]]:
         if not isinstance(items, list):
             raise ValueError("fonts is not a list")
     except (OSError, ValueError, KeyError, TypeError) as e:
-        log.warning("font index %s unusable (%s); no uploaded fonts", index, e)
+        log.warning("font index %s unusable (%s); no uploaded fonts", scrub_paths(index), scrub_paths(e))
         return {}
     out: dict[str, list[FontFace]] = {}
     for it in items:
@@ -93,7 +93,7 @@ def _load_uploaded(root: Path | None) -> dict[str, tuple[FontFace, ...]]:
                 it.get("category") or "neo_grotesque", it.get("postscript"), it.get("sha256", ""),
                 bool(it.get("latin", True)), bool(it.get("hangul", False))))
         except (KeyError, TypeError, ValueError) as e:
-            log.warning("font index entry skipped: %s", e)
+            log.warning("font index entry skipped: %s", scrub_paths(e))
     return {k: tuple(v) for k, v in out.items()}
 
 

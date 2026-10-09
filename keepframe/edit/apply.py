@@ -16,7 +16,7 @@ from ..assets import AssetAPIError, validate_glb
 from ..fonts.raster import MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts
 from ..fonts.registry import FontRegistry
 from ..fonts.upload import pin_face
-from ..log import get
+from ..log import get, scrub_paths
 from .retime import apply_timing
 from .svgraster import rasterize_svg
 from .textraster import measure as _measure, render_lines
@@ -194,7 +194,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 try:
                     pinned = pin_face(scene_dir, face)
                 except (OSError, ValueError) as e:   # the registry still resolves the family
-                    log.warning("uploaded font %s not copied into the scene: %s", family, e)
+                    log.warning("uploaded font %s not copied into the scene: %s", family, scrub_paths(e))
                     pinned = None
                 update.update(source="uploaded", file=pinned,
                               postscript=face.postscript if face.weight_range[0] == face.weight_range[1] else None)

@@ -9,7 +9,7 @@ from pathlib import Path
 from ..assets import validate_glb
 from ..fonts.css import FontEmbedError, font_face_css, text_html, uploaded_font_issues
 from ..fonts.registry import FontRegistry
-from ..log import get
+from ..log import get, scrub_paths
 from ..ir.gradient import gradient_at, gradient_css
 from ..ir.schema import Element, Scene, UIComponent, UIModel
 from ..ir.paths import scene_asset_path
@@ -133,7 +133,7 @@ def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: 
     except FontEmbedError:   # a final render never bakes a fallback font (R39)
         raise
     except Exception as e:   # fail soft: system fonts instead of the embedded faces
-        log.warning("font embedding failed (%s)", e)
+        log.warning("font embedding failed (%s)", scrub_paths(e))
         css = ""
     # Start every embedded face loading before the template awaits document.fonts.ready.
     return f"<style>\n{css}\n</style><script>for(const f of document.fonts)f.load();</script>" if css else ""
@@ -145,9 +145,9 @@ def _font_issues(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: 
     try:
         issues = uploaded_font_issues(scene, scene_dir, fonts)
     except Exception as e:   # the check itself failing never blocks a preview; a final render stops
+        log.warning("uploaded font check failed (%s)", scrub_paths(f"{type(e).__name__}: {e}"))
         if font_wait is not None:
-            raise FontEmbedError(f"uploaded fonts could not be checked ({e}); nothing was rendered") from e
-        log.warning("uploaded font check failed (%s)", e)
+            raise FontEmbedError("uploaded fonts could not be checked; nothing was rendered") from e
         return
     for issue in issues:
         if issue["kind"] == "font_substituted" and font_wait is not None:
