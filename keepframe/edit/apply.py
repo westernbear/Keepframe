@@ -13,7 +13,7 @@ from ..ir.colour import rgb8_to_hex
 from ..ir.schema import Background, Element, FontGuess, Scene, TextStyle
 from ..ir.synth import make_text_texture
 from ..assets import AssetAPIError, validate_glb
-from ..fonts.raster import _HANGUL, MAX_TEXT_PX, embedded_face, natural_box, render_styled, resolve_fonts, text_size
+from ..fonts.raster import _HANGUL, MAX_TEXT_PX, cmap, embedded_face, natural_box, render_styled, resolve_fonts, text_size
 from ..fonts.registry import FontRegistry
 from ..fonts.upload import pin_face
 from ..log import get, scrub_paths
@@ -189,7 +189,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 out.element(t.element).provenance = "manual"
             continue
         if t.property == "background":
-            mode = choice_of.get("background_kind") or choice_of.get("background")
+            mode = choice_of.get("background_kind") or choice_of.get("background_video") or choice_of.get("background")
             if mode == "cancel":
                 continue
             if mode == "tint" and out.background.kind != "color":
@@ -199,7 +199,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             continue
         el = out.element(t.element)
         if t.property == "text":
-            _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id), fonts)
+            _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id), fonts, retext=True)
         elif t.property == "font":
             if el.kind != "text" or not el.canonical.text:
                 raise ValueError("font edit needs a text element")
@@ -240,6 +240,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             if img is None:
                 raise AssetAPIError("invalid_attachment", "could not read attachment image")
             el.canonical.texture = f"assets/{dest.name}"
+            el.canonical.texture_pad = 0.0   # an attachment covers the box exactly
             h, w = img.shape[:2]
             scale = min(box_w / w, box_h / h)
             el.canonical.width, el.canonical.height = float(w * scale), float(h * scale)
@@ -255,17 +256,30 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.kind = "3d"
             el.pending_asset = None
             el.canonical.model = f"assets/{dest.name}"
+            el.canonical.texture_pad = 0.0
         el.provenance = "manual"
     return out
 
 
-def _styled(el: Element, fonts: FontRegistry, scene_dir: Path, text: str | None = None) -> bool:
+def _styled(el: Element, fonts: FontRegistry, scene_dir: Path) -> bool:
     """Text an edit draws with the styled raster: analysed style or an uploaded/bundled face (the composer draws
-    those the same way), or text with Hangul (the bundled fallback draws it, ahead of system fonts)."""
+    those the same way)."""
     c = el.canonical
-    if c.font is None:
+    return c.font is not None and (c.style is not None or embedded_face(c.font, fonts, scene_dir))
+
+
+def _brings_hangul(el: Element, text: str, fonts: FontRegistry) -> bool:
+    """A text edit that brings Hangul into a legacy title whose named face (on this machine) lacks it: the bundled
+    Hangul fallback draws it (ahead of system fonts), so the title moves to the styled path. Colour and font edits
+    never move a title, and a family this machine does not have is left to the browser, as before."""
+    c = el.canonical
+    if c.font is None or not _HANGUL.search(text) or _HANGUL.search(c.text or ""):
         return False
-    return c.style is not None or embedded_face(c.font, fonts, scene_dir) or bool(_HANGUL.search(text or c.text or ""))
+    face = fonts.face(c.font.family_guess, c.font.weight)
+    if face is None:
+        return False
+    covered = cmap(face)
+    return any(ord(ch) not in covered for ch in text if _HANGUL.match(ch))
 
 
 def _line_h(c) -> float:
@@ -274,15 +288,17 @@ def _line_h(c) -> float:
 
 def text_width(el: Element, text: str, font: FontGuess | None = None, *, fonts: FontRegistry | None = None,
                scene_dir: Path | None = None) -> float:
-    """Width `text` takes as an edit would draw it (`font` replaces the element's): the styled layout (weight,
-    tracking, shear, dx, fallback) or, for legacy text, the measured texture."""
+    """Width `text` takes as an edit would draw it (`font` replaces the element's for a font edit; without it the
+    edit is a text edit): the styled layout (weight, tracking, shear, dx, fallback) or, for legacy text, the
+    measured texture."""
     fonts = fonts or FontRegistry()
     c = el.canonical
+    retext = font is None
     font = font or c.font or FontGuess()
     probe = el.model_copy(update={"canonical": c.model_copy(update={"font": font})})
     lines = text.split("\n")
     size = edit_size(font.size_px, _line_h(c))   # R40: measuring rasterises too
-    if _styled(probe, fonts, scene_dir, text):
+    if _styled(probe, fonts, scene_dir) or (retext and _brings_hangul(probe, text, fonts)):
         resolved = resolve_fonts(font, text, fonts, scene_dir)
         if resolved is not None:
             st = c.style or TextStyle()
@@ -300,8 +316,6 @@ def _write_styled(el: Element, scene_dir: Path, lines: list[str], font: FontGues
                        style=c.style, fonts=fonts, scene_dir=scene_dir, box=box, info=info)
     c.texture = f"assets/{dest.name}"
     c.texture_pad = float(info.get("pad", 0))
-    if c.style is None:   # the composer draws it the styled way too (same faces, fallback included)
-        c.style = TextStyle()
 
 
 def _apply_styled_text(el: Element, scene_dir: Path, text: str, overflow: str | None, fonts: FontRegistry) -> bool:
@@ -329,13 +343,16 @@ def _apply_styled_text(el: Element, scene_dir: Path, text: str, overflow: str | 
     return True
 
 
-def _apply_text(el: Element, scene_dir: Path, text: str, overflow: str | None, fonts: FontRegistry | None = None) -> None:
+def _apply_text(el: Element, scene_dir: Path, text: str, overflow: str | None, fonts: FontRegistry | None = None,
+                retext: bool = False) -> None:
     """Fonts: uploaded > bundled > the bundled Hangul fallback > system (fontconfig) > Hershey; the analysed
-    colour, style, effects and tracks are kept."""
+    colour, style, effects and tracks are kept. `retext`: a text edit (only those may move a legacy title to the
+    styled path, `_brings_hangul`)."""
     fonts = fonts or FontRegistry()
-    if _HANGUL.search(text) and el.canonical.font is None:
-        el.canonical.font = FontGuess()
-    if _styled(el, fonts, scene_dir, text) and _apply_styled_text(el, scene_dir, text, overflow, fonts):
+    moved = retext and not _styled(el, fonts, scene_dir) and _brings_hangul(el, text, fonts)
+    if (moved or _styled(el, fonts, scene_dir)) and _apply_styled_text(el, scene_dir, text, overflow, fonts):
+        if moved:   # the composer draws it the styled way too (same faces, fallback included)
+            el.canonical.style = TextStyle()
         return
     font = el.canonical.font or FontGuess()
     color = _rgb(el.canonical.color or "#ffffff")

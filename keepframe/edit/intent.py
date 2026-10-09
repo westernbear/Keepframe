@@ -19,7 +19,7 @@ COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white"
                               "옐로": "#fdd835", "퍼플": "#8e24aa", "오렌지": "#fb8c00", "그레이": "#9e9e9e"}
 _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 BACKGROUND_CHOICES = ("tint", "replace", "cancel")   # a colour on a picture/gradient/video background (D5)
-_BG_KIND_KO = {"image": "그림", "gradient": "그라데이션", "video": "영상"}
+_BG_KIND_KO = {"image": "그림", "gradient": "그라데이션"}
 
 
 class Target(BaseModel):
@@ -136,14 +136,32 @@ def _pick(cands: list[Element], hinted: str | None, selected: str | None) -> tup
     return None, ids
 
 
-def describe(targets: list[Target], has_attachment: bool = False) -> str:
-    bits = []
+def background_mode(scene: Scene | None, choices: dict | None) -> str | None:
+    """How a background colour edit applies: None for a colour background (the colour replaces it), else the
+    chosen 'tint' / 'replace' / 'cancel', or '' while nothing is chosen."""
+    if scene is None or scene.background.kind == "color":
+        return None
+    choices = choices or {}
+    return choices.get("background_kind") or choices.get("background_video") or choices.get("background") or ""
+
+
+def describe(targets: list[Target], has_attachment: bool = False, *, scene: Scene | None = None,
+             choices: dict | None = None) -> str:
+    """The edit in one Korean sentence. A colour for a picture/gradient/video background says how it applies:
+    asks before the choice, then names the chosen tint or replace."""
+    bits, after = [], ""
+    mode = background_mode(scene, choices)
     for t in targets:
         who = t.element or "?"
         if t.property == "text":
             bits.append(f"{who} 문구를 {t.value or ''}(으)로")
         elif t.property == "color":
             bits.append(f"{who} 색을 {t.value or ''}로")
+        elif t.property == "background" and mode:
+            after = (f"배경에 {t.value or ''} 색을 입힙니다(밝고 어두운 결 유지)." if mode == "tint"
+                     else f"배경을 {t.value or ''} 단색으로 바꿉니다." if mode == "replace" else "")
+        elif t.property == "background" and mode == "":
+            after = f"배경에 {t.value or ''} 적용 — 방식을 고르세요."
         elif t.property == "background":
             bits.append(f"배경색을 {t.value or ''}로")
         elif t.property == "font":
@@ -154,7 +172,8 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"{who} 3D 모델을 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
         else:
             bits.append(f"{who} 이미지를 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
-    return " ".join(bits) + " 바꿉니다. 트랙은 유지합니다."
+    head = " ".join(bits) + " 바꿉니다." if bits else ""
+    return " ".join(x for x in (head, after) if x) + " 트랙은 유지합니다."
 
 
 def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_attachment: bool = False) -> Intent:
@@ -207,7 +226,7 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
     if not targets:
         return Intent(summary="문구·색·이미지 교체를 읽지 못했습니다.", ambiguous=True)
 
-    return Intent(targets=targets, summary=describe(targets, has_attachment))
+    return Intent(targets=targets, summary=describe(targets, has_attachment, scene=scene))
 
 
 def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
@@ -226,10 +245,13 @@ def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
         source = timing_scene if t.property == "timing" else scene
         el = source.element(t.element) if t.element else None
         items.append(t)
-        if t.property == "background" and scene.background.kind != "color":
+        if t.property == "background" and scene.background.kind == "video":   # tint waits for Task 13 (R54)
+            conflicts.append(Conflict(id="background_video", element="background", choices=["replace", "cancel"],
+                                      reason="배경이 영상입니다. 영상에는 아직 색을 입힐 수 없습니다. 단색으로 바꿀까요?"))
+        elif t.property == "background" and scene.background.kind != "color":
             conflicts.append(Conflict(id="background_kind", element="background", choices=list(BACKGROUND_CHOICES),
                                       reason=f"배경이 {_BG_KIND_KO.get(scene.background.kind, '그림')}입니다. "
-                                             "색을 입힐까요(밝고 어두운 결은 유지), 단색으로 바꿀까요?"))
+                                             "색만 입힐까요(밝고 어두운 결 유지), 단색으로 바꿀까요?"))
         if t.property == "timing":
             if el is not None:
                 _, end = retimed_range(el, *timing_args(t, el, timing_scene.fps))

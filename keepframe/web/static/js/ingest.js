@@ -1,6 +1,6 @@
-import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261009e";
-import { T, Tf } from "/static/js/i18n.js?v=20261009e";
-import { setWorkflowStage } from "/static/js/workflow.js?v=20261009e";
+import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261009f";
+import { T, Tf } from "/static/js/i18n.js?v=20261009f";
+import { setWorkflowStage } from "/static/js/workflow.js?v=20261009f";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;

@@ -1,7 +1,7 @@
-import { postEdit } from "/static/js/api.js?v=20261009e";
-import { T, Tf } from "/static/js/i18n.js?v=20261009e";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009e";
-import { conflictReason, editErrorText, isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261009e";
+import { postEdit } from "/static/js/api.js?v=20261009f";
+import { T, Tf } from "/static/js/i18n.js?v=20261009f";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009f";
+import { backgroundSummary, conflictReason, editErrorText, isEditNeedsConfirm } from "/static/js/edit-status.js?v=20261009f";
 
 export function attachEditForm(ws) {
   const { dom } = ws;
@@ -45,7 +45,7 @@ export function attachEditForm(ws) {
 
   function paintEditResult(res) {
     ws.pendingIntent = res.intent || null;
-    const summary = res.summary || "";
+    const summary = backgroundSummary(res, null) || res.summary || "";
     dom.editSummary.hidden = !summary;
     dom.editSummary.textContent = summary;
     const conflicts = (res.plan && res.plan.conflicts) || [];

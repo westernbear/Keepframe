@@ -198,3 +198,53 @@ def test_plan_checks_the_registry_and_measures_styled_text(monkeypatch):
     assert plain_w <= 420 * 1.15 < tracked_w
     built = plan(tracked, Intent(targets=[Target(element="t1", property="text", value=text)]), fonts=REG)
     assert [c.id for c in built.conflicts] == ["overflow"]
+
+
+def _legacy_hangul(text="가을 세일", family="Apple SD Gothic Neo"):
+    font = FontGuess(family_guess=family, weight=700, size_px=40, source="system")
+    return _text_scene(text, font, None, color="#ffffff", box=(300, 50))
+
+
+def test_colour_edit_keeps_a_legacy_hangul_title_legacy(tmp_path):
+    """Review fix 3: a colour-only edit never changes a legacy title's font (its named family stays in the CSS,
+    the inspector and AE); the styled path (bundled Hangul fallback) is only for text edits that bring in Hangul
+    the named face lacks."""
+    import re
+    from keepframe.compose.composer import _element_html
+    scene = _legacy_hangul()
+    out = apply_edit(scene, tmp_path, [Target(element="t1", property="color", value="#ff0000")], {}, None)
+    c = out.element("t1").canonical
+    assert c.style is None and c.font == scene.element("t1").canonical.font and c.color == "#ff0000"
+    html = _element_html(out.element("t1"), tmp_path, 30, None, REG)
+    assert "kf-text" not in html and re.findall(r"font-family:[^;\"]+", html) == ["font-family:Apple SD Gothic Neo"]
+    retext = apply_edit(scene, tmp_path, [Target(element="t1", property="text", value="겨울 세일")], {}, None)
+    assert retext.element("t1").canonical.style is None              # Hangul was already there: no switch
+    latin = _legacy_hangul("Sale", "DejaVu Sans")
+    brought = apply_edit(latin, tmp_path, [Target(element="t1", property="text", value="가을 Sale")], {}, None)
+    assert brought.element("t1").canonical.style == TextStyle()    # DejaVu Sans lacks Hangul: the bundled fallback
+    unknown = apply_edit(_legacy_hangul("Sale"), tmp_path, [Target(element="t1", property="text", value="가을 Sale")], {}, None)
+    assert unknown.element("t1").canonical.style is None            # a family not on this machine: left to the browser
+
+
+def test_replacing_a_texture_or_model_resets_the_texture_pad(tmp_path):
+    """R54: only `_write_styled` writes padded textures; any other new texture covers the box exactly."""
+    import base64
+    style = TextStyle(effects=[TextEffect(kind="shadow", color=BLUE, dx=6, dy=8, blur=4)])
+    font = FontGuess(family_guess="Inter", weight=700, size_px=40, source="bundled")
+    scene = _text_scene("Sale", font, style)
+    padded = apply_edit(scene, tmp_path, [Target(element="t1", property="text", value="Mega")], {}, None)
+    assert padded.element("t1").canonical.texture_pad > 0
+    ok, png = cv2.imencode(".png", np.full((20, 40, 4), 255, np.uint8))
+    swapped = apply_edit(padded, tmp_path, [Target(element="t1", property="texture", value="attachment")], {},
+                         png.tobytes())
+    assert swapped.element("t1").canonical.texture_pad == 0
+    from keepframe.assets import validate_glb
+    import keepframe.edit.apply as apply_mod
+    glb = b"glTF" + bytes(16)
+    orig = apply_mod.validate_glb
+    apply_mod.validate_glb = lambda data: data
+    try:
+        modelled = apply_edit(padded, tmp_path, [Target(element="t1", property="model", value="attachment")], {}, glb)
+    finally:
+        apply_mod.validate_glb = orig
+    assert modelled.element("t1").canonical.texture_pad == 0

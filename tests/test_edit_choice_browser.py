@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from keepframe.ir.schema import Background, Canonical, Element, Keyframe, Scene, Track
-from keepframe.ir.store import init_project, load_project, scene_dir
+from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
 from keepframe.session.agent import SessionTurn
 from keepframe.session.store import append_turn
 from keepframe.session.tools import SessionContext, run_tool
@@ -43,10 +43,19 @@ def _assets(root):
     return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((scene_dir(root, "s1") / "assets").iterdir())}
 
 
-def test_agent_shows_three_choices_and_cancel_does_not_apply(tmp_path):
+def test_agent_shows_three_choices_and_cancel_does_not_apply(tmp_path, monkeypatch):
+    """Three states, worded for what happened: previewed ("확인 필요", the summary asks how), cancelled (nothing
+    applied, "취소됨"), tinted (a new version, "Tinted the background …")."""
     from playwright.sync_api import expect, sync_playwright
+    from keepframe.render.renderer import RenderResult
+    from keepframe.verify.verifier import VerifyReport
+    monkeypatch.setattr("keepframe.edit.agent.render", lambda html, scene, out_dir: RenderResult(
+        frames_dir=out_dir / "frames", frames=list(range(scene.frames)), hashes=[], bboxes={}))
+    monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_a, **_k: VerifyReport(
+        schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
     root = _seed(tmp_path)
     before = _assets(root)
+    original = (scene_dir(root, "s1") / "assets" / "background.png").read_bytes()
     server = start(tmp_path)
     try:
         with sync_playwright() as p:
@@ -56,33 +65,42 @@ def test_agent_shows_three_choices_and_cancel_does_not_apply(tmp_path):
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(f"http://127.0.0.1:{server.server_address[1]}/agent?project=p1&scene=s1")
+            status, said = page.locator(".toolcall .toolcall__status"), page.locator(".msg--agent .msg__body")
+            expect(status).to_have_text("확인 필요")                       # previewed, nothing applied yet
+            expect(said.last).to_have_text("배경에 #1a2a6c 적용 — 방식을 고르세요. 트랙은 유지합니다.")
             page.locator("#agent-log button.btn--primary").last.click()          # confirm the previewed edit
             choice = page.locator(".agent-choice")
             expect(choice).to_have_count(1)
             expect(choice.locator(".agent-choice__reason")).to_have_text(
-                "배경이 그림·그라데이션·영상입니다. 색만 입힐까요, 단색으로 바꿀까요?")
+                "배경이 그림이나 그라데이션입니다. 색만 입힐까요, 단색으로 바꿀까요?")
             expect(choice.locator("label")).to_have_text(["색 입히기 (밝고 어두운 결 유지)", "단색으로 바꾸기", "취소"])
             expect(choice.locator("input[type=radio]")).to_have_count(3)
             expect(choice.locator("input[value=tint]")).to_be_checked()
             choice.locator("input[value=cancel]").check()
             choice.get_by_role("button", name="선택").click()
-            expect(page.locator(".msg--agent .msg__body").last).to_have_text("취소했습니다. 바뀐 것은 없습니다.")
+            expect(said.last).to_have_text("취소했습니다. 바뀐 것은 없습니다.")
+            expect(status).to_have_text("취소됨")
+            expect(page.get_by_text("편집 적용됨")).to_have_count(0)
             expect(choice.get_by_role("button", name="선택")).to_be_disabled()
             expect(page.locator("#agent-banner")).to_be_hidden()
             assert [v.id for v in load_project(root).versions] == ["v1"] and _assets(root) == before
 
             page.locator("[data-lang-toggle]").click()
             page.reload()
+            expect(status).to_have_text("Needs confirmation")
             page.locator("#agent-log button.btn--primary").last.click()
             choice = page.locator(".agent-choice")
             expect(choice.locator(".agent-choice__reason")).to_have_text(
-                "The background is a picture, gradient or video. Tint it, or replace it with a flat colour?")
+                "The background is a picture or gradient. Tint it, or replace it with a flat colour?")
             expect(choice.locator("label")).to_have_text(["Tint (keep its light and dark)", "Replace with a flat colour",
                                                           "Cancel"])
-            choice.locator("input[value=cancel]").check()
-            choice.get_by_role("button", name="Choose").click()
-            expect(page.locator(".msg--agent .msg__body").last).to_have_text("Cancelled. Nothing was changed.")
-            assert [v.id for v in load_project(root).versions] == ["v1"] and _assets(root) == before
+            choice.get_by_role("button", name="Choose").click()               # tint, the default
+            expect(said.last).to_have_text("Tinted the background #1a2a6c; its light and dark are kept.")
+            expect(status).to_have_text("Edit applied")
+            assert [v.id for v in load_project(root).versions] == ["v1", "v2"]
+            bg = current_scene(root, "s1")[0].background
+            assert (bg.kind, bg.value) == ("image", "assets/background.tint1.png")
+            assert (scene_dir(root, "s1") / "assets" / "background.png").read_bytes() == original
             assert not errors
             browser.close()
     finally:

@@ -132,7 +132,7 @@ def _edit(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
         unknown = sorted({t.element for t in parsed.targets if t.element and t.element not in known})
         if unknown:
             return _fail(f"없는 요소 {unknown}. 사용 가능한 id: {sorted(known)}")
-        parsed.summary = describe(parsed.targets, has_attachment=ctx.has_attachment)
+        parsed.summary = describe(parsed.targets, has_attachment=ctx.has_attachment, scene=scene)
         intent = parsed.model_dump()
     result = run_edit(
         ctx.root,

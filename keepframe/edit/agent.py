@@ -18,7 +18,7 @@ from ..ir.store import current_scene, load_project, load_scene, new_version, sce
 from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
 from .apply import apply_edit
-from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
+from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, background_mode, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
 from .tint import TintError
 from ..assets import ASSET_GEN_CAP, AssetAPIError, AssetClient
@@ -153,7 +153,7 @@ def edit(
         prompt, scene, element=element, has_attachment=attachment is not None or has_attachment
     )
     if intent is not None:
-        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment)
+        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment, scene=scene)
     unresolved = [t for t in parsed.targets if not t.element and t.property not in SCENE_LEVEL]
     if unresolved and not parsed.ambiguous:
         parsed.ambiguous, parsed.candidates = True, [e.id for e in scene.elements]
@@ -168,8 +168,11 @@ def edit(
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
     pick = lambda c: (choices or {}).get(c.id) or (choices or {}).get(c.element)
-    if any(pick(c) == "cancel" and "cancel" in c.choices for c in built.conflicts):
-        return EditResult(status="cancelled", summary=parsed.summary, intent=parsed, plan=built)   # nothing applied
+    if any(pick(c) == "cancel" and "cancel" in c.choices for c in built.conflicts):   # nothing applied
+        return EditResult(status="cancelled", summary="취소했습니다. 바뀐 것은 없습니다.", intent=parsed, plan=built)
+    if background_mode(scene, choices):   # the summary (and version note) says how the background changed
+        parsed.summary = describe(parsed.targets, has_attachment=attachment is not None or has_attachment, scene=scene,
+                                  choices=choices)
     gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
     # ponytail: edits share one asset payload; retain mixed generation batches until per-target attachments exist.
     if attachment is None and any(t.value == "attachment" and
