@@ -3,6 +3,7 @@ import {
   lottieArtifactUrl,
   approveRenderPlan,
   fetchAgentHistory,
+  fetchFonts,
   fetchRenderPlans,
   fetchRenderState,
   fetchReviewJob,
@@ -13,14 +14,15 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261008a";
-import { T, Tf } from "/static/js/i18n.js?v=20261008a";
-import { initAECard } from "/static/js/ae.js?v=20261008a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261008a";
+  uploadFont,
+} from "/static/js/api.js?v=20261009a";
+import { T, Tf } from "/static/js/i18n.js?v=20261009a";
+import { initAECard } from "/static/js/ae.js?v=20261009a";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261009a";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261008a";
+} from "/static/js/playback.js?v=20261009a";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -995,6 +997,79 @@ function initDisclosure(buttonId, bodyId, key, defaultOpen) {
   paint();
 }
 
+// --- Fonts disclosure: the project's uploaded fonts (metadata only) and one upload at a time --------------------
+const FONT_MAX_BYTES = 20 * 1024 * 1024;
+const FONT_NAME = /\.(ttf|otf|woff2)$/i;
+const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported"]);
+const fontsCount = document.getElementById("agent-fonts-count");
+const fontsList = document.getElementById("agent-fonts-list");
+const fontsEmpty = document.getElementById("agent-fonts-empty");
+const fontsInput = document.getElementById("agent-fonts-input");
+const fontsUploadBtn = document.getElementById("agent-fonts-upload");
+const fontsStatus = document.getElementById("agent-fonts-status");
+let fonts = [];
+let fontStatus = null;   // {key, vars, error}: repainted on a language switch
+
+function fontMeta(font) {
+  const [lo, hi] = font.weight_range || [400, 400];
+  const parts = [font.style, lo === hi ? String(lo) : `${lo}–${hi}`, String(font.ext || "").toUpperCase()];
+  if (font.hangul) parts.push(T("fonts.hangul"));
+  return parts.filter(Boolean).join(" · ");
+}
+
+function paintFonts() {
+  fontsCount.textContent = fonts.length ? Tf("fonts.count", {n: fonts.length}) : T("fonts.title");
+  fontsList.replaceChildren(...fonts.map((font) => {
+    const row = document.createElement("li");
+    row.className = "font-row";
+    const family = document.createElement("span");
+    family.className = "font-row__family";
+    family.textContent = font.family;   // from the font file: text only, never markup
+    family.title = font.original_family || font.family;
+    const meta = document.createElement("span");
+    meta.className = "font-row__meta mono";
+    meta.textContent = fontMeta(font);
+    row.append(family, meta);
+    return row;
+  }));
+  fontsEmpty.hidden = fonts.length > 0;
+  fontsStatus.hidden = !fontStatus;
+  if (fontStatus) {
+    fontsStatus.textContent = Tf(fontStatus.key, fontStatus.vars);
+    fontsStatus.className = "agent-fonts__status" + (fontStatus.error ? " agent-fonts__status--error" : "");
+  }
+}
+
+function setFontStatus(key, vars = {}, error = false) {
+  fontStatus = {key, vars, error};
+  paintFonts();
+}
+
+async function loadFonts() {
+  if (!projectId) return;
+  const data = await fetchFonts(projectId);
+  fonts = (data && data.fonts) || [];
+  paintFonts();
+}
+
+async function sendFont(file) {
+  if (!FONT_NAME.test(file.name)) return setFontStatus("fonts.error.bad_type", {}, true);
+  if (file.size > FONT_MAX_BYTES) return setFontStatus("fonts.error.too_large", {}, true);
+  fontsUploadBtn.disabled = true;
+  setFontStatus("fonts.uploading");
+  try {
+    const {font, created} = await uploadFont(projectId, file);
+    if (created) fonts = [...fonts, font];
+    setFontStatus(created ? "fonts.added" : "fonts.duplicate", {family: font.family});
+  } catch (err) {
+    const code = err.body && err.body.error;
+    setFontStatus(FONT_ERRORS.has(code) ? `fonts.error.${code}` : "fonts.error.failed", {}, true);
+  } finally {
+    fontsUploadBtn.disabled = false;
+    fontsInput.value = "";
+  }
+}
+
 function showMissingProject() {
   emptyEl.textContent = T("agent.needProject");
   emptyEl.hidden = false;
@@ -1045,6 +1120,11 @@ inputEl.addEventListener("keydown", (e) => {
 initDisclosure("render-card-toggle", "render-card-body", "kf.agent.renderCardOpen", true);
 initDisclosure("ae-card-toggle", "ae-card-body", "kf.agent.aeCardOpen", true);
 initDisclosure("agent-elements-toggle", "agent-elements-list", "kf.agent.elementsOpen", false);
+initDisclosure("agent-fonts-toggle", "agent-fonts-body", "kf.agent.fontsOpen", false);
+fontsUploadBtn.addEventListener("click", () => fontsInput.click());
+fontsInput.addEventListener("change", () => {
+  if (fontsInput.files[0]) sendFont(fontsInput.files[0]);
+});
 
 const toolsToggle = document.getElementById("agent-tools-toggle");
 const toolsMenu = document.getElementById("agent-tools");
@@ -1124,12 +1204,15 @@ window.addEventListener("keepframe:lang", () => {
     call.querySelector(".toolcall__status").textContent = toolStatus(call.dataset.tool, call.dataset.ok === "true");
   });
   logEl.querySelectorAll(".verify-chip").forEach(paintVerifyChip);
+  paintFonts();
 });
 
 const aeCard = initAECard({projectId, getSceneId: () => sceneId, getVersionId: () => versionId});
 
+paintFonts();
 if (!projectId) showMissingProject();
 else {
+  loadFonts().catch(() => setFontStatus("fonts.error.load", {}, true));
   loadState()
     .then(() => aeCard.refresh())
     .then(loadHistory)
