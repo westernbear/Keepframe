@@ -16,7 +16,7 @@ import {
   reviewAssetUrl,
   uploadFont,
 } from "/static/js/api.js?v=20261010a";
-import { T, Tf } from "/static/js/i18n.js?v=20261010a";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010a";
 import { initAECard } from "/static/js/ae.js?v=20261010a";
 import { readFileAsDataUrl } from "/static/js/files.js?v=20261010a";
 import {
@@ -262,10 +262,6 @@ function updateRenderControls() {
     || planState.status !== "awaiting_approval";
 }
 
-const JOB_ERRORS = {   // job errors that arrive as codes (the detail stays in the server log)
-  export_failed: "agent.renderExportFailed",
-};
-
 const RENDER_WARNINGS = {
   font_substituted: (w) => Tf("agent.renderFontSubstituted", {family: w.family, used: w.used}),
   font_file_missing: (w) => Tf("agent.renderFontFileMissing", {family: w.family}),
@@ -296,7 +292,7 @@ function paintRenderCard() {
   renderStatusEl.textContent = hasPlan ? `${status} (${plan.version_id})` : "";
   renderStatusEl.title = planState ? `${status}, r${planState.revision}` : status;
   renderStatusClass(status);
-  renderReasonEl.textContent = (JOB_ERRORS[jobError] ? T(JOB_ERRORS[jobError]) : jobError) || renderPayload?.error || "";
+  renderReasonEl.textContent = errorText(jobError) || renderPayload?.error || "";
   document.getElementById("render-reason-field").hidden = status !== "failed" || !renderReasonEl.textContent;
   document.getElementById("render-output-field").hidden = !hasPlan || !outputs.length;
   document.getElementById("render-approval").hidden = !awaitsApproval;

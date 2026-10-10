@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 import numpy as np
+from pydantic import ValidationError
 
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
@@ -30,7 +31,7 @@ from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
-from keepframe.log import configure, get, scrub_paths
+from keepframe.log import configure, describe, get, scrub_paths
 from keepframe.review import corrections
 from keepframe.web.bodies import LengthError, content_length
 from keepframe.web.estimate import consume_token, estimate, probe_video
@@ -523,7 +524,7 @@ class ReviewState:
                 self.job = {"status": "done", "op": op, "error": None, "version": v.id}
                 log.info("correction done scene=%s op=%s version=%s", self.scene_id, op, v.id)
             except Exception as e:
-                self.job = {"status": "error", "op": op, "error": f"{type(e).__name__}: {e}", "version": None}
+                self.job = {"status": "error", "op": op, "error": "correction_failed", "version": None}
                 log.exception("correction failed scene=%s op=%s", self.scene_id, op)
 
         threading.Thread(target=work, daemon=True).start()
@@ -644,6 +645,10 @@ def make_server(
                 "application/json; charset=utf-8",
                 headers=headers,
             )
+
+        def _fail(self, status: int, e: BaseException, code: str = "internal_error") -> None:
+            log.warning("request failed (%s): %s", code, describe(e, trace=True))
+            self._json(status, {"error": code})
 
         def _read_body(self) -> bytes:
             length = int(self.headers.get("content-length", 0))
@@ -1081,7 +1086,7 @@ def make_server(
                     return self._json(200, payload)
                 except Exception as e:
                     log.exception("state failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if u.path == "/api/job":
                 if not pid:
@@ -1125,7 +1130,7 @@ def make_server(
                     return self._json(200, {"size": list(scene.size), "boxes": boxes})
                 except Exception as e:
                     log.exception("bboxes failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             parts = u.path.strip("/").split("/")
             if parts[:2] == ["frame", "orig"] and len(parts) == 3:
@@ -1139,7 +1144,7 @@ def make_server(
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if parts[:2] == ["frame", "recon"] and len(parts) == 3:
                 if not pid:
@@ -1151,7 +1156,7 @@ def make_server(
                     return self._send(200, state.recon_png(int(parts[2]), ver), "image/png", cache="public, max-age=604800")
                 except Exception as e:
                     log.exception("recon frame failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if parts and parts[0] == "assets" and len(parts) >= 2:
                 if not pid:
@@ -1291,7 +1296,9 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
-                except (TypeError, ValueError) as exc:
+                except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+                    return self._fail(400, exc, "invalid_request")
+                except ValueError as exc:
                     return self._json(400, {"error": str(exc)})
 
 
@@ -1581,7 +1588,7 @@ def make_server(
                 try:
                     _scene, version = state.scene(data.get("v"))
                 except Exception as e:
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 project = approve_scene(state.root, scene_id, version.id)
                 fully_approved = all(ref.id in project.approved_scenes for ref in project.scenes)
                 meta = write_meta(
@@ -1632,7 +1639,7 @@ def make_server(
                     return self._json(200, {"version": json.loads(v.model_dump_json())})
                 except Exception as e:
                     log.exception("keep update failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if u.path == "/api/edit":
                 if not self._same_origin():
@@ -1665,7 +1672,7 @@ def make_server(
                     )
                 except Exception as e:
                     log.exception("edit failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 if result.status == "done" and result.version is not None:
                     write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
                     state._preview.clear()
@@ -1725,7 +1732,7 @@ def make_server(
                     if not any(v.id == version for v in versions):
                         raise ValueError("version is not authoritative for this scene")
                 except Exception as e:  # noqa: BLE001 - malformed workspace input
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 resolved_project_id = project_id
                 resolved_scene_id = scene_id
                 resolved_version = version
@@ -1786,7 +1793,7 @@ def make_server(
                         append_turn(root, resolved_scene_id, message, turn)
                 except Exception as e:
                     log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):
@@ -1830,7 +1837,9 @@ def make_server(
                     state.run_correction(op, args)
                 except RuntimeError:
                     return self._json(409, {"error": "a correction is already running"})
-                except (TypeError, ValueError) as exc:
+                except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+                    return self._fail(400, exc, "invalid_request")
+                except ValueError as exc:
                     return self._json(400, {"error": str(exc)})
                 return self._json(202, {"job": state.job})
 

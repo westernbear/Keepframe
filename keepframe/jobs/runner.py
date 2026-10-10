@@ -66,7 +66,7 @@ class ThreadRunner:
                 log.error("job %s %s failed project=%s: %s", job.id, job.kind, job.project_id, e.code)
                 job.status = "error"
             except Exception as e:
-                job.error = f"{type(e).__name__}: {e}"
+                job.error = "job_failed"
                 log.exception("job %s %s failed project=%s", job.id, job.kind, job.project_id)
                 job.status = "error"
             finally:

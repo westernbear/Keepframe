@@ -115,7 +115,7 @@ def test_caption_failure_never_fails_analysis(tmp_path, caption_video, stage, er
         analyze(caption_video, 0, 11, root, opts)
         rerun(root, "s1", "keyframes", "caption failure", captioner=Broken())
     report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-    assert f"captions skipped: {type(error).__name__}: {error}"[:200] in report["messages"]
+    assert "captions skipped (captions_failed)" in report["messages"]
     assert current_scene(root, "s1")[0].elements
 
 

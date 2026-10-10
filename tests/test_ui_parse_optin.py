@@ -78,9 +78,8 @@ def test_ui_parse_failure_is_reported_and_analysis_continues(tmp_path, monkeypat
     assert scene.elements and scene.ui is None
     assert version.id == ("v1" if stage == "analyze" else "v2")
     report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-    message = next(message for message in report["messages"] if message.startswith("UI parse skipped:"))
-    assert len(message) <= 200
-    assert message == f"UI parse skipped: {type(error).__name__}: {error}"[:200]
+    message = next(message for message in report["messages"] if message.startswith("UI parse skipped"))
+    assert message == "UI parse skipped (ui_parse_failed)"
     assert report["reconstruction"] and report["confidence"]
 
 

@@ -116,13 +116,13 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 from .text import RapidOcr
                 ocr = RapidOcr(max_side=opts.ocr_max_side)
             except Exception as e:  # rapidocr missing or broken onnxruntime
-                msg = f"text stage skipped: {e}"
+                msg = "text stage skipped (ocr_failed)"
                 err = str(e)
                 if "No module named 'rapidocr_onnxruntime'" in err:
                     msg += "; pip install -e '.[ocr]' (same python as keepframe)"
                 elif "GraphOptimizationLevel" in err:
                     msg += "; pip uninstall -y onnxruntime onnxruntime-gpu && pip install 'onnxruntime-gpu>=1.19,<1.27'"
-                log.info("%s", msg)
+                log.warning("%s: %s", msg, describe(e, trace=True))
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)
             tracks = merge_reveals(track_text(boxes))
@@ -541,8 +541,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             else:
                 log.info("refine skipped: torch not installed")
         except Exception as e:
-            log.error("refine skipped: %s", e)
-            props["_message"] = f"refine skipped: {e}"
+            log.warning("refine skipped: %s", describe(e, trace=True))
+            props["_message"] = "refine skipped (refine_failed)"
     # Textures v2: matted against the per-frame plate, after refine, before solids. A solid's fragments keep today's
     # textures: they are pieces of a turning surface, and the still/fragments fidelity choice compares like with like.
     report_stage("sprites", "textures")
@@ -648,7 +648,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
             elif 0 < count < sent:
                 messages.append(f"captions partial: {count}/{sent}")
         except Exception as e:  # captions are optional suggestions; analysis never fails on them
-            messages.append(f"captions skipped: {type(e).__name__}: {e}"[:200])
+            log.warning("captions skipped: %s", describe(e, trace=True))
+            messages.append("captions skipped (captions_failed)")
     scene.groups = [] if scene.ui is not None else group_by_motion(scene.elements, raws)  # ponytail: parsed UI has no measured motion tracks.
     t = _stage_done("semantics", t)
     report_stage("constraints")
@@ -729,8 +730,8 @@ def _apply_ui(frames: np.ndarray, scene: Scene, sd: Path, scene_id: str, message
     try:
         return _parse_ui(frames, scene, sd)
     except Exception as exc:
-        message = f"UI parse skipped: {type(exc).__name__}: {exc}"[:200]
-        log.warning("%s scene=%s", message, scene_id)
+        message = "UI parse skipped (ui_parse_failed)"
+        log.warning("%s scene=%s: %s", message, scene_id, describe(exc, trace=True))
         if messages is not None:
             messages.append(message)
         else:

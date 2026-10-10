@@ -56,9 +56,9 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
         log.info("analyze done project=%s", project_id)
         return {"project_id": project_id}
     except Exception as e:
-        log.error("analyze failed project=%s: %s: %s", project_id, type(e).__name__, e)
+        log.error("analyze failed project=%s: %s", project_id, describe(e))
         if workspace is not None and project_id:
-            write_meta(workspace, project_id, status="error", error=f"{type(e).__name__}: {e}")
+            write_meta(workspace, project_id, status="error", error=str(e) if isinstance(e, JobFailed) else "job_failed")
         raise
 
 

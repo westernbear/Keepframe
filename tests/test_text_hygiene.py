@@ -190,4 +190,4 @@ def test_ocr_failure_message_still_reaches_report(tmp_path, monkeypatch, stage):
     else:
         rerun(root, "s1", "text", note="OCR failure", options=options)
     report = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-    assert report["messages"] == ["text stage skipped: OCR unavailable", "3D 후보 0개"]
+    assert report["messages"] == ["text stage skipped (ocr_failed)", "3D 후보 0개"]

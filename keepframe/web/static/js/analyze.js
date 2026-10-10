@@ -1,5 +1,5 @@
 import { fetchProjects, fetchProject, fetchFilmstrip, fetchJob, postAnalyze, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261010a";
-import { T, Tf } from "/static/js/i18n.js?v=20261010a";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010a";
 import { setWorkflowStage, setWorkflowProject } from "/static/js/workflow.js?v=20261010a";
 
 const ANALYZE_POLL_INTERVAL_MS = 1000;
@@ -112,7 +112,7 @@ function updateJob(job) {
     return;
   }
   if (job.status === "error") {
-    showError(job.error || T("analyze.failed"));
+    showError(errorText(job.error) || T("analyze.failed"));
     const strip = document.querySelector("[data-filmstrip]");
     if (strip) strip.innerHTML = "";
   }

@@ -41,7 +41,7 @@ def test_job_error_is_logged(caplog):
             break
         time.sleep(0.05)
     assert job.status == "error"
-    assert job.error == "RuntimeError: gpu missing"
+    assert job.error == "job_failed"
     assert any(
         r.levelno == logging.ERROR and r.exc_info
         and isinstance(r.exc_info[1], RuntimeError)

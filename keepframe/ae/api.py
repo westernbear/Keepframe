@@ -18,7 +18,7 @@ from .devices import Devices
 from .jobs import Jobs
 from .spec import comp_spec, prepare_footage, spec_asset_paths, spec_json, spec_level
 from .verify import sample_frames, verify
-from ..log import get
+from ..log import describe, get
 from ..ir.store import load_project, load_scene, scene_dir
 from ..web.bodies import LengthError, content_length
 
@@ -73,8 +73,6 @@ def _read_json(handler, cap=1024 * 1024):
 def _verification_error(exc):
     if isinstance(exc, FileNotFoundError):
         return f"file not found: {Path(exc.filename).name}" if exc.filename else "file not found"
-    if isinstance(exc, ValueError):
-        return str(exc)
     log.exception("After Effects verification failed")
     return f"verification failed: {type(exc).__name__}"
 
@@ -156,8 +154,8 @@ class AERoutes:
                 log.warning("After Effects %s %s: %s", handler.command, u.path, reason)
                 _error(handler, 404, reason)
             except ValueError as exc:
-                log.warning("After Effects %s %s: %s", handler.command, u.path, exc)
-                _error(handler, 400, str(exc))
+                log.warning("After Effects %s %s: %s", handler.command, u.path, describe(exc))
+                _error(handler, 400, "invalid_request")
             except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
                 raise
             except Exception:
