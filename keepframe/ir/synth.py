@@ -296,12 +296,12 @@ def _title(root: Path, rng: random.Random, eid: str, text: str, size_px: int, fo
 
 
 def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradient", "animated", "image"] = "gradient",
-                         n_sprites: int = 3, n_titles: int = 1, mover: bool = False, logo: bool = True,
+                         n_sprites: int = 3, n_titles: int = 1, mover: bool | Literal["inplace"] = False, logo: bool = True,
                          fonts: Sequence[str] | None = None, frames: int = 60, size: tuple[int, int] = (640, 360),
                          fps: float = 30.0) -> Scene:
     """A motion-graphics reference with known layers: a plate (flat, gradient, animated gradient or picture),
     anti-aliased sprites, a static logo that always covers the same spot, an optional big mover behind the
-    title, and titles that ease in and then hold still for most of the shot. Titles use a seeded bundled font
+    title (crossing the frame, or turning in place with mover="inplace"), and titles that ease in and then hold still for most of the shot. Titles use a seeded bundled font
     (family, weight, sometimes tracking; `fonts` pins the families) drawn by the styled raster."""
     root = Path(root)
     rng = random.Random(seed)
@@ -312,11 +312,12 @@ def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradi
         m = rng.randint(100, 140)
         _shape_texture(root / "assets" / "mover.png", "stripes", m, m, rng.choice(PALETTE[:4]), rng.choice(PALETTE[2:]))
         y = rng.uniform(0.45, 0.7) * H
+        x0, x1, turn = (0.5, 0.5, 360.0) if mover == "inplace" else (0.15, 0.85, rng.choice([-60.0, 60.0]))
         elements.append(Element(id="mover", kind="sprite", canonical=Canonical(width=m, height=m, texture="assets/mover.png"),
                                 visible=(0, frames - 1), z=Track(keys=[Keyframe(t=0, v=1)]),
-                                tracks={"x": Track(keys=[Keyframe(t=0, v=round(0.15 * W, 2)), Keyframe(t=frames - 1, v=round(0.85 * W, 2))]),
+                                tracks={"x": Track(keys=[Keyframe(t=0, v=round(x0 * W, 2)), Keyframe(t=frames - 1, v=round(x1 * W, 2))]),
                                         "y": Track(keys=[Keyframe(t=0, v=round(y, 2))]),
-                                        "rot": Track(keys=[Keyframe(t=0, v=0.0), Keyframe(t=frames - 1, v=rng.choice([-60.0, 60.0]))])}))
+                                        "rot": Track(keys=[Keyframe(t=0, v=0.0), Keyframe(t=frames - 1, v=turn)])}))
     for i in range(1, n_sprites + 1):
         eid = f"s{i}"
         w, h = rng.randint(30, 90), rng.randint(30, 90)

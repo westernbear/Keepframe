@@ -95,3 +95,10 @@ def test_browser_double_render_recomposes_the_frame(tmp_path):
     err = np.abs(out - full)
     assert err.mean() < 0.3 and np.percentile(err, 99.9) < 3
     assert all(gt[e.id][f][0].max() > 0.9 for e in scene.elements)
+
+
+def test_inplace_mover_turns_without_moving(tmp_path):
+    scene = make_reference_scene(tmp_path, seed=7, plate="image", mover="inplace")
+    m = next(e for e in scene.elements if e.id == "mover")
+    a, b = eval_props(m, 0), eval_props(m, scene.frames - 1)
+    assert (a["x"], a["y"]) == (b["x"], b["y"]) and abs(b["rot"] - a["rot"]) == 360.0

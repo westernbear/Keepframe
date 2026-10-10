@@ -339,7 +339,7 @@ def _sheet(res: dict, frames: Sequence[int], out: Path, name: str) -> str:
 def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: AnalyzeOptions, reuse: bool) -> dict:
     d = out / "synthetic" / f"seed{seed}"
     tdir = d / "truth"
-    truth = make_reference_scene(tdir, seed, plate=plate, mover=seed % 2 == 0, n_titles=2 if seed % 3 == 0 else 1)
+    truth = make_reference_scene(tdir, seed, plate=plate, mover="inplace" if seed > 6 else seed % 2 == 0, n_titles=2 if seed % 3 == 0 else 1)
     save_scene(truth, tdir / "scene.json")
     video = render_reference(truth, tdir, d / "reference.mp4", renderer=renderer)
     proj = d / "proj"
