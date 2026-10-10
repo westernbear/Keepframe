@@ -1,5 +1,5 @@
 {
- "source": "text_fill_cases.npz (Stage A real-clip run, master 9aff0a8, R66): texture columns at full resolution, colour zeroed where alpha is 0; the plate under them at 1/4 resolution",
+ "source": "R66: text_fill_cases.npz (Stage A real-clip run, master 9aff0a8): texture columns at full resolution; R67: the stored stages of the same run (ig1/t24, ig2/t21), whole textures. Colour zeroed where alpha is 0; the plate under the texture at 1/4 resolution (R66) or full (R67: small; a smoothed plate loses the text ghosts in it); plate false: unknown in the real run.",
  "cases": {
   "envato1": {
    "text": "Build SaaSPromo",
@@ -12,7 +12,8 @@
    "core": "#e9e1fd",
    "fill_9aff0a8": "#09011a",
    "want": "#f0ebfe",
-   "within": 10.0
+   "within": 10.0,
+   "plate": true
   },
   "ig3": {
    "text": "and it builts for you",
@@ -25,20 +26,50 @@
    "core": "#1d1d1e",
    "fill_9aff0a8": "#c4dbf8",
    "want": "#1d1d1e",
-   "within": 15.0
+   "within": 15.0,
+   "plate": true
   },
   "ig2": {
    "text": "A Weekend Away",
    "columns": [
     130,
-    700
+    600
    ],
    "method": "keyed",
    "confidence": 0.0,
    "core": "#aa0105",
    "fill_9aff0a8": "#ad0104",
    "want": "#ab0004",
-   "within": 5.0
+   "within": 5.0,
+   "plate": true
+  },
+  "ig1_t24": {
+   "text": "Collaborate",
+   "columns": [
+    0,
+    187
+   ],
+   "method": "keyed",
+   "confidence": 0.324,
+   "core": "#161522",
+   "fill_9aff0a8": "#edecfa",
+   "want": "#161522",
+   "within": 20.0,
+   "plate": true
+  },
+  "ig2_t21": {
+   "text": "Paintye",
+   "columns": [
+    0,
+    49
+   ],
+   "method": "keyed",
+   "confidence": 0.4,
+   "core": "#4a4748",
+   "fill_9aff0a8": "#f4f2f3",
+   "want": "#4a4748",
+   "within": 20.0,
+   "plate": false
   }
  }
 }

@@ -119,8 +119,16 @@ def _case(tmp_path, text="Sale", family="Inter", weight=700, size=48, fill="#a80
                            alpha=a[by0:by1, bx0:bx1], fill=fill_map, tex_shape=(th, tw), tbox=tbox, binary=binary)
 
 
-def _analyse(c):
-    return textstyle.analyse_text_style(c.rgba, c.meta, c.frames, c.plate, c.raw, c.text, others_at=c.others_at)
+def _analyse(c, core=None):
+    return textstyle.analyse_text_style(c.rgba, c.meta, c.frames, c.plate, c.raw, c.text, others_at=c.others_at,
+                                        core=core)
+
+
+def _core(c, bg_hex: str, box=None) -> str:
+    """Today's core-mask colour of the case's text (what style_props passes as `core`): the most contrasting decile
+    of the detector's box against the global background."""
+    track = TextTrack(1, {f: TextBox(f, c.text, box or c.box, 0.99) for f in range(len(c.frames))}, c.text)
+    return text_props(track, c.frames, hex_to_rgb8(bg_hex), len(c.frames), 0, infer_font=True, plate=None)[4]
 
 
 def _kinds(style):
@@ -141,14 +149,14 @@ def _disc(d, rgb):
 
 def test_fill_colour_uses_local_plate(tmp_path):
     """ig2: a dark red title over a pale globe on a dark plate. Today's colour is the most contrasting decile against
-    the global background (the pale globe); the analysed fill is measured against the local plate (globe below)."""
+    the global background (the pale globe); the analysed fill is measured against the local plate (globe below).
+    That wrong core colour, passed in, does not override it: the texture has no solid pixels of it."""
     bg = Background(kind="color", value="#2a0a14")
     globe = ("globe", _disc(150, hex_to_rgb8("#ffd9e2")), CX, CY, 1)
     c = _case(tmp_path, text="Big Sale", size=44, fill="#a8001c", bg=bg, others=[globe])
-    track = TextTrack(1, {f: TextBox(f, c.text, c.box, 0.99) for f in range(len(c.frames))}, c.text)
-    old = text_props(track, c.frames, hex_to_rgb8("#2a0a14"), len(c.frames), 0, infer_font=True, plate=None)[4]
+    old = _core(c, "#2a0a14")
     assert _de(old, "#a8001c") > 20
-    style, colour, info = _analyse(c)
+    style, colour, info = _analyse(c, core=old)
     assert _de(colour, "#a8001c") < 5
     assert style.fill is None and style.fade is None and style.effects == []
     assert info["spread"] < 6
@@ -248,9 +256,45 @@ def test_fill_of_a_texture_that_kept_its_surroundings(tmp_path):
     assert 0.8 < (alpha == 255).mean() < textstyle.BOX_SHARE and (border == 255).mean() > 0.5
     haze = _plate(Background(kind="color", value="#13043b"))
     assert 20 < _de("#13043b", box_rgb) < textstyle.KEPT_PLATE_DE
-    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, haze, c.raw, c.text)
+    core = _core(c, box_rgb)
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, haze, c.raw, c.text, core=core)
     assert _de(colour, "#f0ebfe") < 5
     assert style.effects == [] and style.fade is None and style.confidence <= 0.5
+
+
+def test_giant_glyph_that_touches_its_box(tmp_path):
+    """envato1 t1's shape: one huge letter whose box is its own bounds, the matte keeping the dark surroundings in
+    the corners and counters, over a hazy plate estimate. The glyph makes most of the opaque border, so a border in
+    the fill's colour is no sign the fill is the surroundings: the fill stays the letter's colour."""
+    box_rgb = "#09011a"
+    c = _case(tmp_path, text="B", size=230, weight=600, fill="#f3f0f8", bg=Background(kind="color", value=box_rgb))
+    x0, y0, x1, y1 = c.box
+    x0, y0, x1, y1 = x0 + 6, y0 + 6, x1 - 6, y1 - 6   # the box cuts the letter (same centre: the raw rows hold)
+    rgba = np.dstack([c.frames[0][y0:y1, x0:x1], np.full((y1 - y0, x1 - x0), 255, np.uint8)])
+    border = np.concatenate([rgba[0], rgba[-1], rgba[:, 0], rgba[:, -1]])[:, :3].astype(np.float32)
+    assert float((delta_e(srgb_to_lab(border), srgb_to_lab(np.float32(hex_to_rgb8("#f3f0f8")))) < 20).mean()) > 0.5
+    haze = _plate(Background(kind="color", value="#13043b"))
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, haze, c.raw, c.text, core=_core(c, box_rgb))
+    assert _de(colour, "#f3f0f8") < 10 and style.effects == []
+
+
+def test_a_shape_kept_behind_the_title_is_not_the_fill(tmp_path):
+    """Synthetic seed 6's shape: a teal title partly over a dark-teal block the analysis missed; the matte kept the
+    block and the core-mask colour is the block's (it stands out more from the beige plate). The core's colour has
+    plenty of solid pixels, but it stands out from the plate no more than the fill does, so it is no glyph inside
+    kept background: the fill stays the title's."""
+    block = np.zeros((60, 90, 4), np.uint8)
+    block[...] = (*hex_to_rgb8("#073b4c"), 255)
+    bg = Background(kind="color", value="#e8d5b7")
+    c = _case(tmp_path, text="Up to 50% off", size=32, weight=700, fill="#118ab2", bg=bg,
+              others=[("block", block, CX + 60, CY, 1)])
+    x0, y0, x1, y1 = c.box
+    crop = c.frames[0][y0:y1, x0:x1]
+    rgba = np.dstack([crop, np.where(foreground_mask_plate(crop, c.plate.at(0)[y0:y1, x0:x1]), 255, 0).astype(np.uint8)])
+    core = _core(c, "#e8d5b7")
+    assert _de(core, "#073b4c") < 5
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, c.plate, c.raw, c.text, core=core)
+    assert _de(colour, "#118ab2") < 5
 
 
 def _ramp_and_blue(a: np.ndarray, share: float = 0.6) -> np.ndarray:
@@ -292,9 +336,11 @@ REAL = json.loads((DATA / "cases.json").read_text())["cases"]
 
 
 def _real(case: str):
-    """The texture (columns of it, full resolution) and the plate under it (stored at 1/4, scaled back)."""
+    """The texture and the plate under it (scaled back to the texture's size; None: unknown in the real run)."""
     rgba = cv2.cvtColor(cv2.imread(str(DATA / f"{case}_rgba.png"), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
     h, w = rgba.shape[:2]
+    if not REAL[case]["plate"]:
+        return rgba, None
     plate = cv2.resize(cv2.cvtColor(cv2.imread(str(DATA / f"{case}_plate.png")), cv2.COLOR_BGR2RGB), (w, h),
                        interpolation=cv2.INTER_LINEAR)
     return rgba, plate
@@ -302,23 +348,24 @@ def _real(case: str):
 
 def _analyse_real(case: str):
     """analyse_text_style on a real texture: one frame rebuilt as the texture over its plate (edge-padded by the
-    effect crop's margin), the texture held at its centre."""
+    effect crop's margin), the texture held at its centre. An unknown plate: no measured transform, no crop."""
     rgba, plate = _real(case)
     a = rgba[..., 3].astype(np.float32) / 255
     pe = int(max(4, round(0.5 * textstyle.cap_height(a))))
-    B = np.pad(plate, ((pe, pe), (pe, pe), (0, 0)), mode="edge")
+    B = np.pad(plate if plate is not None else np.zeros_like(rgba[..., :3]), ((pe, pe), (pe, pe), (0, 0)), mode="edge")
     ap = np.pad(a, pe)[..., None]
     frame = np.rint(np.pad(rgba[..., :3], ((pe, pe), (pe, pe), (0, 0))) * ap + (1 - ap) * B).astype(np.uint8)
     th, tw = frame.shape[:2]
-    raw = np.array([[tw / 2, th / 2, 1, 1, 0, 0, 0, 1, 1]], np.float64)
+    raw = np.array([[tw / 2, th / 2, 1, 1, 0, 0, 0, 1, 1] if plate is not None else [np.nan] * 9], np.float64)
     meta = TextureMeta(method=REAL[case]["method"], frames=[0], confidence=REAL[case]["confidence"])
-    return textstyle.analyse_text_style(rgba, meta, frame[None], B, raw, REAL[case]["text"])
+    return textstyle.analyse_text_style(rgba, meta, frame[None], B, raw, REAL[case]["text"], core=REAL[case]["core"])
 
 
 @pytest.mark.parametrize("case", sorted(REAL))
 def test_real_fills_are_the_glyph_colour(case):
     """envato1: the matte kept the near-black around the white glyphs (fill was that black, plus a white glow); ig3:
-    a dark line with a light-blue word (fill was the blue); ig2: a red title over a pink globe (right, must stay)."""
+    a dark line with a light-blue word (fill was the blue); ig2: a red title over a pink globe (right, must stay);
+    ig1 t24 / ig2 t21: dark handwriting on a white card / sticker the matte kept (fill was the white)."""
     style, colour, info = _analyse_real(case)
     want = REAL[case]
     assert _de(colour, want["want"]) < want["within"], (colour, want)
@@ -329,17 +376,23 @@ def test_real_fills_are_the_glyph_colour(case):
         assert info["unfilled"] > textstyle.UNFILLED and style.confidence < want["confidence"]
 
 
-def test_kept_surroundings_on_real_textures():
-    """The texture's own border decides: envato1's is opaque over ~78 % of it and its dominant colour is the
-    near-black the fill came out as; ig2's opaque border is pink, far from its red fill; ig3's is transparent."""
+def test_core_fill_on_real_textures():
+    """The core-mask colour breaks the tie only with the texture's own evidence: envato1's old fill is its kept
+    near-black, far from the core, and the core's colour covers much of the solid pixels, so their colour is the
+    fill; a fill that agrees with the core, or a core the texture has too few solid pixels of, changes nothing."""
     def lab(hexv):
         return srgb_to_lab(np.float32(hex_to_rgb8(hexv)))
-    rgba, _ = _real("envato1")
-    behind = textstyle.kept_surroundings(rgba, lab(REAL["envato1"]["fill_9aff0a8"]))
-    assert behind is not None and float(delta_e(behind, lab("#09011a"))) < textstyle.FG_DE
-    assert textstyle.kept_surroundings(rgba, lab(REAL["envato1"]["want"])) is None
+    rgba, plate = _real("envato1")
+    F, a, core = rgba[..., :3], rgba[..., 3], lab(REAL["envato1"]["core"])
+    got = textstyle.core_fill(F, a, lab(REAL["envato1"]["fill_9aff0a8"]), core, plate.reshape(-1, 3))
+    assert got is not None and float(delta_e(got, core)) < 10   # the near-black is the hazy plate's, the core is not
+    assert textstyle.core_fill(F, a, lab(REAL["envato1"]["want"]), core) is None
     for case in ("ig2", "ig3"):
-        assert textstyle.kept_surroundings(_real(case)[0], lab(REAL[case]["fill_9aff0a8"])) is None
+        rgba, _ = _real(case)
+        F, a = rgba[..., :3], rgba[..., 3]
+        assert textstyle.core_fill(F, a, lab(REAL[case]["want"]), lab(REAL[case]["core"])) is None
+    rgba, _ = _real("ig3")   # its core is dark: a light-green core has no solid pixels to stand on
+    assert textstyle.core_fill(rgba[..., :3], rgba[..., 3], lab(REAL["ig3"]["want"]), lab("#7fff7f")) is None
 
 
 @pytest.mark.parametrize("case", ["ig3", "ig2"])
