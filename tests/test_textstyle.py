@@ -404,6 +404,22 @@ def test_fill_colour_by_glyph_area_on_real_textures(case):
     assert _de(hexv, REAL[case]["want"]) < REAL[case]["within"], hexv
 
 
+@pytest.mark.parametrize("case", ["envato1_title", "ig3", "ig3_t24"])
+def test_real_sans_titles_match_a_sans_unsheared_without_shadow(case):
+    """F3: the real clips' sans titles matched a display or slab face (envato1 'Build SaaSPromo' Anton, ig3 'and it
+    builts for you' and 'Your idea' Bitter), 'Your idea' also with a 14° shear and a black shadow. The family is
+    checked by category only (no family truth)."""
+    from keepframe.fonts.match import font_guesses
+    style, _, info = _analyse_real(case)
+    res = font_guesses([textstyle._font_job(case, {"text": REAL[case]["text"]}, style, info)], REG)[case]
+    assert res[0] == "ok", res
+    guess, layout = res[1], res[2]
+    assert REG.face(guess.family_guess).category in ("geometric_sans", "neo_grotesque", "humanist_sans"), (
+        guess.candidates, guess.scores)
+    assert layout["shear_deg"] == 0
+    assert "shadow" not in _kinds(style), style.effects
+
+
 def _gradient_p90(c, g: Gradient, truth: Gradient) -> float:
     """p90 ΔE76 between the analysed and the true fill over the solid glyph interior (box coordinates)."""
     bx0, by0, bx1, by1 = c.tbox
