@@ -45,6 +45,10 @@ THICK_K = 0.75               # fill pixels deeper than this × stroke width insi
 BOX_SHARE = 0.95             # a texture opaque over this share of its box …
 KEPT_PLATE_DE = 30.0         # … whose border is this close to the plate kept the plate: glyphs by contrast
 SIM_DE = (10.0, 20.0)        # texture colour within the first ΔE of the fill is fill, beyond the second it is not
+MAJORITY = 0.5               # a fill colour on less than this share of the stroke centres yields to one on more
+CORE_DE = 20.0               # a fill this far from the core-mask colour may be the surroundings the matte kept …
+CORE_SHARE = 0.10            # … when this share of the solid pixels is within SIM_DE[1] of it (the glyphs)
+UNFILLED = 0.2               # stroke centres the fill does not draw over this share: a second colour (confidence × 0.8)
 EFFECT_FRAMES = 4            # frames averaged for the effect crop
 CAP_WORK = 48.0              # effects are searched at a scale where the cap height is at most this
 OPACITIES = np.round(np.arange(0.05, 1.0001, 0.05), 2)
@@ -174,6 +178,15 @@ def interior_mask(alpha, stroke_w: float) -> np.ndarray:
     return (a >= np.percentile(v, 90)) & (a > INK_A) if v.size else np.zeros(a.shape, bool)
 
 
+def stroke_centres(alpha, stroke_w: float) -> np.ndarray:
+    """The strokes' centre lines: ridge pixels of the depth inside α > 0.5, in the fill interior and no deeper than
+    0.75 × stroke width. A blob baked into the texture has its ridge deeper, so the rim of it the interior keeps has
+    none: a colour's share of these pixels is its share of the glyph area."""
+    a = _a01(alpha)
+    dt = cv2.distanceTransform(np.pad(a > SOLID_A, 1).astype(np.uint8), cv2.DIST_L2, 3)[1:-1, 1:-1]
+    return interior_mask(a, stroke_w) & (dt <= max(2.0, THICK_K * stroke_w)) & (dt >= cv2.dilate(dt, _K3) - 1e-4)
+
+
 def _mode(lab: np.ndarray) -> np.ndarray:
     """The dominant colour: the densest sample (most neighbours within ΔE 8), then the median of the pixels within
     ΔE 15 of it (three rounds). A minority of another colour (a blob baked into the texture) does not pull it."""
@@ -192,7 +205,9 @@ def _mode(lab: np.ndarray) -> np.ndarray:
 def fill_colour(rgba, stroke_w: float, plate_rgb=None) -> tuple[str, np.ndarray, float]:
     """The fill: the dominant Lab colour of the matted foreground over the glyph interior (α > 0.5 eroded by 0.35 ×
     stroke width), left out: pixels deep inside thick blobs and, given the local plate, pixels that are plate
-    (ΔE < 12). Returns (hex, Lab, spread = p90 ΔE76 of the interior from it)."""
+    (ΔE < 12). A line in two colours (a word in another): the density peak may be the minority (a flat colour beats
+    a ramp), so a colour on less than half the stroke centres yields to the mode of the rest when that is on more
+    than half. Returns (hex, Lab, spread = p90 ΔE76 of the interior from it)."""
     rgba = np.asarray(rgba)
     a = rgba[..., 3].astype(np.float32) / 255.0
     F = rgba[..., :3].astype(np.float32)
@@ -209,6 +224,12 @@ def fill_colour(rgba, stroke_w: float, plate_rgb=None) -> tuple[str, np.ndarray,
             m = fg
     lab = srgb_to_lab(F[m])
     c = _mode(lab)
+    cen = srgb_to_lab(F[m & stroke_centres(a, stroke_w)])
+    if len(cen) >= 20 and float((delta_e(cen, c) < SIM_DE[1]).mean()) < MAJORITY:   # glyph area, not density
+        rest = lab[delta_e(lab, c) >= SIM_DE[1]]
+        c2 = _mode(rest) if len(rest) >= 20 else c
+        if float((delta_e(cen, c2) < SIM_DE[1]).mean()) > MAJORITY:
+            c = c2
     spread = float(np.percentile(delta_e(lab, c), 90))
     return rgb8_to_hex(lab_to_srgb(c)), c, spread
 
@@ -222,6 +243,26 @@ def contrast_glyphs(F: np.ndarray, behind) -> np.ndarray:
     base = float(np.median(border))
     glyph = de > base + max(FG_DE, 4.5 * float(np.median(np.abs(border - base))))
     return glyph if glyph.sum() >= 20 else de >= np.percentile(de, 90)
+
+
+def core_fill(F, alpha, fill_lab, core_lab, plate=None) -> np.ndarray | None:
+    """The fill (Lab) when the one measured is the text's surroundings, which the matte kept (a dark box, a white
+    note, a pink globe in a glyph; the plate estimate missed them). The core-mask colour (the most contrasting decile
+    against the background; no sole arbiter: it can be the plate, or a shape kept in the texture) breaks the tie
+    between the two polarities, on the texture's own evidence: a fill over ΔE 20 from it yields to the dominant
+    colour of the solid pixels within ΔE 20 of it when those are 10 % of the solid pixels or more, and, given the
+    local plate (N×3, its known pixels under the box), the core stands out from it by ΔE 20 more than the fill does
+    (surroundings are background-like; a missed shape in the core's colour behind the glyphs is not). None
+    otherwise."""
+    if float(delta_e(fill_lab, core_lab)) <= CORE_DE:
+        return None
+    if plate is not None and len(plate) >= 20:
+        pl = srgb_to_lab(np.asarray(plate, np.float32))
+        if float(np.median(delta_e(pl, core_lab)) - np.median(delta_e(pl, fill_lab))) < CORE_DE:
+            return None
+    lab = srgb_to_lab(np.asarray(F, np.float32)[_a01(alpha) > SOLID_A])
+    near = lab[delta_e(lab, core_lab) < SIM_DE[1]]
+    return _mode(near) if len(near) >= max(20, CORE_SHARE * len(lab)) else None
 
 
 def _xy(mask: np.ndarray):
@@ -610,10 +651,12 @@ def _scaled(arrs, f: float):
 
 
 def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text: str, *,
-                       others_at: Callable | None = None) -> tuple[TextStyle, str, dict]:
+                       others_at: Callable | None = None, core: str | None = None) -> tuple[TextStyle, str, dict]:
     """(TextStyle, fill hex, info) for a text element from its matted texture (un-premultiplied RGBA, padding 0) and
-    the frames / plate it was matted from. info: stroke_px, cap_px, spread, centres, alpha (the fill's glyph
-    coverage, unfaded) and seconds."""
+    the frames / plate it was matted from. core: today's core-mask colour (hex), the tie-breaker when the fill
+    measured may be the surroundings the matte kept (`core_fill`). info: stroke_px, cap_px, spread, unfilled (the
+    share of stroke centres the fill does not draw), centres, alpha (the fill's glyph coverage, unfaded) and
+    seconds."""
     t0 = time.perf_counter()
     rgba = np.asarray(rgba)
     meta = meta or TextureMeta(method="binary", frames=[], confidence=matting.METHOD_FACTOR["binary"])
@@ -640,6 +683,15 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
             a_tex = a_tex * fg
     sw0 = stroke_width(a_tex)
     hexv, lab, spread = fill_colour(np.dstack([F, a_tex * 255.0]), sw0, B_box)
+    known = B_box[crop[2][pe:pe + h, pe:pe + w]] if B_box is not None else None   # plate pixels with data
+    glyph = core_fill(F, a_tex, lab, srgb_to_lab(np.float32(hex_to_rgb8(core))), known) if core else None
+    if glyph is not None:   # the fill was the surroundings the matte kept: the glyphs are the solid pixels not them
+        a_tex = ((a_tex > SOLID_A) & (delta_e(srgb_to_lab(F), lab) >= FG_DE)).astype(np.float32)
+        matted = False
+        sw0 = stroke_width(a_tex)
+        m = interior_mask(a_tex, sw0)
+        lab, hexv = glyph, rgb8_to_hex(lab_to_srgb(glyph))
+        spread = float(np.percentile(delta_e(srgb_to_lab(F[m]), lab), 90)) if m.any() else spread
     sim = _similarity(F, lab)
     # glyph interiors at any fade level: α near its local maximum
     plateau = (a_tex > INK_A) & (a_tex >= 0.85 * cv2.dilate(a_tex, _disc(2)))
@@ -664,6 +716,8 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     fill_map = render_gradient(grad, w, h).astype(np.float32) if grad is not None else None
     if fill_map is not None:
         sim = np.clip((SIM_DE[1] - delta_e(srgb_to_lab(F), srgb_to_lab(fill_map))) / (SIM_DE[1] - SIM_DE[0]), 0.0, 1.0)
+    centres = stroke_centres(a_tex, sw0)   # those the fill (flat or ramp) does not draw: a second colour
+    unfilled = float((sim[centres] <= 0).mean()) if centres.sum() >= 20 else 0.0
     a_g = _fill_coverage(a_n, F, fill_map if fill_map is not None else lab_to_srgb(lab).astype(np.float32), sim)
     cap = cap_height(a_g, lines)
     effects: list[TextEffect] = []
@@ -688,12 +742,13 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
             effects = fit_effects(I, B, alpha_p, fill_p, cap, valid=valid, fade=fade_p)
     sw = stroke_width(a_g)
     conf = float(np.clip(meta.confidence, 0.0, 1.0)) if matted else min(0.5, float(meta.confidence))
-    if spread > GRADIENT_DE and grad is None:
+    if (spread > GRADIENT_DE and grad is None) or unfilled > UNFILLED:
         conf *= 0.8
     style = TextStyle(fill=grad, fade=fade, effects=effects, stroke_ratio=round(sw / cap, 4) if cap > 0 and sw > 0 else None,
                       confidence=round(conf, 3))
     info = {"stroke_px": round(sw, 3), "cap_px": round(cap, 3), "spread": round(spread, 3),
-            "centres": glyph_centres(a_g, text or ""), "alpha": a_g, "seconds": round(time.perf_counter() - t0, 4)}
+            "unfilled": round(unfilled, 3), "centres": glyph_centres(a_g, text or ""), "alpha": a_g,
+            "seconds": round(time.perf_counter() - t0, 4)}
     return style, hexv, info
 
 
@@ -738,7 +793,7 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         meta = TextureMeta(**p["texture_meta"]) if p.get("texture_meta") else None
         try:
             return k, *analyse_text_style(p["canon"], meta, frames, plate, p["raw"], p.get("text") or "",
-                                          others_at=others_for(k)), None
+                                          others_at=others_for(k), core=p.get("core_color") or p.get("color")), None
         except Exception as e:   # fail soft: today's core-mask colour, no style, a code (the detail is logged)
             log.warning("text style failed for %s: %s", k, describe(e, trace=True))
             return k, None, None, None, STYLE_FAILED

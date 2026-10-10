@@ -7,6 +7,7 @@ out/
 .superpowers/
 .worktrees/
 data/
+!tests/data/
 .env
 eval/
 keepframe/ae/static/keepframe.zxp
