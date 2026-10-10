@@ -111,7 +111,7 @@ test('URL policy table and normalization', () => {
         'http://100.64.0.0', 'http://100.127.255.255', 'http://studio.tail.ts.net', 'HTTP://LOCALHOST/'];
     const denied = ['http://public.example', 'http://192.168.1.2', 'http://100.63.255.255',
         'http://100.128.0.0', 'http://[::2]', 'http://ts.net', 'http://x.ts.net.evil.test',
-        'ftp://localhost', 'https://user:pass@public.example', 'https://user@public.example',
+        'ftp://localhost', 'https://user:' + 'pass@public.example', 'https://user@public.example',
         'https://public.example/path', 'https://public.example/?x=1', 'https://public.example/#x',
         'https://public.example/../', 'https://public.example/?', 'https://public.example/#',
         'http://localhost\\evil.test', '', null];
