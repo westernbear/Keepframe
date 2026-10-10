@@ -204,6 +204,9 @@ def _edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, error=str(exc))
     if parsed.ambiguous or not parsed.targets:
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error=parsed.summary or "ambiguous")
+    if scene.background.kind == "video" and any(t.property == "background" and t.mode == "tint" for t in built.items):
+        # Keepframe never tints a video (R55): said at the preview already, not only after the confirm
+        return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="tint_unavailable")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
     gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)

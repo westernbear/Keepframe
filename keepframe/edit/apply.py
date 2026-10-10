@@ -170,7 +170,8 @@ def _next_asset(scene_dir: Path, eid: str, suffix: str) -> Path:
 
 def _background_image(scene_dir: Path, attachment) -> str:
     """The attached PNG as a new flat asset `assets/background.img<n>.png` (never an existing name); refused
-    (`invalid_attachment`) unless it decodes as a PNG within MAX_BACKGROUND_PX."""
+    (`invalid_attachment`) unless it decodes as a PNG within MAX_BACKGROUND_PX. A PNG with transparency is stored
+    flattened onto black, as the composition draws it (the numpy compositor, AE and Lottie then draw the same)."""
     from PIL import Image
     if attachment is None:
         raise ValueError("background image edit needs an attachment")
@@ -181,6 +182,12 @@ def _background_image(scene_dir: Path, attachment) -> str:
         with Image.open(io.BytesIO(data)) as im:
             if im.format != "PNG" or im.size[0] * im.size[1] > MAX_BACKGROUND_PX:
                 raise AssetAPIError("invalid_attachment")
+            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                rgba = im.convert("RGBA")
+                flat = Image.alpha_composite(Image.new("RGBA", rgba.size, (0, 0, 0, 255)), rgba).convert("RGB")
+                out = io.BytesIO()
+                flat.save(out, "PNG")
+                data = out.getvalue()
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
         raise AssetAPIError("invalid_attachment") from exc
     if cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) is None:
