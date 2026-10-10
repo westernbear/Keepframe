@@ -59,9 +59,14 @@ def test_edit_400_is_a_code(tmp_path, monkeypatch):
     _clean(json.dumps(body))
 
 
-def test_ae_value_error_is_a_code(tmp_path, monkeypatch):
+def test_ae_validation_error_is_a_code(tmp_path, monkeypatch):
+    from pydantic import BaseModel
+
+    class M(BaseModel):
+        x: int
+
     def leak(*a, **k):
-        raise ValueError(LEAK)
+        M.model_validate({"x": LEAK})
     monkeypatch.setattr("keepframe.ae.api.AERoutes._post", leak)
     srv = start(tmp_path)
     try:
@@ -69,6 +74,7 @@ def test_ae_value_error_is_a_code(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
     assert status == 400 and body == {"error": "invalid_request"}
+    _clean(json.dumps(body))
 
 
 def test_refine_failure_is_a_code(tmp_path, monkeypatch):

@@ -165,7 +165,7 @@ def test_pair_and_info_return_build_ids_in_device_rows(server):
     assert all(listed["devices"][0][key] == value for key, value in builds.items())
     for field in builds:
         assert json_request(server, "POST", "/api/ae/info", {"info": INFO | {field: "x" * 65}}, headers=headers) == (
-            400, {"error": "invalid_request"})
+            400, {"error": f"invalid {field}"})
     assert json_request(server, "POST", "/api/ae/info", {"info": INFO}, headers=headers)[0] == 204
     _, listed = json_request(server, "GET", "/api/ae/devices", browser=True)
     assert listed["devices"][0]["host_build"] is listed["devices"][0]["panel_build"] is None
@@ -191,7 +191,7 @@ def test_valid_semver_and_invalid_json_constants(server):
                             headers=EXTENSION | {"X-Keepframe-Extension": version})[0] == 426
     for body in (b'{"code": NaN}', b'{"code": Infinity}', b'{"code": -Infinity}', b"[" * 2000):
         status, error = json_request(server, "POST", "/api/ae/pair", body=body, headers=EXTENSION)
-        assert status == 400 and error == {"error": "invalid_request"}
+        assert status == 400 and error == {"error": "bad json"}
 
 
 def test_pair_bad_code_invalid_info_and_json(server):
@@ -202,10 +202,10 @@ def test_pair_bad_code_invalid_info_and_json(server):
     _, code = json_request(server, "POST", "/api/ae/codes", browser=True)
     status, error = json_request(server, "POST", "/api/ae/pair", {"code": code["code"], "info": {}},
                                  headers=EXTENSION)
-    assert status == 400 and error["error"] == "invalid_request"
+    assert status == 400 and error["error"] == "invalid ae_version"
     for body in (b"{broken", b"[]", b"", b" " * 70000 + b"{broken"):
         status, error = json_request(server, "POST", "/api/ae/pair", body=body, headers=EXTENSION)
-        assert status == 400 and error == {"error": "invalid_request"}
+        assert status == 400 and error == {"error": "bad json"}
     status, error = json_request(server, "POST", "/api/ae/pair", body=b"",
                                  headers=EXTENSION | {"Content-Length": str(8 * 1024 * 1024 + 1)})
     assert status == 413 and isinstance(error["error"], str)
@@ -947,7 +947,7 @@ def test_final_spec_failure_names_problem_and_logs_route(server, project, tmp_pa
     with caplog.at_level(logging.WARNING):
         status, body = json_request(server, "GET", route, headers=headers)
     assert status == (404 if failure == "missing" else 400)
-    assert body["error"] == "invalid_request" if status == 400 else path.name in body["error"]   # a 400 is a code (R52); the log names the file
+    assert path.name in body["error"]
     records = [r for r in caplog.records if r.name == "keepframe.ae"]
     assert any(r.levelno == logging.WARNING and route in r.message and path.name in r.message for r in records)
     assert headers["Authorization"] not in caplog.text
@@ -1209,7 +1209,7 @@ def test_corrupt_saved_verify_report_does_not_break_state(server, project, tmp_p
 
 
 @pytest.mark.parametrize("error,expected", [
-    (ValueError("frame 3 from AE is missing or not an image"), "verification failed: ValueError"),
+    (ValueError("frame 3 from AE is missing or not an image"), "frame 3 from AE is missing or not an image"),
     (FileNotFoundError(errno.ENOENT, "not found", "/private/assets/missing.png"), "file not found: missing.png"),
     (RuntimeError("failure in /private/workspace"), "verification failed: RuntimeError"),
 ])

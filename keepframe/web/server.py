@@ -1085,7 +1085,6 @@ def make_server(
                     payload["analysis"] = read_manifest(state.root, v.analysis_file) if v.analysis_file else None
                     return self._json(200, payload)
                 except Exception as e:
-                    log.exception("state failed project=%s scene=%s", pid, sid)
                     return self._fail(500, e)
 
             if u.path == "/api/job":
@@ -1129,7 +1128,6 @@ def make_server(
                             boxes[el.id] = [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)]
                     return self._json(200, {"size": list(scene.size), "boxes": boxes})
                 except Exception as e:
-                    log.exception("bboxes failed project=%s scene=%s", pid, sid)
                     return self._fail(500, e)
 
             parts = u.path.strip("/").split("/")
@@ -1155,7 +1153,6 @@ def make_server(
                 try:
                     return self._send(200, state.recon_png(int(parts[2]), ver), "image/png", cache="public, max-age=604800")
                 except Exception as e:
-                    log.exception("recon frame failed project=%s scene=%s", pid, sid)
                     return self._fail(500, e)
 
             if parts and parts[0] == "assets" and len(parts) >= 2:
@@ -1638,7 +1635,6 @@ def make_server(
                     state._tex.clear()
                     return self._json(200, {"version": json.loads(v.model_dump_json())})
                 except Exception as e:
-                    log.exception("keep update failed project=%s scene=%s", project_id, scene_id)
                     return self._fail(500, e)
 
             if u.path == "/api/edit":
@@ -1671,7 +1667,6 @@ def make_server(
                         version=data.get("v"),
                     )
                 except Exception as e:
-                    log.exception("edit failed project=%s scene=%s", project_id, scene_id)
                     return self._fail(400, e, "invalid_request")
                 if result.status == "done" and result.version is not None:
                     write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
@@ -1792,7 +1787,6 @@ def make_server(
                         )
                         append_turn(root, resolved_scene_id, message, turn)
                 except Exception as e:
-                    log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
                     return self._fail(400, e, "invalid_request")
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
