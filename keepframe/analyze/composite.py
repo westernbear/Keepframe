@@ -83,9 +83,10 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
 
 
 def video_source_frame(offset: int, rate: float = 1.0) -> int:
-    """The source frame a video layer shows `offset` frames after its start when it plays at `rate` (the template's
-    seek rounds the same way)."""
-    return int(math.floor(max(offset, 0) * rate + 0.5))
+    """The source frame a video layer shows `offset` frames after its start when it plays at `rate`: floor(offset ·
+    rate), as AE's time stretch shows it (no half-frame offset; 1e-6 absorbs float error). The template's seek picks
+    the same frame."""
+    return int(math.floor(max(offset, 0) * rate + 1e-6))
 
 
 def _video_frame(cache: dict, scene_dir: Path, rel: str, size: tuple[int, int], alpha: bool, i: int) -> np.ndarray | None:

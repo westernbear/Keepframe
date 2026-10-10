@@ -213,17 +213,45 @@ def test_compositor_plays_retimed_video_at_its_rate(tmp_path):
             assert np.abs(img[20, 14] - bars[2 * (f - 1), 0, 0]).max() <= 6, f
 
 
-@pytest.mark.browser
-def test_retimed_video_frames_match_in_chromium(tmp_path):
+def test_video_source_frame_matches_ae_time_stretch():
+    """Final review N1: AE shows source frame floor(offset · rate) (time stretch 100 / rate, no half-frame offset);
+    numpy and the template pick the same frame at every rate (identical to offset at rate 1)."""
+    import math
+    from keepframe.analyze.composite import video_source_frame
+    for rate in (0.5, 0.75, 1.0, 1.5, 2.0, 1 / 3):
+        assert [video_source_frame(d, rate) for d in range(24)] == [math.floor(d * rate + 1e-9) for d in range(24)], rate
+    assert video_source_frame(-3, 2.0) == 0
+
+
+def test_compositor_plays_slowed_video_at_its_rate(tmp_path):
+    """×0.5: the plate shows source frame floor(f / 2), the sprite floor((f − start) / 2), as AE does."""
     from keepframe.analyze.composite import composite_scene
     n = 12
-    scene = _retimed(tmp_path, n)
+    scene = _retimed(tmp_path, n, 0.5)
     bars = _bars(n, 64, 48)
-    frames = [0, 1, 3, 5, 2]
+    assert (scene.frames, scene.element("e1").visible) == (23, (4, 22))
+    cache = {}
+    for f in (1, 3, 9, 22, 4, 5):
+        img = composite_scene(scene, tmp_path, f, cache) * 255
+        assert np.abs(img[2, 2] - bars[f // 2, 0, 0]).max() <= 3, f
+        if f >= 4:
+            assert np.abs(img[20, 14] - bars[(f - 4) // 2, 0, 0]).max() <= 6, f
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("speed, frames", [(2.0, [0, 1, 3, 5, 2]), (0.5, [1, 3, 9, 22, 5])])
+def test_retimed_video_frames_match_in_chromium(tmp_path, speed, frames):
+    import math
+    from keepframe.analyze.composite import composite_scene
+    n = 12
+    scene = _retimed(tmp_path, n, speed)
+    bars = _bars(n, 64, 48)
+    start = scene.element("e1").visible[0]
+    src = lambda d: min(n - 1, math.floor(d * speed + 1e-9))
     _, imgs = _chromium(scene, tmp_path, frames, tmp_path / "r")
     for f, img in zip(frames, imgs):
-        assert np.abs(img[2, 2] - bars[2 * f, 0, 0]).max() <= 3, f                 # the plate at twice the speed
-        if f >= 1:
-            assert np.abs(img[20, 14] - bars[2 * (f - 1), 0, 0]).max() <= 6, f     # so is the sprite
+        assert np.abs(img[2, 2] - bars[src(f), 0, 0]).max() <= 3, f                # the plate at the edited speed
+        if f >= start:
+            assert np.abs(img[20, 14] - bars[src(f - start), 0, 0]).max() <= 6, f  # so is the sprite
         ref = composite_scene(scene, tmp_path, f) * 255
         assert np.abs(img[2:46, 2:62] - ref[2:46, 2:62]).max() <= 6, f
