@@ -40,6 +40,8 @@ STROKE_WIDTHS = (1, 2, 3, 4, 6, 8)
 STROKE_MAX = 0.15            # × cap height
 RING_SPREAD = 8.0            # ΔE76 spread of a stroke ring's colour (p75 from its median)
 EFFECT_FILL_DE = 10.0        # an effect in the fill's own colour is a heavier weight or a misregistration, not an effect
+# ponytail: refuses a true black shadow under dark low-chroma text (fill L* below ~40); upgrade: judge "own blur" by
+# offset ≈ 0 and small σ, not by fill distance.
 SHADOW_FILL_DE = 40.0        # … a shadow this close: the glyphs' own blur (ig3 'Your idea', ΔE 35.9 black on navy)
 FG_DE = 12.0                 # texture pixels this close to the local plate are plate, not glyph (matting's threshold)
 THICK_K = 0.75               # fill pixels deeper than this × stroke width inside the solid mask are a blob, not glyph

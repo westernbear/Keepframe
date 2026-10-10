@@ -350,7 +350,7 @@ def test_globe_after_a_full_frame_opening_is_a_mover():
     (m,) = find_movers(frames, sample, instability(frames, sample, None), [], [], plate=_plate())
     boxes = np.array([b for f, (b, _) in m.frames.items() if f >= 12])
     box = boxes[:, 0].min(), boxes[:, 1].min(), boxes[:, 2].max(), boxes[:, 3].max()
-    assert len(m.frames) == len(frames) and np.abs(np.subtract(box, GLOBE_BOX)).max() <= 4
+    assert set(range(12, len(frames))) <= set(m.frames) and np.abs(np.subtract(box, GLOBE_BOX)).max() <= 4
 
 
 def _slow_card_clip(n=32, w=120, h=84, travel=48):

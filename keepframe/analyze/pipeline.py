@@ -800,7 +800,7 @@ def analyze_scene_frames(
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
                             props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
                             props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
@@ -1023,7 +1023,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [m for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
                             props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
                             props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)

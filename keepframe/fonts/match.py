@@ -1752,8 +1752,10 @@ def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
     # ponytail: a category prior over a pixel score; the real cause is the input mask (second-colour words at zero
     # coverage, binary core_fill, OCR dropping spaces) — Stage B reads text as text
     cat = {x.fam.family: x.fam.category for x in searches}
+    up = {x.fam.family for x in searches if any(f.source == "uploaded" for f in x.fam.faces)}   # the user's own font stays first
     best_sans = next((f for f in fits if cat[f.family] in SANS), None)
-    if best_sans is not None and cat[fits[0].family] not in SANS and fits[0].score - best_sans.score < SANS_MARGIN:
+    if (best_sans is not None and cat[fits[0].family] not in SANS and fits[0].family not in up
+            and fits[0].score - best_sans.score < SANS_MARGIN):
         fits.remove(best_sans)
         fits.insert(0, best_sans)
     margin = fits[0].score - fits[1].score if len(fits) > 1 else 1.0

@@ -123,6 +123,9 @@ const STRINGS = {
     "err.internalError": "서버 내부 오류입니다. 서버 로그를 확인하세요",
     "err.invalidRequest": "요청이 올바르지 않습니다",
     "err.requestTooLarge": "요청이 너무 큽니다",
+    "err.agentFailed": "에이전트 요청이 실패했습니다. LLM 설정과 서버 로그를 확인하세요.",
+    "err.modelListFailed": "모델 목록을 불러오지 못했습니다. Base URL과 API 키를 확인하세요.",
+    "err.invalidSettings": "설정 값이 올바르지 않습니다.",
     "agent.renderApprove": "승인",
     "agent.renderDownload": "{kind} 다운로드",
     "workflow.title": "작업 단계",
@@ -620,6 +623,9 @@ const STRINGS = {
     "err.internalError": "Internal server error. Check the server log",
     "err.invalidRequest": "The request is invalid",
     "err.requestTooLarge": "The request is too large",
+    "err.agentFailed": "The agent request failed. Check the LLM settings and the server log.",
+    "err.modelListFailed": "Could not load the model list. Check the Base URL and API key.",
+    "err.invalidSettings": "The settings are invalid.",
     "agent.renderApprove": "Approve",
     "agent.renderDownload": "Download {kind}",
     "workflow.title": "Workflow stages",
@@ -1012,6 +1018,9 @@ const ERROR_CODES = {   // errors that arrive as codes (the detail stays in the 
   invalid_request: "err.invalidRequest",
   request_too_large: "err.requestTooLarge",
   invalid_length: "err.invalidRequest",
+  agent_failed: "err.agentFailed",
+  model_list_failed: "err.modelListFailed",
+  invalid_settings: "err.invalidSettings",
 };
 
 function errorText(code) {

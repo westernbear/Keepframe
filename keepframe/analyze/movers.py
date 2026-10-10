@@ -29,8 +29,8 @@ CLOSE_PX = 2              # closing radius (work px); at 5 a sprite's trail 20 p
 # ponytail: a trail within ~2 × CLOSE_PX work px still joins the core and its track is claimed; upgrade: take the
 # pixels one moving, unclaimed track explains out of u before closing.
 RING_PX = 8               # width of the ring that must stay stable (work px)
-RING_U = 0.39             # median instability of that ring; at 0.1 ig2's globe failed: its full-frame opening leaves
-#                           every pixel unstable in 18 of 48 samples (ring median 0.375)
+RING_U = 0.39             # median instability of that ring; at 0.1 ig2's globe failed: its full-frame opening
+#                           leaves every pixel unstable in 18 of 48 samples (ring median 0.375)
 # ponytail: ring pixels are below min_unstable (0.40), so this test now only stops rings almost that unstable; plate
 # animation that leaves the ring unstable < 39 % of the time is left to max_area and the unstable share. Upgrade:
 # judge the ring per sample (count only the samples in which the ring is stable).
@@ -298,8 +298,9 @@ def _tight(x0, y0, m):
 def find_movers(frames, sample, u, obj_tracks, shape_tracks, *, plate, text_tracks=(), established=None,
                 min_area=0.04, min_unstable=0.40, max_area=0.60) -> list[Mover]:
     """Components of u ≥ min_unstable (closed 2 px, insides filled) with area ≥ min_area, bbox ≤ max_area, a stable
-    8 px ring and ≥ 30 % unstable in ≥ min_unstable of the samples. The plate behind is `plate` with the component
-    dilated by REFILL_PX refilled from its ring. Each mover claims the object/shape tracks ≥ 80 % inside that
+    8 px ring that is near-off (median u < RING_U; ring pixels are already below min_unstable, so only rings almost
+    that unstable fail) and ≥ 30 % unstable in ≥ min_unstable of the samples. The plate behind is `plate` with the
+    component dilated by REFILL_PX refilled from its ring. Each mover claims the object/shape tracks ≥ 80 % inside that
     dilated component in ≥ 60 % of their frames (never text). Per frame: dilate((ΔE(I_f, plate behind) > thr) ∩ bbox
     ∪ claimed, 2) minus text boxes and other tracks' regions, where thr is 8, or KNOWN_DE inside a polynomial refill,
     but at least NOISE_K × the measured noise; pieces smaller than a speck are dropped, claimed pixels that match the

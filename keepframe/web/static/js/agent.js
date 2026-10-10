@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261010b";
-import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010b";
-import { initAECard } from "/static/js/ae.js?v=20261010b";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261010b";
+} from "/static/js/api.js?v=20261010c";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010c";
+import { initAECard } from "/static/js/ae.js?v=20261010c";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261010c";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261010b";
+} from "/static/js/playback.js?v=20261010c";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -808,7 +808,7 @@ async function pollCorrection(previewSceneId) {
   while (true) {
     const job = await fetchReviewJob(projectId, previewSceneId);
     if (job.status === "done" && job.version) return job;
-    if (job.status === "error") throw new Error(job.error || T("review.error"));
+    if (job.status === "error") throw new Error(errorText(job.error) || T("review.error"));
     if (!["running", "queued"].includes(job.status)) throw new Error(T("agent.failed"));
     await new Promise((resolve) => setTimeout(resolve, CORRECTION_POLL_INTERVAL_MS));
   }

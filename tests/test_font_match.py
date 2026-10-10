@@ -488,3 +488,30 @@ def test_failed_second_round_keeps_the_first_rounds_fit(monkeypatch):
     monkeypatch.setattr(M._Search, "round", boom)
     fits, _ = match_font(s.alpha, s.text, REG, **_inputs(s.alpha, s.text))
     assert len(fits) == 3 and s.family in [f.family for f in fits] and all(f.weight > 0 for f in fits)
+
+
+def _kept_fits(monkeypatch, source):
+    """_fit_kept over two stub families: a script family (score .80) 0.03 ahead of a bundled sans (.77)."""
+    import types
+    from keepframe.fonts import match as m
+    scores = {"Brand Script": 0.80, "Plain Sans": 0.77}
+
+    class Stub:
+        def __init__(self, obs, fam, start):
+            self.fam, self.score = fam, scores[fam.family]
+        def round(self, rnd): return self.score
+        def state(self): return None
+        def restore(self, s): pass
+        def result(self): return FontFit(self.fam.family, 400, 40.0, 0.0, 0.0, self.score, 0.0, 0.0)
+
+    def fam(name, category, src):
+        return types.SimpleNamespace(family=name, category=category, faces=(types.SimpleNamespace(source=src),))
+    monkeypatch.setattr(m, "_Search", Stub)
+    kept = [("Brand Script", fam("Brand Script", "script", source), None, 0.8),
+            ("Plain Sans", fam("Plain Sans", "neo_grotesque", "bundled"), None, 0.77)]
+    return [f.family for f in m._fit_kept(None, kept)[0]]
+
+
+def test_sans_prior_swaps_a_bundled_family_but_not_an_uploaded_one(monkeypatch):
+    assert _kept_fits(monkeypatch, "bundled") == ["Plain Sans", "Brand Script"]
+    assert _kept_fits(monkeypatch, "uploaded") == ["Brand Script", "Plain Sans"]

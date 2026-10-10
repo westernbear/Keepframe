@@ -47,7 +47,7 @@ def test_state_500_is_a_code(tmp_path, monkeypatch):
     _clean(body.decode())
 
 
-def test_edit_400_is_a_code(tmp_path, monkeypatch):
+def test_edit_unexpected_failure_is_a_500_code(tmp_path, monkeypatch):
     ws, scene = _project(tmp_path)
     monkeypatch.setattr("keepframe.web.server.run_edit", boom)
     srv = start(ws)
@@ -55,8 +55,37 @@ def test_edit_400_is_a_code(tmp_path, monkeypatch):
         code, body = _post(srv, "/api/edit", {"project": "p1", "scene": scene.id, "prompt": "make it red"}, "same")
     finally:
         srv.shutdown()
+    assert code == 500 and body == {"error": "internal_error"}
+    _clean(json.dumps(body))
+
+
+def test_edit_value_error_is_a_400_code(tmp_path, monkeypatch):
+    ws, scene = _project(tmp_path)
+
+    def bad(*a, **k):
+        raise ValueError(LEAK)
+    monkeypatch.setattr("keepframe.web.server.run_edit", bad)
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/edit", {"project": "p1", "scene": scene.id, "prompt": "make it red"}, "same")
+    finally:
+        srv.shutdown()
     assert code == 400 and body == {"error": "invalid_request"}
     _clean(json.dumps(body))
+
+
+def test_agent_turn_failure_is_a_502_code(tmp_path, monkeypatch):
+    from keepframe.session.llm import NullClient
+    ws, scene = _project(tmp_path)
+    monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
+    monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("secret /home/x/key")))
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/agent", {"project": "p1", "scene": scene.id, "message": "hi"}, "same")
+    finally:
+        srv.shutdown()
+    assert code == 502 and body == {"error": "agent_failed"}
+    assert "secret" not in json.dumps(body) and "/home/x" not in json.dumps(body)
 
 
 def test_ae_validation_error_is_a_code(tmp_path, monkeypatch):
@@ -122,3 +151,16 @@ def test_admin_login_2mib_body_is_413(tmp_path):
     finally:
         srv.shutdown()
     assert (status, body) == (413, {"error": "request_too_large"})
+
+
+def test_admin_invalid_settings_does_not_echo_the_api_key(tmp_path, caplog):
+    from tests.test_admin_llm import _api, _login, start_admin
+    srv = start_admin(tmp_path)
+    try:
+        cookie = _login(srv)
+        status, body = _api(srv, "/admin/api/llm", cookie, method="POST",
+                            body={"settings": {"provider": "openai", "api_key": {"k": "sk-SECRET-123"}}})
+    finally:
+        srv.shutdown()
+    assert (status, body) == (400, {"error": "invalid_settings"})
+    assert "sk-SECRET-123" not in json.dumps(body) and "sk-SECRET-123" not in caplog.text

@@ -1,5 +1,5 @@
-import { fetchProjects } from "/static/js/api.js?v=20261010b";
-import { T, Tf, applyI18n, errorText } from "/static/js/i18n.js?v=20261010b";
+import { fetchProjects } from "/static/js/api.js?v=20261010c";
+import { T, Tf, applyI18n, errorText } from "/static/js/i18n.js?v=20261010c";
 
 const DEFAULT_SCENE_ID = "s1";
 const ROW_GAP_PX = 8;

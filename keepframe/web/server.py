@@ -676,6 +676,7 @@ def make_server(
             if length < 0 or length > limit:
                 self._json(413, {"error": "request body is too large"})
                 return None
+            self.connection.settimeout(BODY_IDLE_S)
             try:
                 value = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -1678,8 +1679,10 @@ def make_server(
                         choices=data.get("choices"),
                         version=data.get("v"),
                     )
-                except Exception as e:
+                except ValueError as e:
                     return self._fail(400, e, "invalid_request")
+                except Exception as e:
+                    return self._fail(500, e)
                 if result.status == "done" and result.version is not None:
                     write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
                     state._preview.clear()
@@ -1798,8 +1801,10 @@ def make_server(
                             else agent.turn(ctx, message, history)
                         )
                         append_turn(root, resolved_scene_id, message, turn)
-                except Exception as e:
+                except ValueError as e:
                     return self._fail(400, e, "invalid_request")
+                except Exception as e:   # LLM auth / rate limit / network
+                    return self._fail(502, e, "agent_failed")
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):
