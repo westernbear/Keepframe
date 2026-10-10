@@ -21,6 +21,8 @@ baseline.
   1-D search −0.06…0.12 em step 0.01), size (cap height, then ±4 %), shear (−12…12° step 4, then ±2°; stored only
   when ≥ 4°). Every kept family gets the first round (past MIN_FITS, those whose coarse render trails the best by
   PRUNE are not fitted); the best ROUND2_K the second, and a failing second round keeps the first's fit.
+- A best family outside SANS (geometric, neo-grotesque, humanist) must beat the best SANS family by SANS_MARGIN, else
+  that one wins; stage 1's best SANS family is always kept and fitted.
 - Confidence 1.0 when the best score ≥ 0.80 and leads the next by ≥ 0.02, else 0.5.
 - Strings over 24 characters are matched on their longest run of whole words (one line).
 - Hangul with a best face that lacks it: `registry.hangul_fallback`, then its weight and scale refitted
@@ -80,6 +82,8 @@ WEIGHT_ITERS = (2, 2)            # … and its iterations …
 WEIGHT_STEP = 25.0               # … on a grid of this many wght units (shared by texts: glyphs cached per weight)
 ROUND2_K = 4                     # the second round of coordinate descent refines this many families
 MIN_FITS, PRUNE = 3, 0.15        # families past the first MIN_FITS whose coarse score trails the best by PRUNE: skipped
+SANS = frozenset({"geometric_sans", "neo_grotesque", "humanist_sans"})
+SANS_MARGIN = 0.05               # a best family outside SANS must beat the best SANS family's score by this
 MATCH_FAILED = "match_failed"    # font_guesses result codes (stage data and report messages carry no exception text)
 WORK_CAP = "work_cap"
 SCENE_RENDERS = 5000             # a scene's texts are matched (largest cap height first) until this many candidate renders
@@ -1671,6 +1675,8 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
     n_glyphs = len([c for c in obs.text if not c.isspace()])
     k1 = STAGE1_K if n_glyphs > SHORT_TEXT else 3 * STAGE1_K   # a few glyphs place a family less surely
     keep = first[:k1 if obs.positional else 3 * STAGE1_K]   # touching glyphs: the width tells less
+    sans = next((x for x in first if x[5].category in SANS), None)   # stage 1's best SANS family is always kept
+    keep += [sans] if sans is not None and sans not in keep else []
     second = []
     for d, w, s, t, name, fam in keep:
         try:
@@ -1679,7 +1685,8 @@ def _prefilter(obs: _Obs, registry: FontRegistry, k: int) -> list[tuple[str, _Fa
         except Exception as e:
             log.warning("font prefilter skipped %s: %s", name, describe(e))
     second.sort(key=lambda x: -x[0])
-    return [(name, fam, start, sc) for sc, name, fam, start in second[:k]]
+    top = second[:k] + [x for x in second[k:] if sans is not None and x[1] == sans[4]]
+    return [(name, fam, start, sc) for sc, name, fam, start in top]
 
 
 # --- public API ----------------------------------------------------------------------------------------------
@@ -1709,8 +1716,9 @@ def match_font(alpha, text: str, registry: FontRegistry, *, k: int = 3, stroke_r
 def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
     """The prefilter's families fitted (two rounds of coordinate descent), the top k and the confidence."""
     searches = []
+    sans = next((name for name, fam, _, _ in kept if fam.category in SANS), None)   # always fitted, like MIN_FITS
     for i, (name, fam, start, coarse) in enumerate(kept):
-        if i >= MIN_FITS and coarse < kept[0][3] - PRUNE:   # far behind the best coarse render: not fitted
+        if i >= MIN_FITS and coarse < kept[0][3] - PRUNE and name != sans:   # far behind the best coarse render
             continue
         try:
             search = _Search(obs, fam, start)
@@ -1735,6 +1743,13 @@ def _fit_kept(obs: _Obs, kept: list, k: int = 3) -> tuple[list[FontFit], float]:
     if not fits:
         raise LookupError("no font could be fitted")
     fits.sort(key=lambda f: -f.score)
+    # ponytail: a category prior over a pixel score; the real cause is the input mask (second-colour words at zero
+    # coverage, binary core_fill, OCR dropping spaces) — Stage B reads text as text
+    cat = {x.fam.family: x.fam.category for x in searches}
+    best_sans = next((f for f in fits if cat[f.family] in SANS), None)
+    if best_sans is not None and cat[fits[0].family] not in SANS and fits[0].score - best_sans.score < SANS_MARGIN:
+        fits.remove(best_sans)
+        fits.insert(0, best_sans)
     margin = fits[0].score - fits[1].score if len(fits) > 1 else 1.0
     conf = 1.0 if fits[0].score >= CONF_TOP and margin >= CONF_MARGIN else 0.5
     return fits[:k], conf
