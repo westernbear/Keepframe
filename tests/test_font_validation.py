@@ -132,7 +132,7 @@ def test_agent_job_callback_rejects_correct_without_new_version(font_project, mo
         srv.shutdown()
         srv.server_close()
 
-    assert code == 400 and "unknown job kind 'correct'" in body["error"]
+    assert code == 400 and body == {"error": "invalid_request"}   # the detail (unknown job kind 'correct') is in the log
     assert submitted == []
     _assert_unchanged(root, scene, project_before, scenes_before)
 

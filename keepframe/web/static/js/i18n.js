@@ -35,6 +35,7 @@ const STRINGS = {
     "fonts.error.bad_type": "TTF, OTF, WOFF2 파일만 올릴 수 있습니다",
     "fonts.error.bad_tables": "폰트 파일이 손상됐거나 읽을 수 없습니다",
     "fonts.error.unsupported": "라틴 문자나 한글이 없는 폰트입니다",
+    "fonts.error.too_many_fonts": "프로젝트당 폰트는 100개까지 올릴 수 있습니다",
     "fonts.error.failed": "폰트를 올리지 못했습니다. 다시 시도하세요",
     "fonts.error.load": "폰트 목록을 불러오지 못했습니다",
     "ae.title": "After Effects",
@@ -117,6 +118,14 @@ const STRINGS = {
     "agent.renderFontSubstituted": "올린 폰트가 없어 다른 폰트로 그렸습니다: {family} → {used}",
     "agent.renderFontFileMissing": "장면에 폰트 파일이 없어 프로젝트에 올린 폰트를 썼습니다: {family}",
     "agent.renderExportFailed": "프로젝트 ZIP을 만들지 못했습니다. 디스크 공간과 파일 권한을 확인하세요",
+    "err.jobFailed": "작업이 실패했습니다. 서버 로그를 확인하세요",
+    "err.correctionFailed": "수정을 적용하지 못했습니다. 서버 로그를 확인하세요",
+    "err.internalError": "서버 내부 오류입니다. 서버 로그를 확인하세요",
+    "err.invalidRequest": "요청이 올바르지 않습니다",
+    "err.requestTooLarge": "요청이 너무 큽니다",
+    "err.agentFailed": "에이전트 요청이 실패했습니다. LLM 설정과 서버 로그를 확인하세요.",
+    "err.modelListFailed": "모델 목록을 불러오지 못했습니다. Base URL과 API 키를 확인하세요.",
+    "err.invalidSettings": "설정 값이 올바르지 않습니다.",
     "agent.renderApprove": "승인",
     "agent.renderDownload": "{kind} 다운로드",
     "workflow.title": "작업 단계",
@@ -526,6 +535,7 @@ const STRINGS = {
     "fonts.error.bad_type": "Only TTF, OTF and WOFF2 files can be uploaded",
     "fonts.error.bad_tables": "The font file is damaged or unreadable",
     "fonts.error.unsupported": "The font has no Latin or Hangul letters",
+    "fonts.error.too_many_fonts": "A project can hold up to 100 fonts",
     "fonts.error.failed": "Could not upload the font. Try again",
     "fonts.error.load": "Could not load the font list",
     "ae.title": "After Effects",
@@ -608,6 +618,14 @@ const STRINGS = {
     "agent.renderFontSubstituted": "Uploaded font {family} is missing; drawn with {used}",
     "agent.renderFontFileMissing": "The {family} font file is not in the scene; used the project's uploaded font",
     "agent.renderExportFailed": "Could not write the project ZIP. Check disk space and file permissions",
+    "err.jobFailed": "The job failed. Check the server log",
+    "err.correctionFailed": "Could not apply the correction. Check the server log",
+    "err.internalError": "Internal server error. Check the server log",
+    "err.invalidRequest": "The request is invalid",
+    "err.requestTooLarge": "The request is too large",
+    "err.agentFailed": "The agent request failed. Check the LLM settings and the server log.",
+    "err.modelListFailed": "Could not load the model list. Check the Base URL and API key.",
+    "err.invalidSettings": "The settings are invalid.",
     "agent.renderApprove": "Approve",
     "agent.renderDownload": "Download {kind}",
     "workflow.title": "Workflow stages",
@@ -992,6 +1010,23 @@ function T(key) {
   return (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.ko[key] || key;
 }
 
+const ERROR_CODES = {   // errors that arrive as codes (the detail stays in the server log)
+  export_failed: "agent.renderExportFailed",
+  job_failed: "err.jobFailed",
+  correction_failed: "err.correctionFailed",
+  internal_error: "err.internalError",
+  invalid_request: "err.invalidRequest",
+  request_too_large: "err.requestTooLarge",
+  invalid_length: "err.invalidRequest",
+  agent_failed: "err.agentFailed",
+  model_list_failed: "err.modelListFailed",
+  invalid_settings: "err.invalidSettings",
+};
+
+function errorText(code) {
+  return ERROR_CODES[code] ? T(ERROR_CODES[code]) : code;
+}
+
 function Tf(key, vars) {
   return T(key).replace(/\{(\w+)\}/g, (_, name) => (vars && vars[name] != null ? String(vars[name]) : ""));
 }
@@ -1043,4 +1078,4 @@ if (document.readyState === "loading") {
   boot();
 }
 
-export { T, Tf, applyI18n, toggleLang, currentLang };
+export { T, Tf, errorText, applyI18n, toggleLang, currentLang };

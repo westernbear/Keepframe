@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 import numpy as np
+from pydantic import ValidationError
 
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
@@ -30,7 +31,7 @@ from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
-from keepframe.log import configure, get, scrub_paths
+from keepframe.log import configure, describe, get, scrub_paths
 from keepframe.review import corrections
 from keepframe.web.bodies import LengthError, content_length
 from keepframe.web.estimate import consume_token, estimate, probe_video
@@ -72,6 +73,9 @@ log = get("keepframe.web")
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 FONT_UPLOAD_IDLE_S = 60
+BODY_IDLE_S = 60
+# ponytail: no disk quota and no reverse proxy (slow-loris, per-client limits); both belong in front of this server if it is exposed beyond a trusted network
+MAX_VIDEO_BYTES = 512 << 20   # ponytail: the body is buffered in memory twice (read + multipart parse); stream the multipart to disk if larger sources are needed
 
 JOBS = JobStore()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -523,7 +527,7 @@ class ReviewState:
                 self.job = {"status": "done", "op": op, "error": None, "version": v.id}
                 log.info("correction done scene=%s op=%s version=%s", self.scene_id, op, v.id)
             except Exception as e:
-                self.job = {"status": "error", "op": op, "error": f"{type(e).__name__}: {e}", "version": None}
+                self.job = {"status": "error", "op": op, "error": "correction_failed", "version": None}
                 log.exception("correction failed scene=%s op=%s", self.scene_id, op)
 
         threading.Thread(target=work, daemon=True).start()
@@ -645,9 +649,16 @@ def make_server(
                 headers=headers,
             )
 
-        def _read_body(self) -> bytes:
-            length = int(self.headers.get("content-length", 0))
-            return self.rfile.read(length) if length else b""
+        def _fail(self, status: int, e: BaseException, code: str = "internal_error") -> None:
+            log.warning("request failed (%s): %s", code, describe(e, trace=True))
+            self._json(status, {"error": code})
+
+        def _read_body(self, cap: int = 1 << 20) -> bytes:
+            length = content_length(self.headers, cap)   # LengthError: do_POST answers it before any byte is read
+            if not length:
+                return b""
+            self.connection.settimeout(BODY_IDLE_S)
+            return self.rfile.read(length)
 
         def _bounded_json(self, limit: int = 64 * 1024) -> dict[str, object] | None:
             if self.headers.get_content_type() != "application/json":
@@ -665,6 +676,7 @@ def make_server(
             if length < 0 or length > limit:
                 self._json(413, {"error": "request body is too large"})
                 return None
+            self.connection.settimeout(BODY_IDLE_S)
             try:
                 value = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -1080,8 +1092,7 @@ def make_server(
                     payload["analysis"] = read_manifest(state.root, v.analysis_file) if v.analysis_file else None
                     return self._json(200, payload)
                 except Exception as e:
-                    log.exception("state failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if u.path == "/api/job":
                 if not pid:
@@ -1124,8 +1135,7 @@ def make_server(
                             boxes[el.id] = [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)]
                     return self._json(200, {"size": list(scene.size), "boxes": boxes})
                 except Exception as e:
-                    log.exception("bboxes failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             parts = u.path.strip("/").split("/")
             if parts[:2] == ["frame", "orig"] and len(parts) == 3:
@@ -1139,7 +1149,7 @@ def make_server(
                 except IndexError:
                     return self._json(404, {"error": "frame out of range"})
                 except Exception as e:
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if parts[:2] == ["frame", "recon"] and len(parts) == 3:
                 if not pid:
@@ -1150,8 +1160,7 @@ def make_server(
                 try:
                     return self._send(200, state.recon_png(int(parts[2]), ver), "image/png", cache="public, max-age=604800")
                 except Exception as e:
-                    log.exception("recon frame failed project=%s scene=%s", pid, sid)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if parts and parts[0] == "assets" and len(parts) >= 2:
                 if not pid:
@@ -1200,7 +1209,7 @@ def make_server(
             except FontRejected as exc:
                 log.info("font upload project=%s rejected %s (%s) %.2fs", project_id, exc.code, exc.reason,
                          time.perf_counter() - t0)
-                return self._json(413 if exc.code == "too_large" else 400, {"error": exc.code})
+                return self._json({"too_large": 413, "too_many_fonts": 409}.get(exc.code, 400), {"error": exc.code})
             except Exception as exc:   # detail in the log (paths cut), the code to the client
                 log.error("font upload project=%s failed: %s", project_id, scrub_paths(f"{type(exc).__name__}: {exc}"))
                 return self._json(400, {"error": "bad_tables"})
@@ -1212,6 +1221,12 @@ def make_server(
             return self._json(201 if created else 200, {"font": public_font(entry), "created": created})
 
         def do_POST(self):
+            try:
+                self._post()
+            except LengthError as exc:   # raised only by _read_body, before a body byte is read
+                self._json(exc.status, {"error": "request_too_large" if exc.status == 413 else "invalid_length"})
+
+        def _post(self):
             u = urlparse(self.path)
             if ae_routes.handle_post(self, u):
                 return
@@ -1291,7 +1306,9 @@ def make_server(
                     return self._json(404, {"error": "not found"})
                 except PlanConflict as exc:
                     return self._json(409, {"error": str(exc)})
-                except (TypeError, ValueError) as exc:
+                except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+                    return self._fail(400, exc, "invalid_request")
+                except ValueError as exc:
                     return self._json(400, {"error": str(exc)})
 
 
@@ -1442,7 +1459,7 @@ def make_server(
                         return self._json(400, {"error": "bad json"})
                     return self._json(400, {"error": "video required"})
 
-                fields = _parse_multipart(self._read_body(), ctype)
+                fields = _parse_multipart(self._read_body(MAX_VIDEO_BYTES), ctype)
                 title = str(fields.get("title", "Untitled"))
                 mode = str(fields.get("mode", "full"))
                 video_field = fields.get("video")
@@ -1581,7 +1598,7 @@ def make_server(
                 try:
                     _scene, version = state.scene(data.get("v"))
                 except Exception as e:
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 project = approve_scene(state.root, scene_id, version.id)
                 fully_approved = all(ref.id in project.approved_scenes for ref in project.scenes)
                 meta = write_meta(
@@ -1631,14 +1648,13 @@ def make_server(
                     state._tex.clear()
                     return self._json(200, {"version": json.loads(v.model_dump_json())})
                 except Exception as e:
-                    log.exception("keep update failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(500, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
 
             if u.path == "/api/edit":
                 if not self._same_origin():
                     return
                 try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    data = json.loads(self._read_body(96 << 20).decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 project_id = data.get("project")
@@ -1663,9 +1679,10 @@ def make_server(
                         choices=data.get("choices"),
                         version=data.get("v"),
                     )
+                except ValueError as e:
+                    return self._fail(400, e, "invalid_request")
                 except Exception as e:
-                    log.exception("edit failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(500, e)
                 if result.status == "done" and result.version is not None:
                     write_meta(workspace, project_id, status="review", version=result.version.id, scene=scene_id)
                     state._preview.clear()
@@ -1725,7 +1742,7 @@ def make_server(
                     if not any(v.id == version for v in versions):
                         raise ValueError("version is not authoritative for this scene")
                 except Exception as e:  # noqa: BLE001 - malformed workspace input
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                    return self._fail(400, e, "invalid_request")
                 resolved_project_id = project_id
                 resolved_scene_id = scene_id
                 resolved_version = version
@@ -1784,9 +1801,10 @@ def make_server(
                             else agent.turn(ctx, message, history)
                         )
                         append_turn(root, resolved_scene_id, message, turn)
-                except Exception as e:
-                    log.exception("agent turn failed project=%s scene=%s", project_id, scene_id)
-                    return self._json(400, {"error": f"{type(e).__name__}: {e}"})
+                except ValueError as e:
+                    return self._fail(400, e, "invalid_request")
+                except Exception as e:   # LLM auth / rate limit / network
+                    return self._fail(502, e, "agent_failed")
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):
@@ -1797,7 +1815,7 @@ def make_server(
                 if not self._same_origin():
                     return
                 try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    data = json.loads(self._read_body(16 << 20).decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 project_id = data.get("project")
@@ -1830,7 +1848,9 @@ def make_server(
                     state.run_correction(op, args)
                 except RuntimeError:
                     return self._json(409, {"error": "a correction is already running"})
-                except (TypeError, ValueError) as exc:
+                except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+                    return self._fail(400, exc, "invalid_request")
+                except ValueError as exc:
                     return self._json(400, {"error": str(exc)})
                 return self._json(202, {"job": state.job})
 

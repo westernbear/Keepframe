@@ -1,5 +1,5 @@
-import { fetchProjects } from "/static/js/api.js?v=20261010a";
-import { T, Tf, applyI18n } from "/static/js/i18n.js?v=20261010a";
+import { fetchProjects } from "/static/js/api.js?v=20261010c";
+import { T, Tf, applyI18n, errorText } from "/static/js/i18n.js?v=20261010c";
 
 const DEFAULT_SCENE_ID = "s1";
 const ROW_GAP_PX = 8;
@@ -68,7 +68,7 @@ function formatConfidence(c) {
 
 function badgeText(p) {
   if (p.status === "rejected") return p.reason || p.error || statusLabel("rejected");
-  if (p.status === "error" && p.error) return p.error;
+  if (p.status === "error" && p.error) return errorText(p.error);
   return statusLabel(p.status);
 }
 

@@ -1,4 +1,5 @@
-import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261010a";
+import { fetchAdminOrRedirect } from "/static/js/api.js?v=20261010c";
+import { errorText } from "/static/js/i18n.js?v=20261010c";
 
 const MODEL_RELOAD_DEBOUNCE_MS = 400;
 const AZURE_SCOPE = "https://cognitiveservices.azure.com/.default";
@@ -159,7 +160,7 @@ async function loadModels(announce) {
     if (!model.value && ids.length) model.value = ids[0];
     if (announce) note(ids.length ? `모델 ${ids.length}개를 불러왔습니다.` : "모델 목록이 비어 있습니다.");
   } catch (err) {
-    if (announce) note(err.message || "모델 목록을 불러오지 못했습니다.", true);
+    if (announce) note(errorText(err.message) || "모델 목록을 불러오지 못했습니다.", true);
   }
 }
 
@@ -241,7 +242,7 @@ async function saveSettings() {
     fill(data.settings);
     note("저장했습니다.");
   } catch (err) {
-    note(err.message || "저장 실패", true);
+    note(errorText(err.message) || "저장 실패", true);
   }
 }
 

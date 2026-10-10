@@ -10,6 +10,7 @@ from urllib.parse import parse_qs
 
 from keepframe.admin.auth import COOKIE, cookie_header
 from keepframe.admin.policy import ASSET_GEN_CAP, RETRY_CAP, policy_note
+from keepframe.log import describe, get
 from keepframe.session.chatgpt_oauth import FLOW, clear_litellm_auth, preserve_chatgpt_tokens
 from keepframe.session.models import catalog_public, list_models
 from keepframe.session.provider import ProviderConfig
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from keepframe.admin.auth import MemoryAuth
     from keepframe.admin.memory import MemoryAdmin
 
+log = get("keepframe.admin")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 ADMIN_PAGES = {
@@ -71,7 +73,8 @@ class AdminRoutes:
         try:
             models, source = list_models(provider, base_url=base_url, api_key=api_key)
         except RuntimeError as e:
-            handler._json(502, {"error": str(e), "models": [], "source": "error", "provider": provider})
+            log.warning("model list failed: %s", describe(e))
+            handler._json(502, {"error": "model_list_failed", "models": [], "source": "error", "provider": provider})
             return
         handler._json(200, {"models": models, "source": source, "provider": provider})
 
@@ -186,7 +189,7 @@ class AdminRoutes:
             origin = f"http://{host}"
             try:
                 url = FLOW.begin(actor, origin, self.admin_svc)
-            except RuntimeError as e:
+            except RuntimeError as e:  # ponytail: fixed Korean messages from FLOW.begin, no paths; code them if it ever wraps another error
                 handler._json(409, {"error": str(e)})
                 return True
             handler._json(200, {"url": url, "provider": "chatgpt"})
@@ -260,8 +263,9 @@ class AdminRoutes:
                 return True
             try:
                 config = ProviderConfig.model_validate(data.get("settings", {}))
-            except Exception as e:  # pydantic ValidationError
-                handler._json(400, {"error": f"{type(e).__name__}: {e}"})
+            except Exception as e:  # pydantic ValidationError: its text echoes the submitted values (the API key), so log the field names only
+                log.warning("invalid settings: %s", [err["loc"] for err in e.errors()] if hasattr(e, "errors") else type(e).__name__)
+                handler._json(400, {"error": "invalid_settings"})
                 return True
             config = preserve_chatgpt_tokens(config, self.admin_svc.get_llm_settings())
             self.admin_svc.set_llm_settings(config, actor)

@@ -1,3 +1,5 @@
+import { errorText } from "/static/js/i18n.js?v=20261010c";
+
 const ADMIN_LOGIN_PATH = "/admin/login";
 
 function jsonHeaders(extra) {
@@ -29,7 +31,7 @@ async function api(path, opts = {}) {
   });
   const data = await readJsonOrNull(res);
   if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText);
+    const err = new Error(errorText(data && data.error) || res.statusText);
     err.status = res.status;
     err.body = data;
     throw err;

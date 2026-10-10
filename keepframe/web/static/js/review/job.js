@@ -1,6 +1,6 @@
-import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20261010a";
-import { T, Tf } from "/static/js/i18n.js?v=20261010a";
-import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20261010a";
+import { fetchReviewJob, postCorrect } from "/static/js/api.js?v=20261010c";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010c";
+import { JOB_POLL_INTERVAL_MS } from "/static/js/review/workspace.js?v=20261010c";
 
 export function attachJob(ws) {
   const { dom } = ws;
@@ -35,7 +35,7 @@ export function attachJob(ws) {
 
   function showFailedJob(job) {
     setFormsDisabled(false);
-    setJobBanner(Tf("review.retry", { err: job.error || T("review.error") }), true);
+    setJobBanner(Tf("review.retry", { err: errorText(job.error) || T("review.error") }), true);
     clearInterval(ws.pollTimer);
   }
 

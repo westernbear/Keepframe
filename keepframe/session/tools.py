@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from ..analyze.constraints import KEEP_PRESETS
 from ..ir.store import current_scene, scene_dir
-from ..log import get
+from ..log import describe as describe_exc, get
 
 log = get("keepframe.session")
 
@@ -335,5 +335,5 @@ def run_tool(name: str, ctx: SessionContext, args: dict[str, Any]) -> dict[str, 
     try:
         return handler(ctx, args or {})
     except Exception as e:  # noqa: BLE001 - tool boundary: surface any failure to the LLM
-        log.exception("tool %s failed", name)
-        return _fail(f"{type(e).__name__}: {e}")
+        log.warning("tool %s failed: %s", name, describe_exc(e, trace=True))
+        return _fail(f"tool_failed ({type(e).__name__})")

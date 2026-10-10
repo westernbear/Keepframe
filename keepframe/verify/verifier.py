@@ -43,7 +43,7 @@ def verify(scene: Scene, scene_dir: Path, render_result: RenderResult | None = N
     rep = VerifyReport(schema_ok=True, layer_probe_complete=not scene.elements)
     try:
         Scene.model_validate(scene.model_dump(by_alias=True))
-    except Exception as e:  # pydantic ValidationError
+    except Exception as e:  # pydantic ValidationError; ponytail: the text echoes the agent's own input, no paths: code it if scenes ever carry host data
         rep.schema_ok = False; rep.messages.append(f"schema: {e}")
     for el in scene.elements:
         if el.canonical.texture and not (scene_dir / el.canonical.texture).exists():

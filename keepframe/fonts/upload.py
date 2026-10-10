@@ -30,11 +30,13 @@ from .sfnt import MAX_SFNT_BYTES, child_env as _child_env   # no API keys reach 
 
 log = get("keepframe.fonts")
 MAX_FONT_BYTES = 20 * 2**20
+MAX_PROJECT_FONTS = 100
+FONT_UPLOAD_TOTAL_S = 600         # the whole body, on top of the connection's idle timeout
 MAX_GLYPHS = 65535
 MAX_META_BYTES = 2**20           # WOFF2 extended metadata, decoded
 CHUNK_BYTES = 2**20
 NAME_RE = re.compile(r"^[^/\\]{1,128}\.(ttf|otf|woff2)$")
-CODES = ("too_large", "bad_type", "bad_tables", "unsupported")
+CODES = ("too_large", "bad_type", "bad_tables", "unsupported", "too_many_fonts")
 REQUIRED_TABLES = ("cmap", "head", "hhea", "hmtx", "maxp", "name")
 INSPECT_TIMEOUT_S = 120
 INSPECT_MEMORY = 2 * 2**30
@@ -107,8 +109,11 @@ def receive(project_root: Path, stream: BinaryIO, length: int) -> Path:
         raise FontRejected("too_large")
     read = getattr(stream, "read1", stream.read)
     remaining, path = length, None
+    deadline = time.monotonic() + FONT_UPLOAD_TOTAL_S
 
     def take(n: int) -> bytes:
+        if time.monotonic() > deadline:
+            raise UploadIncomplete("upload took too long")
         try:
             chunk = read(min(n, CHUNK_BYTES))
         except OSError as e:   # timeout or reset
@@ -401,7 +406,7 @@ def _log_tail(logs: BinaryIO) -> str:
 
 def _inspect_child(path: Path) -> dict:
     """Run the check child: its result comes back in a file of its own, its logs (stdout and stderr) in another."""
-    with INSPECT_SLOTS, tempfile.TemporaryDirectory(prefix="kf-fontcheck-") as work, tempfile.TemporaryFile() as logs:
+    with tempfile.TemporaryDirectory(prefix="kf-fontcheck-") as work, tempfile.TemporaryFile() as logs:
         result = Path(work) / "result.json"
         cmd = [sys.executable, "-P", "-B", "-c", "from keepframe.fonts.upload import _confine; _confine()\n" + _CHILD_CODE,
                str(path), str(result)]
@@ -463,10 +468,11 @@ def inspect_font(path: Path, filename: str) -> dict:
     with open(path, "rb") as f:
         head = f.read(4)
     _check_magic(head, ext)
-    if ext == "woff2":
-        check_woff2(path.read_bytes())
     sha = _sha256(path)
-    meta = _inspect_child(path)
+    with INSPECT_SLOTS:   # check_woff2 holds the whole file in memory
+        if ext == "woff2":
+            check_woff2(path.read_bytes())
+        meta = _inspect_child(path)
     return {"family": _family(meta["original_family"], sha), "original_family": scrub_paths(meta["original_family"]),
             "style": _style(meta["style"]), "weight_range": meta["weight_range"], "postscript": meta["postscript"],
             "category": meta["category"], "ext": ext, "sha256": sha, "bytes": size, "latin": bool(meta["latin"]),
@@ -528,9 +534,12 @@ def store_font(project_root: Path, tmp: Path, filename: str) -> tuple[dict, bool
         fonts_dir = _fonts_dir(project_root, create=True)
         sha = _sha256(tmp)
         with _index_lock(fonts_dir):
-            existing = _stored(fonts_dir, _read_index(fonts_dir), sha)
+            items = _read_index(fonts_dir)
+            existing = _stored(fonts_dir, items, sha)
         if existing is not None:
             return existing, False
+        if len(items) >= MAX_PROJECT_FONTS:
+            raise FontRejected("too_many_fonts")
         entry = inspect_font(tmp, filename)
         entry["file"] = f"{entry['sha256']}.{entry['ext']}"
         with _index_lock(fonts_dir):
@@ -538,6 +547,8 @@ def store_font(project_root: Path, tmp: Path, filename: str) -> tuple[dict, bool
             existing = _stored(fonts_dir, items, sha)
             if existing is not None:
                 return existing, False
+            if len(items) >= MAX_PROJECT_FONTS:   # another upload took the last slot meanwhile
+                raise FontRejected("too_many_fonts")
             os.replace(tmp, fonts_dir / entry["file"])
             _write_index(fonts_dir, [it for it in items if it.get("sha256") != sha] + [entry])
         log.info("font stored %s %s (%d bytes)", entry["file"], entry["family"], entry["bytes"])

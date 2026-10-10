@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261010a";
-import { T, Tf } from "/static/js/i18n.js?v=20261010a";
-import { initAECard } from "/static/js/ae.js?v=20261010a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261010a";
+} from "/static/js/api.js?v=20261010c";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010c";
+import { initAECard } from "/static/js/ae.js?v=20261010c";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261010c";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261010a";
+} from "/static/js/playback.js?v=20261010c";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -262,10 +262,6 @@ function updateRenderControls() {
     || planState.status !== "awaiting_approval";
 }
 
-const JOB_ERRORS = {   // job errors that arrive as codes (the detail stays in the server log)
-  export_failed: "agent.renderExportFailed",
-};
-
 const RENDER_WARNINGS = {
   font_substituted: (w) => Tf("agent.renderFontSubstituted", {family: w.family, used: w.used}),
   font_file_missing: (w) => Tf("agent.renderFontFileMissing", {family: w.family}),
@@ -296,7 +292,7 @@ function paintRenderCard() {
   renderStatusEl.textContent = hasPlan ? `${status} (${plan.version_id})` : "";
   renderStatusEl.title = planState ? `${status}, r${planState.revision}` : status;
   renderStatusClass(status);
-  renderReasonEl.textContent = (JOB_ERRORS[jobError] ? T(JOB_ERRORS[jobError]) : jobError) || renderPayload?.error || "";
+  renderReasonEl.textContent = errorText(jobError) || renderPayload?.error || "";
   document.getElementById("render-reason-field").hidden = status !== "failed" || !renderReasonEl.textContent;
   document.getElementById("render-output-field").hidden = !hasPlan || !outputs.length;
   document.getElementById("render-approval").hidden = !awaitsApproval;
@@ -812,7 +808,7 @@ async function pollCorrection(previewSceneId) {
   while (true) {
     const job = await fetchReviewJob(projectId, previewSceneId);
     if (job.status === "done" && job.version) return job;
-    if (job.status === "error") throw new Error(job.error || T("review.error"));
+    if (job.status === "error") throw new Error(errorText(job.error) || T("review.error"));
     if (!["running", "queued"].includes(job.status)) throw new Error(T("agent.failed"));
     await new Promise((resolve) => setTimeout(resolve, CORRECTION_POLL_INTERVAL_MS));
   }
@@ -1042,7 +1038,7 @@ function initDisclosure(buttonId, bodyId, key, defaultOpen) {
 // --- Fonts disclosure: the project's uploaded fonts (metadata only) and one upload at a time --------------------
 const FONT_MAX_BYTES = 20 * 1024 * 1024;
 const FONT_NAME = /\.(ttf|otf|woff2)$/i;
-const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported"]);
+const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported", "too_many_fonts"]);
 const fontsCount = document.getElementById("agent-fonts-count");
 const fontsList = document.getElementById("agent-fonts-list");
 const fontsEmpty = document.getElementById("agent-fonts-empty");

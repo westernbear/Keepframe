@@ -1,5 +1,5 @@
 {
- "source": "R66: text_fill_cases.npz (Stage A real-clip run, master 9aff0a8): texture columns at full resolution; R67: the stored stages of the same run (ig1/t24, ig2/t21), whole textures. Colour zeroed where alpha is 0; the plate under the texture at 1/4 resolution (R66) or full (R67: small; a smoothed plate loses the text ghosts in it); plate false: unknown in the real run.",
+ "source": "R66: text_fill_cases.npz (Stage A real-clip run, master 9aff0a8): texture columns at full resolution; R67: the stored stages of the same run (ig1/t24, ig2/t21), whole textures. Colour zeroed where alpha is 0; the plate under the texture at 1/4 resolution (R66) or full (R67: small; a smoothed plate loses the text ghosts in it); plate false: unknown in the real run. F3 (fonts): envato1_title is R66's whole envato1 texture (plate at 1/4); ig3_t24 the stored stages of the fixed run (ra-clips-fix), whole texture, plate in full.",
  "cases": {
   "envato1": {
    "text": "Build SaaSPromo",
@@ -70,6 +70,34 @@
    "want": "#4a4748",
    "within": 20.0,
    "plate": false
+  },
+  "envato1_title": {
+   "text": "Build SaaSPromo",
+   "columns": [
+    0,
+    1526
+   ],
+   "method": "keyed",
+   "confidence": 0.762,
+   "core": "#e9e1fd",
+   "fill_9aff0a8": "#09011a",
+   "want": "#e9e1fd",
+   "within": 10.0,
+   "plate": true
+  },
+  "ig3_t24": {
+   "text": "Your idea",
+   "columns": [
+    0,
+    1611
+   ],
+   "method": "keyed",
+   "confidence": 0.782,
+   "core": "#19315a",
+   "fill_9aff0a8": "#263c62",
+   "want": "#19315a",
+   "within": 10.0,
+   "plate": true
   }
  }
 }

@@ -33,4 +33,4 @@ def test_job_surfaces_error():
         if store.get(j.id).status == "error":
             break
         time.sleep(0.02)
-    assert "gpu missing" in store.get(j.id).error
+    assert store.get(j.id).error == "job_failed"

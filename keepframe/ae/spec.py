@@ -313,8 +313,8 @@ def _dims(path):
     try:
         with Image.open(path) as image:
             return image.size
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"{path.name} is not a valid image: {exc}") from None
+    except (OSError, ValueError):
+        raise ValueError(f"{path.name} is not a valid image") from None
 
 
 def _plan_background(scene, scene_dir, wait=True):

@@ -137,7 +137,7 @@ def test_refinement_samples_only_visible_sprite_frames(tmp_scene_dir, monkeypatc
         return original(input, grid, *args, **kwargs)
 
     monkeypatch.setattr(F, "grid_sample", counted)
-    out = refine_affine(frames, (0x10, 0x14, 0x18), raws, tex, anchors, z, iters=1, scale=0.5, device="cpu")
+    out = refine_affine(frames, (0x10, 0x14, 0x18), raws, tex, anchors, z, iters=1, scale=0.5, device="cpu", checkpoint=False)  # checkpointing re-runs the warp in backward
     assert sum(sampled) == expected_pairs
     assert expected_pairs < len(frames) * len(raws)
     for k, raw in raws.items():
@@ -170,3 +170,18 @@ def test_refine_oom_retry_preserves_completed_chunks(monkeypatch):
     assert calls[1] == (3, 3, False)
     assert calls[2] == (3, 1, True)
     assert np.array_equal(out["s"][:, 0], np.arange(8) + 100)
+
+
+@pytest.mark.skipif(not torch_available(), reason="torch not installed")
+def test_cpu_checkpoint_matches_dense_graph(tmp_scene_dir, monkeypatch):
+    from keepframe.analyze import refine as R
+    scene = make_synthetic_scene(tmp_scene_dir, seed=51, n_elements=3, frames=8, size=(160, 90), with_text=False, overlap=True)
+    frames = np.stack([(composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8) for f in range(8)])
+    raws, tex, anchors, z = _perturbed_raws(scene, tmp_scene_dir, 8)
+    run = lambda: refine_affine(frames, (0x10, 0x14, 0x18), raws, tex, anchors, z, iters=20, scale=1.0, device="cpu")
+    assert R._frame_plan(8, 90, 160, np.full(8, 3), "cpu") == (8, True)
+    ckpt = run()
+    monkeypatch.setattr(R, "_frame_plan", lambda N, h, w, n_sprites, dev: (N, False))
+    dense = run()
+    for e in scene.elements:
+        assert np.allclose(ckpt[e.id], dense[e.id], atol=1e-6, equal_nan=True), e.id

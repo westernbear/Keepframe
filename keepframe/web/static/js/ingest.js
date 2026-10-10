@@ -1,6 +1,6 @@
-import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261010a";
-import { T, Tf } from "/static/js/i18n.js?v=20261010a";
-import { setWorkflowStage } from "/static/js/workflow.js?v=20261010a";
+import { uploadProject, fetchProject, fetchEstimate, fetchFilmstrip, fetchStatus, DEFAULT_FILMSTRIP_COUNT } from "/static/js/api.js?v=20261010c";
+import { T, Tf } from "/static/js/i18n.js?v=20261010c";
+import { setWorkflowStage } from "/static/js/workflow.js?v=20261010c";
 
 const DEFAULT_FPS = 30;
 const SECONDS_PER_MINUTE = 60;
@@ -180,6 +180,7 @@ async function showProject(project, filmstripData = null) {
 
 async function handleFile(file) {
   showError("");
+  if (file.size > 512 * 1024 * 1024) { showError(T("err.requestTooLarge")); return; }   // the server's upload cap
   dropzone.hidden = true;
   uploadCard.hidden = false;
   qs("[data-video-name]").textContent = file.name;
