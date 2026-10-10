@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261009g";
-import { T, Tf } from "/static/js/i18n.js?v=20261009g";
-import { initAECard } from "/static/js/ae.js?v=20261009g";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261009g";
+} from "/static/js/api.js?v=20261010a";
+import { T, Tf } from "/static/js/i18n.js?v=20261010a";
+import { initAECard } from "/static/js/ae.js?v=20261010a";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261010a";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261009g";
+} from "/static/js/playback.js?v=20261010a";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -499,6 +499,23 @@ function paintVerifyChip(chip) {
   chip.setAttribute("aria-label", chip.title);
 }
 
+// R61: Keepframe's own summary of a background picture from the attachment ("배경 이미지를 첨부로 …") stays in the
+// version history and the tool card, never a chat bubble; the LLM agent writes the chat replies.
+function attachedBackground(intent) {
+  return ((intent && intent.targets) || []).some((t) => t && t.property === "background" && t.value === "attachment");
+}
+
+function confirmedLine(res) {
+  return attachedBackground(res.intent) ? T("agent.applied") : (res.summary || EDIT_APPLIED);
+}
+
+function chatReply(turn) {
+  const reply = (turn.reply || "").trim();
+  const own = (turn.results || []).some((r) => r && r.payload && attachedBackground(r.payload.intent)
+    && (r.message || "").trim() === reply);
+  return own ? "" : (turn.reply || "");
+}
+
 function appendAgent(text) {
   hideEmpty();
   const wrap = document.createElement("div");
@@ -844,7 +861,7 @@ async function applyConfirmedEdit(res) {
     attachInput.value = "";
     document.getElementById("agent-attach-name").textContent = "";
     appendVerify(res.verify);
-    appendAgent(res.summary || EDIT_APPLIED);
+    appendAgent(confirmedLine(res));
     await refreshAfterEdit(res.version.id);
     return true;
   }
@@ -878,8 +895,9 @@ async function refreshAfterEdit(version) {
 }
 
 function paintToolCalls(turn) {
+  const reply = chatReply(turn);   // a summary that is no bubble shows in its tool card
   (turn.tool_calls || []).forEach((tc, i) => {
-    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" }, turn.reply || "");
+    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" }, reply);
   });
 }
 
@@ -889,7 +907,8 @@ function verifyFromTurn(turn) {
 
 function paintTurn(turn, actionable = true) {
   paintToolCalls(turn);
-  if (turn.reply) appendAgent(turn.reply);
+  const reply = chatReply(turn);
+  if (reply) appendAgent(reply);
   appendVerify(verifyFromTurn(turn));
   const isPending = turn.status === "pending";
   const isError = turn.status === "error";

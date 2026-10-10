@@ -1,6 +1,7 @@
 """Task 12R: a background colour edit applies as asked (no forced choice) and reports structured facts the LLM
 agent reads; an attached PNG can become the background; Keepframe adds no reply wording of its own."""
 import base64
+import json
 import hashlib
 from pathlib import Path
 
@@ -156,3 +157,104 @@ def test_no_forced_choice_or_code_made_wording_left():
         src = (static / name).read_text()
         for gone in ("cancelled", "background_kind", "editChoice.tint", "toolPending", "bgTinted", "editBgChoose"):
             assert gone not in src, (name, gone)
+
+
+def test_tint_on_a_video_background_is_refused_before_confirm(tmp_path, monkeypatch):
+    """Final review: Keepframe never tints a video (R55), so the preview already says so with the code, not only
+    the confirm."""
+    root, sd, scene = _project(tmp_path, "video", monkeypatch)
+    before = _assets(sd)
+    intent = _colour_intent(mode="tint")
+    for confirm in (False, True):
+        res = edit(root, "s1", "tint the background navy", confirm=confirm, intent=intent)
+        assert (res.status, res.error) == ("failed", "tint_unavailable"), res
+    assert current_scene(root, "s1")[1].id == "v1" and _assets(sd) == before
+    ctx = SessionContext(root, "s1")
+    tool = run_tool("edit", ctx, {"prompt": "navy", "targets": [{"property": "background", "value": NAVY, "mode": "tint"}]})
+    assert not tool["ok"] and not tool["needs_confirm"] and "tint_unavailable" in json.dumps(tool)
+    replace = edit(root, "s1", "make the background navy", intent=_colour_intent())
+    assert replace.status == "needs_confirm"                                # a flat replace is still offered
+
+
+def test_rgba_background_attachment_is_flattened_onto_black(tmp_path, monkeypatch):
+    """Final review: HTML draws a picture background over black; the stored asset is that picture already, so numpy,
+    AE and Lottie draw the same pixels."""
+    from keepframe.analyze.composite import composite_scene
+    root, sd, scene = _project(tmp_path, "color", monkeypatch)
+    rgba = np.zeros((H, W, 4), np.uint8)
+    rgba[..., :3], rgba[..., 3] = (200, 40, 90), 128
+    rgba[:, : W // 2, 3] = 255
+    ok, data = cv2.imencode(".png", rgba[..., [2, 1, 0, 3]])
+    intent = Intent(targets=[Target(property="background", value="attachment")])
+    done = edit(root, "s1", "use my picture", confirm=True, intent=intent, attachment=data.tobytes())
+    assert done.status == "done", done
+    edited = current_scene(root, "s1")[0]
+    stored = cv2.imread(str(sd / edited.background.value), cv2.IMREAD_UNCHANGED)
+    assert stored.ndim == 3 and stored.shape[2] == 3                         # no alpha left to drop
+    half = np.round(np.array([200, 40, 90]) * 128 / 255)
+    assert np.abs(stored[5, -5, ::-1].astype(int) - half).max() <= 1 and tuple(stored[5, 5, ::-1]) == (200, 40, 90)
+    img = composite_scene(edited, sd, 0) * 255
+    assert np.abs(img[5, W - 5] - half).max() <= 1.5 and np.abs(img[5, 5] - (200, 40, 90)).max() <= 1.5
+
+
+def test_background_attachment_summary_is_never_a_chat_bubble(tmp_path):
+    """R61 (user 2026-10-10): Keepframe's own summary of a background picture from the attachment ("배경 이미지를
+    첨부로 …") stays in the version history and the tool card; neither the confirmed edit nor the pending turn shows it
+    as the agent's chat reply (the LLM agent writes those)."""
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node unavailable")
+    static = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js"
+    source = (static / "agent.js").read_text()
+    start = source.index("function attachedBackground(")
+    helpers = source[start:source.index("\nfunction appendAgent(", start)]
+    script = tmp_path / "bubbles.mjs"
+    script.write_text("import assert from 'node:assert/strict';\n" +
+                      "const T = (key) => `T(${key})`;\nconst EDIT_APPLIED = '적용 완료.';\n" + helpers + "\n" + """
+const summary = '배경 이미지를 첨부로 바꿉니다. 트랙은 유지합니다.';
+const picture = {targets: [{property: 'background', value: 'attachment'}]};
+const colour = {targets: [{property: 'background', value: '#1a2a6c'}]};
+assert.equal(confirmedLine({status: 'done', summary, intent: picture}), 'T(agent.applied)');
+assert.equal(confirmedLine({status: 'done', summary: 'e1 색을 #ff0000로 바꿉니다.', intent: colour}), 'e1 색을 #ff0000로 바꿉니다.');
+assert.equal(confirmedLine({status: 'done', intent: colour}), EDIT_APPLIED);
+const pending = {status: 'pending', reply: summary, results: [{ok: true, message: summary, payload: {intent: picture}}]};
+assert.equal(chatReply(pending), '');
+const own = {status: 'pending', reply: 'Shall I use your picture?', results: [{ok: true, message: summary, payload: {intent: picture}}]};
+assert.equal(chatReply(own), 'Shall I use your picture?');
+const other = {status: 'pending', reply: 'x', results: [{ok: true, message: 'x', payload: {intent: colour}}]};
+assert.equal(chatReply(other), 'x');
+assert.equal(chatReply({reply: 'done', results: []}), 'done');
+""")
+    result = subprocess.run([node, str(script)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "appendAgent(confirmedLine(res))" in source and "const reply = chatReply(turn);" in source
+
+
+RULE = ("When the scene brief shows a picture, gradient or video background, ask the user before replacing it with a "
+        "flat colour: offer tint")
+
+
+def test_agent_is_told_to_ask_before_flattening_a_picture_background(tmp_path, monkeypatch):
+    """R62 (user 2026-10-10): the agent's instructions ask it to offer tint or a flat replace before flattening a
+    picture, gradient or video background; Keepframe itself still applies whatever the agent sends."""
+    from keepframe.session.agent import SessionAgent
+    from keepframe.session.llm import AssistantReply
+    root, sd, scene = _project(tmp_path, "image", monkeypatch)
+    seen = []
+
+    class Capture:
+        supports_vision = True
+
+        def complete(self, messages, tools):
+            seen.append([dict(m) for m in messages])
+            return AssistantReply(content="Tint (keeps the light and dark) or a flat navy?")
+
+    turn = SessionAgent(Capture()).turn(SessionContext(root, "s1"), "make the background navy", [])
+    assert turn.reply.startswith("Tint")
+    system, brief = seen[0][0]["content"], seen[0][1]["content"]
+    assert RULE in system and 'mode: "tint"' in system and "flat replace" in system
+    assert "background image" in brief                                      # the brief states the kind
+    done = edit(root, "s1", "navy", confirm=True, intent=_colour_intent())  # and a flat replace still applies
+    assert done.status == "done" and current_scene(root, "s1")[0].background.kind == "color"
