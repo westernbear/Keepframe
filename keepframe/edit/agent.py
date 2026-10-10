@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -120,6 +121,20 @@ def _asset_prompt(scene: Scene, target: Target, prompt: str, reference_size=None
             f"Replaces element {el.id} ({caption or label or el.kind}). "
             f"Fits a {width:.0f}x{height:.0f}px box (aspect {width / max(height, 1):.2f}), transparent background, "
             f"shown over {background}.")
+
+
+# Candidates never need temporaries or the AE footage derived from clips (large, made for AE only).
+_CANDIDATE_SKIP = shutil.ignore_patterns(".*", "*.ae.mp4", "*.ae.mov")
+
+
+def _link_or_copy(src, dst):
+    """A candidate sees the scene's assets through hard links: its writers only create new names or replace a name
+    (os.replace), never write through one. A copy where linking fails (another filesystem)."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+    return dst
 
 
 def _promote_assets(source: Path, destination: Path, baseline: set[str]) -> None:
@@ -270,7 +285,7 @@ def _edit(
             candidate = temp_root / f"candidate-{candidate_no}"
             candidate.mkdir()
             if (sd / "assets").is_dir():
-                shutil.copytree(sd / "assets", candidate / "assets")
+                shutil.copytree(sd / "assets", candidate / "assets", ignore=_CANDIDATE_SKIP, copy_function=_link_or_copy)
             try:
                 edited = apply_edit(scene, candidate, built.items, choices_map, candidate_attachment, fonts=fonts)
             except (AssetAPIError, TintError) as exc:

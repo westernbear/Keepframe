@@ -573,6 +573,18 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     return _pk(sd, "props", props)
 
 
+def _write_replacing(path: Path, write) -> None:
+    """`write(tmp)` into a temporary beside `path` (made by the writer: the usual file mode), then os.replace: a name
+    that is a hard link (an edit candidate's view of the scene's assets) is replaced, never written through."""
+    import threading
+    tmp = path.with_name(f".{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp{path.suffix}")
+    try:
+        write(tmp)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element], dict[str, np.ndarray]]:
     keys = [k for k in props if not k.startswith("_")]
     keys.sort(key=lambda k: (props[k]["first"], float(np.nanmean(props[k]["raw"][:, 0]))))
@@ -589,15 +601,17 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         first, last = int(valid[0]), int(valid[-1])
         tracks, fe = tracks_from_raw(raw_full[first:last + 1], first)
         (sd / "assets").mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(sd / "assets" / f"{eid}.png"), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA))
-        np.savez_compressed(sd / "assets" / f"{eid}_raw.npz", raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]]))
+        _write_replacing(sd / "assets" / f"{eid}.png",
+                         lambda t: cv2.imwrite(str(t), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA)))
+        _write_replacing(sd / "assets" / f"{eid}_raw.npz", lambda t: np.savez_compressed(
+            t, raw=raw_full, first=first, cols=np.array(PROPS[:raw_full.shape[1]])))
         h, w = p["canon"].shape[:2]   # textures v2 pad the canonical by 2p; centre and anchor stay
         meta = p.get("texture_meta")
         video = None
         if p.get("video") and (sd / p["video"]).is_file():   # a video sprite: its WebM beside the poster
             video = f"assets/{eid}.video.webm"
             try:
-                shutil.copyfile(sd / p["video"], sd / video)
+                _write_replacing(sd / video, lambda t: shutil.copyfile(sd / p["video"], t))
             except OSError as e:   # fail soft: the still sprite, its code, lower confidence (props.pkl keeps the try)
                 log.warning("video sprite %s not copied: %s", eid, describe(e))
                 (sd / video).unlink(missing_ok=True)
