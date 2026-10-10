@@ -1,6 +1,6 @@
 # Reference analysis · Stage A results
 
-Measured with `keepframe eval-edits` (Task 2). The analysis code is the branch state after Task 1b (`cbb64f0`); later tasks re-run the same command and add an "after" section.
+Measured with `keepframe eval-edits` (Task 2). The analysis code is the branch state after Task 1b (`cbb64f0`); the "After" section below re-runs it on master (2026-10-10).
 
 ## Before · 2026-10-08
 
@@ -78,23 +78,101 @@ The hide column names the analysed element: first the title, then the element pa
   - unmeasurable metrics return None;
   - gate aggregation fails on None / NaN / no samples, and `passed` is false when no gate ran.
 
-## Real clips: not measured
+## After · 2026-10-10
 
-Real clips were not run in Stage A. Analysing one `eval/clips` clip peaks at 7–9 GB RSS, and this shared host OOMs (user ruling, 2026-10-08). Clip mode is built and unit-tested on a 640×360 synthetic stand-in with a gold file. Clip analysis uses the default `AnalyzeOptions()` (refine on), the same as `gate-m2-real`. To measure on a machine with at least 12 GB free:
+Measured on the `home` machine: WSL2 Ubuntu 24.04 with 25 GB RAM, 16 cores (Ryzen 9 7950X3D) and an RTX 4070 SUPER (torch 2.14.0+cu130, so refine runs on the GPU; OCR runs on the CPU). Python packages are pinned to this repo's venv. Every before/after pair ran back to back on that machine.
+
+Headless Chromium under WSLg needs `DISPLAY` and `WAYLAND_DISPLAY` unset. Otherwise it waits up to about 100 s on the WSLg Wayland socket, and Playwright's 30 s timeouts fire at random. The runs here unset both.
+
+### Synthetic
 
 ```sh
-keepframe eval-edits --clips eval/clips --gold docs/qa/reference-analysis/gold --out eval/out/ra-clips \
-  --synthetic 0 --renderer browser [--baseline BASELINE.json] [--strict]
+keepframe eval-edits --out eval/out/ra-after --renderer numpy --synthetic 8
 ```
 
-`BASELINE.json` is a `gate-m2-real --render-check` result (`{"rows": [{"clip", "seconds", "render_l1"}]}`) or `{"<clip stem>": {"seconds", "render_l1"}}`. Clip gates are:
+- **Seeds 1–6** are the before set. Seeds 7 and 8 (ruling R26) add a striped disc that spins a full turn in place behind the title, on an animated and on a picture plate.
+- **Before** is the same command at `996ad67` (Task 2) with the R26 seeds patched in. On seeds 1–6 it reproduces the 2026-10-08 numbers to the digit.
+- **After** is master `9aff0a8`. The text-fill fix (`696ebde`) leaves every synthetic number unchanged.
+- **Raw numbers:** [`stage-a-before8.json`](stage-a-before8.json) and [`stage-a-after.json`](stage-a-after.json).
 
-- title colour vs gold ΔE < 10;
-- `render_l1` ≤ baseline + 0.005;
-- seconds ≤ 1.5 × baseline;
-- 0 VLM calls.
+| seed | plate | mover | plate ΔE under title | under logo | halo | α SAD | bg leak | title whole | render L1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | gradient | — | 15.6 → 0.1 | 19.4 → 0.0 | 30.3 → 7.0 | 0.469 → 0.334 | 0.662 → 0.000 | yes → yes | 0.0115 → 0.0067 |
+| 2 | flat | crossing | 0.0 → 0.0 | 0.0 → 0.0 | 7.7 → 7.1 | 0.443 → 0.519 | 0.000 → 0.000 | yes → yes | 0.0153 → 0.0131 |
+| 3 | animated | — | 22.2 → 0.0 | 26.0 → 0.2 | 32.4 → 7.8 | 0.686 → 0.264 | 0.020 → 0.000 | yes/yes → yes/yes | 0.0791 → 0.0062 |
+| 4 | image | crossing | 25.3 → 1.5 | 14.2 → 3.1 | 59.5 → 11.6 | 0.392 → 0.431 | 0.447 → 0.000 | yes → no | 0.0259 → 0.0150 |
+| 5 | gradient | — | 12.7 → 0.4 | 30.0 → 0.8 | 34.8 → 7.9 | 0.672 → 0.414 | 0.555 → 0.000 | yes → yes | 0.0159 → 0.0108 |
+| 6 | flat | crossing | 0.9 → 0.9 | 0.9 → 0.9 | 16.1 → 9.5 | 0.362 → 0.542 | 0.000 → 0.001 | yes/yes → no/yes | 0.0307 → 0.0284 |
+| 7 | animated | in place | 21.8 → 6.9 | 36.5 → 9.8 | 53.6 → 29.8 | 0.573 → 0.518 | 0.801 → 0.254 | yes → yes | 0.0365 → 0.0519 |
+| 8 | image | in place | 22.8 → 3.7 | 29.7 → 3.2 | 38.5 → 17.9 | 0.523 → 0.751 | 0.469 → 0.135 | no → yes | 0.0334 → 0.0195 |
 
-Title integrity (whole / duplicates / fragments) and leak metrics against the analysed plate are reported but not gated. Without a baseline, the two baseline gates read "no baseline". `--strict` counts them as failures.
+- **Plates no longer absorb what holds still.** The plate under the title drops from 13–25 ΔE to 0.0–1.5 on seeds 1–6, and under the logo from 14–30 to 0.0–3.1.
+- **Textures no longer carry the plate.** The bg leak fraction goes from 0.45–0.66 to 0.000. Halo after a background replace goes from 30–60 to 7–12.
+- **Remaining failures:**
+  - **α SAD** is still 0.26–0.54, against the 0.03 gate.
+  - **Seeds 4 and 6:** the title "New Arrivals" over the crossing mover comes back split by OCR (font set changed at Task 10). Merging the fragments is Stage B work.
+  - **In-place mover (seeds 7–8):** plate and halo are much better, but on the animated plate (seed 7) the mover is still not found. On the picture plate (seed 8) it is found, but it absorbs three sprites and the logo (α SAD 0.52 → 0.75).
+
+### Real clips
+
+```sh
+keepframe gate-m2-real --clips eval/clips --out eval/out/ra-baseline --max-frames 150 --render-check   # at 12da25a
+keepframe eval-edits --clips eval/clips --gold docs/qa/reference-analysis/gold --out eval/out/ra-clips \
+  --synthetic 0 --renderer browser --baseline baseline.json --strict                                  # at master
+```
+
+- **Before:** [`baseline.json`](baseline.json), from master before Stage A (`12da25a`, the D7 baseline). Each clip analysis peaked at 6.2 GB RSS.
+- **After:** master with the text-fill fix (`696ebde`). Raw numbers are in [`stage-a-clips-fix.json`](stage-a-clips-fix.json); the merged Stage A without the fix is in [`stage-a-clips.json`](stage-a-clips.json). Peak RSS was 13.6 GB for the whole run.
+
+| clip | analysis s (before → after) | render L1 (before → after) | title colour ΔE vs gold (merged → fixed) | titles whole |
+|---|---|---|---|---|
+| envato1 | 411 → 514 (×1.25) | 0.0794 → 0.0673 | 92.60 → 7.18 | 1/2 |
+| ig1 | 618 → 665 (×1.08) | 0.0458 → 0.0341 | 0.94, 1.78 → 0.94, 1.78 | 2/2 |
+| ig2 | 250 → 288 (×1.15) | 0.0725 → 0.0793 | 0.79 → 0.79 | 1/2 |
+| ig3 | 170 → 184 (×1.09) | 0.0226 → 0.0224 | —, 5.54 → —, 5.54 | 1/2 |
+
+Clip gates with the fix:
+
+| gate | result |
+|---|---|
+| seconds ≤ 1.5 × before | pass, 4/4 (×1.08–1.25) |
+| `render_l1` ≤ before + 0.005 | 3/4. ig2 fails by 0.0018 (0.0793 vs 0.0775) |
+| title colour ΔE < 10 | 5/6. ig3 "You just speak" is unmeasured because OCR splits it into "You just", "ust" and "st" |
+| VLM calls | 0 |
+
+Other checks on master:
+
+- `gate-m1`: 20/20.
+- `gate-m2 --n 20`: frame L1 20/20, tracking ok, temporal mean 0.720, so it passes.
+- The whole pytest suite, every marker: 2683 passed and 236 skipped. One test failed only because node was missing on that machine, and it passes once node is installed.
+- Node tests: 133/133.
+
+Sheets (source | before Stage A | after Stage A with the fix, frames 75/120/149): [envato1](stage-a-envato1.jpg), [ig1](stage-a-ig1.jpg), [ig2](stage-a-ig2.jpg), [ig3](stage-a-ig3.jpg).
+
+**ig2 is the ig2demo source.**
+
+- **Fixed:** the title reads dark red, ΔE 0.79 from gold #ab0004, where Stage A's motivating bug gave #fb9d9d. It is the right size, and the red smear is gone. Retexting it to "Fall Drop Sale" leaves no outside-glyph change and a smear score of 4.0.
+- **Still wrong:** the globe does not become its own layer; it rebuilds as a pale still shape. The small stickers, the suitcase and the plane are missing, both before and after. The leak against the analysed plate is 0.214. These are why `render_l1` rises.
+
+**envato1.**
+
+- **Text-fill bug, fixed:** the merged Stage A drew all eight light-on-black texts near-black. The matte kept the black around the glyphs, and the plate estimate under them was a purple haze. The text-fill fix (R66/R67) uses the pre-Stage-A core colour to break that tie, on the texture's own evidence.
+- **Still wrong:** the colours are right now, but the matched fonts are not. A condensed display face and a slab face are matched where the source uses a geometric sans.
+
+**ig1.** Better than before: the title matches its font, and the plate behind the cards is cleaner.
+
+**ig3.**
+
+- **Fixed:** the colours are right, including "and it builts for you", which the merged Stage A drew pale blue because it took the line's minority colour.
+- **Still wrong:** the fonts. A serif is matched for a sans, and "Your idea" also gets a false 14° shear and a black shadow.
+
+**Follow-ups from the real clips** (not fixed here):
+- Font matching on real text picks the wrong family, and on ig3 also a false shear and shadow.
+- A mover that turns in place on a picture plate absorbs neighbouring layers (seed 8).
+- The ig2 globe is not its own layer, and ig2 `render_l1` is 0.0018 over its gate.
+- OCR-split titles (ig3, seeds 4 and 6) belong to Stage B.
+
+The clip gates are those of `eval-edits` (title colour vs gold ΔE < 10, `render_l1` ≤ baseline + 0.005, seconds ≤ 1.5 × baseline, 0 VLM calls). Title integrity and leak against the analysed plate are reported but not gated. `BASELINE.json` may be a `gate-m2-real --render-check` result (`{"rows": [...]}`) or `{"<clip stem>": {"seconds", "render_l1"}}`.
 
 ## What each check does
 

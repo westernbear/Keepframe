@@ -1,0 +1,51 @@
+{
+  "envato1": {
+    "seconds": 411.3,
+    "mean_l1": 0.06778104269256194,
+    "render_l1": 0.07936163668831189,
+    "elements": 54,
+    "kinds": {
+      "sprite": 46,
+      "text": 8
+    }
+  },
+  "ig1": {
+    "seconds": 618.5,
+    "mean_l1": 0.04050178532799085,
+    "render_l1": 0.0457542618115743,
+    "elements": 127,
+    "kinds": {
+      "text": 43,
+      "sprite": 84
+    }
+  },
+  "ig2": {
+    "seconds": 250.3,
+    "mean_l1": 0.06847979069997867,
+    "render_l1": 0.07254898796478908,
+    "elements": 50,
+    "kinds": {
+      "sprite": 37,
+      "text": 13
+    }
+  },
+  "ig3": {
+    "seconds": 169.5,
+    "mean_l1": 0.01823565364504854,
+    "render_l1": 0.022642221627756955,
+    "elements": 64,
+    "kinds": {
+      "text": 8,
+      "sprite": 56
+    }
+  },
+  "_env": {
+    "commit": "12da25a",
+    "torch": "2.14.0+cu130",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "cores": 16,
+    "host": "home (WSL2 Ubuntu, 25 GB)",
+    "max_frames": 150
+  }
+}
