@@ -555,6 +555,29 @@ def test_video_sprite_plays_the_same_in_chromium(globe):
         assert np.abs(img[y0:y1, x0:x1] - frames[f, y0:y1, x0:x1]).mean() <= 6, f   # the globe turns in Chromium too
 
 
+@pytest.mark.skipif(not videoasset.ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_video_sprite_copy_failure_keeps_still_sprite_at_lower_confidence(still_globe, tmp_path, monkeypatch):
+    """Final review: the WebM made, but its copy into the assets fails: the still sprite with video_failed, at lower
+    confidence, and nothing of the error text in the report."""
+    import types
+    from keepframe.analyze import pipeline
+
+    def copy_fails(*a, **k):
+        raise OSError("No space left on device: '/home/secret-operator/keepframe-ws/p1/assets/e1.video.webm'")
+
+    monkeypatch.setattr(pipeline, "shutil", types.SimpleNamespace(copyfile=copy_fails))
+    scene = analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    ids = json.loads((_sd(tmp_path) / "stages" / "ids.json").read_text())
+    el = scene.element(ids["m1"])
+    assert el.canonical.video is None and not (_sd(tmp_path) / "assets" / f"{el.id}.video.webm").exists()
+    report = (_sd(tmp_path) / "report.json").read_text()
+    assert f"{el.id} animates in place; kept as a still sprite (video_failed)" in json.loads(report)["messages"]
+    assert "secret-operator" not in report and "No space" not in report
+    root, still, _ = still_globe
+    base = still.element(json.loads((_sd(root) / "stages" / "ids.json").read_text())["m1"]).confidence
+    assert el.confidence == pytest.approx(base * 0.5, abs=0.02)
+
+
 def test_mover_video_failure_keeps_still_sprite_at_lower_confidence(still_globe, tmp_path, monkeypatch):
     """R58: an unstable mover whose video cannot be made is the still sprite with the code, at lower confidence
     than the still sprite of a machine without VP9."""

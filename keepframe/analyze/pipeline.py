@@ -596,7 +596,14 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         video = None
         if p.get("video") and (sd / p["video"]).is_file():   # a video sprite: its WebM beside the poster
             video = f"assets/{eid}.video.webm"
-            shutil.copyfile(sd / p["video"], sd / video)
+            try:
+                shutil.copyfile(sd / p["video"], sd / video)
+            except OSError as e:   # fail soft: the still sprite, its code, lower confidence (props.pkl keeps the try)
+                log.warning("video sprite %s not copied: %s", eid, describe(e))
+                (sd / video).unlink(missing_ok=True)
+                video = None
+                p.pop("video")
+                p["video_error"] = "video_failed"
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", video=video,
                               text=p.get("text"), font=_pin_font(p.get("font"), sd, registry), color=p.get("color"),
                               style=TextStyle(**p["style"]) if p.get("style") else None,
