@@ -25,7 +25,9 @@ SPECK_MIN = 4
 PRESENT = 0.10            # a frame holds the mover when its mask covers this share of the component
 Z = -1                    # movers draw below every other layer and above the plate
 CROSS = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-CLOSE_PX = 5              # closing radius (work px)
+CLOSE_PX = 2              # closing radius (work px); at 5 a sprite's trail 20 px off joined the mover (eval seed 8)
+# ponytail: a trail within ~2 × CLOSE_PX work px still joins the core and its track is claimed; upgrade: take the
+# pixels one moving, unclaimed track explains out of u before closing.
 RING_PX = 8               # width of the ring that must stay stable (work px)
 RING_U = 0.1              # median instability of that ring
 FRAME_UNSTABLE = 0.30     # share of a component unstable at once, in ≥ min_unstable of the samples
@@ -291,7 +293,7 @@ def _tight(x0, y0, m):
 
 def find_movers(frames, sample, u, obj_tracks, shape_tracks, *, plate, text_tracks=(), established=None,
                 min_area=0.04, min_unstable=0.40, max_area=0.60) -> list[Mover]:
-    """Components of u ≥ min_unstable (closed 5 px, insides filled) with area ≥ min_area, bbox ≤ max_area, a stable
+    """Components of u ≥ min_unstable (closed 2 px, insides filled) with area ≥ min_area, bbox ≤ max_area, a stable
     8 px ring and ≥ 30 % unstable in ≥ min_unstable of the samples. The plate behind is `plate` with the component
     dilated by REFILL_PX refilled from its ring. Each mover claims the object/shape tracks ≥ 80 % inside that
     dilated component in ≥ 60 % of their frames (never text). Per frame: dilate((ΔE(I_f, plate behind) > thr) ∩ bbox

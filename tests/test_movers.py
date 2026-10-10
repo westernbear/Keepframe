@@ -293,6 +293,54 @@ def test_halo_fragment_is_claimed_but_a_layer_beside_the_mover_is_not():
         assert not full[:CY - R - 4].any()                        # and so does the halo's plate part
 
 
+def _picture_plate(seed=8):
+    """The eval's picture plate: three broad colour blobs and N(0, 2) grain."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[:H, :W].astype(np.float64)
+    img = np.full((H, W, 3), (60.0, 70.0, 90.0))
+    for _ in range(3):
+        cx, cy, s = rng.uniform(0, W), rng.uniform(0, H), rng.uniform(0.25, 0.45) * W
+        g = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * s * s))[..., None] * rng.uniform(0.5, 0.9)
+        img = img * (1 - g) + rng.uniform(0, 255, 3) * g
+    return (img + rng.normal(0, 2.0, img.shape)).round().clip(0, 255).astype(np.uint8)
+
+
+def test_in_place_mover_on_picture_plate_leaves_its_neighbours_out():
+    """Eval seed 8: a striped disc turning in place on a picture plate, a static logo beside it, and a sprite drifting
+    down 20 px to its left (growing: not established), slowly enough that its trail is unstable too. The mover is
+    found and claims neither; its masks hold neither, nor the sprite's trail."""
+    from keepframe.analyze.tracking import ObjectTrack
+    n, plate = 32, _picture_plate()
+    yy, xx = np.mgrid[:H, :W]
+    disc = (xx - CX) ** 2 + (yy - CY) ** 2 <= R * R
+    logo = (CX + R + 4, CY - 8, CX + R + 36, CY + 8)
+
+    def box(f):
+        t = f / (n - 1)
+        y0 = 40 + round(40 * t)
+        return (CX - R - 44, y0, CX - R - 20, y0 + round(24 + 24 * t))
+
+    frames = np.repeat(plate[None], n, 0)
+    for f in range(n):
+        a = np.radians(360 * f / n)
+        stripe = ((xx - CX) * np.cos(a) + (yy - CY) * np.sin(a)) // 8 % 2 == 0
+        frames[f][disc] = np.where(stripe[disc, None], (240, 200, 40), (30, 60, 160))
+        frames[f, logo[1]:logo[3], logo[0]:logo[2]] = (250, 60, 60)
+        x0, y0, x1, y1 = box(f)
+        frames[f, y0:y1, x0:x1] = (60, 220, 120)
+    tracks = [_track(1, range(n), logo), ObjectTrack(2, {f: _track(2, [f], box(f)).regions[f] for f in range(n)})]
+    sample = sample_frames(n)
+    est = established_mask((H, W), [], tracks, n, sample)
+    (m,) = find_movers(frames, sample, instability(frames, sample, est), tracks, [], plate=plate, established=est)
+    assert m.claimed == [] and len(m.frames) == n
+    assert _union_box(m)[0] >= CX - R - 4   # the sprite's trail is not part of it
+    for f, ((bx0, by0, bx1, by1), mk) in m.frames.items():
+        full = np.zeros((H, W), bool)
+        full[by0:by1, bx0:bx1] = mk
+        x0, y0, x1, y1 = box(f)
+        assert not full[y0:y1, x0:x1].any() and not full[logo[1]:logo[3], logo[0]:logo[2]].any()
+
+
 def _slow_card_clip(n=32, w=120, h=84, travel=48):
     """A striped card drifting so slowly that pass 1 bakes it into its plate (only a halo becomes a region)."""
     out = np.repeat(_plate()[None], n, 0)
