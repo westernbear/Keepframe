@@ -341,6 +341,18 @@ def test_in_place_mover_on_picture_plate_leaves_its_neighbours_out():
         assert not full[y0:y1, x0:x1].any() and not full[logo[1]:logo[3], logo[0]:logo[2]].any()
 
 
+def test_globe_after_a_full_frame_opening_is_a_mover():
+    """ig2: a full-frame opening (another background) leaves every pixel unstable in 12 of the 32 samples, so the
+    globe's ring is too (median u 0.375, as ig2's); the globe that turns after it is still a mover."""
+    frames = _globe_clip()
+    frames[:12] = (250, 200, 200)
+    sample = sample_frames(len(frames))
+    (m,) = find_movers(frames, sample, instability(frames, sample, None), [], [], plate=_plate())
+    boxes = np.array([b for f, (b, _) in m.frames.items() if f >= 12])
+    box = boxes[:, 0].min(), boxes[:, 1].min(), boxes[:, 2].max(), boxes[:, 3].max()
+    assert len(m.frames) == len(frames) and np.abs(np.subtract(box, GLOBE_BOX)).max() <= 4
+
+
 def _slow_card_clip(n=32, w=120, h=84, travel=48):
     """A striped card drifting so slowly that pass 1 bakes it into its plate (only a halo becomes a region)."""
     out = np.repeat(_plate()[None], n, 0)

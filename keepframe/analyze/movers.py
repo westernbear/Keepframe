@@ -29,7 +29,11 @@ CLOSE_PX = 2              # closing radius (work px); at 5 a sprite's trail 20 p
 # ponytail: a trail within ~2 × CLOSE_PX work px still joins the core and its track is claimed; upgrade: take the
 # pixels one moving, unclaimed track explains out of u before closing.
 RING_PX = 8               # width of the ring that must stay stable (work px)
-RING_U = 0.1              # median instability of that ring
+RING_U = 0.39             # median instability of that ring; at 0.1 ig2's globe failed: its full-frame opening leaves
+#                           every pixel unstable in 18 of 48 samples (ring median 0.375)
+# ponytail: ring pixels are below min_unstable (0.40), so this test now only stops rings almost that unstable; plate
+# animation that leaves the ring unstable < 39 % of the time is left to max_area and the unstable share. Upgrade:
+# judge the ring per sample (count only the samples in which the ring is stable).
 FRAME_UNSTABLE = 0.30     # share of a component unstable at once, in ≥ min_unstable of the samples
 CLAIM_INSIDE = 0.80       # a track is a fragment when this share of its pixels lies in the dilated component …
 CLAIM_FRAMES = 0.60       # … in this share of its frames (pixels matching the plate behind, pass 1 halos, aside)
