@@ -7,26 +7,44 @@ from .composite import composite_scene
 
 
 def read_frames(path: Path, start: int = 0, end: int | None = None) -> tuple[np.ndarray, float]:
+    """Decode into one preallocated stack (a list + np.stack held the frames twice)."""
     path = Path(path)
     if path.is_dir():
         files = sorted(path.glob("*.png"))[start: (end + 1) if end is not None else None]
-        frames = [cv2.cvtColor(cv2.imread(str(f), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB) for f in files]
-        return np.stack(frames), 30.0
+        if not files:
+            raise ValueError(f"no frames in {path} in [{start},{end}]")
+        out = None
+        for i, f in enumerate(files):
+            rgb = cv2.cvtColor(cv2.imread(str(f), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+            if out is None:
+                out = np.empty((len(files), *rgb.shape), np.uint8)
+            out[i] = rgb
+        return out, 30.0
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise FileNotFoundError(path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-    frames, i = [], start
-    while True:
+    stop = end + 1 if end is not None else None
+    if total > start:
+        stop = min(stop, total) if stop is not None else total
+    out, n = None, 0
+    while end is None or start + n <= end:
         ok, bgr = cap.read()
-        if not ok or (end is not None and i > end):
+        if not ok:
             break
-        frames.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)); i += 1
+        if out is None:
+            out = np.empty((max(1, (stop or 0) - start), *bgr.shape), np.uint8)
+        elif n == len(out):   # container under-reported its frame count
+            grown = np.empty((2 * n, *bgr.shape), np.uint8)
+            grown[:n] = out
+            out = grown
+        out[n] = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB); n += 1
     cap.release()
-    if not frames:
+    if not n:
         raise ValueError(f"no frames read from {path} in [{start},{end}]")
-    return np.stack(frames), float(fps)
+    return out[:n], float(fps)   # pages past n were never written, so they cost no memory
 
 
 def write_video(frames: np.ndarray, fps: float, out: Path) -> Path:

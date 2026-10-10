@@ -1,10 +1,13 @@
 from __future__ import annotations
+import shutil
+from pathlib import Path
 import cv2, numpy as np
 
 PLATE_CONF_MAX = 0.30   # spec 5.2: dominant colour under 30% of pixels -> not a solid background
 PLATE_RING = 0.08
 PLATE_NONUNIFORM = 0.10
 PLATE_PATH = "assets/background.png"
+PASS1_PATH = "stages/plate_pass1.png"
 
 
 def rgb_to_lab(img_rgb_uint8: np.ndarray) -> np.ndarray:
@@ -62,3 +65,19 @@ def opacity_against_plate(pixels: np.ndarray, plate_pixels: np.ndarray, foregrou
     valid = n > 1e-6
     a = np.sum((pixels - plate_pixels) * c, axis=1)[valid] / n[valid]
     return float(np.clip(np.median(a), 0.0, 1.0)) if len(a) else 1.0
+
+
+def pass1_plate(sd: Path) -> np.ndarray:
+    """The scene's pass-1 plate. Before plate v2 it lived at assets/background.png; such a legacy file is
+    copied to PASS1_PATH first, so a rebuilt v2 plate can take that name."""
+    path = Path(sd) / PASS1_PATH
+    if not path.is_file():
+        legacy = Path(sd) / PLATE_PATH
+        if not legacy.is_file():
+            raise FileNotFoundError(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(legacy, path)
+    img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if img is None:
+        raise FileNotFoundError(path)
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

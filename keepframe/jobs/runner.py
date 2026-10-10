@@ -8,7 +8,7 @@ from typing import Any, Callable, Protocol
 from keepframe.log import get
 from keepframe.progress import bind_stage, remaining_eta, reset_stage
 
-from .dispatch import run_job
+from .dispatch import JobFailed, run_job
 from .spec import Job, JobSpec
 
 log = get("keepframe.jobs")
@@ -61,6 +61,10 @@ class ThreadRunner:
                 job.result = (run_job(spec) if spec is not None else fn()) or {}
                 job.status = "done"
                 log.info("job %s %s done project=%s", job.id, job.kind, job.project_id)
+            except JobFailed as e:   # a code for clients; the detail is already in the log, paths cut
+                job.error = e.code
+                log.error("job %s %s failed project=%s: %s", job.id, job.kind, job.project_id, e.code)
+                job.status = "error"
             except Exception as e:
                 job.error = f"{type(e).__name__}: {e}"
                 log.exception("job %s %s failed project=%s", job.id, job.kind, job.project_id)

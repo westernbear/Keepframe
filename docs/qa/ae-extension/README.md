@@ -101,3 +101,29 @@ Known differences:
 | model v1 | 0.0115 | 0.0188 | yes |
 
 Rule: 2× the worst value on scenes that look right, rounded up to 0.005. Worst mean 0.0115 → `VERIFY_MEAN_MAX = 0.025`; worst frame 0.0188 → `VERIFY_FRAME_MAX = 0.04` (set in 9a70dfd). Substituted-font regions are excluded from both numbers.
+
+## Live check 4 (Stage A Task 14: gradients, footage, styled text)
+
+To run with the user in Task 15. Install a fresh build (`scripts/build_zxp.sh`; source version 1.1.0, stamped
+`1.<YYYYMMDD>.<ms>`, which installs over the older stamped builds). The panel sends `X-Keepframe-Spec-Level: 3`
+(a level-2 build from before the final fix wave gets 426 for a speed-edited scene with video, whose footage carries
+a time stretch).
+A panel from before Task 14 sends none: legacy scenes still sync on it, but a scene with video, a 2-stop gradient
+or styled text gets HTTP 426 (the job fails with “update the Keepframe extension: …” and the panel stops and
+offers the download). Leave unrun results blank.
+
+| # | Check | How | Expected | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Linear gradient background | Send a scene whose background is a 2-stop linear gradient (e.g. 135°). Inspect the background layer and **Verify against AE** (AE와 비교). | A solid with one **Keepframe Gradient** (Gradient Ramp): Ramp Shape Linear, Start/End of Ramp on the CSS gradient line (135° on 1920×1080: (210, −210) → (1710, 1290)), start/end colours as the stops. No warning. Verify passes. | |
+| 2 | Radial and animated gradients | Send a radial 2-stop gradient and an animated (busy-plate) gradient. Scrub. | Ramp Shape Radial, Start of Ramp at the centre, End one radius to the right. Animated: Start/End/colour keys at the gradient keys' frames, linear between them. Verify passes. | |
+| 3 | Gradient with more than 2 stops | Send a 3-stop gradient background. | The poster image is the background; the job warns `gradient background has more than 2 stops; exported as its poster image`. | |
+| 4 | Video plate | Send a scene with a video background. Scrub frames 0, middle and last; open Interpret Footage. Verify. | A footage layer `background.mp4` (H.264, BT.709) at the bottom, frame-exact with Keepframe, no colour shift. Verify passes. | |
+| 5 | Video sprite | Send a scene with a video sprite. Inspect the layer bar, Interpret Footage, and edges over the background. Verify. | Footage `<id>.mov` (ProRes 4444): the layer starts (startTime and In) at the sprite's first visible frame and plays its clip from frame 0 there; alpha **Straight**, no dark fringe. Verify passes. | |
+| 6 | Text tracking and stroke | Send styled text with tracking and a stroke. Open the Character panel. | Tracking = tracking_em × 1000. Stroke on, width 2w, **Fill Over Stroke**, the analysed stroke colour. The PostScript name of an installed uploaded font is the text's font (no substitution warning). | |
+| 7 | Shadow and glow | Send styled text with a shadow and a glow. Inspect **Keepframe Shadow 1/2** (Drop Shadow). | Direction atan2(dx, −dy), Distance √(dx²+dy²), Softness = blur; the panel's Opacity reads the analysed opacity in % (the script writes 0–255 — check this mapping). A glow has Distance 0. Shadows reach past the text box. | |
+| 8 | Gradient fill | Send text with a gradient fill. Inspect the effect stack. | **Keepframe Fill** (Gradient Ramp) and **Keepframe Fill Matte** (Set Matte: Take Matte From Layer = this layer, Use For Matte = Alpha Channel) are the first two effects; the glyphs show the gradient over the text box, nothing outside them. With a stroke, the job warns that the stroke takes the gradient. | |
+| 9 | Shear | Send italic-like text (shear) and compare glyph slant and baseline with Keepframe. | **Keepframe Skew** leans the glyphs the same way as Keepframe; the first baseline stays in place (Position = Anchor + baseline shift). | |
+| 10 | Fade | Send text with a fade. | The job warns `text fade not exported`; the text is drawn without the fade. | |
+| 11 | Resend, stop-colour change, style removed | Resend unchanged; then change one gradient stop colour in Keepframe and send; then remove a text's style and send. | The resend is a no-op (all unchanged, no undo step). After the colour change only the background updates; the Keepframe Gradient effect stays in place with only End/Start Color changed. Removing the style turns the stroke off and the tracking to 0. | |
+| 12 | Hand edits on the new effects | In AE change a Drop Shadow distance, a text's tracking, the Set Matte channel, or slide a footage layer. Send, then **Overwrite them** (덮어쓰기). | The send refuses with a hand-edit warning for that layer; overwrite restores the Keepframe values. Moving the text layer in the stack is not a hand edit. | |
+| 13 | Old panel and video preparation | Before installing, send a gradient scene from the old panel; then install and send a scene with a long video plate. | Old panel: the update message with the download link; the web job says “update the Keepframe extension: …”. New panel: “Preparing video for …” (영상 준비 중) while the footage is made in the background, then the sync. | |

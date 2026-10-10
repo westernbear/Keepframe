@@ -117,6 +117,47 @@ if (typeof JSON !== "object" || JSON === null) {
         }
     }
 
+    function optional(value) { return value === undefined ? null : value; }
+
+    function styledText(s) { return !!s && s.kind === "text" && s.source.tracking !== undefined; }
+
+    function validateColorKeys(keys) {
+        var i, j;
+        validateKeys(keys, 4);
+        for (i = 0; i < keys.length; i += 1) {
+            for (j = 0; j < 4; j += 1) { requireValue(keys[i][1][j] >= 0 && keys[i][1][j] <= 1, "invalid effect color"); }
+        }
+    }
+
+    function validateRamp(ramp) {
+        requireValue(ramp && (ramp.shape === 1 || ramp.shape === 2), "invalid ramp effect");
+        validateKeys(ramp.start, 2); validateKeys(ramp.end, 2);
+        validateColorKeys(ramp.start_color); validateColorKeys(ramp.end_color);
+    }
+
+    function validateStyle(s) {
+        var i, shadow, stroke, shadows = optional(s.effects.shadows);
+        if (styledText(s)) {
+            stroke = optional(s.source.stroke);
+            requireValue(number(s.source.tracking) && (stroke === null || (number(stroke.width) && stroke.width > 0
+                && typeof stroke.over_fill === "boolean")), "invalid text style");
+            if (stroke !== null) { rgb(stroke.color); }
+        }
+        requireValue(shadows === null || (s.kind === "text" && array(shadows)), "invalid shadow effects");
+        for (i = 0; shadows !== null && i < shadows.length; i += 1) {
+            shadow = shadows[i];
+            requireValue(shadow && number(shadow.opacity) && shadow.opacity >= 0 && shadow.opacity <= 100
+                && number(shadow.direction) && number(shadow.distance) && shadow.distance >= 0
+                && number(shadow.softness) && shadow.softness >= 0, "invalid shadow effects");
+            validateColorKeys([[0, shadow.color, null, null]]);
+        }
+        if (optional(s.effects.fill) !== null) {
+            requireValue(s.kind === "text", "invalid fill effect");
+            validateRamp(s.effects.fill);
+        }
+        if (optional(s.effects.gradient) !== null) { validateRamp(s.effects.gradient); }
+    }
+
     function validate(spec, assets, force) {
         var i, j, s, a, ids = {}, names = {};
         requireValue(spec && spec.schema === "keepframe.ae-comp/1" && spec.comp
@@ -141,7 +182,7 @@ if (typeof JSON !== "object" || JSON === null) {
             s = spec.layers[i];
             requireValue(s && typeof s.id === "string" && s.id !== "" && !own(ids, "$" + s.id), "invalid layer id");
             ids["$" + s.id] = true;
-            requireValue(/^(text|solid|null|image|model)$/.test(s.kind) && typeof s.name === "string"
+            requireValue(/^(text|solid|null|image|model|footage)$/.test(s.kind) && typeof s.name === "string"
                 && (s.hidden === undefined || typeof s.hidden === "boolean")
                 && number(s.order) && number(s["in"]) && number(s.out) && s.out >= s["in"]
                 && (s.label === null || (number(s.label) && s.label >= 0 && s.label <= 16
@@ -166,8 +207,13 @@ if (typeof JSON !== "object" || JSON === null) {
                     && number(s.anchor[0]) && number(s.anchor[1]), "invalid layer anchor");
             }
             if (s.kind === "solid") { rgb(s.source.color); }
-            if (s.kind === "image" || s.kind === "model") {
+            if (s.kind === "image" || s.kind === "model" || s.kind === "footage") {
                 requireValue(s.source && own(names, "$" + s.source.asset), "invalid layer asset");
+            }
+            if (s.kind === "footage") {
+                requireValue(number(s.source.start_time) && s.source.start_time >= 0, "invalid footage start");
+                requireValue(s.source.stretch === undefined
+                    || (number(s.source.stretch) && s.source.stretch > 0 && s.source.stretch <= 9900), "invalid footage stretch");
             }
             if (s.kind === "model") {
                 requireValue(array(s.source.fit_box) && s.source.fit_box.length === 2
@@ -182,8 +228,10 @@ if (typeof JSON !== "object" || JSON === null) {
             }
             if (s.effects.skew !== null) {
                 validateKeys(s.effects.skew.skew, 1);
-                requireValue(number(s.effects.skew.axis), "invalid skew effect");
+                requireValue(number(s.effects.skew.axis) && (s.effects.skew.baseline_shear === undefined
+                    || number(s.effects.skew.baseline_shear)), "invalid skew effect");
             }
+            validateStyle(s);
         }
     }
 
@@ -211,8 +259,12 @@ if (typeof JSON !== "object" || JSON === null) {
     function transform(layer) { return layer.property("ADBE Transform Group"); }
 
     function owned(effect) {
-        return (effect.name === "Keepframe Reveal" && effect.matchName === "ADBE Linear Wipe")
-            || (effect.name === "Keepframe Skew" && effect.matchName === "ADBE Geometry2");
+        var name = effect.name, match = effect.matchName;
+        return (name === "Keepframe Reveal" && match === "ADBE Linear Wipe")
+            || (name === "Keepframe Skew" && match === "ADBE Geometry2")
+            || ((name === "Keepframe Gradient" || name === "Keepframe Fill") && match === "ADBE Ramp")
+            || (name === "Keepframe Fill Matte" && match === "ADBE Set Matte3")
+            || (/^Keepframe Shadow [1-9][0-9]*$/.test(name) && match === "ADBE Drop Shadow");
     }
 
     function managed(layer) {
@@ -283,10 +335,19 @@ if (typeof JSON !== "object" || JSON === null) {
         return result;
     }
 
-    function propertyValue(p, value, modelScale) {
+    function propertyValue(p, value, modelScale, layer, styled) {
+        var result;
         if (p.propertyValueType === PropertyValueType.TEXT_DOCUMENT) {
-            return [value.text, value.font, rounded(value.fontSize), colorValue(value.fillColor), value.applyFill, String(value.justification)];
+            result = [value.text, value.font, rounded(value.fontSize), colorValue(value.fillColor), value.applyFill, String(value.justification)];
+            // Styled text manages tracking and stroke; stroke fields throw while applyStroke is false.
+            if (styled) {
+                result.push(rounded(value.tracking), value.applyStroke, value.applyStroke
+                    ? [colorValue(value.strokeColor), rounded(value.strokeWidth), value.strokeOverFill] : null);
+            }
+            return result;
         }
+        // A layer parameter reads the referenced layer's index, which moves with the stack; "self" does not.
+        if (p.propertyValueType === PropertyValueType.LAYER_INDEX) { return value === layer.index ? "self" : value; }
         return p.propertyValueType === PropertyValueType.COLOR ? colorValue(value) : rounded(paddedValue(p, value, modelScale));
     }
 
@@ -299,7 +360,7 @@ if (typeof JSON !== "object" || JSON === null) {
         return values;
     }
 
-    function fingerprint(layer, fps, legacy, timings) {
+    function fingerprint(layer, fps, legacy, timings, styled) {
         var started = new Date().getTime(), value;
         try {
             var props = managed(layer), data = [], i, k, p, keys, key, incoming, outgoing, effects, effect, effectNames = [];
@@ -314,6 +375,9 @@ if (typeof JSON !== "object" || JSON === null) {
             if (kind(layer) === "solid") {
                 data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
             } else if (layer.source) { data.push(layer.source.id); }
+            if (kind(layer) === "footage") { data.push(Math.round(layer.startTime * fps)); }
+            // A time stretch other than 100 % (speed edits); unstretched layers keep their earlier fingerprint.
+            if (kind(layer) === "footage" && Math.abs(layer.stretch - 100) > 1e-6) { data.push(rounded(layer.stretch)); }
             // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
             if (kind(layer) === "model") { data.push(layer.source.comment); }
             for (i = 0; i < props.length; i += 1) {
@@ -321,14 +385,14 @@ if (typeof JSON !== "object" || JSON === null) {
                 keys = [];
                 for (k = 1; k <= p.numKeys; k += 1) {
                     incoming = p.keyInInterpolationType(k); outgoing = p.keyOutInterpolationType(k);
-                    key = [Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale), String(incoming), String(outgoing)];
+                    key = [Math.round(p.keyTime(k) * fps), propertyValue(p, p.keyValue(k), modelScale, layer, styled), String(incoming), String(outgoing)];
                     // AE turns an ease-edited key Bezier; all-LINEAR ease has no visible state.
                     if (legacy || incoming !== KeyframeInterpolationType.LINEAR || outgoing !== KeyframeInterpolationType.LINEAR) {
                         key.push(easeValues(p, p.keyInTemporalEase(k)), easeValues(p, p.keyOutTemporalEase(k)));
                     }
                     keys.push(key);
                 }
-                data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale),
+                data.push([p.matchName, p.numKeys ? keys : propertyValue(p, p.valueAtTime(0, true), modelScale, layer, styled),
                     p.canSetExpression ? p.expressionEnabled : false, p.canSetExpression ? p.expression : ""]);
             }
             effects = layer.property("ADBE Effect Parade");
@@ -346,8 +410,8 @@ if (typeof JSON !== "object" || JSON === null) {
         return value;
     }
 
-    function readFingerprint(layer, fps, legacy, timings) {
-        try { return fingerprint(layer, fps, legacy, timings); } catch (e) { return null; }
+    function readFingerprint(layer, fps, legacy, timings, styled) {
+        try { return fingerprint(layer, fps, legacy, timings, styled === true); } catch (e) { return null; }
     }
 
     function keyCount(layer) {
@@ -435,13 +499,50 @@ if (typeof JSON !== "object" || JSON === null) {
         return effect;
     }
 
-    function writeEffects(layer, s, fps, anchor, force) {
-        var effects = layer.property("ADBE Effect Parade"), i, effect;
+    function shifted(keys, origin) {
+        var result = [], i;
+        for (i = 0; i < keys.length; i += 1) {
+            result.push([keys[i][0], [keys[i][1][0] + origin[0], keys[i][1][1] + origin[1]], keys[i][2], keys[i][3]]);
+        }
+        return result;
+    }
+
+    function writeRamp(effect, ramp, fps, origin) {
+        writeKeys(effect.property("ADBE Ramp-0001"), shifted(ramp.start, origin), fps, 1, false);
+        writeKeys(effect.property("ADBE Ramp-0002"), ramp.start_color, fps, 1, false);
+        writeKeys(effect.property("ADBE Ramp-0003"), shifted(ramp.end, origin), fps, 1, false);
+        writeKeys(effect.property("ADBE Ramp-0004"), ramp.end_color, fps, 1, false);
+        staticValue(effect.property("ADBE Ramp-0005"), ramp.shape);
+    }
+
+    function ownedIndex(effects, name) {
+        var i;
+        for (i = 1; i <= effects.numProperties; i += 1) {
+            if (effects.property(i).name === name && owned(effects.property(i))) { return i; }
+        }
+        return 0;
+    }
+
+    function writeEffects(layer, s, fps, anchor, force, origin) {
+        var effects = layer.property("ADBE Effect Parade"), i, effect, match, shift;
+        var gradient = optional(s.effects.gradient), fill = optional(s.effects.fill), shadows = optional(s.effects.shadows) || [];
         for (i = effects.numProperties; i >= 1; i -= 1) {
             effect = effects.property(i);
+            match = /^Keepframe Shadow ([0-9]+)$/.exec(effect.name);
             if (owned(effect) && ((effect.name === "Keepframe Reveal" && s.effects.reveal === null)
-                || (effect.name === "Keepframe Skew" && s.effects.skew === null))) { effect.remove(); }
+                || (effect.name === "Keepframe Skew" && s.effects.skew === null)
+                || (effect.name === "Keepframe Gradient" && gradient === null)
+                || ((effect.name === "Keepframe Fill" || effect.name === "Keepframe Fill Matte") && fill === null)
+                || (match && Number(match[1]) > shadows.length))) { effect.remove(); }
         }
+        if (fill !== null) {
+            writeRamp(addEffect(layer, "Keepframe Fill", "ADBE Ramp", force), fill, fps, origin);
+            effect = addEffect(layer, "Keepframe Fill Matte", "ADBE Set Matte3", force);
+            // The matte is the text's own alpha (Set Matte reads the layer's source, before any effect).
+            staticValue(effect.property("ADBE Set Matte3-0001"), layer.index);
+            staticValue(effect.property("ADBE Set Matte3-0002"), 4);
+        }
+        if (gradient !== null) { writeRamp(addEffect(layer, "Keepframe Gradient", "ADBE Ramp", force), gradient, fps, [0, 0]); }
         if (s.effects.reveal !== null) {
             effect = addEffect(layer, "Keepframe Reveal", "ADBE Linear Wipe", force);
             writeKeys(effect.property("ADBE Linear Wipe-0001"), s.effects.reveal.completion, fps, 1, false);
@@ -453,12 +554,28 @@ if (typeof JSON !== "object" || JSON === null) {
             writeKeys(effect.property("ADBE Geometry2-0005"), s.effects.skew.skew, fps, 1, false);
             staticValue(effect.property("ADBE Geometry2-0006"), s.effects.skew.axis);
             staticValue(effect.property("ADBE Geometry2-0001"), [anchor[0], anchor[1]]);
-            staticValue(effect.property("ADBE Geometry2-0002"), [anchor[0], anchor[1]]);
+            // Text shear pivots on the first baseline (y = 0), the element skew on the anchor.
+            shift = s.effects.skew.baseline_shear === undefined ? 0 : s.effects.skew.baseline_shear * anchor[1];
+            staticValue(effect.property("ADBE Geometry2-0002"), [anchor[0] + shift, anchor[1]]);
+        }
+        for (i = 0; i < shadows.length; i += 1) {
+            effect = addEffect(layer, "Keepframe Shadow " + (i + 1), "ADBE Drop Shadow", force);
+            staticValue(effect.property("ADBE Drop Shadow-0001"), shadows[i].color);
+            // Scripts see Drop Shadow opacity as 0-255 (the panel shows a percentage).
+            staticValue(effect.property("ADBE Drop Shadow-0002"), shadows[i].opacity * 255 / 100);
+            staticValue(effect.property("ADBE Drop Shadow-0003"), shadows[i].direction);
+            staticValue(effect.property("ADBE Drop Shadow-0004"), shadows[i].distance);
+            staticValue(effect.property("ADBE Drop Shadow-0005"), shadows[i].softness);
+        }
+        if (fill !== null) {
+            // The fill replaces the text's pixels, so it runs before every other effect (moving invalidates references).
+            if (ownedIndex(effects, "Keepframe Fill") !== 1) { effects.property(ownedIndex(effects, "Keepframe Fill")).moveTo(1); }
+            if (ownedIndex(effects, "Keepframe Fill Matte") !== 2) { effects.property(ownedIndex(effects, "Keepframe Fill Matte")).moveTo(2); }
         }
     }
 
-    function writeLayer(layer, s, fps, force, timings) {
-        var t, rect, anchor = s.anchor, doc, i, factor = 1;
+    function writeLayer(layer, s, fps, force, timings, wasStyled) {
+        var t, rect, anchor = s.anchor, doc, i, factor = 1, origin = [0, 0], start, stroke, end, stretch = 100;
         if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
         t = transform(layer);
         if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
@@ -476,10 +593,26 @@ if (typeof JSON !== "object" || JSON === null) {
             doc.applyFill = true;
             doc.fillColor = rgb(s.source.color);
             doc.justification = ParagraphJustification.LEFT_JUSTIFY;
+            if (styledText(s)) {
+                doc.tracking = s.source.tracking;
+                stroke = s.source.stroke;
+                doc.applyStroke = stroke !== null;
+                if (stroke !== null) {
+                    doc.strokeColor = rgb(stroke.color);
+                    doc.strokeWidth = stroke.width;
+                    doc.strokeOverFill = stroke.over_fill;
+                }
+            } else if (wasStyled === true) {
+                // The style was removed: clear what Keepframe set (unstyled text leaves these to the user).
+                doc.tracking = 0;
+                doc.applyStroke = false;
+            }
             staticValue(layer.property("ADBE Text Properties").property("ADBE Text Document"), doc);
             rect = layer.sourceRectAtTime(s["in"] / fps, false);
             anchor = [rect.left + s.source.anchor_fraction[0] * s.source.box[0],
                 rect.top + rect.height / 2 + (s.source.anchor_fraction[1] - 0.5) * s.source.box[1]];
+            origin = [anchor[0] - s.source.anchor_fraction[0] * s.source.box[0],
+                anchor[1] - s.source.anchor_fraction[1] * s.source.box[1]];
         }
         if (layer.threeDLayer) {
             rect = layer.sourceRectAtTime(0, false);
@@ -494,11 +627,25 @@ if (typeof JSON !== "object" || JSON === null) {
             writeKeys(t.property(PROP_MATCHES[i]), s.props[PROP_NAMES[i]], fps,
                 i === 2 ? factor : 1, i === 2 && s.kind === "model");
         }
-        writeEffects(layer, s, fps, anchor, force);
-        if (s["in"] / fps >= layer.outPoint) { layer.outPoint = (s.out + 1) / fps; }
+        writeEffects(layer, s, fps, anchor, force, origin);
+        if (s.kind === "footage") {
+            // A speed edit plays the clip at its rate: time stretch 100 / rate (AE scales in/out around startTime).
+            if (s.source.stretch !== undefined) { stretch = s.source.stretch; }
+            if (Math.abs(layer.stretch - stretch) > 1e-6) { layer.stretch = stretch; }
+            // On the frame grid; the clip's first frame shows at the layer's first visible frame. Before in/out,
+            // which a clip clamps to [startTime, startTime + its stretched duration].
+            start = Math.round(s.source.start_time * fps) / fps;
+            if (layer.startTime !== start) { layer.startTime = start; }
+        }
+        end = (s.out + 1) / fps;
+        // A clip ends with its footage (no time remapping); never ask AE for more.
+        if (s.kind === "footage" && layer.source.duration > 0) {
+            end = Math.min(end, start + layer.source.duration * stretch / 100);
+        }
+        if (s["in"] / fps >= layer.outPoint) { layer.outPoint = end; }
         layer.inPoint = s["in"] / fps;
-        layer.outPoint = (s.out + 1) / fps;
-        layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s, timings) + ";fp=" + (readFingerprint(layer, fps, false, timings) || "00000000");
+        layer.outPoint = end;
+        layer.comment = "keepframe:" + s.id + ";spec=" + layerHash(s, timings) + ";fp=" + (readFingerprint(layer, fps, false, timings, styledText(s)) || "00000000");
     }
 
     function folder(name, parent) {
@@ -538,6 +685,8 @@ if (typeof JSON !== "object" || JSON === null) {
                     found.name = asset.name;
                     found.parentFolder = parent;
                 }
+                // Sprite clips (ProRes 4444) carry straight alpha; AE would otherwise guess or ask.
+                if (/\.mov$/i.test(asset.name)) { found.mainSource.alphaMode = AlphaMode.STRAIGHT; }
                 found.comment = "keepframe-asset:" + asset.sha256;
             }
             result["$" + asset.name] = found;
@@ -564,7 +713,7 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function updateSource(layer, comp, s, assets) {
         var temporary;
-        if ((s.kind === "image" || s.kind === "model") && layer.source.id !== assets["$" + s.source.asset].id) {
+        if ((s.kind === "image" || s.kind === "model" || s.kind === "footage") && layer.source.id !== assets["$" + s.source.asset].id) {
             layer.replaceSource(assets["$" + s.source.asset], false);
             return true;
         }
@@ -600,7 +749,10 @@ if (typeof JSON !== "object" || JSON === null) {
         if (layer instanceof TextLayer) { return "text"; }
         if (layer.nullLayer) { return "null"; }
         if (layer.source instanceof FootageItem) {
-            if (layer.source.file) { return /\.glb$/i.test(layer.source.file.name) ? "model" : "image"; }
+            if (layer.source.file) {
+                if (/\.glb$/i.test(layer.source.file.name)) { return "model"; }
+                return /\.(mp4|mov)$/i.test(layer.source.file.name) ? "footage" : "image";
+            }
             return "solid";
         }
         return "unknown";
@@ -792,7 +944,7 @@ if (typeof JSON !== "object" || JSON === null) {
             var started = new Date().getTime(), stage = started, measured;
             var timings = {validate: 0, read: 0, hash: 0, assets: 0, write: 0, order: 0, total: 0};
             var spec = JSON.parse(specJson), paths = JSON.parse(assetsJson), parent, comp, assets, i, layer, record;
-            var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered, fps;
+            var existing = {}, wanted = {}, records, s, newHash, edits = [], interrupted = [], desired = [], renderer = null, ordered, fps, other;
             validate(spec, paths, force);
             timings.validate = new Date().getTime() - stage;
             var result = {ok: true, applied: true, created: [], updated: [], deleted: [], unchanged: 0,
@@ -813,8 +965,14 @@ if (typeof JSON !== "object" || JSON === null) {
                 record = records[i]; s = wanted["$" + record.id];
                 fps = Math.abs(comp.frameRate - spec.comp.fps) <= 0.0001 ? spec.comp.fps : rounded(comp.frameRate);
                 record.fps = fps;
-                record.current = readFingerprint(record.layer, fps, false, timings);
                 record.kind = kind(record.layer);
+                record.styled = styledText(s);
+                record.current = readFingerprint(record.layer, fps, false, timings, record.styled);
+                if (record.kind === "text" && record.fp !== null && record.current !== record.fp) {
+                    // Synced before its text was styled (or with a style since removed): the other variant.
+                    other = readFingerprint(record.layer, fps, false, timings, !record.styled);
+                    if (other !== null && other === record.fp) { record.current = other; record.styled = !record.styled; }
+                }
                 record.asset = record.kind === "model" ? record.layer.source.comment : null;
                 record.upgrade = record.fp !== null && record.current !== null && record.current !== record.fp
                     && (readFingerprint(record.layer, fps, "ease", timings) === record.fp
@@ -899,7 +1057,7 @@ if (typeof JSON !== "object" || JSON === null) {
                             if (record) { updateSource(layer, comp, s, assets); }
                             else { placeNew(layer, s, ordered, existing); }
                         }
-                        writeLayer(layer, s, spec.comp.fps, force === "true", timings);
+                        writeLayer(layer, s, spec.comp.fps, force === "true", timings, record ? record.styled : false);
                         (record ? result.updated : result.created).push(s.id);
                     }
                     result.keys[s.id] = keyCount(layer);

@@ -10,6 +10,15 @@ Ease = tuple[float, float, float, float]
 PROPS = ("x", "y", "sx", "sy", "rot", "skx", "sky", "opacity", "reveal", "rx", "ry")
 DEFAULTS: dict[str, float] = {"x": 0.0, "y": 0.0, "sx": 1.0, "sy": 1.0, "rot": 0.0, "skx": 0.0, "sky": 0.0, "opacity": 1.0, "reveal": 1.0, "rx": 0.0, "ry": 0.0}
 FONT_FAMILY_RE = re.compile(r"[A-Za-z0-9 \-가-힣]{1,64}")
+POSTSCRIPT_RE = re.compile(r"[A-Za-z0-9._-]{1,63}")
+HEX_RE = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
+
+
+def _hex_colour(value: object) -> str:
+    if not isinstance(value, str) or not HEX_RE.fullmatch(value):
+        raise ValueError("colour must be #rgb or #rrggbb")
+    value = value.lower()
+    return "#" + "".join(c * 2 for c in value[1:]) if len(value) == 4 else value
 
 
 def validate_font_family(value: object) -> str:
@@ -46,6 +55,24 @@ class FontGuess(BaseModel):
     weight: int = 400
     size_px: float = 32.0
     candidates: list[str] = Field(default_factory=list)
+    scores: list[float] = Field(default_factory=list)
+    confidence: float = 1.0
+    source: Literal["bundled", "uploaded", "system", "generic"] = "generic"
+    file: Optional[str] = None
+    postscript: Optional[str] = None
+    fallback: Optional[str] = None
+    fallback_weight: Optional[int] = None
+    fallback_scale: float = 1.0
+
+    @field_validator("postscript", mode="before")
+    @classmethod
+    def _safe_postscript(cls, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str) and POSTSCRIPT_RE.fullmatch(value):
+            return value
+        get("keepframe.ir").warning("invalid stored PostScript name; ignoring it")
+        return None
 
     @field_validator("family_guess", mode="before")
     @classmethod
@@ -57,6 +84,91 @@ class FontGuess(BaseModel):
             return "sans-serif"
 
 
+class GradientStop(BaseModel):
+    offset: float = Field(ge=0.0, le=1.0)
+    color: str
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _colour(cls, value: object) -> str:
+        return _hex_colour(value)
+
+
+class Gradient(BaseModel):
+    kind: Literal["linear", "radial"] = "linear"
+    stops: list[GradientStop]
+    angle: float = 180.0
+    center: tuple[float, float] = (0.5, 0.5)
+    radius: float = Field(1.0, gt=0.0)
+
+    @field_validator("stops")
+    @classmethod
+    def _ordered_stops(cls, stops: list[GradientStop]) -> list[GradientStop]:
+        if not 2 <= len(stops) <= 8:
+            raise ValueError("a gradient needs 2 to 8 stops")
+        if any(a.offset > b.offset for a, b in zip(stops, stops[1:])):
+            raise ValueError("gradient stops must be in ascending offset order")
+        return stops
+
+
+class GradientKey(BaseModel):
+    t: int
+    gradient: Gradient
+
+
+class TextureMeta(BaseModel):
+    method: Literal["triangulation", "two_colour", "keyed", "binary"]
+    frames: list[int] = Field(default_factory=list)
+    confidence: float = 1.0
+    padding: int = 0
+
+
+class TextEffect(BaseModel):
+    kind: Literal["stroke", "shadow", "glow"]
+    color: str
+    opacity: float = 1.0
+    width: float = 0.0
+    dx: float = 0.0
+    dy: float = 0.0
+    blur: float = 0.0
+
+
+class AlphaStop(BaseModel):
+    offset: float
+    alpha: float
+
+
+class Fade(BaseModel):
+    angle: float = 180.0
+    stops: list[AlphaStop]
+
+    @field_validator("stops")
+    @classmethod
+    def _stop_count(cls, stops: list[AlphaStop]) -> list[AlphaStop]:
+        if not 2 <= len(stops) <= 4:
+            raise ValueError("a fade needs 2 to 4 stops")
+        return stops
+
+
+class TextStyle(BaseModel):
+    fill: Optional[Gradient] = None
+    fade: Optional[Fade] = None
+    effects: list[TextEffect] = Field(default_factory=list)
+    tracking_em: float = 0.0
+    shear_deg: float = 0.0
+    dx: float = 0.0
+    dy: float = 0.0
+    stroke_ratio: Optional[float] = None
+    confidence: float = 1.0
+
+    @field_validator("effects")
+    @classmethod
+    def _effect_count(cls, effects: list[TextEffect]) -> list[TextEffect]:
+        if len(effects) > 4:
+            raise ValueError("a text style takes at most 4 effects")
+        return effects
+
+
 class Canonical(BaseModel):
     width: float
     height: float
@@ -66,6 +178,14 @@ class Canonical(BaseModel):
     font: Optional[FontGuess] = None
     color: Optional[str] = None
     model: Optional[str] = None
+    style: Optional[TextStyle] = None
+    texture_meta: Optional[TextureMeta] = None
+    video: Optional[str] = None
+    # A video sprite's playback rate (speed edits): frame f shows source frame floor((f − start) · rate). Absent when 1.
+    video_rate: float = Field(default=1.0, gt=0.0, allow_inf_nan=False, exclude_if=lambda v: v == 1.0)
+    # Styled text textures carry their effects past the box (R41): the texture covers the box grown by this many
+    # box pixels on every side.
+    texture_pad: float = Field(default=0.0, ge=0.0, le=512.0, exclude_if=lambda v: not v)   # absent when 0
 
 
 class FitError(BaseModel):
@@ -121,9 +241,24 @@ class Constraint(BaseModel):
 
 
 class Background(BaseModel):
-    kind: Literal["color", "image"] = "color"
+    kind: Literal["color", "image", "gradient", "video"] = "color"
     value: str = "#000000"
     confidence: float = 1.0
+    gradient: Optional[Gradient] = None
+    gradient_keys: list[GradientKey] = Field(default_factory=list)
+    poster: Optional[str] = None
+    synthetic: Optional[str] = None
+    # A video background's playback rate (scene speed edits), as Canonical.video_rate. Absent when 1.
+    video_rate: float = Field(default=1.0, gt=0.0, allow_inf_nan=False, exclude_if=lambda v: v == 1.0)
+
+    @model_validator(mode="after")
+    def _gradient_fields(self):
+        if self.kind == "gradient" and self.gradient is None and not self.gradient_keys:
+            raise ValueError("a gradient background needs a gradient")
+        ts = [k.t for k in self.gradient_keys]
+        if ts != sorted(ts) or len(set(ts)) != len(ts):
+            raise ValueError("gradient keys must be sorted by t and unique")
+        return self
 
 
 class UIStateRange(BaseModel):

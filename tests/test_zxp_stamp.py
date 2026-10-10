@@ -77,3 +77,24 @@ def test_final_build_versions_advance_with_time_even_when_commit_count_drops_or_
         assert all(0 <= part <= 2147483647 for part in version)
         versions.append(version)
     assert versions[0] < versions[1] < versions[2]
+
+
+def test_stamp_keeps_the_source_major_and_sorts_after_older_builds(tmp_path, monkeypatch):
+    """The date stamp keeps the source's protocol major; panel features are declared by X-Keepframe-Spec-Level,
+    since a build must sort above every installed date-stamped build (1.20261007.x) to replace it."""
+    import re
+    monkeypatch.setattr("scripts.zxp.stamp.subprocess.check_output", lambda cmd, **kw: {
+        ("rev-parse", "--short", "HEAD"): "abc1234", ("status", "--porcelain"): ""}[tuple(cmd[3:])])
+    monkeypatch.setattr("time.time_ns", lambda: 1791289845123000000)
+    versions = {}
+    for major in ("1.1.0", "2.0.0"):
+        stage = tmp_path / major
+        shutil.copytree(ROOT / "extension", stage)
+        for name in ("CSXS/manifest.xml", "js/core.js"):
+            path = stage / name
+            path.write_text(path.read_text().replace("1.1.0", major))
+        stamp(stage, ROOT)
+        versions[major] = re.search(r"const EXTENSION_VERSION = '([^']+)';", (stage / "js/core.js").read_text())[1]
+    assert versions == {"1.1.0": "1.20261006.123045123", "2.0.0": "2.20261006.123045123"}
+    assert tuple(map(int, versions["1.1.0"].split("."))) > (1, 20261007 - 1, 95826219)
+    assert "const SPEC_LEVEL = 3;" in (ROOT / "extension/js/core.js").read_text()

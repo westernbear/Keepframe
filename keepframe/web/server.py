@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import re
 import tempfile
 import threading
@@ -23,17 +24,20 @@ from keepframe.analyze.device import gpu_status
 from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
 from keepframe.analyze.video import read_frames
 from keepframe.ae.api import AERoutes
+from keepframe.fonts.upload import (MAX_FONT_BYTES, FontRejected, UploadIncomplete, font_ext, list_fonts, public_font,
+                                    receive as receive_font, store_font)
 from keepframe.ir.schema import FontGuess, validate_font_family
 from keepframe.ir.store import approve_scene, current_scene, load_project, load_scene, new_version, scene_dir
 from keepframe.ir.tracks import element_bbox
 from keepframe.jobs import Job, JobSpec, JobStore
-from keepframe.log import configure, get
+from keepframe.log import configure, get, scrub_paths
 from keepframe.review import corrections
+from keepframe.web.bodies import LengthError, content_length
 from keepframe.web.estimate import consume_token, estimate, probe_video
 from keepframe.web.liveaction import looks_live_action
 from keepframe.web.demo import ensure_demo_project
 from keepframe.edit.agent import edit as run_edit
-from keepframe.render.native import prepare_native_job
+from keepframe.render.native import native_warnings, prepare_native_job
 from keepframe.render.lottie import prepare_lottie_job
 from keepframe.render.plan import (
     PlanConflict,
@@ -67,6 +71,7 @@ from keepframe.web.workspace import (
 log = get("keepframe.web")
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
+FONT_UPLOAD_IDLE_S = 60
 
 JOBS = JobStore()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -188,6 +193,7 @@ def _render_state_payload(root: Path, plan) -> dict:
         "job": job.to_json() if job is not None else None,
         "status": _render_status(state, job),
         "artifacts": _local_artifacts(root, plan, job),
+        "warnings": native_warnings(root, plan.id) if plan.backend == "native" else [],
     }
 
 
@@ -299,6 +305,13 @@ def _slim_project(project, scene_id: str) -> dict:
     }
 
 
+def _finite_number(value, digits: int):
+    """A rounded finite float, else None (stored scene JSON is untrusted)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return round(float(value), digits)
+
+
 def _slim_scene(scene) -> dict:
     data = scene.model_dump(by_alias=True)
     for el in data.get("elements", []):
@@ -314,10 +327,13 @@ def _slim_scene(scene) -> dict:
         if font:
             slim_font = {key: font[key] for key in ("family_guess", "weight", "size_px")}
             candidates = font.get("candidates")
-            slim_font["candidates"] = (
-                [family for family in candidates if isinstance(family, str)][:3]
-                if isinstance(candidates, list) else []
-            )
+            kept = ([i for i, family in enumerate(candidates) if isinstance(family, str)][:3]
+                    if isinstance(candidates, list) else [])
+            slim_font["candidates"] = [candidates[i] for i in kept]
+            scores = font.get("scores")   # the matcher's soft IoU per candidate (Task 10), kept with its candidate
+            slim_font["scores"] = ([_finite_number(scores[i], 4) if i < len(scores) else None for i in kept]
+                                   if isinstance(scores, list) and scores else [])
+            slim_font["confidence"] = _finite_number(font.get("confidence"), 3)
         el["canonical"] = {
             "text": can.get("text"),
             "texture": tex.split("/")[-1] if tex else None,
@@ -429,11 +445,13 @@ class ReviewState:
             return hit
         if scene.ui is not None or any(element.kind == "3d" for element in scene.elements):
             from keepframe.compose.composer import compose
+            from keepframe.fonts.registry import FontRegistry
             from keepframe.render.renderer import render
 
             with self.lock, tempfile.TemporaryDirectory(prefix="keepframe-preview-") as temp:
                 temp_path = Path(temp)
-                html_path = compose(scene, scene_dir(self.root, self.scene_id), temp_path / "composition.html")
+                html_path = compose(scene, scene_dir(self.root, self.scene_id), temp_path / "composition.html",
+                                    fonts=FontRegistry.for_project(self.root))
                 result = render(html_path, scene, temp_path / "render", frames=[f], probe=False)
                 data = (result.frames_dir / "f_00000.png").read_bytes()
             return self._remember(key, data)
@@ -774,6 +792,16 @@ def make_server(
                 return self._json(200, gpu_status())
             if u.path == "/api/projects":
                 return self._json(200, {"projects": list_projects(workspace)})
+
+            m = re.fullmatch(r"/api/projects/([^/]+)/fonts", u.path)
+            if m:   # metadata only: no route serves font bytes
+                if not self._host_allowed():
+                    return
+                try:
+                    root = _safe_render_project(workspace, m.group(1))
+                except (ValueError, FileNotFoundError):
+                    return self._json(404, {"error": "not found"})
+                return self._json(200, {"fonts": [public_font(it) for it in list_fonts(root)], "max_bytes": MAX_FONT_BYTES})
 
             m = re.fullmatch(r"/api/projects/([^/]+)", u.path)
             if m:
@@ -1141,12 +1169,60 @@ def make_server(
 
             return self._json(404, {"error": "not found"})
 
+        def _upload_font(self, project_id: str, query: str) -> None:
+            """POST /api/projects/<pid>/fonts?name=<file>: the raw font as the body (same origin checked)."""
+            try:
+                root = _safe_render_project(workspace, project_id)
+            except (ValueError, FileNotFoundError):
+                return self._json(404, {"error": "not found"})
+            names = parse_qs(query, keep_blank_values=True).get("name", [])
+            if len(names) != 1 or font_ext(names[0]) is None:
+                return self._json(400, {"error": "bad_type"})
+            try:   # decided from the headers: nothing of an oversize body is read
+                length = content_length(self.headers, MAX_FONT_BYTES, required=True)
+            except LengthError as exc:
+                return self._json(exc.status, {"error": {411: "length_required", 413: "too_large"}.get(exc.status, "bad_length")})
+            if length == 0:
+                return self._json(400, {"error": "bad_type"})
+            t0 = time.perf_counter()
+            tmp = None
+            try:   # every outcome answers: only a short body is `incomplete`, anything unexpected `bad_tables` (R48)
+                previous = self.connection.gettimeout()
+                self.connection.settimeout(FONT_UPLOAD_IDLE_S)
+                try:
+                    tmp = receive_font(root, self.rfile, length)
+                finally:
+                    self.connection.settimeout(previous)
+                entry, created = store_font(root, tmp, names[0])
+            except UploadIncomplete as exc:
+                log.warning("font upload project=%s incomplete: %s", project_id, exc)
+                return self._json(400, {"error": "incomplete"})
+            except FontRejected as exc:
+                log.info("font upload project=%s rejected %s (%s) %.2fs", project_id, exc.code, exc.reason,
+                         time.perf_counter() - t0)
+                return self._json(413 if exc.code == "too_large" else 400, {"error": exc.code})
+            except Exception as exc:   # detail in the log (paths cut), the code to the client
+                log.error("font upload project=%s failed: %s", project_id, scrub_paths(f"{type(exc).__name__}: {exc}"))
+                return self._json(400, {"error": "bad_tables"})
+            finally:
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
+            log.info("font upload project=%s %s created=%s %.2fs", project_id, entry["file"], created,
+                     time.perf_counter() - t0)
+            return self._json(201 if created else 200, {"font": public_font(entry), "created": created})
+
         def do_POST(self):
             u = urlparse(self.path)
             if ae_routes.handle_post(self, u):
                 return
             if admin_routes and admin_routes.handle_post(self, u):
                 return
+
+            m = re.fullmatch(r"/api/projects/([^/]+)/fonts", u.path)
+            if m:
+                if not self._same_origin():
+                    return
+                return self._upload_font(m.group(1), u.query)
 
             if u.path == "/api/render-plans":
                 if not self._same_origin():
@@ -1284,6 +1360,7 @@ def make_server(
                             "job": job.to_json(),
                             "status": _render_status(state, job),
                             "artifacts": _local_artifacts(root, plan, job),
+                            "warnings": native_warnings(root, plan.id) if plan.backend == "native" else [],
                         },
                     )
                 except FileNotFoundError:

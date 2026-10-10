@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from keepframe.cli import main
+from keepframe.gates import m1_gate
 
 def run(*args):
     return subprocess.run([sys.executable, "-m", "keepframe.cli", *args], capture_output=True, text=True)

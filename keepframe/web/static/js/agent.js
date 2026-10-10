@@ -3,6 +3,7 @@ import {
   lottieArtifactUrl,
   approveRenderPlan,
   fetchAgentHistory,
+  fetchFonts,
   fetchRenderPlans,
   fetchRenderState,
   fetchReviewJob,
@@ -13,14 +14,15 @@ import {
   postKeep,
   postRenderPlan,
   reviewAssetUrl,
-} from "/static/js/api.js?v=20261006l";
-import { T, Tf } from "/static/js/i18n.js?v=20261006l";
-import { initAECard } from "/static/js/ae.js?v=20261006l";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261006l";
+  uploadFont,
+} from "/static/js/api.js?v=20261010a";
+import { T, Tf } from "/static/js/i18n.js?v=20261010a";
+import { initAECard } from "/static/js/ae.js?v=20261010a";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261010a";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261006l";
+} from "/static/js/playback.js?v=20261010a";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -260,6 +262,28 @@ function updateRenderControls() {
     || planState.status !== "awaiting_approval";
 }
 
+const JOB_ERRORS = {   // job errors that arrive as codes (the detail stays in the server log)
+  export_failed: "agent.renderExportFailed",
+};
+
+const RENDER_WARNINGS = {
+  font_substituted: (w) => Tf("agent.renderFontSubstituted", {family: w.family, used: w.used}),
+  font_file_missing: (w) => Tf("agent.renderFontFileMissing", {family: w.family}),
+};
+
+function paintRenderWarnings(warnings) {
+  const el = document.getElementById("render-warnings");
+  const lines = (Array.isArray(warnings) ? warnings : [])
+    .filter((w) => w && RENDER_WARNINGS[w.kind])
+    .map((w) => {
+      const item = document.createElement("li");
+      item.textContent = RENDER_WARNINGS[w.kind](w);   // family names come from font files: text only
+      return item;
+    });
+  el.replaceChildren(...lines);
+  el.hidden = !lines.length;
+}
+
 function paintRenderCard() {
   const plan = renderPayload && renderPayload.plan;
   const planState = renderPayload && renderPayload.state;
@@ -272,7 +296,7 @@ function paintRenderCard() {
   renderStatusEl.textContent = hasPlan ? `${status} (${plan.version_id})` : "";
   renderStatusEl.title = planState ? `${status}, r${planState.revision}` : status;
   renderStatusClass(status);
-  renderReasonEl.textContent = jobError || renderPayload?.error || "";
+  renderReasonEl.textContent = (JOB_ERRORS[jobError] ? T(JOB_ERRORS[jobError]) : jobError) || renderPayload?.error || "";
   document.getElementById("render-reason-field").hidden = status !== "failed" || !renderReasonEl.textContent;
   document.getElementById("render-output-field").hidden = !hasPlan || !outputs.length;
   document.getElementById("render-approval").hidden = !awaitsApproval;
@@ -283,6 +307,7 @@ function paintRenderCard() {
     renderModeEl.value = plan.mode;
   }
   renderOutputsEl.textContent = outputs.join(", ");
+  paintRenderWarnings(renderPayload && renderPayload.warnings);
   paintPlanSelector();
   paintArtifacts(plan, renderPayload);
   updateRenderControls();
@@ -472,6 +497,23 @@ function paintVerifyChip(chip) {
   chip.textContent = total === 0 ? T("agent.verifyNoKeep") : Tf(key, {rate: Math.round(rate * CONFIDENCE_PERCENT)});
   chip.title = Tf("agent.verifyDetails", {summary: chip.textContent, n: total, error: error.toFixed(2)});
   chip.setAttribute("aria-label", chip.title);
+}
+
+// R61: Keepframe's own summary of a background picture from the attachment ("배경 이미지를 첨부로 …") stays in the
+// version history and the tool card, never a chat bubble; the LLM agent writes the chat replies.
+function attachedBackground(intent) {
+  return ((intent && intent.targets) || []).some((t) => t && t.property === "background" && t.value === "attachment");
+}
+
+function confirmedLine(res) {
+  return attachedBackground(res.intent) ? T("agent.applied") : (res.summary || EDIT_APPLIED);
+}
+
+function chatReply(turn) {
+  const reply = (turn.reply || "").trim();
+  const own = (turn.results || []).some((r) => r && r.payload && attachedBackground(r.payload.intent)
+    && (r.message || "").trim() === reply);
+  return own ? "" : (turn.reply || "");
 }
 
 function appendAgent(text) {
@@ -819,7 +861,7 @@ async function applyConfirmedEdit(res) {
     attachInput.value = "";
     document.getElementById("agent-attach-name").textContent = "";
     appendVerify(res.verify);
-    appendAgent(res.summary || EDIT_APPLIED);
+    appendAgent(confirmedLine(res));
     await refreshAfterEdit(res.version.id);
     return true;
   }
@@ -853,8 +895,9 @@ async function refreshAfterEdit(version) {
 }
 
 function paintToolCalls(turn) {
+  const reply = chatReply(turn);   // a summary that is no bubble shows in its tool card
   (turn.tool_calls || []).forEach((tc, i) => {
-    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" }, turn.reply || "");
+    appendToolCall(tc.name, tc.arguments, (turn.results && turn.results[i]) || { ok: false, message: "" }, reply);
   });
 }
 
@@ -864,7 +907,8 @@ function verifyFromTurn(turn) {
 
 function paintTurn(turn, actionable = true) {
   paintToolCalls(turn);
-  if (turn.reply) appendAgent(turn.reply);
+  const reply = chatReply(turn);
+  if (reply) appendAgent(reply);
   appendVerify(verifyFromTurn(turn));
   const isPending = turn.status === "pending";
   const isError = turn.status === "error";
@@ -995,6 +1039,79 @@ function initDisclosure(buttonId, bodyId, key, defaultOpen) {
   paint();
 }
 
+// --- Fonts disclosure: the project's uploaded fonts (metadata only) and one upload at a time --------------------
+const FONT_MAX_BYTES = 20 * 1024 * 1024;
+const FONT_NAME = /\.(ttf|otf|woff2)$/i;
+const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported"]);
+const fontsCount = document.getElementById("agent-fonts-count");
+const fontsList = document.getElementById("agent-fonts-list");
+const fontsEmpty = document.getElementById("agent-fonts-empty");
+const fontsInput = document.getElementById("agent-fonts-input");
+const fontsUploadBtn = document.getElementById("agent-fonts-upload");
+const fontsStatus = document.getElementById("agent-fonts-status");
+let fonts = [];
+let fontStatus = null;   // {key, vars, error}: repainted on a language switch
+
+function fontMeta(font) {
+  const [lo, hi] = font.weight_range || [400, 400];
+  const parts = [font.style, lo === hi ? String(lo) : `${lo}–${hi}`, String(font.ext || "").toUpperCase()];
+  if (font.hangul) parts.push(T("fonts.hangul"));
+  return parts.filter(Boolean).join(" · ");
+}
+
+function paintFonts() {
+  fontsCount.textContent = fonts.length ? Tf("fonts.count", {n: fonts.length}) : T("fonts.title");
+  fontsList.replaceChildren(...fonts.map((font) => {
+    const row = document.createElement("li");
+    row.className = "font-row";
+    const family = document.createElement("span");
+    family.className = "font-row__family";
+    family.textContent = font.family;   // from the font file: text only, never markup
+    family.title = font.family;
+    const meta = document.createElement("span");
+    meta.className = "font-row__meta mono";
+    meta.textContent = fontMeta(font);
+    row.append(family, meta);
+    return row;
+  }));
+  fontsEmpty.hidden = fonts.length > 0;
+  fontsStatus.hidden = !fontStatus;
+  if (fontStatus) {
+    fontsStatus.textContent = Tf(fontStatus.key, fontStatus.vars);
+    fontsStatus.className = "agent-fonts__status" + (fontStatus.error ? " agent-fonts__status--error" : "");
+  }
+}
+
+function setFontStatus(key, vars = {}, error = false) {
+  fontStatus = {key, vars, error};
+  paintFonts();
+}
+
+async function loadFonts() {
+  if (!projectId) return;
+  const data = await fetchFonts(projectId);
+  fonts = (data && data.fonts) || [];
+  paintFonts();
+}
+
+async function sendFont(file) {
+  if (!FONT_NAME.test(file.name)) return setFontStatus("fonts.error.bad_type", {}, true);
+  if (file.size > FONT_MAX_BYTES) return setFontStatus("fonts.error.too_large", {}, true);
+  fontsUploadBtn.disabled = true;
+  setFontStatus("fonts.uploading");
+  try {
+    const {font, created} = await uploadFont(projectId, file);
+    if (created) fonts = [...fonts, font];
+    setFontStatus(created ? "fonts.added" : "fonts.duplicate", {family: font.family});
+  } catch (err) {
+    const code = err.body && err.body.error;
+    setFontStatus(FONT_ERRORS.has(code) ? `fonts.error.${code}` : "fonts.error.failed", {}, true);
+  } finally {
+    fontsUploadBtn.disabled = false;
+    fontsInput.value = "";
+  }
+}
+
 function showMissingProject() {
   emptyEl.textContent = T("agent.needProject");
   emptyEl.hidden = false;
@@ -1045,6 +1162,11 @@ inputEl.addEventListener("keydown", (e) => {
 initDisclosure("render-card-toggle", "render-card-body", "kf.agent.renderCardOpen", true);
 initDisclosure("ae-card-toggle", "ae-card-body", "kf.agent.aeCardOpen", true);
 initDisclosure("agent-elements-toggle", "agent-elements-list", "kf.agent.elementsOpen", false);
+initDisclosure("agent-fonts-toggle", "agent-fonts-body", "kf.agent.fontsOpen", false);
+fontsUploadBtn.addEventListener("click", () => fontsInput.click());
+fontsInput.addEventListener("change", () => {
+  if (fontsInput.files[0]) sendFont(fontsInput.files[0]);
+});
 
 const toolsToggle = document.getElementById("agent-tools-toggle");
 const toolsMenu = document.getElementById("agent-tools");
@@ -1124,12 +1246,15 @@ window.addEventListener("keepframe:lang", () => {
     call.querySelector(".toolcall__status").textContent = toolStatus(call.dataset.tool, call.dataset.ok === "true");
   });
   logEl.querySelectorAll(".verify-chip").forEach(paintVerifyChip);
+  paintFonts();
 });
 
 const aeCard = initAECard({projectId, getSceneId: () => sceneId, getVersionId: () => versionId});
 
+paintFonts();
 if (!projectId) showMissingProject();
 else {
+  loadFonts().catch(() => setFontStatus("fonts.error.load", {}, true));
   loadState()
     .then(() => aeCard.refresh())
     .then(loadHistory)

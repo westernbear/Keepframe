@@ -1,14 +1,16 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>{{ID}}</title>
 <style>
-  html,body{margin:0;padding:0;background:{{BG}};overflow:hidden}
-  #stage{position:relative;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
+  html,body{margin:0;padding:0;background:{{PAGEBG}};overflow:hidden}
+  #stage{position:relative;isolation:isolate;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
   .el{position:absolute;will-change:transform;transition:none!important}
   .el img{display:block;width:100%;height:100%;image-rendering:auto}
+  .el video{display:block;width:100%;height:100%;object-fit:fill}
+  .bg-video{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;z-index:-2147483647}
   .el span{display:block;width:100%;height:100%;white-space:pre;overflow:visible}
   .model-canvas{display:block;width:100%;height:100%;background:transparent}
   .ui-component{box-sizing:border-box;margin:0;border:0;background:transparent;color:inherit;font:inherit;overflow:hidden}
-</style>
+</style>{{FONTS}}
 <script>{{GSAP_JS}}</script>
 <script>{{CUSTOMEASE_JS}}</script>
 <script>{{THREE_JS}}</script>
@@ -90,7 +92,65 @@ for (const el of SCENE.elements) {
     node.style.zIndex = String(zAt(f));
   });
 }
+const BG = SCENE.background, STAGE = document.getElementById('stage');
+const num = (v) => { const s = (+v).toFixed(4).replace(/0+$/, '').replace(/\.$/, ''); return s === '-0' ? '0' : s; };
+const hex8 = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const mixGradient = (a, b, u) => {
+  if (a.kind !== b.kind || a.stops.length !== b.stops.length) return a;
+  const L = (p, q) => p + (q - p) * u;
+  return {kind: a.kind, angle: L(a.angle, b.angle), radius: L(a.radius, b.radius),
+    center: [L(a.center[0], b.center[0]), L(a.center[1], b.center[1])],
+    stops: a.stops.map((p, i) => {
+      const q = b.stops[i], x = hex8(p.color), y = hex8(q.color);
+      return {offset: L(p.offset, q.offset), color: '#' + x.map((v, j) => Math.floor(L(v, y[j]) + 0.5).toString(16).padStart(2, '0')).join('')};
+    })};
+};
+const gradientAt = (f) => {
+  const keys = BG.gradient_keys;
+  if (!keys.length) return BG.gradient;
+  if (f <= keys[0].t) return keys[0].gradient;
+  for (let i = 0; i < keys.length - 1; i++) if (f < keys[i + 1].t) return mixGradient(keys[i].gradient, keys[i + 1].gradient, (f - keys[i].t) / (keys[i + 1].t - keys[i].t));
+  return keys[keys.length - 1].gradient;
+};
+const gradientCss = (g) => {
+  const stops = g.stops.map(s => `${s.color} ${num(s.offset * 100)}%`).join(', ');
+  if (g.kind === 'radial') return `radial-gradient(circle ${num(g.radius * Math.hypot(SCENE.size[0], SCENE.size[1]) / 2)}px at ${num(g.center[0] * 100)}% ${num(g.center[1] * 100)}%, ${stops})`;
+  return `linear-gradient(${num(g.angle)}deg, ${stops})`;
+};
+// Video layers seek to the middle of source frame floor((f − start) · rate) (composite.video_source_frame; rate from
+// data-rate, else 1), then wait for `seeked` and one animation frame (headless Chromium never runs
+// requestVideoFrameCallback); a seek to the frame already shown is skipped. A seek that errors
+// or does not land within __seekTimeoutMs (20 s) resolves false: __seek then returns {error: 'video_seek_failed'}.
+const VIDEOS = [...document.querySelectorAll('video[data-start]')].map(v => ({v, start: +v.dataset.start, rate: +(v.dataset.rate || 1), t: -1}));
+const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
+  if (v.readyState >= 2 || v.error) return resolve();
+  v.addEventListener('loadeddata', resolve, {once: true});
+  v.addEventListener('error', resolve, {once: true});
+}));
+const seekVideo = (item, f) => new Promise(resolve => {
+  const v = item.v;
+  if (v.error || v.readyState < 1) return resolve(true);   // never loaded: the poster stays (as in numpy)
+  const mid = (Math.floor(Math.max(f - item.start, 0) * item.rate + 1e-6) + 0.5) / FPS;
+  const t = Number.isFinite(v.duration) ? Math.min(mid, v.duration) : mid;   // past its end: the last frame
+  if (t === item.t) return resolve(true);
+  item.t = t;
+  let timer = 0;
+  const done = (ok) => {
+    clearTimeout(timer);
+    v.removeEventListener('seeked', landed);
+    v.removeEventListener('error', failed);
+    if (!ok) item.t = -1;   // the next seek tries again
+    resolve(ok);
+  };
+  const landed = () => requestAnimationFrame(() => done(true));
+  const failed = () => done(false);
+  v.addEventListener('seeked', landed, {once: true});
+  v.addEventListener('error', failed, {once: true});
+  timer = setTimeout(failed, window.__seekTimeoutMs || 20000);
+  v.currentTime = t;
+});
 window.__seek = (f) => {
+  if (BG.kind === 'gradient' && BG.gradient_keys.length) STAGE.style.background = gradientCss(gradientAt(f));
   tl.time(f / FPS, false); for (const a of appliers) a(f);
   for (const [node, label, ranges, baseText, baseBackground, baseColor] of uiStates) {
     const state = (ranges.find(item => f >= item.frames[0] && f <= item.frames[1]) || {}).state || {};
@@ -99,13 +159,15 @@ window.__seek = (f) => {
     node.style.backgroundColor = /^#[0-9a-f]{3,8}$/i.test(state.background || '') ? state.background : baseBackground;
     node.style.color = /^#[0-9a-f]{3,8}$/i.test(state.color || '') ? state.color : baseColor;
   }
-  for (const draw of modelRenders) draw(); return f;
+  for (const draw of modelRenders) draw();
+  if (!VIDEOS.length) return f;
+  return Promise.all(VIDEOS.map(item => seekVideo(item, f))).then(ok => ok.every(Boolean) ? f : {error: 'video_seek_failed'});
 };
 window.__bbox = (id) => {
   const r = document.getElementById('el-' + id).getBoundingClientRect();
   const s = document.getElementById('stage').getBoundingClientRect();
   return [r.left - s.left, r.top - s.top, r.right - s.left, r.bottom - s.top];
 };
-Promise.all([document.fonts.ready, ...modelPromises]).then(() => { window.__seek(0); window.__ready = true; });
+Promise.all([document.fonts.ready, ...modelPromises, ...videoReady]).then(() => window.__seek(0)).then(() => { window.__ready = true; });
 </script>
 </body></html>

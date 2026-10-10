@@ -83,3 +83,11 @@ def test_lottie_rejects_sprite_model_without_texture(tmp_path):
     sprite.canonical.model, sprite.canonical.texture = "assets/e1.model1.glb", None
     with pytest.raises(PlanConflict, match="3D element"):
         preflight_lottie(scene)
+
+
+def test_lottie_refuses_video_sprite(tmp_path):
+    scene, _ = _scene(tmp_path)
+    sprite = next(e for e in scene.elements if e.kind == "sprite")
+    sprite.canonical.video = f"assets/{sprite.id}.video.webm"   # an element animating in place
+    with pytest.raises(PlanConflict, match=f"Lottie does not animate video sprite {sprite.id}; export HTML or After Effects"):
+        preflight_lottie(scene)

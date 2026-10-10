@@ -170,7 +170,7 @@ def test_pair_announces_real_fake_ae_info(extension):
     device = value["devices"][0]
     assert device["id"] == ext.device and device["connected"] is True
     assert device["ae_version"] == read_state(ext.state)["app"]["version"] == "24.6.0x45"
-    assert device["extension_version"] == "1.0.0"
+    assert device["extension_version"] == "1.1.0"
     assert device["project_saved"] is False
     assert set(json.loads(ext.credentials.read_text())) == {"serverUrl", "deviceId", "token"}
     assert ext.credentials.stat().st_mode & 0o777 == 0o600

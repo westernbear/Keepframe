@@ -91,6 +91,15 @@ async function fetchFilmstrip(projectId, n = DEFAULT_FILMSTRIP_COUNT) {
   return api(`/api/projects/${projectId}/filmstrip?n=${n}`);
 }
 
+async function fetchFonts(projectId) {
+  return api(`/api/projects/${encodeURIComponent(projectId)}/fonts`);
+}
+
+async function uploadFont(projectId, file) {
+  const path = withQuery(`/api/projects/${encodeURIComponent(projectId)}/fonts`, { name: file.name });
+  return api(path, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+}
+
 async function fetchReviewState(project, scene, v) {
   return api(withQuery("/api/state", { project, scene, v }));
 }
@@ -193,6 +202,8 @@ export {
   uploadProject,
   fetchEstimate,
   fetchFilmstrip,
+  fetchFonts,
+  uploadFont,
   fetchReviewState,
   fetchReviewJob,
   fetchBboxes,

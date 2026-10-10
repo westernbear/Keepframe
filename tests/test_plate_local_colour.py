@@ -116,11 +116,10 @@ def test_solid_plate_matches_colour_background(local_plate_clip):
 
 def test_sprite_stage_passes_plate_to_text_shapes_and_objects(local_plate_clip, tmp_path, monkeypatch):
     frames, plate, bg, mask, text, obj = local_plate_clip
-    monkeypatch.setattr("keepframe.analyze.text.font_candidates", lambda *args: [])
-    monkeypatch.setattr("keepframe.analyze.text.font_family_guess", lambda *args: "sans-serif")
     shape = TextTrack(id=2, text=text.text, boxes=text.boxes.copy())
     props = _stage_sprites(frames, bg, [text], [shape], [obj],
                            AnalyzeOptions(refine=False, use_ecc=False), tmp_path, len(frames), plate=plate)
     for key in ("t1", "s2", "o3"):
         assert props[key]["raw"][1, 7] == pytest.approx(0.5, abs=0.1)
-        assert np.array_equal(props[key]["canon"][..., 3] > 127, mask)
+        pad, (h, w) = props[key]["texture_meta"]["padding"], props[key]["canon"].shape[:2]   # textures v2: padded
+        assert np.array_equal(props[key]["canon"][pad:h - pad, pad:w - pad, 3] > 127, mask)

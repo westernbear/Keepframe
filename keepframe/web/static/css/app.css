@@ -581,6 +581,7 @@ a { color: inherit; text-decoration: none; }
 }
 .render-card__head h2 { margin: 0; font-size: var(--fs-caption); }
 .render-card__lock { margin: 3px 0 0; color: var(--muted); font-size: var(--fs-micro); }
+.render-card__warnings { list-style: none; margin: 8px 0 0; padding: 0; color: var(--gradient-orange); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 .render-card__status {
   padding: 3px 8px; border: 1px solid var(--hairline); border-radius: var(--r-pill);
   color: var(--muted); font: 600 var(--fs-micro) ui-monospace, monospace;
@@ -652,6 +653,17 @@ a { color: inherit; text-decoration: none; }
   padding: 8px 14px; border-bottom: 1px solid var(--hairline); font-size: var(--fs-caption); color: var(--muted);
 }
 .agent-elements__list { max-height: 240px; overflow-y: auto; padding: 6px; }
+.agent-fonts__body { max-height: 240px; overflow-y: auto; padding: 8px 14px 12px; }
+.agent-fonts__list { list-style: none; margin: 0 0 8px; padding: 0; }
+.font-row { display: flex; align-items: baseline; gap: 10px; min-height: 36px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: var(--fs-body-sm); }
+.font-row__family { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-row__meta { margin-left: auto; flex-shrink: 0; color: var(--muted); font-size: var(--fs-micro); }
+.agent-fonts__empty { margin: 0 0 10px; color: var(--muted); font-size: var(--fs-caption); }
+.agent-fonts__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.agent-fonts__actions .btn { min-height: 36px; padding: 6px 14px; }
+.agent-fonts__hint { color: var(--muted); font-size: var(--fs-micro); }
+.agent-fonts__status { margin: 6px 0 0; font-size: var(--fs-caption); overflow-wrap: anywhere; }
+.agent-fonts__status--error { color: var(--error); }
 .element-row__id { font-family: ui-monospace, monospace; color: var(--accent); }
 .element-row__kind { font-family: ui-monospace, monospace; color: var(--muted); font-size: var(--fs-micro); }
 .element-row__conf { margin-left: auto; font-family: ui-monospace, monospace; font-size: var(--fs-micro); color: var(--secondary); }

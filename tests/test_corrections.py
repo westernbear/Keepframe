@@ -24,7 +24,6 @@ def ocr_shape_project(tmp_path, monkeypatch):
             return boxes
 
     monkeypatch.setattr("keepframe.analyze.pipeline.read_frames", lambda *args: (frames, 30.0))
-    monkeypatch.setattr("keepframe.analyze.text.font_candidates", lambda *args: [])
     root = tmp_path / "ws" / "p1"
     analyze(tmp_path / "clip.mp4", 0, 5, root,
             AnalyzeOptions(bg_override="#ffffff", refine=False, use_ecc=False), ocr=FakeOcr())

@@ -4,7 +4,13 @@
     if (typeof window !== 'undefined') root.KeepframeCore = core;
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
-    const EXTENSION_VERSION = '1.0.0';
+    const EXTENSION_VERSION = '1.1.0';
+    // What this panel draws (the server's spec.SPEC_LEVEL): 2 = footage, Ramp gradients, Drop Shadows, gradient
+    // fills, text stroke/tracking; 3 = footage time stretch (speed edits). Builds are stamped by date, so the server
+    // gates on this, not on the version.
+    const SPEC_LEVEL = 3;
+    // Video preparation is asked about every 2 s for at most 20 min (the server bounds each encode to 10 min).
+    const PREPARE_RETRY_MS = 2000, PREPARE_MAX_TRIES = 600;
     const HOST_BUILD = "dev";
     const HOST_TIMEOUT_MS = 10 * 60 * 1000;
     const FRAME_WAIT_MS = 60000;
@@ -79,7 +85,8 @@
             url.hostname = address.includes(':') ? '[' + address + ']' : address;
         }
         return new Promise((resolve, reject) => {
-            const headers = Object.assign({'X-Keepframe-Extension': EXTENSION_VERSION}, extraHeaders);
+            const headers = Object.assign({'X-Keepframe-Extension': EXTENSION_VERSION,
+                'X-Keepframe-Spec-Level': String(SPEC_LEVEL)}, extraHeaders);
             if (url.protocol === 'http:') headers.Host = host;
             if (context.token) headers.Authorization = 'Bearer ' + context.token;
             const data = body === undefined ? undefined : JSON.stringify(body);
@@ -263,7 +270,7 @@
     function assetCachePath(documentsDir, project, asset, path) {
         validateProject(project);
         if (!asset || typeof asset.name !== 'string' || /[\/\\\x00-\x1f:]/.test(asset.name) ||
-            asset.name.includes('..') || !/\.(png|jpg|webp|glb)$/.test(asset.name)) throw failure('Invalid asset name or extension');
+            asset.name.includes('..') || !/\.(png|jpg|webp|glb|mp4|mov)$/.test(asset.name)) throw failure('Invalid asset name or extension');
         if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256)) throw failure('Invalid asset SHA-256');
         if (!Number.isSafeInteger(asset.bytes) || asset.bytes < 0) throw failure('Invalid asset byte count');
         const folder = path.resolve(documentsDir, 'Keepframe', project, 'assets');
@@ -319,7 +326,16 @@
 
         async function sync(job, progress) {
             const prefix = '/api/ae/jobs/' + encodeURIComponent(job.id);
-            const response = await send('GET', prefix + '/spec');
+            let response = await send('GET', prefix + '/spec'), tries = 0;
+            // 202: the server is still making AE footage from the scene's videos; ask again (heartbeats continue).
+            while (response.status === 202) {
+                if (tries++ === PREPARE_MAX_TRIES) throw failure('Video preparation took too long (footage_prepare_timeout) — send again');
+                progress.stage = 'preparing video';
+                status('Preparing video for ' + job.project + ' / ' + job.scene + ' ' + job.version + '…', {job, progress});
+                await wait(PREPARE_RETRY_MS, stopped);
+                if (!running) throw failure('Disconnected before sync');
+                response = await send('GET', prefix + '/spec');
+            }
             const spec = parseJson(response.text, 'Invalid sync spec', context.secrets);
             if (!spec || !Array.isArray(spec.assets)) throw failure('Invalid sync spec assets');
             if (spec.project !== job.project || spec.scene !== job.scene || spec.version !== job.version)
@@ -608,5 +624,5 @@
         return {start, stop};
     }
 
-    return {EXTENSION_VERSION, HOST_BUILD, HOST_TIMEOUT_MS, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
+    return {EXTENSION_VERSION, HOST_BUILD, HOST_TIMEOUT_MS, PREPARE_MAX_TRIES, validateServerUrl, pair, createRunner, assetCachePath, createLog, redact};
 }));

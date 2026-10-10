@@ -340,9 +340,14 @@ def _media_kind(path: Path) -> str:
         ".svg": "image/svg+xml",
         ".mp4": "video/mp4",
         ".mov": "video/quicktime",
+        ".webm": "video/webm",
         ".npz": "application/x-npz",
         ".json": "application/json",
         ".glb": "model/gltf-binary",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
     }.get(path.suffix.lower(), "application/octet-stream")
 
 
@@ -528,6 +533,14 @@ def _normalize_substitutions(
     return tuple(normalized)
 
 
+def _font_file_present(scene_dir: Path, value: str) -> bool:
+    from ..ir.paths import scene_asset_path
+    try:
+        return scene_asset_path(scene_dir, value).is_file()
+    except ValueError:
+        return False
+
+
 def create_render_plan(
     root: Path,
     *,
@@ -588,10 +601,20 @@ def create_render_plan(
             refs.append((element.canonical.texture, "texture"))
         if element.canonical.model:
             refs.append((element.canonical.model, "texture"))
+        if element.canonical.video:
+            refs.append((element.canonical.video, "texture"))   # a video sprite's WebM (its texture is the poster)
+        if element.canonical.font is not None and element.canonical.font.file:
+            if _font_file_present(scene_dir, element.canonical.font.file):
+                refs.append((element.canonical.font.file, "texture"))   # uploaded face the composer embeds
+            # else (e.g. a project unpacked from a ZIP, R46): the composer takes the project's registry and says so
         if element.raw:
             refs.append((element.raw, "raw"))
-    if scene.background.kind == "image":
-        refs.append((scene.background.value, "texture"))
+    background = scene.background
+    if background.kind in {"image", "video"}:
+        refs.append((background.value, "texture"))
+    for extra in (background.poster, background.synthetic):
+        if extra:
+            refs.append((extra, "texture"))
     refs.extend(
         _substitution_asset_paths(
             substitutions,

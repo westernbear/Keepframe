@@ -217,7 +217,8 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
     N = len(frames)
     cuda = str(dev).startswith("cuda")
     order = consts["order"]
-    target = torch.tensor(frames, dtype=torch.float32, device=dev).permute(0, 3, 1, 2) / 255.0
+    # uint8, shared with the downscaled frames on CPU; each group converts its own frames (same float32 / 255.0).
+    target = torch.as_tensor(frames, device=dev).permute(0, 3, 1, 2)
     params, valid_by_key, init = {}, {}, {}
     for k in order:
         r = raws[k]
@@ -268,9 +269,9 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
     for step in range(iters):
         opt.zero_grad(set_to_none=True)
         with amp:
-            loss = target.new_zeros(())
+            loss = torch.zeros((), device=dev)
             for active, indices in groups:
-                canvas = bg.expand(len(indices), 3, h, w).clone()
+                canvas = bg.expand(len(indices), 3, h, w)   # stamps never write in place, so no per-frame copy
                 for k in active:
                     p = params[k].index_select(0, indices)
                     if checkpoint:
@@ -279,7 +280,7 @@ def _refine_chunk(frames: np.ndarray, consts: dict, raws: dict[str, np.ndarray],
                         )
                     else:
                         canvas = stamp(canvas, p, texs[k], k)
-                loss = loss + (canvas - target.index_select(0, indices)).abs().sum() / loss_size
+                loss = loss + (canvas - target.index_select(0, indices).float().div_(255.0)).abs().sum() / loss_size
             for k in order:
                 d = params[k] - init[k]
                 loss = loss + _INIT_REG * (

@@ -1,6 +1,6 @@
 import json, pickle
 import cv2, numpy as np, pytest
-from keepframe.analyze.background import PLATE_PATH, background_plate, estimate_background, foreground_mask_plate, needs_plate
+from keepframe.analyze.background import PASS1_PATH, PLATE_PATH, background_plate, estimate_background, foreground_mask_plate, needs_plate
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rerun
 from keepframe.compose.composer import compose
@@ -10,9 +10,17 @@ from keepframe.ir.store import current_scene, init_project, scene_dir
 from keepframe.review.corrections import add_bbox_prompt
 
 
-def _gradient_clip(n=12, h=60, w=120):
+def _ramp(h, w, picture=False):
+    """A horizontal ramp (a linear gradient); picture=True adds a vertical blue ramp no single gradient fits."""
     ramp = np.linspace(0, 255, w, dtype=np.uint8)
-    frames = np.repeat(np.stack([np.stack([ramp, ramp[::-1], np.full(w, 80, np.uint8)], -1)] * h)[None], n, 0).copy()
+    out = np.stack([np.stack([ramp, ramp[::-1], np.full(w, 80, np.uint8)], -1)] * h)
+    if picture:
+        out[..., 2] = np.linspace(40, 140, h, dtype=np.uint8)[:, None]
+    return out
+
+
+def _gradient_clip(n=12, h=60, w=120, picture=False):
+    frames = np.repeat(_ramp(h, w, picture)[None], n, 0).copy()
     for i in range(n):
         frames[i, 20:36, 5 + i * 8: 21 + i * 8] = (255, 255, 255)   # one moving square
     return frames
@@ -65,7 +73,8 @@ def test_dominant_gradient_uses_plate_on_analysis_and_rerun(tmp_path):
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", AnalyzeOptions(ocr=False, refine=False, use_ecc=False))
     sd = scene_dir(tmp_path, "s1")
     bgj = json.loads((sd / "stages" / "background.json").read_text())
-    assert scene.background.kind == "image" and bgj["plate"] is True
+    assert scene.background.kind == "gradient" and bgj["plate"] is True   # D4: a 3-stop gradient, editable
+    assert len(scene.background.gradient.stops) == 3 and scene.background.poster == PLATE_PATH
     assert bgj["confidence"] == conf and len(scene.elements) == 1
     regions = pickle.loads((sd / "stages" / "regions.pkl").read_bytes())
     assert [sum(r.area for r in rs) for rs in regions] == [256] * len(frames)
@@ -118,7 +127,7 @@ def test_gradient_with_static_sharp_logo_preserves_foreground_region(tmp_path):
     assert fg[80:120, 320:360].sum() == 1600
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", AnalyzeOptions(ocr=False, refine=False, use_ecc=False))
     sd = scene_dir(tmp_path, "s1")
-    assert scene.background.kind == "image"
+    assert scene.background.kind == "gradient"   # the ramp behind the logo is an editable gradient (D4)
     assert json.loads((sd / "stages" / "background.json").read_text())["plate"] is True
     regions = pickle.loads((sd / "stages" / "regions.pkl").read_bytes())
     assert all(any(r.bbox == (320, 80, 360, 120) and r.area == 1600 for r in rs) for rs in regions)
@@ -221,7 +230,7 @@ def test_image_background_is_resized_cached_and_under_elements(tmp_path, monkeyp
 
 @pytest.fixture
 def analyzed_plate(tmp_path):
-    frames = _gradient_clip(h=320, w=640)
+    frames = _gradient_clip(h=320, w=640, picture=True)   # a picture: the image-plate path
     scene = analyze_scene_frames(frames, 30, tmp_path, "s1", AnalyzeOptions(ocr=False, refine=False, use_ecc=False))
     init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [640, 320]}, scene)
     return tmp_path, scene, frames
@@ -235,8 +244,9 @@ def test_analyze_stores_plate_without_gradient_elements(analyzed_plate):
     assert scene.background == Background(kind="image", value=PLATE_PATH, confidence=bgj["confidence"])
     assert bgj["plate"] is True and bgj["confidence"] < 0.30
     assert bgj["rgb"] == [int(v) for v in plate.reshape(-1, 3).mean(0)]
-    saved = cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB)
-    assert np.array_equal(saved, plate)
+    assert np.array_equal(cv2.cvtColor(cv2.imread(str(sd / PASS1_PATH)), cv2.COLOR_BGR2RGB), plate)   # pass 1
+    clean = _ramp(320, 640, picture=True)
+    assert np.array_equal(cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB), clean)   # pass 2
     assert len(scene.elements) == 1
     assert all(el.canonical.texture != scene.background.value for el in scene.elements)
     regions = pickle.loads((sd / "stages" / "regions.pkl").read_bytes())
@@ -313,11 +323,11 @@ def test_edit_preserves_plate_and_promotes_only_element_assets(analyzed_plate, m
     assets = {p.name for p in (sd / "assets").iterdir()}
     composed = []
 
-    def candidate_compose(edited, directory, out):
+    def candidate_compose(edited, directory, out, **kw):
         assert edited.background == scene.background
         assert (directory / edited.background.value).read_bytes() == before
         assert all(el.canonical.texture != edited.background.value for el in edited.elements)
-        result = compose(edited, directory, out)
+        result = compose(edited, directory, out, **kw)
         assert 'url("data:image/png;base64,' in result.read_text()
         composed.append(result)
         return result

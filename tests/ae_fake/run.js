@@ -47,8 +47,12 @@ function checkES3Syntax(source) {
         else if (ch === "/" && !inClass) break;
         else if (/[\r\n\u2028\u2029]/.test(ch)) break;
       }
+      const slash = end;
       while (end < source.length && /[a-z]/i.test(source[end])) end++;
       token.kind = "literal";
+      // ExtendScript's regexes are ES3: flags g/i/m only; no lookbehind or named groups.
+      if (/[^gim]/.test(source.slice(slash, end))) fail("regex flag", token);
+      if (/(^|[^\\])\(\?</.test(source.slice(start + 1, slash - 1))) fail("regex lookbehind or named group", token);
     } else if (/[\p{ID_Start}$_]/u.test(c) || c === "\\" && next === "u") {
       const word = /^(?:[\p{ID_Start}$_]|\\u[\da-fA-F]{4})(?:[\p{ID_Continue}$\u200c\u200d]|\\u[\da-fA-F]{4})*/u.exec(source.slice(offset));
       if (word) end = offset + word[0].length;

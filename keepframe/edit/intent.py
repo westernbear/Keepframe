@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..ir.schema import Element, Scene, validate_font_family
+from ..ir.schema import Element, FontGuess, Scene, validate_font_family
 from .retime import apply_timing, retimed_range, timing_args
 from .textraster import resolve_families
 
@@ -23,7 +23,8 @@ _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
 class Target(BaseModel):
     element: str | None = Field(default=None, description="장면 브리프의 요소 id(예: e12). background와 장면 전체 timing에는 비워 둔다(장면 id 's1'을 넣지 않는다)")
     property: Prop = Field(description="허용된 편집: text(문구), color(요소 색), texture(이미지), model(3D 모델), background(배경색), font(폰트), timing(속도·지연).")
-    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color/background: #rrggbb, font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 참조 크롭으로 생성하려면 'reference', 새 생성 설명 또는 'attachment'.")
+    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color: #rrggbb, background: #rrggbb 또는 첨부한 PNG를 새 배경 이미지로 쓰려면 'attachment', font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 참조 크롭으로 생성하려면 'reference', 새 생성 설명 또는 'attachment'.")
+    mode: Literal["replace", "tint"] | None = Field(default=None, exclude_if=lambda v: v is None, description="background 색 편집 전용: replace(기본, 배경 전체를 단색으로 교체) 또는 tint(그림·그라데이션 배경의 밝고 어두운 결을 유지한 채 그 색을 입힌 새 이미지로 교체).")
     weight: int | None = Field(default=None, ge=100, le=900, description="폰트 굵기(100~900, 400=보통, 700=굵게).")
     speed: float | None = Field(default=None, gt=0.1, le=10, description="timing 속도 배율(1=원래 속도, 2=2배 빠르게).")
     delay: float | None = Field(default=None, ge=-30, le=30, description="timing 지연 시간(초). 요소별 timing에만 사용하며 음수는 앞당긴다.")
@@ -41,7 +42,11 @@ class Target(BaseModel):
                 raise ValueError("timing needs speed or delay")
             if self.element is None and self.delay is not None:
                 raise ValueError("delay needs an element")
-        if self.property in ("color", "background"):
+        if self.mode is not None and (self.property != "background" or self.value == "attachment"):
+            raise ValueError("mode applies to a background colour only")
+        if self.property == "background" and self.value == "attachment":
+            pass
+        elif self.property in ("color", "background"):
             if not self.value or not _HEX_FULL.fullmatch(self.value):
                 raise ValueError("color value must be #rrggbb")
             self.value = _norm_hex(self.value)
@@ -142,6 +147,8 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"{who} 문구를 {t.value or ''}(으)로")
         elif t.property == "color":
             bits.append(f"{who} 색을 {t.value or ''}로")
+        elif t.property == "background" and t.value == "attachment":
+            bits.append("배경 이미지를 첨부로")
         elif t.property == "background":
             bits.append(f"배경색을 {t.value or ''}로")
         elif t.property == "font":
@@ -208,9 +215,13 @@ def interpret(prompt: str, scene: Scene, *, element: str | None = None, has_atta
     return Intent(targets=targets, summary=describe(targets, has_attachment))
 
 
-def plan(scene: Scene, intent: Intent) -> Plan:
-    from .apply import measure_text
+def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
+    """`fonts`: the project's registry (uploads); bundled fonts only when None. `scene_dir` resolves pinned font
+    files for the overflow measurement."""
+    from ..fonts.registry import FontRegistry
+    from .apply import text_width
 
+    fonts = fonts or FontRegistry()
     items: list[Target] = []
     conflicts: list[Conflict] = []
     timing_scene = scene.model_copy(deep=True) if any(t.property == "timing" for t in intent.targets) else scene
@@ -228,10 +239,7 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                                               reason=f"장면 끝({timing_scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
             apply_timing(timing_scene, [t], {"timing_overflow": "extend_scene"})
         if t.property == "text" and t.value and el is not None:
-            font = el.canonical.font
-            size = font.size_px if font else 32.0
-            w, _ = measure_text(t.value, size, font.family_guess if font else "sans-serif")
-            if w > el.canonical.width * 1.15:
+            if text_width(el, t.value, fonts=fonts, scene_dir=scene_dir) > el.canonical.width * 1.15:
                 conflicts.append(Conflict(
                     id="overflow",
                     element=el.id,
@@ -239,13 +247,16 @@ def plan(scene: Scene, intent: Intent) -> Plan:
                     reason="새 문구가 원래 상자보다 깁니다.",
                 ))
         if t.property == "font" and el is not None and el.canonical.text:
-            family = t.value or (el.canonical.font.family_guess if el.canonical.font else "sans-serif")
-            resolved = resolve_families(t.value) if t.value else ()
+            base = el.canonical.font or FontGuess()
+            update = {k: v for k, v in (("family_guess", t.value), ("weight", t.weight)) if v}
+            if t.value and t.value.casefold() != base.family_guess.casefold():   # as apply_edit: the old file goes
+                update.update(file=None, postscript=None, fallback=None, fallback_weight=None, fallback_scale=1.0)
+            resolved = resolve_families(t.value) if t.value and not fonts.faces(t.value) else ()   # uploads/bundled first
             if t.value and resolved and t.value.casefold() not in {name.casefold() for name in resolved}:
                 conflicts.append(Conflict(id="font_missing", element=el.id, choices=["use_fallback"],
                                           reason=f"{t.value} 폰트가 설치되어 있지 않습니다. {resolved[0]}(으)로 그려집니다."))
-            size = el.canonical.font.size_px if el.canonical.font else 32.0
-            if measure_text(el.canonical.text, size, family)[0] > el.canonical.width * 1.15:
+            new = base.model_copy(update=update)
+            if text_width(el, el.canonical.text, new, fonts=fonts, scene_dir=scene_dir) > el.canonical.width * 1.15:
                 conflicts.append(Conflict(id="overflow", element=el.id, choices=["shrink_font", "wrap", "expand_box"],
                                           reason="바꾼 폰트로는 문구가 원래 상자보다 깁니다."))
     return Plan(items=items, conflicts=conflicts)

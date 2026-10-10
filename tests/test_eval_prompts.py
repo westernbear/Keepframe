@@ -350,7 +350,7 @@ def test_main_strips_confirm_before_edit_and_never_creates_an_edit_version(tmp_p
     first = _edit(0, [{"element": "e1", "property": "text", "value": "New"}], confirm=True)
     llm = ScriptedLLM([first, *[AssistantReply(content="done") for _ in range(8)]])
     monkeypatch.setattr(eval_prompts, "make_llm", lambda: llm)
-    monkeypatch.setattr(agent, "compose", lambda *args: None)
+    monkeypatch.setattr(agent, "compose", lambda *args, **_: None)
     monkeypatch.setattr(agent, "render", lambda *args: None)
     monkeypatch.setattr(agent, "verify", lambda *args, **kwargs: VerifyReport(schema_ok=True, passed=True))
     real_turn = SessionAgent.turn

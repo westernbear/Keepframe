@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import FontGuess, Version
 from ..ir.store import current_scene, new_version, scene_dir
-from ..analyze.background import PLATE_PATH, foreground_mask, foreground_mask_plate
+from ..analyze.background import foreground_mask, foreground_mask_plate, pass1_plate
 from ..analyze.pipeline import rerun
 
 
@@ -111,11 +111,8 @@ def add_bbox_prompt(root: Path, scene_id: str, frame: int, bbox: tuple[int, int,
     _object_num(key)
     frames = np.load(sd / "stages" / "frames.npy", mmap_mode="r")
     bgj = json.loads((sd / "stages" / "background.json").read_text())
-    if bgj.get("plate", False):
-        plate = cv2.imread(str(sd / PLATE_PATH), cv2.IMREAD_COLOR)
-        if plate is None:
-            raise FileNotFoundError(sd / PLATE_PATH)
-        fg = foreground_mask_plate(frames[frame], cv2.cvtColor(plate, cv2.COLOR_BGR2RGB))
+    if bgj.get("plate", False):   # the prompt cuts against pass 1, the plate the regions were found with
+        fg = foreground_mask_plate(frames[frame], pass1_plate(sd))
     else:
         fg = foreground_mask(frames[frame], tuple(bgj["rgb"]))
     m = np.zeros(frames.shape[1:3], np.uint8)

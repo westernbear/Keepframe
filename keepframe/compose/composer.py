@@ -7,10 +7,15 @@ import re
 from pathlib import Path
 
 from ..assets import validate_glb
+from ..fonts.css import FontEmbedError, font_face_css, text_html, uploaded_font_issues
+from ..fonts.registry import FontRegistry
+from ..log import get, scrub_paths
+from ..ir.gradient import gradient_at, gradient_css
 from ..ir.schema import Element, Scene, UIComponent, UIModel
 from ..ir.paths import scene_asset_path
 from ..ir.tracks import eval_z
 
+log = get("keepframe.compose")
 VENDOR = Path(__file__).parent / "vendor"
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -83,7 +88,7 @@ def _ui_html(model: UIModel | None, element_id: str) -> str:
     return _ui_component(component) if component is not None else ""
 
 
-def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) -> str:
+def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, fonts: FontRegistry | None = None) -> str:
     c = el.canonical
     ax, ay = c.anchor
     style = (
@@ -100,12 +105,16 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) 
         inner = _ui_html(ui, el.id)
     elif el.kind == "text" and c.text is not None and c.font is not None:
         f = c.font
-        inner = (
+        inner = _styled_text(c, scene_dir, fonts) or (
             f'<span style="font-family:{html.escape(f.family_guess)};font-weight:{f.weight};'
             f'font-size:{f.size_px}px;line-height:{c.height}px;color:{c.color or "#000"}">{html.escape(c.text)}</span>'
         )
     elif c.texture:
         inner = f'<img src="{_data_uri(scene_dir / c.texture)}" alt="{html.escape(el.id)}">'
+        clip = _video_uri(scene_dir, c.video) if c.video else None
+        if clip:   # a video sprite: frame f − start of its WebM (at its rate); the texture is its poster
+            inner = (f'<video class="vid" muted playsinline preload="auto" data-start="{el.visible[0]}"{_rate(c.video_rate)} '
+                     f'poster="{_data_uri(scene_dir / c.texture)}" src="{clip}"></video>')
     else:
         inner = ""
     return (
@@ -114,22 +123,93 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None) 
     )
 
 
-def compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path:
+def _rate(rate: float) -> str:
+    """The data-rate attribute of a video layer that plays at `rate` (none at 1: today's markup)."""
+    return "" if rate == 1.0 else f' data-rate="{float(rate)!r}"'
+
+
+def _video_uri(scene_dir: Path, rel: str) -> str | None:
+    """A scene's WebM as a data URI, None when the file is gone (the poster is drawn instead)."""
+    try:
+        return _data_uri(scene_asset_path(scene_dir, rel), "video/webm")
+    except (OSError, ValueError) as e:   # fail soft: the poster
+        log.warning("video asset %s not embedded (%s)", Path(rel).name, type(e).__name__)
+        return None
+
+
+def _styled_text(c, scene_dir: Path, fonts: FontRegistry | None) -> str | None:
+    try:
+        return text_html(c, registry=fonts, scene_dir=scene_dir)
+    except Exception as e:   # fail soft: the legacy span still shows the text
+        log.warning("styled text markup failed (%s); plain span", e)
+        return None
+
+
+def _fonts_block(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: float | None = None) -> str:
+    try:
+        css = font_face_css(scene, scene_dir, fonts, wait=font_wait, strict=font_wait is not None)
+    except FontEmbedError:   # a final render never bakes a fallback font (R39)
+        raise
+    except Exception as e:   # fail soft: system fonts instead of the embedded faces
+        log.warning("font embedding failed (%s)", scrub_paths(e))
+        css = ""
+    # Start every embedded face loading before the template awaits document.fonts.ready.
+    return f"<style>\n{css}\n</style><script>for(const f of document.fonts)f.load();</script>" if css else ""
+
+
+def _font_issues(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: float | None, warnings) -> None:
+    """A final render stops on an uploaded family it would draw with a stand-in (R47); otherwise each issue is
+    logged and reported through `warnings`."""
+    try:
+        issues = uploaded_font_issues(scene, scene_dir, fonts)
+    except Exception as e:   # the check itself failing never blocks a preview; a final render stops
+        log.warning("uploaded font check failed (%s)", scrub_paths(f"{type(e).__name__}: {e}"))
+        if font_wait is not None:
+            raise FontEmbedError("uploaded fonts could not be checked; nothing was rendered") from e
+        return
+    for issue in issues:
+        if issue["kind"] == "font_substituted" and font_wait is not None:
+            raise FontEmbedError(f"uploaded font {issue['family']} is not in this project any more (it would be drawn "
+                                 f"with {issue['used']}); upload it again or choose another font. Nothing was rendered")
+        log.warning("font issue %s", issue)
+    if warnings is not None:
+        warnings.extend(issues)
+
+
+def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None,
+            font_wait: float | None = None, warnings: list | None = None) -> Path:
+    """`fonts`: the project's registry (uploads); bundled fonts only when None. `font_wait`: final renders wait this
+    long (css.FINAL_WAIT_S) for every embedded face and raise css.FontEmbedError instead of falling back (also for an
+    uploaded family that is gone); previews (None) wait css.SUBSET_WAIT_S and embed what is ready. `warnings`
+    collects the uploaded-font issues (css.uploaded_font_issues) the composition was made with."""
     scene_dir, out_html = Path(scene_dir), Path(out_html)
-    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui) for e in scene.elements)
+    fonts = fonts or FontRegistry()
+    _font_issues(scene, scene_dir, fonts, font_wait, warnings)
+    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
+    clip = _video_uri(scene_dir, scene.background.value) if scene.background.kind == "video" else None
+    if clip:   # under every layer; the stage keeps the poster behind it
+        elements = (f'<video class="bg-video" muted playsinline preload="auto" data-start="0"{_rate(scene.background.video_rate)} '
+                    f'src="{clip}"></video>\n') + elements
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
-    bg = scene.background.value if scene.background.kind == "color" else (
-        f'#000 url("{_data_uri(scene_asset_path(scene_dir, scene.background.value))}") 0 0/100% 100% no-repeat')
+    bgd = scene.background
+    if bgd.kind == "gradient":
+        bg = gradient_css(gradient_at(bgd, 0), *scene.size)
+    elif bgd.kind == "image" or (bgd.kind == "video" and bgd.poster):
+        bg = f'#000 url("{_data_uri(scene_asset_path(scene_dir, bgd.value if bgd.kind == "image" else bgd.poster))}") 0 0/100% 100% no-repeat'
+    else:
+        bg = bgd.value if bgd.kind == "color" else "#000"
     for k, v in {
         "{{ID}}": html.escape(scene.id),
         "{{WIDTH}}": str(scene.size[0]),
         "{{HEIGHT}}": str(scene.size[1]),
         "{{BG}}": bg,
+        "{{PAGEBG}}": bgd.value if bgd.kind == "color" else "#000",
         "{{GSAP_JS}}": (VENDOR / "gsap.min.js").read_text(),
         "{{CUSTOMEASE_JS}}": (VENDOR / "CustomEase.min.js").read_text(),
         "{{THREE_JS}}": (VENDOR / "three-0.128.0.min.js").read_text(),
         "{{GLTFLOADER_JS}}": (VENDOR / "GLTFLoader-0.128.0.js").read_text(),
+        "{{FONTS}}": _fonts_block(scene, scene_dir, fonts, font_wait),
         "{{ELEMENTS}}": elements,
         "{{SCENE_JSON}}": scene_json,
     }.items():

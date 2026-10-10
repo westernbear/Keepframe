@@ -1,8 +1,8 @@
-import { fetchAnalysisOverlay } from "/static/js/api.js?v=20261006l";
-import { T } from "/static/js/i18n.js?v=20261006l";
-import { createPreviewCache, createFrameTransport, seekDelayMs, frameStep } from "/static/js/playback.js?v=20261006l";
-import { MIN_BBOX_EDGE } from "/static/js/review/workspace.js?v=20261006l";
-import { objectColor } from "/static/js/review/colors.js?v=20261006l";
+import { fetchAnalysisOverlay } from "/static/js/api.js?v=20261010a";
+import { T } from "/static/js/i18n.js?v=20261010a";
+import { createPreviewCache, createFrameTransport, seekDelayMs, frameStep } from "/static/js/playback.js?v=20261010a";
+import { MIN_BBOX_EDGE } from "/static/js/review/workspace.js?v=20261010a";
+import { objectColor } from "/static/js/review/colors.js?v=20261010a";
 
 const NS = "http://www.w3.org/2000/svg";
 export function attachPlayback(ws) {

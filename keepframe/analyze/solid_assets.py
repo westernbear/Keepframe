@@ -13,6 +13,7 @@ import numpy as np
 
 from ..assets import ASSET_GEN_CAP, AssetAPIError, AssetClient, validate_glb
 from ..compose.composer import compose
+from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import Background, Scene
 from ..ir.tracks import element_bbox
 from ..log import get
@@ -88,8 +89,13 @@ def reference_crop(scene, sd, eid):
 
 
 def _plate(scene, sd):
-    if scene.background.kind == "image":
-        return cv2.cvtColor(cv2.imread(str(sd / scene.background.value)), cv2.COLOR_BGR2RGB)
+    bg = scene.background
+    if bg.kind == "image" or (bg.kind == "video" and bg.poster):
+        return cv2.cvtColor(cv2.imread(str(sd / (bg.value if bg.kind == "image" else bg.poster))), cv2.COLOR_BGR2RGB)
+    if bg.kind == "gradient":
+        return render_gradient(gradient_at(bg, 0), *scene.size)
+    if bg.kind == "video":
+        return (0, 0, 0)
     value = scene.background.value.lstrip("#")
     return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 

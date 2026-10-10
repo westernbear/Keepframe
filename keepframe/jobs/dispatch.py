@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
-from keepframe.log import get
+from keepframe.log import describe, get
 
 from .spec import JobSpec
 
@@ -11,6 +12,15 @@ log = get("keepframe.jobs")
 
 # Closed cloud workers import this module and call run_job(JobSpec.from_json(payload)).
 # Do not reimplement analyze/render there.
+
+
+class JobFailed(RuntimeError):
+    """A job failure whose client-visible text is `code` only (`str()` is the code; runners store it as the job's
+    error); the detail was logged, paths cut."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 def run_job(spec: JobSpec) -> dict[str, Any]:
@@ -70,13 +80,47 @@ def _run_render(args: dict[str, Any]) -> dict[str, Any]:
     return {"frames": len(res.frames), "mp4": str(res.mp4) if res.mp4 else None}
 
 
+_FONT_SUFFIXES = (".ttf", ".otf", ".woff", ".woff2", ".ttc")
+_FONT_COPY = re.compile(r"font-[0-9a-f]{16}\.(ttf|otf|woff2?)|\.font-.*\.tmp")
+
+
+def _private_font(relative: Path) -> bool:
+    """A file whose bytes never leave the server in a ZIP (R46): anything under the project's top-level `fonts/`, a
+    scene copy of an uploaded face (`font-<sha16>.<ext>` and its `.font-*.tmp`) and any font file. The composition
+    carries the embedded subset."""
+    return (relative.parts[:1] == ("fonts",) or _FONT_COPY.fullmatch(relative.name) is not None
+            or relative.name.lower().endswith(_FONT_SUFFIXES))
+
+
+def project_zip(root: Path, zip_path: Path) -> None:
+    """`root` as a ZIP without uploaded font bytes, symlinks or the ZIP itself."""
+    import os
+    import zipfile
+    root, zip_path = Path(root), Path(zip_path)
+    tmp = zip_path.with_name(f".{zip_path.name}.tmp")
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for dirpath, dirnames, filenames in os.walk(root):
+                here = Path(dirpath)
+                dirnames[:] = sorted(d for d in dirnames if not (here / d).is_symlink()
+                                     and not (here == root and d == "fonts"))   # only the project's fonts/ whole
+                for name in sorted(filenames):
+                    path = here / name
+                    relative = path.relative_to(root)
+                    if path in (zip_path, tmp) or path.is_symlink() or _private_font(relative):
+                        continue
+                    zf.write(path, relative.as_posix())
+        os.replace(tmp, zip_path)
+    except BaseException:   # no partial ZIP left behind
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     if args.get("lottie_plan_id"):
         from keepframe.render.lottie import export_lottie_plan
 
         return export_lottie_plan(Path(args["project_root"]), args["lottie_plan_id"], args["execution_id"])
-    import shutil
-
     if args.get("stage_manifest"):
         from keepframe.render.native import verify_native_stage
         from keepframe.render.plan import PlanConflict
@@ -85,6 +129,8 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
         if not args.get("package_root"):
             raise PlanConflict("native final stage package root is missing")
     from keepframe.compose.composer import compose
+    from keepframe.fonts.css import FINAL_WAIT_S
+    from keepframe.fonts.registry import FontRegistry
     from keepframe.ir.store import load_scene
     from keepframe.render.renderer import render
 
@@ -95,13 +141,18 @@ def _run_export(args: dict[str, Any]) -> dict[str, Any]:
     sd = scene_path.parent
     html_arg = args.get("html")
     html = Path(html_arg) if html_arg else sd / "composition.export.html"
-    if not html_arg:
-        compose(scene, sd, html)
+    if not html_arg:   # an export is a final render: the project's fonts, waited for, never a fallback (R39)
+        compose(scene, sd, html, fonts=FontRegistry.for_project(sd.parent.parent if sd.parent.name == "scenes" else None),
+                font_wait=FINAL_WAIT_S)
     res = render(html, scene, out, mp4=True)
     package_root_arg = args.get("package_root")
     root = Path(package_root_arg) if package_root_arg else sd.parent.parent
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / "project.zip"
-    shutil.make_archive(str(zip_path.with_suffix("")), "zip", root)
+    try:
+        project_zip(root, zip_path)
+    except Exception as e:   # unreadable, vanished or unwritable files, a full disk: a code for the render card
+        log.error("export project zip failed out=%s: %s", out.name, describe(e))
+        raise JobFailed("export_failed") from None
     log.info("export done mp4=%s zip=%s", res.mp4, zip_path)
     return {"mp4": str(res.mp4) if res.mp4 else None, "zip": str(zip_path), "frames": len(res.frames)}

@@ -107,7 +107,7 @@ def test_edit_retry_keeps_asset_context_and_failure_feedback(tmp_path, monkeypat
             return AssetResponse("image/png", encoded.tobytes())
 
     monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out: directory / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out, **_: directory / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_args, **_kwargs: VerifyReport(
         schema_ok=True, passed=False, keep_results=[{"pred": "keep_test", "passed": False}], messages=["candidate failed"],

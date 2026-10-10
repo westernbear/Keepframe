@@ -73,8 +73,28 @@ resolve_families.cache_clear = _families.cache_clear
 resolve_family.cache_clear = _families.cache_clear
 
 
+def _registry_font(family: str, size_px: float, hangul: bool):
+    """A bundled face for `family` (fontconfig never sees the bundled set); None when there is none."""
+    try:
+        from ..fonts.raster import _mtime, _pil_font
+        from ..fonts.registry import FontRegistry
+        registry = FontRegistry()
+        if family.casefold() not in {name.casefold() for name in registry.families()}:
+            return None
+        face = registry.face(family)
+        if face is None or face.source == "system" or (hangul and not face.hangul):
+            return None
+        # uncached: callers here run outside the raster's FreeType lock
+        return _pil_font.__wrapped__(str(face.path), face.index, float(max(1, round(size_px))), 400, _mtime(face.path))
+    except Exception:   # an unreadable bundled file must not break the fontconfig path
+        return None
+
+
 def _font(family: str, size_px: float, hangul: bool = False):
     from PIL import ImageFont
+    font = _registry_font(family, size_px, hangul)
+    if font is not None:
+        return font
     try:
         path, index = _font_match(family, hangul)
     except LookupError:

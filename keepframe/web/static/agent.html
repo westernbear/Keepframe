@@ -4,11 +4,11 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Keepframe - 에이전트</title>
-<link href="/static/css/app.css?v=20261006l" rel="stylesheet"/>
+<link href="/static/css/app.css?v=20261010a" rel="stylesheet"/>
 <link rel="icon" href="/static/icon.png" type="image/png"/>
-<script type="module" src="/static/js/i18n.js?v=20261006l"></script>
-<script type="module" src="/static/js/api.js?v=20261006l"></script>
-<script type="module" src="/static/js/agent.js?v=20261006l"></script>
+<script type="module" src="/static/js/i18n.js?v=20261010a"></script>
+<script type="module" src="/static/js/api.js?v=20261010a"></script>
+<script type="module" src="/static/js/agent.js?v=20261010a"></script>
 </head>
 <body class="app app--fill">
 <header class="header header--static">
@@ -103,6 +103,7 @@
 <div class="render-card__facts" id="render-reason-field" hidden>
 <div><span data-i18n="agent.renderReason">실패 이유</span><strong id="render-reason"></strong></div>
 </div>
+<ul id="render-warnings" class="render-card__warnings" hidden></ul>
 <div id="render-artifacts" class="render-artifacts" data-i18n-aria="agent.renderArtifacts" aria-label="렌더 산출물"></div>
 </div>
 <div class="render-card__actions" id="render-approval" hidden>
@@ -181,6 +182,20 @@
 <div class="agent-elements">
 <button class="agent-elements__head card-toggle" id="agent-elements-toggle" type="button" aria-expanded="false" aria-controls="agent-elements-list"><span id="agent-count"></span></button>
 <div class="agent-elements__list" id="agent-elements-list" hidden></div>
+</div>
+<div class="agent-elements agent-fonts">
+<button class="agent-elements__head card-toggle" id="agent-fonts-toggle" type="button" aria-expanded="false" aria-controls="agent-fonts-body"><span id="agent-fonts-count" data-i18n="fonts.title">폰트</span></button>
+<div class="agent-fonts__body" id="agent-fonts-body" hidden>
+<ul class="agent-fonts__list" id="agent-fonts-list" data-i18n-aria="fonts.listLabel" aria-label="올린 폰트"></ul>
+<p class="agent-fonts__empty" id="agent-fonts-empty" data-i18n="fonts.empty">아직 올린 폰트가 없습니다</p>
+<div class="agent-fonts__actions">
+<input type="file" id="agent-fonts-input" accept=".ttf,.otf,.woff2" hidden>
+<button type="button" class="btn btn--secondary btn--inline" id="agent-fonts-upload" aria-describedby="agent-fonts-formats" data-i18n="fonts.upload">폰트 올리기</button>
+<span class="agent-fonts__hint" id="agent-fonts-formats" data-i18n="fonts.formats">TTF · OTF · WOFF2, 20MB 이하</span>
+</div>
+<p class="render-card__lock" id="agent-fonts-note" data-i18n="fonts.note">다음 분석이나 문구 수정부터 쓰입니다</p>
+<p class="agent-fonts__status" id="agent-fonts-status" role="status" aria-live="polite" hidden></p>
+</div>
 </div>
 </section>
 </main>

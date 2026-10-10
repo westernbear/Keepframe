@@ -278,7 +278,7 @@ def test_generated_assets_stop_at_two_distinct_candidates(tmp_path, monkeypatch)
             return AssetResponse("image/png", encoded.tobytes())
 
     monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out: directory / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out, **_: directory / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_args, **_kwargs: VerifyReport(schema_ok=True, keep_pass_rate=0, layer_probe_complete=True, passed=False))
 
@@ -305,7 +305,7 @@ def test_generated_3d_asset_is_attached_as_glb(tmp_path, monkeypatch):
             return AssetResponse("model/gltf-binary", _triangle_glb())
 
     monkeypatch.setattr("keepframe.edit.agent.AssetClient", FakeAssets)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out: directory / "composition.html")
+    monkeypatch.setattr("keepframe.edit.agent.compose", lambda _scene, directory, _out, **_: directory / "composition.html")
     monkeypatch.setattr("keepframe.edit.agent.render", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("keepframe.edit.agent.verify", lambda *_args, **_kwargs: VerifyReport(schema_ok=True, keep_pass_rate=1, temporal=1, layer_probe_complete=True, passed=True))
 

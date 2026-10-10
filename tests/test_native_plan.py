@@ -170,3 +170,40 @@ def test_native_stage_rejects_reparse_points(tmp_path, monkeypatch):
 
     with pytest.raises(PlanConflict, match="native"):
         prepare_native_job(root, plan.id)
+
+
+@pytest.mark.skipif(not __import__("keepframe.analyze.videoasset", fromlist=["x"]).ffmpeg_vp9_ok(), reason="ffmpeg with libvpx-vp9 required")
+def test_video_assets_are_pinned_staged_and_exported(tmp_path, monkeypatch):
+    """WebM layers reach the HTML renderer and the export through the plan's pinned snapshot (no asset route)."""
+    import numpy as np
+    from keepframe.analyze.videoasset import encode_webm
+    from keepframe.ir.schema import Background
+    from keepframe.ir.store import current_scene, save_scene, scene_dir
+    root = _project(tmp_path)
+    scene, version = current_scene(root, "s1")
+    sd = scene_dir(root, "s1")
+    W, H = scene.size
+    sprite = next(e for e in scene.elements if e.kind == "sprite" and e.canonical.texture)
+    encode_webm(np.full((scene.frames, H, W, 3), 60, np.uint8), scene.fps, sd / "assets" / "background.webm", alpha=False)
+    th, tw = (int(round(v)) for v in (sprite.canonical.height, sprite.canonical.width))
+    encode_webm(np.full((3, th, tw, 4), 200, np.uint8), scene.fps, sd / "assets" / f"{sprite.id}.video.webm", alpha=True)
+    __import__("shutil").copyfile(sd / sprite.canonical.texture, sd / "assets" / "background.png")
+    scene.background = Background(kind="video", value="assets/background.webm", poster="assets/background.png")
+    sprite.canonical.video = f"assets/{sprite.id}.video.webm"
+    save_scene(scene, sd / f"scene.{version.id}.json")
+    plan = _approved_plan(root, "final")
+    kinds = {a.project_path: a.media_kind for a in plan.assets}
+    assert kinds["scenes/s1/assets/background.webm"] == "video/webm"
+    assert kinds[f"scenes/s1/assets/{sprite.id}.video.webm"] == "video/webm"
+    spec = prepare_native_job(root, plan.id)
+    html = Path(spec.args["html"]).read_text()
+    assert html.count('src="data:video/webm;base64,') == 2
+
+    class Result:
+        frames = [0]
+        mp4 = root / "renders" / plan.id / "native" / "output" / "video.mp4"
+
+    monkeypatch.setattr("keepframe.render.renderer.render", lambda *args, **kwargs: Result())
+    with zipfile.ZipFile(run_job(spec)["zip"]) as zf:
+        names = set(zf.namelist())
+    assert {"scenes/s1/assets/background.webm", f"scenes/s1/assets/{sprite.id}.video.webm"} <= names

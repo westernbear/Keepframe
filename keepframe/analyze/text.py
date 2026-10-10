@@ -6,16 +6,22 @@ from dataclasses import dataclass, field
 from threading import Lock, local
 from typing import Protocol
 import cv2, numpy as np
+from ..ir.colour import delta_e, srgb8_to_lab
 from ..ir.schema import FontGuess
-from ..log import get
+from ..log import describe, get
 from .background import foreground_mask, foreground_mask_plate, opacity_against_plate, rgb_to_lab
 from .device import ocr_cuda, ocr_cuda_expected
-from .fonts import font_candidates, font_family_guess
 
 log = get("keepframe.analyze")
 
 MIN_TEXT_FRAMES = 3
 CONFIDENT_OCR = 0.9
+FULL_OPACITY = 0.97     # a text frame at this share of the peak level is at full opacity (0: off, the largest box) …
+PEAK_SUPPORT = 3        # … the peak: the level this many frames reach (one or two bright frames are not the peak) …
+FIT_DE = 8.0            # … over the frames whose glyph core is the text's colour faded over the plate, within this ΔE76
+PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced)
+FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
+FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
 _warned_ocr_cap_unavailable = False
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
@@ -451,13 +457,93 @@ def _glyph_core_mask(crop: np.ndarray, mask: np.ndarray, bg_rgb: tuple,
     return core
 
 
+def _core_pixels(frame: np.ndarray, bbox, bg_rgb: tuple, plate: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
+    """(glyph core pixels, the plate behind them), uint8 N×3, the box clipped to the frame."""
+    x0, y0, x1, y1 = bbox
+    fh, fw = frame.shape[:2]
+    cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
+    crop = frame[cy0:cy1, cx0:cx1]
+    local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
+    core = _glyph_core_mask(crop, stroke_mask(frame, bbox, bg_rgb, plate=plate), bg_rgb, local_plate)
+    px = crop[core] if core.any() else np.zeros((0, 3), np.uint8)
+    behind = local_plate[core] if local_plate is not None and core.any() else np.broadcast_to(np.asarray(bg_rgb, np.uint8), px.shape)
+    return px, behind
+
+
+def _box_area(box: TextBox) -> int:
+    return (box.bbox[2] - box.bbox[0]) * (box.bbox[3] - box.bbox[1])
+
+
+def _fade_fit(px: np.ndarray, behind: np.ndarray, colour: np.ndarray) -> tuple[float, float]:
+    """(level, residual) of glyph pixels as `colour` faded over the plate behind them: the median projection of
+    px − B on colour − B (not clipped: a more opaque frame is above 1), and the median ΔE76 between px and
+    B + level·(colour − B) per pixel (the distance off that line: another colour, clutter)."""
+    p, b = px.astype(np.float32), behind.astype(np.float32)
+    d = np.asarray(colour, np.float32) - b
+    n = np.sum(d * d, axis=1)
+    ok = n > 1e-6
+    if not ok.any():
+        return 0.0, float("inf")
+    a = np.sum((p - b) * d, axis=1)[ok] / n[ok]
+    fit = np.clip(b[ok] + a[:, None] * d[ok], 0, 255)
+    return float(np.median(a)), float(np.median(delta_e(srgb8_to_lab(p[ok].astype(np.uint8)), srgb8_to_lab(np.rint(fit).astype(np.uint8)))))
+
+
+def full_opacity_frame(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, cf: int, plate: np.ndarray | None = None) -> int:
+    """The canonical frame of a text that fades: `cf` (the largest box) when its glyphs are at full opacity, else the
+    largest box among the frames, inside the picture, that are. The text's colour is the median of the frames' glyph
+    core colours; a frame shows it (faded or not) when its core lies on the line from the plate to that colour
+    (`_fade_fit` residual ≤ ΔE 8); the peak is the level 3 such frames reach, and full opacity ≥ 0.97 of it. When
+    fewer than half the frames show that colour (clutter, a colour animation) `cf` stays. A faded-in title's largest
+    OCR box is often a faint frame, whose colour would define opacity 1."""
+    H, W = frames.shape[1:3]
+    fit = {}
+    inside = []
+    for f, b in track.boxes.items():
+        px, behind = _core_pixels(frames[f], b.bbox, bg_rgb, plate)
+        if not len(px):
+            continue
+        if len(px) > PEAK_PX:
+            keep = np.linspace(0, len(px) - 1, PEAK_PX).astype(int)
+            px, behind = px[keep], behind[keep]
+        fit[f] = (px, behind)
+        x0, y0, x1, y1 = b.bbox
+        if x0 >= 0 and y0 >= 0 and x1 <= W and y1 <= H:
+            inside.append(f)
+    if len(inside) < PEAK_SUPPORT:
+        return cf
+    colour = np.median(np.stack([np.median(fit[f][0], axis=0) for f in inside]), axis=0)
+    fit = {f: _fade_fit(px, behind, colour) for f, (px, behind) in fit.items()}
+    line = [f for f in inside if fit[f][1] <= FIT_DE]
+    if 2 * len(line) < len(inside):
+        return cf
+    peak = sorted((fit[f][0] for f in line), reverse=True)[min(PEAK_SUPPORT, len(line)) - 1]
+    if peak <= 0:
+        return cf
+    if cf in fit and fit[cf][1] <= FIT_DE and fit[cf][0] >= FULL_OPACITY * peak:
+        return cf
+    return max((f for f in line if fit[f][0] >= FULL_OPACITY * peak), key=lambda f: _box_area(track.boxes[f]))
+
+
 def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
-               infer_font: bool = True, plate: np.ndarray | None = None):
+               infer_font: bool = True, plate: np.ndarray | None = None, full_opacity: bool = True,
+               notes: list[str] | None = None):
+    """`full_opacity`: a text that fades takes its canonical frame (and so its colour and opacity 1) at full opacity
+    (`full_opacity_frame`; a reveal keeps its widest box). `notes` collects report messages."""
     reveal = getattr(track, "reveal", False)
     if reveal:
         cf = _widest_box(track).frame
     else:
-        cf = max(track.boxes, key=lambda f: (track.boxes[f].bbox[2] - track.boxes[f].bbox[0]) * (track.boxes[f].bbox[3] - track.boxes[f].bbox[1]))
+        cf = max(track.boxes, key=lambda f: _box_area(track.boxes[f]))
+        if full_opacity and FULL_OPACITY > 0:
+            try:
+                largest, cf = cf, full_opacity_frame(track, frames, bg_rgb, cf, plate)
+                if cf != largest:
+                    log.info("text track %s: canonical frame %s (full opacity), not %s (largest box, faded)", track.id, cf, largest)
+            except Exception as e:   # fail soft: today's canonical frame (the largest box)
+                log.warning("full-opacity frame failed for text track %s: %s", track.id, describe(e, trace=True))
+                if notes is not None:
+                    notes.append(FULL_OPACITY_NOTE)
     cb = track.boxes[cf].bbox
     frame_h, frame_w = frames[cf].shape[:2]
     cx0, cy0, cx1, cy1 = max(0, cb[0]), max(0, cb[1]), min(frame_w, cb[2]), min(frame_h, cb[3])
@@ -469,23 +555,18 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
     core = _glyph_core_mask(crop, sm, bg_rgb, local_plate)
     stroke_px = crop[core].astype(np.float32) if core.any() else crop.reshape(-1, 3).astype(np.float32)
+    # The core-mask colour is only the fallback (and the opacity reference below): the style phase (textstyle)
+    # measures the fill on the matted texture against the local plate and replaces it.
     col = np.median(stroke_px, axis=0)
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
     raw = np.full((n_frames, 9), np.nan)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
-        fh, fw = frames[f].shape[:2]
-        cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
-        m = stroke_mask(frames[f], b.bbox, bg_rgb, plate=plate)
-        frame_crop = frames[f][cy0:cy1, cx0:cx1]
-        local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
-        m = _glyph_core_mask(frame_crop, m, bg_rgb, local_plate)
-        px = frame_crop[m].astype(np.float32) if m.any() else np.zeros((0, 3), np.float32)
+        px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate))
         if plate is None:
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
-            bg_px = local_plate[m].astype(np.float32)
             opacity = opacity_against_plate(px, bg_px, col)
         # A reveal clips the full texture; shrinking sx too would clip twice.
         x = x0 + cw / 2 if reveal else (x0 + x1) / 2
@@ -494,10 +575,8 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None
-    ys, xs = np.nonzero(sm)
-    tight = sm[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(xs) else sm
+    # A first guess only: the style phase matches the font on the matted texture (fonts.match, Task 10) and
+    # replaces it; this one stays when that fails.
     size = float(min(ch, track_h) * 0.8)
-    cands = font_candidates(tight, track.text, size)
-    font = FontGuess(family_guess=font_family_guess(tight, track.text, size, cands), weight=700 if sm.mean() > 0.35 else 400,
-                     size_px=size, candidates=cands)
+    font = FontGuess(family_guess="sans-serif", weight=700 if sm.mean() > 0.35 else 400, size_px=size, confidence=0.5)
     return raw, canon, cf, font, color
