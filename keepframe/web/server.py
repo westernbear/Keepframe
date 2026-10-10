@@ -73,6 +73,9 @@ log = get("keepframe.web")
 
 CORRECTION_OPS = {"reassign", "mask", "bbox", "text"}
 FONT_UPLOAD_IDLE_S = 60
+BODY_IDLE_S = 60
+# ponytail: no disk quota and no reverse proxy (slow-loris, per-client limits); both belong in front of this server if it is exposed beyond a trusted network
+MAX_VIDEO_BYTES = 512 << 20   # ponytail: the body is buffered in memory twice (read + multipart parse); stream the multipart to disk if larger sources are needed
 
 JOBS = JobStore()
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -650,9 +653,12 @@ def make_server(
             log.warning("request failed (%s): %s", code, describe(e, trace=True))
             self._json(status, {"error": code})
 
-        def _read_body(self) -> bytes:
-            length = int(self.headers.get("content-length", 0))
-            return self.rfile.read(length) if length else b""
+        def _read_body(self, cap: int = 1 << 20) -> bytes:
+            length = content_length(self.headers, cap)   # LengthError: do_POST answers it before any byte is read
+            if not length:
+                return b""
+            self.connection.settimeout(BODY_IDLE_S)
+            return self.rfile.read(length)
 
         def _bounded_json(self, limit: int = 64 * 1024) -> dict[str, object] | None:
             if self.headers.get_content_type() != "application/json":
@@ -1202,7 +1208,7 @@ def make_server(
             except FontRejected as exc:
                 log.info("font upload project=%s rejected %s (%s) %.2fs", project_id, exc.code, exc.reason,
                          time.perf_counter() - t0)
-                return self._json(413 if exc.code == "too_large" else 400, {"error": exc.code})
+                return self._json({"too_large": 413, "too_many_fonts": 409}.get(exc.code, 400), {"error": exc.code})
             except Exception as exc:   # detail in the log (paths cut), the code to the client
                 log.error("font upload project=%s failed: %s", project_id, scrub_paths(f"{type(exc).__name__}: {exc}"))
                 return self._json(400, {"error": "bad_tables"})
@@ -1214,6 +1220,12 @@ def make_server(
             return self._json(201 if created else 200, {"font": public_font(entry), "created": created})
 
         def do_POST(self):
+            try:
+                self._post()
+            except LengthError as exc:   # raised only by _read_body, before a body byte is read
+                self._json(exc.status, {"error": "request_too_large" if exc.status == 413 else "invalid_length"})
+
+        def _post(self):
             u = urlparse(self.path)
             if ae_routes.handle_post(self, u):
                 return
@@ -1446,7 +1458,7 @@ def make_server(
                         return self._json(400, {"error": "bad json"})
                     return self._json(400, {"error": "video required"})
 
-                fields = _parse_multipart(self._read_body(), ctype)
+                fields = _parse_multipart(self._read_body(MAX_VIDEO_BYTES), ctype)
                 title = str(fields.get("title", "Untitled"))
                 mode = str(fields.get("mode", "full"))
                 video_field = fields.get("video")
@@ -1641,7 +1653,7 @@ def make_server(
                 if not self._same_origin():
                     return
                 try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    data = json.loads(self._read_body(96 << 20).decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 project_id = data.get("project")
@@ -1798,7 +1810,7 @@ def make_server(
                 if not self._same_origin():
                     return
                 try:
-                    data = json.loads(self._read_body().decode("utf-8") or "{}")
+                    data = json.loads(self._read_body(16 << 20).decode("utf-8") or "{}")
                 except json.JSONDecodeError:
                     return self._json(400, {"error": "bad json"})
                 project_id = data.get("project")

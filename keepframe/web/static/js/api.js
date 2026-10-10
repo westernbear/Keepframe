@@ -1,4 +1,4 @@
-import { errorText } from "/static/js/i18n.js?v=20261010a";
+import { errorText } from "/static/js/i18n.js?v=20261010b";
 
 const ADMIN_LOGIN_PATH = "/admin/login";
 

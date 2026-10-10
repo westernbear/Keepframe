@@ -15,14 +15,14 @@ import {
   postRenderPlan,
   reviewAssetUrl,
   uploadFont,
-} from "/static/js/api.js?v=20261010a";
-import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010a";
-import { initAECard } from "/static/js/ae.js?v=20261010a";
-import { readFileAsDataUrl } from "/static/js/files.js?v=20261010a";
+} from "/static/js/api.js?v=20261010b";
+import { T, Tf, errorText } from "/static/js/i18n.js?v=20261010b";
+import { initAECard } from "/static/js/ae.js?v=20261010b";
+import { readFileAsDataUrl } from "/static/js/files.js?v=20261010b";
 import {
   createPreviewCache,
   createFrameTransport,
-} from "/static/js/playback.js?v=20261010a";
+} from "/static/js/playback.js?v=20261010b";
 
 const KEEP_PASS_RATE = 0.95;
 const CONFIDENCE_PERCENT = 100;
@@ -1038,7 +1038,7 @@ function initDisclosure(buttonId, bodyId, key, defaultOpen) {
 // --- Fonts disclosure: the project's uploaded fonts (metadata only) and one upload at a time --------------------
 const FONT_MAX_BYTES = 20 * 1024 * 1024;
 const FONT_NAME = /\.(ttf|otf|woff2)$/i;
-const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported"]);
+const FONT_ERRORS = new Set(["too_large", "bad_type", "bad_tables", "unsupported", "too_many_fonts"]);
 const fontsCount = document.getElementById("agent-fonts-count");
 const fontsList = document.getElementById("agent-fonts-list");
 const fontsEmpty = document.getElementById("agent-fonts-empty");

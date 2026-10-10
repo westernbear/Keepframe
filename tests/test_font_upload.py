@@ -1106,3 +1106,13 @@ def test_project_zip_failure_is_a_code_only_job_error(tmp_path, monkeypatch, cap
     failure = "\n".join(r.getMessage() for r in caplog.records if "failed" in r.getMessage())
     assert "project zip failed" in failure and type(error).__name__ in failure and not _leaks(failure), failure
     assert not [p.name for p in out.iterdir() if "zip" in p.name], list(out.iterdir())
+
+
+def test_project_font_cap_refuses_a_new_font_but_not_a_duplicate(server, monkeypatch):
+    from keepframe.fonts import upload
+    srv, _ = server
+    monkeypatch.setattr(upload, "MAX_PROJECT_FONTS", 1)
+    first = _ttf()
+    assert _upload(srv, first)[0] == 201
+    assert _upload(srv, _ttf(factor=1.4)) == (409, {"error": "too_many_fonts"})
+    assert _upload(srv, first)[0] == 200

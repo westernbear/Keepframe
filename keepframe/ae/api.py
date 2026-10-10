@@ -617,6 +617,7 @@ class AERoutes:
                 try:
                     handler.connection.settimeout(UPLOAD_IDLE_TIMEOUT)
                     remaining = length
+                    # ponytail: no total deadline, only the idle timeout (paired panel only; 4 GiB files have no sane total); add one if unpaired clients can reach this
                     while remaining:
                         try:
                             # read1 returns arriving bytes even when a slow upload never fills a chunk.

@@ -35,6 +35,7 @@ const STRINGS = {
     "fonts.error.bad_type": "TTF, OTF, WOFF2 파일만 올릴 수 있습니다",
     "fonts.error.bad_tables": "폰트 파일이 손상됐거나 읽을 수 없습니다",
     "fonts.error.unsupported": "라틴 문자나 한글이 없는 폰트입니다",
+    "fonts.error.too_many_fonts": "프로젝트당 폰트는 100개까지 올릴 수 있습니다",
     "fonts.error.failed": "폰트를 올리지 못했습니다. 다시 시도하세요",
     "fonts.error.load": "폰트 목록을 불러오지 못했습니다",
     "ae.title": "After Effects",
@@ -121,6 +122,7 @@ const STRINGS = {
     "err.correctionFailed": "수정을 적용하지 못했습니다. 서버 로그를 확인하세요",
     "err.internalError": "서버 내부 오류입니다. 서버 로그를 확인하세요",
     "err.invalidRequest": "요청이 올바르지 않습니다",
+    "err.requestTooLarge": "요청이 너무 큽니다",
     "agent.renderApprove": "승인",
     "agent.renderDownload": "{kind} 다운로드",
     "workflow.title": "작업 단계",
@@ -530,6 +532,7 @@ const STRINGS = {
     "fonts.error.bad_type": "Only TTF, OTF and WOFF2 files can be uploaded",
     "fonts.error.bad_tables": "The font file is damaged or unreadable",
     "fonts.error.unsupported": "The font has no Latin or Hangul letters",
+    "fonts.error.too_many_fonts": "A project can hold up to 100 fonts",
     "fonts.error.failed": "Could not upload the font. Try again",
     "fonts.error.load": "Could not load the font list",
     "ae.title": "After Effects",
@@ -616,6 +619,7 @@ const STRINGS = {
     "err.correctionFailed": "Could not apply the correction. Check the server log",
     "err.internalError": "Internal server error. Check the server log",
     "err.invalidRequest": "The request is invalid",
+    "err.requestTooLarge": "The request is too large",
     "agent.renderApprove": "Approve",
     "agent.renderDownload": "Download {kind}",
     "workflow.title": "Workflow stages",
@@ -1006,6 +1010,8 @@ const ERROR_CODES = {   // errors that arrive as codes (the detail stays in the 
   correction_failed: "err.correctionFailed",
   internal_error: "err.internalError",
   invalid_request: "err.invalidRequest",
+  request_too_large: "err.requestTooLarge",
+  invalid_length: "err.invalidRequest",
 };
 
 function errorText(code) {

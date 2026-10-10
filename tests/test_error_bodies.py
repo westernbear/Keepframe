@@ -86,3 +86,39 @@ def test_refine_failure_is_a_code(tmp_path, monkeypatch):
     report = (tmp_path / "scenes" / "s1" / "report.json").read_text()
     assert "refine skipped (refine_failed)" in report
     _clean(report)
+
+
+def _raw(srv, method_path, headers, body=b""):
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+    conn.putrequest("POST", method_path)
+    for k, v in headers.items():
+        conn.putheader(k, v)
+    conn.endheaders(body)
+    r = conn.getresponse()
+    return r.status, json.loads(r.read())
+
+
+def test_oversize_video_upload_is_413_before_any_project_exists(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    srv = start(ws)
+    before = set(ws.rglob("*"))
+    try:   # headers only: nothing of the body is sent, nothing may be created
+        status, body = _raw(srv, "/api/projects", {"Content-Type": "multipart/form-data; boundary=x",
+                                                    "Content-Length": str((512 << 20) + 1)})
+    finally:
+        srv.shutdown()
+    assert (status, body) == (413, {"error": "request_too_large"})
+    assert set(ws.rglob("*")) == before
+
+
+def test_admin_login_2mib_body_is_413(tmp_path):
+    from tests.test_admin_http import start_admin
+    srv = start_admin(tmp_path)
+    try:
+        status, body = _raw(srv, "/admin/api/login", {"Content-Type": "application/json",
+                                                       "Content-Length": str(2 << 20)})
+    finally:
+        srv.shutdown()
+    assert (status, body) == (413, {"error": "request_too_large"})
