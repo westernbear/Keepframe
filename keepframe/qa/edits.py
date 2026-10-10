@@ -25,7 +25,9 @@ from .sheets import comparison_sheet
 log = get("keepframe.qa")
 Renderer = Literal["numpy", "browser"]
 TITLE_TEXT = "Fall Drop Sale"
-BACKGROUND_EDITS: list[tuple[str, str]] = [("replace", "#1a2a6c")]   # Task 12 adds ("tint", …) with the background choice
+# Tint is not measured here: since 2026-10-09 it is an explicit mode the LLM agent chooses (mode "tint"), not a choice
+# Keepframe makes.
+BACKGROUND_EDITS: list[tuple[str, str]] = [("replace", "#1a2a6c")]
 SHEET_LABELS = ("source", "rebuilt", "title edited", "element hidden", "background replaced")
 PLATES = ("gradient", "flat", "animated", "image")
 # name: (sample key, op, threshold[, True: add the scene's ring_floor]). Every sample must pass, except "rate" gates

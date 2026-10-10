@@ -226,7 +226,7 @@ def test_colour_edit_keeps_a_legacy_hangul_title_legacy(tmp_path):
     assert unknown.element("t1").canonical.style is None            # a family not on this machine: left to the browser
 
 
-def test_replacing_a_texture_or_model_resets_the_texture_pad(tmp_path):
+def test_replacing_a_texture_or_model_resets_the_texture_pad(tmp_path, monkeypatch):
     """R54: only `_write_styled` writes padded textures; any other new texture covers the box exactly."""
     import base64
     style = TextStyle(effects=[TextEffect(kind="shadow", color=BLUE, dx=6, dy=8, blur=4)])
@@ -238,13 +238,7 @@ def test_replacing_a_texture_or_model_resets_the_texture_pad(tmp_path):
     swapped = apply_edit(padded, tmp_path, [Target(element="t1", property="texture", value="attachment")], {},
                          png.tobytes())
     assert swapped.element("t1").canonical.texture_pad == 0
-    from keepframe.assets import validate_glb
-    import keepframe.edit.apply as apply_mod
-    glb = b"glTF" + bytes(16)
-    orig = apply_mod.validate_glb
-    apply_mod.validate_glb = lambda data: data
-    try:
-        modelled = apply_edit(padded, tmp_path, [Target(element="t1", property="model", value="attachment")], {}, glb)
-    finally:
-        apply_mod.validate_glb = orig
+    monkeypatch.setattr("keepframe.edit.apply.validate_glb", lambda data: data)
+    modelled = apply_edit(padded, tmp_path, [Target(element="t1", property="model", value="attachment")], {},
+                          b"glTF" + bytes(16))
     assert modelled.element("t1").canonical.texture_pad == 0
