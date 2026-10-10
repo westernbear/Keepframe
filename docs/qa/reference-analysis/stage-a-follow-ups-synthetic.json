@@ -1,0 +1,3438 @@
+{
+  "date": "2026-10-10",
+  "renderer": "numpy",
+  "vlm_calls": 0,
+  "max_frames": 150,
+  "strict": false,
+  "options": {
+    "synthetic": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": false,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": false
+    },
+    "clips": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": true,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": true
+    }
+  },
+  "gates": {
+    "synthetic": {
+      "title_outside_glyph_delta": {
+        "value": 4.5299530029296875e-06,
+        "worst": 1.811981201171875e-05,
+        "threshold": 1.0,
+        "op": "le",
+        "samples": 8,
+        "failed": 4,
+        "passed": false
+      },
+      "title_smear_score": {
+        "value": 2.70963299048024,
+        "worst": 7.196591297785441,
+        "threshold": 3.0,
+        "op": "le",
+        "samples": 8,
+        "failed": 6,
+        "passed": false
+      },
+      "title_glyph_de": {
+        "value": 7.896077464499588,
+        "worst": 31.254062559106387,
+        "threshold": 5.0,
+        "op": "lt",
+        "samples": 8,
+        "failed": 5,
+        "passed": false
+      },
+      "hide_plate_de": {
+        "value": 8.695938296261083,
+        "worst": 38.50091679890951,
+        "threshold": 2.0,
+        "op": "le",
+        "samples": 28,
+        "failed": 19,
+        "passed": false
+      },
+      "hide_hf_ratio": {
+        "value": 2.4402445784689464,
+        "worst": 10.897859732309977,
+        "threshold": [
+          0.5,
+          2.0
+        ],
+        "op": "in",
+        "samples": 28,
+        "failed": 11,
+        "passed": false
+      },
+      "hide_residue": {
+        "value": 0.19434616723258263,
+        "worst": 0.7284732153905771,
+        "threshold": 0.02,
+        "op": "le",
+        "samples": 28,
+        "failed": 18,
+        "passed": false
+      },
+      "hide_truth_de": {
+        "value": 11.214091401949618,
+        "worst": 48.72357304890951,
+        "threshold": 2.0,
+        "op": "le",
+        "samples": 28,
+        "failed": 19,
+        "limits": [
+          2.226,
+          2.226,
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.1812,
+          2.1812,
+          2.1812,
+          2.4546,
+          2.4546,
+          2.4546,
+          2.4546,
+          2.269,
+          2.269,
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.0,
+          2.998,
+          2.998,
+          2.998,
+          2.998,
+          2.5582,
+          2.5582,
+          2.5582
+        ],
+        "passed": false
+      },
+      "plate_de_title": {
+        "value": 1.6974021526790843,
+        "worst": 6.878287156422933,
+        "threshold": 2.0,
+        "op": "le",
+        "samples": 8,
+        "failed": 2,
+        "limits": [
+          2.226,
+          2.0,
+          2.1812,
+          2.4546,
+          2.269,
+          2.0,
+          2.998,
+          2.5582
+        ],
+        "passed": false
+      },
+      "plate_de_logo": {
+        "value": 2.2711564945833134,
+        "worst": 9.786443392435709,
+        "threshold": 2.0,
+        "op": "le",
+        "samples": 8,
+        "failed": 3,
+        "limits": [
+          2.226,
+          2.0,
+          2.1812,
+          2.4546,
+          2.269,
+          2.0,
+          2.998,
+          2.5582
+        ],
+        "passed": false
+      },
+      "recolour_halo_ring": {
+        "value": 12.810219903786976,
+        "worst": 29.752909978230793,
+        "threshold": 2.0,
+        "op": "lt",
+        "samples": 8,
+        "failed": 8,
+        "passed": false
+      },
+      "alpha_sad_edge": {
+        "value": 0.44182935832518333,
+        "worst": 0.5424406008794904,
+        "threshold": 0.03,
+        "op": "le",
+        "samples": 8,
+        "failed": 8,
+        "passed": false
+      },
+      "f_de_interior": {
+        "value": 3.2701304147796084,
+        "worst": 13.015952658529082,
+        "threshold": 3.0,
+        "op": "lt",
+        "samples": 8,
+        "failed": 3,
+        "passed": false
+      },
+      "f_de_edge": {
+        "value": 5.704448662123752,
+        "worst": 18.565671124806006,
+        "threshold": 6.0,
+        "op": "lt",
+        "samples": 8,
+        "failed": 1,
+        "passed": false
+      },
+      "font_top3": {
+        "value": 0.6,
+        "threshold": 0.9,
+        "op": "ge",
+        "samples": 10,
+        "passed": false
+      },
+      "font_set_top3": {
+        "value": 0.9833333333333333,
+        "threshold": 0.9,
+        "op": "ge",
+        "samples": 60,
+        "passed": true
+      }
+    }
+  },
+  "synthetic": {
+    "n": 8,
+    "rows": [
+      {
+        "seed": 1,
+        "plate": "gradient",
+        "mover": false,
+        "frames": [
+          14,
+          30,
+          59
+        ],
+        "seconds": 18.34,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Geist",
+            "colour": "#ffd166"
+          }
+        ],
+        "elements": {
+          "truth": 5,
+          "analysed": 13
+        },
+        "matched": 4,
+        "pairs": {
+          "e4": "title1",
+          "e7": "s1",
+          "e2": "s2",
+          "e13": "s3"
+        },
+        "unmatched_truth": [
+          "logo"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": true,
+            "element": "e4",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          9.172282218933105
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.3336621562817267,
+          "mse": 0.29739634985370295,
+          "f_de_interior": 1.7483635246753693,
+          "f_de_edge": 5.831287145614624,
+          "layers": 14,
+          "missed": [
+            "logo"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.0,
+          "leak_correlation": 0.08816321815665137
+        },
+        "plate_de": {
+          "overall": 0.25649547576904297,
+          "under_title": 0.10581552237272263,
+          "under_logo": 0.049047891050577164
+        },
+        "ring_floor": 0.22602947056293488,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e4",
+          "text": "Fall Drop Sale",
+          "colour": "#e7c163",
+          "visible_frames": 3,
+          "outside_glyph_delta": 0.0,
+          "smear_score": 0.3538162310918172,
+          "glyph_de": 0.0010349956185867388,
+          "frames": [
+            {
+              "frame": 14,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.3557010591030121,
+              "glyph_de": 0.0031049868557602167
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.35317662358283997,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.3525710105895996,
+              "glyph_de": 0.0
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e4",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 0.22716801861921945,
+            "p95_de": 0.45449018478393555,
+            "hf_ratio": 0.9971729715665182,
+            "residue_fraction": 0.0,
+            "truth_de": 0.10621766000986099,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 0.22714124619960785,
+                "p95_de": 0.4577533006668091,
+                "hf_ratio": 1.0009206533432007,
+                "residue_fraction": 0.0,
+                "pixels": 7351,
+                "fit_degree": 2,
+                "truth_de": 0.10925235599279404
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.22708351910114288,
+                "p95_de": 0.4526156187057495,
+                "hf_ratio": 0.9911025166511536,
+                "residue_fraction": 0.0,
+                "pixels": 7774,
+                "fit_degree": 2,
+                "truth_de": 0.1050107330083847
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.22727929055690765,
+                "p95_de": 0.45310163497924805,
+                "hf_ratio": 0.9994957447052002,
+                "residue_fraction": 0.0,
+                "pixels": 7869,
+                "fit_degree": 2,
+                "truth_de": 0.10438989102840424
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "logo",
+            "missed": true,
+            "mean_de": 2.228731632232666,
+            "p95_de": 5.951023101806641,
+            "hf_ratio": 2.232459783554077,
+            "residue_fraction": 0.0,
+            "truth_de": 2.150071382522583,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 2.228731632232666,
+                "p95_de": 5.951023101806641,
+                "hf_ratio": 2.232459783554077,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 2.150071382522583
+              },
+              {
+                "frame": 30,
+                "mean_de": 2.228731632232666,
+                "p95_de": 5.951023101806641,
+                "hf_ratio": 2.232459783554077,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 2.150071382522583
+              },
+              {
+                "frame": 59,
+                "mean_de": 2.228731632232666,
+                "p95_de": 5.951023101806641,
+                "hf_ratio": 2.232459783554077,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 2.150071382522583
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 7.027327060699463,
+            "frames": [
+              {
+                "frame": 14,
+                "halo_ring": 7.062147617340088
+              },
+              {
+                "frame": 30,
+                "halo_ring": 6.650249004364014
+              },
+              {
+                "frame": 59,
+                "halo_ring": 7.369584560394287
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.0067463878852625685,
+        "sheet": "sheets/synthetic-seed1.png",
+        "messages": [
+          "text tracks reclassified as shapes: 2",
+          "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e3: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e5: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e11: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 2,
+        "plate": "flat",
+        "mover": true,
+        "frames": [
+          15,
+          30,
+          59
+        ],
+        "seconds": 13.27,
+        "titles": [
+          {
+            "text": "Fresh Picks",
+            "font": "Source Serif 4",
+            "colour": "#ffd166"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 5
+        },
+        "matched": 3,
+        "pairs": {
+          "e3": "title1",
+          "e2": "s2",
+          "e1": "logo"
+        },
+        "unmatched_truth": [
+          "mover",
+          "s1",
+          "s3"
+        ],
+        "integrity": [
+          {
+            "text": "Fresh Picks",
+            "role": "title",
+            "whole": true,
+            "element": "e3",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          5.89408016204834
+        ],
+        "font_hits": [
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.5191252241458963,
+          "mse": 0.4972944908967132,
+          "f_de_interior": 0.11069976165890694,
+          "f_de_edge": 3.583151040805711,
+          "layers": 17,
+          "missed": [
+            "mover",
+            "s1",
+            "s3"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 5.200748907842729e-05,
+          "leak_correlation": null
+        },
+        "plate_de": {
+          "overall": 0.0,
+          "under_title": 0.0,
+          "under_logo": 0.0
+        },
+        "ring_floor": 0.0,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e3",
+          "text": "Fall Drop Sale",
+          "colour": "#efc663",
+          "visible_frames": 3,
+          "outside_glyph_delta": 0.0,
+          "smear_score": 0.0024525233935340416,
+          "glyph_de": 0.2823086927334468,
+          "frames": [
+            {
+              "frame": 15,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.9199985672457842e-06,
+              "glyph_de": 0.5140863656997681
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.007353127468377352,
+              "glyph_de": 0.2171485275030136
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 2.522713657526765e-06,
+              "glyph_de": 0.1156911849975586
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e3",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 0.0566180944442749,
+            "p95_de": 0.1412234902381897,
+            "hf_ratio": 0.9725289543469747,
+            "residue_fraction": 0.0,
+            "truth_de": 0.0,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 6349,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.1698542833328247,
+                "p95_de": 0.4236704707145691,
+                "hf_ratio": 0.9175896048545837,
+                "residue_fraction": 0.0,
+                "pixels": 6465,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 0.9999972581863403,
+                "residue_fraction": 0.0,
+                "pixels": 6526,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          },
+          {
+            "element": "e1",
+            "truth": "logo",
+            "missed": false,
+            "mean_de": 0.0,
+            "p95_de": 0.0,
+            "hf_ratio": 1.0,
+            "residue_fraction": 0.0,
+            "truth_de": 0.0,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1775,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1775,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "mover",
+            "missed": true,
+            "mean_de": 1.3756574675207958,
+            "p95_de": 3.225538461934775,
+            "hf_ratio": 1.3642480770746868,
+            "residue_fraction": 0.014926064988643212,
+            "truth_de": 1.188770905137062,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.001908983220346272,
+                "p95_de": 0.0020643756724894047,
+                "hf_ratio": 0.998353123664856,
+                "residue_fraction": 0.0,
+                "pixels": 8054,
+                "fit_degree": 2,
+                "truth_de": 0.07106845080852509
+              },
+              {
+                "frame": 30,
+                "mean_de": 4.125063419342041,
+                "p95_de": 9.674551010131836,
+                "hf_ratio": 2.094391107559204,
+                "residue_fraction": 0.044778194965929635,
+                "pixels": 7191,
+                "fit_degree": 2,
+                "truth_de": 3.495244264602661
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 9387,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s1",
+            "missed": true,
+            "mean_de": 1.3598280393828948,
+            "p95_de": 3.0257678404450417,
+            "hf_ratio": 2.053172548611959,
+            "residue_fraction": 0.010309278350515464,
+            "truth_de": 2.152644634246826,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.01319803111255169,
+                "p95_de": 0.034811608493328094,
+                "hf_ratio": 0.9604805707931519,
+                "residue_fraction": 0.0,
+                "pixels": 3503,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              },
+              {
+                "frame": 30,
+                "mean_de": 4.066286087036133,
+                "p95_de": 9.042491912841797,
+                "hf_ratio": 4.199037075042725,
+                "residue_fraction": 0.030927835051546393,
+                "pixels": 1358,
+                "fit_degree": 2,
+                "truth_de": 6.4579339027404785
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 3522,
+                "fit_degree": 2,
+                "truth_de": 0.0
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s3",
+            "missed": true,
+            "mean_de": 1.3253747820854187,
+            "p95_de": 11.08038330078125,
+            "hf_ratio": 1.7800525426864624,
+            "residue_fraction": 0.057937354232765324,
+            "truth_de": 1.2464377284049988,
+            "frames": [
+              {
+                "frame": 15,
+                "absent": true
+              },
+              {
+                "frame": 30,
+                "mean_de": 1.3188607692718506,
+                "p95_de": 11.081250190734863,
+                "hf_ratio": 1.7726037502288818,
+                "residue_fraction": 0.05796703296703297,
+                "pixels": 3640,
+                "fit_degree": 2,
+                "truth_de": 1.2409611940383911
+              },
+              {
+                "frame": 59,
+                "mean_de": 1.3318887948989868,
+                "p95_de": 11.079516410827637,
+                "hf_ratio": 1.787501335144043,
+                "residue_fraction": 0.05790767549849768,
+                "pixels": 3661,
+                "fit_degree": 2,
+                "truth_de": 1.2519142627716064
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 7.061670780181885,
+            "frames": [
+              {
+                "frame": 15,
+                "halo_ring": 6.659785270690918
+              },
+              {
+                "frame": 30,
+                "halo_ring": 7.743052005767822
+              },
+              {
+                "frame": 59,
+                "halo_ring": 6.782175064086914
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.013050609889129797,
+        "sheet": "sheets/synthetic-seed2.png",
+        "messages": [
+          "e4: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 3,
+        "plate": "animated",
+        "mover": false,
+        "frames": [
+          15,
+          30,
+          59
+        ],
+        "seconds": 21.4,
+        "titles": [
+          {
+            "text": "Big Launch",
+            "font": "Geist",
+            "colour": "#ffffff"
+          },
+          {
+            "text": "Limited edition",
+            "font": "IBM Plex Mono",
+            "colour": "#ab0004"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 10
+        },
+        "matched": 5,
+        "pairs": {
+          "e8": "title1",
+          "e9": "title2",
+          "e2": "s1",
+          "e7": "s2",
+          "e4": "logo"
+        },
+        "unmatched_truth": [
+          "s3"
+        ],
+        "integrity": [
+          {
+            "text": "Big Launch",
+            "role": "title",
+            "whole": true,
+            "element": "e8",
+            "ratio": 1.0,
+            "duplicates": 1,
+            "fragments": 0,
+            "fragment_ids": []
+          },
+          {
+            "text": "Limited edition",
+            "role": "title",
+            "whole": true,
+            "element": "e9",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          0.0,
+          2.688373327255249
+        ],
+        "font_hits": [
+          true,
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.26387659191257423,
+          "mse": 0.22257988072103924,
+          "f_de_interior": 1.817292892270618,
+          "f_de_edge": 3.1474600647177016,
+          "layers": 18,
+          "missed": [
+            "s3"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.0,
+          "leak_correlation": 0.04772170451952539
+        },
+        "plate_de": {
+          "overall": 0.12462126091122627,
+          "under_title": 0.048452569637447596,
+          "under_logo": 0.19318806566298008
+        },
+        "ring_floor": 0.18117990593115488,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e8",
+          "text": "Fall Drop Sale",
+          "colour": "#ffffff",
+          "visible_frames": 2,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 15,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.18456746637821198,
+              "glyph_de": 1.0321369171142578
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.2715989351272583,
+              "glyph_de": 0.02484678477048874
+            },
+            {
+              "frame": 59,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e8",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 9.221052721142769,
+            "p95_de": 20.04900524020195,
+            "hf_ratio": 3.40520848830541,
+            "residue_fraction": 0.21924773022049285,
+            "truth_de": 9.466027785092592,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.20294907689094543,
+                "p95_de": 0.3450315594673157,
+                "hf_ratio": 0.9893587827682495,
+                "residue_fraction": 0.0,
+                "pixels": 6324,
+                "fit_degree": 2,
+                "truth_de": 0.09484706819057465
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.22316952049732208,
+                "p95_de": 0.4212430417537689,
+                "hf_ratio": 0.9754598736763,
+                "residue_fraction": 0.0,
+                "pixels": 7008,
+                "fit_degree": 2,
+                "truth_de": 0.04453496262431145
+              },
+              {
+                "frame": 59,
+                "mean_de": 27.23703956604004,
+                "p95_de": 59.380741119384766,
+                "hf_ratio": 8.25080680847168,
+                "residue_fraction": 0.6577431906614786,
+                "pixels": 6425,
+                "fit_degree": 2,
+                "truth_de": 28.25870132446289
+              }
+            ]
+          },
+          {
+            "element": "e4",
+            "truth": "logo",
+            "missed": false,
+            "mean_de": 0.20308806002140045,
+            "p95_de": 0.353399063150088,
+            "hf_ratio": 0.9976649284362793,
+            "residue_fraction": 0.0,
+            "truth_de": 0.19375180546194315,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 0.20603010058403015,
+                "p95_de": 0.38313165307044983,
+                "hf_ratio": 0.9995188117027283,
+                "residue_fraction": 0.0,
+                "pixels": 1874,
+                "fit_degree": 2,
+                "truth_de": 0.520714521408081
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.2804751396179199,
+                "p95_de": 0.47667399048805237,
+                "hf_ratio": 0.996945321559906,
+                "residue_fraction": 0.0,
+                "pixels": 1890,
+                "fit_degree": 2,
+                "truth_de": 0.014880417846143246
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.12275893986225128,
+                "p95_de": 0.20039154589176178,
+                "hf_ratio": 0.9965306520462036,
+                "residue_fraction": 0.0,
+                "pixels": 1873,
+                "fit_degree": 2,
+                "truth_de": 0.04566047713160515
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s3",
+            "missed": true,
+            "mean_de": 7.400590380032857,
+            "p95_de": 17.673099676767986,
+            "hf_ratio": 1.801774223645528,
+            "residue_fraction": 0.2636270609938891,
+            "truth_de": 6.081720312436421,
+            "frames": [
+              {
+                "frame": 15,
+                "mean_de": 9.934343338012695,
+                "p95_de": 30.860977172851562,
+                "hf_ratio": 3.29707932472229,
+                "residue_fraction": 0.24744897959183673,
+                "pixels": 392,
+                "fit_degree": 2,
+                "truth_de": 14.393622398376465
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.45368993282318115,
+                "p95_de": 0.8737626075744629,
+                "hf_ratio": 1.058400273323059,
+                "residue_fraction": 0.0,
+                "pixels": 758,
+                "fit_degree": 2,
+                "truth_de": 0.7865582704544067
+              },
+              {
+                "frame": 59,
+                "mean_de": 11.813737869262695,
+                "p95_de": 21.28455924987793,
+                "hf_ratio": 1.0498430728912354,
+                "residue_fraction": 0.5434322033898306,
+                "pixels": 944,
+                "fit_degree": 2,
+                "truth_de": 3.0649802684783936
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 7.780453523000081,
+            "frames": [
+              {
+                "frame": 15,
+                "halo_ring": 5.840135097503662
+              },
+              {
+                "frame": 30,
+                "halo_ring": 8.782347679138184
+              },
+              {
+                "frame": 59,
+                "halo_ring": 8.718877792358398
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.006237706635147333,
+        "sheet": "sheets/synthetic-seed3.png",
+        "messages": [
+          "text tracks reclassified as shapes: 3",
+          "e5: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 4,
+        "plate": "image",
+        "mover": true,
+        "frames": [
+          12,
+          30,
+          59
+        ],
+        "seconds": 16.53,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Barlow Condensed",
+            "colour": "#ab0004"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 15
+        },
+        "matched": 4,
+        "pairs": {
+          "e6": "s1",
+          "e2": "s2",
+          "e11": "s3",
+          "e5": "logo"
+        },
+        "unmatched_truth": [
+          "mover",
+          "title1"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": false,
+            "element": null,
+            "ratio": 0.8,
+            "duplicates": 0,
+            "fragments": 2,
+            "fragment_ids": [
+              "e8",
+              "e15"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          null
+        ],
+        "font_hits": [
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.4305814599825276,
+          "mse": 0.4081082557224565,
+          "f_de_interior": 1.295683205127716,
+          "f_de_edge": 1.6947906504977832,
+          "layers": 18,
+          "missed": [
+            "mover",
+            "title1"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.0,
+          "leak_correlation": 0.08774755981121082
+        },
+        "plate_de": {
+          "overall": 0.7558830380439758,
+          "under_title": 1.5404094457626343,
+          "under_logo": 3.1392433643341064
+        },
+        "ring_floor": 0.4545537233352661,
+        "title": null,
+        "hide": [
+          {
+            "element": "e3",
+            "truth": null,
+            "missed": false,
+            "mean_de": null,
+            "p95_de": null,
+            "hf_ratio": null,
+            "residue_fraction": null,
+            "truth_de": null,
+            "frames": [
+              {
+                "frame": 12,
+                "absent": true
+              },
+              {
+                "frame": 30,
+                "absent": true
+              },
+              {
+                "frame": 59,
+                "absent": true
+              }
+            ]
+          },
+          {
+            "element": "e5",
+            "truth": "logo",
+            "missed": false,
+            "mean_de": 2.114818493525187,
+            "p95_de": 4.046852747599284,
+            "hf_ratio": 0.9303011298179626,
+            "residue_fraction": 0.0,
+            "truth_de": 2.8423962593078613,
+            "frames": [
+              {
+                "frame": 12,
+                "mean_de": 2.1148171424865723,
+                "p95_de": 4.046850204467773,
+                "hf_ratio": 0.9303001761436462,
+                "residue_fraction": 0.0,
+                "pixels": 1924,
+                "fit_degree": 2,
+                "truth_de": 2.8423938751220703
+              },
+              {
+                "frame": 30,
+                "mean_de": 2.1148195266723633,
+                "p95_de": 4.046854019165039,
+                "hf_ratio": 0.9303017854690552,
+                "residue_fraction": 0.0,
+                "pixels": 1924,
+                "fit_degree": 2,
+                "truth_de": 2.842397928237915
+              },
+              {
+                "frame": 59,
+                "mean_de": 2.114818811416626,
+                "p95_de": 4.046854019165039,
+                "hf_ratio": 0.9303014278411865,
+                "residue_fraction": 0.0,
+                "pixels": 1924,
+                "fit_degree": 2,
+                "truth_de": 2.8423969745635986
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "mover",
+            "missed": true,
+            "mean_de": 5.587567508220673,
+            "p95_de": 16.99557403723399,
+            "hf_ratio": 1.6369743545850117,
+            "residue_fraction": 0.08889022426282016,
+            "truth_de": 5.8498953978220625,
+            "frames": [
+              {
+                "frame": 12,
+                "mean_de": 5.061223983764648,
+                "p95_de": 8.64820384979248,
+                "hf_ratio": 0.8168382048606873,
+                "residue_fraction": 0.0169263836646964,
+                "pixels": 3722,
+                "fit_degree": 2,
+                "truth_de": 1.6013236045837402
+              },
+              {
+                "frame": 30,
+                "mean_de": 11.18728256225586,
+                "p95_de": 41.26345443725586,
+                "hf_ratio": 3.087839126586914,
+                "residue_fraction": 0.24974428912376406,
+                "pixels": 5866,
+                "fit_degree": 2,
+                "truth_de": 15.370748519897461
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.51419597864151,
+                "p95_de": 1.0750638246536255,
+                "hf_ratio": 1.006245732307434,
+                "residue_fraction": 0.0,
+                "pixels": 8299,
+                "fit_degree": 2,
+                "truth_de": 0.5776140689849854
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "title1",
+            "missed": true,
+            "mean_de": 38.50091679890951,
+            "p95_de": 104.10056813557942,
+            "hf_ratio": 7.993778546651204,
+            "residue_fraction": 0.6469164673609961,
+            "truth_de": 41.44113032023112,
+            "frames": [
+              {
+                "frame": 12,
+                "mean_de": 32.91271209716797,
+                "p95_de": 93.68923950195312,
+                "hf_ratio": 9.457133293151855,
+                "residue_fraction": 0.6388888888888888,
+                "pixels": 3780,
+                "fit_degree": 2,
+                "truth_de": 36.86537551879883
+              },
+              {
+                "frame": 30,
+                "mean_de": 45.27450180053711,
+                "p95_de": 109.71776580810547,
+                "hf_ratio": 7.288968563079834,
+                "residue_fraction": 0.6775342465753424,
+                "pixels": 3650,
+                "fit_degree": 2,
+                "truth_de": 46.391822814941406
+              },
+              {
+                "frame": 59,
+                "mean_de": 37.31553649902344,
+                "p95_de": 108.89469909667969,
+                "hf_ratio": 7.235233783721924,
+                "residue_fraction": 0.6243262666187568,
+                "pixels": 5566,
+                "fit_degree": 2,
+                "truth_de": 41.066192626953125
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 11.584731737772623,
+            "frames": [
+              {
+                "frame": 12,
+                "halo_ring": 16.0894832611084
+              },
+              {
+                "frame": 30,
+                "halo_ring": 8.83553695678711
+              },
+              {
+                "frame": 59,
+                "halo_ring": 9.829174995422363
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.014956940586368242,
+        "sheet": "sheets/synthetic-seed4.png",
+        "messages": [
+          "text tracks reclassified as shapes: 3",
+          "e7: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e6: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e9: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e10: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 5,
+        "plate": "gradient",
+        "mover": false,
+        "frames": [
+          11,
+          30,
+          59
+        ],
+        "seconds": 15.16,
+        "titles": [
+          {
+            "text": "Fresh Picks",
+            "font": "Inter",
+            "colour": "#ffffff"
+          }
+        ],
+        "elements": {
+          "truth": 5,
+          "analysed": 21
+        },
+        "matched": 4,
+        "pairs": {
+          "e11": "title1",
+          "e4": "s1",
+          "e20": "s2",
+          "e12": "s3"
+        },
+        "unmatched_truth": [
+          "logo"
+        ],
+        "integrity": [
+          {
+            "text": "Fresh Picks",
+            "role": "title",
+            "whole": true,
+            "element": "e11",
+            "ratio": 1.0,
+            "duplicates": 1,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "title_colour_de": [
+          6.867889404296875
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.4139604438096285,
+          "mse": 0.378292177138584,
+          "f_de_interior": 3.6923171520233153,
+          "f_de_edge": 4.896291051592145,
+          "layers": 14,
+          "missed": [
+            "logo"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.00020323550930818632,
+          "leak_correlation": 0.09631274963927017
+        },
+        "plate_de": {
+          "overall": 0.30142155289649963,
+          "under_title": 0.41487663984298706,
+          "under_logo": 0.8493802547454834
+        },
+        "ring_floor": 0.26895177364349365,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e11",
+          "text": "Fall Drop Sale",
+          "colour": "#eeecf1",
+          "visible_frames": 2,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 11,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.8444469571113586,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 1.4126300811767578e-05,
+              "smear_score": 0.19936631619930267,
+              "glyph_de": 1.7375096082687378
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e11",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 3.5740208625793457,
+            "p95_de": 12.520564834276835,
+            "hf_ratio": 4.330881913503011,
+            "residue_fraction": 0.11830818056725151,
+            "truth_de": 3.9623678227265677,
+            "frames": [
+              {
+                "frame": 11,
+                "mean_de": 10.118407249450684,
+                "p95_de": 36.6657829284668,
+                "hf_ratio": 10.932549476623535,
+                "residue_fraction": 0.351028877745115,
+                "pixels": 5783,
+                "fit_degree": 2,
+                "truth_de": 10.096311569213867
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.359896183013916,
+                "p95_de": 0.43472057580947876,
+                "hf_ratio": 1.05764639377594,
+                "residue_fraction": 0.0038956639566395663,
+                "pixels": 5904,
+                "fit_degree": 2,
+                "truth_de": 1.379591703414917
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.2437591552734375,
+                "p95_de": 0.46119099855422974,
+                "hf_ratio": 1.002449870109558,
+                "residue_fraction": 0.0,
+                "pixels": 6318,
+                "fit_degree": 2,
+                "truth_de": 0.4112001955509186
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "logo",
+            "missed": true,
+            "mean_de": 0.12673072516918182,
+            "p95_de": 0.2018779218196869,
+            "hf_ratio": 1.0007845163345337,
+            "residue_fraction": 0.0,
+            "truth_de": 0.8523777723312378,
+            "frames": [
+              {
+                "frame": 11,
+                "mean_de": 0.12673072516918182,
+                "p95_de": 0.2018779218196869,
+                "hf_ratio": 1.0007845163345337,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.8523777723312378
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.12673072516918182,
+                "p95_de": 0.2018779218196869,
+                "hf_ratio": 1.0007845163345337,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.8523777723312378
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.12673072516918182,
+                "p95_de": 0.2018779218196869,
+                "hf_ratio": 1.0007845163345337,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 0.8523777723312378
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 7.9358774820963545,
+            "frames": [
+              {
+                "frame": 11,
+                "halo_ring": 4.6915507316589355
+              },
+              {
+                "frame": 30,
+                "halo_ring": 15.402454376220703
+              },
+              {
+                "frame": 59,
+                "halo_ring": 3.713627338409424
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.010750090392927328,
+        "sheet": "sheets/synthetic-seed5.png",
+        "messages": [
+          "text tracks reclassified as shapes: 9",
+          "e10: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e13: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e17: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e18: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e19: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e21: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e3: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e12: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 6,
+        "plate": "flat",
+        "mover": true,
+        "frames": [
+          13,
+          30,
+          59
+        ],
+        "seconds": 17.25,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Lato",
+            "colour": "#333138"
+          },
+          {
+            "text": "Up to 50% off",
+            "font": "Work Sans",
+            "colour": "#118ab2"
+          }
+        ],
+        "elements": {
+          "truth": 7,
+          "analysed": 20
+        },
+        "matched": 4,
+        "pairs": {
+          "e7": "title2",
+          "e13": "s1",
+          "e2": "s2",
+          "e1": "logo"
+        },
+        "unmatched_truth": [
+          "mover",
+          "s3",
+          "title1"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": false,
+            "element": null,
+            "ratio": 0.8,
+            "duplicates": 0,
+            "fragments": 3,
+            "fragment_ids": [
+              "e3",
+              "e9",
+              "e20"
+            ]
+          },
+          {
+            "text": "Up to 50% off",
+            "role": "title",
+            "whole": true,
+            "element": "e7",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e18"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          null,
+          1.330851674079895
+        ],
+        "font_hits": [
+          false,
+          false
+        ],
+        "font_top3": 0.0,
+        "alpha": {
+          "sad": 0.5424406008794904,
+          "mse": 0.51774180540815,
+          "f_de_interior": 1.214363880455494,
+          "f_de_edge": 2.630764491178773,
+          "layers": 20,
+          "missed": [
+            "mover",
+            "s3",
+            "title1"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.000801086691511964,
+          "leak_correlation": null
+        },
+        "plate_de": {
+          "overall": 0.9289324283599854,
+          "under_title": 0.9289324879646301,
+          "under_logo": 0.9289324879646301
+        },
+        "ring_floor": 0.0,
+        "title": null,
+        "hide": [
+          {
+            "element": "e4",
+            "truth": null,
+            "missed": false,
+            "mean_de": 7.80194091796875,
+            "p95_de": 11.521295547485352,
+            "hf_ratio": 0.37928441166877747,
+            "residue_fraction": 0.17340241796200345,
+            "truth_de": 3.3706159591674805,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 7.80194091796875,
+                "p95_de": 11.521295547485352,
+                "hf_ratio": 0.37928441166877747,
+                "residue_fraction": 0.17340241796200345,
+                "pixels": 2895,
+                "fit_degree": 2,
+                "truth_de": 3.3706159591674805
+              },
+              {
+                "frame": 30,
+                "absent": true
+              },
+              {
+                "frame": 59,
+                "absent": true
+              }
+            ]
+          },
+          {
+            "element": "e1",
+            "truth": "logo",
+            "missed": false,
+            "mean_de": 0.0,
+            "p95_de": 0.0,
+            "hf_ratio": 1.0,
+            "residue_fraction": 0.0,
+            "truth_de": 0.9289324283599854,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1775,
+                "fit_degree": 2,
+                "truth_de": 0.9289324283599854
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1775,
+                "fit_degree": 2,
+                "truth_de": 0.9289324283599854
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 1775,
+                "fit_degree": 2,
+                "truth_de": 0.9289324283599854
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "mover",
+            "missed": true,
+            "mean_de": 12.313109079996744,
+            "p95_de": 41.09066390991211,
+            "hf_ratio": 3.630208651224772,
+            "residue_fraction": 0.22230971391937837,
+            "truth_de": 16.000586966673534,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 20.429731369018555,
+                "p95_de": 62.74515151977539,
+                "hf_ratio": 5.394010543823242,
+                "residue_fraction": 0.3572867696440564,
+                "pixels": 7445,
+                "fit_degree": 2,
+                "truth_de": 23.424474716186523
+              },
+              {
+                "frame": 30,
+                "mean_de": 16.50959587097168,
+                "p95_de": 60.52684020996094,
+                "hf_ratio": 4.496615409851074,
+                "residue_fraction": 0.30964237211407875,
+                "pixels": 4418,
+                "fit_degree": 2,
+                "truth_de": 23.648353576660156
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 9396,
+                "fit_degree": 2,
+                "truth_de": 0.9289326071739197
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s3",
+            "missed": true,
+            "mean_de": 21.267146110534668,
+            "p95_de": 57.16148694356283,
+            "hf_ratio": 7.119891370336215,
+            "residue_fraction": 0.4674111869651057,
+            "truth_de": 48.72357304890951,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 11.420544624328613,
+                "p95_de": 27.637216567993164,
+                "hf_ratio": 0.161326065659523,
+                "residue_fraction": 0.5036599763872491,
+                "pixels": 4235,
+                "fit_degree": 2,
+                "truth_de": 71.72021484375
+              },
+              {
+                "frame": 30,
+                "mean_de": 20.006797790527344,
+                "p95_de": 71.63877868652344,
+                "hf_ratio": 9.306076049804688,
+                "residue_fraction": 0.36324167872648333,
+                "pixels": 3455,
+                "fit_degree": 2,
+                "truth_de": 29.843219757080078
+              },
+              {
+                "frame": 59,
+                "mean_de": 32.37409591674805,
+                "p95_de": 72.20846557617188,
+                "hf_ratio": 11.892271995544434,
+                "residue_fraction": 0.5353319057815846,
+                "pixels": 3736,
+                "fit_degree": 2,
+                "truth_de": 44.60728454589844
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "title1",
+            "missed": true,
+            "mean_de": 23.677073160807293,
+            "p95_de": 57.69341150919596,
+            "hf_ratio": 10.897859732309977,
+            "residue_fraction": 0.5641773980218695,
+            "truth_de": 23.956778208414715,
+            "frames": [
+              {
+                "frame": 13,
+                "mean_de": 29.791950225830078,
+                "p95_de": 64.68932342529297,
+                "hf_ratio": 4.764766216278076,
+                "residue_fraction": 0.6617797476986021,
+                "pixels": 2933,
+                "fit_degree": 2,
+                "truth_de": 28.702699661254883
+              },
+              {
+                "frame": 30,
+                "mean_de": 14.353206634521484,
+                "p95_de": 46.54472732543945,
+                "hf_ratio": 9.6626615524292,
+                "residue_fraction": 0.371996685998343,
+                "pixels": 1207,
+                "fit_degree": 2,
+                "truth_de": 15.953800201416016
+              },
+              {
+                "frame": 59,
+                "mean_de": 26.886062622070312,
+                "p95_de": 61.84618377685547,
+                "hf_ratio": 18.266151428222656,
+                "residue_fraction": 0.6587557603686636,
+                "pixels": 4340,
+                "fit_degree": 2,
+                "truth_de": 27.213834762573242
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 9.46802552541097,
+            "frames": [
+              {
+                "frame": 13,
+                "halo_ring": 16.502323150634766
+              },
+              {
+                "frame": 30,
+                "halo_ring": 7.974815845489502
+              },
+              {
+                "frame": 59,
+                "halo_ring": 3.9269375801086426
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.028353404253721237,
+        "sheet": "sheets/synthetic-seed6.png",
+        "messages": [
+          "text tracks reclassified as shapes: 3",
+          "e6: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e8: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e19: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 7,
+        "plate": "animated",
+        "mover": false,
+        "frames": [
+          14,
+          30,
+          59
+        ],
+        "seconds": 19.57,
+        "titles": [
+          {
+            "text": "A Weekend Away",
+            "font": "Archivo",
+            "colour": "#333138"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 13
+        },
+        "matched": 4,
+        "pairs": {
+          "e3": "title1",
+          "e7": "s1",
+          "e9": "s2",
+          "e8": "logo"
+        },
+        "unmatched_truth": [
+          "mover",
+          "s3"
+        ],
+        "integrity": [
+          {
+            "text": "A Weekend Away",
+            "role": "title",
+            "whole": true,
+            "element": "e3",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e4"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          0.4591904580593109
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.5179383220771948,
+          "mse": 0.4880854633326332,
+          "f_de_interior": 3.266370243496365,
+          "f_de_edge": 5.286173727777269,
+          "layers": 18,
+          "missed": [
+            "mover",
+            "s3"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.2541167455559901,
+          "leak_correlation": -0.001671877494915798
+        },
+        "plate_de": {
+          "overall": 4.245122293631236,
+          "under_title": 6.878287156422933,
+          "under_logo": 9.786443392435709
+        },
+        "ring_floor": 0.9979730248451233,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e3",
+          "text": "Fall Drop Sale",
+          "colour": "#323138",
+          "visible_frames": 3,
+          "outside_glyph_delta": 1.811981201171875e-05,
+          "smear_score": 7.196591297785441,
+          "glyph_de": 31.254062559106387,
+          "frames": [
+            {
+              "frame": 14,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 16.305999755859375,
+              "glyph_de": 93.75523376464844
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 5.435943603515625e-05,
+              "smear_score": 4.051543235778809,
+              "glyph_de": 0.0001636663218960166
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.2322309017181396,
+              "glyph_de": 0.006790246348828077
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e3",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 13.464029471079508,
+            "p95_de": 33.757835706075035,
+            "hf_ratio": 0.8368468483289083,
+            "residue_fraction": 0.4304072034347144,
+            "truth_de": 16.775704383850098,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 22.95856285095215,
+                "p95_de": 63.50849533081055,
+                "hf_ratio": 0.9699392914772034,
+                "residue_fraction": 0.5719724883321051,
+                "pixels": 8142,
+                "fit_degree": 2,
+                "truth_de": 31.08576011657715
+              },
+              {
+                "frame": 30,
+                "mean_de": 11.996480941772461,
+                "p95_de": 25.53425407409668,
+                "hf_ratio": 1.0325571298599243,
+                "residue_fraction": 0.5609889359377134,
+                "pixels": 7321,
+                "fit_degree": 2,
+                "truth_de": 6.549675941467285
+              },
+              {
+                "frame": 59,
+                "mean_de": 5.437044620513916,
+                "p95_de": 12.230757713317871,
+                "hf_ratio": 0.5080441236495972,
+                "residue_fraction": 0.15826018603432465,
+                "pixels": 7633,
+                "fit_degree": 2,
+                "truth_de": 12.69167709350586
+              }
+            ]
+          },
+          {
+            "element": "e8",
+            "truth": "logo",
+            "missed": false,
+            "mean_de": 4.422249247630437,
+            "p95_de": 5.818651179472606,
+            "hf_ratio": 1.4059515198071797,
+            "residue_fraction": 0.266737325560855,
+            "truth_de": 9.100873311360678,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 0.340223103761673,
+                "p95_de": 0.599811315536499,
+                "hf_ratio": 0.9719393253326416,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 12.270652770996094
+              },
+              {
+                "frame": 30,
+                "mean_de": 0.34088850021362305,
+                "p95_de": 0.7619344592094421,
+                "hf_ratio": 0.9609952569007874,
+                "residue_fraction": 0.0,
+                "pixels": 1815,
+                "fit_degree": 2,
+                "truth_de": 3.26950740814209
+              },
+              {
+                "frame": 59,
+                "mean_de": 12.585636138916016,
+                "p95_de": 16.094207763671875,
+                "hf_ratio": 2.2849199771881104,
+                "residue_fraction": 0.8002119766825649,
+                "pixels": 1887,
+                "fit_degree": 2,
+                "truth_de": 11.762459754943848
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "mover",
+            "missed": true,
+            "mean_de": 25.226829528808594,
+            "p95_de": 57.80756505330404,
+            "hf_ratio": 1.4817276000976562,
+            "residue_fraction": 0.7284732153905771,
+            "truth_de": 41.40527153015137,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 28.68832015991211,
+                "p95_de": 50.87129211425781,
+                "hf_ratio": 2.0114212036132812,
+                "residue_fraction": 0.9153244362632306,
+                "pixels": 4346,
+                "fit_degree": 2,
+                "truth_de": 51.89622116088867
+              },
+              {
+                "frame": 30,
+                "mean_de": 27.057653427124023,
+                "p95_de": 50.00350570678711,
+                "hf_ratio": 1.436316728591919,
+                "residue_fraction": 0.9293067947838023,
+                "pixels": 5828,
+                "fit_degree": 2,
+                "truth_de": 40.67388153076172
+              },
+              {
+                "frame": 59,
+                "mean_de": 19.93451499938965,
+                "p95_de": 72.54789733886719,
+                "hf_ratio": 0.9974448680877686,
+                "residue_fraction": 0.3407884151246983,
+                "pixels": 6215,
+                "fit_degree": 2,
+                "truth_de": 31.64571189880371
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s3",
+            "missed": true,
+            "mean_de": 28.06271457672119,
+            "p95_de": 71.7915522257487,
+            "hf_ratio": 2.2318631410598755,
+            "residue_fraction": 0.5694225209513241,
+            "truth_de": 36.75726763407389,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 44.94306182861328,
+                "p95_de": 83.43598937988281,
+                "hf_ratio": 0.9886819124221802,
+                "residue_fraction": 0.9808553971486762,
+                "pixels": 2455,
+                "fit_degree": 2,
+                "truth_de": 62.21961212158203
+              },
+              {
+                "frame": 30,
+                "mean_de": 24.74819564819336,
+                "p95_de": 65.50786590576172,
+                "hf_ratio": 3.474902629852295,
+                "residue_fraction": 0.525,
+                "pixels": 1320,
+                "fit_degree": 2,
+                "truth_de": 25.76675033569336
+              },
+              {
+                "frame": 59,
+                "mean_de": 14.496886253356934,
+                "p95_de": 66.43080139160156,
+                "hf_ratio": 2.2320048809051514,
+                "residue_fraction": 0.20241216570529627,
+                "pixels": 1907,
+                "fit_degree": 2,
+                "truth_de": 22.28544044494629
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 29.752909978230793,
+            "frames": [
+              {
+                "frame": 14,
+                "halo_ring": 50.79206466674805
+              },
+              {
+                "frame": 30,
+                "halo_ring": 16.047334671020508
+              },
+              {
+                "frame": 59,
+                "halo_ring": 22.419330596923828
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.051876538743575416,
+        "sheet": "sheets/synthetic-seed7.png",
+        "messages": [
+          "e2: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e5: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "seed": 8,
+        "plate": "image",
+        "mover": true,
+        "frames": [
+          14,
+          30,
+          59
+        ],
+        "seconds": 18.03,
+        "titles": [
+          {
+            "text": "New Arrivals",
+            "font": "Fira Sans",
+            "colour": "#14018a"
+          }
+        ],
+        "elements": {
+          "truth": 6,
+          "analysed": 11
+        },
+        "matched": 4,
+        "pairs": {
+          "e4": "title1",
+          "e2": "mover",
+          "e5": "s2",
+          "e7": "s3"
+        },
+        "unmatched_truth": [
+          "s1",
+          "logo"
+        ],
+        "integrity": [
+          {
+            "text": "New Arrivals",
+            "role": "title",
+            "whole": true,
+            "element": "e4",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e9"
+            ]
+          }
+        ],
+        "title_colour_de": [
+          0.5386508703231812
+        ],
+        "font_hits": [
+          true
+        ],
+        "font_top3": 1.0,
+        "alpha": {
+          "sad": 0.5130500675124281,
+          "mse": 0.47742643949630503,
+          "f_de_interior": 13.015952658529082,
+          "f_de_edge": 18.565671124806006,
+          "layers": 17,
+          "missed": [
+            "logo",
+            "s1"
+          ]
+        },
+        "leak": {
+          "bg_leak_fraction": 0.12899475222323475,
+          "leak_correlation": 0.032742705016111734
+        },
+        "plate_de": {
+          "overall": 1.1627660989761353,
+          "under_title": 3.6624433994293213,
+          "under_logo": 3.2230165004730225
+        },
+        "ring_floor": 0.5581548810005188,
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e4",
+          "text": "Fall Drop Sale",
+          "colour": "#150189",
+          "visible_frames": 3,
+          "outside_glyph_delta": 0.0,
+          "smear_score": 3.285671909650167,
+          "glyph_de": 0.04690361053993305,
+          "frames": [
+            {
+              "frame": 14,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 4.11633825302124,
+              "glyph_de": 0.1382751315832138
+            },
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 4.520598411560059,
+              "glyph_de": 0.002435700036585331
+            },
+            {
+              "frame": 59,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.2200790643692017,
+              "glyph_de": 0.0
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e4",
+            "truth": "title1",
+            "missed": false,
+            "mean_de": 4.787067015965779,
+            "p95_de": 14.736669222513834,
+            "hf_ratio": 1.2072490851084392,
+            "residue_fraction": 0.09582518585921113,
+            "truth_de": 5.781946023305257,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 5.861501693725586,
+                "p95_de": 13.374247550964355,
+                "hf_ratio": 1.108480453491211,
+                "residue_fraction": 0.1049546406140963,
+                "pixels": 7165,
+                "fit_degree": 2,
+                "truth_de": 6.401774883270264
+              },
+              {
+                "frame": 30,
+                "mean_de": 3.8575165271759033,
+                "p95_de": 16.18103790283203,
+                "hf_ratio": 1.2296841144561768,
+                "residue_fraction": 0.06689644367852107,
+                "pixels": 6383,
+                "fit_degree": 2,
+                "truth_de": 5.443877696990967
+              },
+              {
+                "frame": 59,
+                "mean_de": 4.64218282699585,
+                "p95_de": 14.654722213745117,
+                "hf_ratio": 1.2835826873779297,
+                "residue_fraction": 0.11562447328501602,
+                "pixels": 5933,
+                "fit_degree": 2,
+                "truth_de": 5.500185489654541
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "s1",
+            "missed": true,
+            "mean_de": 2.82037490606308,
+            "p95_de": 16.826717019081116,
+            "hf_ratio": 1.600273221731186,
+            "residue_fraction": 0.07846556233653008,
+            "truth_de": 3.926621437072754,
+            "frames": [
+              {
+                "frame": 14,
+                "absent": true
+              },
+              {
+                "frame": 30,
+                "mean_de": 5.018782138824463,
+                "p95_de": 32.27726745605469,
+                "hf_ratio": 2.2590086460113525,
+                "residue_fraction": 0.15693112467306017,
+                "pixels": 2294,
+                "fit_degree": 2,
+                "truth_de": 6.216148376464844
+              },
+              {
+                "frame": 59,
+                "mean_de": 0.6219676733016968,
+                "p95_de": 1.376166582107544,
+                "hf_ratio": 0.9415377974510193,
+                "residue_fraction": 0.0,
+                "pixels": 2283,
+                "fit_degree": 2,
+                "truth_de": 1.637094497680664
+              }
+            ]
+          },
+          {
+            "element": null,
+            "truth": "logo",
+            "missed": true,
+            "mean_de": 17.645636399586994,
+            "p95_de": 31.149307250976562,
+            "hf_ratio": 1.5984450578689575,
+            "residue_fraction": 0.2305524239007892,
+            "truth_de": 18.518487135569256,
+            "frames": [
+              {
+                "frame": 14,
+                "mean_de": 2.263834238052368,
+                "p95_de": 4.200992584228516,
+                "hf_ratio": 0.9565871357917786,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 3.137458562850952
+              },
+              {
+                "frame": 30,
+                "mean_de": 2.263834238052368,
+                "p95_de": 4.200992584228516,
+                "hf_ratio": 0.9565871357917786,
+                "residue_fraction": 0.0,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 3.137458562850952
+              },
+              {
+                "frame": 59,
+                "mean_de": 48.40924072265625,
+                "p95_de": 85.04593658447266,
+                "hf_ratio": 2.8821609020233154,
+                "residue_fraction": 0.6916572717023676,
+                "pixels": 1774,
+                "fit_degree": 2,
+                "truth_de": 49.28054428100586
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 21.870763142903645,
+            "frames": [
+              {
+                "frame": 14,
+                "halo_ring": 24.02090835571289
+              },
+              {
+                "frame": 30,
+                "halo_ring": 22.319805145263672
+              },
+              {
+                "frame": 59,
+                "halo_ring": 19.271575927734375
+              }
+            ]
+          }
+        ],
+        "render_l1": 0.016462911541263264,
+        "sheet": "sheets/synthetic-seed8.png",
+        "messages": [
+          "text tracks reclassified as shapes: 1",
+          "e8: matted texture at low confidence (0.01); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      }
+    ],
+    "font_set": {
+      "n": 60,
+      "rows": [
+        {
+          "seed": 1,
+          "family": "Inter",
+          "text": "Best of 2026",
+          "top3": [
+            "Inter",
+            "Pretendard",
+            "IBM Plex Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.00676923076923075,
+          "tracking_err": 0.0029,
+          "seconds": 0.154
+        },
+        {
+          "seed": 2,
+          "family": "Pacifico",
+          "text": "A Weekend Away",
+          "top3": [
+            "Pacifico",
+            "Anton",
+            "Lobster"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.009210526315789558,
+          "tracking_err": 0.0046,
+          "seconds": 0.575
+        },
+        {
+          "seed": 3,
+          "family": "Quicksand",
+          "text": "LAST CHANCE",
+          "top3": [
+            "Quicksand",
+            "Urbanist",
+            "Roboto"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0076666666666667105,
+          "tracking_err": -0.005299999999999999,
+          "seconds": 0.225
+        },
+        {
+          "seed": 4,
+          "family": "Sora",
+          "text": "Free Shipping",
+          "top3": [
+            "Sora",
+            "Montserrat",
+            "Noto Sans KR"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0036363636363636598,
+          "tracking_err": 0.0020999999999999977,
+          "seconds": 0.156
+        },
+        {
+          "seed": 5,
+          "family": "Archivo",
+          "text": "Big Launch",
+          "top3": [
+            "Archivo",
+            "IBM Plex Sans",
+            "Varela Round"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.008318584070796442,
+          "tracking_err": -0.003300000000000001,
+          "seconds": 0.124
+        },
+        {
+          "seed": 6,
+          "family": "Instrument Serif",
+          "text": "Last Chance",
+          "top3": [
+            "Instrument Serif",
+            "Archivo Narrow",
+            "Barlow Condensed"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.01716417910447765,
+          "tracking_err": 0.0064,
+          "seconds": 0.12
+        },
+        {
+          "seed": 7,
+          "family": "Zilla Slab",
+          "text": "Coming Soon",
+          "top3": [
+            "Zilla Slab",
+            "Arvo",
+            "Bitter"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.023333333333333317,
+          "tracking_err": 0.013499999999999998,
+          "seconds": 0.136
+        },
+        {
+          "seed": 8,
+          "family": "Bricolage Grotesque",
+          "text": "Coming Soon",
+          "top3": [
+            "Bricolage Grotesque",
+            "Archivo",
+            "DM Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 50,
+          "size_err": 0.0006015037593984918,
+          "tracking_err": -0.0025000000000000022,
+          "seconds": 0.13
+        },
+        {
+          "seed": 9,
+          "family": "Geist",
+          "text": "Join us today",
+          "top3": [
+            "Geist",
+            "Pretendard",
+            "Inter"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.01025641025641022,
+          "tracking_err": -0.0048,
+          "seconds": 0.257
+        },
+        {
+          "seed": 10,
+          "family": "Poppins",
+          "text": "BEST OF 2026",
+          "top3": [
+            "Poppins",
+            "DM Sans",
+            "Pretendard"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.00303030303030305,
+          "tracking_err": 0.0021999999999999936,
+          "seconds": 0.148
+        },
+        {
+          "seed": 11,
+          "family": "Archivo Narrow",
+          "text": "Open Studio",
+          "top3": [
+            "Archivo Narrow",
+            "Roboto Condensed",
+            "Roboto"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.008139534883720989,
+          "tracking_err": 0.0,
+          "seconds": 0.125
+        },
+        {
+          "seed": 12,
+          "family": "Playfair Display",
+          "text": "Up to 50% off",
+          "top3": [
+            "Playfair Display",
+            "Fira Sans",
+            "Libre Baskerville"
+          ],
+          "hit": true,
+          "confidence": 0.5,
+          "weight_err": -125,
+          "size_err": 0.004587155963302836,
+          "tracking_err": 0.0,
+          "seconds": 0.145
+        },
+        {
+          "seed": 13,
+          "family": "JetBrains Mono",
+          "text": "OPEN STUDIO",
+          "top3": [
+            "JetBrains Mono",
+            "Roboto Mono",
+            "Source Code Pro"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -25,
+          "size_err": -0.014747474747474731,
+          "tracking_err": 0.0088,
+          "seconds": 0.178
+        },
+        {
+          "seed": 14,
+          "family": "Space Mono",
+          "text": "A Weekend Away",
+          "top3": [
+            "Space Mono",
+            "IBM Plex Mono",
+            "DM Mono"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.006526315789473713,
+          "tracking_err": 0.004600000000000007,
+          "seconds": 0.117
+        },
+        {
+          "seed": 15,
+          "family": "Nunito",
+          "text": "Free Shipping",
+          "top3": [
+            "Nunito",
+            "Figtree",
+            "Pretendard"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.006666666666666821,
+          "tracking_err": 0.0036,
+          "seconds": 0.237
+        },
+        {
+          "seed": 16,
+          "family": "Roboto",
+          "text": "Coming Soon",
+          "top3": [
+            "Roboto",
+            "Inter",
+            "Pretendard"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0037647058823528923,
+          "tracking_err": 0.002699999999999994,
+          "seconds": 0.144
+        },
+        {
+          "seed": 17,
+          "family": "Arvo",
+          "text": "Night Market",
+          "top3": [
+            "Arvo",
+            "Open Sans",
+            "Source Serif 4"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.001224489795918382,
+          "tracking_err": 0.0006,
+          "seconds": 0.135
+        },
+        {
+          "seed": 18,
+          "family": "Anton",
+          "text": "A Weekend Away",
+          "top3": [
+            "Anton",
+            "Barlow Condensed",
+            "Oswald"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.02261682242990659,
+          "tracking_err": 0.0113,
+          "seconds": 0.13
+        },
+        {
+          "seed": 19,
+          "family": "Barlow Condensed",
+          "text": "Night Market",
+          "top3": [
+            "Barlow Condensed",
+            "Oswald",
+            "Archivo Narrow"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0026865671641792543,
+          "tracking_err": 0.0013999999999999985,
+          "seconds": 0.143
+        },
+        {
+          "seed": 20,
+          "family": "Nunito",
+          "text": "GRAND OPENING",
+          "top3": [
+            "Nunito",
+            "Quicksand",
+            "Outfit"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.024587155963302854,
+          "tracking_err": -0.0155,
+          "seconds": 0.251
+        },
+        {
+          "seed": 21,
+          "family": "Fira Sans",
+          "text": "Up to 50% off",
+          "top3": [
+            "Fira Sans",
+            "Noto Sans KR",
+            "Source Sans 3"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0010101010101009056,
+          "tracking_err": 0.0,
+          "seconds": 0.246
+        },
+        {
+          "seed": 22,
+          "family": "Inter",
+          "text": "Grand Opening",
+          "top3": [
+            "Inter",
+            "Pretendard",
+            "Geist"
+          ],
+          "hit": true,
+          "confidence": 0.5,
+          "weight_err": 0,
+          "size_err": -0.0050000000000000044,
+          "tracking_err": 0.0027,
+          "seconds": 0.363
+        },
+        {
+          "seed": 23,
+          "family": "Onest",
+          "text": "Summer Sale",
+          "top3": [
+            "Onest",
+            "Geist",
+            "Roboto"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0028571428571428914,
+          "tracking_err": 0.0,
+          "seconds": 0.156
+        },
+        {
+          "seed": 24,
+          "family": "Noto Sans KR",
+          "text": "Summer Sale",
+          "top3": [
+            "Source Sans 3",
+            "Noto Sans KR",
+            "IBM Plex Sans"
+          ],
+          "hit": true,
+          "confidence": 0.5,
+          "weight_err": 50,
+          "size_err": 0.00042553191489358433,
+          "tracking_err": -0.0048,
+          "seconds": 0.184
+        },
+        {
+          "seed": 25,
+          "family": "JetBrains Mono",
+          "text": "City Lights",
+          "top3": [
+            "JetBrains Mono",
+            "Roboto Mono",
+            "IBM Plex Mono"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 25,
+          "size_err": 0.012054794520547807,
+          "tracking_err": -0.006999999999999999,
+          "seconds": 0.149
+        },
+        {
+          "seed": 26,
+          "family": "Lobster",
+          "text": "Summer Sale",
+          "top3": [
+            "Lobster",
+            "Roboto Condensed",
+            "Barlow Condensed"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.005494505494505475,
+          "tracking_err": 0.005100000000000004,
+          "seconds": 0.289
+        },
+        {
+          "seed": 27,
+          "family": "Anton",
+          "text": "Join us today",
+          "top3": [
+            "Anton",
+            "Barlow Condensed",
+            "Roboto Condensed"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0009836065573771702,
+          "tracking_err": -0.0005,
+          "seconds": 0.122
+        },
+        {
+          "seed": 28,
+          "family": "Montserrat",
+          "text": "Last Chance",
+          "top3": [
+            "Montserrat",
+            "Varela Round",
+            "Open Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0005594405594406826,
+          "tracking_err": 0.0003999999999999976,
+          "seconds": 0.114
+        },
+        {
+          "seed": 29,
+          "family": "Noto Sans KR",
+          "text": "Free Shipping",
+          "top3": [
+            "Noto Sans KR",
+            "Source Sans 3",
+            "Open Sans"
+          ],
+          "hit": true,
+          "confidence": 0.5,
+          "weight_err": -25,
+          "size_err": -0.007441860465116301,
+          "tracking_err": 0.005100000000000004,
+          "seconds": 0.194
+        },
+        {
+          "seed": 30,
+          "family": "Nunito",
+          "text": "JOIN US TODAY",
+          "top3": [
+            "Nunito",
+            "Quicksand",
+            "Be Vietnam Pro"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -50,
+          "size_err": 0.013759999999999994,
+          "tracking_err": 0.0,
+          "seconds": 0.21
+        },
+        {
+          "seed": 31,
+          "family": "Poppins",
+          "text": "Fresh Picks",
+          "top3": [
+            "Poppins",
+            "DM Sans",
+            "Space Grotesk"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.019210526315789345,
+          "tracking_err": 0.0097,
+          "seconds": 0.127
+        },
+        {
+          "seed": 32,
+          "family": "Bitter",
+          "text": "Keepframe Studio",
+          "top3": [
+            "Bitter",
+            "Source Serif 4",
+            "Open Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0006185567010309478,
+          "tracking_err": 0.0001999999999999988,
+          "seconds": 0.215
+        },
+        {
+          "seed": 33,
+          "family": "Lilita One",
+          "text": "Big Launch",
+          "top3": [
+            "Lilita One",
+            "Fira Sans",
+            "Jost"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.00560975609756087,
+          "tracking_err": 0.0,
+          "seconds": 0.1
+        },
+        {
+          "seed": 34,
+          "family": "Red Hat Display",
+          "text": "THIS FRIDAY ONLY",
+          "top3": [
+            "Red Hat Display",
+            "Onest",
+            "Montserrat"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -25,
+          "size_err": -0.0031818181818181746,
+          "tracking_err": 0.0045000000000000005,
+          "seconds": 0.26
+        },
+        {
+          "seed": 35,
+          "family": "Arvo",
+          "text": "OPEN STUDIO",
+          "top3": [
+            "Arvo",
+            "Noto Sans KR",
+            "Poppins"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.003783783783783745,
+          "tracking_err": -0.0024,
+          "seconds": 0.129
+        },
+        {
+          "seed": 36,
+          "family": "Inter",
+          "text": "A WEEKEND AWAY",
+          "top3": [
+            "Inter",
+            "Pretendard",
+            "DM Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -25,
+          "size_err": 0.008915662650602396,
+          "tracking_err": -0.005199999999999996,
+          "seconds": 0.215
+        },
+        {
+          "seed": 37,
+          "family": "Zilla Slab",
+          "text": "Hello Autumn",
+          "top3": [
+            "Zilla Slab",
+            "Bitter",
+            "Instrument Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.001315789473684159,
+          "tracking_err": 0.0005000000000000004,
+          "seconds": 0.183
+        },
+        {
+          "seed": 38,
+          "family": "Outfit",
+          "text": "This Friday only",
+          "top3": [
+            "Outfit",
+            "Be Vietnam Pro",
+            "Fredoka"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.009117647058823564,
+          "tracking_err": 0.004400000000000001,
+          "seconds": 0.129
+        },
+        {
+          "seed": 39,
+          "family": "Bricolage Grotesque",
+          "text": "Grand Opening",
+          "top3": [
+            "Archivo",
+            "Public Sans",
+            "DM Sans"
+          ],
+          "hit": false,
+          "confidence": 0.5,
+          "weight_err": -25,
+          "size_err": -0.0029729729729729426,
+          "tracking_err": 0.0020999999999999994,
+          "seconds": 0.259
+        },
+        {
+          "seed": 40,
+          "family": "Urbanist",
+          "text": "Coming Soon",
+          "top3": [
+            "Urbanist",
+            "Figtree",
+            "Lexend"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0044800000000000395,
+          "tracking_err": -0.002700000000000008,
+          "seconds": 0.152
+        },
+        {
+          "seed": 41,
+          "family": "Zilla Slab",
+          "text": "Night Market",
+          "top3": [
+            "Zilla Slab",
+            "Lora",
+            "Merriweather"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.009397590361445829,
+          "tracking_err": -0.0049999999999999975,
+          "seconds": 0.157
+        },
+        {
+          "seed": 42,
+          "family": "Instrument Sans",
+          "text": "This Friday only",
+          "top3": [
+            "Instrument Sans",
+            "Pretendard",
+            "Nunito"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.004383561643835576,
+          "tracking_err": 0.0,
+          "seconds": 0.184
+        },
+        {
+          "seed": 43,
+          "family": "Patrick Hand",
+          "text": "LIMITED EDITION",
+          "top3": [
+            "Patrick Hand",
+            "Source Sans 3",
+            "Fira Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.01846153846153853,
+          "tracking_err": 0.004499999999999999,
+          "seconds": 0.118
+        },
+        {
+          "seed": 44,
+          "family": "Pacifico",
+          "text": "MOTION DESIGN",
+          "top3": [
+            "Pacifico",
+            "Urbanist",
+            "IBM Plex Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.0016528925619835322,
+          "tracking_err": -0.0019,
+          "seconds": 0.398
+        },
+        {
+          "seed": 45,
+          "family": "Montserrat",
+          "text": "Fresh Picks",
+          "top3": [
+            "Montserrat",
+            "Lexend",
+            "Varela Round"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.008000000000000007,
+          "tracking_err": -0.004,
+          "seconds": 0.12
+        },
+        {
+          "seed": 46,
+          "family": "Instrument Serif",
+          "text": "New Arrivals",
+          "top3": [
+            "Instrument Serif",
+            "Fjalla One",
+            "Barlow Condensed"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.02703703703703697,
+          "tracking_err": -0.0087,
+          "seconds": 0.136
+        },
+        {
+          "seed": 47,
+          "family": "Instrument Sans",
+          "text": "Keepframe Studio",
+          "top3": [
+            "Instrument Sans",
+            "Figtree",
+            "Pretendard"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0067256637168142674,
+          "tracking_err": -0.003799999999999998,
+          "seconds": 0.272
+        },
+        {
+          "seed": 48,
+          "family": "Lexend",
+          "text": "Join us today",
+          "top3": [
+            "Lexend",
+            "Archivo",
+            "Source Sans 3"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -50,
+          "size_err": 0.0015238095238094829,
+          "tracking_err": 0.0045,
+          "seconds": 0.158
+        },
+        {
+          "seed": 49,
+          "family": "Instrument Serif",
+          "text": "Hello Autumn",
+          "top3": [
+            "Instrument Serif",
+            "Barlow Condensed",
+            "Source Sans 3"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.005742574257425748,
+          "tracking_err": -0.0019,
+          "seconds": 0.134
+        },
+        {
+          "seed": 50,
+          "family": "Zilla Slab",
+          "text": "THIS FRIDAY ONLY",
+          "top3": [
+            "Zilla Slab",
+            "Libre Baskerville",
+            "Syne"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.010285714285714231,
+          "tracking_err": 0.005499999999999998,
+          "seconds": 0.212
+        },
+        {
+          "seed": 51,
+          "family": "Barlow Condensed",
+          "text": "SUMMER SALE",
+          "top3": [
+            "Barlow Condensed",
+            "Oswald",
+            "Bebas Neue"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.012833333333333474,
+          "tracking_err": -0.0055000000000000005,
+          "seconds": 0.119
+        },
+        {
+          "seed": 52,
+          "family": "Arvo",
+          "text": "Coming Soon",
+          "top3": [
+            "Arvo",
+            "Zilla Slab",
+            "Fraunces"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.00014388489208638777,
+          "tracking_err": 0.0002,
+          "seconds": 0.159
+        },
+        {
+          "seed": 53,
+          "family": "Lilita One",
+          "text": "This Friday only",
+          "top3": [
+            "Lilita One",
+            "Source Sans 3",
+            "Noto Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.02116279069767435,
+          "tracking_err": -0.0089,
+          "seconds": 0.247
+        },
+        {
+          "seed": 54,
+          "family": "Roboto Mono",
+          "text": "GRAND OPENING",
+          "top3": [
+            "Roboto Mono",
+            "IBM Plex Mono",
+            "Source Code Pro"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 50,
+          "size_err": -0.0011666666666666492,
+          "tracking_err": 0.0006000000000000033,
+          "seconds": 0.18
+        },
+        {
+          "seed": 55,
+          "family": "Plus Jakarta Sans",
+          "text": "Fresh Picks",
+          "top3": [
+            "Plus Jakarta Sans",
+            "Public Sans",
+            "Space Grotesk"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": -0.016129032258064502,
+          "tracking_err": 0.0079,
+          "seconds": 0.145
+        },
+        {
+          "seed": 56,
+          "family": "Patrick Hand",
+          "text": "Keepframe Studio",
+          "top3": [
+            "Patrick Hand",
+            "Urbanist",
+            "Fredoka"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.0086440677966102,
+          "tracking_err": -0.0038000000000000048,
+          "seconds": 0.128
+        },
+        {
+          "seed": 57,
+          "family": "Noto Sans KR",
+          "text": "Up to 50% off",
+          "top3": [
+            "Noto Sans KR",
+            "Source Sans 3",
+            "Fira Sans"
+          ],
+          "hit": true,
+          "confidence": 0.5,
+          "weight_err": -75,
+          "size_err": 0.006080000000000085,
+          "tracking_err": 0.0016999999999999932,
+          "seconds": 0.151
+        },
+        {
+          "seed": 58,
+          "family": "Lobster",
+          "text": "This Friday only",
+          "top3": [
+            "Lobster",
+            "Barlow Condensed",
+            "Fira Sans"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 0,
+          "size_err": 0.004819277108433884,
+          "tracking_err": 0.0,
+          "seconds": 0.306
+        },
+        {
+          "seed": 59,
+          "family": "Manrope",
+          "text": "NEW ARRIVALS",
+          "top3": [
+            "Manrope",
+            "Public Sans",
+            "Pretendard"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": -25,
+          "size_err": -0.011395348837209385,
+          "tracking_err": 0.0097,
+          "seconds": 0.17
+        },
+        {
+          "seed": 60,
+          "family": "Figtree",
+          "text": "LIMITED EDITION",
+          "top3": [
+            "Figtree",
+            "Plus Jakarta Sans",
+            "Be Vietnam Pro"
+          ],
+          "hit": true,
+          "confidence": 1.0,
+          "weight_err": 25,
+          "size_err": -0.002586206896551646,
+          "tracking_err": 0.0004,
+          "seconds": 0.239
+        }
+      ],
+      "top3": 0.9833333333333333,
+      "weight_ok": 0.9833333333333333,
+      "size_ok": 1.0,
+      "tracking_ok": 1.0,
+      "median_seconds": 0.156
+    }
+  },
+  "passed": false
+}
