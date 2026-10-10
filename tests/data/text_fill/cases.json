@@ -1,0 +1,44 @@
+{
+ "source": "text_fill_cases.npz (Stage A real-clip run, master 9aff0a8, R66): texture columns at full resolution, colour zeroed where alpha is 0; the plate under them at 1/4 resolution",
+ "cases": {
+  "envato1": {
+   "text": "Build SaaSPromo",
+   "columns": [
+    450,
+    1300
+   ],
+   "method": "keyed",
+   "confidence": 0.762,
+   "core": "#e9e1fd",
+   "fill_9aff0a8": "#09011a",
+   "want": "#f0ebfe",
+   "within": 10.0
+  },
+  "ig3": {
+   "text": "and it builts for you",
+   "columns": [
+    0,
+    1185
+   ],
+   "method": "keyed",
+   "confidence": 0.756,
+   "core": "#1d1d1e",
+   "fill_9aff0a8": "#c4dbf8",
+   "want": "#1d1d1e",
+   "within": 15.0
+  },
+  "ig2": {
+   "text": "A Weekend Away",
+   "columns": [
+    130,
+    700
+   ],
+   "method": "keyed",
+   "confidence": 0.0,
+   "core": "#aa0105",
+   "fill_9aff0a8": "#ad0104",
+   "want": "#ab0004",
+   "within": 5.0
+  }
+ }
+}

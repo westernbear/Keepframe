@@ -1,6 +1,7 @@
 """Text style analysis (Task 9): fill colour, gradient, fade, effects and glyph measures from the matted texture
 and the local plate."""
 import json, pickle, time
+from pathlib import Path
 from types import SimpleNamespace
 import cv2, numpy as np, pytest
 from keepframe.analyze import matting, textstyle
@@ -13,7 +14,7 @@ from keepframe.fonts.registry import FontRegistry
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb_to_lab
 from keepframe.ir.gradient import render_gradient
 from keepframe.ir.schema import (AlphaStop, Background, Canonical, Element, Fade, Gradient, GradientStop, Keyframe, Scene,
-                                 TextEffect, TextStyle, Track)
+                                 TextEffect, TextStyle, TextureMeta, Track)
 from keepframe.ir.store import current_scene, new_version, scene_dir
 from keepframe.ir.synth import render_frames
 
@@ -84,7 +85,8 @@ def _case(tmp_path, text="Sale", family="Inter", weight=700, size=48, fill="#a80
     epad = effect_pad(effects) + 4
     a = _even(glyph_alpha([text], size, [face], weight=weight, pad=epad))
     th, tw = a.shape
-    fill_map = (render_gradient(fill, tw, th).astype(np.float32) / 255 if isinstance(fill, Gradient)
+    fill_map = (fill(a) if callable(fill)   # a map built from the glyphs (H×W×3, 0..1)
+                else render_gradient(fill, tw, th).astype(np.float32) / 255 if isinstance(fill, Gradient)
                 else np.float32(hex_to_rgb8(fill)) / 255)
     if grain:
         fill_map = np.clip(np.broadcast_to(fill_map, (th, tw, 3))
@@ -224,6 +226,129 @@ def test_no_false_effects_over_a_wrong_plate(tmp_path):
     off = Background(kind="gradient", gradient=_grad("#f0b8d4", "#a04c80", angle=120.0))
     style, colour, _ = textstyle.analyse_text_style(c.rgba, c.meta, c.frames, _plate(off), c.raw, c.text)
     assert style.effects == [] and _de(colour, "#ab0004") < 5
+
+
+def test_fill_of_a_texture_that_kept_its_surroundings(tmp_path):
+    """envato1's shape: light glyphs whose matte kept the dark box around them (opaque over ~88 % of it, a few
+    transparent holes), over a plate estimate ΔE ≈ 26 off that box (a haze baked into it). Every texture pixel is
+    then ≥ 12 from the plate, so the plate keeps the whole box and its dark mode was the fill, with a white "glow":
+    the fill is the glyphs' colour, and nothing else is claimed."""
+    box_rgb = "#09011a"
+    c = _case(tmp_path, text="Build Promo", size=48, fill="#f0ebfe", bg=Background(kind="color", value=box_rgb))
+    x0, y0, x1, y1 = c.box
+    box = (x0 - 8, y0 - 8, x1 + 8, y1 + 8)   # the detector's box and a margin (same centre: the raw rows hold)
+    ink = cv2.dilate(_binary(c.frames, c.plate, box).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    h, w = ink.shape
+    hole = np.zeros((h, w), bool)
+    hole[:, int(0.55 * w):int(0.7 * w)] = True
+    hole[int(0.8 * h):, :int(0.3 * w)] = True
+    alpha = np.where(hole & ~ink, 0, 255).astype(np.uint8)
+    rgba = np.dstack([c.frames[0][box[1]:box[3], box[0]:box[2]], alpha])
+    border = np.concatenate([alpha[0], alpha[-1], alpha[:, 0], alpha[:, -1]])
+    assert 0.8 < (alpha == 255).mean() < textstyle.BOX_SHARE and (border == 255).mean() > 0.5
+    haze = _plate(Background(kind="color", value="#13043b"))
+    assert 20 < _de("#13043b", box_rgb) < textstyle.KEPT_PLATE_DE
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, haze, c.raw, c.text)
+    assert _de(colour, "#f0ebfe") < 5
+    assert style.effects == [] and style.fade is None and style.confidence <= 0.5
+
+
+def _ramp_and_blue(a: np.ndarray, share: float = 0.6) -> np.ndarray:
+    """A fill map: the words left of the gap column nearest `share` of the glyph area a dark ramp down the glyph
+    rows (#1d1d1e → #8a8a8c), the rest a flat light blue (ig3: "and it builts" / "for you")."""
+    th, tw = a.shape
+    cols = a.sum(0)
+    cs = np.cumsum(cols) / cols.sum()
+    gaps = np.flatnonzero(cols < 1e-3)
+    split = int(gaps[np.argmin(np.abs(cs[gaps] - share))])
+    ys = np.flatnonzero(a.max(1) > 0.05)
+    t = np.clip((np.arange(th, dtype=np.float32) + 0.5 - ys.min()) / (ys.max() + 1 - ys.min()), 0, 1)[:, None, None]
+    out = np.broadcast_to(np.float32(hex_to_rgb8("#c4dbf8")) / 255, (th, tw, 3)).copy()
+    out[:, :split] = ((1 - t) * np.float32(hex_to_rgb8("#1d1d1e")) + t * np.float32(hex_to_rgb8("#8a8a8c"))) / 255
+    return out
+
+
+def test_two_colour_line_takes_the_larger_glyph_area(tmp_path):
+    """ig3's shape: one line in two colours, ~60 % of the glyph area a dark vertical ramp, the rest a flat light blue.
+    The blue is the density peak (the ramp spreads), so it was the fill of the whole line; the fill is the colour
+    covering more glyph area, and the style says one fill cannot draw the line (lower confidence, `unfilled`)."""
+    c = _case(tmp_path, text="and it builts for you", size=40, weight=500, fill=_ramp_and_blue,
+              bg=Background(kind="gradient", gradient=_grad("#fdfdfd", "#f2f2f4")))
+    bx0, by0, bx1, by1 = c.tbox
+    fill = c.fill[by0:by1, bx0:bx1]
+    dark = c.alpha * (fill[..., 2] < 0.5)
+    assert 0.55 < dark.sum() / c.alpha.sum() < 0.65
+    style, colour, info = _analyse(c)
+    ramp = srgb_to_lab(np.float32(np.linspace(hex_to_rgb8("#1d1d1e"), hex_to_rgb8("#8a8a8c"), 32)))
+    assert float(delta_e(ramp, srgb_to_lab(np.float32(hex_to_rgb8(colour)))).min()) < 6
+    assert _de(colour, "#c4dbf8") > 40
+    assert info["unfilled"] > textstyle.UNFILLED and style.confidence < c.meta.confidence
+
+
+# --- real textures (the first Stage A clip run, R66: envato1, ig3, ig2) ---------------------------------------------
+
+DATA = Path(__file__).parent / "data" / "text_fill"
+REAL = json.loads((DATA / "cases.json").read_text())["cases"]
+
+
+def _real(case: str):
+    """The texture (columns of it, full resolution) and the plate under it (stored at 1/4, scaled back)."""
+    rgba = cv2.cvtColor(cv2.imread(str(DATA / f"{case}_rgba.png"), cv2.IMREAD_UNCHANGED), cv2.COLOR_BGRA2RGBA)
+    h, w = rgba.shape[:2]
+    plate = cv2.resize(cv2.cvtColor(cv2.imread(str(DATA / f"{case}_plate.png")), cv2.COLOR_BGR2RGB), (w, h),
+                       interpolation=cv2.INTER_LINEAR)
+    return rgba, plate
+
+
+def _analyse_real(case: str):
+    """analyse_text_style on a real texture: one frame rebuilt as the texture over its plate (edge-padded by the
+    effect crop's margin), the texture held at its centre."""
+    rgba, plate = _real(case)
+    a = rgba[..., 3].astype(np.float32) / 255
+    pe = int(max(4, round(0.5 * textstyle.cap_height(a))))
+    B = np.pad(plate, ((pe, pe), (pe, pe), (0, 0)), mode="edge")
+    ap = np.pad(a, pe)[..., None]
+    frame = np.rint(np.pad(rgba[..., :3], ((pe, pe), (pe, pe), (0, 0))) * ap + (1 - ap) * B).astype(np.uint8)
+    th, tw = frame.shape[:2]
+    raw = np.array([[tw / 2, th / 2, 1, 1, 0, 0, 0, 1, 1]], np.float64)
+    meta = TextureMeta(method=REAL[case]["method"], frames=[0], confidence=REAL[case]["confidence"])
+    return textstyle.analyse_text_style(rgba, meta, frame[None], B, raw, REAL[case]["text"])
+
+
+@pytest.mark.parametrize("case", sorted(REAL))
+def test_real_fills_are_the_glyph_colour(case):
+    """envato1: the matte kept the near-black around the white glyphs (fill was that black, plus a white glow); ig3:
+    a dark line with a light-blue word (fill was the blue); ig2: a red title over a pink globe (right, must stay)."""
+    style, colour, info = _analyse_real(case)
+    want = REAL[case]
+    assert _de(colour, want["want"]) < want["within"], (colour, want)
+    if case == "envato1":
+        assert style.effects == [] and style.confidence <= 0.5
+    if case == "ig3":
+        assert _de(colour, want["fill_9aff0a8"]) > 40
+        assert info["unfilled"] > textstyle.UNFILLED and style.confidence < want["confidence"]
+
+
+def test_kept_surroundings_on_real_textures():
+    """The texture's own border decides: envato1's is opaque over ~78 % of it and its dominant colour is the
+    near-black the fill came out as; ig2's opaque border is pink, far from its red fill; ig3's is transparent."""
+    def lab(hexv):
+        return srgb_to_lab(np.float32(hex_to_rgb8(hexv)))
+    rgba, _ = _real("envato1")
+    behind = textstyle.kept_surroundings(rgba, lab(REAL["envato1"]["fill_9aff0a8"]))
+    assert behind is not None and float(delta_e(behind, lab("#09011a"))) < textstyle.FG_DE
+    assert textstyle.kept_surroundings(rgba, lab(REAL["envato1"]["want"])) is None
+    for case in ("ig2", "ig3"):
+        assert textstyle.kept_surroundings(_real(case)[0], lab(REAL[case]["fill_9aff0a8"])) is None
+
+
+@pytest.mark.parametrize("case", ["ig3", "ig2"])
+def test_fill_colour_by_glyph_area_on_real_textures(case):
+    """ig3: the light-blue word is the density peak, the dark ramp covers more of the strokes; ig2: the pink globe
+    rims the interior keeps are nearly half of it, but they are no stroke, so the red stays."""
+    rgba, plate = _real(case)
+    hexv, _, _ = textstyle.fill_colour(rgba, textstyle.stroke_width(rgba[..., 3]), plate)
+    assert _de(hexv, REAL[case]["want"]) < REAL[case]["within"], hexv
 
 
 def _gradient_p90(c, g: Gradient, truth: Gradient) -> float:
