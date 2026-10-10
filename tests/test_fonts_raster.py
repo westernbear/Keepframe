@@ -484,3 +484,26 @@ def test_subsetting_leaves_pillow_text_layout_intact(tmp_path):
     assert r.returncode == 0, r.stderr[-2000:]
     width, hb = r.stdout.strip().splitlines()[-1].split(" ", 1)
     assert 100 < float(width) < 250 and hb == "[]", r.stdout
+
+
+def test_sfnt_child_runs_isolated_without_server_secrets(monkeypatch, tmp_path):
+    """Final review: the FreeType decode child, like the upload check child, runs with -P (no cwd on sys.path) and
+    only the environment the interpreter needs (no API keys or tokens)."""
+    import subprocess
+    import sys
+    from keepframe.fonts import sfnt
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-secret")
+    monkeypatch.setenv("KEEPFRAME_ASSET_API_TOKEN", "tok-secret")
+    calls = []
+    real = subprocess.run
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw.get("env")))
+        return real(cmd, **kw)
+
+    monkeypatch.setattr(sfnt.subprocess, "run", run)
+    assert sfnt.sfnt_bytes(REG.face("Inter").path)                           # still decodes
+    (cmd, env), = calls
+    assert cmd[:3] == [sys.executable, "-P", "-B"] and cmd[3] == "-c"
+    assert env is not None and not {"OPENAI_API_KEY", "KEEPFRAME_ASSET_API_TOKEN"} & env.keys()
+    assert set(env) <= {"PATH", "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONNOUSERSITE", "LC_ALL", "SYSTEMROOT"}

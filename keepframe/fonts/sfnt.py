@@ -117,15 +117,25 @@ def sfnt_bytes(path: Path, index: int = 0) -> bytes | None:
         return None
 
 
+def child_env() -> dict[str, str]:
+    """Only what the interpreter needs for a font child (this decode, the upload check): no API keys, tokens or
+    other server settings reach it."""
+    paths = [str(Path(__file__).resolve().parents[2])] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
+    env = {"PATH": os.environ.get("PATH", os.defpath), "PYTHONPATH": os.pathsep.join(paths),
+           "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1", "LC_ALL": "C.UTF-8"}
+    if os.name == "nt" and os.environ.get("SYSTEMROOT"):
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    return env
+
+
 def _child_tables(path: Path, index: int) -> dict[str, bytes] | None:
     budget = _budget(path.stat().st_size)
     fd, out = tempfile.mkstemp(prefix="kf-sfnt-", suffix=".bin")
     os.close(fd)
-    try:
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(
-            [str(Path(__file__).resolve().parents[2])] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
-        r = subprocess.run([sys.executable, "-c", "from keepframe.fonts.sfnt import _child; _child()",
-                            str(path), str(index), out], env=env, capture_output=True, timeout=CHILD_TIMEOUT_S)
+    try:   # -P: the server's working directory never lands on the child's sys.path
+        r = subprocess.run([sys.executable, "-P", "-B", "-c", "from keepframe.fonts.sfnt import _child; _child()",
+                            str(path), str(index), out], env=child_env(), stdin=subprocess.DEVNULL,
+                           capture_output=True, timeout=CHILD_TIMEOUT_S)
         if r.returncode != 0:
             return None
         data = Path(out).read_bytes()

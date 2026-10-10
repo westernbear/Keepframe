@@ -26,7 +26,7 @@ from typing import BinaryIO
 from ..ir.schema import FONT_FAMILY_RE, POSTSCRIPT_RE
 from ..log import get, scrub_paths
 from .registry import _FILE_RE
-from .sfnt import MAX_SFNT_BYTES
+from .sfnt import MAX_SFNT_BYTES, child_env as _child_env   # no API keys reach the check child
 
 log = get("keepframe.fonts")
 MAX_FONT_BYTES = 20 * 2**20
@@ -360,16 +360,6 @@ def _child() -> None:
         out = {"code": "bad_tables", "reason": f"{type(e).__name__}: {e}"[:200]}
     with open(sys.argv[2], "w", encoding="utf-8") as f:
         f.write(json.dumps(out))
-
-
-def _child_env() -> dict[str, str]:
-    """Only what the interpreter needs: no API keys, tokens or other server settings reach the child."""
-    paths = [str(Path(__file__).resolve().parents[2])] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
-    env = {"PATH": os.environ.get("PATH", os.defpath), "PYTHONPATH": os.pathsep.join(paths),
-           "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1", "LC_ALL": "C.UTF-8"}
-    if os.name == "nt" and os.environ.get("SYSTEMROOT"):
-        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
-    return env
 
 
 def _valid_meta(meta) -> bool:
