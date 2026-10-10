@@ -4,7 +4,9 @@ A plate (opaque background) becomes H.264 `.ae.mp4`; a sprite (RGBA) becomes Pro
 (yuva444p10le, straight alpha). Each is derived once, as a flat file beside its source in the scene's assets,
 named by the source's SHA-256: an unchanged clip is never derived again and a changed one gets a new name.
 Frames are converted from the WebM's BT.601 to tagged BT.709, the matrix AE assumes for both codecs, and scaled
-to the poster's size (`size`), which places the layer.
+to the poster's size (`size`), which places the layer. The footage ends with TAIL_FRAMES copies of the clip's last
+frame (N2): a speed edit's last scene frame can fall past the clip's end, where Keepframe holds that last frame,
+but an AE layer ends with its footage (no time remapping). The copies only show where the layer runs that long.
 
 The AE routes never encode inside a request: `prepare` derives in a background thread when a sync job is created,
 the spec route answers "preparing" until it is done, and `derive(wait=False)` only looks up. Limits (R60):
@@ -35,6 +37,9 @@ MAX_SECONDS = 120.0                 # longer clips stay posters (footage_too_lon
 MAX_BYTES = 1 << 30                 # an output reaching this is dropped (footage_too_large)
 MAX_ENCODES, MAX_QUEUED = 2, 4
 RETRY_S, FAILED_CAP = 600.0, 256
+# Covers the last scene frame after any one speed edit (up to ×10: the last frame lands < speed − 1 frames past the
+# clip). Part of the derived name, so footage derived without it is never reused.
+TAIL_FRAMES = 9
 _TAGS = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
 _SCALE = "scale=w={w}:h={h}:in_color_matrix=bt601:in_range=tv:out_color_matrix=bt709:out_range=tv"
 FORMATS = {
@@ -81,7 +86,7 @@ def encode_timeout(seconds: float) -> float:
 
 
 def derived_path(src: Path, kind: str) -> Path:
-    return src.with_name(f"{src.name.removesuffix('.webm')}.{file_sha256(src)[:16]}{FORMATS[kind][0]}")
+    return src.with_name(f"{src.name.removesuffix('.webm')}.{file_sha256(src)[:16]}.t{TAIL_FRAMES}{FORMATS[kind][0]}")
 
 
 def _ready(out: Path) -> bool:
@@ -174,7 +179,8 @@ def _encode_to(src, out, kind, fps, size, seconds):
     suffix, decode, fmt, encode = FORMATS[kind]
     tmp = out.with_name(f".{out.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     command = ["ffmpeg", "-y", "-loglevel", "error", *decode, "-t", repr(float(MAX_SECONDS)), "-i", str(src), "-an",
-               "-vf", _SCALE.format(w=int(size[0]), h=int(size[1])) + fmt, "-r", repr(float(fps)), *encode,
+               "-vf", _SCALE.format(w=int(size[0]), h=int(size[1])) + fmt + f",tpad=stop_mode=clone:stop={TAIL_FRAMES}",
+               "-r", repr(float(fps)), *encode,
                "-fs", str(MAX_BYTES), str(tmp)]
     started = time.monotonic()
     try:

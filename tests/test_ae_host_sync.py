@@ -1813,7 +1813,8 @@ def test_footage_layers_start_at_their_first_visible_frame(tmp_path):
     bg, sprite = layers(state)["kf:background"], layers(state)["kf:e1"]
     assert items[bg["source"] - 1]["mainSource"]["file"] == assets["background.mp4"]
     assert items[sprite["source"] - 1]["mainSource"]["file"] == assets["e1.mov"]
-    assert items[sprite["source"] - 1]["duration"] == pytest.approx(4 / 30, abs=1e-3)
+    from keepframe.ae.footage import TAIL_FRAMES
+    assert items[sprite["source"] - 1]["duration"] == pytest.approx((4 + TAIL_FRAMES) / 30, abs=1e-3)   # + its tail
     assert items[sprite["source"] - 1]["mainSource"]["alphaMode"] == "STRAIGHT"
     assert "alphaMode" not in items[bg["source"] - 1]["mainSource"]
     assert (bg["startTime"], bg["inPoint"], bg["outPoint"]) == pytest.approx((0, 0, 6 / 30))
@@ -1848,14 +1849,34 @@ def test_retimed_footage_plays_at_its_rate(tmp_path):
     assert result["ok"] and result["updated"] == ["kf:background", "kf:e1"], result
     bg, sprite = layers(read_state(path))["kf:background"], layers(read_state(path))["kf:e1"]
     assert bg["stretch"] == sprite["stretch"] == 50
-    # 6 plate frames at twice the speed span 3 comp frames (the 4th, past the clip, holds no clip in AE)
-    assert (bg["startTime"], bg["inPoint"], bg["outPoint"]) == pytest.approx((0, 0, 3 / 30))
+    # N2: 6 plate frames at twice the speed span 3 comp frames; the derived footage's cloned tail covers the 4th, the
+    # scene's last (Keepframe holds the clip's last frame there), so the layer ends with the scene
+    assert (bg["startTime"], bg["inPoint"], bg["outPoint"]) == pytest.approx((0, 0, 4 / 30))
     assert (sprite["startTime"], sprite["inPoint"], sprite["outPoint"]) == pytest.approx((1 / 30, 1 / 30, 3 / 30))
     assert sync(path, spec, assets)["writes"] == 0
     state = read_state(path)
     layers(state)["kf:e1"]["stretch"] = 80
     save_state(path, state)
     assert sync(path, spec, assets)["value"]["hand_edited"] == ["kf:e1"]
+
+
+@pytest.mark.parametrize("speed", [2.0, 3.0, 10.0])
+def test_retimed_footage_covers_the_last_scene_frame(tmp_path, speed):
+    """N2: after any one speed edit (up to the ×10 cap) every footage layer still shows a clip frame on its last
+    visible frame in AE: the derived footage ends with cloned frames of the clip's last one."""
+    from tests.test_ae_spec import _video_scene
+    from keepframe.edit.retime import retime_scene
+    value = _video_scene(tmp_path)
+    retime_scene(value, speed)
+    spec = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
+    assets = {name: str(p) for name, p in spec_asset_paths(value, tmp_path).items()}
+    path = tmp_path / "ae.json"
+    assert sync(path, spec, assets)["value"]["ok"]
+    state = read_state(path)
+    for item in spec["layers"]:
+        got = layers(state)[item["id"]]
+        assert got["stretch"] == pytest.approx(100 / speed, abs=1e-3), item["id"]
+        assert got["inPoint"] * 30 <= item["in"] + 1e-6 and got["outPoint"] * 30 > item["out"] + 1e-6, (item["id"], got)
 
 
 def test_postscript_preferred(tmp_path):

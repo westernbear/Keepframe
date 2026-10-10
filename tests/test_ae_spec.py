@@ -711,6 +711,12 @@ def _video_scene(root, fail=None):
         kind="video", value="assets/background.webm", poster="assets/background.png"))
 
 
+def r_first(path):
+    from keepframe.analyze.videoasset import VideoReader
+    with VideoReader(path, (64, 48)) as r:
+        return r.frame(0).astype(int)
+
+
 def _probe(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries",
                           "stream=codec_name,pix_fmt,width,height,nb_read_frames", "-of", "json", str(path)],
@@ -732,14 +738,19 @@ def test_video_layers_use_derived_footage_and_start_time(tmp_path, monkeypatch):
     paths = spec_asset_paths(value, tmp_path)
     plate_sha = hashlib.sha256((tmp_path / "assets" / "background.webm").read_bytes()).hexdigest()
     sprite_sha = hashlib.sha256((tmp_path / "assets" / "e1.video.webm").read_bytes()).hexdigest()
-    assert paths == {"background.mp4": tmp_path / "assets" / f"background.{plate_sha[:16]}.ae.mp4",
-                     "e1.mov": tmp_path / "assets" / f"e1.video.{sprite_sha[:16]}.ae.mov"}
+    tail = footage.TAIL_FRAMES   # N2: cloned frames of the clip's last one (a speed-up's last scene frame)
+    assert paths == {"background.mp4": tmp_path / "assets" / f"background.{plate_sha[:16]}.t{tail}.ae.mp4",
+                     "e1.mov": tmp_path / "assets" / f"e1.video.{sprite_sha[:16]}.t{tail}.ae.mov"}
     assert spec["assets"] == [{"name": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                                "bytes": path.stat().st_size} for name, path in sorted(paths.items())]
     plate, clip = _probe(paths["background.mp4"]), _probe(paths["e1.mov"])
     assert (plate["codec_name"], plate["pix_fmt"], plate["width"], plate["height"], plate["nb_read_frames"]) == (
-        "h264", "yuv420p", 64, 48, "6")
-    assert (clip["codec_name"], clip["width"], clip["height"], clip["nb_read_frames"]) == ("prores", 20, 12, "4")
+        "h264", "yuv420p", 64, 48, str(6 + tail))
+    assert (clip["codec_name"], clip["width"], clip["height"], clip["nb_read_frames"]) == ("prores", 20, 12, str(4 + tail))
+    from keepframe.analyze.videoasset import VideoReader
+    with VideoReader(paths["background.mp4"], (64, 48)) as r:   # the tail repeats the clip's last frame
+        last, tail_end = r.frame(5).astype(int), r.frame(5 + tail).astype(int)
+    assert np.abs(last - tail_end).max() <= 2 and np.abs(last - r_first(paths["background.mp4"])).max() > 20
     assert clip["pix_fmt"].startswith("yuva444p")
     # Cached by the source's SHA: a second export never runs ffmpeg.
     monkeypatch.setattr(footage.subprocess, "run", lambda *a, **k: pytest.fail("derived again"))
