@@ -1831,6 +1831,33 @@ def test_footage_layers_start_at_their_first_visible_frame(tmp_path):
     assert sync(path, moved, assets)["value"]["hand_edited"] == ["kf:e1"]
 
 
+def test_retimed_footage_plays_at_its_rate(tmp_path):
+    """Final review: a speed edit's footage gets AE's time stretch (100 / rate); its span ends with the stretched
+    clip; a stretch changed by hand is a hand edit."""
+    from tests.test_ae_spec import _video_scene
+    from keepframe.edit.retime import retime_scene
+    value = _video_scene(tmp_path)
+    plain = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
+    retime_scene(value, 2.0)
+    spec = comp_spec(value, tmp_path, project="demo", scene_id="s1", version="v1")
+    assets = {name: str(p) for name, p in spec_asset_paths(value, tmp_path).items()}
+    path = tmp_path / "ae.json"
+    assert sync(path, plain, assets)["value"]["ok"]
+    assert "stretch" not in layers(read_state(path))["kf:e1"]                # unretimed footage: as before
+    result = sync(path, spec, assets)["value"]
+    assert result["ok"] and result["updated"] == ["kf:background", "kf:e1"], result
+    bg, sprite = layers(read_state(path))["kf:background"], layers(read_state(path))["kf:e1"]
+    assert bg["stretch"] == sprite["stretch"] == 50
+    # 6 plate frames at twice the speed span 3 comp frames (the 4th, past the clip, holds no clip in AE)
+    assert (bg["startTime"], bg["inPoint"], bg["outPoint"]) == pytest.approx((0, 0, 3 / 30))
+    assert (sprite["startTime"], sprite["inPoint"], sprite["outPoint"]) == pytest.approx((1 / 30, 1 / 30, 3 / 30))
+    assert sync(path, spec, assets)["writes"] == 0
+    state = read_state(path)
+    layers(state)["kf:e1"]["stretch"] = 80
+    save_state(path, state)
+    assert sync(path, spec, assets)["value"]["hand_edited"] == ["kf:e1"]
+
+
 def test_postscript_preferred(tmp_path):
     fonts = [{"family": "Brand Wide", "style": "Bold", "postscript": "BrandWide-Bold"},
              {"family": "BrandWide AE", "style": "Book", "postscript": "BrandWide-Regular"}]

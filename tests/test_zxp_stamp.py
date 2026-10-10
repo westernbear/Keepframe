@@ -97,4 +97,4 @@ def test_stamp_keeps_the_source_major_and_sorts_after_older_builds(tmp_path, mon
         versions[major] = re.search(r"const EXTENSION_VERSION = '([^']+)';", (stage / "js/core.js").read_text())[1]
     assert versions == {"1.1.0": "1.20261006.123045123", "2.0.0": "2.20261006.123045123"}
     assert tuple(map(int, versions["1.1.0"].split("."))) > (1, 20261007 - 1, 95826219)
-    assert "const SPEC_LEVEL = 2;" in (ROOT / "extension/js/core.js").read_text()
+    assert "const SPEC_LEVEL = 3;" in (ROOT / "extension/js/core.js").read_text()

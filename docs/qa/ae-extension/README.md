@@ -105,7 +105,9 @@ Rule: 2× the worst value on scenes that look right, rounded up to 0.005. Worst 
 ## Live check 4 (Stage A Task 14: gradients, footage, styled text)
 
 To run with the user in Task 15. Install a fresh build (`scripts/build_zxp.sh`; source version 1.1.0, stamped
-`1.<YYYYMMDD>.<ms>`, which installs over the older stamped builds). The panel sends `X-Keepframe-Spec-Level: 2`.
+`1.<YYYYMMDD>.<ms>`, which installs over the older stamped builds). The panel sends `X-Keepframe-Spec-Level: 3`
+(a level-2 build from before the final fix wave gets 426 for a speed-edited scene with video, whose footage carries
+a time stretch).
 A panel from before Task 14 sends none: legacy scenes still sync on it, but a scene with video, a 2-stop gradient
 or styled text gets HTTP 426 (the job fails with “update the Keepframe extension: …” and the panel stops and
 offers the download). Leave unrun results blank.

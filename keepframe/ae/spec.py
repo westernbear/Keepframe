@@ -18,8 +18,9 @@ from ..log import get
 
 log = get("keepframe.ae")
 # What a panel must draw for a spec: 1 = Keepframe AE 1.0 (images, solids, text, models, reveal, skew);
-# 2 = Task 14 (footage, Ramp gradients, Drop Shadows, Ramp + Set Matte fills, text stroke/tracking, baseline shear).
-SPEC_LEVEL = 2
+# 2 = Task 14 (footage, Ramp gradients, Drop Shadows, Ramp + Set Matte fills, text stroke/tracking, baseline shear);
+# 3 = footage time stretch (video layers of a speed edit).
+SPEC_LEVEL = 3
 
 
 def _rounded(value):
@@ -425,13 +426,17 @@ def _image(value, sid, size, anchor, scene_dir, assets, pad=0.0):
     return {"asset": _asset(path, name, assets), "scale_fix": fix}, anchor
 
 
-def _footage(clip, sid, size, anchor, poster, scene_dir, assets, start_time, pad=0.0):
+def _footage(clip, sid, size, anchor, poster, scene_dir, assets, start_time, pad=0.0, rate=1.0):
     """A footage layer source: placed by its poster's size (the clip is scaled to it; its box inside `pad`, as
-    `_image`), starting at start_time."""
+    `_image`), starting at start_time; a clip that plays at `rate` (speed edits) carries AE's time stretch
+    100 / rate (none at 1)."""
     width, height = _dims(scene_asset_path(scene_dir, poster)) if poster else size
     fix, anchor = _placement(width, height, size, anchor, pad)
     name = re.sub(r"[^A-Za-z0-9_-]", "_", sid) + clip.suffix
-    return {"asset": _asset(clip, name, assets), "scale_fix": fix, "start_time": start_time}, anchor
+    source = {"asset": _asset(clip, name, assets), "scale_fix": fix, "start_time": start_time}
+    if rate != 1.0:
+        source["stretch"] = 100.0 / rate
+    return source, anchor
 
 
 def _text_style(el, source, effects, warnings):
@@ -498,7 +503,7 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label, wait=True):
                 kind = "footage"
                 source, anchor = _footage(clip, sid, (canonical.width, canonical.height), canonical.anchor,
                                           canonical.texture, scene_dir, assets, el.visible[0] / fps,
-                                          canonical.texture_pad)
+                                          canonical.texture_pad, canonical.video_rate)
             else:
                 kind = "image"
                 source, anchor = _image(canonical.texture, sid, (canonical.width, canonical.height),
@@ -529,7 +534,8 @@ def _background(scene, scene_dir, assets, wait=True):
         source, anchor = _image(value, "background", scene.size, (0, 0), scene_dir, assets)
         fix = source["scale_fix"]
     elif kind == "footage":
-        source, anchor = _footage(value, "background", scene.size, (0, 0), None, scene_dir, assets, 0)
+        source, anchor = _footage(value, "background", scene.size, (0, 0), None, scene_dir, assets, 0,
+                                  rate=background.video_rate)
         fix = source["scale_fix"]
     else:
         source = {"color": _color(background.value if kind == "ramp" else value)}
@@ -593,6 +599,8 @@ def comp_spec_json(scene: Scene, scene_dir: Path, *, project: str, scene_id: str
 
 def spec_level(spec: dict) -> int:
     """The SPEC_LEVEL a panel needs to draw `spec` (older panels ignore or reject what they do not know)."""
+    if any(layer["kind"] == "footage" and "stretch" in layer["source"] for layer in spec["layers"]):
+        return 3
     for layer in spec["layers"]:
         effects = layer["effects"]
         if (layer["kind"] == "footage" or {"gradient", "fill", "shadows"} & effects.keys()

@@ -1504,3 +1504,28 @@ def test_old_panel_gets_426_while_footage_is_prepared(server, tmp_path, slow_enc
     status, error = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=old)
     assert (status, error["error"]) == (426, "update the Keepframe extension")
     assert _job_state(server, job)["state"] == "failed"
+
+
+def test_level2_panel_gets_426_for_retimed_footage(server, tmp_path):
+    """Final review: footage that plays at a speed edit's rate needs a level-3 panel (AE time stretch); a level-2
+    panel would silently play it at 1x."""
+    from keepframe.edit.retime import retime_scene
+    from tests.test_ae_spec import _video_scene
+    root = tmp_path / "p1"
+    value = _video_scene(scene_dir(root, "s1")).model_copy(update={"id": "s1"})
+    retime_scene(value, 2.0)
+    init_project(root, {"file": "source.mp4"}, value)
+    _, headers = pair(server)
+    for level, expected in (("2", 426), ("3", 200)):
+        panel = headers | {"X-Keepframe-Spec-Level": level}
+        assert poll(server, panel)[0] == 204
+        job = _job_for(server, panel)
+        status, body, deadline = 202, None, time.monotonic() + 20
+        while status == 202 and time.monotonic() < deadline:
+            status, body = json_request(server, "GET", f'/api/ae/jobs/{job["id"]}/spec', headers=panel)
+            time.sleep(0.05) if status == 202 else None
+        assert status == expected, (level, body)
+        if expected == 200:
+            assert [layer["source"]["stretch"] for layer in body["layers"]] == [50, 50]
+        else:
+            assert _job_state(server, job)["state"] == "failed"

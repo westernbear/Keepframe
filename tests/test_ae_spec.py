@@ -746,6 +746,25 @@ def test_video_layers_use_derived_footage_and_start_time(tmp_path, monkeypatch):
     assert describe(value, tmp_path) == spec
 
 
+def test_retimed_video_layers_carry_a_stretch(tmp_path):
+    """Final review: a speed edit plays footage at its rate (AE stretch = 100 / rate); only such a spec needs a
+    level-3 panel."""
+    from keepframe.ae.spec import spec_level
+    from keepframe.edit.retime import retime_scene
+    value = _video_scene(tmp_path)
+    assert spec_level(describe(value, tmp_path)) == 2
+    retime_scene(value, 2.0)
+    spec = describe(value, tmp_path)
+    bg, sprite = layer(spec, "background"), layer(spec, "e1")
+    assert bg["source"] == {"asset": "background.mp4", "scale_fix": [1, 1], "start_time": 0, "stretch": 50}
+    assert sprite["source"] == {"asset": "e1.mov", "scale_fix": [0.5, 0.5], "start_time": 0.0333, "stretch": 50}
+    assert (sprite["in"], sprite["out"]) == (1, 2) and spec_level(spec) == 3
+    value.background.video_rate = 1.0
+    value.elements[0].canonical.video_rate = 0.75
+    sprite = layer(describe(value, tmp_path), "e1")
+    assert sprite["source"]["stretch"] == 133.3333 and "stretch" not in layer(describe(value, tmp_path), "background")["source"]
+
+
 def test_video_footage_failure_exports_posters_with_codes(tmp_path, monkeypatch):
     from keepframe.ae import footage
     value = _video_scene(tmp_path)

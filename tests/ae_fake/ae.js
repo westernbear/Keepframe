@@ -738,15 +738,15 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
   // Layers: collections store stack order, so index is always computed live.
   function layer(comp, type, saved, source) {
     const values = { name: "", comment: "", label: 0, inPoint: 0, outPoint: comp.duration,
-      startTime: 0, enabled: true, threeDLayer: Boolean(source && records.get(source).values.isModel), ...copy(saved) };
+      startTime: 0, stretch: 100, enabled: true, threeDLayer: Boolean(source && records.get(source).values.isModel), ...copy(saved) };
     values.parent = null; values.trackMatteLayer = null;
     const api = Object.create((type === "TextLayer" ? TextLayer : AVLayer).prototype);
     for (const name of ["name", "comment"]) setting(api, values, name);
     setting(api, values, "enabled", (v) => { if (typeof v !== "boolean") throw Error("fake AE: invalid enabled"); });
     setting(api, values, "label", (v) => { if (!Number.isInteger(v) || v < 0 || v > 16) throw Error("fake AE: label must be 0–16"); });
-    // A video footage layer plays its clip once (no time remapping): in/out clamp to [startTime, startTime + clip];
-    // moving startTime slides the layer.
-    const clip = () => { const v = source && records.get(source)?.values; return v?.duration > 0 ? v.duration : null; };
+    // A video footage layer plays its clip once (no time remapping): in/out clamp to [startTime, startTime + clip
+    // · stretch / 100]; moving startTime slides the layer; a new stretch scales in/out around startTime (as AE).
+    const clip = () => { const v = source && records.get(source)?.values; return v?.duration > 0 ? v.duration * values.stretch / 100 : null; };
     field(api, "inPoint", () => values.inPoint, (v) => {
       finite(v, "inPoint");
       if (clip() !== null) v = Math.max(v, values.startTime);
@@ -762,6 +762,14 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
       finite(v, "startTime");
       const delta = v - values.startTime;
       values.startTime = v; values.inPoint += delta; values.outPoint += delta; changed();
+    });
+    field(api, "stretch", () => values.stretch, (v) => {
+      finite(v, "stretch");
+      if (v === 0 || Math.abs(v) > 9900) throw Error("fake AE: invalid stretch");
+      const k = v / values.stretch;
+      values.inPoint = values.startTime + (values.inPoint - values.startTime) * k;
+      values.outPoint = values.startTime + (values.outPoint - values.startTime) * k;
+      values.stretch = v; changed();
     });
     const stack = records.get(comp).layers;
     field(api, "index", () => stack.indexOf(proxy) + 1);
@@ -919,7 +927,7 @@ function createAE({ state = {}, documents = process.cwd(), defaultInterpolation 
           frameRate: v.frameRate, duration: v.duration, bgColor: copy(v.bgColor), renderer: v.renderer, renderers: copy(v.renderers), layers: r.layers.map((l) => {
             const lr = records.get(l), lv = lr.values;
             return { type: lr.type, name: lv.name, comment: lv.comment, label: lv.label, inPoint: lv.inPoint,
-              outPoint: lv.outPoint, startTime: lv.startTime, enabled: lv.enabled, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
+              outPoint: lv.outPoint, startTime: lv.startTime, ...(lv.stretch !== 100 ? {stretch: lv.stretch} : {}), enabled: lv.enabled, threeDLayer: lv.threeDLayer, nullLayer: Boolean(lv.nullLayer), source: reference(lr.source),
               ...(lv.parent ? {parent: r.layers.indexOf(lv.parent) + 1} : {}),
               ...(lv.trackMatteLayer ? {trackMatteLayer: r.layers.indexOf(lv.trackMatteLayer) + 1} : {}),
               properties: lr.groups.map(serializeProperty) };

@@ -1291,6 +1291,31 @@ test("task14: video footage has its file's duration; layers clamp to it and slid
   assert.equal(restored.items[1].layers[1].startTime, 0.5);
 });
 
+test("final review: footage stretch scales the clip around startTime and survives a save", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ae-stretch-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const body = Buffer.alloc(20); body.writeUInt32BE(600, 12); body.writeUInt32BE(120, 16);   // 0.2 s
+  const header = Buffer.alloc(8); header.writeUInt32BE(28); header.write("mvhd", 4);
+  fs.writeFileSync(path.join(dir, "a.mov"), Buffer.concat([Buffer.from("....ftypisom"), header, body]));
+  const f = fixture(), c = f.context;
+  const clip = c.app.project.importFile(new c.ImportOptions(new c.File(path.join(dir, "a.mov"))));
+  const layer = f.comp.layers.add(clip);
+  assert.equal(layer.stretch, 100);
+  layer.startTime = 0.5;
+  layer.stretch = 50;                                     // twice the speed: the clip spans half the time
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+  near(layer.inPoint, 0.5); near(layer.outPoint, 0.6);
+  layer.outPoint = 9; near(layer.outPoint, 0.6);          // still clamped to the stretched clip
+  layer.stretch = 200; near(layer.outPoint, 0.9);
+  layer.outPoint = 9; near(layer.outPoint, 0.9);
+  for (const bad of [0, NaN, "50", 10000]) assert.throws(() => { layer.stretch = bad; }, /stretch/);
+  const saved = JSON.parse(JSON.stringify(f.serialize()));
+  assert.equal(saved.project.items[0].layers[0].stretch, 200);
+  assert.equal(createAE({state: saved}).context.app.project.items[1].layers[1].stretch, 200);
+  layer.stretch = 100;
+  assert.equal("stretch" in JSON.parse(JSON.stringify(f.serialize())).project.items[0].layers[0], false);   // as before
+});
+
 test("task14: the ES3 checker rejects regex flags and groups ExtendScript lacks", () => {
   for (const [source, rule] of [["var r = /a/u;", "regex flag"], ["var r = /a/s;", "regex flag"], ["var r = /a/y;", "regex flag"],
     ["var r = /(?<=a)b/;", "regex lookbehind or named group"], ["var r = /(?<n>a)/;", "regex lookbehind or named group"],

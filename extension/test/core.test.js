@@ -143,8 +143,9 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     assert.equal(request.path, '/api/ae/pair');
     assert.equal(request.method, 'POST');
     assert.equal(request.headers['x-keepframe-extension'], '1.1.0');
-    // The spec level says what this panel draws (2: footage, ramps, shadows, text styles); the server gates on it.
-    assert.equal(request.headers['x-keepframe-spec-level'], '2');
+    // The spec level says what this panel draws (2: footage, ramps, shadows, text styles; 3: footage time stretch);
+    // the server gates on it.
+    assert.equal(request.headers['x-keepframe-spec-level'], '3');
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers['content-type'], 'application/json');
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
@@ -1508,7 +1509,7 @@ test('sync asks for the spec again while the server prepares video footage', asy
     }});
     assert.equal(f.result.ok, true, JSON.stringify(f.result));
     assert.equal(f.requests.filter(req => req.path.endsWith('/spec')).length, 3);
-    assert.ok(f.requests.filter(req => req.path.endsWith('/spec')).every(req => req.headers['x-keepframe-spec-level'] === '2'));
+    assert.ok(f.requests.filter(req => req.path.endsWith('/spec')).every(req => req.headers['x-keepframe-spec-level'] === '3'));
     assert.ok(f.statuses.some(status => status.message === 'Preparing video for demo / s1 v7…'
         && status.details.progress.stage === 'preparing video'));
 });

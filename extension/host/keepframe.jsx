@@ -212,6 +212,8 @@ if (typeof JSON !== "object" || JSON === null) {
             }
             if (s.kind === "footage") {
                 requireValue(number(s.source.start_time) && s.source.start_time >= 0, "invalid footage start");
+                requireValue(s.source.stretch === undefined
+                    || (number(s.source.stretch) && s.source.stretch > 0 && s.source.stretch <= 9900), "invalid footage stretch");
             }
             if (s.kind === "model") {
                 requireValue(array(s.source.fit_box) && s.source.fit_box.length === 2
@@ -374,6 +376,8 @@ if (typeof JSON !== "object" || JSON === null) {
                 data.push([layer.source.width, layer.source.height, colorValue(layer.source.mainSource.color)]);
             } else if (layer.source) { data.push(layer.source.id); }
             if (kind(layer) === "footage") { data.push(Math.round(layer.startTime * fps)); }
+            // A time stretch other than 100 % (speed edits); unstretched layers keep their earlier fingerprint.
+            if (kind(layer) === "footage" && Math.abs(layer.stretch - 100) > 1e-6) { data.push(rounded(layer.stretch)); }
             // Model bounds can change with new bytes even when fit_box and the layer spec stay identical.
             if (kind(layer) === "model") { data.push(layer.source.comment); }
             for (i = 0; i < props.length; i += 1) {
@@ -571,7 +575,7 @@ if (typeof JSON !== "object" || JSON === null) {
     }
 
     function writeLayer(layer, s, fps, force, timings, wasStyled) {
-        var t, rect, anchor = s.anchor, doc, i, factor = 1, origin = [0, 0], start, stroke, end;
+        var t, rect, anchor = s.anchor, doc, i, factor = 1, origin = [0, 0], start, stroke, end, stretch = 100;
         if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
         t = transform(layer);
         if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
@@ -625,14 +629,19 @@ if (typeof JSON !== "object" || JSON === null) {
         }
         writeEffects(layer, s, fps, anchor, force, origin);
         if (s.kind === "footage") {
+            // A speed edit plays the clip at its rate: time stretch 100 / rate (AE scales in/out around startTime).
+            if (s.source.stretch !== undefined) { stretch = s.source.stretch; }
+            if (Math.abs(layer.stretch - stretch) > 1e-6) { layer.stretch = stretch; }
             // On the frame grid; the clip's first frame shows at the layer's first visible frame. Before in/out,
-            // which a clip clamps to [startTime, startTime + its duration].
+            // which a clip clamps to [startTime, startTime + its stretched duration].
             start = Math.round(s.source.start_time * fps) / fps;
             if (layer.startTime !== start) { layer.startTime = start; }
         }
         end = (s.out + 1) / fps;
         // A clip ends with its footage (no time remapping); never ask AE for more.
-        if (s.kind === "footage" && layer.source.duration > 0) { end = Math.min(end, start + layer.source.duration); }
+        if (s.kind === "footage" && layer.source.duration > 0) {
+            end = Math.min(end, start + layer.source.duration * stretch / 100);
+        }
         if (s["in"] / fps >= layer.outPoint) { layer.outPoint = end; }
         layer.inPoint = s["in"] / fps;
         layer.outPoint = end;
