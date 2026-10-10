@@ -207,7 +207,7 @@ def test_classify_failure_keeps_still_kind_with_message(monkeypatch):
     frames, rbf = _with_square([render_gradient(truth, 160, 90)] * 8)
     model = _build(frames, rbf)
     assert model.kind == "image" and model.confidence < 0.6
-    assert model.stats["message"] == "plate classification skipped: RuntimeError: fit exploded"
+    assert model.stats["message"] == "plate classification skipped (plate_classify_failed)"   # a code (R52)
 
 
 def test_gradient_reaches_scene_and_composites(tmp_path):

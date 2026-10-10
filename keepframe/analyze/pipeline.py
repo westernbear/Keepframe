@@ -16,13 +16,13 @@ from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, ext
 from .keyframes import fill_gaps, tracks_from_raw
 from . import videoasset
 from .movers import mover_cover, mover_frames, mover_props, mover_video
-from .plate import FALLBACK_CONF, FRAMES_PATH, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
+from .plate import FALLBACK_CONF, FRAMES_PATH, MOVERS_FAILED, PLATE_FAILED, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
-from .text import Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
+from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -150,8 +150,8 @@ def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
             model.stats.update(busy_pass1=busy["busy_pass1"], moved_de=busy["moved_de"], resegmented=busy["kind"])
         model = write_video(sd, model, fps)
     except Exception as e:   # plate v2 must never fail the analysis: keep pass 1 at lower confidence
-        log.exception("plate v2 failed")
-        model = fallback_plate(pass1, bg, bconf, frames.shape[1:3], f"plate v2 skipped: {type(e).__name__}: {e}"[:200])
+        log.warning("plate v2 failed: %s", describe(e, trace=True))
+        model = fallback_plate(pass1, bg, bconf, frames.shape[1:3], f"plate v2 skipped ({PLATE_FAILED})")
     _pk(sd, "movers", model.movers)   # before plate.json, which marks the plate stage complete
     save_plate(sd, model)
     return model
@@ -240,20 +240,35 @@ def _mover_messages(props: dict, ids: dict) -> list[str]:
     return out
 
 
+# Fail-soft codes of the sprites stage (R52): report messages and stage data carry these, never exception text.
+MOVER_DROPPED, TEXTURES_FAILED = "mover_dropped", "textures_failed"
+LOW_TEXTURE_CONF = 0.05   # a matted texture at or below this confidence is reported (it still replaces the binary one)
+
+
+def _full_opacity_failed(p: dict) -> bool:
+    note = p.get("fade_note")   # older stages kept the exception text in the note
+    return bool(p.get("full_opacity_error")) or (isinstance(note, str) and note.startswith("full-opacity frame not found"))
+
+
 def _texture_messages(props: dict, ids: dict) -> list[str]:
     out = []
     for k, p in props.items():
         if k.startswith("_") or k not in ids or not isinstance(p, dict):
             continue
-        if p.get("texture_error"):
-            out.append(f"{ids[k]}: matted texture failed ({p['texture_error']}); kept the binary texture")
+        meta = p.get("texture_meta") or {}
+        if p.get("texture_error"):   # fixed text: older stages stored the exception text
+            out.append(f"{ids[k]}: matted texture failed ({matting.TEXTURE_FAILED}); kept the binary texture")
         elif p.get("texture_note"):
             out.append(f"{ids[k]}: not matted, {p['texture_note']}; kept the binary texture")
         elif p.get("mover") and not p.get("stable") and not p.get("video") and p.get("texture_meta"):
             out.append(f"{ids[k]}: still texture matted from frame {p['cf']} only")
+        elif meta.get("method") not in (None, "binary") and meta.get("confidence", 1.0) <= LOW_TEXTURE_CONF:
+            out.append(f"{ids[k]}: matted texture at low confidence ({meta['confidence']:.2f}); it replaced the binary texture")
         if p.get("style_error"):   # fixed text: the stored value is a code (exception text in older stages)
             out.append(f"{ids[k]}: text style failed; kept the core-mask colour")
-        if p.get("fade_note"):
+        if _full_opacity_failed(p):
+            out.append(f"{ids[k]}: {FULL_OPACITY_NOTE}")
+        elif p.get("fade_note"):
             out.append(f"{ids[k]}: {p['fade_note']}")
         if p.get("font_error") or p.get("font_skipped"):
             family = getattr(p.get("font"), "family_guess", None)
@@ -261,6 +276,29 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
                        else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
     return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths
+
+
+def _fell_back(p: dict) -> bool:
+    return any(p.get(name) for name in ("video_error", "texture_error", "texture_note", "style_error", "font_error",
+                                        "font_skipped", "mover_dropped")) or _full_opacity_failed(p)
+
+
+def fallback_ids(props: dict, ids: dict) -> set[str]:
+    """The elements a fail-soft path left at today's behaviour, whose confidence drops (once) by FALLBACK_CONF: a
+    video that could not be made, a texture not matted, a text style or font match that failed or was skipped, a
+    full-opacity frame not found, the fragments of a dropped mover (and a solid made of them); every element when the
+    textures phase failed as a whole, every text when the text style phase did."""
+    textures_failed, style_failed = bool(props.get("_textures_message")), bool(props.get("_style_message"))
+    out = set()
+    for k, p in props.items():
+        if k.startswith("_") or not isinstance(p, dict):
+            continue
+        fragments = p.get("fragments") or {}
+        out |= {ids[fk] for fk, fp in fragments.items() if fk in ids and isinstance(fp, dict) and _fell_back(fp)}
+        if k in ids and (_fell_back(p) or any(isinstance(fp, dict) and fp.get("mover_dropped") for fp in fragments.values())
+                         or (textures_failed and not k.startswith("solid")) or (style_failed and p.get("kind") == "text")):
+            out.add(ids[k])
+    return out
 
 
 def _font_registry(sd: Path):
@@ -345,9 +383,10 @@ def _stage_tracking(rbf, sd):
     return _pk(sd, "tracks", tracks)
 
 
-def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), notes=None, plate_at=None):
+def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), notes=None, plate_at=None, dropped=None):
     """Solids (3D candidates) from the tracks no mover claimed; mover pixels are layers already, never a 3D
-    candidate too. Returns (solids, movers): when the movers cannot be applied they are dropped with a note.
+    candidate too. Returns (solids, movers): when the movers cannot be applied they are dropped with a note (and
+    added to `dropped`: their fragments come back as sprites, at lower confidence).
     `plate_at(f)`: a per-frame plate (a background that moves), instead of `plate`."""
     plate_lab = rgb_to_lab(plate) if plate is not None else None
     shape = frames.shape[1:3]
@@ -368,9 +407,11 @@ def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), note
     except Exception as e:
         if not movers:
             raise
-        log.exception("solids with movers failed; movers dropped")
+        log.warning("solids with movers failed; movers dropped: %s", describe(e, trace=True))
         if notes is not None:
-            notes.append(f"movers dropped: {type(e).__name__}: {e}"[:200])
+            notes.append(f"movers dropped ({MOVERS_FAILED})")
+        if dropped is not None:
+            dropped.extend(movers)
         movers, solids = (), run(())
     return _pk(sd, "solids", solids), list(movers)
 
@@ -396,7 +437,9 @@ def _mover_videos(props: dict, movers, frames, plate, fps: float, sd: Path) -> N
 
 
 def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=(),
-                   plate_model: PlateModel | None = None, fps: float | None = None):
+                   plate_model: PlateModel | None = None, fps: float | None = None, dropped=()):
+    """`dropped`: movers an earlier stage dropped; their fragments, like those of a mover dropped here, are marked
+    `mover_dropped`."""
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     kept, failed = [], []
@@ -406,10 +449,12 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             props[f"m{m.id}"] = mover_props(m, frames, behind, n_frames)
             kept.append(m)
         except Exception as e:
-            log.exception("mover m%s dropped", m.id)
-            failed.append(f"mover m{m.id} dropped: {type(e).__name__}: {e}"[:200])
+            log.warning("mover m%s dropped: %s", m.id, describe(e, trace=True))
+            failed.append(m)
     if failed:
-        props["_movers_message"] = "; ".join(failed)
+        props["_movers_message"] = "; ".join(f"mover m{m.id} dropped ({MOVER_DROPPED})" for m in failed)
+    fragments = {f"o{i}" for m in (*failed, *dropped) for i in m.claimed} \
+        | {f"s{i}" for m in (*failed, *dropped) for i in m.claimed_shapes}
     obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, kept)
     if movers:
         log.info("sprites movers=%s kept=%s %.2fs", len(movers), len(kept), time.perf_counter() - t0)
@@ -431,6 +476,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
                 p["z"] = 0
             if notes:
                 p["fade_note"] = "; ".join(notes)
+            if FULL_OPACITY_NOTE in notes:
+                p["full_opacity_error"] = FULL_OPACITY_FAILED
             props[f"{'t' if is_text else 's'}{t.id}"] = p
     log.info("sprites text_props tracks=%s shapes=%s %.2fs", len(text_tracks), len(shape_tracks), time.perf_counter() - t0)
     t0 = time.perf_counter()
@@ -447,6 +494,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             props[f"o{t.id}"] = {"raw": raw, "canon": canon, "cf": cf, "kind": "sprite", "z": z[t.id], "first": t.first, "last": t.last}
     log.info("sprites sprite_props objects=%s workers=%s ecc=%s %.2fs", len(obj_tracks), workers, opts.use_ecc,
              time.perf_counter() - t0)
+    for k in fragments & props.keys():   # a dropped mover's pieces are separate sprites again, less sure
+        props[k]["mover_dropped"] = MOVER_DROPPED
     ov = _load_overrides(sd)
     for a, b in ov.get("merge", []):   # merge object b into a (element ids resolved via ids.json at correction time)
         if a in props and b in props:
@@ -505,16 +554,16 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         matting.matte_props(props, frames, plate_at, workers=workers, skip=members,
                             layers_at={k: mover_frames(m, frames, plate_at) for k, m in videos.items()})
     except Exception as e:   # fail soft: every element keeps its binary texture
-        log.exception("textures v2 failed")
-        props["_textures_message"] = f"textures v2 skipped: {type(e).__name__}: {e}"[:200]
+        log.warning("textures v2 failed: %s", describe(e, trace=True))
+        props["_textures_message"] = f"textures v2 skipped ({TEXTURES_FAILED})"
     # Text style: fill, gradient, fade and effects from the matted texture and the local plate (Task 9).
     report_stage("sprites", "text style")
     try:
         textstyle.style_props(props, frames, plate_model if plate_model is not None else matting.as_plate(behind), workers=workers,
                               fonts=_font_registry(sd))
     except Exception as e:   # fail soft: every text keeps its core-mask colour and no style
-        log.exception("text style failed")
-        props["_style_message"] = f"text style skipped: {type(e).__name__}: {e}"[:200]
+        log.warning("text style failed: %s", describe(e, trace=True))
+        props["_style_message"] = f"text style skipped ({textstyle.STYLE_FAILED})"
     _mover_videos(props, list(videos.values()), frames, plate_at, fps, sd)
     for i, solid in enumerate(solids):
         p = solid_props(solid, frames)
@@ -589,8 +638,7 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     report_stage("report")
     from .report import reconstruction_and_confidence
     rec, conf = reconstruction_and_confidence(scene, sd, frames, 0)
-    failed = {ids[k] for k, p in (props or {}).items()   # a video sprite that could not be made: the still, less sure
-              if not k.startswith("_") and isinstance(p, dict) and p.get("video_error") and k in (ids or {})}
+    failed = fallback_ids(props or {}, ids or {})   # today's behaviour after a fail-soft path: less sure, once
     for e in scene.elements:
         e.confidence = conf[e.id] * (FALLBACK_CONF if e.id in failed else 1.0)
     write_report(sd, {"reconstruction": rec, "confidence": {e.id: e.confidence for e in scene.elements}, "messages": messages,
@@ -716,12 +764,13 @@ def analyze_scene_frames(
     t = _stage_done("plate", t)
     report_stage("solids")
     notes: list[str] = []
+    dropped: list = []
     solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=model.movers, notes=notes,
-                                   plate_at=_moving(model))
+                                   plate_at=_moving(model), dropped=dropped)
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                           movers=movers, plate_model=model, fps=fps)
+                           movers=movers, plate_model=model, fps=fps, dropped=dropped)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -930,18 +979,19 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
     notes: list[str] = []
+    dropped: list = []
     movers = model.movers
     if boundary <= STAGES.index("solids") or redo:
         report_stage("solids")
         solids, movers = _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=plate, movers=movers, notes=notes,
-                                       plate_at=_moving(model))
+                                       plate_at=_moving(model), dropped=dropped)
     else:
         solids = _pk(sd, "solids")
     t = _stage_done("solids", t)
     if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                               movers=movers, plate_model=model, fps=fps)
+                               movers=movers, plate_model=model, fps=fps, dropped=dropped)
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)

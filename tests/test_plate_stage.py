@@ -193,7 +193,7 @@ def test_plate_v2_failure_falls_back_to_pass1(tmp_path, monkeypatch):
     assert scene.background.kind == "image" and scene.background.synthetic is None
     assert scene.background.confidence == pytest.approx(0.5 * bgj["confidence"])
     assert np.array_equal(cv2.cvtColor(cv2.imread(str(sd / PLATE_PATH)), cv2.COLOR_BGR2RGB), background_plate(frames))
-    assert any("plate v2 skipped: RuntimeError: plate exploded" in m
+    assert any("plate v2 skipped (plate_failed)" in m
                for m in json.loads((sd / "report.json").read_text())["messages"])
 
 

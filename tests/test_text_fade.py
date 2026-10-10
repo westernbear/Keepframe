@@ -106,5 +106,5 @@ def test_full_opacity_frame_fails_soft(tmp_path, monkeypatch):
     notes: list[str] = []
     got = text_props(track, frames, plate.rgb, N, 0, infer_font=False, plate=plate.image, notes=notes)
     assert got[2] == want[2] and truth[got[2]] < 0.6 and np.array_equal(got[0], want[0], equal_nan=True)
-    assert len(notes) == 1 and "boom" in notes[0]
+    assert notes == [text_module.FULL_OPACITY_NOTE]                         # a code, never the exception (R52)
     assert _texture_messages({"t1": {"fade_note": notes[0]}}, {"t1": "e1"}) == [f"e1: {notes[0]}"]

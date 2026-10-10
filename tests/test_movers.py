@@ -330,9 +330,9 @@ def test_mover_search_failure_keeps_plate_with_message(tmp_path, monkeypatch):
     assert _movers(tmp_path) == []
     pj = json.loads((_sd(tmp_path) / "stages" / "plate.json").read_text())
     bconf = json.loads((_sd(tmp_path) / "stages" / "background.json").read_text())["confidence"]
-    assert pj["stats"]["movers_message"] == "movers skipped: RuntimeError: boom" and "movers" not in pj["stats"]
+    assert pj["stats"]["movers_message"] == "movers skipped (movers_failed)" and "movers" not in pj["stats"]
     assert pj["confidence"] <= 0.5 * bconf
-    assert "movers skipped: RuntimeError: boom" in _messages(tmp_path)
+    assert "movers skipped (movers_failed)" in _messages(tmp_path)
 
 
 # --- review round 1 -------------------------------------------------------------------------------------
@@ -484,15 +484,32 @@ def test_text_over_mover_is_filled_in(tmp_path):
     assert de(got[gaps]) < 6 and de(got[gaps]) < de(load_plate(_sd(tmp_path)).image[gaps])   # globe-coloured
 
 
+def _fragments_less_sure(root, scene, frames):
+    """The dropped mover's fragments are marked; the elements made of them (sprites, or a solid) are at half their
+    measured confidence, the rest is not."""
+    from keepframe.analyze.pipeline import fallback_ids
+    from keepframe.analyze.report import reconstruction_and_confidence
+    props, ids = _props(root), json.loads((_sd(root) / "stages" / "ids.json").read_text())
+    pieces = [q for k, p in props.items() if not k.startswith("_") for q in (p, *(p.get("fragments") or {}).values())]
+    assert any(q.get("mover_dropped") == "mover_dropped" for q in pieces)
+    marked = fallback_ids(props, ids)
+    assert marked
+    measured = reconstruction_and_confidence(scene, _sd(root), frames, 0)[1]
+    for el in scene.elements:
+        assert el.confidence == pytest.approx(measured[el.id] * (0.5 if el.id in marked else 1.0)), el.id
+
+
 def test_mover_props_failure_drops_the_mover_and_keeps_its_fragments(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("props exploded")
 
     monkeypatch.setattr("keepframe.analyze.pipeline.mover_props", boom)
-    scene = analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    frames = _globe_clip()
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
     props = _props(tmp_path)
     assert not any(k.startswith("m") for k in props) and any(k.startswith("o") for k in props) and scene.elements
-    assert "mover m1 dropped: RuntimeError: props exploded" in _messages(tmp_path)
+    assert "mover m1 dropped (mover_dropped)" in _messages(tmp_path)
+    _fragments_less_sure(tmp_path, scene, frames)
 
 
 def test_mover_cover_failure_in_solids_drops_the_movers(tmp_path, monkeypatch):
@@ -500,10 +517,12 @@ def test_mover_cover_failure_in_solids_drops_the_movers(tmp_path, monkeypatch):
         raise RuntimeError("cover exploded")
 
     monkeypatch.setattr("keepframe.analyze.pipeline.mover_cover", boom)
-    analyze_scene_frames(_globe_clip(), 30, tmp_path, "s1", OPTS)
+    frames = _globe_clip()
+    scene = analyze_scene_frames(frames, 30, tmp_path, "s1", OPTS)
     assert len(_movers(tmp_path)) == 1   # found by the plate stage, then dropped
     assert not any(k.startswith("m") for k in _props(tmp_path))
-    assert "movers dropped: RuntimeError: cover exploded" in _messages(tmp_path)
+    assert "movers dropped (movers_failed)" in _messages(tmp_path)
+    _fragments_less_sure(tmp_path, scene, frames)
 
 
 def test_faint_layer_beside_mover_without_overlap_is_not_claimed():

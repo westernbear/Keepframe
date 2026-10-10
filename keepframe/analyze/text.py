@@ -8,7 +8,7 @@ from typing import Protocol
 import cv2, numpy as np
 from ..ir.colour import delta_e, srgb8_to_lab
 from ..ir.schema import FontGuess
-from ..log import get
+from ..log import describe, get
 from .background import foreground_mask, foreground_mask_plate, opacity_against_plate, rgb_to_lab
 from .device import ocr_cuda, ocr_cuda_expected
 
@@ -20,6 +20,8 @@ FULL_OPACITY = 0.97     # a text frame at this share of the peak level is at ful
 PEAK_SUPPORT = 3        # … the peak: the level this many frames reach (one or two bright frames are not the peak) …
 FIT_DE = 8.0            # … over the frames whose glyph core is the text's colour faded over the plate, within this ΔE76
 PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced)
+FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
+FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
 _warned_ocr_cap_unavailable = False
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
@@ -539,9 +541,9 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
                 if cf != largest:
                     log.info("text track %s: canonical frame %s (full opacity), not %s (largest box, faded)", track.id, cf, largest)
             except Exception as e:   # fail soft: today's canonical frame (the largest box)
-                log.exception("full-opacity frame failed for text track %s", track.id)
+                log.warning("full-opacity frame failed for text track %s: %s", track.id, describe(e, trace=True))
                 if notes is not None:
-                    notes.append(f"full-opacity frame not found ({type(e).__name__}: {e}); kept the largest box"[:200])
+                    notes.append(FULL_OPACITY_NOTE)
     cb = track.boxes[cf].bbox
     frame_h, frame_w = frames[cf].shape[:2]
     cx0, cy0, cx1, cy1 = max(0, cb[0]), max(0, cb[1]), min(frame_w, cb[2]), min(frame_h, cb[3])

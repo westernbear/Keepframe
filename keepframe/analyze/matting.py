@@ -28,7 +28,7 @@ from ..ir.colour import delta_e, srgb_to_lab
 from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import DEFAULTS, PROPS, TextureMeta
 from ..ir.tracks import affine_matrix
-from ..log import get
+from ..log import describe, get
 from .keyframes import fill_gaps
 
 log = get("keepframe.analyze")
@@ -64,6 +64,7 @@ COVER_A = 0.02              # a layer above hides the element where its α excee
 SEEN_MIN = 0.5              # share of the mask the chosen frames must show, else the binary texture stays
 ALIGN_CC, ALIGN_PX = 0.8, 1.5   # a frame's sub-pixel alignment is kept above this correlation, within this shift
 METHOD_FACTOR = {"triangulation": 1.0, "two_colour": 0.95, "keyed": 0.8, "binary": 0.3}
+TEXTURE_FAILED = "texture_failed"   # `texture_error` of an element whose matting failed (a code, R52)
 MIN_CANDIDATES, MAX_CANDIDATES = 12, 32
 CANDIDATE_BYTES = 32 << 20  # warped frames + plates kept per element while scoring
 _K3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
@@ -920,8 +921,8 @@ def matte_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, pad
         except NotMatted as e:
             return k, None, None, ("note", str(e))
         except Exception as e:   # fail soft: today's binary texture, lower confidence, a message
-            log.exception("textures v2 failed for %s", k)
-            return k, None, None, ("error", f"{type(e).__name__}: {e}"[:160])
+            log.warning("textures v2 failed for %s: %s", k, describe(e, trace=True))
+            return k, None, None, ("error", TEXTURE_FAILED)
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
         results = list(ex.map(run, [k for k in keys if k not in skip]))

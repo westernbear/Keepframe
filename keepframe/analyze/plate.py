@@ -13,7 +13,7 @@ import cv2, numpy as np
 from ..ir.colour import delta_e, hex_to_rgb8, rgb8_to_hex, srgb8_to_lab, srgb_to_lab
 from ..ir.gradient import gradient_at, render_gradient
 from ..ir.schema import Background, Gradient, GradientKey
-from ..log import get
+from ..log import describe, get
 from . import videoasset
 from .background import PLATE_PATH
 from .gradient_fit import fit_gradient, fit_like, follow, measure, shrink, stop_range
@@ -34,6 +34,8 @@ ENCLOSED_MAX = 0.25       # enclosed interiors up to this share of the frame cou
 INPAINT_PAD = 32
 INPAINT_RADIUS = 5
 FALLBACK_CONF = 0.5
+# Fail-soft codes (R52): what report messages and stage data say; the exception itself goes to the log only.
+PLATE_FAILED, MOVERS_FAILED, PLATE_CLASSIFY_FAILED = "plate_failed", "movers_failed", "plate_classify_failed"
 STATIC_P95 = 1.5          # temporal ΔE76 p95 below which the plate holds still
 GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient (at fit size) is that gradient …
 GRADIENT_FULL_P95 = 3.0   # … when it also stays within this at ≤ 640 px (R19, without its 3×3 blur)
@@ -545,8 +547,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
                 plate, synthetic, filled = without
                 kind, rgb, p95 = _still_kind(plate, bg_rgb, pass1)
         except Exception as e:   # fail soft: keep the plate without the mover search, at lower confidence
-            log.exception("mover search failed")
-            movers, mover_msg = [], f"movers skipped: {type(e).__name__}: {e}"[:200]
+            log.warning("mover search failed: %s", describe(e, trace=True))
+            movers, mover_msg = [], f"movers skipped ({MOVERS_FAILED})"
         log.info("plate movers %.2fs count=%s", time.perf_counter() - t[-1], len(movers))
     t.append(time.perf_counter())
     frac = float(synthetic.mean())
@@ -557,8 +559,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
     try:
         model = classify(model, temporal_stats(frames, sample, occ, plate), frames, sample, occ, try_keys)
     except Exception as e:   # fail soft: keep the still kind, at lower confidence, and say so
-        log.exception("plate classification failed")
-        model.stats["message"] = f"plate classification skipped: {type(e).__name__}: {e}"[:200]
+        log.warning("plate classification failed: %s", describe(e, trace=True))
+        model.stats["message"] = f"plate classification skipped ({PLATE_CLASSIFY_FAILED})"
         failed = True
     if model.stats.get("video_candidate") and frames_out is not None:
         model = _video_plate(model, frames, rbf, boxes, reveal, frames_out)

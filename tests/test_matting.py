@@ -478,7 +478,7 @@ def test_failure_falls_back_to_binary_with_message(tmp_path, monkeypatch):
     tex = cv2.imread(str(scene_dir(root, "s1") / el.canonical.texture), cv2.IMREAD_UNCHANGED)
     assert set(np.unique(tex[..., 3])) <= {0, 255} and el.canonical.width == tex.shape[1]
     messages = json.loads((scene_dir(root, "s1") / "report.json").read_text())["messages"]
-    assert any(m.startswith(f"{el.id}: matted texture failed") and "boom" in m for m in messages), messages
+    assert f"{el.id}: matted texture failed (texture_failed); kept the binary texture" in messages, messages
 
 
 def test_textures_phase_failure_keeps_every_binary_texture(tmp_path, monkeypatch):
@@ -495,7 +495,7 @@ def test_textures_phase_failure_keeps_every_binary_texture(tmp_path, monkeypatch
     (el,) = scene.elements
     assert el.canonical.texture_meta is None
     messages = json.loads((scene_dir(root, "s1") / "report.json").read_text())["messages"]
-    assert "textures v2 skipped: RuntimeError: index exploded" in messages
+    assert "textures v2 skipped (textures_failed)" in messages
 
 
 def test_mover_filled_pixels_stay_opaque(tmp_path):
