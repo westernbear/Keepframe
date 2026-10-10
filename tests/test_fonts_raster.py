@@ -174,10 +174,20 @@ def _legacy_scene():
 
 
 def test_legacy_text_without_style_html_unchanged(tmp_path):
+    """Legacy (unstyled) text keeps the markup it had at 111b03b, before styled text existed: the element <div>s with
+    their <span> and its style, and the embedded scene, byte for byte; no @font-face or styled text layers. The shared
+    template script around them may change (video seek, isolation): the whole page is no longer pinned."""
     html = compose(_legacy_scene(), tmp_path, tmp_path / "c.html").read_text()
-    # sha256 of this page at 111b03b, before styled text existed
-    assert hashlib.sha256(html.encode()).hexdigest() == "c2147a57610318d323c9adf64115722808e848b1729d882bdea106a36903bd56"
-    assert "@font-face" not in html
+    elements = re.findall(r'<div class="el" id="el-[^"]*".*?</div>', html)
+    assert len(elements) == 3
+    # sha256 of the same parts of this page at 111b03b (whole page there: c2147a57…bd56)
+    assert hashlib.sha256("\n".join(elements).encode()).hexdigest() == \
+        "00a02e8f196eb163ada954d6fe5c9c292f65f190f23eba5e3ac3ec9583e51a28"
+    scene = re.search(r"const SCENE = (.*?);\n", html).group(1)
+    assert hashlib.sha256(scene.encode()).hexdigest() == "80ccadc673cffeada1175d52305d4ddbea3ff9540bef598578b3e8cf2ddfdc9e"
+    assert ('<span style="font-family:sans-serif;font-weight:700;font-size:32.0px;line-height:40.0px;color:#ff0000">'
+            'Hello &lt;world&gt; &amp; 한글</span>') in elements[0]
+    assert "@font-face" not in html and "kf-text" not in html and "data:font" not in html
 
 
 def test_plan_pins_uploaded_font(tmp_path):
