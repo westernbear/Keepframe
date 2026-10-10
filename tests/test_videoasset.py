@@ -189,3 +189,41 @@ def test_video_seek_that_never_lands_fails_with_a_code(tmp_path):
     with pytest.raises(RenderError) as e:
         render(html, scene, tmp_path / "r", frames=[3], probe=False)
     assert e.value.code == "video_seek_failed" and str(e.value) == "video_seek_failed"
+
+
+def _retimed(tmp_path, n=12, speed=2.0):
+    from keepframe.edit.retime import retime_scene
+    scene = _video_scene(tmp_path, n)
+    retime_scene(scene, speed)
+    return scene
+
+
+def test_compositor_plays_retimed_video_at_its_rate(tmp_path):
+    """Final review: after a scene speed ×2 the plate shows source frame 2f and the sprite 2(f − start)."""
+    from keepframe.analyze.composite import composite_scene
+    n = 12
+    scene = _retimed(tmp_path, n)
+    bars = _bars(n, 64, 48)
+    assert (scene.frames, scene.element("e1").visible) == (7, (1, 6))
+    cache = {}
+    for f in (0, 3, 6, 2):
+        img = composite_scene(scene, tmp_path, f, cache) * 255
+        assert np.abs(img[2, 2] - bars[min(2 * f, n - 1), 0, 0]).max() <= 3, f
+        if f >= 1:
+            assert np.abs(img[20, 14] - bars[2 * (f - 1), 0, 0]).max() <= 6, f
+
+
+@pytest.mark.browser
+def test_retimed_video_frames_match_in_chromium(tmp_path):
+    from keepframe.analyze.composite import composite_scene
+    n = 12
+    scene = _retimed(tmp_path, n)
+    bars = _bars(n, 64, 48)
+    frames = [0, 1, 3, 5, 2]
+    _, imgs = _chromium(scene, tmp_path, frames, tmp_path / "r")
+    for f, img in zip(frames, imgs):
+        assert np.abs(img[2, 2] - bars[2 * f, 0, 0]).max() <= 3, f                 # the plate at twice the speed
+        if f >= 1:
+            assert np.abs(img[20, 14] - bars[2 * (f - 1), 0, 0]).max() <= 6, f     # so is the sprite
+        ref = composite_scene(scene, tmp_path, f) * 255
+        assert np.abs(img[2:46, 2:62] - ref[2:46, 2:62]).max() <= 6, f

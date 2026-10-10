@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from pathlib import Path
 import cv2, numpy as np
 from ..ir.schema import Element, Scene
@@ -81,6 +82,12 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
     roi += warped[..., :3] * opacity
 
 
+def video_source_frame(offset: int, rate: float = 1.0) -> int:
+    """The source frame a video layer shows `offset` frames after its start when it plays at `rate` (the template's
+    seek rounds the same way)."""
+    return int(math.floor(max(offset, 0) * rate + 0.5))
+
+
 def _video_frame(cache: dict, scene_dir: Path, rel: str, size: tuple[int, int], alpha: bool, i: int) -> np.ndarray | None:
     """Frame i of a video asset as float32 0..1 (RGB, or RGBA with `alpha`), None when it cannot be decoded (the
     caller draws the poster). One reader per asset lives in `cache`; a failed one is remembered."""
@@ -107,7 +114,8 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
     cache = {} if cache is None else cache
     bgd = scene.background
     image = bgd.value if bgd.kind == "image" else bgd.poster if bgd.kind == "video" else None
-    video = _video_frame(cache, Path(scene_dir), bgd.value, (W, H), False, f) if bgd.kind == "video" else None
+    video = _video_frame(cache, Path(scene_dir), bgd.value, (W, H), False, video_source_frame(f, bgd.video_rate)) \
+        if bgd.kind == "video" else None
     if video is not None:
         canvas[:] = video
     elif image:
@@ -143,7 +151,8 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
             cache[prem_key] = prem
         if el.canonical.video:   # a video sprite: frame f − start of its video, in the texture's geometry
             th, tw = tex.shape[:2]
-            frame = _video_frame(cache, Path(scene_dir), el.canonical.video, (tw, th), True, f - el.visible[0])
+            frame = _video_frame(cache, Path(scene_dir), el.canonical.video, (tw, th), True,
+                                 video_source_frame(f - el.visible[0], el.canonical.video_rate))
             if frame is not None:
                 prem = frame
                 prem[..., :3] *= prem[..., 3:4]

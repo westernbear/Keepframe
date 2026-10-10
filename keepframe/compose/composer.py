@@ -112,8 +112,8 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
     elif c.texture:
         inner = f'<img src="{_data_uri(scene_dir / c.texture)}" alt="{html.escape(el.id)}">'
         clip = _video_uri(scene_dir, c.video) if c.video else None
-        if clip:   # a video sprite: frame f − start of its WebM; the texture is its poster
-            inner = (f'<video class="vid" muted playsinline preload="auto" data-start="{el.visible[0]}" '
+        if clip:   # a video sprite: frame f − start of its WebM (at its rate); the texture is its poster
+            inner = (f'<video class="vid" muted playsinline preload="auto" data-start="{el.visible[0]}"{_rate(c.video_rate)} '
                      f'poster="{_data_uri(scene_dir / c.texture)}" src="{clip}"></video>')
     else:
         inner = ""
@@ -121,6 +121,11 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
         f'<div class="el" id="el-{html.escape(el.id)}" data-start="{start:.4f}" data-duration="{dur:.4f}" '
         f'data-track-index="{eval_z(el, 0)}" style="{style}">{inner}</div>'
     )
+
+
+def _rate(rate: float) -> str:
+    """The data-rate attribute of a video layer that plays at `rate` (none at 1: today's markup)."""
+    return "" if rate == 1.0 else f' data-rate="{float(rate)!r}"'
 
 
 def _video_uri(scene_dir: Path, rel: str) -> str | None:
@@ -183,7 +188,8 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistr
     elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
     clip = _video_uri(scene_dir, scene.background.value) if scene.background.kind == "video" else None
     if clip:   # under every layer; the stage keeps the poster behind it
-        elements = f'<video class="bg-video" muted playsinline preload="auto" data-start="0" src="{clip}"></video>\n' + elements
+        elements = (f'<video class="bg-video" muted playsinline preload="auto" data-start="0"{_rate(scene.background.video_rate)} '
+                    f'src="{clip}"></video>\n') + elements
     scene_json = _script_json(scene.model_dump(by_alias=True))
     page = TEMPLATE.read_text()
     bgd = scene.background

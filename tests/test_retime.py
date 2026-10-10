@@ -473,3 +473,64 @@ def test_element_timing_reference_extends_scene_and_excludes_content_edits(tmp_p
     assert reference.background == scene.background and reference.element("e1").canonical == scene.element("e1").canonical
     assert edited.background.value == "#ffffff" and edited.element("e1").canonical.color == "#ff0000"
     assert scene.model_dump() == before
+
+
+def _keyed_gradient_scene(ts=(0, 59)):
+    from keepframe.ir.schema import Gradient, GradientKey, GradientStop
+    flat = lambda c: Gradient(stops=[GradientStop(offset=0, color=c), GradientStop(offset=1, color=c)])
+    colours = ["#ff0000", "#00ff00", "#0000ff"] if len(ts) == 3 else ["#ff0000", "#0000ff"]
+    bg = Background(kind="gradient", value="#800080",
+                    gradient_keys=[GradientKey(t=t, gradient=flat(c)) for t, c in zip(ts, colours)])
+    return Scene(id="s1", size=(50, 50), fps=30, frames=60, background=bg, elements=[])
+
+
+@pytest.mark.parametrize("speed, frames, keys", [(2.0, 31, [0, 30]), (0.5, 119, [0, 118])])
+def test_scene_speed_remaps_gradient_keys(speed, frames, keys):
+    """Final review: an animated gradient follows a scene speed edit; its last key still lands on the last frame."""
+    from keepframe.ir.gradient import gradient_at
+    scene = _keyed_gradient_scene()
+    retime_scene(scene, speed)
+    assert scene.frames == frames and [k.t for k in scene.background.gradient_keys] == keys
+    assert gradient_at(scene.background, scene.frames - 1).stops[0].color == "#0000ff"
+    assert gradient_at(scene.background, 0).stops[0].color == "#ff0000"
+    Background.model_validate(scene.background.model_dump())               # still sorted and unique
+
+
+def test_scene_speed_dedupes_collapsed_gradient_keys():
+    scene = _keyed_gradient_scene((0, 1, 59))
+    retime_scene(scene, 4.0)
+    keys = scene.background.gradient_keys
+    assert [k.t for k in keys] == [0, 15] and keys[0].gradient.stops[0].color == "#00ff00"   # the later key wins
+
+
+def _video_el(eid="v1", visible=(10, 29)):
+    return Element(id=eid, kind="sprite", visible=visible, canonical=Canonical(
+        width=10, height=10, texture=f"assets/{eid}.png", video=f"assets/{eid}.video.webm"))
+
+
+def test_scene_speed_sets_video_playback_rate():
+    """Final review: a video background and a video sprite play at the edited speed; stills carry no rate."""
+    scene = _scene()
+    scene.background = Background(kind="video", value="assets/background.webm", poster="assets/background.png")
+    scene.elements.append(_video_el())
+    retime_scene(scene, 2.0)
+    assert scene.background.video_rate == 2.0 and scene.element("v1").canonical.video_rate == 2.0
+    assert scene.element("e1").canonical.video_rate == 1.0
+    retime_scene(scene, 0.5)
+    assert scene.background.video_rate == 1.0 and scene.element("v1").canonical.video_rate == 1.0
+    dumped = scene.model_dump_json()
+    assert "video_rate" not in dumped                                       # rate 1 never reaches the scene JSON
+
+
+def test_element_speed_sets_only_that_video_rate():
+    scene = _scene()
+    scene.background = Background(kind="video", value="assets/background.webm")
+    scene.elements.append(_video_el())
+    apply_timing = retime.apply_timing
+    apply_timing(scene, [Target(element="v1", property="timing", speed=2.0, delay=0.2)], None)
+    v1 = scene.element("v1")
+    assert v1.canonical.video_rate == 2.0 and v1.visible == (16, 26) and scene.background.video_rate == 1.0
+    assert '"video_rate":2.0' in v1.model_dump_json() and "video_rate" not in scene.background.model_dump_json()
+    still = _el()
+    retime_element(still, 2.0, 0, 10)
+    assert "video_rate" not in still.model_dump_json()

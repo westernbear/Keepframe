@@ -283,6 +283,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.canonical.texture_pad = 0.0
         if el.canonical.video and t.property in ("color", "texture", "model"):
             el.canonical.video = None   # the edited still (or model) replaces the clip: video is never recoloured (R55)
+            el.canonical.video_rate = 1.0
         el.provenance = "manual"
     return out
 

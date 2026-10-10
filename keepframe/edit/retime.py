@@ -9,14 +9,15 @@ if TYPE_CHECKING:
 MAX_SCENE_SECONDS = 120
 
 # ponytail: retime keys and the visible range; z and raw measurements stay untouched (raw is the reference's L0).
+# Video layers keep their clip and play it at `video_rate` (the speeds multiply); an animated gradient's keys move.
 
 
 def _remap(t: int, speed: float, delay_frames: int, anchor: int) -> int:
     return int(round(anchor + (t - anchor) / speed)) + delay_frames
 
 
-def _dedupe(keys: list[Keyframe]) -> list[Keyframe]:
-    by_t: dict[int, Keyframe] = {}
+def _dedupe(keys: list) -> list:
+    by_t: dict = {}
     for k in keys:
         by_t[k.t] = k            # collapsed keys: the later key wins
     return [by_t[t] for t in sorted(by_t)]
@@ -33,11 +34,17 @@ def retime_element(el: Element, speed: float, delay_frames: int, anchor: int) ->
     for name, track in el.tracks.items():
         el.tracks[name] = Track(keys=_dedupe([k.model_copy(update={"t": _remap(k.t, speed, delay_frames, anchor)}) for k in track.keys]))
     el.visible = (start, max(start, end))
+    if el.canonical.video:
+        el.canonical.video_rate *= speed
 
 
 def retime_scene(scene: Scene, speed: float) -> None:
     for el in scene.elements:
         retime_element(el, speed, 0, 0)
+    bg = scene.background
+    bg.gradient_keys = _dedupe([k.model_copy(update={"t": _remap(k.t, speed, 0, 0)}) for k in bg.gradient_keys])
+    if bg.kind == "video":
+        bg.video_rate *= speed
     scene.frames = math.ceil((scene.frames - 1) / speed) + 1
     _retime_ui(scene, speed, 0, 0)
 

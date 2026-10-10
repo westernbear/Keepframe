@@ -117,10 +117,11 @@ const gradientCss = (g) => {
   if (g.kind === 'radial') return `radial-gradient(circle ${num(g.radius * Math.hypot(SCENE.size[0], SCENE.size[1]) / 2)}px at ${num(g.center[0] * 100)}% ${num(g.center[1] * 100)}%, ${stops})`;
   return `linear-gradient(${num(g.angle)}deg, ${stops})`;
 };
-// Video layers seek to the middle of frame f − start, then wait for `seeked` and one animation frame (headless
-// Chromium never runs requestVideoFrameCallback); a seek to the frame already shown is skipped. A seek that errors
+// Video layers seek to the middle of source frame round((f − start) · rate) (composite.video_source_frame; rate from
+// data-rate, else 1), then wait for `seeked` and one animation frame (headless Chromium never runs
+// requestVideoFrameCallback); a seek to the frame already shown is skipped. A seek that errors
 // or does not land within __seekTimeoutMs (20 s) resolves false: __seek then returns {error: 'video_seek_failed'}.
-const VIDEOS = [...document.querySelectorAll('video[data-start]')].map(v => ({v, start: +v.dataset.start, t: -1}));
+const VIDEOS = [...document.querySelectorAll('video[data-start]')].map(v => ({v, start: +v.dataset.start, rate: +(v.dataset.rate || 1), t: -1}));
 const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
   if (v.readyState >= 2 || v.error) return resolve();
   v.addEventListener('loadeddata', resolve, {once: true});
@@ -129,7 +130,7 @@ const videoReady = VIDEOS.map(({v}) => new Promise(resolve => {
 const seekVideo = (item, f) => new Promise(resolve => {
   const v = item.v;
   if (v.error || v.readyState < 1) return resolve(true);   // never loaded: the poster stays (as in numpy)
-  const mid = (Math.max(f - item.start, 0) + 0.5) / FPS;
+  const mid = (Math.floor(Math.max(f - item.start, 0) * item.rate + 0.5) + 0.5) / FPS;
   const t = Number.isFinite(v.duration) ? Math.min(mid, v.duration) : mid;   // past its end: the last frame
   if (t === item.t) return resolve(true);
   item.t = t;

@@ -181,6 +181,8 @@ class Canonical(BaseModel):
     style: Optional[TextStyle] = None
     texture_meta: Optional[TextureMeta] = None
     video: Optional[str] = None
+    # A video sprite's playback rate (speed edits): frame f shows source frame round((f − start) · rate). Absent when 1.
+    video_rate: float = Field(default=1.0, gt=0.0, allow_inf_nan=False, exclude_if=lambda v: v == 1.0)
     # Styled text textures carry their effects past the box (R41): the texture covers the box grown by this many
     # box pixels on every side.
     texture_pad: float = Field(default=0.0, ge=0.0, le=512.0, exclude_if=lambda v: not v)   # absent when 0
@@ -246,6 +248,8 @@ class Background(BaseModel):
     gradient_keys: list[GradientKey] = Field(default_factory=list)
     poster: Optional[str] = None
     synthetic: Optional[str] = None
+    # A video background's playback rate (scene speed edits), as Canonical.video_rate. Absent when 1.
+    video_rate: float = Field(default=1.0, gt=0.0, allow_inf_nan=False, exclude_if=lambda v: v == 1.0)
 
     @model_validator(mode="after")
     def _gradient_fields(self):
