@@ -10,16 +10,15 @@ from scipy.stats import spearmanr
 
 from keepframe.edit.agent import edit
 from keepframe.edit.apply import apply_edit
-from keepframe.edit.intent import Intent, Target, plan
+from keepframe.edit.intent import Intent, Target
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb_to_lab
 from keepframe.ir.gradient import render_gradient
 from keepframe.ir.schema import (Background, Canonical, Element, Gradient, GradientKey, GradientStop, Keyframe, Scene,
                                  Track)
-from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
+from keepframe.ir.store import current_scene, init_project, scene_dir
 from keepframe.render.renderer import RenderResult
 from keepframe.verify.verifier import VerifyReport
 
-pytestmark = pytest.mark.skip(reason="Task 12R: tint is the agent's explicit mode (Target.mode), no forced choice/cancel; not re-run (user)")
 NAVY = "#1a2a6c"
 W, H = 160, 90
 
@@ -107,46 +106,6 @@ def _intent():
     return Intent(targets=[Target(property="background", value=NAVY)])
 
 
-@pytest.mark.parametrize("kind", ["image", "gradient", "video", "color"])
-def test_background_edit_on_picture_needs_choice(tmp_path, monkeypatch, kind):
-    root, sd, scene = _project(tmp_path, kind, monkeypatch)
-    built = plan(scene, _intent())
-    if kind == "color":
-        assert not built.conflicts
-        return
-    cid, choices = ("background_video", ["replace", "cancel"]) if kind == "video" else ("background_kind", ["tint", "replace", "cancel"])
-    assert len(built.conflicts) == 1
-    c = built.conflicts[0]
-    assert (c.id, c.element, c.choices) == (cid, "background", choices) and c.reason
-    before = _assets(sd)
-    res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent())
-    assert res.status == "needs_choice" and res.plan.conflicts[0].id == cid
-    assert current_scene(root, "s1")[1].id == "v1" and _assets(sd) == before
-
-
-def test_cancel_creates_no_version_or_assets(tmp_path, monkeypatch):
-    root, sd, scene = _project(tmp_path, "image", monkeypatch)
-    monkeypatch.setattr("keepframe.edit.agent.compose", lambda *_a, **_k: pytest.fail("cancel must not compose"))
-    monkeypatch.setattr("keepframe.edit.agent.apply_edit", lambda *_a, **_k: pytest.fail("cancel must not apply"))
-    before, files = _assets(sd), sorted(p.relative_to(root) for p in root.rglob("*"))
-    for choices in ({"background_kind": "cancel"}, {"background": "cancel"}):
-        res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent(), choices=choices)
-        assert res.status == "cancelled" and res.version is None and res.error is None
-    assert [v.id for v in load_project(root).versions] == ["v1"]
-    assert _assets(sd) == before and sorted(p.relative_to(root) for p in root.rglob("*")) == files
-    assert current_scene(root, "s1")[0] == scene
-
-
-def test_replace_sets_color(tmp_path, monkeypatch):
-    root, sd, scene = _project(tmp_path, "image", monkeypatch)
-    before = _assets(sd)
-    res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent(), choices={"background": "replace"})
-    assert res.status == "done" and res.version.id == "v2", res
-    edited, _ = current_scene(root, "s1")
-    assert edited.background == Background(kind="color", value=NAVY, confidence=1.0)
-    assert edited.elements == scene.elements and _assets(sd) == before
-
-
 def _ab_miss(rgb, target=NAVY):
     mean = srgb_to_lab(rgb.astype(np.float32)).reshape(-1, 3).mean(0)
     return float(delta_e(mean[1:], _lab_target(target)[1:]))
@@ -180,7 +139,8 @@ def test_tint_writes_new_asset_and_keeps_original(tmp_path, monkeypatch):
     original = (sd / "assets" / "background.png").read_bytes()
     (sd / "assets" / "background.tint1.png").write_bytes(b"an earlier asset of the same name")
     before = _assets(sd)
-    res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent(), choices={"background": "tint"})
+    res = edit(root, "s1", "make the background navy", confirm=True,
+               intent=Intent(targets=[Target(property="background", value=NAVY, mode="tint")]))
     assert res.status == "done" and res.version.id == "v2", res
     edited, _ = current_scene(root, "s1")
     bg = edited.background
@@ -237,22 +197,11 @@ def _tint_gradient_pure(g):
     return _tint_gradient(g, _lab_target(), image_stats(render_gradient(g, W, H)))
 
 
-def test_tint_video_fails_soft_until_task_13(tmp_path, monkeypatch):
-    root, sd, scene = _project(tmp_path, "video", monkeypatch)
-    before = _assets(sd)
-    res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent(), choices={"background": "tint"})
-    assert res.status == "failed" and res.error == "tint_unavailable"
-    assert current_scene(root, "s1")[1].id == "v1" and _assets(sd) == before
-
-
-def test_apply_cancel_and_colour_background_tint(tmp_path):
-    """apply_edit alone: cancel leaves the background; tint on a flat colour is the colour itself."""
+def test_colour_background_tint_is_the_colour(tmp_path):
+    """apply_edit alone: tint on a flat colour background is the colour itself."""
     sd = tmp_path / "s1"
-    scene = _scene(_background("image", sd))
-    out = apply_edit(scene, sd, [Target(property="background", value=NAVY)], {"background": "cancel"}, None)
-    assert out.background == scene.background
     flat = _scene(Background(kind="color", value="#ffffff"))
-    out = apply_edit(flat, sd, [Target(property="background", value=NAVY)], {"background": "tint"}, None)
+    out = apply_edit(flat, sd, [Target(property="background", value=NAVY, mode="tint")], {}, None)
     assert out.background == Background(kind="color", value=NAVY, confidence=1.0)
 
 
@@ -345,31 +294,3 @@ def test_balance_is_a_small_correction(kind, target):
     miss = lambda lab: float(np.hypot(*(lab[:, 1:].mean(0) - t[1:])))
     print(f"{kind} → {target}: |shift| {np.hypot(*stats.shift):.2f}, mean (a, b) miss {miss(out):.2f} (pure D5 {miss(pure):.2f})")
     assert miss(out) <= miss(pure) + 1e-6
-
-
-def test_video_background_offers_replace_or_cancel(tmp_path, monkeypatch):
-    """R54: until Task 13, a video background is not offered a tint."""
-    root, sd, scene = _project(tmp_path, "video", monkeypatch)
-    c = plan(scene, _intent()).conflicts
-    assert [(x.id, x.element, x.choices) for x in c] == [("background_video", "background", ["replace", "cancel"])]
-    res = edit(root, "s1", "make the background navy", confirm=True, intent=_intent(), choices={"background_video": "replace"})
-    assert res.status == "done" and current_scene(root, "s1")[0].background.kind == "color"
-
-
-@pytest.mark.parametrize("kind,choice,want", [
-    ("image", None, "배경에 #1a2a6c 적용 — 방식을 고르세요. 트랙은 유지합니다."),
-    ("image", "tint", "배경에 #1a2a6c 색을 입힙니다(밝고 어두운 결 유지). 트랙은 유지합니다."),
-    ("image", "replace", "배경을 #1a2a6c 단색으로 바꿉니다. 트랙은 유지합니다."),
-    ("color", None, "배경색을 #1a2a6c로 바꿉니다. 트랙은 유지합니다.")])
-def test_background_summary_follows_the_choice(tmp_path, monkeypatch, kind, choice, want):
-    """Review fix 4: before a choice the summary asks how; afterwards it says what was done; cancel says so."""
-    from keepframe.edit.intent import describe
-    root, sd, scene = _project(tmp_path, kind, monkeypatch)
-    assert describe(_intent().targets, scene=scene, choices={"background": choice} if choice else None) == want
-    preview = edit(root, "s1", "make the background navy", intent=_intent())
-    assert preview.summary == describe(_intent().targets, scene=scene)
-    if kind == "image":
-        done = edit(root, "s1", "x", confirm=True, intent=_intent(), choices={"background_kind": choice or "cancel"})
-        assert done.summary == (want if choice else "취소했습니다. 바뀐 것은 없습니다.")
-        if choice:
-            assert load_project(root).versions[-1].note.startswith(want)
