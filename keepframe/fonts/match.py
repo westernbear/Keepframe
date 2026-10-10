@@ -18,9 +18,10 @@ baseline.
   samples: tracking and weight change the width as much as the family does.)
 - Fit per family, coordinate descent: weight (golden section on wght, on a WEIGHT_STEP grid, seeded by the
   stroke-ratio calibration; static families try each file), tracking (least squares on the glyph positions, else a
-  1-D search −0.06…0.12 em step 0.01), size (cap height, then ±4 %), shear (−12…12° step 4, then ±2°; stored only
-  when ≥ 4°). Every kept family gets the first round (past MIN_FITS, those whose coarse render trails the best by
-  PRUNE are not fitted); the best ROUND2_K the second, and a failing second round keeps the first's fit.
+  1-D search −0.06…0.12 em step 0.01), size (cap height, then ±4 %), shear (−12…12° step 4, then ±2°; kept only
+  when it beats none by SHEAR_GAIN, stored only when ≥ 4°). Every kept family gets the first round (past MIN_FITS,
+  those whose coarse render trails the best by PRUNE are not fitted); the best ROUND2_K the second, and a failing
+  second round keeps the first's fit.
 - A best family outside SANS (geometric, neo-grotesque, humanist) must beat the best SANS family by SANS_MARGIN, else
   that one wins; stage 1's best SANS family is always kept and fitted.
 - Confidence 1.0 when the best score ≥ 0.80 and leads the next by ≥ 0.02, else 0.5.
@@ -91,6 +92,7 @@ DUP_FITS = 3                     # a repeated text whose own prefilter puts the 
 SHEARS = (-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0)
 SHEAR_FINE = 2.0
 SHEAR_MIN = 4.0                  # a smaller shear is stored as 0
+SHEAR_GAIN = 0.02                # a shear is kept only when it beats none (same fit) by this score
 SIZE_STEPS = (0.96, 0.98, 1.02, 1.04)
 REGISTER = (4, 3)                # candidates are registered on the observation within this many working px (x, y)
 CONF_TOP, CONF_MARGIN = 0.80, 0.02
@@ -1413,6 +1415,10 @@ class _Search:
             if v > sc:
                 sc, best_k = v, kd
         shear = best_k
+        if shear:
+            v = ft.score(b, s, 0.0)
+            if sc - v < SHEAR_GAIN:
+                sc, shear = v, 0.0
         if obs.positional and not whole:   # tracking follows the final size and shear
             tv = ft.tracking_ls(lay, s, shear, t)
             if tv is not None and abs(tv - t) > 0.002:
