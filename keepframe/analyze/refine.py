@@ -94,9 +94,11 @@ def _chunk_for_costs(costs: np.ndarray, budget: int) -> int:
 
 
 def _frame_plan(N: int, h: int, w: int, active_counts: np.ndarray, dev: str) -> tuple[int, bool]:
-    """Frames per shot and whether to checkpoint sprite warps. CPU stays one shot."""
-    if N <= 1 or not str(dev).startswith("cuda"):
+    """Frames per shot and whether to checkpoint sprite warps. CPU stays one shot, checkpointed."""
+    if N <= 1:
         return N, False
+    if not str(dev).startswith("cuda"):
+        return N, True
     free, _ = _cuda_mem_info()
     budget = int(free * _VRAM_FRAC)
     dense_costs = _frame_costs(h, w, active_counts, False)
@@ -106,7 +108,7 @@ def _frame_plan(N: int, h: int, w: int, active_counts: np.ndarray, dev: str) -> 
 
 
 def _frame_chunk(N: int, h: int, w: int, n_sprites: int, dev: str) -> int:
-    """How many dense frames fit in free VRAM. CPU and tiny clips stay one shot."""
+    """How many dense frames fit in free VRAM. CPU (checkpointed) and tiny clips stay one shot."""
     return _frame_plan(N, h, w, np.full(N, n_sprites), dev)[0]
 
 
