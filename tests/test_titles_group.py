@@ -80,3 +80,21 @@ def test_movers_and_solid_members_are_not_fragments():
     assert fragment("o1", {**p, "mover": True}, SIZE) is None
     assert fragment("o1", {**p, "video": "stages/m1.video.webm"}, SIZE) is None
     assert fragment("t1", p, SIZE).text == "x"
+
+
+def test_sprite_does_not_bridge_separate_texts():
+    # "Sale" and "Today" are too far apart to join (gap 3 lines); a bullet between them is near both
+    f = frags(("t1", prop("Sale", 100, 80)), ("o1", prop("", 240, 30, kind="sprite")), ("t2", prop("Today", 350, 100)))
+    assert keys(group_fragments(f, [], FPS)) == [["o1"], ["t1"], ["t2"]]
+    assert keys(group_fragments(f, ["Sale", "Today"], FPS)) == [["o1"], ["t1"], ["t2"]]
+
+
+def test_real_solid_member_keys_are_not_fragments():
+    p = prop("", 0, 30, kind="sprite")
+    assert fragment("o7", p, SIZE, members={"o7"}) is None and fragment("o8", p, SIZE, members={"o7"})
+
+
+def test_concurrent_line_at_same_place_is_not_succession():
+    # same place, overlapping in time, but not side by side (gap < 0 passes) -> keep onset gap beyond ONSET_S
+    f = frags(("t1", prop("Hello", 100, 100, 0, 40)), ("t2", prop("Hello", 100, 100, 35, 80)))
+    assert len(group_fragments(f, [], FPS)) == 2

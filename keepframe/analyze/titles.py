@@ -24,9 +24,10 @@ class Fragment:
     rot: float                                             # median rotation, degrees
 
 
-def fragment(key: str, p: dict, size) -> Fragment | None:
-    """None for movers, solids and video sprites (and anything without a visible frame)."""
-    if key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("kind") not in ("text", "sprite"):
+def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
+    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them) and video
+    sprites (and anything without a visible frame)."""
+    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("kind") not in ("text", "sprite"):
         return None
     raw, canon = p["raw"], p["canon"]
     ch, cw = canon.shape[:2]
@@ -102,12 +103,14 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
         side = gap <= GAP_H * h and abs(a.first - b.first) / fps <= ONSET_S and dv <= MOTION_PX
     else:
         side = False
-    if not side:   # successive in place: the later one sits inside the earlier one's box and repeats part of its string
+    if not side:   # successive in place: the later one starts after the earlier one ends, inside its box, repeating part of its string
         e, l = (a, b) if a.last <= b.first else (b, a)
+        if l.first < e.last:
+            return False
         be, bl = e.boxes[e.last], l.boxes[l.first]
         w, hh = min(be[2], bl[2]) - max(be[0], bl[0]), min(be[3], bl[3]) - max(be[1], bl[1])
         small = min(np.prod(_size(be)), np.prod(_size(bl)))
-        if not (max(0, l.first - e.last) / fps <= SUCCESSION_S and w > 0 and hh > 0 and small > 0 and w * hh / small >= CONTAIN
+        if not ((l.first - e.last) / fps <= SUCCESSION_S and w > 0 and hh > 0 and small > 0 and w * hh / small >= CONTAIN
                 and partial_ratio(a.text, b.text) >= SUBSTRING):
             return False
     if strings:   # ponytail: a text-less sprite cannot be checked against the lines; the geometry gates vouch for it
@@ -118,7 +121,8 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
 
 
 def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> list[list[Fragment]]:
-    """Connected components of `same_title` (union-find), in input order."""
+    """Texts join through text-text `same_title` links only (union-find); a text-less sprite joins the one text group it
+    qualifies for, and no group when it qualifies for several (it would bridge separate titles). Input order."""
     parent = list(range(len(frags)))
 
     def find(i):
@@ -126,10 +130,17 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
             parent[i] = parent[parent[i]]; i = parent[i]
         return i
 
-    for i in range(len(frags)):
-        for j in range(i + 1, len(frags)):
+    texts = [i for i, f in enumerate(frags) if not _sprite(f)]
+    for n, i in enumerate(texts):
+        for j in texts[n + 1:]:
             if same_title(frags[i], frags[j], strings, fps):
                 parent[find(j)] = find(i)
+    roots = {find(i) for i in texts}
+    for i, f in enumerate(frags):
+        if _sprite(f):
+            near = {find(j) for j in texts if same_title(f, frags[j], strings, fps)}
+            if len(near) == 1:
+                parent[i] = near.pop()
     groups: dict[int, list[Fragment]] = {}
     for i, f in enumerate(frags):
         groups.setdefault(find(i), []).append(f)
