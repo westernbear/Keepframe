@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import cv2, numpy as np
-from ..ir.schema import FONT_FAMILY_RE, Canonical, DEFAULTS, Element, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
+from ..ir.schema import FONT_FAMILY_RE, Canonical, DEFAULTS, Element, GlyphReveal, Keyframe, PROPS, Project, Scene, TextStyle, TextureMeta, Track, UIModel, Version
 from ..ir.store import current_scene, init_project_scenes, load_project, new_version, _save_project, scene_dir as _scene_dir
 from ..review.overlay import snapshot_from_stages
 from ..log import describe, get, scrub_paths
@@ -671,7 +671,8 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", video=video,
                               text=p.get("text"), font=_pin_font(p.get("font"), sd, registry), color=p.get("color"),
                               style=TextStyle(**p["style"]) if p.get("style") else None,
-                              texture_meta=TextureMeta(**meta) if meta else None)
+                              texture_meta=TextureMeta(**meta) if meta else None,
+                              glyphs=GlyphReveal(**p["glyphs"]) if p.get("glyphs") else None)
         elements.append(Element(id=eid, kind=p["kind"], canonical=canonical, visible=(first, last), tracks=tracks,
                                 z=Track(keys=[Keyframe(t=0, v=p.get("z", 0))]), raw=f"assets/{eid}_raw.npz", fit_error=fe,
                                 pending_asset=p.get("pending_asset")))

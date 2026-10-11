@@ -1,20 +1,22 @@
 """Title fragments: text tracks, junk-OCR shape tracks and glyph-sized sprites that belong to one title, grouped by
 geometry, colour, onset and motion (no VLM needed; with VLM strings both texts must sit on one common line), and
 merged into one text prop over the full string: its plane tracked by homography, its string re-read by OCR and
-reconciled with the VLM's."""
+reconciled with the VLM's; a title whose glyphs come in one by one gets per-glyph delays (D15)."""
 from __future__ import annotations
 import math, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
 from ..ir.colour import delta_e, rgb8_to_hex, srgb8_to_lab
-from ..ir.schema import DEFAULTS, PROPS
-from ..ir.tracks import is_tilted, projective_matrix
+from ..ir.schema import DEFAULTS, PROPS, GlyphReveal
+from ..ir.tracks import glyph_edges, is_tilted, projective_matrix
 from ..log import describe, get
 from .background import foreground_mask_plate
+from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
 from .text import _glyph_core_mask
+from .textstyle import glyph_centres
 
 log = get("keepframe.analyze")
 
@@ -401,6 +403,92 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             "plane_fit_px": fit_props(H0, wh, size)[1], "text_source": source, "text_unverified": unverified}
 
 
+# --- per-glyph reveal (D15) ---------------------------------------------------------------------------------------
+
+GLYPHS_FAILED = "glyphs_failed"   # fail-soft code (R52): a title left in box mode
+GLYPH_SPREAD, GLYPH_ON, GLYPH_RAMP, GLYPH_S = 3, 0.5, (0.1, 0.9), 3.0   # onset spread (frames), onset and ramp levels, window (s)
+
+
+def _crossing(a, level: float) -> float:
+    """The first time (in frames, linear between frames) the series `a` reaches `level`; inf when it never does."""
+    hit = np.flatnonzero(a >= level)
+    if not len(hit):
+        return math.inf
+    i = int(hit[0])
+    return float(i) if i == 0 else i - 1 + float((level - a[i - 1]) / (a[i] - a[i - 1]))
+
+
+def glyph_reveal(p: dict, frames, plate, size, text: str, *, fps: float = 30.0) -> dict | None:
+    """The per-glyph reveal of a text prop (a GlyphReveal dump), or None (box mode) when its glyph onsets spread
+    < GLYPH_SPREAD frames or a glyph never comes in. Over the prop's first 3 s, glyph i's opacity at f is the
+    rectified (I_f − B_f) projected onto the reference over the ink of its column: its onset is the first frame
+    (interpolated) at ≥ 0.5, the ramp the median 10→90 % time over 0.8 (a linear ramp's 0→100 %), its delay the
+    onset less half the ramp, after the prop's first frame. The ink is the canon α in the title's colour at cf
+    (`_on_colour`: a sprite under it at cf is not the title); the reference is (I_cf − B_cf), as the per-pixel
+    median of ≤ 9 frames from cf to the window's end (a glyph still coming in at cf, a sprite crossing it, go). The
+    glyph centres are `glyph_centres` on that ink, spread uniformly over its extent when the glyphs cannot be told
+    apart. ponytail: opacity stagger only; per-glyph slides are not reproduced (upgrade: a per-glyph offset track);
+    delays are ≥ 0, so a glyph already in on the first frame starts there at α 0 (upgrade: delays down to −ramp)."""
+    plate = as_plate(plate)
+    canon, raw, cf, first = p["canon"], fill_gaps(p["raw"]), int(p["cf"]), int(p["first"])
+    end = min(int(p["last"]), first + round(GLYPH_S * fps))
+    h, w = canon.shape[:2]
+    L = np.array([[1.0, 0.0, -w / 2], [0.0, 1.0, -h / 2], [0.0, 0.0, 1.0]])
+
+    def rectified(f):   # (I_f, B_f) in canonical space
+        q = {**DEFAULTS, **{k: float(v) for k, v in zip(PROPS, raw[f]) if np.isfinite(v)}, "sky": 0.0}
+        M = projective_matrix(q, size) @ L
+        return [cv2.warpPerspective(np.ascontiguousarray(img), M, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+                for img in (frames[f], np.broadcast_to(plate.at(f), frames[f].shape))]
+
+    def diff(f):
+        I, B = rectified(f)
+        return I.astype(np.float32) - B.astype(np.float32)
+
+    ink = (canon[..., 3] > 127) & _on_colour(canon[..., :3], rectified(cf)[1])[1]
+    cols, n = np.flatnonzero(ink.any(0)), len("".join(text.split()))
+    if n < 2 or not len(cols):
+        return None
+    x = glyph_centres(ink.astype(np.float32), text)
+    if x is None:
+        x = cols[0] + (np.arange(n) + 0.5) * (cols[-1] + 1 - cols[0]) / n
+    x = np.asarray(x, float) / w
+    if np.any(np.diff(x) <= 0):   # ponytail: one line, columns cannot cut several; upgrade path: per-glyph boxes
+        return None
+    edges = glyph_edges(GlyphReveal(x=x.tolist(), delays=[0.0] * n), w)
+    ref = np.median([diff(f) for f in sorted({*np.linspace(cf, max(cf, end), 9).round().astype(int)})], axis=0) * ink[..., None]
+
+    def columns(d):   # Σ d·ref over each glyph's column
+        c = np.concatenate([[0.0], np.cumsum((d * ref).sum((0, 2)))])
+        return c[edges[1:]] - c[edges[:-1]]
+
+    den = np.maximum(columns(ref), 1e-6)
+    a = np.array([columns(diff(f)) / den for f in range(first, end + 1)])
+    on = np.array([_crossing(a[:, i], GLYPH_ON) for i in range(n)])
+    if not np.isfinite(on).all() or on.max() - on.min() < GLYPH_SPREAD:
+        return None
+    rise = np.array([_crossing(a[:, i], GLYPH_RAMP[1]) - _crossing(a[:, i], GLYPH_RAMP[0]) for i in range(n)])
+    rise = rise[np.isfinite(rise)]
+    ramp = float(np.clip(np.median(rise) / (GLYPH_RAMP[1] - GLYPH_RAMP[0]) if len(rise) else 1.0, 1.0, 120.0))
+    return GlyphReveal(x=x.tolist(), delays=np.maximum(on - ramp / 2, 0.0).round(2).tolist(), ramp=round(ramp, 2)).model_dump()
+
+
+def _glyph_mode(p: dict, frames, plate, size, fps) -> bool:
+    """`glyph_reveal` into p["glyphs"]; over the stagger window the glyph α carries the reveal (R14): opacity keeps
+    the title's own (at cf) and reveal is 1. ponytail: a title that also fades as a whole while its glyphs come in
+    holds its cf opacity there; upgrade path: divide the measured opacity by the mean glyph α."""
+    g = glyph_reveal(p, frames, plate, size, p.get("text") or "", fps=fps)
+    if g is None:
+        return False
+    p["glyphs"], raw = g, p["raw"]
+    window = slice(p["first"], min(p["last"], p["first"] + math.ceil(max(g["delays"]) + g["ramp"])) + 1)
+    for j, v in ((PROPS.index("opacity"), raw[p["cf"], PROPS.index("opacity")]), (PROPS.index("reveal"), 1.0)):
+        if raw.shape[1] > j:
+            col = raw[window, j]
+            col[np.isfinite(col)] = v
+    return True
+
+
 def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> bool:
     """D12 on a single text track at its settled frame: the quad of its glyph mask turns ≥ 2° or converges ≥ 0.8°.
     A failure leaves the track on the text_props path and `notes` one message per phase."""
@@ -418,9 +506,10 @@ def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> 
 def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) -> list[str]:
     """In place: each title's fragments (`group_fragments`, a group with a text track) and each tilted single text
     track (D12) become one text prop `title_<first text key>` (`merge_title`), the fragments under its `fragments`;
-    a VLM string within ratio 0.8 of an unmerged text corrects its OCR typos. A title that cannot be merged keeps its
-    fragments, each marked `merge_note` = MERGE_FAILED; a failure of the whole phase keeps every fragment and adds a
-    note. `members`: the solid members' keys (never fragments). Returns the new keys."""
+    a VLM string within ratio 0.8 of an unmerged text corrects its OCR typos; a merged title or a revealed text whose
+    glyph onsets spread gets `glyphs` (`_glyph_mode`; a failure leaves it in box mode and adds one note). A title
+    that cannot be merged keeps its fragments, each marked `merge_note` = MERGE_FAILED; a failure of the whole phase
+    keeps every fragment and adds a note. `members`: the solid members' keys (never fragments). Returns the new keys."""
     t0 = time.perf_counter()
     done: list[str] = []
     try:
@@ -452,6 +541,16 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
                 best = max(strings, key=lambda s: _ratio(s, p["text"]))
                 if best != p["text"] and _ratio(best, p["text"]) >= SUBSTRING:
                     p["text"], p["text_source"] = best, "vlm"
+        t1, glyphs = time.perf_counter(), 0
+        for k, p in props.items():   # D15: a merged title or a revealed text whose glyphs come in one by one
+            if k in done or (not k.startswith("_") and isinstance(p, dict) and p.get("kind") == "text" and p.get("reveal")):
+                try:
+                    glyphs += _glyph_mode(p, frames, plate, size, fps)
+                except Exception as e:   # fail soft: box mode
+                    log.warning("glyph reveal failed for %s: %s", k, describe(e, trace=True))
+                    if (note := f"glyph reveal failed ({GLYPHS_FAILED})") not in notes:
+                        notes.append(note)
+        log.info("titles glyphs %.2fs glyph_mode=%s", time.perf_counter() - t1, glyphs)
     except Exception as e:   # fail soft: every fragment stays
         log.warning("titles merge failed: %s", describe(e, trace=True))
         notes.append(f"title merge failed ({MERGE_FAILED})")
