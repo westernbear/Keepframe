@@ -6,7 +6,7 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
 from keepframe.analyze.reading import parse_reading
-from keepframe.analyze.titles import _reconcile, _title_contrast, _vlm_line, fragment, merge_title
+from keepframe.analyze.titles import _glyph_mask, _reconcile, _title_contrast, _vlm_line, fragment, merge_title
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import PROPS, Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
@@ -423,3 +423,13 @@ def test_side_by_side_words_keep_the_whole_string():
     out = merge_title([fragment(k, p, (640, 360)) for k, p in props.items()], props, frames, plate, ocr=None, strings=[],
                       size=(640, 360), fps=30.0)
     assert out["text"] == "New Arrivals", out["text"]
+
+
+def test_glyph_mask_leaves_out_a_solid_blob():
+    """I2 (seed 6): a square in the title's colour inside its box is no glyph (no stroke is that thick)."""
+    frames, plate, (b0,) = _words(["Sale"], gap=0)
+    frames[:, 160:220, b0[2] + 10:b0[2] + 70] = 32   # a 60 px square of the title's colour beside it
+    x0, y0, x1, y1 = b0[0], 160, b0[2] + 70, 220
+    p = _box_prop("Sale", (x0, y0, x1, y1), frames, 0, 7, 8)
+    m = _glyph_mask([fragment("t1", p, (640, 360))], frames, plate, 0)
+    assert not m[190, b0[2] + 40] and m[b0[1]:b0[3], b0[0]:b0[2]].sum() > 0.5 * (frames[0, b0[1]:b0[3], b0[0]:b0[2], 0] < 100).sum()

@@ -186,6 +186,7 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
 
 MERGE_FAILED = "merge_failed"   # fail-soft code (R52): a title left as its fragments
 CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 0.9, 0.8, 0.02, 2.0, 0.3
+BLOB = 0.2   # I2: half a stroke is under this many line heights (bold display faces ≈ 0.06)
 TILT_ROT, TILT_CONVERGE, TILT_LEN = 2.0, 0.8, 5.0   # D12 with R8 (a yawed title converges only ≈ cap·tan(ry)/d)
 LEN_TOL = 0.25   # a VLM line replaces an OCR string only within 25 % of its compact length (final review I2)
 
@@ -323,12 +324,18 @@ def _still(group: list[Fragment], frames, cf: int, box) -> np.ndarray:
 
 def _glyph_mask(group: list[Fragment], frames, B, cf: int) -> np.ndarray:
     """The union glyph mask at cf (frame-sized): `_on_colour` on `_still`, inside the members' union box padded by
-    0.1·h."""
+    0.1·h, less the solid blobs in it (I2: seed 6's square in the title's colour): pixels within BLOB·h of a pixel
+    over BLOB·h deep inside the mask, where no stroke is that thick.
+    ponytail: a blob is cut where it overlaps glyphs too; upgrade path: the other props' alpha at cf."""
     box = _box(group, cf, frames.shape[1:3])
     m = np.zeros(frames.shape[1:3], bool)
     if box[2] > box[0] and box[3] > box[1]:
         behind = np.ascontiguousarray(np.broadcast_to(B, frames.shape[1:])[box[1]:box[3], box[0]:box[2]])
-        m[box[1]:box[3], box[0]:box[2]] = _on_colour(_still(group, frames, cf, box), behind)[1]
+        on = _on_colour(_still(group, frames, cf, box), behind)[1]
+        r = max(1, int(round(BLOB * max(g.h for g in group))))
+        deep = (cv2.distanceTransform(on.astype(np.uint8), cv2.DIST_L2, 3) > r).astype(np.uint8)
+        blob = cv2.dilate(deep, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0
+        m[box[1]:box[3], box[0]:box[2]] = on & ~blob
     return m
 
 
