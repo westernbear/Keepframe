@@ -24,6 +24,7 @@ log = get("keepframe.analyze")
 LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBSTRING = 1.6, 0.5, 1.2, 20.0, 1.0, 2.0, 0.5, 0.8
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
 ROT_DEG, CONTAIN, CONCURRENT, INSIDE = 5.0, 0.5, 0.5, 0.25
+PIECE = 0.6   # a piece's misread text in its title's (`partial_ratio`, "vew" in "New Arrivals" 0.67); "STOP" in "SCROLLING" 0.5
 MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
 
 
@@ -91,17 +92,19 @@ def _sprite(f: Fragment) -> bool:
 
 
 def _inside(a: Fragment, b: Fragment, h: float, fps: float) -> bool:
-    """V5: of two text tracks, the one with the shorter string lies inside the other's widest box along the line
-    (± INSIDE·h) and within INSIDE·h of its median line centre at ≥ half its frames, within the other's life
-    (± SUCCESSION_S): the title read in pieces while a sprite crossed it or as it faded in (seeds 4/6), whatever the
-    pieces' onsets, the jumps of their boxes (each holds what is read at a frame) and the colour of their canons (a
-    sprite crossing one at its canonical frame).
+    """V5: of two text tracks, the one with the shorter string, a piece of the other's (`partial_ratio` ≥ PIECE, its
+    digits in the other's: not "Step 9" before "Step 10", not "STOP" before "SCROLLING"), lies inside the other's
+    widest box along the line (± INSIDE·h) and within INSIDE·h of its median line centre at ≥ half its frames, within
+    the other's life (± SUCCESSION_S): the title read in pieces while a sprite crossed it or as it faded in (seeds
+    4/6), whatever the pieces' onsets, the jumps of their boxes (each holds what is read at a frame) and the colour of
+    their canons (a sprite crossing one at its canonical frame).
     ponytail: a title that holds still (a moving one's widest box is one frame's); upgrade path: its widest box near
     each frame."""
     p, t = sorted((a, b), key=lambda f: len(_compact(f.text)))
     span = SUCCESSION_S * fps
     if (a.kind, b.kind) != ("text", "text") or len(_compact(p.text)) >= len(_compact(t.text)) \
-            or p.first < t.first - span or p.last > t.last + span:
+            or p.first < t.first - span or p.last > t.last + span \
+            or partial_ratio(p.text, t.text) < PIECE or not _digits_agree(p.text, t.text):
         return False
     W, m = max(t.boxes.values(), key=lambda q: q[2] - q[0]), INSIDE * h
     c = np.median([(q[1] + q[3]) / 2 for q in t.boxes.values()])
@@ -350,14 +353,17 @@ def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], mul
     stays, flagged as disagreeing with the reading (or as unverified without one). R24, without a VLM: the re-read
     stands only for a group of several fragments (`multi`) and only when it is no shorter than its longest fragment
     text; else the fragments' string (a single tilted track: its own consensus text). R25: that string is the first
-    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join. V5: a
-    text seen in more frames (`seen`, per text) than all the others together is the string, re-read or not: the
-    title read whole most of the time, its pieces and misreads split off while a sprite crossed it."""
+    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join. V5: the
+    text seen in more frames (`seen`, per text) than all the others together, which holds each other text at the
+    misread bar (`read_cover` ≥ PIECE: "Arwwials" 0.75), is the string, unless the re-read is longer: the title read
+    whole most of the time, its pieces and misreads split off while a sprite crossed it.
+    ponytail: a misread piece below PIECE ("Am Tvals") keeps the join; upgrade path: weigh each piece by its frames."""
     if not strings:
         if not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
             read = ""
         joined = next((c for c in texts if all(read_cover(t, c) >= SUBSTRING for t in texts)), joined)
-        if seen and texts and 2 * seen[0] > sum(seen):
+        if seen and len(texts) > 1 and 2 * seen[0] > sum(seen) and all(read_cover(t, texts[0]) >= PIECE for t in texts[1:]) \
+                and len(_compact(read)) <= len(_compact(texts[0])):
             read, joined = "", texts[0]
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:

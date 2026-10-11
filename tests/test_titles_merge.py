@@ -320,6 +320,9 @@ def test_reconcile_codes():
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
     # V5 (seed 4): a text seen in more frames than the others together is the string, not the join of split reads
     assert _reconcile("", "New ArrivalsArrivals", ["New Arrivals", "Arrivals", "Arwwials"], [], seen=[57, 5, 4])[0] == "New Arrivals"
+    # ... only when it holds the others (C1: a word seen one frame more is not the title) and no longer re-read wins
+    assert _reconcile("Grand Opening", "Grand Opening", ["Grand", "Opening"], [], seen=[30, 29]) == ("Grand Opening", "ocr", "no_vlm")
+    assert _reconcile("Sales", "Sale", ["Sale"], [], seen=[40])[0] == "Sales"   # a missed glyph became a sprite
 
 
 def test_vlm_line_never_widens_the_title():
@@ -387,3 +390,36 @@ def test_title_contrast_keeps_the_glyphs_under_a_sprite():
     crop[:, 60:200] = (20, 40, 50)
     crop[10:30, 10:50] = (170, 0, 10)   # a glyph
     assert _title_contrast(crop, B, np.float32([170, 0, 10]))[15:25, 15:45].min() > 0
+
+
+def _words(words, size=(640, 360), n=8, gap=40, y=180):
+    """Words drawn side by side (Inter 40, `gap` px apart) on a flat plate: (frames, plate, the words' boxes)."""
+    plate = np.full((size[1], size[0], 3), (240, 230, 200), np.uint8)
+    frame, x, boxes = plate.astype(np.float32), 100, []
+    for w in words:
+        a = render_styled([w], FontGuess(family_guess="Inter", weight=700, size_px=40, source="bundled"), "#202020", None)[..., 3]
+        ys, xs = np.nonzero(a > 127)
+        a = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1, None].astype(np.float32) / 255
+        h, w_ = a.shape[:2]
+        sl = np.s_[y - h // 2:y - h // 2 + h, x:x + w_]
+        frame[sl] = frame[sl] * (1 - a) + np.float32([32, 32, 32]) * a
+        boxes.append((x, y - h // 2, x + w_, y - h // 2 + h))
+        x += w_ + gap
+    return np.repeat(np.rint(frame).astype(np.uint8)[None], n, 0), plate, boxes
+
+
+def _box_prop(text, box, frames, first, last, n):
+    x0, y0, x1, y1 = box
+    raw = np.full((n, 11), np.nan)
+    raw[first:last + 1] = [(x0 + x1) / 2, (y0 + y1) / 2, 1, 1, 0, 0, 0, 1, 1, 0, 0]
+    canon = np.dstack([frames[first, y0:y1, x0:x1], np.full((y1 - y0, x1 - x0), 255, np.uint8)])
+    return {"raw": raw, "canon": canon, "kind": "text", "first": first, "last": last, "text": text, "font": None, "cf": first}
+
+
+def test_side_by_side_words_keep_the_whole_string():
+    """C1: without a VLM, two words of a title seen in unequal frame counts merge to both words, not the more-seen."""
+    frames, plate, (b0, b1) = _words(["New", "Arrivals"])
+    props = {"t1": _box_prop("New", b0, frames, 0, 7, 8), "t2": _box_prop("Arrivals", b1, frames, 1, 7, 8)}
+    out = merge_title([fragment(k, p, (640, 360)) for k, p in props.items()], props, frames, plate, ocr=None, strings=[],
+                      size=(640, 360), fps=30.0)
+    assert out["text"] == "New Arrivals", out["text"]
