@@ -595,7 +595,7 @@ def clip_gates(rows: list[dict]) -> dict:
     colour = [c["de"] for r in rows for c in r["colour"]]
     l1 = [(r["render_l1"], r["baseline"].get("render_l1")) for r in rows]
     secs = [(r["seconds"], r["baseline"].get("seconds")) for r in rows]
-    whole = [i["whole"] for r in rows for i in r["integrity"] if i.get("role", "title") == "title"]
+    whole = [i["whole"] for r in rows for i in r["integrity"]]   # every gold entry, titles and kinetic (R7)
     gates = {"title_colour_de": _gate(colour, "lt", 10.0),
              "title_whole": _gate(whole, "rate", 0.75),
              "vlm_calls": _gate([r["vlm_calls"] for r in rows], "le", 0)}

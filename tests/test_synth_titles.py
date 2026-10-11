@@ -52,7 +52,9 @@ def test_title_whole_gates_aggregate():
     seed = lambda *w: {"integrity": [{"whole": x} for x in w]}
     g = synthetic_gates([seed(True, True), seed(True, False)])["title_whole"]
     assert g["value"] == 0.75 and g["samples"] == 4 and g["passed"] is False
-    clip = lambda *w: {"integrity": [{"whole": x, "role": "title"} for x in w] + [{"whole": False, "role": "kinetic"}],
+    clip = lambda *w: {"integrity": [{"whole": x, "role": "title"} for x in w] + [{"whole": True, "role": "kinetic"}],
                        "colour": [], "render_l1": 0.0, "seconds": 1.0, "vlm_calls": 0, "baseline": {}}
-    assert clip_gates([clip(True, True), clip(True, False)])["title_whole"]["passed"] is True
-    assert clip_gates([clip(True, False), clip(False)])["title_whole"]["passed"] is False
+    g = clip_gates([clip(True, True), clip(True, False)])["title_whole"]   # kinetic entries count too: 6 of 6 whole
+    assert g["samples"] == 6 and g["passed"] is True
+    g = clip_gates([clip(False, False), clip(False)])["title_whole"]
+    assert g["samples"] == 5 and g["passed"] is False
