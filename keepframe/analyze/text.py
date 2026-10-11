@@ -571,6 +571,9 @@ def full_opacity_frame(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, cf: 
             inside.append(f)
     if len(inside) < PEAK_SUPPORT:
         return cf
+    # ponytail: colour-blind cores here (V4's line needs a colour, and this one is their median: a sprite crossing
+    # the box in most frames becomes it, and the fit then trusts the sprite: the split title's "Grand" moved its cf
+    # onto the mover); the residual gate keeps cf instead. Upgrade path: the line through cf's core colour.
     colour = np.median(np.stack([np.median(fit[f][0], axis=0) for f in inside]), axis=0)
     fit = {f: _fade_fit(px, behind, colour) for f, (px, behind) in fit.items()}
     line = [f for f in inside if fit[f][1] <= FIT_DE]
@@ -588,7 +591,8 @@ def _showing(track: TextTrack) -> TextTrack:
     """V1: the track over the frames whose read holds ≥ 3/4 of its text (all of them when none does). R22 makes the
     text the read that covers the others, the whole line; a canonical frame where a word is not in yet or gone
     already (ig3: the zoomed "You just" of "You just speak", the largest box) gives the canon fewer glyphs than the
-    string the style and the font are fitted to, whose live text then overflows its box both ways and is clipped."""
+    string the style and the font are fitted to, whose live text then overflows its box both ways and is clipped.
+    ponytail: compact length only (a junk read as long as the text shows it); upgrade path: `read_cover` both ways."""
     n = len(_compact(track.text))
     keep = {f: b for f, b in track.boxes.items() if len(_compact(b.text)) >= WHOLE_READ * n}
     return replace(track, boxes=keep) if keep else track

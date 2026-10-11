@@ -6,7 +6,7 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
 from keepframe.analyze.reading import parse_reading
-from keepframe.analyze.titles import _glyph_mask, _reconcile, _title_contrast, _vlm_line, fragment, merge_title
+from keepframe.analyze.titles import _glyph_mask, _perspective, _reconcile, _title_contrast, _vlm_line, fragment, merge_title
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import PROPS, Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
@@ -433,3 +433,9 @@ def test_glyph_mask_leaves_out_a_solid_blob():
     p = _box_prop("Sale", (x0, y0, x1, y1), frames, 0, 7, 8)
     m = _glyph_mask([fragment("t1", p, (640, 360))], frames, plate, 0)
     assert not m[190, b0[2] + 40] and m[b0[1]:b0[3], b0[0]:b0[2]].sum() > 0.5 * (frames[0, b0[1]:b0[3], b0[0]:b0[2], 0] < 100).sum()
+
+
+def test_perspective_needs_a_cap_a_yaw_can_converge():
+    """M1: lines converging 1.2° on a 20 px cap at 1920 wide are glyph noise (a 45° yaw converges them 0.43°)."""
+    assert not _perspective({"rot_deg": 0.0, "converge_deg": 1.2, "cap_px": 20.0}, (1920, 1080))
+    assert _perspective({"rot_deg": 0.0, "converge_deg": 1.2, "cap_px": 60.0}, (1920, 1080))

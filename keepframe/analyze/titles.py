@@ -265,7 +265,9 @@ def _on_colour(crop, behind) -> tuple[np.ndarray, np.ndarray]:
 
 def _title_contrast(crop, B, colour) -> np.ndarray:
     """The contrast of the foreground `on_line` of the title's colour at cf: what crosses the title is not tracked
-    (V5: the crop's own median foreground was a sprite's colour where one filled it, and ECC saw glyph edges only)."""
+    (V5: the crop's own median foreground was a sprite's colour where one filled it, and ECC saw glyph edges only).
+    ponytail: one colour, cf's; a title whose colour animates loses ECC away from cf (held, placed by its boxes);
+    upgrade path: the colour of the frame tracked last."""
     B = np.ascontiguousarray(np.broadcast_to(B, crop.shape))
     return contrast(crop, B) * (foreground_mask_plate(crop, B) & on_line(crop, B, colour))
 

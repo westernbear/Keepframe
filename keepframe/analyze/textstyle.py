@@ -752,6 +752,8 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
         conf *= 0.8
     style = TextStyle(fill=grad, fade=fade, effects=effects, stroke_ratio=round(sw / cap, 4) if cap > 0 and sw > 0 else None,
                       confidence=round(conf, 3))
+    # ponytail: a_n also holds what the matte kept besides the glyphs (a shadow, a glow, a sprite), read as glyph
+    # by the font fit; upgrade path: a_n less the effects' and the other layers' alpha.
     cover = a_g if unfilled <= UNFILLED else a_n
     info = {"stroke_px": round(sw, 3), "cap_px": round(cap, 3), "spread": round(spread, 3),
             "unfilled": round(unfilled, 3), "centres": glyph_centres(cover, text or ""), "alpha": cover,
