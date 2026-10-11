@@ -84,6 +84,8 @@ def test_text_edit_resamples_glyphs(tmp_path):
     g = edit("AB CDEF GH")                                             # 8 glyphs: uniform centres, the stagger's shape
     assert g.x == pytest.approx([(i + 0.5) / 8 for i in range(8)])
     assert g.delays == pytest.approx([0, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6]) and g.ramp == 4
+    blank = Target(element="title", property="text", value="x").model_copy(update={"value": " "})   # bypasses validation
+    assert apply_edit(scene, tmp_path, [blank], {"overflow": "expand_box"}, None).elements[0].canonical.glyphs is None
 
 
 def _ae_layer(tmp_path, delays):

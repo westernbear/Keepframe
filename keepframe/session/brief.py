@@ -103,7 +103,15 @@ def scene_brief(scene: Scene) -> str:
         )
     if len(order) > MAX_ELEMENTS:
         lines.append(f"... {len(order) - MAX_ELEMENTS} smaller or shorter elements omitted")
+    present = {e.id: e for e in scene.elements}
     for g in scene.groups:
         reason = " ".join(g.reason.split())[:80]
         lines.append(f"group {g.id}: {', '.join(g.members)} ({reason})")
+        if g.reason == "text_fragments":   # the title its pieces spell, in x order
+            pieces = sorted((e for m in g.members if (e := present.get(m)) is not None and e.canonical.text),
+                            key=lambda e: element_bbox(e, e.visible[0])[0])
+            lines[-1] += ' "' + " ".join(" ".join(e.canonical.text.split()) for e in pieces)[:80] + '"'
+    if any(g.reason == "text_fragments" for g in scene.groups):
+        lines.append('a text_fragments group is one title in pieces: a text edit on any member replaces the whole title, '
+                     'so give the whole new string (to change "speak" in "You just speak", send "You just talk")')
     return "\n".join(lines)

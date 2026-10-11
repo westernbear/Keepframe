@@ -179,10 +179,25 @@ def test_retext_on_a_group_member_replaces_the_group(tmp_path, monkeypatch):
     assert result.status == "done", result.error
     edited, _ = current_scene(root, "s1")
     assert [e.id for e in edited.elements] == ["e1", "e4"] and edited.groups == []
-    first = edited.element("e1")
-    assert first.canonical.text == "Fall Drop Sale" and (first.visible, first.tracks) == (before.element("e1").visible, before.element("e1").tracks)
+    first, was = edited.element("e1"), before.element("e1")
+    assert first.canonical.text == "Fall Drop Sale" and first.visible == was.visible and first.tracks["y"] == was.tracks["y"]
+    # R21: centred on the pieces' union box at frame 14 (the first that shows all three), its x track shifted, not rebuilt
+    union = np.array([element_bbox(before.element(m), 14) for m in ("e1", "e2", "e3")])
+    x0, y0, x1, y1 = element_bbox(first, 14)
+    assert abs((x0 + x1 - union[:, 0].min() - union[:, 2].max()) / 2) < 2 and abs((y0 + y1 - union[:, 1].min() - union[:, 3].max()) / 2) < 2
+    shift = [(a.t, a.v - b.v) for a, b in zip(first.tracks["x"].keys, was.tracks["x"].keys)]
+    assert [t for t, _ in shift] == [10, 39] and shift[0][1] == pytest.approx(shift[1][1]) and shift[0][1] > 50   # was ~55 px off
     preds = [c.pred for c in edited.constraints]
     assert not set(gone) & set(preds) and any(p.startswith("type(m_e1_") for p in preds)
+
+
+def test_brief_spells_a_text_group_and_its_retext_rule(tmp_path):
+    """R21: the brief gives each text_fragments group its pieces' string (x order) and says a retext gives the whole
+    new string."""
+    lines = scene_brief(_group_scene(tmp_path)).splitlines()
+    assert lines[-2] == 'group text1: e1, e2, e3 (text_fragments) "Grand Openin"'
+    assert lines[-1].startswith("a text_fragments group is one title in pieces: a text edit on any member replaces the whole")
+    assert '"You just talk"' in lines[-1]
 
 
 def test_timing_edit_on_a_group_member_moves_all(tmp_path, monkeypatch):

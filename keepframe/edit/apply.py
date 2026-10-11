@@ -281,7 +281,8 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 # ponytail: the stagger shape is kept; glyph positions are approximate (uniform centres) — measure
                 # them on the new raster (textstyle.glyph_centres) if exact columns matter
                 x = (np.arange(n) + 0.5) / n
-                el.canonical.glyphs = GlyphReveal(x=x.tolist(), delays=np.interp(x, g.x, g.delays).tolist(), ramp=g.ramp)
+                el.canonical.glyphs = GlyphReveal(x=x.tolist(), delays=np.interp(x, g.x, g.delays).tolist(), ramp=g.ramp) \
+                    if n else None   # no glyph left to stagger
         elif t.property == "font":
             if el.kind != "text" or not el.canonical.text:
                 raise ValueError("font edit needs a text element")
@@ -343,7 +344,20 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.canonical.video = None   # the edited still (or model) replaces the clip: video is never recoloured (R55)
             el.canonical.video_rate = 1.0
         el.provenance = "manual"
-    if dropped:   # a group retext: the first text member draws the whole title
+    if dropped:   # a group retext: the first text member draws the whole title, centred on the pieces' union box (R21)
+        for g in scene.groups:
+            keep = [m for m in g.members if m not in dropped]
+            if g.reason != "text_fragments" or not keep or len(keep) == len(g.members):
+                continue
+            el, first, pieces = out.element(keep[0]), scene.element(keep[0]), [scene.element(m) for m in g.members]
+            shown = lambda f: [p for p in pieces if p.visible[0] <= f <= p.visible[1]]
+            # the IR keeps no cf: the earliest frame of the first member's range that shows the most pieces
+            f = max(range(first.visible[0], first.visible[1] + 1), key=lambda f: (len(shown(f)), -f))
+            u = np.array([element_bbox(p, f) for p in shown(f)])
+            a = element_bbox(first.model_copy(update={"canonical": el.canonical}), f)   # the new text where the piece was
+            for prop, i in (("x", 0), ("y", 1)):   # the centres' difference; the track is shifted, not rebuilt
+                for k in el.tracks[prop].keys if prop in el.tracks else []:
+                    k.v += float(u[:, i].min() + u[:, i + 2].max() - a[i] - a[i + 2]) / 2
         out.elements = [e for e in out.elements if e.id not in dropped]
         out.groups = [g for g in (g.model_copy(update={"members": [m for m in g.members if m not in dropped]}) for g in out.groups)
                       if len(g.members) > 1]
