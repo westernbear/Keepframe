@@ -16,7 +16,7 @@ from .background import foreground_mask_plate
 from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
-from .text import _compact, _glyph_core_mask, partial_ratio
+from .text import _compact, _glyph_core_mask, partial_ratio, read_cover
 from .textstyle import glyph_centres
 
 log = get("keepframe.analyze")
@@ -24,6 +24,7 @@ log = get("keepframe.analyze")
 LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBSTRING = 1.6, 0.5, 1.2, 20.0, 1.0, 2.0, 0.5, 0.8
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
 ROT_DEG, CONTAIN, CONCURRENT = 5.0, 0.5, 0.5
+MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
 
 
 @dataclass
@@ -40,7 +41,7 @@ class Fragment:
 
 def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
     """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them) and video
-    sprites (and anything without a visible frame)."""
+    sprites (and anything visible in fewer than MIN_FRAMES frames)."""
     if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("kind") not in ("text", "sprite"):
         return None
     raw, canon = p["raw"], p["canon"]
@@ -59,7 +60,7 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
             P = corners[:, :2] @ M.T + [q["x"], q["y"]]
         boxes[int(f)] = (float(P[:, 0].min()), float(P[:, 1].min()), float(P[:, 0].max()), float(P[:, 1].max()))
         hs.append(ch * q["sy"]); rots.append(q["rot"])
-    if not boxes:
+    if len(boxes) < MIN_FRAMES:
         return None
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
@@ -316,9 +317,12 @@ def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], mul
     fragments that all fragment texts sit on wins, flagged as disagreeing with OCR; without such a line the OCR string
     stays, flagged as disagreeing with the reading (or as unverified without one). R24, without a VLM: the re-read
     stands only for a group of several fragments (`multi`) and only when it is no shorter than its longest fragment
-    text; else the fragments joined (a single tilted track: its own consensus text)."""
-    if not strings and not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
-        read = ""
+    text; else the fragments' string (a single tilted track: its own consensus text). R25: that string is the first
+    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join."""
+    if not strings:
+        if not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
+            read = ""
+        joined = next((c for c in texts if all(read_cover(t, c) >= SUBSTRING for t in texts)), joined)
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
         if best := _vlm_line(ocr, strings):
@@ -405,7 +409,7 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             x0, y0, x1, y1 = g.boxes[cf]
             q = np.array([[x0, y0, 1], [x1, y0, 1], [x1, y1, 1], [x0, y1, 1]], float) @ Hi.T
             pieces.append((g.text, float((q[:, 0] / q[:, 2]).min()), float((q[:, 0] / q[:, 2]).max())))
-    texts = [g.text for g in group if g.text]
+    texts = [g.text for g in sorted(group, key=lambda g: -len(g.boxes)) if g.text]   # most-seen first (R25)
     text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1)
     boxes = np.full((n, 4), np.nan)
     for f in seen:

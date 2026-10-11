@@ -151,10 +151,11 @@ def test_title_merge_failure_is_a_code_and_refine_still_runs(tmp_path, monkeypat
 def test_title_tilt_test_failure_is_one_note(tmp_path, monkeypatch):
     from keepframe.analyze import titles
     monkeypatch.setattr(titles, "_settled", boom)
-    frames = np.zeros((1, 80, 50, 3), np.uint8)
-    frames[0, 8:12, 10:24] = frames[0, 58:62, 10:24] = 255
-    tracks = [TextTrack(id=i, boxes={0: TextBox(0, "Text", (5, y, 35, y + 20), 0.9)}, text="Text") for i, y in ((1, 3), (2, 53))]
-    props = _stage_sprites(frames, (0, 0, 0), tracks, [], [], AnalyzeOptions(refine=False), _sd(tmp_path), 1)
+    frames = np.zeros((3, 80, 50, 3), np.uint8)   # R25: a fragment is seen in >= 3 frames
+    frames[:, 8:12, 10:24] = frames[:, 58:62, 10:24] = 255
+    tracks = [TextTrack(id=i, boxes={f: TextBox(f, "Text", (5, y, 35, y + 20), 0.9) for f in range(3)}, text="Text")
+              for i, y in ((1, 3), (2, 53))]
+    props = _stage_sprites(frames, (0, 0, 0), tracks, [], [], AnalyzeOptions(refine=False), _sd(tmp_path), 3)
     assert props["_titles_message"] == "title tilt test failed (merge_failed)" and {"t1", "t2"} <= set(props)
 
 

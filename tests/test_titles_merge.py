@@ -311,6 +311,11 @@ def test_reconcile_codes():
         ("inside your walls.", "fragments", "no_vlm")
     assert _reconcile("lew aproach", "New aproach", ["New aproach"], [], multi=False) == ("New aproach", "fragments", "no_vlm")
     assert _reconcile("Grand Opening", "Grand Openin", ["Grand", "Openin"], []) == ("Grand Opening", "ocr", "no_vlm")
+    # R25: a fragment text that holds every other is the string, not the join (ig1: 'your' 9 px left of t6's centre)
+    assert _reconcile("inside uour", "yourinside your walls.", ["inside your walls.", "your", "your walls."], []) == \
+        ("inside your walls.", "fragments", "no_vlm")
+    assert _reconcile("", "Join us foday", ["Join us foday", "Joivn us foday"], [])[0] == "Join us foday"   # most seen
+    assert _reconcile("", "Grand Openin", ["Openin", "Grand"], [])[0] == "Grand Openin"   # none holds the other: join
     assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
 

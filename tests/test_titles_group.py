@@ -107,3 +107,10 @@ def test_successive_numbered_cards_stay_separate():   # final review I3: one car
         assert len(group_fragments(f, [a, b], FPS)) == 2, (a, b)
     f = frags(("t1", prop("Episode 1", 100, 110, 0, 30)), ("t2", prop("Episode 12", 100, 120, 31, 60)))   # a reveal
     assert len(group_fragments(f, [], FPS)) == 1
+
+
+def test_flicker_piece_stays_out():   # R25 (ig1): a piece OCR saw in 1-2 frames is flicker, not a piece of the title
+    assert fragment("s2", prop("your", 190, 140, 10, 11, kind="sprite"), SIZE) is None
+    assert fragment("t2", prop("Arrivals", 190, 140, 10, 11), SIZE) is None
+    f = frags(("t1", prop("New", 100, 80)), ("t2", prop("Arrivals", 190, 140, 10, 12)))   # three frames do join
+    assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]
