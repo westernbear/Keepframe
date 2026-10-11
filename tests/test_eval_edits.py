@@ -61,7 +61,7 @@ def test_eval_edits_cli_writes_metrics_and_sheet(tmp_path, monkeypatch):
     gates = m["gates"]["synthetic"]
     assert {"title_outside_glyph_delta", "title_smear_score", "title_glyph_de", "hide_plate_de", "hide_hf_ratio",
             "hide_residue", "hide_truth_de", "plate_de_title", "plate_de_logo", "recolour_halo_ring", "alpha_sad_edge",
-            "f_de_interior", "f_de_edge", "font_top3", "title_whole", "font_set_top3"} == set(gates)
+            "f_de_interior", "f_de_edge", "font_top3", "title_whole", "vlm_calls", "font_set_top3"} == set(gates)
     fs = m["synthetic"]["font_set"]   # Task 10: the matcher on make_font_sample (the eval runs 60 by default)
     assert fs["n"] == 2 and len(fs["rows"]) == 2 and gates["font_set_top3"]["samples"] == 2
     assert {"family", "hit", "weight_err", "size_err", "tracking_err", "seconds"} <= set(fs["rows"][0])

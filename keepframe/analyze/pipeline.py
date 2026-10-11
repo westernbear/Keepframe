@@ -12,6 +12,7 @@ from ..progress import STAGES, report_stage
 from . import matting, textstyle
 from .background import PASS1_PATH, background_plate, estimate_background, foreground_mask, foreground_mask_plate, needs_plate, pass1_plate, rgb_to_lab
 from .captions import MAX_TILES, caption_scene
+from .reading import CountingLLM, read_titles
 from .constraints import DEFAULT_KEEP_PRESET, apply_keep_preset, carry_keep, extract_constraints
 from .keyframes import fill_gaps, tracks_from_raw
 from . import videoasset
@@ -108,8 +109,8 @@ def _stage_background(frames, opts, sd):
     return bg, bconf, plate
 
 
-def _stage_text(frames, bg, opts, ocr, sd):
-    boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None
+def _stage_text(frames, bg, opts, ocr, sd, reader=None):
+    boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None; reading = None
     if opts.ocr:
         if ocr is None:
             try:
@@ -133,7 +134,13 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 msg = f"text tracks reclassified as shapes: {n}"
                 log.info("%s", msg)
             log.info("text boxes=%s tracks=%s shapes=%s", sum(len(b) for b in boxes), len(tracks), len(shape_tracks))
-    _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "shape_tracks": shape_tracks, "message": msg})
+            if reader is not None:
+                t = time.perf_counter()
+                reading = read_titles(frames, boxes, reader)
+                log.info("titles reading %.2fs calls=%s strings=%s", time.perf_counter() - t, reading.calls, len(reading.strings))
+                if reading.error:
+                    msg = "; ".join(m for m in (msg, f"title reading skipped ({reading.error})") if m)
+    _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "shape_tracks": shape_tracks, "message": msg, "reading": reading})
     return boxes, tracks, shape_tracks, msg
 
 
@@ -663,7 +670,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
     failed = fallback_ids(props or {}, ids or {})   # today's behaviour after a fail-soft path: less sure, once
     for e in scene.elements:
         e.confidence = conf[e.id] * (FALLBACK_CONF if e.id in failed else 1.0)
-    write_report(sd, {"reconstruction": rec, "confidence": {e.id: e.confidence for e in scene.elements}, "messages": messages,
+    vlm_calls = captioner.calls if isinstance(captioner, CountingLLM) else 0
+    write_report(sd, {"reconstruction": rec, "vlm_calls": vlm_calls, "confidence": {e.id: e.confidence for e in scene.elements}, "messages": messages,
                       "solids": solids_report, "elements": len(scene.elements), "fit_error_max_px": max([e.fit_error.max_px for e in scene.elements] or [0])})
     _stage_done("report", t)
     return scene
@@ -754,6 +762,7 @@ def analyze_scene_frames(
 ) -> Scene:
     opts = options or AnalyzeOptions()
     out_root = Path(out_root)
+    captioner = CountingLLM(captioner) if captioner is not None else None   # one count and cap per scene
     existing = load_project(out_root) if (out_root / "project.json").exists() else None
     previous = current_scene(out_root, scene_id)[0] if existing and any(s.id == scene_id for s in existing.scenes) else None
     sd = _scene_dir(out_root, scene_id)
@@ -772,7 +781,7 @@ def analyze_scene_frames(
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
     t = _stage_done("background", t)
     report_stage("text")
-    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd)
+    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd, captioner)
     t = _stage_done("text", t)
     report_stage("regions")
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
@@ -943,6 +952,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         raise ValueError(from_stage)
     log.info("rerun scene=%s from=%s note=%s", scene_id, from_stage, note)
     root = Path(root); sd = _scene_dir(root, scene_id)
+    captioner = CountingLLM(captioner) if captioner is not None else None
     project = load_project(root)
     prev, _ = current_scene(root, scene_id)
     opts = options or AnalyzeOptions(**json.loads((sd / "stages" / "options.json").read_text()))
@@ -973,7 +983,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     msg = None
     if boundary <= STAGES.index("text"):
         report_stage("text")
-        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd)
+        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd, captioner)
     else:
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]

@@ -48,12 +48,18 @@ SYNTHETIC_GATES = {
     "f_de_edge": ("alpha.f_de_edge", "lt", 6.0),
     "font_top3": ("font_hits", "rate", 0.90),
     "title_whole": ("integrity.whole", "rate", 0.9),
+    "vlm_calls": ("vlm_calls", "le", 3),   # report.json's count per scene
 }
 TITLE_MODES = {9: "stagger", 10: "plane"}   # synthetic seeds with a per-glyph or a yawed first title
 
 
 def make_ocr(truth: Scene | None):
     """OCR engine for one analysis; None lets the pipeline load RapidOCR. Tests swap in a fake reader."""
+    return None
+
+
+def make_reader(truth: Scene | None):
+    """VLM for one analysis; None means the CV fallback only (no real VLM is configured). Tests swap in a fake."""
     return None
 
 
@@ -304,16 +310,21 @@ def _alpha_rows(truth: dict, analysed: dict, pairs: dict[str, str], frames: Sequ
     return rows
 
 
-def _analyse(video: Path, n_frames: int, root: Path, opts: AnalyzeOptions, ocr, reuse: bool) -> float:
+def _analyse(video: Path, n_frames: int, root: Path, opts: AnalyzeOptions, ocr, reuse: bool, truth: Scene | None = None) -> float:
     meta = root.parent / f"{root.name}.analysis.json"
     if reuse and (root / "project.json").exists() and meta.exists():
         return json.loads(meta.read_text())["seconds"]
     shutil.rmtree(root, ignore_errors=True)
     t0 = time.perf_counter()
-    analyze(video, 0, n_frames - 1, root, opts, ocr=ocr, captioner=None)   # no captioner: no VLM calls
+    analyze(video, 0, n_frames - 1, root, opts, ocr=ocr, captioner=make_reader(truth))   # None by default: no VLM calls
     seconds = time.perf_counter() - t0
     meta.write_text(json.dumps({"seconds": seconds, "options": asdict(opts)}))
     return seconds
+
+
+def _vlm_calls(root: Path, scene_id: str = "s1") -> int:
+    p = scene_dir(root, scene_id) / "report.json"
+    return json.loads(p.read_text()).get("vlm_calls", 0) if p.exists() else 0
 
 
 def _messages(root: Path, scene_id: str = "s1") -> list[str]:
@@ -346,7 +357,7 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
     save_scene(truth, tdir / "scene.json")
     video = render_reference(truth, tdir, d / "reference.mp4", renderer=renderer)
     proj = d / "proj"
-    seconds = _analyse(video, truth.frames, proj, opts, make_ocr(truth), reuse)
+    seconds = _analyse(video, truth.frames, proj, opts, make_ocr(truth), reuse, truth)
     scene, _ = current_scene(proj, "s1")
     sd = scene_dir(proj, "s1")
     titles = [e for e in truth.elements if e.kind == "text"]
@@ -388,7 +399,7 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
     res = edit_checks(proj, "s1", title=title_id, hide=hide, frames=frames, renderer=renderer,
                       truth={"scene": truth, "dir": tdir, "layers": gt, "plates": plates, "title": titles[0].id, "pairs": pairs})
     sheet = _sheet(res, frames, out, f"synthetic-seed{seed}")
-    return {"seed": seed, "plate": plate, "mover": seed % 2 == 0, "frames": frames, "seconds": round(seconds, 2),
+    return {"seed": seed, "plate": plate, "mover": seed % 2 == 0, "frames": frames, "seconds": round(seconds, 2), "vlm_calls": _vlm_calls(proj),
             "titles": [{"text": t.canonical.text, "font": t.canonical.font.family_guess, "colour": t.canonical.color} for t in titles],
             "elements": {"truth": len(truth.elements), "analysed": len(scene.elements)}, "matched": len(pairs), "pairs": pairs,
             "unmatched_truth": [e.id for e in truth.elements if e.id not in pairs.values()],
@@ -419,7 +430,7 @@ def _samples(rows: list[dict], key: str) -> tuple[list, list[float]]:
         elif isinstance(v, list):
             got = [x.get(tail) for x in v] or [None]
         else:
-            got = [v.get(tail) if isinstance(v, dict) else None]
+            got = [v.get(tail) if isinstance(v, dict) else (v if not tail else None)]
         values += got
         floors += [row.get("ring_floor") if _finite(row.get("ring_floor")) else 0.0] * len(got)
     return values, floors
@@ -563,7 +574,7 @@ def eval_clip(clip, gold, out, *, max_frames=150, baseline=None, reuse=False, re
     cap.release()
     n = min(total, max_frames)
     root = Path(out) / "clips" / clip.stem
-    seconds = _analyse(clip, n, root, options or AnalyzeOptions(), make_ocr(None), reuse)
+    seconds = _analyse(clip, n, root, options or AnalyzeOptions(), make_ocr(None), reuse, None)
     scene, _ = current_scene(root, "s1")
     sd = scene_dir(root, "s1")
     integrity = title_integrity(scene, titles)
@@ -582,7 +593,7 @@ def eval_clip(clip, gold, out, *, max_frames=150, baseline=None, reuse=False, re
     frames = sorted({min(max(settled, 0), n - 1), n // 2, n - 1})
     res = edit_checks(root, "s1", title=title_id, hide=[title_id or _largest_sprite(scene)], frames=frames, renderer=renderer)
     base = _baseline(baseline, clip.stem)
-    row = {"clip": clip.stem, "frames": frames, "analysed_frames": n, "seconds": round(seconds, 2), "vlm_calls": 0,
+    row = {"clip": clip.stem, "frames": frames, "analysed_frames": n, "seconds": round(seconds, 2), "vlm_calls": _vlm_calls(root),
            "elements": len(scene.elements), "integrity": integrity, "colour": colour,
            "render_l1": _render_l1(root, clip, renderer, max_frames), "leak": _clip_leak(scene, sd, frames),
            "title": res["title"], "hide": res["hide"], "background": res["background"],
@@ -598,7 +609,7 @@ def clip_gates(rows: list[dict]) -> dict:
     whole = [i["whole"] for r in rows for i in r["integrity"]]   # every gold entry, titles and kinetic (R7)
     gates = {"title_colour_de": _gate(colour, "lt", 10.0),
              "title_whole": _gate(whole, "rate", 0.75),
-             "vlm_calls": _gate([r["vlm_calls"] for r in rows], "le", 0)}
+             "vlm_calls": _gate([r["vlm_calls"] for r in rows], "le", 3)}
     for name, pairs, limit in (("render_l1", l1, lambda b: b + 0.005), ("seconds", secs, lambda b: 1.5 * b)):
         known = [(v, limit(b)) for v, b in pairs if b is not None]
         gates[name] = ({"value": _mean(v for v, _ in known), "limits": [lim for _, lim in known], "samples": len(known),
@@ -697,6 +708,7 @@ def eval_edits(clips_dir, gold_dir, out, *, max_frames=150, baseline=None, synth
             rows.append(eval_clip(clip, gold, out, max_frames=max_frames, baseline=baseline, reuse=reuse, renderer=renderer, options=clip_opts))
         m["clips"] = {"rows": rows, "missing_gold": missing}
         m["gates"]["clips"] = clip_gates(rows)
+    m["vlm_calls"] = sum(r["vlm_calls"] for g in ("synthetic", "clips") for r in m.get(g, {}).get("rows", []))
     m["passed"] = overall_passed(m["gates"], strict)
     (out / "metrics.json").write_text(json.dumps(m, indent=2, default=float))
     (out / "summary.md").write_text(summary_markdown(m))
