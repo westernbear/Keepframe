@@ -46,7 +46,7 @@ PP-OCRv5's detector splits a line at word gaps ("Summer" / "Sale", "Big" / "Laun
 | clip titles whole | v5 ≥ v4 | 1 vs 5 | no |
 | clip fragments | v5 ≤ v4 + 1 | 18 vs 14 | no |
 | synthetic titles whole | v5 ≥ v4 | 2 vs 8 | no |
-X unmeasurable, v5 leaves 4 of 5 titles unmatched |
+| mean title colour ΔE | no worse by more than 1.0 | ig2, the only title v5 matches: 8.25 vs 3.18 (+5.1); the other four are unmatched | no |
 | scene `font_top3` | not lower | 0.0 vs 0.6 | no |
 | OCR seconds per clip | ≤ 1.3 × v4 | 0.91 × | yes |
 
