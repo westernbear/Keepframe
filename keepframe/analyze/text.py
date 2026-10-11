@@ -2,7 +2,7 @@ from __future__ import annotations
 import difflib, math, os
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from threading import Lock, local
 from typing import Protocol
 import cv2, numpy as np
@@ -22,6 +22,7 @@ FIT_DE = 8.0            # … over the frames whose glyph core is the text's col
 PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced)
 FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
 FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
+WHOLE_READ = 0.75       # V1: a canonical frame's read holds at least this share of the track's text (compact characters)
 LINE_DE, LINE_A = 25.0, 1.5   # `on_line`: ΔE76 off the line from the plate through the colour; how far past the colour
 _warned_ocr_cap_unavailable = False
 
@@ -580,6 +581,16 @@ def full_opacity_frame(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, cf: 
     return max((f for f in line if fit[f][0] >= FULL_OPACITY * peak), key=lambda f: _box_area(track.boxes[f]))
 
 
+def _showing(track: TextTrack) -> TextTrack:
+    """V1: the track over the frames whose read holds ≥ 3/4 of its text (all of them when none does). R22 makes the
+    text the read that covers the others, the whole line; a canonical frame where a word is not in yet or gone
+    already (ig3: the zoomed "You just" of "You just speak", the largest box) gives the canon fewer glyphs than the
+    string the style and the font are fitted to, whose live text then overflows its box both ways and is clipped."""
+    n = len(_compact(track.text))
+    keep = {f: b for f, b in track.boxes.items() if len(_compact(b.text)) >= WHOLE_READ * n}
+    return replace(track, boxes=keep) if keep else track
+
+
 def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
                infer_font: bool = True, plate: np.ndarray | None = None, full_opacity: bool = True,
                notes: list[str] | None = None):
@@ -589,10 +600,11 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     if reveal:
         cf = _widest_box(track).frame
     else:
-        cf = max(track.boxes, key=lambda f: _box_area(track.boxes[f]))
+        shown = _showing(track)
+        cf = max(shown.boxes, key=lambda f: _box_area(shown.boxes[f]))
         if full_opacity and FULL_OPACITY > 0:
             try:
-                largest, cf = cf, full_opacity_frame(track, frames, bg_rgb, cf, plate)
+                largest, cf = cf, full_opacity_frame(shown, frames, bg_rgb, cf, plate)
                 if cf != largest:
                     log.info("text track %s: canonical frame %s (full opacity), not %s (largest box, faded)", track.id, cf, largest)
             except Exception as e:   # fail soft: today's canonical frame (the largest box)

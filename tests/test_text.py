@@ -153,6 +153,16 @@ def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
     assert res and max(difflib.SequenceMatcher(None, t.lower(), gold.canonical.text.lower()).ratio() for t, _, _ in res) >= 0.6
 
 
+def test_canonical_frame_holds_the_whole_text():
+    """V1 (ig3 e1): a zoom made the box of a piece ("You just") the largest; the canon is taken where the read holds
+    the track's text, else the style and the font are fitted to fewer glyphs than the string they lay out."""
+    boxes = {f: TextBox(f, "You just speak", (20, 40, 320, 70), 0.9) for f in (0, 1)}
+    boxes.update({f: TextBox(f, "You just", (10, 20, 300, 100), 0.9) for f in (2, 3)})
+    _, _, cf, _, _ = text_props(TextTrack(1, boxes, "You just speak"), np.zeros((4, 120, 400, 3), np.uint8), (0, 0, 0), 4, 0,
+                                infer_font=False, full_opacity=False)
+    assert cf in (0, 1)
+
+
 def test_opacity_ignores_a_sprite_crossing_the_text():
     """V4 (seed 9 e3 at f39-44): a bright pill behind a dark title was its most contrasting decile, read 0.18 opaque."""
     plate = np.full((80, 300, 3), (40, 40, 80), np.uint8)
