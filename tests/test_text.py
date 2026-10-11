@@ -151,3 +151,15 @@ def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
     frame = (composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8)
     res = RapidOcr()(frame)
     assert res and max(difflib.SequenceMatcher(None, t.lower(), gold.canonical.text.lower()).ratio() for t, _, _ in res) >= 0.6
+
+
+def test_opacity_ignores_a_sprite_crossing_the_text():
+    """V4 (seed 9 e3 at f39-44): a bright pill behind a dark title was its most contrasting decile, read 0.18 opaque."""
+    plate = np.full((80, 300, 3), (40, 40, 80), np.uint8)
+    frames = np.repeat(plate[None], 2, 0)
+    cv2.circle(frames[1], (60, 40), 32, (20, 140, 190), -1)
+    for f in frames:
+        cv2.putText(f, "Weekend", (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (20, 0, 140), 5, cv2.LINE_AA)
+    track = TextTrack(1, {f: TextBox(f, "Weekend", (4, 14, 230, 70), 0.9) for f in (0, 1)}, "Weekend")
+    raw, _, cf, _, _ = text_props(track, frames, (40, 40, 80), 2, 0, infer_font=False, plate=plate, full_opacity=False)
+    assert cf == 0 and raw[1, 7] > 0.9, raw[:, 7]

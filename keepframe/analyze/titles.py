@@ -8,7 +8,7 @@ import math, re, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
-from ..ir.colour import delta_e, rgb8_to_hex, srgb8_to_lab
+from ..ir.colour import rgb8_to_hex
 from ..ir.schema import DEFAULTS, PROPS, GlyphReveal, Group
 from ..ir.tracks import glyph_edges, is_tilted, projective_matrix
 from ..log import describe, get
@@ -16,7 +16,7 @@ from .background import foreground_mask_plate
 from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
-from .text import _compact, _glyph_core_mask, partial_ratio, read_cover
+from .text import _compact, _glyph_core_mask, on_line, partial_ratio, read_cover
 from .textstyle import glyph_centres
 
 log = get("keepframe.analyze")
@@ -158,7 +158,7 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
 # --- the merged title ---------------------------------------------------------------------------------------------
 
 MERGE_FAILED = "merge_failed"   # fail-soft code (R52): a title left as its fragments
-TITLE_DE, FADE_A, CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 25.0, 1.5, 0.9, 0.8, 0.02, 2.0, 0.3
+CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 0.9, 0.8, 0.02, 2.0, 0.3
 TILT_ROT, TILT_CONVERGE, TILT_LEN = 2.0, 0.8, 5.0   # D12 with R8 (a yawed title converges only ≈ cap·tan(ry)/d)
 LEN_TOL = 0.25   # a VLM line replaces an OCR string only within 25 % of its compact length (final review I2)
 
@@ -221,11 +221,7 @@ def _on_colour(crop, behind) -> tuple[np.ndarray, np.ndarray]:
     fg = foreground_mask_plate(crop, behind)
     if not fg.any():
         return fg, fg
-    P, Bf = crop.astype(np.float32), behind.astype(np.float32)
-    d = np.median(P[fg], axis=0) - Bf
-    a = np.clip(((P - Bf) * d).sum(-1) / np.maximum((d * d).sum(-1), 1e-6), 0.0, FADE_A)
-    line = np.rint(np.clip(Bf + a[..., None] * d, 0, 255)).astype(np.uint8)
-    return fg, fg & (delta_e(srgb8_to_lab(crop), srgb8_to_lab(line)) <= TITLE_DE)
+    return fg, fg & on_line(crop, behind, np.median(crop[fg].astype(np.float32), axis=0))
 
 
 def _title_contrast(crop, B) -> np.ndarray:

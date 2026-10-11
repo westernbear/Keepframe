@@ -22,6 +22,7 @@ FIT_DE = 8.0            # … over the frames whose glyph core is the text's col
 PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced)
 FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
 FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
+LINE_DE, LINE_A = 25.0, 1.5   # `on_line`: ΔE76 off the line from the plate through the colour; how far past the colour
 _warned_ocr_cap_unavailable = False
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
@@ -493,14 +494,32 @@ def _glyph_core_mask(crop: np.ndarray, mask: np.ndarray, bg_rgb: tuple,
     return core
 
 
-def _core_pixels(frame: np.ndarray, bbox, bg_rgb: tuple, plate: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
-    """(glyph core pixels, the plate behind them), uint8 N×3, the box clipped to the frame."""
+def on_line(crop: np.ndarray, behind: np.ndarray, colour) -> np.ndarray:
+    """The pixels of `crop` within ΔE 25 of the line from the plate `behind` through `colour` (up to 1.5× past it):
+    that colour faded toward the plate (anti-aliased edges, a fade) or a gradient toward a darker one."""
+    P, Bf = crop.astype(np.float32), behind.astype(np.float32)
+    d = np.asarray(colour, np.float32) - Bf
+    a = np.clip(((P - Bf) * d).sum(-1) / np.maximum((d * d).sum(-1), 1e-6), 0.0, LINE_A)
+    line = np.rint(np.clip(Bf + a[..., None] * d, 0, 255)).astype(np.uint8)
+    return delta_e(srgb8_to_lab(crop), srgb8_to_lab(line)) <= LINE_DE
+
+
+def _core_pixels(frame: np.ndarray, bbox, bg_rgb: tuple, plate: np.ndarray | None,
+                 colour=None) -> tuple[np.ndarray, np.ndarray]:
+    """(glyph core pixels, the plate behind them), uint8 N×3, the box clipped to the frame. `colour`: the core is
+    taken among the pixels `on_line` of it only (all of them when none is): a sprite crossing the box contrasts
+    more than the text and would be its core (V4: seed 9's title read 0.18 opaque under a passing pill)."""
     x0, y0, x1, y1 = bbox
     fh, fw = frame.shape[:2]
     cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
     crop = frame[cy0:cy1, cx0:cx1]
     local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
-    core = _glyph_core_mask(crop, stroke_mask(frame, bbox, bg_rgb, plate=plate), bg_rgb, local_plate)
+    mask = stroke_mask(frame, bbox, bg_rgb, plate=plate)
+    if colour is not None and mask.any():
+        behind = local_plate if local_plate is not None else np.broadcast_to(np.asarray(bg_rgb, np.uint8), crop.shape)
+        on = mask & on_line(crop, behind, colour)
+        mask = on if on.any() else mask
+    core = _glyph_core_mask(crop, mask, bg_rgb, local_plate)
     px = crop[core] if core.any() else np.zeros((0, 3), np.uint8)
     behind = local_plate[core] if local_plate is not None and core.any() else np.broadcast_to(np.asarray(bg_rgb, np.uint8), px.shape)
     return px, behind
@@ -599,7 +618,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     raw = np.full((n_frames, 9), np.nan)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
-        px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate))
+        px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate, col))
         if plate is None:
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
