@@ -375,7 +375,7 @@ def _fake_render(monkeypatch):
     from keepframe.render.renderer import RenderResult
     monkeypatch.setattr("keepframe.edit.agent.render", lambda html, scene, out_dir: RenderResult(
         frames_dir=out_dir / "frames", frames=list(range(scene.frames)), hashes=[],
-        bboxes={e.id: [list(element_bbox(e, f)) for f in range(scene.frames)] for e in scene.elements}))
+        bboxes={e.id: [list(element_bbox(e, f, scene.size)) for f in range(scene.frames)] for e in scene.elements}))
 
 
 def test_text_edit_uses_uploaded_font(tmp_path, monkeypatch):

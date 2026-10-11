@@ -75,7 +75,7 @@ def verify(scene: Scene, scene_dir: Path, render_result: RenderResult | None = N
                 if len(probes[i]) != 4 or not np.isfinite(probes[i]).all():
                     rep.layer_probe_complete = False
                     continue
-                exp = np.array(element_bbox(el, f)); act = np.array(probes[i])
+                exp = np.array(element_bbox(el, f, scene.size)); act = np.array(probes[i])
                 err = float(np.abs(exp - act).max())
                 rep.layer_max_err_px = max(rep.layer_max_err_px, err)
                 if err > tol_px:

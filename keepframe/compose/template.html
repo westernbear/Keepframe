@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><title>{{ID}}</title>
 <style>
   html,body{margin:0;padding:0;background:{{PAGEBG}};overflow:hidden}
-  #stage{position:relative;isolation:isolate;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};overflow:hidden}
+  #stage{position:relative;isolation:isolate;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};{{PERSPECTIVE}}overflow:hidden}
   .el{position:absolute;will-change:transform;transition:none!important}
   .el img{display:block;width:100%;height:100%;image-rendering:auto}
   .el video{display:block;width:100%;height:100%;object-fit:fill}
@@ -66,13 +66,15 @@ for (const el of SCENE.elements) {
   const node = document.getElementById('el-' + el.id);
   const canvas = node.querySelector('.model-canvas');
   const st = Object.assign({}, DEFAULTS);
+  // rx/ry tilt a 2D element under #stage's perspective (tracks.projective_matrix). Kind "3d" spins its model with
+  // them; a 3D candidate (pending_asset) stays flat until its model exists.
+  const tilt = (el.pending_asset || el.kind) !== '3d' && ('rx' in el.tracks || 'ry' in el.tracks);
   const apply = () => {
-    node.style.transform = `translate(${st.x}px, ${st.y}px) rotate(${st.rot}deg) skewX(${st.skx}deg) scale(${st.sx}, ${st.sy})`;
+    node.style.transform = `translate(${st.x}px, ${st.y}px) ${tilt ? `rotateX(${st.rx}deg) rotateY(${st.ry}deg) ` : ''}rotate(${st.rot}deg) skewX(${st.skx}deg) scale(${st.sx}, ${st.sy})`;
     node.style.opacity = String(st.opacity);
     const reveal = Math.max(0, Math.min(1, st.reveal));
     // clip-path preserves getBoundingClientRect and the layer probe.
     node.style.clipPath = reveal === 1 ? '' : `inset(0 ${(1-reveal)*100}% 0 0)`;
-    // rx/ry apply only to kind "3d"; sprites ignore these tracks.
     const object = el.kind === '3d' ? modelObjects.get(canvas) : null;
     if (object) object.rotation.set(st.rx * Math.PI / 180, st.ry * Math.PI / 180, 0);
   };

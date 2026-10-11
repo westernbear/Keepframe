@@ -3,7 +3,7 @@ import json, time
 import cv2, numpy as np, pytest
 from keepframe.analyze import matting
 from keepframe.analyze.background import background_plate, foreground_mask_plate
-from keepframe.analyze.composite import texture_to_scene_affine
+from keepframe.analyze.composite import texture_to_scene
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames
 from keepframe.analyze.plate import PlateModel
 from keepframe.analyze.text import TextBox, TextTrack, text_props
@@ -430,7 +430,7 @@ def test_texture_padding_keeps_transform(tmp_path):
         w, h = int(rng.integers(10, 90)), int(rng.integers(10, 90))
         el = Element(id="e", kind="sprite", canonical=Canonical(width=w, height=h), visible=(0, 0))
         props = dict(zip(RAW, row))
-        assert np.allclose(matting.element_affine(row, (h, w), (w, h)), texture_to_scene_affine(el, props, (h, w)))
+        assert np.allclose(matting.element_affine(row, (h, w), (w, h)), texture_to_scene(el, props, (h, w), (300, 200)))
         A = matting.element_affine(row, (h, w), (w, h))
         B = matting.element_affine(row, (h + 2 * P, w + 2 * P), (w + 2 * P, h + 2 * P))
         pts = np.array([[0, 0, 1], [w - 1, 0, 1], [3.5, h - 2, 1]], np.float64).T

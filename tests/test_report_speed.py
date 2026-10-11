@@ -48,7 +48,7 @@ def _old_composite_scene(scene, scene_dir, f, cache=None):
         if reveal < 1.0:
             tex = tex.copy()
             tex[:, int(round(tex.shape[1] * reveal)):, 3] = 0
-        _old_composite_element(canvas, tex, composite.texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
+        _old_composite_element(canvas, tex, composite.texture_to_scene(el, p, tex.shape[:2], scene.size), p["opacity"])
     return canvas
 
 
@@ -149,7 +149,7 @@ def test_composite_element_affine_rounding_and_edges(seed):
                  tracks={"x": _track(rng.uniform(-30, 350)), "y": _track(rng.uniform(-20, 200)),
                          "rot": _track(rng.uniform(-180, 180)), "sx": _track(rng.uniform(0.3, 8)),
                          "sy": _track(rng.uniform(0.3, 8)), "skx": _track(rng.uniform(-40, 40))})
-    A = composite.texture_to_scene_affine(el, eval_props(el, 0), tex.shape[:2])
+    A = composite.texture_to_scene(el, eval_props(el, 0), tex.shape[:2], canvas.shape[1::-1])
     expected = canvas.copy()
     _old_composite_element(expected, tex, A, 0.73)
     composite.composite_element(canvas, tex, A, 0.73)
@@ -175,7 +175,7 @@ def test_degenerate_affines_preserve_old_pixels(width, height, sx, sy):
     canvas = np.full((40, 60, 3), 0.1, dtype=np.float32)
     el = Element(id="e", kind="sprite", canonical=Canonical(width=width, height=height), visible=(0, 0),
                  tracks={"x": _track(1000), "y": _track(1000), "sx": _track(sx), "sy": _track(sy)})
-    A = composite.texture_to_scene_affine(el, eval_props(el, 0), tex.shape[:2])
+    A = composite.texture_to_scene(el, eval_props(el, 0), tex.shape[:2], canvas.shape[1::-1])
     expected = canvas.copy()
     _old_composite_element(expected, tex, A, 0.5)
     composite.composite_element(canvas, tex, A, 0.5)
@@ -284,7 +284,7 @@ def test_small_element_warps_only_roi_and_leaves_other_pixels(tmp_path, monkeypa
     assert h * w < 160 * 100 // 4
     assert kwargs == {"flags": cv2.INTER_LINEAR, "borderMode": cv2.BORDER_CONSTANT, "borderValue": 0}
     el = scene.elements[0]
-    global_affine = composite.texture_to_scene_affine(el, eval_props(el, 0), src.shape[:2])
+    global_affine = composite.texture_to_scene(el, eval_props(el, 0), src.shape[:2], scene.size)
     np.testing.assert_array_equal(local_affine[:, :2], global_affine[:, :2])
     offset = global_affine[:, 2] - local_affine[:, 2]
     np.testing.assert_allclose(offset, np.rint(offset), atol=1e-12, rtol=0)

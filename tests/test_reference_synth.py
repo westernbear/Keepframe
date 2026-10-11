@@ -1,5 +1,5 @@
 import cv2, numpy as np, pytest
-from keepframe.analyze.composite import load_texture, texture_to_scene_affine
+from keepframe.analyze.composite import load_texture, texture_to_scene
 from keepframe.ir.colour import delta_e, srgb_to_lab
 from keepframe.ir.synth import ground_truth, make_reference_scene, render_reference, true_plate
 from keepframe.ir.tracks import eval_props
@@ -12,7 +12,7 @@ def _reference_layer(scene, root, el, f):
     prem[..., :3] *= prem[..., 3:4]
     p = eval_props(el, f)
     W, H = scene.size
-    warped = cv2.warpAffine(prem, texture_to_scene_affine(el, p, tex.shape[:2]), (W, H), flags=cv2.INTER_LINEAR,
+    warped = cv2.warpAffine(prem, texture_to_scene(el, p, tex.shape[:2], scene.size), (W, H), flags=cv2.INTER_LINEAR,
                             borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     a = warped[..., 3] * p["opacity"]
     fg = np.where(warped[..., 3:4] > 1e-6, warped[..., :3] / np.maximum(warped[..., 3:4], 1e-6), 0) * 255

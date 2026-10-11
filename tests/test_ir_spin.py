@@ -67,10 +67,11 @@ def test_three_rotation_changes_glb_frames_and_seeks_back_deterministically(tmp_
 
 
 @pytest.mark.browser
-def test_sprite_ignores_rotation_in_chromium(tmp_path):
+def test_3d_candidate_sprite_ignores_rotation_in_chromium(tmp_path):
     from keepframe.compose.composer import compose
     from keepframe.render.renderer import render
     scene = spin_scene(tmp_path, kind="sprite")
+    scene.elements[0].pending_asset = "3d"   # its rx/ry is the spin of its future model; a plain sprite tilts
     scene.elements[0].tracks["rx"] = track(0, 90)
     result = render(compose(scene, tmp_path, tmp_path / "sprite.html"), scene,
                     tmp_path / "render", frames=[0, 5, 10])
@@ -82,6 +83,7 @@ def test_composite_and_lottie_use_static_texture_without_rotation(tmp_path, kind
     from keepframe.analyze.composite import composite_scene
     from keepframe.render.lottie import write_lottie
     scene = spin_scene(tmp_path, kind=kind)
+    scene.elements[0].pending_asset = "3d" if kind == "sprite" else None   # a 3D candidate; a plain sprite tilts
     assert np.array_equal(composite_scene(scene, tmp_path, 0), composite_scene(scene, tmp_path, 10))
     animation = json.loads(write_lottie(scene, tmp_path, tmp_path / "animation.json").read_text())
     layer = next(layer for layer in animation["layers"] if layer["nm"] == "model")

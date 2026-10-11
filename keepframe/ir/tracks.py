@@ -62,8 +62,8 @@ def eval_z(el: Element, f: float) -> int:
 
 
 def affine_matrix(p: dict[str, float]) -> np.ndarray:
-    # reveal clips pixels without changing geometry; rx/ry are degrees for kind
-    # "3d" only. Sprites ignore rx/ry in composer, composite and Lottie.
+    # reveal clips pixels without changing geometry; rx/ry (degrees) spin a kind
+    # "3d" model and tilt a 2D element through `projective_matrix`.
     if abs(p.get("sky", 0.0)) > 1e-9:
         raise ValueError("sky must be 0 (decomposition uses skewX only)")
     r = math.radians(p["rot"])
@@ -75,6 +75,38 @@ def affine_matrix(p: dict[str, float]) -> np.ndarray:
     M[:2, :2] = R @ K @ S
     M[:2, 2] = [p["x"], p["y"]]
     return M
+
+
+PERSPECTIVE_PER_WIDTH = 50 / 36   # ponytail: AE's default comp camera (50 mm, 36 mm film, horizontal); live AE check verifies
+
+
+def perspective_px(size: tuple[int, int]) -> float:
+    """The stage's CSS perspective d for a scene `size` (W, H)."""
+    return size[0] * PERSPECTIVE_PER_WIDTH
+
+
+def is_tilted(p: dict[str, float], kind: str) -> bool:
+    """rx/ry tilt a 2D element; kind "3d" spins its model with them instead. Callers pass `el.pending_asset or
+    el.kind`: a 3D candidate's rx/ry is its object's spin (solids.estimate_spin), drawn flat until its model exists."""
+    return kind != "3d" and max(abs(p.get("rx", 0.0)), abs(p.get("ry", 0.0))) > 1e-6
+
+
+def projective_matrix(p: dict[str, float], size: tuple[int, int]) -> np.ndarray:
+    """3×3 local (anchor at origin, z = 0) → scene homography of the composer's `translate(x,y) rotateX(rx)
+    rotateY(ry) rotate(rot) skewX(skx) scale(sx,sy)` under `#stage{perspective: d}` at the stage centre c:
+    T(c)·Persp(d)·T(−c)·T(x,y)·Rx·Ry·Rz·K·S with CSS Transforms 2 matrices (+z toward the viewer, w = 1 − z/d).
+    Without rx/ry it equals `affine_matrix(p)` exactly."""
+    a, b = math.radians(p.get("rx", 0.0)), math.radians(p.get("ry", 0.0))
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, math.cos(a), -math.sin(a)], [0.0, math.sin(a), math.cos(a)]])
+    Ry = np.array([[math.cos(b), 0.0, math.sin(b)], [0.0, 1.0, 0.0], [-math.sin(b), 0.0, math.cos(b)]])
+    M = affine_matrix(p)
+    d, cx, cy = perspective_px(size), size[0] / 2, size[1] / 2
+    # a 3D offset (u, v, z) from (x, y, 0) lands at ((x + u − cx·z/d) / w, (y + v − cy·z/d) / w), w = 1 − z/d
+    P = np.array([[1.0, 0.0, -cx / d], [0.0, 1.0, -cy / d], [0.0, 0.0, -1.0 / d]])
+    H = np.eye(3)
+    H[:, :2] = P @ (Rx @ Ry)[:, :2] @ M[:2, :2]
+    H[:2, 2] = M[:2, 2]
+    return H
 
 
 def decompose_affine(M: np.ndarray) -> dict[str, float]:
@@ -95,12 +127,19 @@ def local_corners(c: Canonical) -> np.ndarray:
     return np.array([[x0, y0], [x0 + c.width, y0], [x0 + c.width, y0 + c.height], [x0, y0 + c.height]], dtype=float)
 
 
-def element_corners(el: Element, f: float) -> np.ndarray:
-    M = affine_matrix(eval_props(el, f))
+def element_corners(el: Element, f: float, size: tuple[int, int] | None = None) -> np.ndarray:
+    """Scene corners of the canonical box; with the scene `size`, a tilted element's corners are projected."""
+    p = eval_props(el, f)
     pts = np.c_[local_corners(el.canonical), np.ones(4)]
+    if size is not None and is_tilted(p, el.pending_asset or el.kind):
+        q = pts @ projective_matrix(p, size).T
+        return q[:, :2] / q[:, 2:]
+    M = affine_matrix(p)
     return (pts @ M.T)[:, :2]
 
 
-def element_bbox(el: Element, f: float) -> tuple[float, float, float, float]:
-    P = element_corners(el, f)
+def element_bbox(el: Element, f: float, size: tuple[int, int] | None = None) -> tuple[float, float, float, float]:
+    # ponytail: captions, brief, server, solid_assets and verify.matrix call this without `size` and keep affine boxes,
+    # so tilted titles get approximate boxes there; pass scene.size where a caller needs the projected box.
+    P = element_corners(el, f, size)
     return float(P[:, 0].min()), float(P[:, 1].min()), float(P[:, 0].max()), float(P[:, 1].max())
