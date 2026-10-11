@@ -710,3 +710,19 @@ def test_tilted_title_font_job_reads_the_canon_alpha():
     info = {"alpha": np.zeros((20, 80), np.float32), "centres": None}
     job = textstyle._font_job("k", {"text": "NEW", "canon": canon, "raw": raw}, TextStyle(), info)
     assert job.alpha.sum() == (canon[..., 3] > 0).sum()
+
+
+def test_a_fit_far_left_of_its_ink_starts_at_the_ink(styled_clip, monkeypatch):
+    """V2 (envato1 e35, dx -150: "Promo" still blurred at cf, the fill coverage missed it, and a retext lost its first
+    150 px): a fit whose pen lands more than 0.3 em left of its coverage's ink starts at the ink."""
+    from keepframe.fonts import match as fontmatch
+    real = fontmatch.font_guesses
+
+    def guesses(jobs, registry, **kw):   # the fit spreads the string far left of the ink
+        return {k: (r[0], r[1], {**r[2], "dx": -3.0 * r[1].size_px}) if r[0] == "ok" else r
+                for k, r in real(jobs, registry, **kw).items()}
+
+    monkeypatch.setattr(fontmatch, "font_guesses", guesses)
+    rerun(styled_clip, "s1", "sprites", note="pen far left")
+    _, el = _title(styled_clip)
+    assert el.canonical.style.dx >= 0, el.canonical.style.dx
