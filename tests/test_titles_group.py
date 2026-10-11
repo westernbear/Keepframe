@@ -83,8 +83,8 @@ def test_movers_and_solid_members_are_not_fragments():
 
 
 def test_sprite_does_not_bridge_separate_texts():
-    # "Sale" and "Today" are too far apart to join (gap 3 lines); a bullet between them is near both
-    f = frags(("t1", prop("Sale", 100, 80)), ("o1", prop("", 240, 30, kind="sprite")), ("t2", prop("Today", 350, 100)))
+    # "Sale" and "Today" are 70 px apart (> GAP_H*h = 48); the bullet sits 10 px from one and 30 px from the other
+    f = frags(("t1", prop("Sale", 100, 80)), ("o1", prop("", 190, 30, kind="sprite")), ("t2", prop("Today", 250, 100)))
     assert keys(group_fragments(f, [], FPS)) == [["o1"], ["t1"], ["t2"]]
     assert keys(group_fragments(f, ["Sale", "Today"], FPS)) == [["o1"], ["t1"], ["t2"]]
 
