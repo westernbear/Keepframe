@@ -5,7 +5,8 @@ import json, pickle, shutil
 import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
-from keepframe.analyze.titles import _reconcile
+from keepframe.analyze.reading import parse_reading
+from keepframe.analyze.titles import _reconcile, _vlm_line
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
@@ -13,6 +14,7 @@ from keepframe.ir.store import current_scene, scene_dir
 from keepframe.ir.synth import make_reference_scene, render_frames
 from keepframe.ir.tracks import element_bbox, eval_props, eval_track
 from keepframe.review.corrections import add_bbox_prompt, validate_correction_targets
+from keepframe.review.overlay import frame_overlay, read_manifest
 from keepframe.session.llm import AssistantReply
 
 OPTS = AnalyzeOptions(refine=False, use_ecc=False, generate_3d=False)
@@ -126,11 +128,11 @@ def split(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def read(tmp_path_factory):
-    """The same split read, with a VLM reading both lines and a re-read that disagrees with it."""
+    """The same split read, with a VLM reading both lines as one two-line string and a re-read that disagrees with it."""
     tmp = tmp_path_factory.mktemp("read")
     truth, video = _split_scene(tmp)
     ocr = Ocr(truth, tmp / "truth", video, split=True, reread="Grnd Qpcnm")
-    llm = Vision(TITLE, SUB)
+    llm = Vision(f"{TITLE}\n{SUB}")
     root, _ = _analyse(tmp, truth, video, ocr, llm)
     return root, ocr, llm
 
@@ -179,6 +181,18 @@ def test_merged_title_style_and_font_get_the_full_string(split):
     text, shape, centres = next(j for j in jobs if j[0] == TITLE)
     assert shape == p["canon"].shape[:2] and centres is not None and len(centres) == len(TITLE.replace(" ", ""))
     assert scene.element(ids[key]).canonical.font.family_guess == "Inter"
+
+
+def test_merged_title_shows_in_the_review_overlay(split):
+    """Final review I1: the fragments' observations are the title's, so review shows its lane and recognised text."""
+    root = split[0]
+    props, ids, _ = _stages(root)
+    scene, v = current_scene(root, "s1")
+    eid = ids[_titles(props)[0]]
+    assert next(o for o in read_manifest(root, v.analysis_file)["objects"] if o["id"] == eid)["intervals"]
+    read = {r["text"] for f in range(scene.frames) for o in frame_overlay(root, scene, v, f)["objects"] if o["id"] == eid
+            for r in o["ocr"]}
+    assert read == {"Grand", "Openin"}
 
 
 def test_without_vlm_text_comes_from_reread_and_is_flagged(split):
@@ -292,6 +306,22 @@ def test_reconcile_codes():
     assert _reconcile("", "Grand Opening", ["Grand", "Opening"], []) == ("Grand Opening", "fragments", "no_vlm")
     assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
+
+
+def test_vlm_line_never_widens_the_title():
+    """Final review I2: the reading keeps its line breaks and a VLM line replaces an OCR string only within LEN_TOL
+    (25 %) of its compact length: the next line or an extra word never becomes the title's text; a typo still does."""
+    two = [r.string for r in parse_reading(json.dumps({"texts": [{"string": " SUMMER  SALE \n UP TO 50% "}]}), [])]
+    assert two == ["SUMMER SALE\nUP TO 50%"]
+    assert _reconcile("SUMMER SALE", "SUMMER SALE", ["SUMMER", "SALE"], two) == ("SUMMER SALE", "vlm", None)
+    assert _reconcile("SUMMER SALE", "SUMMER SALE", ["SUMMER", "SALE"], ["SUMMER SALE UP TO 50%"]) == \
+        ("SUMMER SALE", "ocr", "vlm_ocr_disagree")
+    assert _reconcile("New Arrivals", "New Arrivals", ["New", "Arrivals"], ["New Arrivals Now"]) == \
+        ("New Arrivals", "ocr", "vlm_ocr_disagree")
+    assert _reconcile("", "SUMMER SAL", ["SUMMER", "SAL"], two) == ("SUMMER SALE", "vlm", None)   # a missed glyph
+    for text, strings in (("SUMMER SALE", ["SUMMER SALE 50%"]), ("New Arrivals", ["New Arrivals Now"])):
+        assert _vlm_line(text, strings) is None   # the typo fix of an unmerged text
+    assert _vlm_line("SUMMER SALE", ["SUMMER SALE\n50%"]) == "SUMMER SALE" and _vlm_line("Sal", ["Sale"]) == "Sale"
 
 
 def test_bbox_correction_on_a_merged_title_goes_to_its_first_text_track(split, tmp_path, monkeypatch):

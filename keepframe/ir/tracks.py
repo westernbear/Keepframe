@@ -151,7 +151,7 @@ def element_corners(el: Element, f: float, size: tuple[int, int] | None = None) 
 
 
 def element_bbox(el: Element, f: float, size: tuple[int, int] | None = None) -> tuple[float, float, float, float]:
-    # ponytail: captions, brief, server, solid_assets and verify.matrix call this without `size` and keep affine boxes,
+    # ponytail: captions, brief, solid_assets and verify.matrix call this without `size` and keep affine boxes,
     # so tilted titles get approximate boxes there; pass scene.size where a caller needs the projected box.
     P = element_corners(el, f, size)
     return float(P[:, 0].min()), float(P[:, 1].min()), float(P[:, 0].max()), float(P[:, 1].max())

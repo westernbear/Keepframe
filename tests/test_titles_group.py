@@ -98,3 +98,12 @@ def test_concurrent_line_at_same_place_is_not_succession():
     # same place, overlapping in time, but not side by side (gap < 0 passes) -> keep onset gap beyond ONSET_S
     f = frags(("t1", prop("Hello", 100, 100, 0, 40)), ("t2", prop("Hello", 100, 100, 35, 80)))
     assert len(group_fragments(f, [], FPS)) == 2
+
+
+def test_successive_numbered_cards_stay_separate():   # final review I3: one card after another, in place
+    for a, b in (("Step 1", "Step 2"), ("Chapter 1", "Chapter 2"), ("Episode 12", "Episode 13"), ("Step 9", "Step 10")):
+        f = frags(("t1", prop(a, 100, 120, 0, 30)), ("t2", prop(b, 100, 120, 31, 60)))
+        assert len(group_fragments(f, [], FPS)) == 2, (a, b)
+        assert len(group_fragments(f, [a, b], FPS)) == 2, (a, b)
+    f = frags(("t1", prop("Episode 1", 100, 110, 0, 30)), ("t2", prop("Episode 12", 100, 120, 31, 60)))   # a reveal
+    assert len(group_fragments(f, [], FPS)) == 1

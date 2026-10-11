@@ -4,7 +4,7 @@ merged into one text prop over the full string: its plane tracked by homography,
 reconciled with the VLM's; a title whose glyphs come in one by one gets per-glyph delays (D15); a merged title that
 renders worse than its fragments goes back to them, grouped (D16)."""
 from __future__ import annotations
-import math, time
+import math, re, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
@@ -81,6 +81,13 @@ def partial_ratio(a: str, b: str) -> float:
     return max(SequenceMatcher(None, a, b[i:i + n]).ratio() for i in range(len(b) - n + 1))
 
 
+def _digits_agree(a: str, b: str) -> bool:
+    """One string's digits inside the other's: a reveal ("Episode 1" → "Episode 12"), not numbered cards in place
+    ("Step 1" / "Step 2", "Step 9" / "Step 10")."""
+    da, db = re.sub(r"\D", "", a), re.sub(r"\D", "", b)
+    return da in db or db in da
+
+
 def _size(b):
     return b[2] - b[0], b[3] - b[1]
 
@@ -125,7 +132,7 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
         w, hh = min(be[2], bl[2]) - max(be[0], bl[0]), min(be[3], bl[3]) - max(be[1], bl[1])
         small = min(np.prod(_size(be)), np.prod(_size(bl)))
         if not ((l.first - e.last) / fps <= SUCCESSION_S and w > 0 and hh > 0 and small > 0 and w * hh / small >= CONTAIN
-                and partial_ratio(a.text, b.text) >= SUBSTRING):
+                and partial_ratio(a.text, b.text) >= SUBSTRING and _digits_agree(a.text, b.text)):
             return False
     if strings:   # ponytail: a text-less sprite cannot be checked against the lines; the geometry gates vouch for it
         texts = [t for t in (a.text, b.text) if t]
@@ -166,6 +173,7 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
 MERGE_FAILED = "merge_failed"   # fail-soft code (R52): a title left as its fragments
 TITLE_DE, FADE_A, CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 25.0, 1.5, 0.9, 0.8, 0.02, 2.0, 0.3
 TILT_ROT, TILT_CONVERGE, TILT_LEN = 2.0, 0.8, 5.0   # D12 with R8 (a yawed title converges only ≈ cap·tan(ry)/d)
+LEN_TOL = 0.25   # a VLM line replaces an OCR string only within 25 % of its compact length (final review I2)
 
 
 def _tilted(quad, info) -> bool:
@@ -178,6 +186,20 @@ def _tilted(quad, info) -> bool:
 
 def _ratio(a: str, b: str) -> float:
     return SequenceMatcher(None, _compact(a), _compact(b)).ratio()
+
+
+def _close(a: str, b: str) -> bool:
+    """Compact lengths within LEN_TOL of the shorter's (one character on short words): a typo, not a wider block."""
+    la, lb = len(_compact(a)), len(_compact(b))
+    return abs(la - lb) <= max(1.0, LEN_TOL * min(la, lb))
+
+
+def _vlm_line(text: str, strings: list[str]) -> str | None:
+    """The VLM line (the strings split at their line breaks) of a close length (`_close`) nearest `text`, when within
+    ratio 0.8 of it; None otherwise. A title's next line or an extra word never becomes its text."""
+    lines = [ln for s in strings for ln in s.splitlines() if _close(ln, text)]
+    best = max(lines, key=lambda s: _ratio(s, text), default=None)
+    return best if best is not None and _ratio(best, text) >= SUBSTRING else None
 
 
 def _union(boxes):
@@ -303,15 +325,16 @@ def _join(pieces, alpha, h: float) -> str:
 
 
 def _reconcile(read: str, joined: str, texts: list[str], strings: list[str]) -> tuple[str, str, str | None]:
-    """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 of the OCR string (the re-read, else
-    the fragments joined) wins; else the line all fragment texts sit on wins, flagged as disagreeing with OCR; without
-    such a line the OCR string stays, flagged as disagreeing with the reading (or as unverified without one)."""
+    """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 and of a close length (`_vlm_line`)
+    of the OCR string (the re-read, else the fragments joined) wins; else the line of a length close to the joined
+    fragments that all fragment texts sit on wins, flagged as disagreeing with OCR; without such a line the OCR string
+    stays, flagged as disagreeing with the reading (or as unverified without one)."""
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
-        best = max(strings, key=lambda s: _ratio(s, ocr))
-        if _ratio(best, ocr) >= SUBSTRING:
+        if best := _vlm_line(ocr, strings):
             return best, "vlm", None
-        lines = [s for s in strings if texts and all(partial_ratio(t, s) >= SUBSTRING for t in texts)]
+        lines = [ln for s in strings for ln in s.splitlines()
+                 if texts and _close(ln, joined) and all(partial_ratio(t, ln) >= SUBSTRING for t in texts)]
         if lines:
             return max(lines, key=lambda s: _ratio(s, joined)), "vlm", "vlm_ocr_disagree"
         return ocr, source, "vlm_ocr_disagree"
@@ -546,11 +569,11 @@ def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> 
 def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) -> list[str]:
     """In place: each title's fragments (`group_fragments`, a group with a text track) and each tilted single text
     track (D12) become one text prop `title_<first text key>` (`merge_title`), the fragments under its `fragments`;
-    a VLM string within ratio 0.8 of an unmerged text corrects its OCR typos; a merged title, a revealed text or a
-    text whose box grows (R16) gets `glyphs` when its glyph onsets spread (`_glyph_mode`; a failure leaves it in box
-    mode and adds one note). A title that cannot be merged keeps its fragments, each marked `merge_note` =
-    MERGE_FAILED; a failure of the whole phase keeps every fragment and adds a note. `members`: the solid members'
-    keys (never fragments). Returns the new keys."""
+    a VLM line within ratio 0.8 and of a close length (`_vlm_line`) corrects an unmerged text's OCR typos; a merged
+    title, a revealed text or a text whose box grows (R16) gets `glyphs` when its glyph onsets spread (`_glyph_mode`;
+    a failure leaves it in box mode and adds one note). A title that cannot be merged keeps its fragments, each marked
+    `merge_note` = MERGE_FAILED; a failure of the whole phase keeps every fragment and adds a note. `members`: the
+    solid members' keys (never fragments). Returns the new keys."""
     t0 = time.perf_counter()
     done: list[str] = []
     try:
@@ -577,10 +600,10 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
                 del props[k]
             props[key] = p
             done.append(key)
-        for k, p in props.items():   # a matching VLM string corrects OCR typos in a title left as it was
+        for k, p in props.items():   # a matching VLM line corrects OCR typos in a title left as it was
             if strings and k not in done and isinstance(p, dict) and p.get("kind") == "text" and p.get("text"):
-                best = max(strings, key=lambda s: _ratio(s, p["text"]))
-                if best != p["text"] and _ratio(best, p["text"]) >= SUBSTRING:
+                best = _vlm_line(p["text"], strings)
+                if best and best != p["text"]:
                     p["text"], p["text_source"] = best, "vlm"
         t1, glyphs, tried = time.perf_counter(), 0, 0
         for k, p in props.items():   # D15: merged titles, revealed texts and texts whose box grows (R16)

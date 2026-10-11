@@ -60,7 +60,7 @@ def test_parse_reading_closed_vocabulary():
         {"string": "unreadable", "frames": [3]}, {"string": ""}, {"string": 5}, "junk",
         {"string": "x" * 300, "lines": 99}]}) + "\n```"
     a, b = parse_reading(raw, [3, 6])
-    assert a.string == "HELLO world" and a.frames == [3] and a.lines == 2 and a.case == "upper" and a.font_class is None
+    assert a.string == "HELLO\nworld" and a.frames == [3] and a.lines == 2 and a.case == "upper" and a.font_class is None
     assert a.weight == "bold" and a.fill == "gradient" and a.effects == ["glow"] and a.perspective is True and a.cut_off is None
     assert len(b.string) == 120 and b.lines == 1 and b.effects == [] and b.perspective is None
     assert len(parse_reading(json.dumps({"texts": [{"string": str(i)} for i in range(60)]}), [])) == 40

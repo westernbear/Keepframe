@@ -132,7 +132,8 @@ def parse_reading(text: str, picks: list[int]) -> list[TitleReading]:
     out = []
     for row in rows if isinstance(rows, list) else []:
         s = row.get("string") if isinstance(row, dict) else None
-        s = " ".join(unicodedata.normalize("NFKC", s).split())[:MAX_CHARS] if isinstance(s, str) else ""
+        s = "\n".join(ln for raw in unicodedata.normalize("NFKC", s).splitlines() if (ln := " ".join(raw.split())))[:MAX_CHARS] \
+            if isinstance(s, str) else ""   # line breaks kept: the titles phase compares single lines
         if not s or s.casefold() == "unreadable":
             continue
         fr, lines, eff = row.get("frames"), row.get("lines"), row.get("effects")
