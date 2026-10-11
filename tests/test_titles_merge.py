@@ -5,12 +5,14 @@ import json, pickle, shutil
 import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
+from keepframe.analyze.titles import _reconcile
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
 from keepframe.ir.store import current_scene, scene_dir
 from keepframe.ir.synth import make_reference_scene, render_frames
 from keepframe.ir.tracks import element_bbox, eval_props, eval_track
+from keepframe.review.corrections import add_bbox_prompt, validate_correction_targets
 from keepframe.session.llm import AssistantReply
 
 OPTS = AnalyzeOptions(refine=False, use_ecc=False, generate_3d=False)
@@ -269,7 +271,7 @@ def test_merge_failure_keeps_fragments_with_message(split, tmp_path, monkeypatch
     assert {"Grand", "Openin"} <= {props[k].get("text") for k in kept}
     report = _report(root)
     for k in kept:
-        assert f"{ids[k]}: title merge failed (merge_failed); kept the fragment" in report["messages"]
+        assert f"{ids[k]}: title merge failed (merge_failed); kept as measured" in report["messages"]
     assert "secret detail" not in json.dumps(report) and {ids[k] for k in kept} <= fallback_ids(props, ids)
 
 
@@ -284,3 +286,27 @@ def test_rerun_from_sprites_remerges_with_cached_reading(read, tmp_path, monkeyp
     assert _report(root)["vlm_calls"] == 0
     assert ids == before and key in before
     assert (props[key]["text"], props[key]["text_source"]) == (TITLE, "vlm") and scene.element(ids[key]).canonical.text == TITLE
+
+
+def test_reconcile_codes():
+    assert _reconcile("", "Grand Opening", ["Grand", "Opening"], []) == ("Grand Opening", "fragments", "no_vlm")
+    assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
+    assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
+
+
+def test_bbox_correction_on_a_merged_title_goes_to_its_first_text_track(split, tmp_path, monkeypatch):
+    """A merged title (`title_t<id>`) takes a bbox prompt through its first text track, and stays merged."""
+    root = tmp_path / "p"
+    shutil.copytree(split[0], root)
+    _stub(monkeypatch, split[2])
+    props, ids, _ = _stages(root)
+    key = _titles(props)[0]
+    first = int(key.removeprefix("title_t"))
+    sd, f = scene_dir(root, "s1"), split[1].frames - 2
+    box = next(t for t in pickle.loads((sd / "stages/text.pkl").read_bytes())["tracks"] if t.id == first).boxes[f].bbox
+    bbox = (box[0], box[1], box[2] - 1, box[3])   # not larger: the track's canonical frame (largest box) stays
+    validate_correction_targets(root, "s1", "bbox", {"object_id": ids[key]})
+    add_bbox_prompt(root, "s1", f, bbox, ids[key])
+    track = next(t for t in pickle.loads((sd / "stages/text.pkl").read_bytes())["tracks"] if t.id == first)
+    assert track.boxes[f].bbox == bbox and track.boxes[f].source == "manual_box"
+    assert _titles(_stages(root)[0]) == [key]

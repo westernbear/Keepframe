@@ -111,13 +111,16 @@ def _stage_background(frames, opts, sd):
     return bg, bconf, plate
 
 
-def _stage_text(frames, bg, opts, ocr, sd, reader=None):
+def _stage_text(frames, bg, opts, ocr, sd, reader=None, built=None):
+    """`built`: a list that receives the engine this stage loads, for the sprites stage's title re-reads."""
     boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None; reading = None
     if opts.ocr:
         if ocr is None:
             try:
                 from .text import RapidOcr
                 ocr = RapidOcr(max_side=opts.ocr_max_side)
+                if built is not None:
+                    built.append(ocr)
             except Exception as e:  # rapidocr missing or broken onnxruntime
                 msg = "text stage skipped (ocr_failed)"
                 err = str(e)
@@ -285,7 +288,7 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
                        else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
         if p.get("merge_note"):
-            out.append(f"{ids[k]}: title merge failed ({p['merge_note']}); kept the fragment")
+            out.append(f"{ids[k]}: title merge failed ({p['merge_note']}); kept as measured")
         if p.get("text_unverified"):
             out.append(f"{ids[k]}: title text not verified ({p['text_unverified']})")
     return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths
@@ -452,17 +455,21 @@ def _mover_videos(props: dict, movers, frames, plate, fps: float, sd: Path) -> N
 
 
 def _reread_ocr(ocr, opts):
-    """The OCR that re-reads merged titles: the text stage's engine, else RapidOCR loaded on first use; None with OCR
-    off (the fragments' strings stay)."""
+    """The OCR that re-reads merged titles: the text stage's engine, else RapidOCR loaded on first use (once: an
+    engine that cannot load reads nothing, and the fragments' strings stay); None with OCR off."""
     if not opts.ocr or ocr is not None:
         return ocr if opts.ocr else None
     engine: list = []
 
     def read(img):
         if not engine:
-            from .text import RapidOcr
-            engine.append(RapidOcr(max_side=opts.ocr_max_side))
-        return engine[0](img)
+            try:
+                from .text import RapidOcr
+                engine.append(RapidOcr(max_side=opts.ocr_max_side))
+            except Exception as e:   # fail soft, once
+                log.warning("title re-read OCR unavailable: %s", describe(e, trace=True))
+                engine.append(None)
+        return engine[0](img) if engine[0] is not None else []
     return read
 
 
@@ -554,7 +561,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
                  members=members)
     if title_notes:
         props["_titles_message"] = "; ".join(title_notes)
-    if opts.refine and any(p["kind"] == "sprite" and not p.get("mover") for p in props.values()):
+    if opts.refine and any(isinstance(p, dict) and p["kind"] == "sprite" and not p.get("mover") for p in props.values()):
         try:
             from .device import resolve_device
             from .refine import refine_affine, torch_available
@@ -567,7 +574,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
                         torch.cuda.empty_cache()
                 except ImportError:
                     pass
-                keys = [k for k, p in props.items() if p["kind"] == "sprite" and not p.get("mover")]   # movers hold their centroid track
+                keys = [k for k, p in props.items()   # movers hold their centroid track; "_…" entries are messages
+                        if isinstance(p, dict) and p["kind"] == "sprite" and not p.get("mover")]
                 dev = resolve_device()
                 n, hh, ww = frames.shape[:3]
                 log.info("refine start device=%s sprites=%s frames=%s %sx%s iters=%s",
@@ -816,7 +824,9 @@ def analyze_scene_frames(
     log.info("background rgb=%s confidence=%s", list(bg), bconf)
     t = _stage_done("background", t)
     report_stage("text")
-    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd, captioner)
+    built: list = []   # the engine the text stage loads, if any: one RapidOCR per analysis
+    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd, captioner, built=built)
+    ocr = ocr if ocr is not None else next(iter(built), None)
     t = _stage_done("text", t)
     report_stage("regions")
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
@@ -1016,9 +1026,10 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
             plate = pass1_plate(sd)
     t = _stage_done("background", t)
     msg = None
+    built: list = []   # the engine a rerun of the text stage loads: the sprites stage re-reads titles with it
     if boundary <= STAGES.index("text"):
         report_stage("text")
-        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd, captioner)
+        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd, captioner, built=built)
     else:
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]
@@ -1058,7 +1069,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     if boundary <= STAGES.index("sprites") or redo:
         report_stage("sprites")
         props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                               movers=movers, plate_model=model, fps=fps, dropped=dropped)
+                               movers=movers, plate_model=model, fps=fps, dropped=dropped, ocr=next(iter(built), None))
     else:
         props = _pk(sd, "props")
     t = _stage_done("sprites", t)

@@ -302,7 +302,7 @@ def _join(pieces, alpha, h: float) -> str:
 def _reconcile(read: str, joined: str, texts: list[str], strings: list[str]) -> tuple[str, str, str | None]:
     """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 of the OCR string (the re-read, else
     the fragments joined) wins; else the line all fragment texts sit on wins, flagged as disagreeing with OCR; without
-    such a line (or a reading) the OCR string stays, unverified."""
+    such a line the OCR string stays, flagged as disagreeing with the reading (or as unverified without one)."""
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
         best = max(strings, key=lambda s: _ratio(s, ocr))
@@ -311,6 +311,7 @@ def _reconcile(read: str, joined: str, texts: list[str], strings: list[str]) -> 
         lines = [s for s in strings if texts and all(partial_ratio(t, s) >= SUBSTRING for t in texts)]
         if lines:
             return max(lines, key=lambda s: _ratio(s, joined)), "vlm", "vlm_ocr_disagree"
+        return ocr, source, "vlm_ocr_disagree"
     return ocr, source, "no_vlm"
 
 
@@ -400,14 +401,17 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             "plane_fit_px": fit_props(H0, wh, size)[1], "text_source": source, "text_unverified": unverified}
 
 
-def _tilted_track(f: Fragment, props: dict, frames, plate) -> bool:
-    """D12 on a single text track at its settled frame: the quad of its glyph mask turns ≥ 2° or converges ≥ 0.8°."""
+def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> bool:
+    """D12 on a single text track at its settled frame: the quad of its glyph mask turns ≥ 2° or converges ≥ 0.8°.
+    A failure leaves the track on the text_props path and `notes` one message per phase."""
     try:
         cf = _settled([f], frames, plate, _opacity([f], props, len(frames)))
         found = text_quad(_glyph_mask([f], frames, plate.at(cf), cf))
         return found is not None and _tilted(*found)
     except Exception as e:   # fail soft: the track stays on the text_props path
         log.warning("tilt test failed for %s: %s", f.key, describe(e, trace=True))
+        if (note := f"title tilt test failed ({MERGE_FAILED})") not in notes:
+            notes.append(note)
         return False
 
 
@@ -426,7 +430,7 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
         frags = [g for k, p in props.items() if not k.startswith("_") and isinstance(p, dict) and (g := fragment(k, p, size, members))]
         groups = [g for g in group_fragments(frags, strings, fps) if len(g) > 1 and any(props[f.key]["kind"] == "text" for f in g)]
         grouped = {f.key for g in groups for f in g}
-        groups += [[f] for f in frags if f.key not in grouped and props[f.key]["kind"] == "text" and _tilted_track(f, props, frames, plate)]
+        groups += [[f] for f in frags if f.key not in grouped and props[f.key]["kind"] == "text" and _tilted_track(f, props, frames, plate, notes)]
         for group in groups:
             keys = [f.key for f in group]
             try:

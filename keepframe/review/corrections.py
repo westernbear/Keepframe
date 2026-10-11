@@ -29,6 +29,11 @@ def _object_of(sd: Path, element_id: str) -> str:
     raise KeyError(element_id)
 
 
+def _track_key(key: str) -> str:
+    """A merged title (`title_<first text key>`) is corrected through its first text track."""
+    return key.removeprefix("title_")
+
+
 def _object_num(key: str) -> int:
     if key.startswith("s"):
         raise ValueError("shape elements from OCR boxes cannot take region masks or partial ID reassignment; "
@@ -41,7 +46,7 @@ def _object_num(key: str) -> int:
 def validate_correction_targets(root: Path, scene_id: str, op: str, args: dict) -> None:
     sd = scene_dir(root, scene_id)
     if op in {"mask", "bbox"}:
-        key = _object_of(sd, args["object_id"])
+        key = _track_key(_object_of(sd, args["object_id"]))
         if op == "bbox" and key.startswith("t"):
             return
         _object_num(key)
@@ -95,7 +100,7 @@ def add_bbox_prompt(root: Path, scene_id: str, frame: int, bbox: tuple[int, int,
     if x1 <= x0 or y1 <= y0:
         raise ValueError("box must have positive area")
     bbox = (x0, y0, x1, y1)
-    key = _object_of(sd, object_id)
+    key = _track_key(_object_of(sd, object_id))
     if scene.element(object_id).kind == "text":
         if not key.startswith("t"):
             raise ValueError("text boxes require a text track")
