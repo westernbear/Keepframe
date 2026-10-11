@@ -20,7 +20,9 @@ log = get("keepframe.ae")
 # What a panel must draw for a spec: 1 = Keepframe AE 1.0 (images, solids, text, models, reveal, skew);
 # 2 = Task 14 (footage, Ramp gradients, Drop Shadows, Ramp + Set Matte fills, text stroke/tracking, baseline shear);
 # 3 = footage time stretch (video layers of a speed edit).
-SPEC_LEVEL = 3
+SPEC_LEVEL = 4
+# AE's z points away from the viewer, CSS's toward it: a CSS tilt reads as the negated AE X/Y Rotation (to confirm live).
+AE_TILT_SIGN = -1.0
 
 
 def _rounded(value):
@@ -520,6 +522,8 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label, wait=True):
     props = _props(tracks, fix, fps, warnings, el.id)
     if kind == "model":
         props.update(rotation_x=_scalar(tracks["rx"], fps), rotation_y=_scalar(tracks["ry"], fps))
+    elif kind != "null" and (el.pending_asset or el.kind) != "3d" and ("rx" in el.tracks or "ry" in el.tracks):
+        props.update(rotation_x=_scalar(tracks["rx"], fps, AE_TILT_SIGN), rotation_y=_scalar(tracks["ry"], fps, AE_TILT_SIGN))
     return {"id": f"kf:{el.id}", "kind": kind, "name": f"{el.id} · {el.label or el.kind}",
             "label": label, "in": el.visible[0], "out": el.visible[1],
             "source": source, "anchor": anchor, "props": props,
@@ -599,6 +603,8 @@ def comp_spec_json(scene: Scene, scene_dir: Path, *, project: str, scene_id: str
 
 def spec_level(spec: dict) -> int:
     """The SPEC_LEVEL a panel needs to draw `spec` (older panels ignore or reject what they do not know)."""
+    if any(layer["kind"] != "model" and "rotation_x" in layer["props"] for layer in spec["layers"]):
+        return 4
     if any(layer["kind"] == "footage" and "stretch" in layer["source"] for layer in spec["layers"]):
         return 3
     for layer in spec["layers"]:

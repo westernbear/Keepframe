@@ -139,7 +139,7 @@ def test_spin_motion_constraints_and_brief(tmp_path, prop):
     assert (motion.type, motion.mag, motion.dur) == ("spin", 360, 10)
     assert all(c.keep and eval_pred(c.pred, build_context(scene)) for c in apply_keep_preset(extract_constraints(scene), "content_only"))
     assert "spins 360°" in scene_brief(scene) and "(3D 후보)" in scene_brief(scene)
-    assert 'sprites ignore' in scene_brief(scene)
+    assert 'tilt 2D elements with perspective' in scene_brief(scene) and 'sprites ignore' not in scene_brief(scene)
     element.kind = "sprite"
     element.canonical.model = None
     assert extract_motions(scene) == []

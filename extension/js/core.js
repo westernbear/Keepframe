@@ -4,11 +4,11 @@
     if (typeof window !== 'undefined') root.KeepframeCore = core;
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
-    const EXTENSION_VERSION = '1.1.0';
+    const EXTENSION_VERSION = '1.2.0';
     // What this panel draws (the server's spec.SPEC_LEVEL): 2 = footage, Ramp gradients, Drop Shadows, gradient
-    // fills, text stroke/tracking; 3 = footage time stretch (speed edits). Builds are stamped by date, so the server
+    // fills, text stroke/tracking; 3 = footage time stretch (speed edits); 4 = rx/ry tilt (3D) on text, image and footage layers. Builds are stamped by date, so the server
     // gates on this, not on the version.
-    const SPEC_LEVEL = 3;
+    const SPEC_LEVEL = 4;
     // Video preparation is asked about every 2 s for at most 20 min (the server bounds each encode to 10 min).
     const PREPARE_RETRY_MS = 2000, PREPARE_MAX_TRIES = 600;
     const HOST_BUILD = "dev";
