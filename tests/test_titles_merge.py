@@ -6,10 +6,10 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
 from keepframe.analyze.reading import parse_reading
-from keepframe.analyze.titles import _reconcile, _vlm_line
+from keepframe.analyze.titles import _reconcile, _vlm_line, fragment, merge_title
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
-from keepframe.ir.schema import Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
+from keepframe.ir.schema import PROPS, Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
 from keepframe.ir.store import current_scene, scene_dir
 from keepframe.ir.synth import make_reference_scene, render_frames
 from keepframe.ir.tracks import element_bbox, eval_props, eval_track
@@ -352,3 +352,26 @@ def test_bbox_correction_on_a_merged_title_goes_to_its_first_text_track(split, t
     track = next(t for t in pickle.loads((sd / "stages/text.pkl").read_bytes())["tracks"] if t.id == first)
     assert track.boxes[f].bbox == bbox and track.boxes[f].source == "manual_box"
     assert _titles(_stages(root)[0]) == [key]
+
+
+def test_turned_note_keeps_rx_ry_zero():
+    """V3 (ig1 e26): a note turned 13° in the plane with a 23 px cap at 1920 wide: its line fits converge by noise
+    only, so rot carries the turn and rx = ry = 0 (they read 46° and 58°)."""
+    size, n = (1920, 1080), 3
+    rgba = render_styled(["New aproach"], FontGuess(family_guess="Inter", weight=700, size_px=32, source="bundled"), "#202020", None)
+    h, w = rgba.shape[:2]
+    M = cv2.getRotationMatrix2D((w / 2, h / 2), -13, 1.0)
+    M[:, 2] += (300 - w / 2, 400 - h / 2)
+    a = cv2.warpAffine(rgba[..., 3], M, size, flags=cv2.INTER_LINEAR)[..., None].astype(np.float32) / 255
+    plate = np.full((size[1], size[0], 3), (250, 240, 200), np.uint8)
+    frame = (plate * (1 - a) + np.float32([32, 32, 32]) * a).round().astype(np.uint8)
+    frames = np.repeat(frame[None], n, 0)
+    ys, xs = np.nonzero(a[..., 0] > 0.5)
+    x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+    raw = np.full((n, 11), np.nan)
+    raw[:] = [(x0 + x1) / 2, (y0 + y1) / 2, 1, 1, 0, 0, 0, 1, 1, 0, 0]
+    p = {"raw": raw, "canon": np.dstack([frame[y0:y1, x0:x1], (a[y0:y1, x0:x1, 0] > 0.5).astype(np.uint8) * 255]),
+         "kind": "text", "first": 0, "last": n - 1, "text": "New aproach", "font": None, "cf": 0}
+    out = merge_title([fragment("t1", p, size)], {"t1": p}, frames, plate, ocr=None, strings=[], size=size, fps=30.0)
+    assert not out["plane"] and not out["raw"][:, [PROPS.index("rx"), PROPS.index("ry")]].any()
+    assert abs(abs(out["raw"][0, PROPS.index("rot")]) - 13) < 1.5, out["raw"][0]

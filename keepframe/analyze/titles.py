@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 import cv2, numpy as np
 from ..ir.colour import rgb8_to_hex
 from ..ir.schema import DEFAULTS, PROPS, GlyphReveal, Group
-from ..ir.tracks import glyph_edges, is_tilted, projective_matrix
+from ..ir.tracks import glyph_edges, is_tilted, perspective_px, projective_matrix
 from ..log import describe, get
 from .background import foreground_mask_plate
 from .keyframes import fill_gaps
@@ -169,6 +169,17 @@ def _tilted(quad, info) -> bool:
     ponytail: a short word stays flat, however it turns; upgrade path: the glyph stems' vanishing point."""
     width = float(np.linalg.norm(quad[1] - quad[0])) - 2 * PAD[0] * info["cap_px"]
     return width >= TILT_LEN * info["cap_px"] and quad_tilted(info, rot=TILT_ROT, converge=TILT_CONVERGE)
+
+
+def _perspective(info, size) -> bool:
+    """V3: rx/ry only where perspective is observable: the cap line and baseline converge ≥ 0.8° (a turn in the
+    plane alone does not: rot carries it, rx = ry = 0) on a cap a 45° yaw converges by that much (cap·tan(ry)/d,
+    d the stage perspective). On a smaller cap the line fits and ECC's projective terms are glyph noise that
+    `fit_props` reads as large angles (ig1's notes, caps of 23 and 28 px at d 2667: rx 46°, ry 58°).
+    ponytail: a title with a cap under d·tan(0.8°) (37 px at 1920 wide) stays flat however it turns; upgrade path:
+    the foreshortening of the glyph advances along the line."""
+    return abs(info["converge_deg"]) >= TILT_CONVERGE \
+        and info["cap_px"] >= perspective_px(size) * math.tan(math.radians(TILT_CONVERGE))
 
 
 def _ratio(a: str, b: str) -> float:
@@ -370,7 +381,7 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
     if found is None:
         return None
     quad, info = found
-    tilted = _tilted(quad, info)
+    tilted = _tilted(quad, info) and _perspective(info, size)
     # ponytail: an upright title stays flat (rx = ry = 0) even if it tilts after cf; upgrade path: a tilt test per frame.
     if not tilted:   # upright: a rectangle on the baseline (the cap line's slope is glyph noise there)
         tl, tr, br, bl = quad
