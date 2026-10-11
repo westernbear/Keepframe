@@ -1,8 +1,9 @@
 from __future__ import annotations
-import difflib, math, os
+import difflib, hashlib, math, os, urllib.request
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import Lock, local
 from typing import Protocol
 import cv2, numpy as np
@@ -83,6 +84,41 @@ def _ocr_gpu_mem_limit() -> int:
     return 2 * 1024 ** 3
 
 
+_MS = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/"
+OCR_MODELS_MISSING = "ocr_models_missing"   # fail-soft code (R52): v4 runs and the report says so, never the exception
+# ponytail: mobile v5 only (the v5 rec ONNX carries its character list, so no rec_keys_path). Upgrade path: en_PP-OCRv5_rec_mobile for Latin-only clips.
+OCR_V5 = {"det_model_path": ("ch_PP-OCRv5_det_mobile.onnx", _MS + "det/ch_PP-OCRv5_det_mobile.onnx",
+                             "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae"),
+          "rec_model_path": ("ch_PP-OCRv5_rec_mobile.onnx", _MS + "rec/ch_PP-OCRv5_rec_mobile.onnx",
+                             "5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5")}
+
+
+def ocr_models(cache: Path | None = None, *, fetch=urllib.request.urlopen) -> dict[str, str] | None:
+    """Verified PP-OCRv5 model paths for RapidOCR, downloaded once; None (v4, one warning) when unavailable.
+    KEEPFRAME_OCR_MODELS=v4 opts out; KEEPFRAME_OCR_DIR moves the cache."""
+    if os.environ.get("KEEPFRAME_OCR_MODELS") == "v4":
+        return None
+    cache = Path(cache or os.environ.get("KEEPFRAME_OCR_DIR") or Path.home() / ".cache" / "keepframe" / "ocr" / "v5")
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+        paths = {}
+        for key, (name, url, sha) in OCR_V5.items():
+            path = cache / name
+            if not (path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == sha):
+                with fetch(url, timeout=60) as r:
+                    data = r.read()
+                if hashlib.sha256(data).hexdigest() != sha:
+                    raise ValueError(f"sha256 mismatch for {name}")
+                tmp = path.with_name(f"{name}.{os.getpid()}.part")
+                tmp.write_bytes(data)
+                os.replace(tmp, path)
+            paths[key] = str(path)
+        return paths
+    except Exception as e:
+        log.warning("ocr v5 models unavailable, using v4 (%s): %s", OCR_MODELS_MISSING, describe(e, trace=True))
+        return None
+
+
 class RapidOcr:
     def __init__(self, max_side: int | None = None):
         if max_side is not None and max_side <= 0:
@@ -119,13 +155,15 @@ class RapidOcr:
             # RapidOCR 1.4.4 ignores det_limit_side_len for limit_type="max".
             # Prevent detector upscaling; cap its input explicitly below.
             kw["det_limit_type"] = "max"
+        self.models = ocr_models()
+        kw.update(self.models or {})
         self._engine_kwargs = kw
         self._ocr = RapidOCR(**kw)
 
     def fork(self) -> RapidOcr:
         """Give each frame worker its own mutable RapidOCR pipeline and sessions."""
         worker = RapidOcr.__new__(RapidOcr)
-        worker.max_side, worker.workers = self.max_side, self.workers
+        worker.max_side, worker.workers, worker.models = self.max_side, self.workers, self.models
         worker._engine_kwargs = self._engine_kwargs.copy()
         worker._ocr = type(self._ocr)(**worker._engine_kwargs)
         return worker

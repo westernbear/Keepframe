@@ -41,7 +41,8 @@ COPY keepframe ./keepframe
 
 RUN pip install --no-cache-dir ".[ocr,llm]" \
     && python -m playwright install --with-deps chromium \
-    && mkdir -p /data/workspace
+    && mkdir -p /data/workspace \
+    && python -c "from keepframe.analyze.text import ocr_models; ocr_models()"
 
 WORKDIR /data/workspace
 EXPOSE 8765 1455
