@@ -659,8 +659,9 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     """(TextStyle, fill hex, info) for a text element from its matted texture (un-premultiplied RGBA, padding 0) and
     the frames / plate it was matted from. core: today's core-mask colour (hex), the tie-breaker when the fill
     measured may be the surroundings the matte kept (`core_fill`). info: stroke_px, cap_px, spread, unfilled (the
-    share of stroke centres the fill does not draw), centres, alpha (the fill's glyph coverage, unfaded) and
-    seconds."""
+    share of stroke centres the fill does not draw), centres, alpha (the fill's glyph coverage, unfaded; the
+    unfaded texture alpha where the fill does not draw the line, `unfilled` > UNFILLED: a second colour or a ramp it
+    missed, whose glyphs the font fit would lose, spreading the string over the rest, V2) and seconds."""
     t0 = time.perf_counter()
     rgba = np.asarray(rgba)
     meta = meta or TextureMeta(method="binary", frames=[], confidence=matting.METHOD_FACTOR["binary"])
@@ -750,8 +751,9 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
         conf *= 0.8
     style = TextStyle(fill=grad, fade=fade, effects=effects, stroke_ratio=round(sw / cap, 4) if cap > 0 and sw > 0 else None,
                       confidence=round(conf, 3))
+    cover = a_g if unfilled <= UNFILLED else a_n
     info = {"stroke_px": round(sw, 3), "cap_px": round(cap, 3), "spread": round(spread, 3),
-            "unfilled": round(unfilled, 3), "centres": glyph_centres(a_g, text or ""), "alpha": a_g,
+            "unfilled": round(unfilled, 3), "centres": glyph_centres(cover, text or ""), "alpha": cover,
             "seconds": round(time.perf_counter() - t0, 4)}
     return style, hexv, info
 
@@ -759,11 +761,13 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
 # --- the pipeline phase -------------------------------------------------------------------------------------------
 
 def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None):
-    """The font-matching input of a text element: the fill coverage the style analysis left (the texture's alpha
-    when it failed), with its stroke ratio and glyph centres."""
+    """The font-matching input of a text element: the glyph coverage the style analysis left (the texture's alpha
+    when it failed, or for a tilted title: D14 skips its effect crop, so its coverage, with no plate to model a fade
+    or a ramp on, drops the glyphs they lighten; V2: seed 10's faded right half went, the fit spread the whole string
+    over the rest and started it 149 px left of its box), with its stroke ratio and glyph centres."""
     from ..fonts.match import TextJob
     text = p.get("text") or ""
-    if info is not None:
+    if info is not None and not tilted_raw(p.get("raw")):
         alpha, centres, ratio = info["alpha"], info.get("centres"), style.stroke_ratio if style is not None else None
     else:
         alpha = np.asarray(p["canon"])[..., 3].astype(np.float32) / 255.0

@@ -327,6 +327,7 @@ def test_two_colour_line_takes_the_larger_glyph_area(tmp_path):
     assert float(delta_e(ramp, srgb_to_lab(np.float32(hex_to_rgb8(colour)))).min()) < 6
     assert _de(colour, "#c4dbf8") > 40
     assert info["unfilled"] > textstyle.UNFILLED and style.confidence < c.meta.confidence
+    assert info["alpha"].sum() > 0.9 * c.alpha.sum()   # V2 (ig3 e59, dx -103): the font fit reads the blue words too
 
 
 # --- real textures (the first Stage A clip run, R66: envato1, ig3, ig2) ---------------------------------------------
@@ -697,3 +698,15 @@ def test_font_work_cap_keeps_preliminary_font_with_message(styled_clip, monkeypa
     assert el.canonical.font.confidence <= 0.5
     report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
     assert f"{el.id}: font not matched (scene work cap reached); kept sans-serif" in report["messages"], report["messages"]
+
+
+def test_tilted_title_font_job_reads_the_canon_alpha():
+    """V2 (seed 10): with no plate under a tilted title its fill coverage dropped the faded half, the font fit spread
+    the string over the rest (Fira Sans, dx -149) and a retext lost "Fall D"; the matcher reads the binary canon."""
+    canon = np.zeros((20, 80, 4), np.uint8)
+    canon[4:16, 4:76, 3] = 255
+    raw = np.zeros((3, 11))
+    raw[:, 10] = -30.0   # ry
+    info = {"alpha": np.zeros((20, 80), np.float32), "centres": None}
+    job = textstyle._font_job("k", {"text": "NEW", "canon": canon, "raw": raw}, TextStyle(), info)
+    assert job.alpha.sum() == (canon[..., 3] > 0).sum()
