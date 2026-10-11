@@ -42,9 +42,11 @@ class Fragment:
 
 
 def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
-    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them) and video
-    sprites (and anything visible in fewer than MIN_FRAMES frames)."""
-    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("kind") not in ("text", "sprite"):
+    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them),
+    video sprites and the pieces of a track split at a cut (`text_group`: never merged back into one canon), and
+    anything visible in fewer than MIN_FRAMES frames."""
+    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("text_group") \
+            or p.get("kind") not in ("text", "sprite"):
         return None
     raw, canon = p["raw"], p["canon"]
     ch, cw = canon.shape[:2]
@@ -563,10 +565,12 @@ def glyph_reveal(p: dict, frames, plate, size, text: str, *, fps: float = 30.0) 
 
 def _grows(p: dict) -> bool:
     """R16: an unmerged text whose OCR box widens from a steady left edge over its first frames: < 0.8× its width at
-    cf on its first frame, the left edge there within 0.25 line heights of cf's (a reveal read as it grew)."""
+    cf on its first frame (sx times the revealed share: `text_props` reveals the canon's start where the read is
+    its start), the left edge there within 0.25 line heights of cf's (a reveal read as it grew)."""
     raw, (ch, cw), f, cf = p["raw"], p["canon"].shape[:2], int(p["first"]), int(p["cf"])
     left = raw[:, 0] - raw[:, 2] * cw / 2
-    return bool(raw[f, 2] < GROW_W * raw[cf, 2] and abs(left[f] - left[cf]) <= GROW_X * raw[cf, 3] * ch)
+    shown = raw[:, 2] * (np.nan_to_num(raw[:, PROPS.index("reveal")], nan=1.0) if raw.shape[1] > PROPS.index("reveal") else 1.0)
+    return bool(shown[f] < GROW_W * shown[cf] and abs(left[f] - left[cf]) <= GROW_X * raw[cf, 3] * ch)
 
 
 def _glyph_mode(p: dict, frames, plate, size, fps, hold: bool = False) -> bool:

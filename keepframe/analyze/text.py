@@ -1,6 +1,7 @@
 from __future__ import annotations
 import difflib, math, os
 from collections import Counter, deque
+from itertools import groupby
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from threading import Lock, local
@@ -23,6 +24,7 @@ PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced
 FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
 FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
 WHOLE_READ = 0.75       # V1: a canonical frame's read holds at least this share of the track's text (compact characters)
+CUT_H = 1.6             # a box this much taller or shorter than the frame before's may be another text (`split_cuts`)
 LINE_DE, LINE_A = 25.0, 1.5   # `on_line`: ΔE76 off the line from the plate through the colour; how far past the colour
 _warned_ocr_cap_unavailable = False
 
@@ -257,6 +259,7 @@ class TextTrack:
     boxes: dict[int, TextBox] = field(default_factory=dict)
     text: str = ""
     reveal: bool = False
+    cut_of: int | None = None   # `split_cuts`: the id of the track this piece was cut from
 
     @property
     def first(self) -> int:
@@ -591,6 +594,37 @@ def _showing(track: TextTrack) -> TextTrack:
     return replace(track, boxes=keep) if keep else track
 
 
+def _lead(read: str, text: str) -> bool:
+    """`read` is shorter than `text` and half its characters at least lead it ("You", "You just (ea" of "You just
+    speak"; not "just"): a word not in yet, or gone already."""
+    r, t = _compact(read), _compact(text)
+    k = next((i for i, (a, b) in enumerate(zip(r, t)) if a != b), min(len(r), len(t)))
+    return 0 < len(r) < len(t) and 2 * k >= len(r)
+
+
+def split_cuts(tracks: list[TextTrack]) -> list[TextTrack]:
+    """ig3 t1 at f57 (a cut to a 2x "just"): a track whose box changes height by more than CUT_H from one frame to the
+    next, where the next MIN_TEXT_FRAMES reads show neither its text (`_showing`'s 3/4) nor its start (`_lead`), is
+    two texts the tracker joined across a cut: it is split there. Each piece takes the read that covers its own (R22)
+    and `cut_of`, the track's id (one `text_fragments` group: a retext replaces them all); the first keeps the id."""
+    out, next_id = [], max((t.id for t in tracks), default=0) + 1
+    for t in tracks:
+        fs, n = sorted(t.boxes), len(_compact(t.text))
+        h = lambda f: max(1, t.boxes[f].bbox[3] - t.boxes[f].bbox[1])
+        other = lambda f: len(_compact(t.boxes[f].text)) < WHOLE_READ * n and not _lead(t.boxes[f].text, t.text)
+        cuts = [i for i in range(MIN_TEXT_FRAMES, len(fs) - MIN_TEXT_FRAMES + 1)
+                if max(h(fs[i]), h(fs[i - 1])) > CUT_H * min(h(fs[i]), h(fs[i - 1]))
+                and all(other(f) for f in fs[i:i + MIN_TEXT_FRAMES])]
+        if t.reveal or not cuts:
+            out.append(t)
+            continue
+        for j, (a, b) in enumerate(zip([0, *cuts], [*cuts, len(fs)])):
+            boxes = {f: t.boxes[f] for f in fs[a:b]}
+            out.append(TextTrack(t.id if j == 0 else next_id, boxes, best_read([boxes[f].text for f in fs[a:b]]), cut_of=t.id))
+            next_id += j > 0
+    return out
+
+
 def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, *,
                infer_font: bool = True, plate: np.ndarray | None = None, full_opacity: bool = True,
                notes: list[str] | None = None):
@@ -628,6 +662,12 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
     raw = np.full((n_frames, 9), np.nan)
+    # a word not in yet or gone (ig3 f2-26, f39-56) is seen over several frames: a run of MIN_TEXT_FRAMES leading reads
+    leading = set()
+    for lead, run in groupby(sorted(track.boxes), key=lambda f: not reveal and _lead(track.boxes[f].text, track.text)):
+        run = list(run)
+        if lead and len(run) >= MIN_TEXT_FRAMES:
+            leading.update(run)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
         px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate, col))
@@ -639,6 +679,9 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
         x = x0 + cw / 2 if reveal else (x0 + x1) / 2
         sx = 1.0 if reveal else (x1 - x0) / cw
         fraction = float(np.clip((x1 - cb[0]) / cw, 0, 1)) if reveal else 1.0
+        if f in leading:   # the canon's start at the box's scale, revealed to the box's width (not squeezed into it)
+            sx = (y1 - y0) / ch
+            x, fraction = x0 + sx * cw / 2, float(np.clip((x1 - x0) / (sx * cw), 0, 1))
         raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None

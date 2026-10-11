@@ -126,3 +126,7 @@ def test_short_cards_in_place_stay_separate():   # C2: a short card then the nex
         f = frags(("t1", prop(a, 100, 120, 20, 30)), ("t2", prop(b, 100, 120, 31, 60)))
         assert len(group_fragments(f, [], FPS)) == 2, (a, b)
         assert len(group_fragments(f, [a, b], FPS)) == 2, (a, b)
+
+
+def test_pieces_of_a_cut_are_not_fragments():   # ig3: a track split at a cut is never merged back into one canon
+    assert fragment("t1", prop("You just speak", 100, 200, extra={"text_group": "cut_t1"}), SIZE) is None
