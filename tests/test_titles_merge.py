@@ -6,7 +6,7 @@ import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
 from keepframe.analyze.reading import parse_reading
-from keepframe.analyze.titles import _reconcile, _vlm_line, fragment, merge_title
+from keepframe.analyze.titles import _reconcile, _title_contrast, _vlm_line, fragment, merge_title
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import PROPS, Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
@@ -318,6 +318,8 @@ def test_reconcile_codes():
     assert _reconcile("", "Grand Openin", ["Openin", "Grand"], [])[0] == "Grand Openin"   # none holds the other: join
     assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
+    # V5 (seed 4): a text seen in more frames than the others together is the string, not the join of split reads
+    assert _reconcile("", "New ArrivalsArrivals", ["New Arrivals", "Arrivals", "Arwwials"], [], seen=[57, 5, 4])[0] == "New Arrivals"
 
 
 def test_vlm_line_never_widens_the_title():
@@ -375,3 +377,13 @@ def test_turned_note_keeps_rx_ry_zero():
     out = merge_title([fragment("t1", p, size)], {"t1": p}, frames, plate, ocr=None, strings=[], size=size, fps=30.0)
     assert not out["plane"] and not out["raw"][:, [PROPS.index("rx"), PROPS.index("ry")]].any()
     assert abs(abs(out["raw"][0, PROPS.index("rot")]) - 13) < 1.5, out["raw"][0]
+
+
+def test_title_contrast_keeps_the_glyphs_under_a_sprite():
+    """V5 (seed 4): a dark striped sprite filling most of the tracked crop was its median foreground, so the
+    title's red glyphs fell off that colour's line and ECC saw their edges only (it held 43 frames of a still title)."""
+    B = np.full((40, 200, 3), (60, 200, 160), np.uint8)
+    crop = B.copy()
+    crop[:, 60:200] = (20, 40, 50)
+    crop[10:30, 10:50] = (170, 0, 10)   # a glyph
+    assert _title_contrast(crop, B, np.float32([170, 0, 10]))[15:25, 15:45].min() > 0

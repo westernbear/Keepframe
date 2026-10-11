@@ -114,3 +114,8 @@ def test_flicker_piece_stays_out():   # R25 (ig1): a piece OCR saw in 1-2 frames
     assert fragment("t2", prop("Arrivals", 190, 140, 10, 11), SIZE) is None
     f = frags(("t1", prop("New", 100, 80)), ("t2", prop("Arrivals", 190, 140, 10, 12)))   # three frames do join
     assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]
+
+
+def test_piece_read_inside_a_still_title_joins_it():   # V5 (seed 4): "Arrivals" read apart over f55-59, a sprite in its canon
+    f = frags(("t1", prop("New Arrivals", 100, 260)), ("t2", prop("Arrivals", 190, 170, 50, 60, rgb=(60, 60, 60))))
+    assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]

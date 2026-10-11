@@ -23,7 +23,7 @@ log = get("keepframe.analyze")
 
 LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBSTRING = 1.6, 0.5, 1.2, 20.0, 1.0, 2.0, 0.5, 0.8
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
-ROT_DEG, CONTAIN, CONCURRENT = 5.0, 0.5, 0.5
+ROT_DEG, CONTAIN, CONCURRENT, INSIDE = 5.0, 0.5, 0.5, 0.25
 MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
 
 
@@ -37,6 +37,7 @@ class Fragment:
     lab: np.ndarray                                        # mean opaque colour, CIE Lab
     h: float                                               # median line height (canonical height × sy)
     rot: float                                             # median rotation, degrees
+    kind: str = "text"                                     # the prop's: "text" (a text track) or "sprite"
 
 
 def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
@@ -65,7 +66,8 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
     lab = cv2.cvtColor(rgb.mean(0).astype(np.float32).reshape(1, 1, 3) / 255, cv2.COLOR_RGB2Lab)[0, 0]
-    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)))
+    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)),
+                    float(np.median(rots)), p["kind"])
 
 
 def _digits_agree(a: str, b: str) -> bool:
@@ -88,9 +90,28 @@ def _sprite(f: Fragment) -> bool:
     return not f.text
 
 
+def _inside(a: Fragment, b: Fragment, h: float, fps: float) -> bool:
+    """V5: of two text tracks, the one with the shorter string lies inside the other's widest box along the line
+    (± INSIDE·h) and within INSIDE·h of its median line centre at ≥ half its frames, within the other's life
+    (± SUCCESSION_S): the title read in pieces while a sprite crossed it or as it faded in (seeds 4/6), whatever the
+    pieces' onsets, the jumps of their boxes (each holds what is read at a frame) and the colour of their canons (a
+    sprite crossing one at its canonical frame).
+    ponytail: a title that holds still (a moving one's widest box is one frame's); upgrade path: its widest box near
+    each frame."""
+    p, t = sorted((a, b), key=lambda f: len(_compact(f.text)))
+    span = SUCCESSION_S * fps
+    if (a.kind, b.kind) != ("text", "text") or len(_compact(p.text)) >= len(_compact(t.text)) \
+            or p.first < t.first - span or p.last > t.last + span:
+        return False
+    W, m = max(t.boxes.values(), key=lambda q: q[2] - q[0]), INSIDE * h
+    c = np.median([(q[1] + q[3]) / 2 for q in t.boxes.values()])
+    return float(np.mean([W[0] - m <= q[0] and q[2] <= W[2] + m and abs((q[1] + q[3]) / 2 - c) <= m
+                          for q in p.boxes.values()])) >= CONTAIN
+
+
 def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool:
     h = max(a.h, b.h)
-    if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or np.linalg.norm(a.lab - b.lab) > COLOUR_DE or abs(a.rot - b.rot) > ROT_DEG:
+    if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or abs(a.rot - b.rot) > ROT_DEG:
         return False
     common = sorted(a.boxes.keys() & b.boxes.keys())
     cy = lambda f, i: (f.boxes[i][1] + f.boxes[i][3]) / 2
@@ -103,14 +124,15 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
     for s, ref in ((a, b), (b, a)):   # glyph-sized and mostly concurrent with the text it joins
         if _sprite(s) and (not _is_glyph(s, ref) or len(common) < CONCURRENT * len(s.boxes)):
             return False
-    if common:   # concurrent and side by side
+    side = _inside(a, b, h, fps)   # V5: a piece of the title, whatever the colour of its canon
+    if not side and np.linalg.norm(a.lab - b.lab) > COLOUR_DE:
+        return False
+    if not side and common:   # concurrent and side by side
         gap = np.median([max(a.boxes[i][0], b.boxes[i][0]) - min(a.boxes[i][2], b.boxes[i][2]) for i in common])
         va = np.diff([(a.boxes[i][0] + a.boxes[i][2]) / 2 for i in common]), np.diff([cy(a, i) for i in common])
         vb = np.diff([(b.boxes[i][0] + b.boxes[i][2]) / 2 for i in common]), np.diff([cy(b, i) for i in common])
         dv = float(np.median(np.hypot(va[0] - vb[0], va[1] - vb[1]))) if len(common) > 1 else 0.0
         side = gap <= GAP_H * h and abs(a.first - b.first) / fps <= ONSET_S and dv <= MOTION_PX
-    else:
-        side = False
     if not side:   # successive in place: the later one starts after the earlier one ends, inside its box, repeating part of its string
         e, l = (a, b) if a.last <= b.first else (b, a)
         if l.first < e.last:
@@ -235,9 +257,11 @@ def _on_colour(crop, behind) -> tuple[np.ndarray, np.ndarray]:
     return fg, fg & on_line(crop, behind, np.median(crop[fg].astype(np.float32), axis=0))
 
 
-def _title_contrast(crop, B) -> np.ndarray:
-    """The contrast of the pixels with the title's colour (`_on_colour`): what crosses the title is not tracked."""
-    return contrast(crop, B) * _on_colour(crop, np.ascontiguousarray(np.broadcast_to(B, crop.shape)))[1]
+def _title_contrast(crop, B, colour) -> np.ndarray:
+    """The contrast of the foreground `on_line` of the title's colour at cf: what crosses the title is not tracked
+    (V5: the crop's own median foreground was a sprite's colour where one filled it, and ECC saw glyph edges only)."""
+    B = np.ascontiguousarray(np.broadcast_to(B, crop.shape))
+    return contrast(crop, B) * (foreground_mask_plate(crop, B) & on_line(crop, B, colour))
 
 
 def _settled(group: list[Fragment], frames, plate, op) -> int:
@@ -318,18 +342,23 @@ def _join(pieces, alpha, h: float) -> str:
     return out
 
 
-def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], multi: bool = True) -> tuple[str, str, str | None]:
+def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], multi: bool = True,
+               seen: list[int] | None = None) -> tuple[str, str, str | None]:
     """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 and of a close length (`_vlm_line`)
     of the OCR string (the re-read, else the fragments joined) wins; else the line of a length close to the joined
     fragments that all fragment texts sit on wins, flagged as disagreeing with OCR; without such a line the OCR string
     stays, flagged as disagreeing with the reading (or as unverified without one). R24, without a VLM: the re-read
     stands only for a group of several fragments (`multi`) and only when it is no shorter than its longest fragment
     text; else the fragments' string (a single tilted track: its own consensus text). R25: that string is the first
-    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join."""
+    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join. V5: a
+    text seen in more frames (`seen`, per text) than all the others together is the string, re-read or not: the
+    title read whole most of the time, its pieces and misreads split off while a sprite crossed it."""
     if not strings:
         if not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
             read = ""
         joined = next((c for c in texts if all(read_cover(t, c) >= SUBSTRING for t in texts)), joined)
+        if seen and texts and 2 * seen[0] > sum(seen):
+            read, joined = "", texts[0]
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
         if best := _vlm_line(ocr, strings):
@@ -389,7 +418,8 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
         quad = np.array([bl + (tl - bl) * h / np.linalg.norm(tl - bl), br + (tr - br) * h / np.linalg.norm(tr - br), br, bl])
     tpl, H0 = rectify(contrast(frames[cf], B) * mask, quad)   # the glyphs only: clutter at cf is not the title
     wh = tpl.shape[1::-1]
-    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=_title_contrast)
+    colour = np.median(frames[cf][mask].astype(np.float32), axis=0)
+    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=lambda c, b: _title_contrast(c, b, colour))
     if not tilted:   # sub-pixel ECC noise reads as degrees of rx/ry: fit the affine part only
         Hs = {f: _affine(H, wh) for f, H in Hs.items()}
     raw = plane_raw({f: Hs[f] for f in seen}, wh, size, n, op)
@@ -416,8 +446,10 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             x0, y0, x1, y1 = g.boxes[cf]
             q = np.array([[x0, y0, 1], [x1, y0, 1], [x1, y1, 1], [x0, y1, 1]], float) @ Hi.T
             pieces.append((g.text, float((q[:, 0] / q[:, 2]).min()), float((q[:, 0] / q[:, 2]).max())))
-    texts = [g.text for g in sorted(group, key=lambda g: -len(g.boxes)) if g.text]   # most-seen first (R25)
-    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1)
+    texted = sorted((g for g in group if g.text), key=lambda g: -len(g.boxes))   # most-seen first (R25)
+    texts = [g.text for g in texted]
+    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1,
+                                          [len(g.boxes) for g in texted])
     boxes = np.full((n, 4), np.nan)
     for f in seen:
         boxes[f] = np.round(_at(group, f))
