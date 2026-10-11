@@ -84,3 +84,18 @@ Condensed turns `envato1_title` and `ig3` (both gate cases of `test_real_sans_ti
 The ig1 run is `rerun(root, "s1", "sprites")` on a copy of the follow-ups analysis (`~/kfx/rb-t2/ig1` on home). The only font-set difference is seed 41 (Zilla Slab): its top 3 is now Zilla Slab, Nunito, Lora instead of Zilla Slab, Lora, Merriweather, still a hit. The synthetic run is `~/kf-b/eval/out/rb-t2` on home; its rows are the seeds 1–8 identity reference for Task 6.
 
 Rounded stays because it costs nothing on any measure and covers the bundled rounded faces (Fredoka, Comfortaa, Nunito, Quicksand) the same way as the other sans. The Bebas Neue → Jost swap seen on ig1 stays: the condensed fix that targeted it fails the fixture gate, and ig1 has no font truth to say which side is right.
+
+## Synthetic seeds 9 and 10 (before merge)
+
+Seed 9 reveals its title glyph by glyph (step 2-3 frames, ramp 4-6, opacity constant 1); seed 10 yaws it (ry -35 to -18, small rot, 60-72 px,
+two-stop gradient fill, `Fade(90, 1 -> 0.3)`). Run: `eval-edits --synthetic 10 --renderer numpy`, home `~/kf-b/eval/out/rb-t6` (commit 677a2c7,
+numpy renderer, v4 OCR). Seeds 1-8 rows equal `rb-t2/metrics.json` (seconds and sheet paths excluded).
+
+| seed | title | whole | title colour ΔE | font top-3 | α SAD | F ΔE int / edge | matched | elements truth/analysed |
+|---|---|---|---|---|---|---|---|---|
+| 9 stagger | "A Weekend Away" (+ subtitle) | yes (e3), subtitle yes (ratio 0.92) | 0.54 (subtitle 16.2) | 0.5 | 0.455 | 3.17 / 5.59 | 4 | 6 / 14 |
+| 10 plane | "New Arrivals" | yes (e4) | 94.1 | 0.0 | 0.498 | 1.34 / 13.6 | 3 | 5 / 13 |
+
+Gate `title_whole`: 11/13 titles whole over seeds 1-10 (0.846 < 0.9, fails). Seed 9 title edit: smear 0.70, glyph ΔE 2.5 at frame 30 but not visible at 39 (stagger
+unsettled). Seed 10 residue: s1/s3 unmatched, hide residue 0.6. The analysis splits both titles into pieces elsewhere (14 and 13 analysed
+elements), which Stage B's merge, plane fit and glyph measurement target.
