@@ -310,6 +310,33 @@ def _compact(text: str) -> str:
     return "".join(text.split()).casefold()
 
 
+def partial_ratio(a: str, b: str) -> float:
+    """Best difflib ratio of the shorter compact, casefolded string against any same-length window of the longer."""
+    a, b = _compact(a), _compact(b)
+    if not a or not b:
+        return 0.0
+    a, b = sorted((a, b), key=len)
+    n = len(a)
+    return max(difflib.SequenceMatcher(None, a, b[i:i + n]).ratio() for i in range(len(b) - n + 1))
+
+
+READ_CANDIDATES = 32
+
+
+def best_read(reads: list[str]) -> str:
+    """R22: the read that best covers a track's reads (in frame order). Of the reads seen in ≥ 2 frames (all of them
+    when none is), the one with the largest Σ count · cover(read ⊂ candidate), where cover is `partial_ratio` times
+    the share of the read the candidate can hold, min(1, |candidate| / |read|) in compact characters; ties by count,
+    then by first appearance. ponytail: a junk read seen twice that holds the title (two lines in one OCR box) wins,
+    and only the READ_CANDIDATES most common reads are candidates (the cost is candidates × distinct reads: 300
+    distinct reads took 2.7 s uncapped, 0.29 s capped); upgrade path: weigh in each read's box width."""
+    counts = Counter(reads)   # insertion order: first appearance (most_common keeps it among equal counts)
+    common = counts.most_common(READ_CANDIDATES)
+    cover = lambda r, c: partial_ratio(r, c) * min(1.0, len(_compact(c)) / max(len(_compact(r)), 1))
+    return max([c for c, n in common if n >= 2] or [c for c, _ in common],
+               key=lambda c: (sum(n * cover(r, c) for r, n in counts.items()), counts[c]))
+
+
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
     # The shorter box sets the tolerance, so a zoom cannot relax alignment.
     height = min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1])
@@ -404,7 +431,7 @@ def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_th
                 best = TextTrack(id=next_id); next_id += 1; tracks.append(best)
             best.boxes[f] = box; used.add(best.id)
     for t in tracks:
-        t.text = Counter(b.text for b in t.boxes.values()).most_common(1)[0][0]
+        t.text = best_read([t.boxes[f].text for f in sorted(t.boxes)])
     return tracks
 
 

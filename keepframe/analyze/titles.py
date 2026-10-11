@@ -16,7 +16,7 @@ from .background import foreground_mask_plate
 from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
-from .text import _glyph_core_mask
+from .text import _compact, _glyph_core_mask, partial_ratio
 from .textstyle import glyph_centres
 
 log = get("keepframe.analyze")
@@ -65,20 +65,6 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
     lab = cv2.cvtColor(rgb.mean(0).astype(np.float32).reshape(1, 1, 3) / 255, cv2.COLOR_RGB2Lab)[0, 0]
     return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)))
-
-
-def _compact(s: str) -> str:
-    return "".join(s.split()).casefold()
-
-
-def partial_ratio(a: str, b: str) -> float:
-    """Best difflib ratio of the shorter compact, casefolded string against any same-length window of the longer."""
-    a, b = _compact(a), _compact(b)
-    if not a or not b:
-        return 0.0
-    a, b = sorted((a, b), key=len)
-    n = len(a)
-    return max(SequenceMatcher(None, a, b[i:i + n]).ratio() for i in range(len(b) - n + 1))
 
 
 def _digits_agree(a: str, b: str) -> bool:
