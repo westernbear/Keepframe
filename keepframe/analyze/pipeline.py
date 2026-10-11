@@ -22,7 +22,7 @@ from .report import write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
-from .text import FULL_OPACITY_FAILED, OCR_MODELS_MISSING, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
+from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -109,14 +109,12 @@ def _stage_background(frames, opts, sd):
 
 
 def _stage_text(frames, bg, opts, ocr, sd):
-    boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None; v4_note = None
+    boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None
     if opts.ocr:
         if ocr is None:
             try:
                 from .text import RapidOcr
                 ocr = RapidOcr(max_side=opts.ocr_max_side)
-                if ocr.models is None and os.environ.get("KEEPFRAME_OCR_MODELS") != "v4":
-                    v4_note = f"ocr v5 models unavailable, used v4 ({OCR_MODELS_MISSING})"
             except Exception as e:  # rapidocr missing or broken onnxruntime
                 msg = "text stage skipped (ocr_failed)"
                 err = str(e)
@@ -135,8 +133,6 @@ def _stage_text(frames, bg, opts, ocr, sd):
                 msg = f"text tracks reclassified as shapes: {n}"
                 log.info("%s", msg)
             log.info("text boxes=%s tracks=%s shapes=%s", sum(len(b) for b in boxes), len(tracks), len(shape_tracks))
-    if v4_note:
-        msg = f"{msg}; {v4_note}" if msg else v4_note
     _pk(sd, "text", {"boxes": boxes, "tracks": tracks, "shape_tracks": shape_tracks, "message": msg})
     return boxes, tracks, shape_tracks, msg
 
