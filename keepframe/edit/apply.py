@@ -207,6 +207,35 @@ def _next_model(scene_dir: Path, eid: str) -> Path:
     return path
 
 
+def _group_items(scene: Scene, items: list) -> tuple[list, set[str]]:
+    """D16: an item on a member of a `text_fragments` group acts on the group (once per group and property): text goes
+    to its first text member and the other members are dropped; colour goes to every member, font to every text
+    member, timing to every member about the group's first frame (each member's delay takes its start's offset).
+    Other items stay as they are. Returns the items and the ids a group retext drops."""
+    group_of = {m: g for g in scene.groups if g.reason == "text_fragments" for m in g.members}
+    out, dropped, seen = [], set(), set()
+    for t in items:
+        g = group_of.get(t.element)
+        if g is None or t.property not in ("text", "color", "font", "timing"):
+            out.append(t)
+            continue
+        if (g.id, t.property) in seen:
+            continue
+        seen.add((g.id, t.property))
+        els = [scene.element(m) for m in g.members]
+        texts = [e.id for e in els if e.kind == "text"]
+        if t.property == "text":
+            out.append(t.model_copy(update={"element": texts[0]}))
+            dropped |= set(g.members) - {texts[0]}
+        elif t.property == "timing":
+            start, speed = min(e.visible[0] for e in els), t.speed or 1.0
+            out += [t.model_copy(update={"element": e.id, "delay": (t.delay or 0) + (e.visible[0] - start) * (1 / speed - 1) / scene.fps})
+                    for e in els]
+        else:
+            out += [t.model_copy(update={"element": m}) for m in (texts if t.property == "font" else g.members)]
+    return out, dropped
+
+
 def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, str] | None, attachment: str | Path | bytes | None,
                *, fonts: FontRegistry | None = None) -> Scene:
     """`fonts`: the project's registry (uploads); bundled fonts only when None."""
@@ -214,6 +243,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
     fonts = fonts or FontRegistry()
     out = scene.model_copy(deep=True)
     choice_of = choices or {}
+    items, dropped = _group_items(out, items)
     for t in items:
         if t.property == "timing":
             apply_timing(out, [t], choice_of)
@@ -298,6 +328,10 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.canonical.video = None   # the edited still (or model) replaces the clip: video is never recoloured (R55)
             el.canonical.video_rate = 1.0
         el.provenance = "manual"
+    if dropped:   # a group retext: the first text member draws the whole title
+        out.elements = [e for e in out.elements if e.id not in dropped]
+        out.groups = [g for g in (g.model_copy(update={"members": [m for m in g.members if m not in dropped]}) for g in out.groups)
+                      if len(g.members) > 1]
     return out
 
 

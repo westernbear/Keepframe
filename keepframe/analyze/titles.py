@@ -1,14 +1,15 @@
 """Title fragments: text tracks, junk-OCR shape tracks and glyph-sized sprites that belong to one title, grouped by
 geometry, colour, onset and motion (no VLM needed; with VLM strings both texts must sit on one common line), and
 merged into one text prop over the full string: its plane tracked by homography, its string re-read by OCR and
-reconciled with the VLM's; a title whose glyphs come in one by one gets per-glyph delays (D15)."""
+reconciled with the VLM's; a title whose glyphs come in one by one gets per-glyph delays (D15); a merged title that
+renders worse than its fragments goes back to them, grouped (D16)."""
 from __future__ import annotations
 import math, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
 from ..ir.colour import delta_e, rgb8_to_hex, srgb8_to_lab
-from ..ir.schema import DEFAULTS, PROPS, GlyphReveal
+from ..ir.schema import DEFAULTS, PROPS, GlyphReveal, Group
 from ..ir.tracks import glyph_edges, is_tilted, projective_matrix
 from ..log import describe, get
 from .background import foreground_mask_plate
@@ -599,3 +600,48 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
         notes.append(f"title merge failed ({MERGE_FAILED})")
     log.info("titles merge %.2fs merged=%s", time.perf_counter() - t0, len(done))
     return done
+
+
+# --- the guard (D16) ----------------------------------------------------------------------------------------------
+
+TITLE_GUARD = 0.005   # choose_solid's slack: a merged title stays when it renders within this of its fragments
+GUARD_FAILED, MERGE_WORSE = "guard_failed", "merge_worse"   # fail-soft code (R52); a merge the guard undid
+
+
+def guard_titles(props, frames, plate_or_bg, notes) -> None:
+    """D16, in place and before matting (binary textures on both sides): a merged title whose still renders worse than
+    its fragments by more than TITLE_GUARD (`solid_errors`: local RGB L1 in the union box, every 5th visible frame,
+    over the plate at its cf) goes back to its fragments under their own keys, each marked `merge_note` = MERGE_WORSE
+    and `text_group` = the title's key (`text_groups`). A failure keeps that merge and adds one note.
+    ponytail: restored fragments miss the VLM typo fix and glyph mode (both ran on the merged title); upgrade path:
+    run them again on what the guard restores."""
+    from .solid_assets import solid_errors
+    t0, undone = time.perf_counter(), 0
+    plate = as_plate(plate_or_bg)
+    for key in [k for k, p in props.items() if k.startswith("title_") and isinstance(p, dict)]:
+        p = props[key]
+        try:
+            ok = np.isfinite(p["boxes"]).all(1)
+            boxes = np.zeros(p["boxes"].shape, int)   # NaN outside the visible frames, whole pixels inside
+            boxes[ok] = np.rint(p["boxes"][ok])
+            err = solid_errors(frames, plate.at(int(p["cf"])), {**p, "boxes": boxes}, None)
+            log.info("titles guard %s still=%.4f fragments=%.4f", key, err["still"], err["fragments"])
+            if err["still"] > err["fragments"] + TITLE_GUARD:
+                del props[key]
+                props.update({k: {**f, "merge_note": MERGE_WORSE, "text_group": key} for k, f in p["fragments"].items()})
+                undone += 1
+        except Exception as e:   # fail soft: the merge stays
+            log.warning("title guard failed for %s: %s", key, describe(e, trace=True))
+            if (note := f"title guard failed ({GUARD_FAILED})") not in notes:
+                notes.append(note)
+    log.info("titles guard %.2fs undone=%s", time.perf_counter() - t0, undone)
+
+
+def text_groups(props, ids) -> list[Group]:
+    """One `text_fragments` group per title the guard undid: its fragments' element ids, in the title's order."""
+    groups: dict[str, list[str]] = {}
+    for k, p in props.items():
+        if isinstance(p, dict) and p.get("text_group") and k in ids:
+            groups.setdefault(p["text_group"], []).append(ids[k])
+    return [Group(id=f"text{i}", members=m, reason="text_fragments")
+            for i, m in enumerate((m for m in groups.values() if len(m) > 1), 1)]

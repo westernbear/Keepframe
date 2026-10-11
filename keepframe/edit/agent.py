@@ -19,7 +19,7 @@ from ..ir.paths import scene_asset_path
 from ..ir.store import current_scene, load_project, load_scene, new_version, scene_dir
 from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
-from .apply import apply_edit
+from .apply import _group_items, apply_edit
 from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
 from .tint import TintError
@@ -237,10 +237,12 @@ def _edit(
     released: list[str] = []
     choices_map = dict(choices or {})
     expected = scene
-    if any(t.property == "timing" for t in built.items):
+    items, dropped = _group_items(scene, built.items)   # as apply_edit applies them (D16: groups act as one)
+    if dropped or any(t.property == "timing" for t in items):
         expected = scene.model_copy(deep=True)
+        expected.elements = [e for e in expected.elements if e.id not in dropped]
         try:
-            apply_timing(expected, built.items, choices_map)
+            apply_timing(expected, items, choices_map)
         except ValueError as exc:
             if str(exc) != f"timing would make the scene longer than {MAX_SCENE_SECONDS}s":
                 raise

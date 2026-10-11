@@ -25,7 +25,7 @@ from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .plane import tilted_raw
-from .titles import merge_titles
+from .titles import guard_titles, merge_titles, text_groups
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -559,6 +559,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     title_notes: list[str] = []
     merge_titles(props, frames, plate_at, ocr=_reread_ocr(ocr, opts), reading=reading, fps=fps or 30.0, notes=title_notes,
                  members=members)
+    guard_titles(props, frames, plate_at, title_notes)   # D16: before refine and matting, binary textures on both sides
     if title_notes:
         props["_titles_message"] = "; ".join(title_notes)
     if opts.refine and any(isinstance(p, dict) and p["kind"] == "sprite" and not p.get("mover") for p in props.values()):
@@ -701,7 +702,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
         except Exception as e:  # captions are optional suggestions; analysis never fails on them
             log.warning("captions skipped: %s", describe(e, trace=True))
             messages.append("captions skipped (captions_failed)")
-    scene.groups = [] if scene.ui is not None else group_by_motion(scene.elements, raws)  # ponytail: parsed UI has no measured motion tracks.
+    # ponytail: parsed UI has no measured motion tracks (nor the analysis' text elements).
+    scene.groups = [] if scene.ui is not None else text_groups(props or {}, ids or {}) + group_by_motion(scene.elements, raws)
     t = _stage_done("semantics", t)
     report_stage("constraints")
     scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
