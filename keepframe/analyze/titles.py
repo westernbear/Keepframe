@@ -310,11 +310,15 @@ def _join(pieces, alpha, h: float) -> str:
     return out
 
 
-def _reconcile(read: str, joined: str, texts: list[str], strings: list[str]) -> tuple[str, str, str | None]:
+def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], multi: bool = True) -> tuple[str, str, str | None]:
     """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 and of a close length (`_vlm_line`)
     of the OCR string (the re-read, else the fragments joined) wins; else the line of a length close to the joined
     fragments that all fragment texts sit on wins, flagged as disagreeing with OCR; without such a line the OCR string
-    stays, flagged as disagreeing with the reading (or as unverified without one)."""
+    stays, flagged as disagreeing with the reading (or as unverified without one). R24, without a VLM: the re-read
+    stands only for a group of several fragments (`multi`) and only when it is no shorter than its longest fragment
+    text; else the fragments joined (a single tilted track: its own consensus text)."""
+    if not strings and not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
+        read = ""
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
         if best := _vlm_line(ocr, strings):
@@ -402,7 +406,7 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             q = np.array([[x0, y0, 1], [x1, y0, 1], [x1, y1, 1], [x0, y1, 1]], float) @ Hi.T
             pieces.append((g.text, float((q[:, 0] / q[:, 2]).min()), float((q[:, 0] / q[:, 2]).max())))
     texts = [g.text for g in group if g.text]
-    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings)
+    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1)
     boxes = np.full((n, 4), np.nan)
     for f in seen:
         boxes[f] = np.round(_at(group, f))

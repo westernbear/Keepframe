@@ -2,7 +2,7 @@ import cv2, numpy as np, pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.text import TextBox, TextTrack, best_read, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.analyze.text import TextBox, TextTrack, best_read, keep_text_track, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -40,12 +40,14 @@ def test_track_text_and_copy(tmp_scene_dir):
 
 def test_track_text_takes_the_read_that_covers_the_others():
     """R22, synthetic seeds 4 and 6 at 5668095 (RapidOCR): the most common exact read was a piece of the title."""
-    assert best_read(["New"] * 9 + ["NewArrivals"] * 9 + ["New Arrivals"] * 8) in ("NewArrivals", "New Arrivals")
+    assert best_read(["New"] * 9 + ["NewArrivals"] * 9 + ["New Arrivals"] * 8) == "New Arrivals"   # the spaced variant
     assert best_read(["Arrivals"] * 6 + ["ivals"] * 6 + ["wArrivals"] * 4 + ["ew Arri"] * 4 + ["New Arrivals"] * 4) == "New Arrivals"
     assert best_read(["New"] * 5 + ["New Arrivals"] * 8 + ["New Arrivals Up to 50% off"]) == "New Arrivals"   # junk seen once
     assert best_read(["Sale", "Sole"]) == "Sale"   # none seen twice: every read is a candidate, the first wins a tie
     boxes = [[TextBox(f, t, (10, 10, 10 + 12 * len(t), 30), 0.9)] for f, t in enumerate(["New"] * 3 + ["New Arrivals"] * 2)]
     assert [t.text for t in track_text(boxes)] == ["New Arrivals"]
+    glyph = track_text([[TextBox(f, t, (10, 10, 22, 30), 0.5)] for f, t in enumerate(["O"] * 5 + ["OO"] * 2)])
+    assert [t.text for t in glyph] == ["OO"] and not keep_text_track(glyph[0])   # the junk gate reads the modal "O"
 
 
 @pytest.mark.parametrize("plate_has_text_ghost", [False, True])

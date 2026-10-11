@@ -236,12 +236,13 @@ def test_tilted_title_gets_rx_ry_and_skips_matting(tmp_path):
     crossing it."""
     truth = make_reference_scene(tmp_path / "truth", 10, plate="flat", title="plane")
     video = _video(truth, tmp_path / "truth")
-    root, _ = _analyse(tmp_path, truth, video, Ocr(truth, tmp_path / "truth", video))
+    root, _ = _analyse(tmp_path, truth, video, Ocr(truth, tmp_path / "truth", video, reread="lew Arivals"))
     props, ids, scene = _stages(root)
     assert len(_titles(props)) == 1, list(props)
     key = _titles(props)[0]
     p, el, title = props[key], scene.element(ids[key]), truth.element("title1")
     assert p["plane"] and {"rx", "ry"} <= set(el.tracks) and el.canonical.text == title.canonical.text
+    assert (p["text_source"], p["text_unverified"]) == ("fragments", "no_vlm")   # R24: one re-read never beats the track
     assert "texture_meta" not in p and el.canonical.texture_meta is None   # textures v2 skipped (D14)
     assert set(np.unique(p["canon"][..., 3])) <= {0, 255}                 # the binary rectified texture
     settle = title.tracks["opacity"].keys[-1].t
@@ -304,6 +305,12 @@ def test_rerun_from_sprites_remerges_with_cached_reading(read, tmp_path, monkeyp
 
 def test_reconcile_codes():
     assert _reconcile("", "Grand Opening", ["Grand", "Opening"], []) == ("Grand Opening", "fragments", "no_vlm")
+    # R24 without a VLM (ig1 at 059a2b5): a re-read shorter than the longest fragment text, or of a single tilted
+    # track, does not replace the fragments' string; one as long as it does
+    assert _reconcile("inside uour", "inside your walls.", ["inside your walls.", "your"], []) == \
+        ("inside your walls.", "fragments", "no_vlm")
+    assert _reconcile("lew aproach", "New aproach", ["New aproach"], [], multi=False) == ("New aproach", "fragments", "no_vlm")
+    assert _reconcile("Grand Opening", "Grand Openin", ["Grand", "Openin"], []) == ("Grand Opening", "ocr", "no_vlm")
     assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
 

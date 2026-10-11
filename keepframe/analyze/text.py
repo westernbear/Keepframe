@@ -270,7 +270,10 @@ def keep_text_track(t: TextTrack) -> bool:
     ponytail: frame-count + alphanumeric heuristic; a text/non-text classifier if real clips still leak junk."""
     if len(t.boxes) < MIN_TEXT_FRAMES:
         return False
-    alnum = sum(ch.isalnum() for ch in t.text)
+    # best_read's choice covers the others, so a lone glyph read "O"×5 and "OO"×2 would pass as "OO": the gate reads
+    # the modal read instead; a reveal's full text and a copy line (not one of the reads) stand
+    reads = [b.text for b in t.boxes.values()]
+    alnum = sum(ch.isalnum() for ch in (t.text if t.reveal or t.text not in reads else Counter(reads).most_common(1)[0][0]))
     if alnum >= 2:
         return True
     if alnum == 0:
@@ -327,14 +330,16 @@ def best_read(reads: list[str]) -> str:
     """R22: the read that best covers a track's reads (in frame order). Of the reads seen in ≥ 2 frames (all of them
     when none is), the one with the largest Σ count · cover(read ⊂ candidate), where cover is `partial_ratio` times
     the share of the read the candidate can hold, min(1, |candidate| / |read|) in compact characters; ties by count,
-    then by first appearance. ponytail: a junk read seen twice that holds the title (two lines in one OCR box) wins,
+    then by first appearance; of compact-equal reads (equal scores), the spaced one ("New Arrivals", not
+    "NewArrivals"). ponytail: a junk read seen twice that holds the title (two lines in one OCR box) wins,
     and only the READ_CANDIDATES most common reads are candidates (the cost is candidates × distinct reads: 300
     distinct reads took 2.7 s uncapped, 0.29 s capped); upgrade path: weigh in each read's box width."""
     counts = Counter(reads)   # insertion order: first appearance (most_common keeps it among equal counts)
     common = counts.most_common(READ_CANDIDATES)
     cover = lambda r, c: partial_ratio(r, c) * min(1.0, len(_compact(c)) / max(len(_compact(r)), 1))
-    return max([c for c, n in common if n >= 2] or [c for c, _ in common],
-               key=lambda c: (sum(n * cover(r, c) for r, n in counts.items()), counts[c]))
+    cands = [c for c, n in common if n >= 2] or [c for c, _ in common]
+    best = max(cands, key=lambda c: (sum(n * cover(r, c) for r, n in counts.items()), counts[c]))
+    return max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
