@@ -5,7 +5,7 @@ import cv2, numpy as np
 from ..ir.schema import Element, Scene
 from ..ir.paths import scene_asset_path
 from ..ir.gradient import gradient_at, render_gradient
-from ..ir.tracks import affine_matrix, eval_props, eval_z, is_tilted, projective_matrix
+from ..ir.tracks import affine_matrix, eval_props, eval_z, glyph_alphas, glyph_edges, is_tilted, projective_matrix
 from ..log import get
 
 log = get("keepframe.analyze")
@@ -172,11 +172,18 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
         # ponytail: kind "3d" uses canonical.texture as a static preview here;
         # animated GLB rotation belongs to the Three.js composer. 2D elements tilt by rx/ry.
         reveal = float(np.clip(p["reveal"], 0.0, 1.0))
-        if reveal < 1.0:
+        g = el.canonical.glyphs   # a per-glyph reveal: column i at α_i (the composer's mask-image hard stops)
+        alphas = glyph_alphas(g, f - el.visible[0]) if g is not None else None
+        glyphs = alphas is not None and alphas.min() < 1.0
+        if reveal < 1.0 or glyphs:
             prem = prem.copy()  # never clip either shared full-texture cache
             pad = int(round(_pad(el.canonical, prem.shape[:2])))
-            if pad:   # the composer's reveal clips to the box (clip-path inset), effects past it included
-                prem[:pad], prem[prem.shape[0] - pad:], prem[:, :pad] = 0, 0, 0
-            prem[:, pad + int(round((prem.shape[1] - 2 * pad) * reveal)):] = 0
+            if pad:   # the composer's reveal and mask clip to the box (clip-path inset), effects past it included
+                prem[:pad], prem[prem.shape[0] - pad:], prem[:, :pad], prem[:, prem.shape[1] - pad:] = 0, 0, 0, 0
+            if reveal < 1.0:
+                prem[:, pad + int(round((prem.shape[1] - 2 * pad) * reveal)):] = 0
+            if glyphs:   # in texture space, before the warp: the columns follow a tilt as the CSS mask does
+                w = prem.shape[1] - 2 * pad
+                prem[:, pad:pad + w] *= np.repeat(alphas, np.diff(glyph_edges(g, w)))[:, None].astype(np.float32)
         _composite_premultiplied(canvas, prem, texture_to_scene(el, p, tex.shape[:2], scene.size), p["opacity"])
     return canvas

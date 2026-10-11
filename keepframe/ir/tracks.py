@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 import numpy as np
-from .schema import Canonical, Element, Ease, Track, PROPS, DEFAULTS
+from .schema import Canonical, Element, Ease, GlyphReveal, Track, PROPS, DEFAULTS
 
 PRESET_EASES: dict[str, Ease] = {
     "linear": (0.0, 0.0, 1.0, 1.0),
@@ -59,6 +59,18 @@ def eval_z(el: Element, f: float) -> int:
         if k.t <= f:
             v = k.v
     return int(v)
+
+
+def glyph_alphas(g: GlyphReveal, f_rel: float) -> np.ndarray:
+    """Each glyph's opacity `f_rel` frames after visible[0]."""
+    return np.clip((f_rel - np.asarray(g.delays)) / g.ramp, 0.0, 1.0)
+
+
+def glyph_edges(g: GlyphReveal, width: float) -> list[int]:
+    """Integer column edges of the glyphs across `width` px: 0, the rounded midpoints between centres, ceil(width).
+    The composer's mask stops (canonical px) and numpy's texture columns (texture px) both cut here."""
+    x = np.asarray(g.x)
+    return [0, *np.round((x[1:] + x[:-1]) / 2 * width).astype(int).tolist(), math.ceil(width)]
 
 
 def affine_matrix(p: dict[str, float]) -> np.ndarray:

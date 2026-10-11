@@ -88,10 +88,17 @@ for (const el of SCENE.elements) {
     }
   }
   const zAt = (f) => { let v = el.z.keys[0].v; for (const k of el.z.keys) if (k.t <= f) v = k.v; return v; };
+  // A per-glyph reveal (tracks.glyph_alphas): column i between the integer edges i and i + 1 at α_i, hard stops;
+  // the mask lives in .el's own space, so it follows a tilt. No mask once every glyph is in.
+  const glyphs = el.canonical.glyphs, edges = node.dataset.glyphEdges && node.dataset.glyphEdges.split(',').map(Number);
   appliers.push((f) => {
     apply();
     node.style.visibility = (f >= el.visible[0] && f <= el.visible[1]) ? 'visible' : 'hidden';
     node.style.zIndex = String(zAt(f));
+    if (!edges) return;
+    const alphas = glyphs.delays.map(d => Math.max(0, Math.min(1, (f - el.visible[0] - d) / glyphs.ramp)));
+    node.style.maskImage = node.style.webkitMaskImage = alphas.every(a => a === 1) ? '' :
+      `linear-gradient(to right, ${alphas.map((a, i) => `rgba(0,0,0,${a}) ${edges[i]}px ${edges[i + 1]}px`).join(', ')})`;
   });
 }
 const BG = SCENE.background, STAGE = document.getElementById('stage');

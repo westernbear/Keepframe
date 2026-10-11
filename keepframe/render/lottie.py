@@ -46,6 +46,8 @@ def preflight_lottie(scene: Scene) -> None:
             raise PlanConflict(f"Lottie does not support rx/ry tilt on element {element.id}; export HTML or After Effects")
         if len({key.v for key in element.z.keys}) > 1:
             raise PlanConflict(f"Lottie does not support dynamic z on element {element.id}")
+        if element.canonical.glyphs is not None:
+            raise PlanConflict(f"Lottie does not support per-glyph reveal on element {element.id}; export HTML or After Effects")
 
 
 def _hex(value: str | None, fallback: str = "#000000") -> list[float]:

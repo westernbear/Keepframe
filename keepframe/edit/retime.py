@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
-from ..ir.schema import Element, Keyframe, Scene, Track
+from ..ir.schema import Element, GlyphReveal, Keyframe, Scene, Track
 
 if TYPE_CHECKING:
     from .intent import Target
@@ -36,6 +36,10 @@ def retime_element(el: Element, speed: float, delay_frames: int, anchor: int) ->
     el.visible = (start, max(start, end))
     if el.canonical.video:
         el.canonical.video_rate *= speed
+    g = el.canonical.glyphs
+    if g is not None:   # the stagger plays at the new speed; a ramp stays 1..120 frames
+        el.canonical.glyphs = GlyphReveal(x=g.x, delays=[d / speed for d in g.delays],
+                                          ramp=min(max(g.ramp / speed, 1.0), 120.0))
 
 
 def retime_scene(scene: Scene, speed: float) -> None:

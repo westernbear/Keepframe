@@ -13,7 +13,7 @@ from ..log import get, scrub_paths
 from ..ir.gradient import gradient_at, gradient_css
 from ..ir.schema import Element, Scene, UIComponent, UIModel
 from ..ir.paths import scene_asset_path
-from ..ir.tracks import eval_z, perspective_px
+from ..ir.tracks import eval_z, glyph_edges, perspective_px
 
 log = get("keepframe.compose")
 VENDOR = Path(__file__).parent / "vendor"
@@ -117,9 +117,11 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
                      f'poster="{_data_uri(scene_dir / c.texture)}" src="{clip}"></video>')
     else:
         inner = ""
+    # a per-glyph reveal: the template's mask stops sit at these integer px edges (numpy cuts its columns alike)
+    glyphs = f' data-glyph-edges="{",".join(map(str, glyph_edges(c.glyphs, c.width)))}"' if c.glyphs else ""
     return (
         f'<div class="el" id="el-{html.escape(el.id)}" data-start="{start:.4f}" data-duration="{dur:.4f}" '
-        f'data-track-index="{eval_z(el, 0)}" style="{style}">{inner}</div>'
+        f'data-track-index="{eval_z(el, 0)}"{glyphs} style="{style}">{inner}</div>'
     )
 
 

@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 from ..ir.colour import rgb8_to_hex
-from ..ir.schema import Background, Element, FontGuess, Scene, TextStyle
+from ..ir.schema import Background, Element, FontGuess, GlyphReveal, Scene, TextStyle
 from ..ir.synth import make_text_texture
 from ..assets import AssetAPIError, validate_glb
 from ..fonts.raster import _HANGUL, MAX_TEXT_PX, cmap, embedded_face, natural_box, render_styled, resolve_fonts, text_size
@@ -231,6 +231,12 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
         el = out.element(t.element)
         if t.property == "text":
             _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id), fonts, retext=True)
+            g, n = el.canonical.glyphs, sum(not ch.isspace() for ch in el.canonical.text or "")
+            if g is not None and n != len(g.x):
+                # ponytail: the stagger shape is kept; glyph positions are approximate (uniform centres) — measure
+                # them on the new raster (textstyle.glyph_centres) if exact columns matter
+                x = (np.arange(n) + 0.5) / n
+                el.canonical.glyphs = GlyphReveal(x=x.tolist(), delays=np.interp(x, g.x, g.delays).tolist(), ramp=g.ramp)
         elif t.property == "font":
             if el.kind != "text" or not el.canonical.text:
                 raise ValueError("font edit needs a text element")
