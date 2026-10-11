@@ -478,9 +478,9 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             raw, canon, cf, font, color = fut.result()
             p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last}
             if is_text:
-                p.update(text=t.text, font=font, color=color)
+                p.update(text=t.text, font=font, color=color, reveal=t.reveal)
             else:
-                p["z"] = 0
+                p.update(z=0, ocr_text=t.text)
             if notes:
                 p["fade_note"] = "; ".join(notes)
             if FULL_OPACITY_NOTE in notes:
