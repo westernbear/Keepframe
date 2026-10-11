@@ -2,7 +2,7 @@
 background) and measure what pixel L1 cannot see. Synthetic scenes carry exact ground truth (double render);
 real clips carry gold titles (docs/qa/reference-analysis/gold)."""
 from __future__ import annotations
-import json, shutil, tempfile, time
+import json, math, shutil, tempfile, time
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -47,7 +47,9 @@ SYNTHETIC_GATES = {
     "f_de_interior": ("alpha.f_de_interior", "lt", 3.0),
     "f_de_edge": ("alpha.f_de_edge", "lt", 6.0),
     "font_top3": ("font_hits", "rate", 0.90),
+    "title_whole": ("integrity.whole", "rate", 0.9),
 }
+TITLE_MODES = {9: "stagger", 10: "plane"}   # synthetic seeds with a per-glyph or a yawed first title
 
 
 def make_ocr(truth: Scene | None):
@@ -339,7 +341,8 @@ def _sheet(res: dict, frames: Sequence[int], out: Path, name: str) -> str:
 def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: AnalyzeOptions, reuse: bool) -> dict:
     d = out / "synthetic" / f"seed{seed}"
     tdir = d / "truth"
-    truth = make_reference_scene(tdir, seed, plate=plate, mover="inplace" if seed > 6 else seed % 2 == 0, n_titles=2 if seed % 3 == 0 else 1)
+    truth = make_reference_scene(tdir, seed, plate=plate, mover="inplace" if seed in (7, 8) else (seed % 2 == 0 and seed <= 6),
+                                 n_titles=2 if seed % 3 == 0 else 1, title=TITLE_MODES.get(seed))
     save_scene(truth, tdir / "scene.json")
     video = render_reference(truth, tdir, d / "reference.mp4", renderer=renderer)
     proj = d / "proj"
@@ -348,6 +351,8 @@ def _eval_seed(out: Path, seed: int, plate: str, renderer: Renderer, opts: Analy
     sd = scene_dir(proj, "s1")
     titles = [e for e in truth.elements if e.kind == "text"]
     settle = titles[0].tracks["opacity"].keys[-1].t
+    if (g := titles[0].canonical.glyphs) is not None:   # the last glyph is in once its delay and ramp are over
+        settle = max(settle, titles[0].visible[0] + math.ceil(max(g.delays) + g.ramp))
     frames = sorted({min(settle + 1, truth.frames - 1), truth.frames // 2, truth.frames - 1})
     gt = ground_truth(truth, tdir, frames, renderer=renderer)
     plates = {f: true_plate(truth, tdir, f, renderer=renderer) for f in frames}
@@ -590,7 +595,9 @@ def clip_gates(rows: list[dict]) -> dict:
     colour = [c["de"] for r in rows for c in r["colour"]]
     l1 = [(r["render_l1"], r["baseline"].get("render_l1")) for r in rows]
     secs = [(r["seconds"], r["baseline"].get("seconds")) for r in rows]
+    whole = [i["whole"] for r in rows for i in r["integrity"] if i.get("role", "title") == "title"]
     gates = {"title_colour_de": _gate(colour, "lt", 10.0),
+             "title_whole": _gate(whole, "rate", 0.75),
              "vlm_calls": _gate([r["vlm_calls"] for r in rows], "le", 0)}
     for name, pairs, limit in (("render_l1", l1, lambda b: b + 0.005), ("seconds", secs, lambda b: 1.5 * b)):
         known = [(v, limit(b)) for v, b in pairs if b is not None]

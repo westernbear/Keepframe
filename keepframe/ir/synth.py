@@ -6,7 +6,8 @@ from typing import Literal, Sequence
 import cv2
 import numpy as np
 from .colour import delta_e, hex_to_rgb8, rgb8_to_hex, srgb_to_lab
-from .schema import Background, Canonical, Element, FontGuess, Gradient, GradientKey, GradientStop, Keyframe, Scene, Track
+from .schema import (AlphaStop, Background, Canonical, Element, Fade, FontGuess, GlyphReveal, Gradient, GradientKey, GradientStop,
+                     Keyframe, Scene, TextStyle, Track)
 from .tracks import PRESET_EASES
 
 PALETTE = [(239, 71, 111), (255, 209, 102), (6, 214, 160), (17, 138, 178), (7, 59, 76), (255, 255, 255)]
@@ -272,15 +273,19 @@ def _readable(rng: random.Random, plate_rgb: np.ndarray) -> tuple[int, int, int]
 
 
 def _title(root: Path, rng: random.Random, eid: str, text: str, size_px: int, font: tuple[str, int, float], rgb, frames: int,
-           x: float, y: float, start: int, z: int) -> Element:
+           x: float, y: float, start: int, z: int, style: TextStyle | None = None, mode: str | None = None,
+           mrng: random.Random | None = None) -> Element:
     """A title drawn by the styled raster in a bundled font (family, weight, tracking): the truth the analysis'
-    font matcher is scored against."""
+    font matcher is scored against. `mode` "stagger" reveals it glyph by glyph, "plane" yaws it (draws from `mrng`);
+    both sit on whole pixels (even texture, integer anchor) so HTML and numpy agree."""
     from ..fonts.raster import render_styled
-    from ..ir.schema import TextStyle
     family, weight, tracking = font
     guess = FontGuess(family_guess=family, weight=weight, size_px=size_px, source="bundled")
-    style = TextStyle(tracking_em=tracking) if tracking else None
+    style = style or (TextStyle(tracking_em=tracking) if tracking else None)
     rgba = render_styled([text], guess, rgb8_to_hex(rgb), style)
+    if mode:
+        rgba = np.pad(rgba, ((0, rgba.shape[0] % 2), (0, rgba.shape[1] % 2), (0, 0)))
+        x, y = float(round(x)), float(round(y))
     path = root / "assets" / f"{eid}.png"
     path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(path), cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA))
@@ -291,18 +296,31 @@ def _title(root: Path, rng: random.Random, eid: str, text: str, size_px: int, fo
               "y": Track(keys=[Keyframe(t=start, v=round(y + dy, 2), ease=PRESET_EASES["out_cubic"]), Keyframe(t=start + intro, v=round(y, 2))]),
               "opacity": Track(keys=[Keyframe(t=start, v=0.0, ease=PRESET_EASES["out_quad"]), Keyframe(t=start + intro, v=1.0)])}
     canonical = Canonical(width=w, height=h, texture=f"assets/{eid}.png", text=text, color=rgb8_to_hex(rgb), font=guess, style=style)
+    if mode == "stagger":
+        from ..analyze.textstyle import glyph_centres
+        step = mrng.randint(2, 3)
+        centres = glyph_centres(rgba[..., 3], text)
+        canonical.glyphs = GlyphReveal(x=[c / w for c in centres], delays=[float(step * i) for i in range(len(centres))],
+                                       ramp=float(mrng.randint(4, 6)))
+        tracks["opacity"] = Track(keys=[Keyframe(t=0, v=1.0)])
+        tracks["y"] = Track(keys=[Keyframe(t=0, v=y)])
+    elif mode == "plane":
+        tracks["ry"] = Track(keys=[Keyframe(t=start, v=-35.0), Keyframe(t=frames - 1, v=-18.0)])
+        tracks["rot"] = Track(keys=[Keyframe(t=0, v=round(mrng.uniform(-3.0, 3.0), 2))])
     return Element(id=eid, kind="text", role="text", canonical=canonical, visible=(start, frames - 1), tracks=tracks,
                    z=Track(keys=[Keyframe(t=0, v=z)]))
 
 
 def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradient", "animated", "image"] = "gradient",
                          n_sprites: int = 3, n_titles: int = 1, mover: bool | Literal["inplace"] = False, logo: bool = True,
+                         title: Literal["stagger", "plane"] | None = None,
                          fonts: Sequence[str] | None = None, frames: int = 60, size: tuple[int, int] = (640, 360),
                          fps: float = 30.0) -> Scene:
     """A motion-graphics reference with known layers: a plate (flat, gradient, animated gradient or picture),
     anti-aliased sprites, a static logo that always covers the same spot, an optional big mover behind the
     title (crossing the frame, or turning in place with mover="inplace"), and titles that ease in and then hold still for most of the shot. Titles use a seeded bundled font
-    (family, weight, sometimes tracking; `fonts` pins the families) drawn by the styled raster."""
+    (family, weight, sometimes tracking; `fonts` pins the families) drawn by the styled raster. `title` makes the first
+    one a per-glyph stagger or a yawed, gradient-faded plane (its extra draws come from their own generator)."""
     root = Path(root)
     rng = random.Random(seed)
     W, H = size
@@ -333,13 +351,25 @@ def make_reference_scene(root: Path, seed: int, *, plate: Literal["flat", "gradi
     texts = rng.sample(TITLES, 1) + rng.sample(SUBTITLES, max(0, n_titles - 1))
     x, y = W / 2 + rng.uniform(-0.08, 0.08) * W, rng.uniform(0.35, 0.5) * H
     start = rng.randint(0, max(0, frames // 15))
+    mrng = random.Random(seed * 7919 + 1)
     for i, text in enumerate(texts):
         size_px = rng.randint(44, 56) if i == 0 else rng.randint(22, 28)
+        mode = title if i == 0 else None
+        if mode == "plane":
+            size_px = mrng.randint(60, 72)
         frng = random.Random(seed * 1009 + i)   # the font draw leaves the scene's own sequence alone
         family, weight = pick_font(frng) if fonts is None else (fonts[(seed + i) % len(fonts)], 400)
         tracking = 0.0 if frng.random() < 0.5 else round(frng.uniform(-0.03, 0.08) * 200) / 200
-        elements.append(_title(root, rng, f"title{i + 1}", text, size_px, (family, weight, tracking), _readable(rng, plate_rgb),
-                               frames, x, y + (0 if i == 0 else 1.6 * size_px), start + (0 if i == 0 else frames // 10), 8))
+        rgb = _readable(rng, plate_rgb)
+        style = None
+        if mode == "plane":   # a two-stop fill (the colour to a darker one) fading to 30 % downwards
+            style = TextStyle(tracking_em=tracking, fill=Gradient(stops=[GradientStop(offset=0.0, color=rgb8_to_hex(rgb)),
+                                                                         GradientStop(offset=1.0, color=rgb8_to_hex(tuple(round(c * 0.6) for c in rgb)))],
+                                                                  angle=180.0),
+                              fade=Fade(angle=90.0, stops=[AlphaStop(offset=0.0, alpha=1.0), AlphaStop(offset=1.0, alpha=0.3)]))
+        elements.append(_title(root, rng, f"title{i + 1}", text, size_px, (family, weight, tracking), rgb,
+                               frames, x, y + (0 if i == 0 else 1.6 * size_px), start + (0 if i == 0 else frames // 10), 8,
+                               style, mode, mrng))
     if logo:
         _shape_texture(root / "assets" / "logo.png", "disc", 44, 44, rng.choice(PALETTE), rng.choice(PALETTE))
         lx, ly = rng.choice([(W - 40, 38), (40, 38), (W - 40, H - 38), (40, H - 38)])
