@@ -1,6 +1,7 @@
-"""Task 11 (Stage B): per-glyph delays measured on titles whose glyphs come in one by one (D15). A merged title or a
-revealed text whose onsets spread ≥ 3 frames gets `glyphs`, and over the stagger the glyph α alone carries the
-reveal (R14); a title that comes in as a whole stays in box mode."""
+"""Task 11 (Stage B): per-glyph delays measured on titles whose glyphs come in one by one (D15). A merged title, a
+revealed text or a text whose box grows (R16) gets `glyphs` when its onsets spread, and over the stagger the glyph α
+alone carries the reveal (R14); a title that comes in as a whole, slides in or is a clean box wipe (R18) stays in box
+mode."""
 import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.composite import composite_scene
@@ -114,12 +115,64 @@ def test_held_title_stays_box_mode(tmp_path):
     p["text"], raw = "REVEAL", p["raw"].copy()
     merge_titles({"t1": p}, frames, plate, ocr=None, reading=None, fps=30.0, notes=[])
     assert "glyphs" not in p and np.array_equal(p["raw"], raw, equal_nan=True)
+    p["reveal"] = False   # on its curves alone (no box fit to fall back on, R18): the onsets do not spread
+    assert glyph_reveal(p, frames, plate, SIZE, "REVEAL") is None
 
 
 def test_unreadable_glyphs_use_uniform_columns(tmp_path):
     tex = np.zeros((20, 120, 4), np.uint8)
     tex[4:16, 10:110] = 255   # one blob of ink: five glyphs that cannot be told apart
     frames, plate, p = _wiped(tex, lambda f: np.clip((f - 4) / 16, 0, 1), lambda f: 1.0)
+    p["reveal"] = False   # the curves alone: as a `reveal` prop this clean box wipe would keep box mode (R18)
     g = glyph_reveal(p, frames, plate, SIZE, "ABCDE")
     assert g is not None and np.allclose(np.array(g["x"]) * 120, 10 + 20 * np.arange(5) + 10)
     assert np.all(np.diff(g["delays"]) > 0)
+
+
+def test_clean_wipe_reveal_keeps_box_mode(tmp_path):
+    tex = _text(tmp_path, "REVEAL")
+    frames, plate, p = _wiped(tex, lambda f: np.clip((f - 4) / 16, 0, 1), lambda f: 1.0)   # its reveal column is right
+    p["text"], raw = "REVEAL", p["raw"].copy()
+    merge_titles({"t1": p}, frames, plate, ocr=None, reading=None, fps=30.0, notes=[])
+    assert "glyphs" not in p and np.array_equal(p["raw"], raw, equal_nan=True)   # box mode (Lottie exports it)
+
+
+def test_title_entering_from_frame_edge_stays_box_mode(tmp_path):
+    tex = _text(tmp_path, "REVEAL")
+    h, w = tex.shape[:2]
+    frames, plate, p = _wiped(tex, lambda f: 1.0, lambda f: 1.0)
+    for f in range(8):   # it slides in across the left edge, 10 px a frame, then holds
+        wide, x0 = np.full((SIZE[1], SIZE[0] + 200, 3), 40, np.uint8), X0 - 10 * (8 - f)
+        a = tex[..., 3:] / 255.0
+        wide[Y0:Y0 + h, 200 + x0:200 + x0 + w] = np.rint(a * tex[..., :3] + (1 - a) * 40).astype(np.uint8)
+        frames[f], p["raw"][f, 0] = wide[:, 200:], x0 + w / 2
+    p["text"] = "REVEAL"
+    merge_titles({"t1": p}, frames, plate, ocr=None, reading=None, fps=30.0, notes=[])
+    assert "glyphs" not in p
+
+
+def test_growing_box_holds_its_cf_box_in_glyph_mode(tmp_path):
+    tex = _text(tmp_path, "REVEAL")
+    w = tex.shape[1]
+    frames, plate, p = _wiped(tex, lambda f: np.clip((f - 4) / 16, 0, 1), lambda f: 1.0)
+    r = p["raw"]
+    r[:, 0], r[:, 2], r[:, 8] = X0 + r[:, 8] * w / 2, r[:, 8], np.where(np.isfinite(r[:, 8]), 1.0, np.nan)   # OCR's box grew
+    p["text"], p["reveal"] = "REVEAL", False
+    merge_titles({"t1": p}, frames, plate, ocr=None, reading=None, fps=30.0, notes=[])
+    g = p["glyphs"]
+    window = slice(p["first"], p["first"] + int(np.ceil(max(g["delays"]) + g["ramp"])) + 1)
+    assert len(g["x"]) == 6 and np.all(r[window, 0] == X0 + w / 2) and np.all(r[window, 2] == 1)
+
+
+
+def test_glyph_curves_the_model_misses_stay_box_mode(tmp_path):
+    tex = _text(tmp_path, "REVEAL")
+    h, w = tex.shape[:2]
+    frames, plate, p = _wiped(tex, lambda f: 1.0, lambda f: 1.0)
+    full = frames[-1].copy()
+    for f in range(20):   # a band 30 px wide sweeps across it, each glyph showing only while it passes, then it is all in
+        frames[f] = plate
+        c = X0 + round((f - 2) * w / 14)
+        frames[f, :, max(c - 30, X0):max(c, X0)] = full[:, max(c - 30, X0):max(c, X0)]
+    p.update(text="REVEAL", reveal=False)
+    assert glyph_reveal(p, frames, plate, SIZE, "REVEAL") is None   # onsets spread, but no glyph stays in

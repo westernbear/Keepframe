@@ -46,13 +46,15 @@ def test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments(tmp_pa
     text = texts[0]
     assert text.canonical.text == "You just"
     assert text.canonical.texture_meta.padding == 0   # R27: text keeps its unpadded box (HTML/AE/Lottie place glyphs in it)
-    g = text.canonical.glyphs   # Task 11: the letters come in over 9 frames, so the glyphs carry the reveal (D15)
-    assert "reveal" not in text.tracks and len(g.x) == 7 and g.delays == sorted(g.delays) and g.ramp == 1.0
+    assert text.tracks["reveal"].keys[0].v == pytest.approx(0.1, abs=0.01)
+    assert text.tracks["reveal"].keys[-1].v == 1.0
+    assert [eval_props(text, frame)["reveal"] for frame in (0, 4, 7, 9)] == pytest.approx([0.1, 0.3, 0.6, 1.0], abs=0.01)
     assert element_bbox(text, 0) == element_bbox(text, 9) == (20, 20, 220, 50)
     assert not [element for element in scene.elements if element.kind == "sprite"]
-    for f in range(1, 9):   # glyph columns cut between glyphs, OCR's boxes through them (frame 0: every glyph at α 0)
-        assert np.abs(composite_scene(scene, tmp_path / "scenes/s1", f) * 255 - frames[f])[20:50, 20:220].mean() <= 0.03 * 255
-    np.testing.assert_allclose(composite_scene(scene, tmp_path / "scenes/s1", 9) * 255, frames[9], atol=1e-4)
+    for f, width in ((0, 20), (4, 60), (7, 120), (9, 200)):
+        expected = np.full((80, 260, 3), 255, np.uint8)
+        expected[20:50, 20:20 + width] = title[:, :width]
+        np.testing.assert_allclose(composite_scene(scene, tmp_path / "scenes/s1", f) * 255, expected, atol=1e-4)
     with np.load(tmp_path / "scenes/s1" / text.raw) as measured:
         assert measured["raw"].shape == (12, 9)
         assert measured["cols"].tolist() == ["x", "y", "sx", "sy", "rot", "skx", "sky", "opacity", "reveal"]
