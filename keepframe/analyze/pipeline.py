@@ -24,6 +24,8 @@ from .semantics import assign_roles, group_by_motion
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
+from .plane import tilted_raw
+from .titles import merge_titles
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -282,20 +284,26 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             family = family if isinstance(family, str) and FONT_FAMILY_RE.fullmatch(family) else "sans-serif"
             out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
                        else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
+        if p.get("merge_note"):
+            out.append(f"{ids[k]}: title merge failed ({p['merge_note']}); kept the fragment")
+        if p.get("text_unverified"):
+            out.append(f"{ids[k]}: title text not verified ({p['text_unverified']})")
     return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths
 
 
 def _fell_back(p: dict) -> bool:
     return any(p.get(name) for name in ("video_error", "texture_error", "texture_note", "style_error", "font_error",
-                                        "font_skipped", "mover_dropped")) or _full_opacity_failed(p)
+                                        "font_skipped", "mover_dropped", "merge_note", "text_unverified")) or _full_opacity_failed(p)
 
 
 def fallback_ids(props: dict, ids: dict) -> set[str]:
     """The elements a fail-soft path left at today's behaviour, whose confidence drops (once) by FALLBACK_CONF: a
     video that could not be made, a texture not matted, a text style or font match that failed or was skipped, a
-    full-opacity frame not found, the fragments of a dropped mover (and a solid made of them); every element when the
-    textures phase failed as a whole, every text when the text style phase did."""
-    textures_failed, style_failed = bool(props.get("_textures_message")), bool(props.get("_style_message"))
+    full-opacity frame not found, the fragments of a dropped mover (and a solid made of them), a title left as its
+    fragments or whose text is unverified; every element when the textures phase failed as a whole, every text when
+    the text style or title merge phase did."""
+    textures_failed = bool(props.get("_textures_message"))
+    texts_failed = bool(props.get("_style_message") or props.get("_titles_message"))
     out = set()
     for k, p in props.items():
         if k.startswith("_") or not isinstance(p, dict):
@@ -303,7 +311,7 @@ def fallback_ids(props: dict, ids: dict) -> set[str]:
         fragments = p.get("fragments") or {}
         out |= {ids[fk] for fk, fp in fragments.items() if fk in ids and isinstance(fp, dict) and _fell_back(fp)}
         if k in ids and (_fell_back(p) or any(isinstance(fp, dict) and fp.get("mover_dropped") for fp in fragments.values())
-                         or (textures_failed and not k.startswith("solid")) or (style_failed and p.get("kind") == "text")):
+                         or (textures_failed and not k.startswith("solid")) or (texts_failed and p.get("kind") == "text")):
             out.add(ids[k])
     return out
 
@@ -443,10 +451,25 @@ def _mover_videos(props: dict, movers, frames, plate, fps: float, sd: Path) -> N
         log.info("sprites mover m%s video %.2fs %s", m.id, time.perf_counter() - t0, code or "ok")
 
 
+def _reread_ocr(ocr, opts):
+    """The OCR that re-reads merged titles: the text stage's engine, else RapidOCR loaded on first use; None with OCR
+    off (the fragments' strings stay)."""
+    if not opts.ocr or ocr is not None:
+        return ocr if opts.ocr else None
+    engine: list = []
+
+    def read(img):
+        if not engine:
+            from .text import RapidOcr
+            engine.append(RapidOcr(max_side=opts.ocr_max_side))
+        return engine[0](img)
+    return read
+
+
 def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n_frames, plate=None, solids=(), movers=(),
-                   plate_model: PlateModel | None = None, fps: float | None = None, dropped=()):
+                   plate_model: PlateModel | None = None, fps: float | None = None, dropped=(), ocr=None):
     """`dropped`: movers an earlier stage dropped; their fragments, like those of a mover dropped here, are marked
-    `mover_dropped`."""
+    `mover_dropped`. `ocr`: the engine that re-reads merged titles (None: RapidOCR, loaded when a title needs it)."""
     props = {}   # object_key -> dict(raw, canon, cf, kind, font, color)
     t0 = time.perf_counter()
     kept, failed = [], []
@@ -518,6 +541,19 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             m = np.isnan(pa["raw"][:, 0]) & ~np.isnan(pb["raw"][:, 0])
             pa["raw"][m] = pb["raw"][m]; pa["first"] = min(pa["first"], pb["first"]); pa["last"] = max(pa["last"], pb["last"])
             del props[b]
+    # Titles (D9): fragments and tilted single tracks become one text prop each, before refine, matting and style.
+    report_stage("sprites", "titles")
+    members = {f"o{mid}" for solid in solids for mid in solid.members}
+    plate_at = plate_model if plate_model is not None else matting.as_plate(behind)
+    try:   # the reading the text stage cached (absent in legacy caches and stage-only callers)
+        reading = _pk(sd, "text").get("reading")
+    except Exception:
+        reading = None
+    title_notes: list[str] = []
+    merge_titles(props, frames, plate_at, ocr=_reread_ocr(ocr, opts), reading=reading, fps=fps or 30.0, notes=title_notes,
+                 members=members)
+    if title_notes:
+        props["_titles_message"] = "; ".join(title_notes)
     if opts.refine and any(p["kind"] == "sprite" and not p.get("mover") for p in props.values()):
         try:
             from .device import resolve_device
@@ -553,12 +589,11 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     # Textures v2: matted against the per-frame plate, after refine, before solids. A solid's fragments keep today's
     # textures: they are pieces of a turning surface, and the still/fragments fidelity choice compares like with like.
     report_stage("sprites", "textures")
-    members = {f"o{mid}" for solid in solids for mid in solid.members}
-    plate_at = plate_model if plate_model is not None else matting.as_plate(behind)
     videos = {f"m{m.id}": m for m in kept if not props[f"m{m.id}"].get("stable")} \
         if fps is not None and videoasset.ffmpeg_vp9_ok() else {}
     try:   # a video sprite under a layer is its own frame there, not its poster
-        matting.matte_props(props, frames, plate_at, workers=workers, skip=members,
+        matting.matte_props(props, frames, plate_at, workers=workers,   # D14: tilted titles keep the binary rectified texture
+                            skip=members | {k for k, p in props.items() if not k.startswith("_") and tilted_raw(p["raw"])},
                             layers_at={k: mover_frames(m, frames, plate_at) for k, m in videos.items()})
     except Exception as e:   # fail soft: every element keeps its binary texture
         log.warning("textures v2 failed: %s", describe(e, trace=True))
@@ -801,7 +836,7 @@ def analyze_scene_frames(
     t = _stage_done("solids", t)
     report_stage("sprites")
     props = _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, n, plate=plate, solids=solids,
-                           movers=movers, plate_model=model, fps=fps, dropped=dropped)
+                           movers=movers, plate_model=model, fps=fps, dropped=dropped, ocr=ocr)
     t = _stage_done("sprites", t)
     ids_path = sd / "stages" / "ids.json"
     ids: dict = json.loads(ids_path.read_text()) if existing and ids_path.exists() else {}
@@ -810,8 +845,8 @@ def analyze_scene_frames(
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
-                            props.get("_style_message")) if m]
+                            props.get("_message"), props.get("_movers_message"), props.get("_titles_message"),
+                            props.get("_textures_message"), props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:
@@ -1034,8 +1069,8 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
     messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
-                            props.get("_message"), props.get("_movers_message"), props.get("_textures_message"),
-                            props.get("_style_message")) if m]
+                            props.get("_message"), props.get("_movers_message"), props.get("_titles_message"),
+                            props.get("_textures_message"), props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
     messages.append(f"3D 후보 {len(solids)}개")
     if opts.ui:

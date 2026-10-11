@@ -17,6 +17,7 @@ from ..ir.gradient import gradient_t, render_gradient
 from ..ir.schema import AlphaStop, Fade, Gradient, GradientStop, TextEffect, TextStyle, TextureMeta
 from ..log import describe, get
 from . import matting
+from .plane import tilted_raw
 
 log = get("keepframe.analyze.textstyle")
 
@@ -672,7 +673,7 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     matted = meta.method != "binary"
     cap0 = cap_height(a_tex, lines)
     pe = int(max(4, round(0.5 * cap0)))
-    crop = _effect_crop(raw, a_tex, frames, plate, others_at, pe, meta) if cap0 >= 4 else None
+    crop = _effect_crop(raw, a_tex, frames, plate, others_at, pe, meta) if cap0 >= 4 and not tilted_raw(raw) else None
     B_box = crop[1][pe:pe + h, pe:pe + w] if crop is not None else None
     edge = np.concatenate([F[0], F[-1], F[:, 0], F[:, -1]])
     if B_box is not None and (a_tex >= 0.98).mean() >= BOX_SHARE and float(delta_e(

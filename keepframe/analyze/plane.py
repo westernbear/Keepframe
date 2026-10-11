@@ -15,12 +15,29 @@ from .matting import as_plate
 FIT = ("x", "y", "sx", "sy", "rot", "skx", "rx", "ry")
 PAD = (0.1, 0.35)   # quad padding in cap heights: left/right, top/bottom
 JUMP = 0.3          # a tracked corner moving more than JUMP·h in one frame is held
+TILT_DEG = 1.0      # D14: a title whose |rx| or |ry| passes this skips textures v2 and the style effect crop
+SLOPES = np.tan(np.radians(np.arange(-45.0, 45.01, 0.25)))   # the line angles `_edge_slope` tries
+
+
+def _edge_slope(y, x, tol: float) -> float:
+    """The slope of the line the most ink edges (y at x) sit on, within 2·tol px (|angle| ≤ 45°), refined by
+    Theil–Sen on them: the x-height tops beside the caps, the descenders under the baseline are outliers whatever
+    their share, which tilts a short word's lines by degrees in a slope over all the edges."""
+    r = np.sort(y[None, :] - SLOPES[:, None] * x[None, :], axis=1)
+    count = [np.searchsorted(row, row + 2 * tol, "right") - np.arange(len(row)) for row in r]
+    k = int(np.argmax([c.max() for c in count]))
+    lo = r[k, int(count[k].argmax())]
+    res = y - SLOPES[k] * x
+    on = (res >= lo - 1e-9) & (res <= lo + 2 * tol + 1e-9)
+    return float(theilslopes(y[on], x[on])[0]) if on.sum() >= 4 else float(SLOPES[k])
 
 
 def text_lines(mask) -> tuple[tuple[float, float], tuple[float, float]] | None:
-    """Cap line and baseline of a glyph mask as y = a·x + b: Theil–Sen slopes of the column tops and bottoms (ink
-    edges), the cap line at p10 of the tops (capitals and ascenders over x-height), the baseline at the median of
-    the bottoms (descenders are outliers). None with fewer than 4 inked columns."""
+    """Cap line and baseline of a glyph mask as y = a·x + b: the slopes of the lines most column tops and bottoms
+    (ink edges) sit on (`_edge_slope`, within 2 % of the column height), the cap line at p10 of the tops (capitals
+    and ascenders over x-height), the baseline at the median of the bottoms (descenders are outliers). None with
+    fewer than 4 inked columns. ponytail: on a lowercase-heavy line the tops' slope is the x-height line's, ≈ 0.7 of
+    the cap line's convergence; upgrade path: the stems' vanishing point."""
     m = np.asarray(mask, bool)
     cols = np.flatnonzero(m.any(0))
     if len(cols) < 4:
@@ -28,11 +45,9 @@ def text_lines(mask) -> tuple[tuple[float, float], tuple[float, float]] | None:
     cols = cols[::math.ceil(len(cols) / 512)]   # Theil–Sen is quadratic in the columns
     sub = m[:, cols]
     top, bot = sub.argmax(0) - 0.5, len(m) - sub[::-1].argmax(0) - 0.5
-    lines = []
-    for y, q in ((top, 10), (bot, 50)):
-        a = float(theilslopes(y, cols)[0])
-        lines.append((a, float(np.percentile(y - a * cols, q))))
-    return lines[0], lines[1]
+    tol = max(1.0, 0.02 * float(np.median(bot - top)))
+    ac, ab = _edge_slope(top, cols, tol), _edge_slope(bot, cols, tol)
+    return (ac, float(np.percentile(top - ac * cols, 10))), (ab, float(np.percentile(bot - ab * cols, 50)))
 
 
 def text_quad(mask, pad=PAD) -> tuple[np.ndarray, dict] | None:
@@ -117,15 +132,15 @@ def contrast(img, B) -> np.ndarray:
     return np.abs(np.asarray(img, np.float32) - np.asarray(B, np.float32)).sum(-1)
 
 
-def _ecc(img, B, template, H, margin, work, min_cc) -> np.ndarray | None:
-    """H refined by ECC (MOTION_HOMOGRAPHY) of the template against the contrast crop around its predicted quad at
-    ≤ `work` px; None when it fails or correlates below `min_cc`."""
+def _ecc(img, B, template, H, margin, work, min_cc, prep=contrast) -> np.ndarray | None:
+    """H refined by ECC (MOTION_HOMOGRAPHY) of the template against the `prep` (contrast) crop around its predicted
+    quad at ≤ `work` px; None when it fails or correlates below `min_cc`."""
     q = _corners(H, template.shape[1::-1])
     x0, y0 = np.maximum(np.floor(q.min(0) - margin).astype(int), 0)
     x1, y1 = np.minimum(np.ceil(q.max(0) + margin).astype(int), img.shape[1::-1])
     if x1 - x0 < 8 or y1 - y0 < 8:
         return None
-    crop = contrast(img[y0:y1, x0:x1], B[y0:y1, x0:x1] if np.ndim(B) == 3 else B)
+    crop = prep(img[y0:y1, x0:x1], B[y0:y1, x0:x1] if np.ndim(B) == 3 else B)
     s = min(1.0, work / max(*crop.shape, *template.shape))
     tpl = template
     if s < 1.0:
@@ -145,11 +160,12 @@ def _ecc(img, B, template, H, margin, work, min_cc) -> np.ndarray | None:
     return np.linalg.inv(Tc) @ np.linalg.inv(S) @ W.astype(np.float64) @ S
 
 
-def track_plane(frames, plate, template, H0, cf, span, *, work=384, min_cc=0.6) -> tuple[dict[int, np.ndarray], set[int]]:
+def track_plane(frames, plate, template, H0, cf, span, *, work=384, min_cc=0.6,
+                prep=contrast) -> tuple[dict[int, np.ndarray], set[int]]:
     """H canon→scene for every frame of `span` (first, last), tracked from cf (where it is H0) outward: ECC of
-    `template` (the rectified contrast at cf: `rectify(contrast(frames[cf], B), quad)`) against each frame's contrast,
-    started from the neighbour's H. A frame whose ECC fails, correlates below `min_cc` or moves a corner more than
-    0.3·h (h the cap height) keeps its neighbour's H and is returned in the held set.
+    `template` (the rectified contrast at cf: `rectify(contrast(frames[cf], B), quad)`) against each frame's contrast
+    (`prep(crop, B)`), started from the neighbour's H. A frame whose ECC fails, correlates below `min_cc` or moves a
+    corner more than 0.3·h (h the cap height) keeps its neighbour's H and is returned in the held set.
     ponytail: a plain hold on failure; upgrade path: re-detection of the quad after a hold."""
     plate = as_plate(plate)
     template = np.asarray(template, np.float32)
@@ -160,7 +176,7 @@ def track_plane(frames, plate, template, H0, cf, span, *, work=384, min_cc=0.6) 
     for step, stop in ((1, span[1] + 1), (-1, span[0] - 1)):
         H = Hs[cf]
         for f in range(cf + step, stop, step):
-            got = _ecc(frames[f], plate.at(f), template, H, 2 * JUMP * h, work, min_cc)
+            got = _ecc(frames[f], plate.at(f), template, H, 2 * JUMP * h, work, min_cc, prep)
             if got is None or np.linalg.norm(_corners(got, wh) - _corners(H, wh), axis=1).max() > JUMP * h:
                 held.add(f)
             else:
@@ -185,3 +201,11 @@ def plane_raw(Hs, wh, size, n, opacity) -> np.ndarray:
         if len(run) >= 5:
             raw[np.ix_(run, geo)] = savgol_filter(raw[np.ix_(run, geo)], min(7, len(run) - 1 + len(run) % 2), 2, axis=0)
     return raw
+
+
+def tilted_raw(raw) -> bool:
+    """D14: some frame of `raw` (PROPS columns) turns |rx| or |ry| past TILT_DEG. ponytail: matting and the style crop
+    warp affine-only; upgrade path: homography warps there."""
+    raw = np.asarray(raw)
+    rx, ry = PROPS.index("rx"), PROPS.index("ry")
+    return raw.ndim == 2 and raw.shape[1] > ry and bool((np.abs(raw[:, rx:ry + 1]) > TILT_DEG).any())

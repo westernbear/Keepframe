@@ -117,6 +117,7 @@ def test_solid_plate_matches_colour_background(local_plate_clip):
 def test_sprite_stage_passes_plate_to_text_shapes_and_objects(local_plate_clip, tmp_path, monkeypatch):
     frames, plate, bg, mask, text, obj = local_plate_clip
     shape = TextTrack(id=2, text=text.text, boxes=text.boxes.copy())
+    monkeypatch.setattr("keepframe.analyze.pipeline.merge_titles", lambda *a, **k: [])   # t1 and s2 would merge (Task 10)
     props = _stage_sprites(frames, bg, [text], [shape], [obj],
                            AnalyzeOptions(refine=False, use_ecc=False), tmp_path, len(frames), plate=plate)
     for key in ("t1", "s2", "o3"):
