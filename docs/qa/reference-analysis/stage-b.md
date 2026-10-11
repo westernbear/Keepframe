@@ -55,3 +55,32 @@ Only the speed gate holds. v4 stays.
 ### Follow-up
 
 If a later task merges adjacent same-line boxes before tracking (a word-gap line merge), v5 is worth measuring again with the same probe: its per-box reads are as good as v4's and it is about 9 % faster on the CPU. The model files, hashes and the `ocr_models()` fetch are in `23d72d8`.
+
+## Font prior
+
+Task 2 extended the matcher's sans prior (`SANS`, margin 0.05 in `_fit_kept`) from geometric, neo-grotesque and humanist to the two other sans categories. **Decision: add `rounded_sans`, leave `condensed_sans` out.** Condensed fails a gate.
+
+The `real` rows below came from `font_guesses` on the `tests/data/text_fill` cases (`_analyse_real`) with `SANS` patched per column, on `home`; the other numbers from the eval.
+
+| text_fill case | old prior | + condensed | + rounded | both |
+|---|---|---|---|---|
+| envato1 | Urbanist (geometric) | same | same | same |
+| envato1_title | Outfit (geometric) | **Oswald (condensed)** | Outfit | Oswald |
+| ig1_t24 | Onest (neo-grotesque) | same | same | same |
+| ig2 | Urbanist (geometric) | **Barlow Condensed (condensed)** | Urbanist | Barlow Condensed |
+| ig2_t21 | Noto Sans (humanist) | same | same | same |
+| ig3 | Source Sans 3 (humanist) | **Oswald (condensed)** | Source Sans 3 | Oswald |
+| ig3_t24 | Sora (geometric) | same | same | same |
+
+Condensed turns `envato1_title` and `ig3` (both gate cases of `test_real_sans_titles_match_a_sans_unsheared_without_shadow`, whose category tuple stays geometric, neo-grotesque or humanist) into Oswald, and `ig2` into Barlow Condensed: a condensed face 0.05 behind a wide one was kept ahead of it, which the real titles' truth contradicts. Rounded moves no case.
+
+| gate | rule | measured (rounded only) | holds |
+|---|---|---|---|
+| `font_set(60)` top-3 | ≥ 0.95 | 0.983 (59 / 60; the miss is seed 39, as in the follow-ups) | yes |
+| real sans titles | category tuple unchanged | `test_real_sans_titles_match_a_sans_unsheared_without_shadow` passes | yes |
+| ig1 gold titles | family stays in its category | "Every day, ideas are born" Onest, "inside your walls." Onest (neo-grotesque), original = old prior = new prior | yes |
+| synthetic seeds 1–8 | identical to `stage-a-follow-ups-synthetic.json` | every row field identical (title whole, colour ΔE, font hits); font set top-3 / weight / size / tracking identical | yes |
+
+The ig1 run is `rerun(root, "s1", "sprites")` on a copy of the follow-ups analysis (`~/kfx/rb-t2/ig1` on home). The only font-set difference is seed 41 (Zilla Slab): its top 3 is now Zilla Slab, Nunito, Lora instead of Zilla Slab, Lora, Merriweather, still a hit. The synthetic run is `~/kf-b/eval/out/rb-t2` on home; its rows are the seeds 1–8 identity reference for Task 6.
+
+Rounded stays because it costs nothing on any measure and covers the bundled rounded faces (Fredoka, Comfortaa, Nunito, Quicksand) the same way as the other sans. The Bebas Neue → Jost swap seen on ig1 stays: the condensed fix that targeted it fails the fixture gate, and ig1 has no font truth to say which side is right.

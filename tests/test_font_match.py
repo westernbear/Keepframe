@@ -490,8 +490,8 @@ def test_failed_second_round_keeps_the_first_rounds_fit(monkeypatch):
     assert len(fits) == 3 and s.family in [f.family for f in fits] and all(f.weight > 0 for f in fits)
 
 
-def _kept_fits(monkeypatch, source):
-    """_fit_kept over two stub families: a script family (score .80) 0.03 ahead of a bundled sans (.77)."""
+def _kept_fits(monkeypatch, source, top="script", sans="neo_grotesque"):
+    """_fit_kept over two stub families: a `top` family (score .80) 0.03 ahead of a bundled `sans` (.77)."""
     import types
     from keepframe.fonts import match as m
     scores = {"Brand Script": 0.80, "Plain Sans": 0.77}
@@ -507,11 +507,18 @@ def _kept_fits(monkeypatch, source):
     def fam(name, category, src):
         return types.SimpleNamespace(family=name, category=category, faces=(types.SimpleNamespace(source=src),))
     monkeypatch.setattr(m, "_Search", Stub)
-    kept = [("Brand Script", fam("Brand Script", "script", source), None, 0.8),
-            ("Plain Sans", fam("Plain Sans", "neo_grotesque", "bundled"), None, 0.77)]
+    kept = [("Brand Script", fam("Brand Script", top, source), None, 0.8),
+            ("Plain Sans", fam("Plain Sans", sans, "bundled"), None, 0.77)]
     return [f.family for f in m._fit_kept(None, kept)[0]]
 
 
 def test_sans_prior_swaps_a_bundled_family_but_not_an_uploaded_one(monkeypatch):
     assert _kept_fits(monkeypatch, "bundled") == ["Plain Sans", "Brand Script"]
     assert _kept_fits(monkeypatch, "uploaded") == ["Brand Script", "Plain Sans"]
+
+
+def test_sans_prior_includes_rounded_not_condensed(monkeypatch):
+    """A serif 0.03 ahead of a rounded sans loses to it; a condensed sans is not in the prior (on real titles it
+    pulled Oswald / Barlow Condensed over the humanist and geometric truth), so a serif 0.03 ahead keeps its place."""
+    assert _kept_fits(monkeypatch, "bundled", "serif", "rounded_sans") == ["Plain Sans", "Brand Script"]
+    assert _kept_fits(monkeypatch, "bundled", "serif", "condensed_sans") == ["Brand Script", "Plain Sans"]
