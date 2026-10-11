@@ -215,3 +215,14 @@ def test_timing_edit_on_a_group_member_moves_all(tmp_path, monkeypatch):
     assert edited.element("e4") == before.element("e4")
     built = plan(before, Intent(targets=[Target(element="e2", property="timing", delay=0.2)]))   # e2 ends early, e1 does not
     assert [(c.id, c.element) for c in built.conflicts] == [("timing_overflow", "e1")]
+
+
+def test_a_group_lists_its_longest_lived_piece_first():
+    """Seed 6 at fix round 1: a group retext draws the new string on the first text member over that member's frames;
+    the "NewAri" piece (f2-10) came first, the title (f10-59) was dropped and the new string was gone after f10."""
+    def piece(first, last):
+        raw = np.full((60, 9), np.nan)
+        raw[first:last + 1] = 0.0
+        return {"raw": raw, "kind": "text", "text_group": "title_t1"}
+    props = {"t1": piece(2, 10), "t5": piece(10, 59), "t7": piece(28, 39)}
+    assert text_groups(props, {"t1": "e3", "t5": "e9", "t7": "e17"}) == [Group(id="text1", members=["e9", "e17", "e3"], reason="text_fragments")]

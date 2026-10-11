@@ -701,10 +701,13 @@ def guard_titles(props, frames, plate_or_bg, notes) -> None:
 
 
 def text_groups(props, ids) -> list[Group]:
-    """One `text_fragments` group per title the guard undid: its fragments' element ids, in the title's order."""
+    """One `text_fragments` group per title the guard undid (or track split at a cut): its pieces' element ids, the
+    longest-lived first (a group retext draws the new string on its first text member, over that member's frames:
+    seed 6's "NewAri" piece, f2-10, came first and took the title's retext off after f10), else in the title's order."""
     groups: dict[str, list[str]] = {}
     for k, p in props.items():
         if isinstance(p, dict) and p.get("text_group") and k in ids:
-            groups.setdefault(p["text_group"], []).append(ids[k])
-    return [Group(id=f"text{i}", members=m, reason="text_fragments")
+            groups.setdefault(p["text_group"], []).append(k)
+    lived = lambda k: -int(np.isfinite(props[k]["raw"][:, 0]).sum())
+    return [Group(id=f"text{i}", members=[ids[k] for k in sorted(m, key=lived)], reason="text_fragments")
             for i, m in enumerate((m for m in groups.values() if len(m) > 1), 1)]
