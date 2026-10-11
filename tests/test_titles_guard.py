@@ -3,6 +3,7 @@ their own keys, grouped (`text_fragments`) in the scene and the brief; an edit o
 import copy, logging, re, time
 import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline, titles
+from keepframe.analyze.constraints import apply_keep_preset, extract_constraints
 from keepframe.analyze.titles import MERGE_WORSE, guard_titles, text_groups
 from keepframe.edit.agent import edit
 from keepframe.edit.apply import apply_edit
@@ -38,7 +39,7 @@ def split(tmp_path_factory):
     return _split(tmp_path_factory.mktemp("guard"))
 
 
-def test_guard_keeps_a_good_merge(split, caplog):
+def test_guard_keeps_a_good_merge(split, caplog, tmp_path):
     root, seen = split
     props, _, scene = _stages(root)
     assert [k for k in props if k.startswith("title_")] == ["title_t1"]
@@ -52,7 +53,11 @@ def test_guard_keeps_a_good_merge(split, caplog):
     with pytest.MonkeyPatch.context() as mp:   # fail soft: a guard that cannot measure keeps the merge, one coded note
         mp.setattr("keepframe.analyze.solid_assets.solid_errors", lambda *a: 1 / 0)
         guard_titles(again, seen["frames"], seen["plate"], notes)
-    assert "title_t1" in again and notes == ["title guard failed (guard_failed)"]
+        assert "title_t1" in again and notes == ["title guard failed (guard_failed)"]
+        root, _ = _split(tmp_path)   # in the analysis: the phase message, so every text is less sure
+    props, ids, _ = _stages(root)
+    assert "title_t1" in props and props["_titles_message"] == "title guard failed (guard_failed)"
+    assert ids["title_t1"] in pipeline.fallback_ids(props, ids)
 
 
 def test_guard_undoes_a_misplaced_merge(split):
@@ -82,7 +87,7 @@ def test_text_groups_reach_scene_and_brief(split, tmp_path):
     assert scene.groups[0] == Group(id="text1", members=members, reason="text_fragments")
     assert f"group text1: {', '.join(members)} (text_fragments)" in scene_brief(scene)
     messages = _report(root)["messages"]
-    assert all(f"{m}: title merge failed ({MERGE_WORSE}); kept as measured" in messages for m in members)
+    assert all(f"{m}: title merge undone ({MERGE_WORSE}); kept as measured" in messages for m in members)
     assert set(members) <= pipeline.fallback_ids(props, ids)   # less sure, as a title left as its fragments
 
 
@@ -135,11 +140,13 @@ def _group_scene(sd):
                  groups=[Group(id="text1", members=["e1", "e2", "e3"], reason="text_fragments")])
 
 
-@pytest.fixture
-def project(tmp_path, monkeypatch):
-    """The group scene as a project; renders are probe boxes (no browser)."""
+def _project(tmp_path, monkeypatch, keep=False):
+    """The group scene as a project (`keep`: with the constraints analysis gives it, content_only kept); renders are
+    probe boxes (no browser)."""
     root = tmp_path / "proj"
     scene = _group_scene(root / "scenes" / "s1")
+    if keep:
+        scene.constraints = apply_keep_preset(extract_constraints(scene), "content_only")
     init_project(root, {"file": "ref.mp4", "fps": 30, "size": [400, 200]}, scene)
 
     def probes(_html, edited, out_dir):
@@ -162,19 +169,24 @@ def test_colour_edit_on_a_group_member_recolours_all(tmp_path):
     assert out.element("e4") == scene.element("e4") and out.groups == scene.groups
 
 
-def test_retext_on_a_group_member_replaces_the_group(project):
-    root, before = project
-    result = edit(root, "s1", "문구를 바꿔줘", confirm=True, choices={"overflow": "expand_box"},
-                  intent={"targets": [{"element": "e2", "property": "text", "value": "Fall Drop Sale"}]})
+def test_retext_on_a_group_member_replaces_the_group(tmp_path, monkeypatch):
+    root, before = _project(tmp_path, monkeypatch, keep=True)
+    gone = [c.pred for c in before.constraints if c.keep and ("m_e2_" in c.pred or "m_e3_" in c.pred)]
+    assert gone   # the pieces the retext drops move: their motion facts are kept
+    result = edit(root, "s1", "문구를 바꿔줘", confirm=True, choices={"overflow": "expand_box"},   # two text items: one string
+                  intent={"targets": [{"element": "e2", "property": "text", "value": "Drop Sale"},
+                                      {"element": "e1", "property": "text", "value": "Fall"}]})
     assert result.status == "done", result.error
     edited, _ = current_scene(root, "s1")
     assert [e.id for e in edited.elements] == ["e1", "e4"] and edited.groups == []
     first = edited.element("e1")
     assert first.canonical.text == "Fall Drop Sale" and (first.visible, first.tracks) == (before.element("e1").visible, before.element("e1").tracks)
+    preds = [c.pred for c in edited.constraints]
+    assert not set(gone) & set(preds) and any(p.startswith("type(m_e1_") for p in preds)
 
 
-def test_timing_edit_on_a_group_member_moves_all(project):
-    root, before = project
+def test_timing_edit_on_a_group_member_moves_all(tmp_path, monkeypatch):
+    root, before = _project(tmp_path, monkeypatch)
     result = edit(root, "s1", "속도를 바꿔줘", confirm=True,
                   intent={"targets": [{"element": "e3", "property": "timing", "speed": 2.0, "delay": 0.5}]})
     assert result.status == "done", result.error

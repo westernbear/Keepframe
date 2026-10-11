@@ -25,7 +25,7 @@ from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .plane import tilted_raw
-from .titles import guard_titles, merge_titles, text_groups
+from .titles import MERGE_WORSE, guard_titles, merge_titles, text_groups
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
@@ -287,8 +287,9 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
             family = family if isinstance(family, str) and FONT_FAMILY_RE.fullmatch(family) else "sans-serif"
             out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
                        else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
-        if p.get("merge_note"):
-            out.append(f"{ids[k]}: title merge failed ({p['merge_note']}); kept as measured")
+        if p.get("merge_note"):   # a merge that failed, or that the guard undid (it rendered worse)
+            what = "undone" if p["merge_note"] == MERGE_WORSE else "failed"
+            out.append(f"{ids[k]}: title merge {what} ({p['merge_note']}); kept as measured")
         if p.get("text_unverified"):
             out.append(f"{ids[k]}: title text not verified ({p['text_unverified']})")
     return [scrub_paths(m) for m in out]   # report messages reach the browser: no server paths

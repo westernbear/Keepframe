@@ -627,8 +627,9 @@ def guard_titles(props, frames, plate_or_bg, notes) -> None:
             err = solid_errors(frames, plate.at(int(p["cf"])), {**p, "boxes": boxes}, None)
             log.info("titles guard %s still=%.4f fragments=%.4f", key, err["still"], err["fragments"])
             if err["still"] > err["fragments"] + TITLE_GUARD:
+                restored = {k: {**f, "merge_note": MERGE_WORSE, "text_group": key} for k, f in p["fragments"].items()}
                 del props[key]
-                props.update({k: {**f, "merge_note": MERGE_WORSE, "text_group": key} for k, f in p["fragments"].items()})
+                props.update(restored)
                 undone += 1
         except Exception as e:   # fail soft: the merge stays
             log.warning("title guard failed for %s: %s", key, describe(e, trace=True))
