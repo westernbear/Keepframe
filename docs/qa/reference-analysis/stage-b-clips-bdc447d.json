@@ -1,0 +1,816 @@
+{
+  "date": "2026-10-11",
+  "renderer": "browser",
+  "vlm_calls": 0,
+  "max_frames": 150,
+  "strict": true,
+  "options": {
+    "synthetic": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": false,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": false
+    },
+    "clips": {
+      "bg_override": null,
+      "copy": null,
+      "ocr": true,
+      "refine": true,
+      "refine_iters": 200,
+      "min_area": 30,
+      "use_ecc": true,
+      "ui": false,
+      "ocr_max_side": null,
+      "generate_3d": true
+    }
+  },
+  "gates": {
+    "clips": {
+      "title_colour_de": {
+        "value": 4.662219872077306,
+        "worst": 11.741101264953613,
+        "threshold": 10.0,
+        "op": "lt",
+        "samples": 6,
+        "failed": 1,
+        "passed": false
+      },
+      "title_whole": {
+        "value": 0.75,
+        "threshold": 0.75,
+        "op": "ge",
+        "samples": 8,
+        "passed": true
+      },
+      "vlm_calls": {
+        "value": 0.0,
+        "worst": 0,
+        "threshold": 3,
+        "op": "le",
+        "samples": 4,
+        "failed": 0,
+        "passed": true
+      },
+      "render_l1": {
+        "value": 0.04277269752152885,
+        "limits": [
+          0.0843616366883119,
+          0.050754261811574296,
+          0.07754898796478908,
+          0.027642221627756956
+        ],
+        "samples": 4,
+        "failed": 0,
+        "passed": true
+      },
+      "seconds": {
+        "value": 375.76,
+        "limits": [
+          616.95,
+          927.75,
+          375.45000000000005,
+          254.25
+        ],
+        "samples": 4,
+        "failed": 0,
+        "passed": true
+      }
+    }
+  },
+  "clips": {
+    "rows": [
+      {
+        "clip": "envato1",
+        "frames": [
+          75,
+          120,
+          149
+        ],
+        "analysed_frames": 150,
+        "seconds": 534.0,
+        "vlm_calls": 0,
+        "elements": 54,
+        "integrity": [
+          {
+            "text": "Build SaaS Promo",
+            "role": "title",
+            "whole": true,
+            "element": "e35",
+            "ratio": 0.968,
+            "duplicates": 0,
+            "fragments": 3,
+            "fragment_ids": [
+              "e4",
+              "e36",
+              "e38"
+            ]
+          },
+          {
+            "text": "Build",
+            "role": "kinetic",
+            "whole": false,
+            "element": null,
+            "ratio": 0.5,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e4"
+            ]
+          }
+        ],
+        "colour": [
+          {
+            "text": "Build SaaS Promo",
+            "gold": "#f0ebfe",
+            "element": "e35",
+            "analysed": "#e7defc",
+            "de": 7.184918403625488
+          }
+        ],
+        "render_l1": 0.0680399265140295,
+        "leak": {
+          "bg_leak_fraction": 0.0016247980020567064,
+          "leak_correlation": 0.15192320225286954,
+          "against": "analysed plate"
+        },
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e35",
+          "text": "Fall Drop Sale",
+          "colour": "#e7defc",
+          "visible_frames": 1,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 75,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 120,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 8.600613594055176,
+              "glyph_de": 9.180419921875
+            },
+            {
+              "frame": 149,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e35",
+            "truth": null,
+            "missed": false,
+            "mean_de": 7.882623672485352,
+            "p95_de": 20.185312271118164,
+            "hf_ratio": 0.9961026906967163,
+            "residue_fraction": 0.27762601719527275,
+            "truth_de": null,
+            "frames": [
+              {
+                "frame": 75,
+                "absent": true
+              },
+              {
+                "frame": 120,
+                "mean_de": 7.882623672485352,
+                "p95_de": 20.185312271118164,
+                "hf_ratio": 0.9961026906967163,
+                "residue_fraction": 0.27762601719527275,
+                "pixels": 208662,
+                "fit_degree": 2
+              },
+              {
+                "frame": 149,
+                "absent": true
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": null,
+            "frames": [
+              {
+                "frame": 75,
+                "halo_ring": null
+              },
+              {
+                "frame": 120,
+                "halo_ring": 35.7982292175293
+              },
+              {
+                "frame": 149,
+                "halo_ring": 41.93986511230469
+              }
+            ]
+          }
+        ],
+        "baseline": {
+          "seconds": 411.3,
+          "render_l1": 0.07936163668831189
+        },
+        "sheet": "sheets/clip-envato1.png",
+        "messages": [
+          "text tracks reclassified as shapes: 31",
+          "e17: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e21: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e25: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e33: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e34: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e2: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e9: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e13: matted texture at low confidence (0.01); it replaced the binary texture",
+          "e22: matted texture at low confidence (0.00); it replaced the binary texture",
+          "3D \ud6c4\ubcf4 1\uac1c",
+          "3D \ud6c4\ubcf4 1\uac1c: \uc0dd\uc131\uae30 \ubbf8\uc124\uc815",
+          "3D \ucda9\uc2e4\ub3c4 e37: fragments=0.082051, still=0.198315, model=None; fragments"
+        ]
+      },
+      {
+        "clip": "ig1",
+        "frames": [
+          75,
+          90,
+          149
+        ],
+        "analysed_frames": 150,
+        "seconds": 483.16,
+        "vlm_calls": 0,
+        "elements": 101,
+        "integrity": [
+          {
+            "text": "Every day, ideas are born",
+            "role": "title",
+            "whole": true,
+            "element": "e7",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 2,
+            "fragment_ids": [
+              "e1",
+              "e10"
+            ]
+          },
+          {
+            "text": "inside your walls.",
+            "role": "title",
+            "whole": true,
+            "element": "e12",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 0,
+            "fragment_ids": []
+          }
+        ],
+        "colour": [
+          {
+            "text": "Every day, ideas are born",
+            "gold": "#333138",
+            "element": "e7",
+            "analysed": "#34333a",
+            "de": 0.9353451728820801
+          },
+          {
+            "text": "inside your walls.",
+            "gold": "#313237",
+            "element": "e12",
+            "analysed": "#34333a",
+            "de": 1.7831922769546509
+          }
+        ],
+        "render_l1": 0.0318639508758982,
+        "leak": {
+          "bg_leak_fraction": 0.07642390953150242,
+          "leak_correlation": 0.12068689690197995,
+          "against": "analysed plate"
+        },
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e7",
+          "text": "Fall Drop Sale",
+          "colour": "#34333a",
+          "visible_frames": 2,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 75,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.43283167481422424,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 90,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.34850093722343445,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 149,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e7",
+            "truth": null,
+            "missed": false,
+            "mean_de": 0.6823853254318237,
+            "p95_de": 1.3574042320251465,
+            "hf_ratio": 1.0079889595508575,
+            "residue_fraction": 0.0,
+            "truth_de": null,
+            "frames": [
+              {
+                "frame": 75,
+                "mean_de": 0.6581430435180664,
+                "p95_de": 1.2397356033325195,
+                "hf_ratio": 1.0168113708496094,
+                "residue_fraction": 0.0,
+                "pixels": 17132,
+                "fit_degree": 2
+              },
+              {
+                "frame": 90,
+                "mean_de": 0.706627607345581,
+                "p95_de": 1.4750728607177734,
+                "hf_ratio": 0.9991665482521057,
+                "residue_fraction": 0.0,
+                "pixels": 19879,
+                "fit_degree": 2
+              },
+              {
+                "frame": 149,
+                "absent": true
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 20.7641175587972,
+            "frames": [
+              {
+                "frame": 75,
+                "halo_ring": 20.497739791870117
+              },
+              {
+                "frame": 90,
+                "halo_ring": 21.40532112121582
+              },
+              {
+                "frame": 149,
+                "halo_ring": 20.389291763305664
+              }
+            ]
+          }
+        ],
+        "baseline": {
+          "seconds": 618.5,
+          "render_l1": 0.0457542618115743
+        },
+        "sheet": "sheets/clip-ig1.png",
+        "messages": [
+          "text tracks reclassified as shapes: 31",
+          "e13: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e19: font not matched (scene work cap reached); kept sans-serif",
+          "e27: font not matched (scene work cap reached); kept sans-serif",
+          "e24: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e24: font not matched (scene work cap reached); kept sans-serif",
+          "e25: font not matched (scene work cap reached); kept sans-serif",
+          "e28: font not matched (scene work cap reached); kept sans-serif",
+          "e29: font not matched (scene work cap reached); kept sans-serif",
+          "e45: font not matched (scene work cap reached); kept sans-serif",
+          "e44: font not matched (scene work cap reached); kept sans-serif",
+          "e46: font not matched (scene work cap reached); kept sans-serif",
+          "e49: font not matched (scene work cap reached); kept sans-serif",
+          "e55: font not matched (scene work cap reached); kept sans-serif",
+          "e69: font not matched (scene work cap reached); kept sans-serif",
+          "e74: font not matched (scene work cap reached); kept sans-serif",
+          "e76: font not matched (scene work cap reached); kept sans-serif",
+          "e5: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e43: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e58: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e81: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e77: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e84: matted texture at low confidence (0.03); it replaced the binary texture",
+          "e26: title text not verified (no_vlm)",
+          "e31: font not matched (scene work cap reached); kept sans-serif",
+          "e31: title text not verified (no_vlm)",
+          "e17: font not matched (scene work cap reached); kept sans-serif",
+          "e17: title merge undone (merge_worse); kept as measured",
+          "e67: font not matched (scene work cap reached); kept sans-serif",
+          "e67: title merge undone (merge_worse); kept as measured",
+          "e21: font not matched (scene work cap reached); kept sans-serif",
+          "e21: title merge undone (merge_worse); kept as measured",
+          "e66: font not matched (scene work cap reached); kept sans-serif",
+          "e66: title merge undone (merge_worse); kept as measured",
+          "e30: title merge undone (merge_worse); kept as measured",
+          "e65: title merge undone (merge_worse); kept as measured",
+          "e42: font not matched (scene work cap reached); kept sans-serif",
+          "e42: title merge undone (merge_worse); kept as measured",
+          "e50: font not matched (scene work cap reached); kept sans-serif",
+          "e50: title merge undone (merge_worse); kept as measured",
+          "e22: font not matched (scene work cap reached); kept sans-serif",
+          "e22: title merge undone (merge_worse); kept as measured",
+          "e36: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e36: title merge undone (merge_worse); kept as measured",
+          "e52: title merge undone (merge_worse); kept as measured",
+          "e60: title merge undone (merge_worse); kept as measured",
+          "e70: title merge undone (merge_worse); kept as measured",
+          "e72: font not matched (scene work cap reached); kept sans-serif",
+          "e72: title merge undone (merge_worse); kept as measured",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "clip": "ig2",
+        "frames": [
+          75,
+          120,
+          149
+        ],
+        "analysed_frames": 150,
+        "seconds": 279.75,
+        "vlm_calls": 0,
+        "elements": 29,
+        "integrity": [
+          {
+            "text": "A Weekend Away",
+            "role": "title",
+            "whole": true,
+            "element": "e20",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 3,
+            "fragment_ids": [
+              "e6",
+              "e8",
+              "e12"
+            ]
+          },
+          {
+            "text": "Weekend",
+            "role": "kinetic",
+            "whole": false,
+            "element": null,
+            "ratio": 0.667,
+            "duplicates": 0,
+            "fragments": 3,
+            "fragment_ids": [
+              "e6",
+              "e8",
+              "e12"
+            ]
+          }
+        ],
+        "colour": [
+          {
+            "text": "A Weekend Away",
+            "gold": "#ab0004",
+            "element": "e20",
+            "analysed": "#ad0104",
+            "de": 0.7923455834388733
+          }
+        ],
+        "render_l1": 0.04920188374817371,
+        "leak": {
+          "bg_leak_fraction": 0.09416655058802126,
+          "leak_correlation": 0.0882639024973886,
+          "against": "analysed plate"
+        },
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e20",
+          "text": "Fall Drop Sale",
+          "colour": "#ad0104",
+          "visible_frames": 3,
+          "outside_glyph_delta": 0.0,
+          "smear_score": 0.7069923877716064,
+          "glyph_de": 0.0,
+          "frames": [
+            {
+              "frame": 75,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.5310888290405273,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 120,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.8980832695960999,
+              "glyph_de": 0.0
+            },
+            {
+              "frame": 149,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 0.6918050646781921,
+              "glyph_de": 0.0
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e20",
+            "truth": null,
+            "missed": false,
+            "mean_de": 0.846315602461497,
+            "p95_de": 1.579593817392985,
+            "hf_ratio": 1.0029962658882141,
+            "residue_fraction": 0.0,
+            "truth_de": null,
+            "frames": [
+              {
+                "frame": 75,
+                "mean_de": 0.439799964427948,
+                "p95_de": 0.6522109508514404,
+                "hf_ratio": 0.9940531849861145,
+                "residue_fraction": 0.0,
+                "pixels": 217,
+                "fit_degree": 2
+              },
+              {
+                "frame": 120,
+                "mean_de": 1.0754178762435913,
+                "p95_de": 2.451040267944336,
+                "hf_ratio": 1.0104554891586304,
+                "residue_fraction": 0.0,
+                "pixels": 933,
+                "fit_degree": 2
+              },
+              {
+                "frame": 149,
+                "mean_de": 1.0237289667129517,
+                "p95_de": 1.6355302333831787,
+                "hf_ratio": 1.0044801235198975,
+                "residue_fraction": 0.0,
+                "pixels": 791,
+                "fit_degree": 2
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 4.799394528071086,
+            "frames": [
+              {
+                "frame": 75,
+                "halo_ring": 4.099845886230469
+              },
+              {
+                "frame": 120,
+                "halo_ring": 6.414786338806152
+              },
+              {
+                "frame": 149,
+                "halo_ring": 3.8835513591766357
+              }
+            ]
+          }
+        ],
+        "baseline": {
+          "seconds": 250.3,
+          "render_l1": 0.07254898796478908
+        },
+        "sheet": "sheets/clip-ig2.png",
+        "messages": [
+          "text tracks reclassified as shapes: 21",
+          "e2: 2741 px of its texture under text are filled in (synthetic)",
+          "e22: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e25: matted texture at low confidence (0.03); it replaced the binary texture",
+          "e28: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e7: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e11: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e10: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e23: title merge undone (merge_worse); kept as measured",
+          "e24: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e24: title merge undone (merge_worse); kept as measured",
+          "e27: title merge undone (merge_worse); kept as measured",
+          "e29: title merge undone (merge_worse); kept as measured",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      },
+      {
+        "clip": "ig3",
+        "frames": [
+          30,
+          75,
+          149
+        ],
+        "analysed_frames": 150,
+        "seconds": 206.13,
+        "vlm_calls": 0,
+        "elements": 63,
+        "integrity": [
+          {
+            "text": "You just speak",
+            "role": "title",
+            "whole": true,
+            "element": "e1",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 2,
+            "fragment_ids": [
+              "e14",
+              "e33"
+            ]
+          },
+          {
+            "text": "Your idea",
+            "role": "title",
+            "whole": true,
+            "element": "e49",
+            "ratio": 1.0,
+            "duplicates": 0,
+            "fragments": 1,
+            "fragment_ids": [
+              "e14"
+            ]
+          }
+        ],
+        "colour": [
+          {
+            "text": "You just speak",
+            "gold": "#14018a",
+            "element": "e1",
+            "analysed": "#030171",
+            "de": 11.741101264953613
+          },
+          {
+            "text": "Your idea",
+            "gold": "#18325c",
+            "element": "e49",
+            "analysed": "#263c62",
+            "de": 5.536416530609131
+          }
+        ],
+        "render_l1": 0.02198502894801398,
+        "leak": {
+          "bg_leak_fraction": 0.006176416056364142,
+          "leak_correlation": null,
+          "against": "analysed plate"
+        },
+        "title": {
+          "status": "done",
+          "error": null,
+          "element": "e1",
+          "text": "Fall Drop Sale",
+          "colour": "#030171",
+          "visible_frames": 1,
+          "outside_glyph_delta": null,
+          "smear_score": null,
+          "glyph_de": null,
+          "frames": [
+            {
+              "frame": 30,
+              "visible": true,
+              "outside_glyph_delta": 0.0,
+              "smear_score": 1.1136981811432634e-05,
+              "glyph_de": 17.38629150390625
+            },
+            {
+              "frame": 75,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            },
+            {
+              "frame": 149,
+              "visible": false,
+              "outside_glyph_delta": null,
+              "smear_score": null,
+              "glyph_de": null
+            }
+          ]
+        },
+        "hide": [
+          {
+            "element": "e1",
+            "truth": null,
+            "missed": false,
+            "mean_de": 0.0,
+            "p95_de": 0.0,
+            "hf_ratio": 1.0,
+            "residue_fraction": 0.0,
+            "truth_de": null,
+            "frames": [
+              {
+                "frame": 30,
+                "mean_de": 0.0,
+                "p95_de": 0.0,
+                "hf_ratio": 1.0,
+                "residue_fraction": 0.0,
+                "pixels": 23490,
+                "fit_degree": 2
+              },
+              {
+                "frame": 75,
+                "absent": true
+              },
+              {
+                "frame": 149,
+                "absent": true
+              }
+            ]
+          }
+        ],
+        "background": [
+          {
+            "status": "done",
+            "error": null,
+            "mode": "replace",
+            "colour": "#1a2a6c",
+            "halo_ring": 19.375478744506836,
+            "frames": [
+              {
+                "frame": 30,
+                "halo_ring": 21.98928451538086
+              },
+              {
+                "frame": 75,
+                "halo_ring": 13.027107238769531
+              },
+              {
+                "frame": 149,
+                "halo_ring": 23.110044479370117
+              }
+            ]
+          }
+        ],
+        "baseline": {
+          "seconds": 169.5,
+          "render_l1": 0.022642221627756955
+        },
+        "sheet": "sheets/clip-ig3.png",
+        "messages": [
+          "text tracks reclassified as shapes: 22",
+          "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e14: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e12: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e16: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e18: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e19: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e22: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e25: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e45: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e8: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e17: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e20: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+          "e33: matted texture at low confidence (0.00); it replaced the binary texture",
+          "e33: title text not verified (no_vlm)",
+          "e59: title merge undone (merge_worse); kept as measured",
+          "3D \ud6c4\ubcf4 0\uac1c"
+        ]
+      }
+    ],
+    "missing_gold": []
+  },
+  "passed": false
+}

@@ -99,3 +99,71 @@ numpy renderer, v4 OCR). Seeds 1-8 rows equal `rb-t2/metrics.json` (seconds and 
 Gate `title_whole`: 11/13 titles whole over seeds 1-10 (0.846 < 0.9, fails). Seed 9 title edit: smear 0.70, glyph ΔE 2.5 at frame 30 but not visible at 39 (stagger
 unsettled). Seed 10 residue: s1/s3 unmatched, hide residue 0.6. The analysis splits both titles into pieces elsewhere (14 and 13 analysed
 elements), which Stage B's merge, plane fit and glyph measurement target.
+
+## Final results (merged to master 2026-10-12)
+
+### Clips at bdc447d (`stage-b-clips-bdc447d.json`)
+
+Run: home, `eval-edits --clips … --renderer browser --strict`. Code at bdc447d: all Stage B tasks, before the visual fix wave.
+
+| Gate | Value | Result |
+|---|---|---|
+| `title_whole` | 6/8 (0.75) | Passes. ig1 restored; ig3 "You just speak" whole. |
+| fragments | 19 → 15 (vs follow-ups) | |
+| `render_l1` | 4/4 | Passes. |
+| seconds | 4/4 | Passes. |
+| `vlm_calls` | 0 | Passes. |
+| `title_colour_de` | 1/6 fails | Fails on ig3: gradient fill, ΔE 11.74. |
+
+Suite at bdc447d: 3041 passed / 1 skipped. Node 210/210. gate-m1 20/20. gate-m2 20/20 (temporal .720).
+
+### Visual fix wave: what was kept
+
+The contact sheets showed five defects that the gates do not catch, V1–V5.
+
+The fix wave went through three rounds, and each round fixed one case and broke another. Its V1/V5 rules had become thresholds fitted to the eval's own clips and seeds. The user ruled to keep only the fixes that rest on a stated principle (2026-10-12):
+
+| Kept | Principle | Effect |
+|---|---|---|
+| V4 (b137e76) | A text's per-frame opacity is read on pixels on its colour's line, so a sprite crossing its box does not count. | Seed 9's glyph title is fully opaque at f39. |
+| V3 (3509d93) | rx/ry are kept only when the perspective is observable: convergence ≥ 0.8° on a cap ≥ d·tan 0.8°. An in-plane turn alone is carried by `rot`. | ig1's turned notes have no false 3D. Seed 10's ry stays within 3° of the truth. |
+| V2, tilted part (bd2bd0a) | A tilted title's font job reads its binary rectified canon. The fill coverage has no plate under it to model a fade. | Seed 10's retext is whole (dx −149 → −1.8). |
+| e0765c5 | A text group lists its longest-lived piece first, so a group retext lands on the title, not on a short piece. | |
+| 9afa887 | A fitted pen more than 0.3 em left of the ink starts at the ink. | A retext is no longer clipped on the left (envato1 e35 dx −150 → ink). |
+
+Reverted:
+
+- V1: the canonical frame chosen by read length.
+- V5: pieces folded inside a title, the dominance rule, the title-colour contrast.
+- The review rounds' rules: prefix reveal, cut split, blob cut, the merged-title canonical frame and colour.
+- V2's texture-alpha coverage for two-colour lines (c507033). Ablation: on seed 4 it turned Barlow Condensed (0.90, the truth) into Bebas Neue (0.35), because the coverage reads a crossing sprite as glyph.
+
+### Synthetic at c507033 (`stage-b-synthetic.json`, vs bdc447d)
+
+| Gate | bdc447d | c507033 |
+|---|---|---|
+| `title_whole` | 13/13 | 13/13 |
+| `font_top3` | 0.769 | 0.769 |
+| `title_smear` failures | 6 | 5 (seed 9 measured, 0.34) |
+| `title_glyph_de` failures | 4 | 2 |
+| `f_de_edge` failures | 3 | 4 (seed 9: 5.85 → 7.32) |
+| `render_l1` | | better on seeds 9 and 10 |
+
+Seeds 1 and 2 are identical. Seeds 3–10 move only through V4.
+
+### Still open
+
+- ig3 e1:
+  - Frames whose read holds less than the line are squeezed into its box: typing in (f10), the word turning into a mic (f39–56), and a cut (f57–72).
+  - The title colour ΔE is 11.74 against gold. The line has three colour zones, and the fill is a two-stop gradient.
+- Seeds 4 and 6: a retext of the whole title leaves the separately tracked pieces (smear 20.1 and 7.8). Seed 4's title box shrinks over f55–59.
+- Seed 7: smear 7.2.
+- Seed 10: its texture has a hole where the mover crossed at cf.
+- R11: tilt recall on short words.
+- envato1 e35 at f120: the retext keeps the original's reveal fraction (0.94).
+- The VLM paths are unmeasured (D1).
+- Live AE check (user step): X/Y rotation sign and order, perspective against the default camera, the glyph wipe.
+
+### Clips at the merged code
+
+The clip eval and the suite are re-running on home at the merged code. The home WSL filesystem turned read-only mid-run twice on 2026-10-12.
