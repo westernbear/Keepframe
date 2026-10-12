@@ -8,7 +8,7 @@ import math, re, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
-from ..ir.colour import rgb8_to_hex
+from ..ir.colour import delta_e, lab_to_srgb, rgb8_to_hex, srgb8_to_lab, srgb_to_lab
 from ..ir.schema import DEFAULTS, PROPS, GlyphReveal, Group
 from ..ir.tracks import glyph_edges, is_tilted, perspective_px, projective_matrix
 from ..log import describe, get
@@ -17,7 +17,7 @@ from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
 from .text import _compact, _glyph_core_mask, on_line, partial_ratio, read_cover
-from .textstyle import glyph_centres
+from .textstyle import _mode, glyph_centres
 
 log = get("keepframe.analyze")
 
@@ -41,20 +41,16 @@ class Fragment:
     kind: str = "text"                                     # the prop's: "text" (a text track) or "sprite"
 
 
-def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
-    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them),
-    video sprites and the pieces of a track split at a cut (`text_group`: never merged back into one canon), and
-    anything visible in fewer than MIN_FRAMES frames."""
-    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("text_group") \
-            or p.get("kind") not in ("text", "sprite"):
-        return None
+def _boxes_of(p: dict, size) -> dict[int, tuple[float, float, float, float]]:
+    """A prop's scene bbox per frame it is drawn, of what is shown (a reveal clips the canon's end)."""
     raw, canon = p["raw"], p["canon"]
     ch, cw = canon.shape[:2]
-    corners = np.array([[-cw / 2, -ch / 2, 1], [cw / 2, -ch / 2, 1], [cw / 2, ch / 2, 1], [-cw / 2, ch / 2, 1]], float)
-    boxes, hs, rots = {}, [], []
+    boxes = {}
     for f in np.flatnonzero(np.isfinite(raw[:, 0])):
         q = {k: float(raw[f, i]) if i < raw.shape[1] and np.isfinite(raw[f, i]) else DEFAULTS[k] for i, k in enumerate(PROPS)}
         q["sky"] = 0.0
+        xr = cw * (min(1.0, max(0.0, q["reveal"])) - 0.5)
+        corners = np.array([[-cw / 2, -ch / 2, 1], [xr, -ch / 2, 1], [xr, ch / 2, 1], [-cw / 2, ch / 2, 1]], float)
         if is_tilted(q, "sprite"):
             P = corners @ projective_matrix(q, size).T
             P = P[:, :2] / P[:, 2:]
@@ -63,7 +59,22 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
             M = np.array([[np.cos(r), -np.sin(r)], [np.sin(r), np.cos(r)]]) @ np.array([[1, k], [0, 1]]) @ np.diag([q["sx"], q["sy"]])
             P = corners[:, :2] @ M.T + [q["x"], q["y"]]
         boxes[int(f)] = (float(P[:, 0].min()), float(P[:, 1].min()), float(P[:, 0].max()), float(P[:, 1].max()))
-        hs.append(ch * q["sy"]); rots.append(q["rot"])
+    return boxes
+
+
+def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
+    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them),
+    video sprites and the pieces of a track split at a cut (`text_group`: never merged back into one canon), and
+    anything visible in fewer than MIN_FRAMES frames."""
+    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("text_group") \
+            or p.get("kind") not in ("text", "sprite"):
+        return None
+    raw, canon = p["raw"], p["canon"]
+    ch = canon.shape[0]
+    boxes, hs, rots = _boxes_of(p, size), [], []
+    for f in boxes:
+        hs.append(ch * (raw[f, 3] if np.isfinite(raw[f, 3]) else 1.0))
+        rots.append(raw[f, 4] if np.isfinite(raw[f, 4]) else 0.0)
     if len(boxes) < MIN_FRAMES:
         return None
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
@@ -185,8 +196,10 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
 # --- the merged title ---------------------------------------------------------------------------------------------
 
 MERGE_FAILED = "merge_failed"   # fail-soft code (R52): a title left as its fragments
-CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 0.9, 0.8, 0.02, 2.0, 0.3
-BLOB = 0.2   # I2: half a stroke is under this many line heights (bold display faces ≈ 0.06)
+CF_OPACITY, CF_AREA, CF_AWAY, SPACE_GAP, SPACE_H = 0.9, 0.8, 1.0, 2.0, 0.3
+BLOB, GLYPH_DE, CARD_DE = 0.2, 10.0, 20.0   # I2: half a stroke is under this many line heights (bold display faces
+                                            # ≈ 0.06); a glyph pixel is within GLYPH_DE of the title's colour; glyphs
+                                            # on a card differ from it by more than CARD_DE (ΔE76)
 TILT_ROT, TILT_CONVERGE, TILT_LEN = 2.0, 0.8, 5.0   # D12 with R8 (a yawed title converges only ≈ cap·tan(ry)/d)
 LEN_TOL = 0.25   # a VLM line replaces an OCR string only within 25 % of its compact length (final review I2)
 
@@ -263,33 +276,50 @@ def _on_colour(crop, behind) -> tuple[np.ndarray, np.ndarray]:
     return fg, fg & on_line(crop, behind, np.median(crop[fg].astype(np.float32), axis=0))
 
 
-def _title_contrast(crop, B, colour) -> np.ndarray:
-    """The contrast of the foreground `on_line` of the title's colour at cf: what crosses the title is not tracked
-    (V5: the crop's own median foreground was a sprite's colour where one filled it, and ECC saw glyph edges only).
-    ponytail: one colour, cf's; a title whose colour animates loses ECC away from cf (held, placed by its boxes);
-    upgrade path: the colour of the frame tracked last."""
+def _unblobbed(on, h: float, img=None, colour=None) -> np.ndarray:
+    """`on` less its solid blobs (I2: seed 6's square near the title's colour): the pixels within BLOB·h of a pixel
+    over BLOB·h deep inside it, where no stroke is that thick, except (given `img` and the title's `colour`) those
+    within GLYPH_DE of that colour: a glyph over the blob, or touching it, stays."""
+    r = max(1, int(round(BLOB * h)))
+    deep = (cv2.distanceTransform(on.astype(np.uint8), cv2.DIST_L2, 3) > r).astype(np.uint8)
+    blob = cv2.dilate(deep, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0
+    if colour is not None and blob.any():
+        blob &= delta_e(srgb8_to_lab(img), srgb8_to_lab(np.rint(np.broadcast_to(colour, img.shape)).astype(np.uint8))) > GLYPH_DE
+    return on & ~blob
+
+
+def _title_contrast(crop, B, colour, h: float | None = None) -> np.ndarray:
+    """The contrast of the foreground `on_line` of the title's colour (`_colour`), less its solid blobs given the line
+    height `h`, as the template has them: what crosses the title is not tracked (V5: the crop's own median foreground
+    was a sprite's colour where one filled it, and ECC saw glyph edges only).
+    ponytail: one colour for the whole life; a title whose colour animates loses ECC away from the frames it was
+    measured on (held, placed by its boxes); upgrade path: the colour of the frame tracked last."""
     B = np.ascontiguousarray(np.broadcast_to(B, crop.shape))
-    return contrast(crop, B) * (foreground_mask_plate(crop, B) & on_line(crop, B, colour))
+    on = foreground_mask_plate(crop, B) & on_line(crop, B, colour)
+    return contrast(crop, B) * (_unblobbed(on, h, crop, colour) if h else on)   # `h`: blobs out, as from the template
 
 
-def _settled(group: list[Fragment], frames, plate, op) -> int:
-    """cf: of the frames that show the most members at ≥ 90 % of their peak opacity `op` (per frame) and with a union
-    box ≥ 80 % of the largest (a title turning in perspective changes its box; ≤ 16 of them, evenly spread), those
-    whose foreground in the box is most the title's colour (within 0.02 of the best: the least clutter on or under
-    it), then the one with the least motion in the box (the mean change to frames f ± 1)."""
+def _settled(group: list[Fragment], frames, plate, op, others=()) -> int:
+    """cf: of the frames at ≥ 90 % of the peak opacity `op` (per frame) with a union box ≥ 80 % of the largest (a
+    title turning in perspective changes its box) that no other prop's box (`others`, per frame) crosses when there
+    are any (≤ 16 of them, evenly spread), those whose box is nearest the candidates' per-pixel median (within
+    CF_AWAY grey levels of the best: nothing crosses the title there that is not there most of the time), then the one
+    with the least motion in the box (the mean change to frames f ± 1). Round 2: not the frames showing the most
+    members (a piece read apart only while a sprite crossed the title pulled cf there, where the members' boxes missed
+    the letter under the sprite: seeds 6 and 8 lost their "N"), nor the least clutter by colour (seed 3's card over
+    "g" was as title-coloured as the plate's own noise)."""
     seen = sorted(set().union(*(g.boxes for g in group)))
-    count = {f: sum(f in g.boxes for g in group) for f in seen}
-    top = [f for f in seen if count[f] == max(count.values())]
-    top = [f for f in top if op[f] >= CF_OPACITY * max(op[top])] or top
+    top = [f for f in seen if op[f] >= CF_OPACITY * max(op[seen])] or seen
     area = {f: float(np.prod(_size(_at(group, f)))) for f in top}
     cand = [f for f, a in area.items() if a >= CF_AREA * max(area.values())]
+    hit = lambda a, b: a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+    cand = [f for f in cand if not any(f in o and hit(o[f], _at(group, f)) for o in others)] or cand
     cand = [cand[i] for i in sorted(set(np.linspace(0, len(cand) - 1, min(16, len(cand))).round().astype(int)))]
     boxes = {f: _box(group, f, frames.shape[1:3]) for f in cand}
-
-    def clutter(f):
-        x0, y0, x1, y1 = boxes[f]
-        fg, on = _on_colour(frames[f, y0:y1, x0:x1], np.broadcast_to(plate.at(f), frames.shape[1:])[y0:y1, x0:x1])
-        return 1.0 - on.sum() / max(fg.sum(), 1)
+    hh, ww = min(b[3] - b[1] for b in boxes.values()), min(b[2] - b[0] for b in boxes.values())
+    crops = {f: frames[f, b[1]:b[1] + hh, b[0]:b[0] + ww].astype(np.float32) for f, b in boxes.items()}
+    med = np.median(np.stack(list(crops.values())), axis=0)
+    away = {f: float(np.abs(c - med).mean()) for f, c in crops.items()}
 
     def motion(f):
         x0, y0, x1, y1 = boxes[f]
@@ -297,8 +327,7 @@ def _settled(group: list[Fragment], frames, plate, op) -> int:
         d = [np.abs(frames[e, y0:y1, x0:x1] - here).mean() for e in (f - 1, f + 1) if 0 <= e < len(frames)]
         return float(np.mean(d)) if d and here.size else 0.0
 
-    c = {f: clutter(f) for f in cand}
-    return min((f for f in cand if c[f] <= min(c.values()) + CF_CLUTTER), key=lambda f: (motion(f), f))
+    return min((f for f in cand if away[f] <= min(away.values()) + CF_AWAY), key=lambda f: (motion(f), f))
 
 
 def _still(group: list[Fragment], frames, cf: int, box) -> np.ndarray:
@@ -324,21 +353,48 @@ def _still(group: list[Fragment], frames, cf: int, box) -> np.ndarray:
     return np.median(np.stack(crops), axis=0).round().astype(np.uint8)
 
 
-def _glyph_mask(group: list[Fragment], frames, B, cf: int) -> np.ndarray:
-    """The union glyph mask at cf (frame-sized): `_on_colour` on `_still`, inside the members' union box padded by
-    0.1·h, less the solid blobs in it (I2: seed 6's square in the title's colour): pixels within BLOB·h of a pixel
-    over BLOB·h deep inside the mask, where no stroke is that thick.
-    ponytail: a blob is cut where it overlaps glyphs too; upgrade path: the other props' alpha at cf."""
+def _glyph_mask(group: list[Fragment], frames, B, cf: int, colour=None) -> np.ndarray:
+    """The union glyph mask at cf (frame-sized): `_on_colour` on `_still` (`colour`: the foreground `on_line` of
+    it, the title's; the still's median foreground is a sprite's where one fills the box: seed 8's mask kept glyph
+    edges only), inside the members' union box padded by 0.1·h, less its solid blobs (`_unblobbed`).
+    ponytail: a blob within GLYPH_DE of the title's colour stays (it cannot be told from the glyphs by colour);
+    upgrade path: the other props' alpha at cf."""
     box = _box(group, cf, frames.shape[1:3])
     m = np.zeros(frames.shape[1:3], bool)
     if box[2] > box[0] and box[3] > box[1]:
         behind = np.ascontiguousarray(np.broadcast_to(B, frames.shape[1:])[box[1]:box[3], box[0]:box[2]])
-        on = _on_colour(_still(group, frames, cf, box), behind)[1]
-        r = max(1, int(round(BLOB * max(g.h for g in group))))
-        deep = (cv2.distanceTransform(on.astype(np.uint8), cv2.DIST_L2, 3) > r).astype(np.uint8)
-        blob = cv2.dilate(deep, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0
-        m[box[1]:box[3], box[0]:box[2]] = on & ~blob
+        still = _still(group, frames, cf, box)
+        on = _on_colour(still, behind)[1] if colour is None else \
+            foreground_mask_plate(still, behind) & on_line(still, behind, colour)
+        m[box[1]:box[3], box[0]:box[2]] = _unblobbed(on, max(g.h for g in group), still, colour)
     return m
+
+
+def _colour(group: list[Fragment], frames, plate, op) -> np.ndarray | None:
+    """A title's colour: the dominant colour (`_mode`) of the more contrasting half of the thin foreground in the
+    members' union box over ≤ 5 frames spread over those at ≥ 90 % of the peak opacity `op` (None without one): the
+    foreground less its solid blobs (`_unblobbed`: a sprite), plus the pixels inside a blob that differ from it by
+    > CARD_DE (text on a card: ig1's notes). The members' `text_props` colours and the median of the foreground at cf are a sprite's where one
+    fills the box (round 2: seed 6's subtitle took its square's, seed 10's title a mover's, seed 8's mask its mover's).
+    ponytail: one blob colour per box (the median of its blobs); upgrade path: a colour per blob component."""
+    seen = sorted(set().union(*(g.boxes for g in group)))
+    top = [f for f in seen if op[f] >= CF_OPACITY * max(op[seen])] or seen
+    h, px, ink = max(g.h for g in group), [], []
+    for f in [top[i] for i in sorted(set(np.linspace(0, len(top) - 1, min(5, len(top))).round().astype(int)))]:
+        x0, y0, x1, y1 = _box(group, f, frames.shape[1:3])
+        crop = frames[f, y0:y1, x0:x1]
+        behind = np.ascontiguousarray(np.broadcast_to(plate.at(f), frames.shape[1:])[y0:y1, x0:x1])
+        fg = foreground_mask_plate(crop, behind)
+        thin = _unblobbed(fg, h)
+        if (blob := fg & ~thin).any():
+            lab = srgb8_to_lab(crop)
+            thin |= blob & (delta_e(lab, np.median(lab[blob], axis=0)) > CARD_DE)
+        px.append(crop[thin])
+        ink.append(contrast(crop, behind)[thin])
+    if not px or not len(px := np.concatenate(px)):
+        return None
+    ink = np.concatenate(ink)   # the stronger half: anti-aliased fringes outnumber thin strokes' cores (ig1's notes)
+    return np.float32(lab_to_srgb(_mode(srgb_to_lab(px[ink >= np.median(ink)].astype(np.float32)))))
 
 
 def _join(pieces, alpha, h: float) -> str:
@@ -420,9 +476,13 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
     n = len(frames)
     seen = sorted(set().union(*(g.boxes for g in group)))
     op = _opacity(group, props, n)
-    cf = _settled(group, frames, plate, op)
+    colour = _colour(group, frames, plate, op)
+    keys = {g.key for g in group}
+    others = [_boxes_of(q, size) for k, q in props.items()
+              if k not in keys and not k.startswith("_") and isinstance(q, dict) and "raw" in q and "canon" in q]
+    cf = _settled(group, frames, plate, op, others)
     B = np.broadcast_to(plate.at(cf), frames[cf].shape)
-    mask = _glyph_mask(group, frames, B, cf)
+    mask = _glyph_mask(group, frames, B, cf, colour)
     found = text_quad(mask)
     if found is None:
         return None
@@ -435,8 +495,10 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
         quad = np.array([bl + (tl - bl) * h / np.linalg.norm(tl - bl), br + (tr - br) * h / np.linalg.norm(tr - br), br, bl])
     tpl, H0 = rectify(contrast(frames[cf], B) * mask, quad)   # the glyphs only: clutter at cf is not the title
     wh = tpl.shape[1::-1]
-    colour = np.median(frames[cf][mask].astype(np.float32), axis=0)
-    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=lambda c, b: _title_contrast(c, b, colour))
+    if colour is None:
+        colour = np.median(frames[cf][mask].astype(np.float32), axis=0)
+    hh = max(g.h for g in group)
+    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=lambda c, b: _title_contrast(c, b, colour, hh))
     if not tilted:   # sub-pixel ECC noise reads as degrees of rx/ry: fit the affine part only
         Hs = {f: _affine(H, wh) for f, H in Hs.items()}
     raw = plane_raw({f: Hs[f] for f in seen}, wh, size, n, op)
@@ -608,8 +670,10 @@ def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> 
     """D12 on a single text track at its settled frame: the quad of its glyph mask turns ≥ 2° or converges ≥ 0.8°.
     A failure leaves the track on the text_props path and `notes` one message per phase."""
     try:
-        cf = _settled([f], frames, plate, _opacity([f], props, len(frames)))
-        found = text_quad(_glyph_mask([f], frames, plate.at(cf), cf))
+        op = _opacity([f], props, len(frames))
+        cf = _settled([f], frames, plate, op)
+        colour = _colour([f], frames, plate, op)
+        found = text_quad(_glyph_mask([f], frames, plate.at(cf), cf, colour))
         return found is not None and _tilted(*found)
     except Exception as e:   # fail soft: the track stays on the text_props path
         log.warning("tilt test failed for %s: %s", f.key, describe(e, trace=True))
