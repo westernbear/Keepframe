@@ -663,7 +663,7 @@ def guard_titles(props, frames, plate_or_bg, notes) -> None:
 
 
 def text_groups(props, ids) -> list[Group]:
-    """One `text_fragments` group per title the guard undid (or track split at a cut): its pieces' element ids, the
+    """One `text_fragments` group per title the guard undid: its pieces' element ids, the
     longest-lived first (a group retext draws the new string on its first text member, over that member's frames:
     seed 6's "NewAri" piece, f2-10, came first and took the title's retext off after f10), else in the title's order."""
     groups: dict[str, list[str]] = {}
