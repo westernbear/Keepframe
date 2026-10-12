@@ -2,7 +2,7 @@ import cv2, numpy as np, pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.text import TextBox, TextTrack, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.analyze.text import TextBox, TextTrack, best_read, keep_text_track, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -36,6 +36,18 @@ def test_track_text_and_copy(tmp_scene_dir):
     assert abs(raw[cf, 0] - p["x"]) < 2 and abs(raw[cf, 1] - p["y"]) < 2 and canon.shape[2] == 4
     # Hershey bbox + scale/rotation AABB; 40px canonical can read back above 60.
     assert 25 <= font.size_px <= 80 and color.startswith("#")
+
+
+def test_track_text_takes_the_read_that_covers_the_others():
+    """R22, synthetic seeds 4 and 6 at 5668095 (RapidOCR): the most common exact read was a piece of the title."""
+    assert best_read(["New"] * 9 + ["NewArrivals"] * 9 + ["New Arrivals"] * 8) == "New Arrivals"   # the spaced variant
+    assert best_read(["Arrivals"] * 6 + ["ivals"] * 6 + ["wArrivals"] * 4 + ["ew Arri"] * 4 + ["New Arrivals"] * 4) == "New Arrivals"
+    assert best_read(["New"] * 5 + ["New Arrivals"] * 8 + ["New Arrivals Up to 50% off"]) == "New Arrivals"   # junk seen once
+    assert best_read(["Sale", "Sole"]) == "Sale"   # none seen twice: every read is a candidate, the first wins a tie
+    boxes = [[TextBox(f, t, (10, 10, 10 + 12 * len(t), 30), 0.9)] for f, t in enumerate(["New"] * 3 + ["New Arrivals"] * 2)]
+    assert [t.text for t in track_text(boxes)] == ["New Arrivals"]
+    glyph = track_text([[TextBox(f, t, (10, 10, 22, 30), 0.5)] for f, t in enumerate(["O"] * 5 + ["OO"] * 2)])
+    assert [t.text for t in glyph] == ["OO"] and not keep_text_track(glyph[0])   # the junk gate reads the modal "O"
 
 
 @pytest.mark.parametrize("plate_has_text_ghost", [False, True])
@@ -139,3 +151,15 @@ def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
     frame = (composite_scene(scene, tmp_scene_dir, f) * 255).round().astype(np.uint8)
     res = RapidOcr()(frame)
     assert res and max(difflib.SequenceMatcher(None, t.lower(), gold.canonical.text.lower()).ratio() for t, _, _ in res) >= 0.6
+
+
+def test_opacity_ignores_a_sprite_crossing_the_text():
+    """V4 (seed 9 e3 at f39-44): a bright pill behind a dark title was its most contrasting decile, read 0.18 opaque."""
+    plate = np.full((80, 300, 3), (40, 40, 80), np.uint8)
+    frames = np.repeat(plate[None], 2, 0)
+    cv2.circle(frames[1], (60, 40), 32, (20, 140, 190), -1)
+    for f in frames:
+        cv2.putText(f, "Weekend", (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (20, 0, 140), 5, cv2.LINE_AA)
+    track = TextTrack(1, {f: TextBox(f, "Weekend", (4, 14, 230, 70), 0.9) for f in (0, 1)}, "Weekend")
+    raw, _, cf, _, _ = text_props(track, frames, (40, 40, 80), 2, 0, infer_font=False, plate=plate, full_opacity=False)
+    assert cf == 0 and raw[1, 7] > 0.9, raw[:, 7]

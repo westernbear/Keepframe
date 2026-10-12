@@ -11,13 +11,15 @@ import cv2
 import numpy as np
 
 from ..ir.colour import rgb8_to_hex
-from ..ir.schema import Background, Element, FontGuess, Scene, TextStyle
+from ..ir.schema import Background, Element, FontGuess, GlyphReveal, Scene, TextStyle
 from ..ir.synth import make_text_texture
+from ..ir.tracks import element_bbox
 from ..assets import AssetAPIError, validate_glb
 from ..fonts.raster import _HANGUL, MAX_TEXT_PX, cmap, embedded_face, natural_box, render_styled, resolve_fonts, text_size
 from ..fonts.registry import FontRegistry
 from ..fonts.upload import pin_face
 from ..log import get, scrub_paths
+from ..verify.predicates import parse_pred
 from .retime import apply_timing
 from .svgraster import rasterize_svg
 from .tint import tint_background
@@ -207,6 +209,48 @@ def _next_model(scene_dir: Path, eid: str) -> Path:
     return path
 
 
+def _group_items(scene: Scene, items: list) -> tuple[list, set[str]]:
+    """D16: an item on a member of a `text_fragments` group acts on the group (once per group and property): text goes
+    to its first text member (the text items on the group, joined by a space in their members' x order) and the other
+    members are dropped; colour goes to every member, font to every text member, timing to every member about the
+    group's first frame (each member's delay takes its start's offset). Other items, and items on a group with a
+    member gone or no text member left, stay as they are. Returns the items and the ids a group retext drops."""
+    present = {e.id: e for e in scene.elements}
+    group_of = {m: g for g in scene.groups if g.reason == "text_fragments" for m in g.members}
+    out, dropped, seen = [], set(), set()
+    for t in items:
+        g = group_of.get(t.element)
+        els = [present.get(m) for m in g.members] if g is not None else []
+        texts = [e.id for e in els if e is not None and e.kind == "text"]
+        if g is None or t.property not in ("text", "color", "font", "timing") or None in els or not texts:
+            out.append(t)
+            continue
+        if (g.id, t.property) in seen:
+            continue
+        seen.add((g.id, t.property))
+        if t.property == "text":
+            words = sorted((u for u in items if u.property == "text" and group_of.get(u.element) is g),
+                           key=lambda u: element_bbox(present[u.element], present[u.element].visible[0])[0])
+            out.append(t.model_copy(update={"element": texts[0], "value": " ".join(u.value.strip() for u in words)}))
+            dropped |= set(g.members) - {texts[0]}
+        elif t.property == "timing":
+            start, speed = min(e.visible[0] for e in els), t.speed or 1.0
+            out += [t.model_copy(update={"element": e.id, "delay": (t.delay or 0) + (e.visible[0] - start) * (1 / speed - 1) / scene.fps})
+                    for e in els]
+        else:
+            out += [t.model_copy(update={"element": m}) for m in (texts if t.property == "font" else g.members)]
+    return out, dropped
+
+
+def _named(pred: str) -> set[str]:
+    """The element ids a predicate names: its bare ids (layout) and the ids inside its motion ids (`m_<id>_<n>`)."""
+    try:
+        args = parse_pred(pred)[1]
+    except ValueError:   # not a predicate this scene can evaluate: it names nothing
+        return set()
+    return {m[1] if (m := re.fullmatch(r"m_(.+)_\d+", a)) else a for a in args if isinstance(a, str)}
+
+
 def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, str] | None, attachment: str | Path | bytes | None,
                *, fonts: FontRegistry | None = None) -> Scene:
     """`fonts`: the project's registry (uploads); bundled fonts only when None."""
@@ -214,6 +258,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
     fonts = fonts or FontRegistry()
     out = scene.model_copy(deep=True)
     choice_of = choices or {}
+    items, dropped = _group_items(out, items)
     for t in items:
         if t.property == "timing":
             apply_timing(out, [t], choice_of)
@@ -231,6 +276,13 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
         el = out.element(t.element)
         if t.property == "text":
             _apply_text(el, scene_dir, t.value or "", choice_of.get("overflow") or choice_of.get(el.id), fonts, retext=True)
+            g, n = el.canonical.glyphs, sum(not ch.isspace() for ch in el.canonical.text or "")
+            if g is not None and n != len(g.x):
+                # ponytail: the stagger shape is kept; glyph positions are approximate (uniform centres) — measure
+                # them on the new raster (textstyle.glyph_centres) if exact columns matter
+                x = (np.arange(n) + 0.5) / n
+                el.canonical.glyphs = GlyphReveal(x=x.tolist(), delays=np.interp(x, g.x, g.delays).tolist(), ramp=g.ramp) \
+                    if n else None   # no glyph left to stagger
         elif t.property == "font":
             if el.kind != "text" or not el.canonical.text:
                 raise ValueError("font edit needs a text element")
@@ -292,6 +344,24 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             el.canonical.video = None   # the edited still (or model) replaces the clip: video is never recoloured (R55)
             el.canonical.video_rate = 1.0
         el.provenance = "manual"
+    if dropped:   # a group retext: the first text member draws the whole title, centred on the pieces' union box (R21)
+        for g in scene.groups:
+            keep = [m for m in g.members if m not in dropped]
+            if g.reason != "text_fragments" or not keep or len(keep) == len(g.members):
+                continue
+            el, first, pieces = out.element(keep[0]), scene.element(keep[0]), [scene.element(m) for m in g.members]
+            shown = lambda f: [p for p in pieces if p.visible[0] <= f <= p.visible[1]]
+            # the IR keeps no cf: the earliest frame of the first member's range that shows the most pieces
+            f = max(range(first.visible[0], first.visible[1] + 1), key=lambda f: (len(shown(f)), -f))
+            u = np.array([element_bbox(p, f) for p in shown(f)])
+            a = element_bbox(first.model_copy(update={"canonical": el.canonical}), f)   # the new text where the piece was
+            for prop, i in (("x", 0), ("y", 1)):   # the centres' difference; the track is shifted, not rebuilt
+                for k in el.tracks[prop].keys if prop in el.tracks else []:
+                    k.v += float(u[:, i].min() + u[:, i + 2].max() - a[i] - a[i + 2]) / 2
+        out.elements = [e for e in out.elements if e.id not in dropped]
+        out.groups = [g for g in (g.model_copy(update={"members": [m for m in g.members if m not in dropped]}) for g in out.groups)
+                      if len(g.members) > 1]
+        out.constraints = [c for c in out.constraints if not dropped & _named(c.pred)]   # facts about pieces now gone
     return out
 
 

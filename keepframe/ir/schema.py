@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from ..log import get
 
@@ -169,6 +169,23 @@ class TextStyle(BaseModel):
         return effects
 
 
+class GlyphReveal(BaseModel):
+    """Per-glyph reveal (D15): glyph i fades in over `ramp` frames from `delays[i]` frames after visible[0]; its
+    column runs between the midpoints of neighbouring centres (`tracks.glyph_edges`)."""
+    # glyph centres, fractions of canonical width, ascending; one per non-space character
+    x: list[Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]] = Field(min_length=1, max_length=512)
+    delays: list[Annotated[float, Field(ge=0.0, allow_inf_nan=False)]]
+    ramp: float = Field(1.0, ge=1.0, le=120.0, allow_inf_nan=False)   # frames from 0 to full opacity
+
+    @model_validator(mode="after")
+    def _columns(self):
+        if len(self.delays) != len(self.x):
+            raise ValueError("glyphs need one delay per centre")
+        if any(a > b for a, b in zip(self.x, self.x[1:])):
+            raise ValueError("glyph centres must be in ascending order")
+        return self
+
+
 class Canonical(BaseModel):
     width: float
     height: float
@@ -186,6 +203,7 @@ class Canonical(BaseModel):
     # Styled text textures carry their effects past the box (R41): the texture covers the box grown by this many
     # box pixels on every side.
     texture_pad: float = Field(default=0.0, ge=0.0, le=512.0, exclude_if=lambda v: not v)   # absent when 0
+    glyphs: Optional[GlyphReveal] = Field(None, exclude_if=lambda v: v is None)   # absent without a per-glyph reveal
 
 
 class FitError(BaseModel):

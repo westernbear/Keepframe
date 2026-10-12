@@ -87,14 +87,14 @@ def test_stamp_keeps_the_source_major_and_sorts_after_older_builds(tmp_path, mon
         ("rev-parse", "--short", "HEAD"): "abc1234", ("status", "--porcelain"): ""}[tuple(cmd[3:])])
     monkeypatch.setattr("time.time_ns", lambda: 1791289845123000000)
     versions = {}
-    for major in ("1.1.0", "2.0.0"):
+    for major in ("1.2.0", "2.0.0"):
         stage = tmp_path / major
         shutil.copytree(ROOT / "extension", stage)
         for name in ("CSXS/manifest.xml", "js/core.js"):
             path = stage / name
-            path.write_text(path.read_text().replace("1.1.0", major))
+            path.write_text(path.read_text().replace("1.2.0", major))
         stamp(stage, ROOT)
         versions[major] = re.search(r"const EXTENSION_VERSION = '([^']+)';", (stage / "js/core.js").read_text())[1]
-    assert versions == {"1.1.0": "1.20261006.123045123", "2.0.0": "2.20261006.123045123"}
-    assert tuple(map(int, versions["1.1.0"].split("."))) > (1, 20261007 - 1, 95826219)
-    assert "const SPEC_LEVEL = 3;" in (ROOT / "extension/js/core.js").read_text()
+    assert versions == {"1.2.0": "1.20261006.123045123", "2.0.0": "2.20261006.123045123"}
+    assert tuple(map(int, versions["1.2.0"].split("."))) > (1, 20261007 - 1, 95826219)
+    assert "const SPEC_LEVEL = 4;" in (ROOT / "extension/js/core.js").read_text()

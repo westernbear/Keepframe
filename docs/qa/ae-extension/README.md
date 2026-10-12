@@ -127,3 +127,19 @@ offers the download). Leave unrun results blank.
 | 11 | Resend, stop-colour change, style removed | Resend unchanged; then change one gradient stop colour in Keepframe and send; then remove a text's style and send. | The resend is a no-op (all unchanged, no undo step). After the colour change only the background updates; the Keepframe Gradient effect stays in place with only End/Start Color changed. Removing the style turns the stroke off and the tracking to 0. | |
 | 12 | Hand edits on the new effects | In AE change a Drop Shadow distance, a text's tracking, the Set Matte channel, or slide a footage layer. Send, then **Overwrite them** (덮어쓰기). | The send refuses with a hand-edit warning for that layer; overwrite restores the Keepframe values. Moving the text layer in the stack is not a hand edit. | |
 | 13 | Old panel and video preparation | Before installing, send a gradient scene from the old panel; then install and send a scene with a long video plate. | Old panel: the update message with the download link; the web job says “update the Keepframe extension: …”. New panel: “Preparing video for …” (영상 준비 중) while the footage is made in the background, then the sync. | |
+
+## Live check 5 (Stage B Task 4: rx/ry tilt on 2D layers)
+
+To run on the AE PC. Install a fresh build (`scripts/build_zxp.sh`; source version 1.2.0, SPEC_LEVEL 4). Text, image and
+footage layers that carry rx/ry become 3D layers whose X/Y Rotation keys are the negated Keepframe angles
+(`spec.AE_TILT_SIGN = -1.0`; CSS z points toward the viewer, AE z away). AE uses its default comp camera; no camera
+layer is created. Leave unrun results blank.
+
+| # | Check | How | Expected | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Sign and order | Send a scene with a title tilted on both axes (e.g. rx 25°, ry -30°). Compare the AE comp frame with the Keepframe preview side by side. | The layer is 3D; **X Rotation = -25**, **Y Rotation = 30**; the near edge, the vanishing direction and the order of the two rotations match the preview. If a tilt leans the wrong way, flip `AE_TILT_SIGN` (+1.0) in `keepframe/ae/spec.py` and resend. | |
+| 2 | Default camera vs CSS perspective | Use a clearly tilted title (rx 60°) and compare the foreshortening (top/bottom edge length ratio) of AE and the preview. | Equal within a few percent. If they differ, the upgrade is an explicit managed camera (zoom = CSS `perspective` = width x 50/36) instead of AE's default camera. | |
+| 3 | Image and footage | Tilt an image sprite and a video sprite. | Both are 3D layers with Rotate X/Y keys; Position Z 0, Orientation 0; the footage keeps its start frame and speed. | |
+| 4 | 3D candidates stay flat | Send a scene with a 3D-candidate spinning solid (no model yet). | The layer is a flat 2D layer (no Rotate X/Y keys); the job still warns `3D candidate`. | |
+| 5 | Resend and untilt | Resend unchanged; then remove the tilt in Keepframe and send. | The resend is a no-op; after the untilt the layer is 2D again and the Rotate X/Y keys are gone. | |
+| 6 | Old panel | Send a tilted scene from a build before 1.2.0. | HTTP 426: the update message; the panel stops and offers the download. | |

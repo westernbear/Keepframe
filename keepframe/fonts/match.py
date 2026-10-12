@@ -22,8 +22,8 @@ baseline.
   when it beats none by SHEAR_GAIN, stored only when ≥ 4°). Every kept family gets the first round (past MIN_FITS,
   those whose coarse render trails the best by PRUNE are not fitted); the best ROUND2_K the second, and a failing
   second round keeps the first's fit.
-- A best family outside SANS (geometric, neo-grotesque, humanist) must beat the best SANS family by SANS_MARGIN, else
-  that one wins; stage 1's best SANS family is always kept and fitted.
+- A best family outside SANS (geometric, neo-grotesque, humanist, rounded) must beat the best SANS family
+  by SANS_MARGIN, else that one wins; stage 1's best SANS family is always kept and fitted.
 - Confidence 1.0 when the best score ≥ 0.80 and leads the next by ≥ 0.02, else 0.5.
 - Strings over 24 characters are matched on their longest run of whole words (one line).
 - Hangul with a best face that lacks it: `registry.hangul_fallback`, then its weight and scale refitted
@@ -83,7 +83,7 @@ WEIGHT_ITERS = (2, 2)            # … and its iterations …
 WEIGHT_STEP = 25.0               # … on a grid of this many wght units (shared by texts: glyphs cached per weight)
 ROUND2_K = 4                     # the second round of coordinate descent refines this many families
 MIN_FITS, PRUNE = 3, 0.15        # families past the first MIN_FITS whose coarse score trails the best by PRUNE: skipped
-SANS = frozenset({"geometric_sans", "neo_grotesque", "humanist_sans"})
+SANS = frozenset({"geometric_sans", "neo_grotesque", "humanist_sans", "rounded_sans"})
 SANS_MARGIN = 0.05               # a best family outside SANS must beat the best SANS family's score by this
 MATCH_FAILED = "match_failed"    # font_guesses result codes (stage data and report messages carry no exception text)
 WORK_CAP = "work_cap"

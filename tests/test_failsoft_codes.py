@@ -127,6 +127,38 @@ def test_mover_props_failure_is_a_code_and_flags_its_fragments(tmp_path, monkeyp
     assert pipeline.fallback_ids(props, {"s1": "e1", "s2": "e2"}) == {"e1", "e2"}
 
 
+def test_title_merge_failure_is_a_code_and_refine_still_runs(tmp_path, monkeypatch):
+    """Task 10: a failed title-merge phase leaves its code among the props (a str): the refine check passes over it on
+    a text-only clip, refine still runs on the sprites, and every text is less sure."""
+    from keepframe.analyze import refine, regions, titles, tracking
+    monkeypatch.setattr(titles, "group_fragments", boom)
+    refined = []
+    monkeypatch.setattr(refine, "torch_available", lambda: True)
+    monkeypatch.setattr(refine, "refine_affine", lambda frames, bg, raws, *a, **k: refined.append(sorted(raws)) or raws)
+    frames, track = _text_case()
+    sd = _sd(tmp_path)
+    props = _stage_sprites(frames, (0, 0, 0), [track], [], [], AnalyzeOptions(refine=True), sd, 1)   # text only
+    assert props["_titles_message"] == "title merge failed (merge_failed)" and "_message" not in props
+    _clean(props["_titles_message"], (sd / "stages" / "props.pkl").read_bytes().decode("latin-1"))
+    assert pipeline.fallback_ids(props, {"t1": "e1"}) == {"e1"}
+    frames[0, 24:28, 40:46] = 200
+    obj = tracking.ObjectTrack(id=3, regions={0: regions.Region(0, 1, (200.0,) * 3, (40, 24, 46, 28), 24, (43.0, 26.0),
+                                                                  np.ones((4, 6), bool))})
+    props = _stage_sprites(frames, (0, 0, 0), [track], [], [obj], AnalyzeOptions(refine=True, use_ecc=False), sd, 1)
+    assert refined == [["o3"]] and "_message" not in props and props["_titles_message"]
+
+
+def test_title_tilt_test_failure_is_one_note(tmp_path, monkeypatch):
+    from keepframe.analyze import titles
+    monkeypatch.setattr(titles, "_settled", boom)
+    frames = np.zeros((3, 80, 50, 3), np.uint8)   # R25: a fragment is seen in >= 3 frames
+    frames[:, 8:12, 10:24] = frames[:, 58:62, 10:24] = 255
+    tracks = [TextTrack(id=i, boxes={f: TextBox(f, "Text", (5, y, 35, y + 20), 0.9) for f in range(3)}, text="Text")
+              for i, y in ((1, 3), (2, 53))]
+    props = _stage_sprites(frames, (0, 0, 0), tracks, [], [], AnalyzeOptions(refine=False), _sd(tmp_path), 3)
+    assert props["_titles_message"] == "title tilt test failed (merge_failed)" and {"t1", "t2"} <= set(props)
+
+
 def test_legacy_stage_text_is_never_shown():
     """Stage data from before the codes: the report message is the fixed one."""
     legacy = {"o1": {"texture_error": f"RuntimeError: {LEAK}"},

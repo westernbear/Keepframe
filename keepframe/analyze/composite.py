@@ -5,7 +5,7 @@ import cv2, numpy as np
 from ..ir.schema import Element, Scene
 from ..ir.paths import scene_asset_path
 from ..ir.gradient import gradient_at, render_gradient
-from ..ir.tracks import affine_matrix, eval_props, eval_z
+from ..ir.tracks import affine_matrix, eval_props, eval_z, glyph_alphas, glyph_edges, is_tilted, projective_matrix
 from ..log import get
 
 log = get("keepframe.analyze")
@@ -28,7 +28,8 @@ def load_texture(path: Path) -> np.ndarray:
     return rgba
 
 
-def texture_to_scene_affine(el: Element, props: dict[str, float], tex_shape: tuple[int, int]) -> np.ndarray:
+def texture_to_scene(el: Element, props: dict[str, float], tex_shape: tuple[int, int], size: tuple[int, int]) -> np.ndarray:
+    """Texture pixel → scene: today's 2×3 affine, or the 3×3 homography (`projective_matrix`) of a tilted element."""
     th, tw = tex_shape
     c = el.canonical
     ax, ay = c.anchor
@@ -36,6 +37,8 @@ def texture_to_scene_affine(el: Element, props: dict[str, float], tex_shape: tup
     # texture pixel -> local canonical coords (anchor at origin); a padded texture's box starts at (p, p) (R41)
     sx, sy = c.width / (tw - 2 * p), c.height / (th - 2 * p)
     L = np.array([[sx, 0.0, -p * sx - ax * c.width], [0.0, sy, -p * sy - ay * c.height], [0.0, 0.0, 1.0]])
+    if is_tilted(props, el.pending_asset or el.kind):
+        return projective_matrix(props, size) @ L
     M = affine_matrix(props) @ L
     return M[:2, :]
 
@@ -56,7 +59,7 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
     A = np.asarray(A, dtype=np.float64)
     H, W = canvas.shape[:2]
     th, tw = prem.shape[:2]
-    if A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0] == 0:
+    if len(A) == 2 and A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0] == 0:
         # OpenCV's singular inverse samples tex[0, 0] across the whole canvas.
         # Preserve that legacy behavior even for zero canonical width/height.
         x0, y0, x1, y1 = 0, 0, W, H
@@ -64,18 +67,26 @@ def _composite_premultiplied(canvas: np.ndarray, prem: np.ndarray, A: np.ndarray
         # Include bilinear support one source pixel beyond the texture, then
         # pad two destination pixels. Source padding matters for large scales.
         corners = np.array([[-1, -1, 1], [tw, -1, 1], [tw, th, 1], [-1, th, 1]]) @ A.T
+        if len(A) == 3:   # a tilted element's homography; CSS clips a plane reaching behind the viewer (w ≤ 0)
+            if (corners[:, 2] <= 0).any() or np.linalg.det(A) == 0:   # and draws no singular one: numpy skips both
+                return
+            corners = corners[:, :2] / corners[:, 2:]
         lo = np.floor(corners.min(axis=0)).astype(int) - 2
         hi = np.ceil(corners.max(axis=0)).astype(int) + 2
         x0, y0 = max(0, lo[0]), max(0, lo[1])
         x1, y1 = min(W, hi[0]), min(H, hi[1])
         if x1 <= x0 or y1 <= y0:
             return
-    roi_affine = A.copy()
-    roi_affine[:, 2] -= (x0, y0)
-    # ponytail: ROI-local interpolation permits 1e-3 pixel drift; use full-canvas
-    # warps if stricter pixel parity becomes a requirement.
-    warped = cv2.warpAffine(prem, roi_affine, (x1 - x0, y1 - y0), flags=cv2.INTER_LINEAR,
-                            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    if len(A) == 3:
+        warped = cv2.warpPerspective(prem, np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1]]) @ A, (x1 - x0, y1 - y0),
+                                     flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    else:
+        roi_affine = A.copy()
+        roi_affine[:, 2] -= (x0, y0)
+        # ponytail: ROI-local interpolation permits 1e-3 pixel drift; use full-canvas
+        # warps if stricter pixel parity becomes a requirement.
+        warped = cv2.warpAffine(prem, roi_affine, (x1 - x0, y1 - y0), flags=cv2.INTER_LINEAR,
+                                borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     a = warped[..., 3:4] * opacity
     roi = canvas[y0:y1, x0:x1]
     roi *= (1.0 - a)
@@ -159,13 +170,20 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
                 prem[..., :3] *= prem[..., 3:4]
         p = eval_props(el, f)
         # ponytail: kind "3d" uses canonical.texture as a static preview here;
-        # animated GLB rotation belongs to the Three.js composer. Sprites ignore rx/ry.
+        # animated GLB rotation belongs to the Three.js composer. 2D elements tilt by rx/ry.
         reveal = float(np.clip(p["reveal"], 0.0, 1.0))
-        if reveal < 1.0:
+        g = el.canonical.glyphs   # a per-glyph reveal: column i at α_i (the composer's mask-image hard stops)
+        alphas = glyph_alphas(g, f - el.visible[0]) if g is not None else None
+        glyphs = alphas is not None and alphas.min() < 1.0
+        if reveal < 1.0 or glyphs:
             prem = prem.copy()  # never clip either shared full-texture cache
             pad = int(round(_pad(el.canonical, prem.shape[:2])))
-            if pad:   # the composer's reveal clips to the box (clip-path inset), effects past it included
-                prem[:pad], prem[prem.shape[0] - pad:], prem[:, :pad] = 0, 0, 0
-            prem[:, pad + int(round((prem.shape[1] - 2 * pad) * reveal)):] = 0
-        _composite_premultiplied(canvas, prem, texture_to_scene_affine(el, p, tex.shape[:2]), p["opacity"])
+            if pad:   # the composer's reveal and mask clip to the box (clip-path inset), effects past it included
+                prem[:pad], prem[prem.shape[0] - pad:], prem[:, :pad], prem[:, prem.shape[1] - pad:] = 0, 0, 0, 0
+            if reveal < 1.0:
+                prem[:, pad + int(round((prem.shape[1] - 2 * pad) * reveal)):] = 0
+            if glyphs:   # in texture space, before the warp: the columns follow a tilt as the CSS mask does
+                w = prem.shape[1] - 2 * pad
+                prem[:, pad:pad + w] *= np.repeat(alphas, np.diff(glyph_edges(g, w)))[:, None].astype(np.float32)
+        _composite_premultiplied(canvas, prem, texture_to_scene(el, p, tex.shape[:2], scene.size), p["opacity"])
     return canvas

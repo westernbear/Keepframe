@@ -105,6 +105,7 @@ def test_image_pixel_anchor_scale_fix_and_property_mapping(tmp_path):
                   [30, [150, 200], None, [[25, 200], [25, 200]]]],
         "rotation": [[0, -10, None, None], [30, 50, None, None]],
         "opacity": [[0, 20, [[25, 120]], None], [30, 80, None, [[25, 120]]]],
+        "rotation_x": [[0, -90, None, None]], "rotation_y": [[0, -45, None, None]],
     }
     assert image["effects"] == {"skew": None, "reveal": None}
     assert image["warnings"] == []
@@ -225,7 +226,7 @@ def test_text_anchor_font_deferred_color_default_and_name(tmp_path):
     assert result["source"] == {"text": "안녕", "font": {"postscript": None, "family": "Example", "style": None,
                                                        "substituted": False},
                                 "size_px": 20.1235, "color": "#000000", "anchor_fraction": [0.25, 0.75], "box": [10, 6]}
-    assert "rotation_x" not in result["props"] and "rotation_y" not in result["props"]
+    assert result["props"]["rotation_x"] == [[0, -90, None, None]] and result["props"]["rotation_y"] == [[0, -90, None, None]]
     assert spec["assets"] == [] and result["warnings"] == []
 
 
@@ -895,3 +896,35 @@ def test_footage_sprite_places_its_box_inside_texture_pad(tmp_path):
     sprite = layer(describe(value, tmp_path), "e1")
     assert sprite["kind"] == "footage"
     assert (sprite["source"]["scale_fix"], sprite["anchor"]) == ([10 / 16, 6 / 8], [2 + 0.25 * 16, 2 + 0.75 * 8])
+
+
+def test_tilted_text_layer_exports_negated_x_y_rotation_and_level_4(tmp_path):
+    from keepframe.ae.spec import spec_level
+    el = element(kind="text", text="A", font=FontGuess(family_guess="Example", size_px=20),
+                 tracks={"rx": track((0, 10), (30, 30)), "ry": track((0, -45))})
+    spec = describe(scene(el), tmp_path)
+    props = layer(spec)["props"]
+    assert [key[:2] for key in props["rotation_x"]] == [[0, -10], [30, -30]]
+    assert props["rotation_y"] == [[0, 45, None, None]]
+    assert spec_level(spec) == 4
+    sprite = element(tracks={"rx": track((0, 20))}, texture="s.png")
+    png(tmp_path / "s.png")
+    assert [key[:2] for key in layer(describe(scene(sprite), tmp_path))["props"]["rotation_x"]] == [[0, -20]]
+    flat = describe(scene(element(kind="text", text="A", font=FontGuess(family_guess="Example", size_px=20))), tmp_path)
+    assert "rotation_x" not in layer(flat)["props"] and spec_level(flat) == 1
+
+
+def test_model_rotation_unchanged(tmp_path):
+    (tmp_path / "object.glb").write_bytes(b"glb")
+    el = element(kind="3d", model="object.glb", tracks={"rx": track((0, 10)), "ry": track((0, -45))})
+    props = layer(describe(scene(el), tmp_path))["props"]
+    assert props["rotation_x"] == [[0, 10, None, None]] and props["rotation_y"] == [[0, -45, None, None]]
+
+
+def test_three_d_candidate_sprite_stays_flat_in_ae(tmp_path):
+    from keepframe.ae.spec import spec_level
+    png(tmp_path / "s.png")
+    el = element(kind="sprite", texture="s.png", tracks={"ry": track((0, 360))})
+    el.pending_asset = "3d"
+    spec = describe(scene(el), tmp_path)
+    assert "rotation_y" not in layer(spec)["props"] and spec_level(spec) == 1

@@ -17,6 +17,7 @@ from ..ir.gradient import gradient_t, render_gradient
 from ..ir.schema import AlphaStop, Fade, Gradient, GradientStop, TextEffect, TextStyle, TextureMeta
 from ..log import describe, get
 from . import matting
+from .plane import tilted_raw
 
 log = get("keepframe.analyze.textstyle")
 
@@ -51,6 +52,7 @@ SIM_DE = (10.0, 20.0)        # texture colour within the first ΔE of the fill i
 MAJORITY = 0.5               # a fill colour on less than this share of the stroke centres yields to one on more
 CORE_DE = 20.0               # a fill this far from the core-mask colour may be the surroundings the matte kept …
 CORE_SHARE = 0.10            # … when this share of the solid pixels is within SIM_DE[1] of it (the glyphs)
+PEN_EM = 0.3                # V2: a fitted pen this many ems left of the ink is put back at the ink
 UNFILLED = 0.2               # stroke centres the fill does not draw over this share: a second colour (confidence × 0.8)
 EFFECT_FRAMES = 4            # frames averaged for the effect crop
 CAP_WORK = 48.0              # effects are searched at a scale where the cap height is at most this
@@ -672,7 +674,7 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     matted = meta.method != "binary"
     cap0 = cap_height(a_tex, lines)
     pe = int(max(4, round(0.5 * cap0)))
-    crop = _effect_crop(raw, a_tex, frames, plate, others_at, pe, meta) if cap0 >= 4 else None
+    crop = _effect_crop(raw, a_tex, frames, plate, others_at, pe, meta) if cap0 >= 4 and not tilted_raw(raw) else None
     B_box = crop[1][pe:pe + h, pe:pe + w] if crop is not None else None
     edge = np.concatenate([F[0], F[-1], F[:, 0], F[:, -1]])
     if B_box is not None and (a_tex >= 0.98).mean() >= BOX_SHARE and float(delta_e(
@@ -758,16 +760,32 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
 # --- the pipeline phase -------------------------------------------------------------------------------------------
 
 def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None):
-    """The font-matching input of a text element: the fill coverage the style analysis left (the texture's alpha
-    when it failed), with its stroke ratio and glyph centres."""
+    """The font-matching input of a text element: the glyph coverage the style analysis left (the texture's alpha
+    when it failed, or for a tilted title: D14 skips its effect crop, so its coverage, with no plate to model a fade
+    or a ramp on, drops the glyphs they lighten; V2: seed 10's faded right half went, the fit spread the whole string
+    over the rest and started it 149 px left of its box), with its stroke ratio and glyph centres."""
     from ..fonts.match import TextJob
     text = p.get("text") or ""
-    if info is not None:
+    if info is not None and not tilted_raw(p.get("raw")):
         alpha, centres, ratio = info["alpha"], info.get("centres"), style.stroke_ratio if style is not None else None
     else:
         alpha = np.asarray(p["canon"])[..., 3].astype(np.float32) / 255.0
         centres, ratio = glyph_centres(alpha, text), None
     return TextJob(k, alpha, text, ratio, centres, p.get("font"))
+
+
+def _pen_at_ink(job, res):
+    """V2 (envato1 e35, dx -150): a fitted pen more than PEN_EM left of its coverage's ink spread the string past
+    glyphs the coverage missed (a word still blurred at cf); every layout of the string starts at the pen (the live
+    text, a retext, clipped by its box), so the pen goes back to where the ink starts.
+    ponytail: the size and tracking stay those fitted on the glyphs seen; upgrade path: a coverage widened to the
+    missed glyphs (the texture's alpha keeps the matte's glow there: refitted on it, e35 read Lilita One, dx +123)."""
+    if res[0] != "ok":
+        return res
+    cols = np.flatnonzero(_a01(job.alpha).max(0) > SOLID_A)
+    if not len(cols) or res[2]["dx"] >= cols[0] - PEN_EM * res[1].size_px:
+        return res
+    return (res[0], res[1], {**res[2], "dx": float(cols[0])})
 
 
 def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fonts=None) -> dict:
@@ -805,8 +823,10 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         results = list(ex.map(run, keys))
     t1 = time.perf_counter()
     try:
-        found = fontmatch.font_guesses([_font_job(k, props[k], style, info) for k, style, _, info, _ in results],
-                                       registry)
+        jobs = [_font_job(k, props[k], style, info) for k, style, _, info, _ in results]
+        found = fontmatch.font_guesses(jobs, registry)
+        for j in jobs:
+            found[j.key] = _pen_at_ink(j, found.get(j.key, ("error", fontmatch.MATCH_FAILED)))
     except Exception as e:   # fail soft: every text keeps its first guess
         log.warning("font matching failed: %s", describe(e, trace=True))
         found = {k: ("error", fontmatch.MATCH_FAILED) for k in keys}

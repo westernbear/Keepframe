@@ -126,7 +126,7 @@ test('URL policy table and normalization', () => {
 
 test('manifest bundle and extension versions equal EXTENSION_VERSION', () => {
     const xml = fs.readFileSync(path.join(__dirname, '../CSXS/manifest.xml'), 'utf8');
-    assert.equal(core.EXTENSION_VERSION, '1.1.0');   // 1.1: footage layers, Ramp, Drop Shadow, Set Matte, text stroke
+    assert.equal(core.EXTENSION_VERSION, '1.2.0');   // 1.2: rx/ry tilt on 2D layers (1.1: footage layers, Ramp, Drop Shadow, Set Matte, text stroke)
     assert.equal(core.HOST_BUILD, 'dev');
     assert.equal(xml.match(/ExtensionBundleVersion="([^"]+)"/)[1], core.EXTENSION_VERSION);
     assert.equal(xml.match(/<Extension Id="com.keepframe.ae.panel" Version="([^"]+)"/)[1], core.EXTENSION_VERSION);
@@ -142,14 +142,14 @@ test('pair sends exact headers and info from kfInfo without bearer', async t => 
     const request = f.requests[0];
     assert.equal(request.path, '/api/ae/pair');
     assert.equal(request.method, 'POST');
-    assert.equal(request.headers['x-keepframe-extension'], '1.1.0');
+    assert.equal(request.headers['x-keepframe-extension'], '1.2.0');
     // The spec level says what this panel draws (2: footage, ramps, shadows, text styles; 3: footage time stretch);
     // the server gates on it.
-    assert.equal(request.headers['x-keepframe-spec-level'], '3');
+    assert.equal(request.headers['x-keepframe-spec-level'], '4');
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers['content-type'], 'application/json');
     assert.deepEqual(request.body, {code: CODE, info: {ae_version: info.ae_version,
-        extension_version: '1.1.0', host_build: 'dev', panel_build: 'dev',
+        extension_version: '1.2.0', host_build: 'dev', panel_build: 'dev',
         os: os.platform() + ' ' + os.release(), fonts: info.fonts}});
     assert.deepEqual(f.scripts, ['kfInfo("true")']);
     assertPrivate(f);
@@ -268,7 +268,7 @@ test('backoff sequence caps at 30 seconds and resets after success', async t => 
     assert.equal(poll.headers['x-keepframe-project'], encodeURIComponent(info.project_name));
     assert.equal(poll.headers['x-keepframe-project-saved'], '1');
     assert.equal(poll.headers.authorization, 'Bearer ' + TOKEN);
-    assert.deepEqual(f.requests[0].body.info, {ae_version: info.ae_version, extension_version: '1.1.0',
+    assert.deepEqual(f.requests[0].body.info, {ae_version: info.ae_version, extension_version: '1.2.0',
         host_build: 'dev', panel_build: 'dev', os: os.platform() + ' ' + os.release(), fonts: info.fonts});
     assertPrivate(f);
 });
@@ -1326,7 +1326,7 @@ test('panel glue restores pairing, translates status, pairs, forgets credentials
         assert.equal(p.runs.length, 1);
         assert.equal(p.runs[0].options.token, TOKEN);
         assert.equal(p.browser.document.documentElement.lang, locale.startsWith('ko') ? 'ko' : 'en');
-        assert.equal(p.nodes.version.textContent, locale.startsWith('ko') ? '1.1.0 · 빌드 dev' : '1.1.0 · build dev');
+        assert.equal(p.nodes.version.textContent, locale.startsWith('ko') ? '1.2.0 · 빌드 dev' : '1.2.0 · build dev');
         p.runs[0].deps.setStatus('Connected · studio.example.ts.net');
         assert.equal(p.nodes.status.textContent, locale.startsWith('ko') ?
             '연결됨 · studio.example.ts.net' : 'Connected · studio.example.ts.net');
@@ -1509,7 +1509,7 @@ test('sync asks for the spec again while the server prepares video footage', asy
     }});
     assert.equal(f.result.ok, true, JSON.stringify(f.result));
     assert.equal(f.requests.filter(req => req.path.endsWith('/spec')).length, 3);
-    assert.ok(f.requests.filter(req => req.path.endsWith('/spec')).every(req => req.headers['x-keepframe-spec-level'] === '3'));
+    assert.ok(f.requests.filter(req => req.path.endsWith('/spec')).every(req => req.headers['x-keepframe-spec-level'] === '4'));
     assert.ok(f.statuses.some(status => status.message === 'Preparing video for demo / s1 v7…'
         && status.details.progress.stage === 'preparing video'));
 });

@@ -104,6 +104,9 @@ def snapshot_from_stages(sd: Path, scene) -> str | None:
     overrides = stages / "overrides.json"
     ov = json.loads(overrides.read_text()) if overrides.exists() else {}
     aliases = {b: a for a, b in ov.get("merge", [])}
+    if (stages / "props.pkl").is_file():   # a merged title's fragments are observations of the title (legacy: none)
+        props = pickle.loads((stages / "props.pkl").read_bytes())
+        aliases.update({fk: k for k, p in props.items() if k.startswith("title_") and isinstance(p, dict) for fk in p["fragments"]})
     elements = {e.id: e for e in scene.elements}
     observations = [{} for _ in range(scene.frames)]
     seen: dict[str, list[int]] = {}

@@ -1131,7 +1131,7 @@ def make_server(
                     for el in scene.elements:
                         a, b = el.visible
                         if a <= f <= b:
-                            x0, y0, x1, y1 = element_bbox(el, f)
+                            x0, y0, x1, y1 = element_bbox(el, f, scene.size)   # tilted titles: the projected box
                             boxes[el.id] = [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)]
                     return self._json(200, {"size": list(scene.size), "boxes": boxes})
                 except Exception as e:

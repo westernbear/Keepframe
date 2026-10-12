@@ -41,8 +41,13 @@ def preflight_lottie(scene: Scene) -> None:
             raise PlanConflict(f"Lottie does not support 3D element {element.id}")
         if any(abs(key.v) > 1e-9 for prop in ("skx", "sky") for key in (element.tracks[prop].keys if prop in element.tracks else ())):
             raise PlanConflict(f"Lottie does not support skew on element {element.id}")
+        if (element.pending_asset or element.kind) != "3d" and any(
+                abs(key.v) > 1e-6 for prop in ("rx", "ry") for key in (element.tracks[prop].keys if prop in element.tracks else ())):
+            raise PlanConflict(f"Lottie does not support rx/ry tilt on element {element.id}; export HTML or After Effects")
         if len({key.v for key in element.z.keys}) > 1:
             raise PlanConflict(f"Lottie does not support dynamic z on element {element.id}")
+        if element.canonical.glyphs is not None:
+            raise PlanConflict(f"Lottie does not support per-glyph reveal on element {element.id}; export HTML or After Effects")
 
 
 def _hex(value: str | None, fallback: str = "#000000") -> list[float]:
@@ -125,7 +130,7 @@ def _vector(
 
 
 def _transform(element: Element) -> dict:
-    # Sprites ignore rx/ry; 3D elements export the canonical static texture.
+    # 2D tilts are refused in preflight; 3D elements (and 3D candidates) export the canonical static texture.
     tracks = element.tracks
     anchor = element.canonical.anchor
     return {

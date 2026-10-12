@@ -697,3 +697,31 @@ def test_font_work_cap_keeps_preliminary_font_with_message(styled_clip, monkeypa
     assert el.canonical.font.confidence <= 0.5
     report = json.loads((scene_dir(styled_clip, "s1") / "report.json").read_text())
     assert f"{el.id}: font not matched (scene work cap reached); kept sans-serif" in report["messages"], report["messages"]
+
+
+def test_tilted_title_font_job_reads_the_canon_alpha():
+    """V2 (seed 10): with no plate under a tilted title its fill coverage dropped the faded half, the font fit spread
+    the string over the rest (Fira Sans, dx -149) and a retext lost "Fall D"; the matcher reads the binary canon."""
+    canon = np.zeros((20, 80, 4), np.uint8)
+    canon[4:16, 4:76, 3] = 255
+    raw = np.zeros((3, 11))
+    raw[:, 10] = -30.0   # ry
+    info = {"alpha": np.zeros((20, 80), np.float32), "centres": None}
+    job = textstyle._font_job("k", {"text": "NEW", "canon": canon, "raw": raw}, TextStyle(), info)
+    assert job.alpha.sum() == (canon[..., 3] > 0).sum()
+
+
+def test_a_fit_far_left_of_its_ink_starts_at_the_ink(styled_clip, monkeypatch):
+    """V2 (envato1 e35, dx -150: "Promo" still blurred at cf, the fill coverage missed it, and a retext lost its first
+    150 px): a fit whose pen lands more than 0.3 em left of its coverage's ink starts at the ink."""
+    from keepframe.fonts import match as fontmatch
+    real = fontmatch.font_guesses
+
+    def guesses(jobs, registry, **kw):   # the fit spreads the string far left of the ink
+        return {k: (r[0], r[1], {**r[2], "dx": -3.0 * r[1].size_px}) if r[0] == "ok" else r
+                for k, r in real(jobs, registry, **kw).items()}
+
+    monkeypatch.setattr(fontmatch, "font_guesses", guesses)
+    rerun(styled_clip, "s1", "sprites", note="pen far left")
+    _, el = _title(styled_clip)
+    assert el.canonical.style.dx >= 0, el.canonical.style.dx

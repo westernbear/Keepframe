@@ -43,7 +43,7 @@ def _report_metrics(scene: Scene, scene_dir: Path, frames: np.ndarray, sample: i
             per[f] = float(delta.mean())
         for i in sampled_elements.get(f, ()):
             el = scene.elements[i]
-            x0, y0, x1, y1 = [int(round(v)) for v in element_bbox(el, f)]
+            x0, y0, x1, y1 = [int(round(v)) for v in element_bbox(el, f, scene.size)]
             x0, y0 = max(0, x0), max(0, y0); x1, y1 = min(scene.size[0], x1), min(scene.size[1], y1)
             if x1 > x0 and y1 > y0:
                 l1s[i].append(float(delta[y0:y1, x0:x1].mean()))

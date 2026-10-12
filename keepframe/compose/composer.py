@@ -13,7 +13,7 @@ from ..log import get, scrub_paths
 from ..ir.gradient import gradient_at, gradient_css
 from ..ir.schema import Element, Scene, UIComponent, UIModel
 from ..ir.paths import scene_asset_path
-from ..ir.tracks import eval_z
+from ..ir.tracks import eval_z, glyph_edges, perspective_px
 
 log = get("keepframe.compose")
 VENDOR = Path(__file__).parent / "vendor"
@@ -117,9 +117,11 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
                      f'poster="{_data_uri(scene_dir / c.texture)}" src="{clip}"></video>')
     else:
         inner = ""
+    # a per-glyph reveal: the template's mask stops sit at these integer px edges (numpy cuts its columns alike)
+    glyphs = f' data-glyph-edges="{",".join(map(str, glyph_edges(c.glyphs, c.width)))}"' if c.glyphs else ""
     return (
         f'<div class="el" id="el-{html.escape(el.id)}" data-start="{start:.4f}" data-duration="{dur:.4f}" '
-        f'data-track-index="{eval_z(el, 0)}" style="{style}">{inner}</div>'
+        f'data-track-index="{eval_z(el, 0)}"{glyphs} style="{style}">{inner}</div>'
     )
 
 
@@ -199,11 +201,14 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistr
         bg = f'#000 url("{_data_uri(scene_asset_path(scene_dir, bgd.value if bgd.kind == "image" else bgd.poster))}") 0 0/100% 100% no-repeat'
     else:
         bg = bgd.value if bgd.kind == "color" else "#000"
+    # a tilted 2D element (the template's `tilt`) needs the stage perspective; without one the stage CSS is unchanged
+    tilted = any((e.pending_asset or e.kind) != "3d" and ("rx" in e.tracks or "ry" in e.tracks) for e in scene.elements)
     for k, v in {
         "{{ID}}": html.escape(scene.id),
         "{{WIDTH}}": str(scene.size[0]),
         "{{HEIGHT}}": str(scene.size[1]),
         "{{BG}}": bg,
+        "{{PERSPECTIVE}}": f"perspective:{perspective_px(scene.size):.4f}px;" if tilted else "",
         "{{PAGEBG}}": bgd.value if bgd.kind == "color" else "#000",
         "{{GSAP_JS}}": (VENDOR / "gsap.min.js").read_text(),
         "{{CUSTOMEASE_JS}}": (VENDOR / "CustomEase.min.js").read_text(),

@@ -128,7 +128,7 @@ def _col(row, i: int, default: float) -> float:
 
 
 def element_affine(raw_row, tex_shape, canon_wh, anchor=(0.5, 0.5)) -> np.ndarray:
-    """2×3 texture pixel → scene, as `composite.texture_to_scene_affine` places the element."""
+    """2×3 texture pixel → scene, as `composite.texture_to_scene` places an untilted element."""
     p = dict(DEFAULTS)
     for i, name in enumerate(PROPS[:len(raw_row)]):
         if np.isfinite(raw_row[i]):

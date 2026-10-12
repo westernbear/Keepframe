@@ -219,6 +219,8 @@ if (typeof JSON !== "object" || JSON === null) {
                 requireValue(array(s.source.fit_box) && s.source.fit_box.length === 2
                     && number(s.source.fit_box[0]) && s.source.fit_box[0] > 0
                     && number(s.source.fit_box[1]) && s.source.fit_box[1] > 0, "invalid model fit box");
+            }
+            if (s.kind === "model" || own(s.props, "rotation_x")) {
                 validateKeys(s.props.rotation_x, 1);
                 validateKeys(s.props.rotation_y, 1);
             }
@@ -576,7 +578,8 @@ if (typeof JSON !== "object" || JSON === null) {
 
     function writeLayer(layer, s, fps, force, timings, wasStyled) {
         var t, rect, anchor = s.anchor, doc, i, factor = 1, origin = [0, 0], start, stroke, end, stretch = 100;
-        if (layer.threeDLayer !== (s.kind === "model")) { layer.threeDLayer = s.kind === "model"; }
+        var threeD = s.kind === "model" || own(s.props, "rotation_x");
+        if (layer.threeDLayer !== threeD) { layer.threeDLayer = threeD; }
         t = transform(layer);
         if (!t.property("ADBE Position").dimensionsSeparated) { t.property("ADBE Position").dimensionsSeparated = true; }
         // The leader can also carry an expression after separation.
@@ -614,11 +617,13 @@ if (typeof JSON !== "object" || JSON === null) {
             origin = [anchor[0] - s.source.anchor_fraction[0] * s.source.box[0],
                 anchor[1] - s.source.anchor_fraction[1] * s.source.box[1]];
         }
-        if (layer.threeDLayer) {
+        if (s.kind === "model") {
             rect = layer.sourceRectAtTime(0, false);
             requireValue(rect.width > 0 && rect.height > 0, "model has an empty source rectangle");
             anchor = [rect.left + rect.width / 2, rect.top + rect.height / 2, 0];
             factor = 0.9 * Math.min(s.source.fit_box[0] / rect.width, s.source.fit_box[1] / rect.height);
+        }
+        if (layer.threeDLayer) {
             writeKeys(t.property("ADBE Rotate X"), s.props.rotation_x, fps, 1, false);
             writeKeys(t.property("ADBE Rotate Y"), s.props.rotation_y, fps, 1, false);
         }

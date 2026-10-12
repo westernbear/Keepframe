@@ -22,6 +22,7 @@ FIT_DE = 8.0            # … over the frames whose glyph core is the text's col
 PEAK_PX = 1000          # core pixels per frame the measure keeps (evenly spaced)
 FULL_OPACITY_FAILED = "full_opacity_failed"   # fail-soft code (R52): the fade note says it, never the exception
 FULL_OPACITY_NOTE = f"full-opacity frame not found ({FULL_OPACITY_FAILED}); kept the largest box"
+LINE_DE, LINE_A = 25.0, 1.5   # `on_line`: ΔE76 off the line from the plate through the colour; how far past the colour
 _warned_ocr_cap_unavailable = False
 
 # ponytail: greedy tracking + colour-threshold stroke masks. Upgrade path: frozen image spotter + light tracker (GoMatching++),
@@ -270,7 +271,10 @@ def keep_text_track(t: TextTrack) -> bool:
     ponytail: frame-count + alphanumeric heuristic; a text/non-text classifier if real clips still leak junk."""
     if len(t.boxes) < MIN_TEXT_FRAMES:
         return False
-    alnum = sum(ch.isalnum() for ch in t.text)
+    # best_read's choice covers the others, so a lone glyph read "O"×5 and "OO"×2 would pass as "OO": the gate reads
+    # the modal read instead; a reveal's full text and a copy line (not one of the reads) stand
+    reads = [b.text for b in t.boxes.values()]
+    alnum = sum(ch.isalnum() for ch in (t.text if t.reveal or t.text not in reads else Counter(reads).most_common(1)[0][0]))
     if alnum >= 2:
         return True
     if alnum == 0:
@@ -308,6 +312,39 @@ def _sim(a: str, b: str) -> float:
 
 def _compact(text: str) -> str:
     return "".join(text.split()).casefold()
+
+
+def partial_ratio(a: str, b: str) -> float:
+    """Best difflib ratio of the shorter compact, casefolded string against any same-length window of the longer."""
+    a, b = _compact(a), _compact(b)
+    if not a or not b:
+        return 0.0
+    a, b = sorted((a, b), key=len)
+    n = len(a)
+    return max(difflib.SequenceMatcher(None, a, b[i:i + n]).ratio() for i in range(len(b) - n + 1))
+
+
+def read_cover(read: str, cand: str) -> float:
+    """How much of `read` sits in `cand`: `partial_ratio` times the share of the read the candidate can hold,
+    min(1, |cand| / |read|) in compact characters ("your" holds a quarter of "inside your walls.")."""
+    return partial_ratio(read, cand) * min(1.0, len(_compact(cand)) / max(len(_compact(read)), 1))
+
+
+READ_CANDIDATES = 32
+
+
+def best_read(reads: list[str]) -> str:
+    """R22: the read that best covers a track's reads (in frame order). Of the reads seen in ≥ 2 frames (all of them
+    when none is), the one with the largest Σ count · `read_cover`(read, candidate); ties by count,
+    then by first appearance; of compact-equal reads (equal scores), the spaced one ("New Arrivals", not
+    "NewArrivals"). ponytail: a junk read seen twice that holds the title (two lines in one OCR box) wins,
+    and only the READ_CANDIDATES most common reads are candidates (the cost is candidates × distinct reads: 300
+    distinct reads took 2.7 s uncapped, 0.29 s capped); upgrade path: weigh in each read's box width."""
+    counts = Counter(reads)   # insertion order: first appearance (most_common keeps it among equal counts)
+    common = counts.most_common(READ_CANDIDATES)
+    cands = [c for c, n in common if n >= 2] or [c for c, _ in common]
+    best = max(cands, key=lambda c: (sum(n * read_cover(r, c) for r, n in counts.items()), counts[c]))
+    return max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
@@ -404,7 +441,7 @@ def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_th
                 best = TextTrack(id=next_id); next_id += 1; tracks.append(best)
             best.boxes[f] = box; used.add(best.id)
     for t in tracks:
-        t.text = Counter(b.text for b in t.boxes.values()).most_common(1)[0][0]
+        t.text = best_read([t.boxes[f].text for f in sorted(t.boxes)])
     return tracks
 
 
@@ -457,14 +494,32 @@ def _glyph_core_mask(crop: np.ndarray, mask: np.ndarray, bg_rgb: tuple,
     return core
 
 
-def _core_pixels(frame: np.ndarray, bbox, bg_rgb: tuple, plate: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
-    """(glyph core pixels, the plate behind them), uint8 N×3, the box clipped to the frame."""
+def on_line(crop: np.ndarray, behind: np.ndarray, colour) -> np.ndarray:
+    """The pixels of `crop` within ΔE 25 of the line from the plate `behind` through `colour` (up to 1.5× past it):
+    that colour faded toward the plate (anti-aliased edges, a fade) or a gradient toward a darker one."""
+    P, Bf = crop.astype(np.float32), behind.astype(np.float32)
+    d = np.asarray(colour, np.float32) - Bf
+    a = np.clip(((P - Bf) * d).sum(-1) / np.maximum((d * d).sum(-1), 1e-6), 0.0, LINE_A)
+    line = np.rint(np.clip(Bf + a[..., None] * d, 0, 255)).astype(np.uint8)
+    return delta_e(srgb8_to_lab(crop), srgb8_to_lab(line)) <= LINE_DE
+
+
+def _core_pixels(frame: np.ndarray, bbox, bg_rgb: tuple, plate: np.ndarray | None,
+                 colour=None) -> tuple[np.ndarray, np.ndarray]:
+    """(glyph core pixels, the plate behind them), uint8 N×3, the box clipped to the frame. `colour`: the core is
+    taken among the pixels `on_line` of it only (all of them when none is): a sprite crossing the box contrasts
+    more than the text and would be its core (V4: seed 9's title read 0.18 opaque under a passing pill)."""
     x0, y0, x1, y1 = bbox
     fh, fw = frame.shape[:2]
     cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(fw, x1), min(fh, y1)
     crop = frame[cy0:cy1, cx0:cx1]
     local_plate = plate[cy0:cy1, cx0:cx1] if plate is not None else None
-    core = _glyph_core_mask(crop, stroke_mask(frame, bbox, bg_rgb, plate=plate), bg_rgb, local_plate)
+    mask = stroke_mask(frame, bbox, bg_rgb, plate=plate)
+    if colour is not None and mask.any():
+        behind = local_plate if local_plate is not None else np.broadcast_to(np.asarray(bg_rgb, np.uint8), crop.shape)
+        on = mask & on_line(crop, behind, colour)
+        mask = on if on.any() else mask
+    core = _glyph_core_mask(crop, mask, bg_rgb, local_plate)
     px = crop[core] if core.any() else np.zeros((0, 3), np.uint8)
     behind = local_plate[core] if local_plate is not None and core.any() else np.broadcast_to(np.asarray(bg_rgb, np.uint8), px.shape)
     return px, behind
@@ -563,7 +618,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     raw = np.full((n_frames, 9), np.nan)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
-        px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate))
+        px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate, col))
         if plate is None:
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:

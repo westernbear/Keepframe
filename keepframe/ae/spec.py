@@ -7,20 +7,24 @@ import struct
 import zlib
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 from . import footage
+from ..analyze.keyframes import ERR, reduce_curve
 from ..fonts.raster import bounded_style, hex_rgb
 from ..ir.paths import scene_asset_path
 from ..ir.schema import DEFAULTS, Element, FontGuess, Keyframe, Scene, Track
-from ..ir.tracks import eval_track, eval_z
+from ..ir.tracks import eval_track, eval_z, glyph_alphas, glyph_edges
 from ..log import get
 
 log = get("keepframe.ae")
 # What a panel must draw for a spec: 1 = Keepframe AE 1.0 (images, solids, text, models, reveal, skew);
 # 2 = Task 14 (footage, Ramp gradients, Drop Shadows, Ramp + Set Matte fills, text stroke/tracking, baseline shear);
 # 3 = footage time stretch (video layers of a speed edit).
-SPEC_LEVEL = 3
+SPEC_LEVEL = 4
+# AE's z points away from the viewer, CSS's toward it: a CSS tilt reads as the negated AE X/Y Rotation (to confirm live).
+AE_TILT_SIGN = -1.0
 
 
 def _rounded(value):
@@ -174,9 +178,10 @@ def _props(tracks, fix, fps, warnings, eid):
             "opacity": _scalar(tracks["opacity"], fps, 100)}
 
 
-def _effects(tracks, fps, warnings, eid, shear_deg=0.0):
+def _effects(tracks, fps, warnings, eid, shear_deg=0.0, el=None):
     """Skew and reveal. A styled text's shear (CSS skewX(−shear) about its first baseline, the text layer's y = 0)
-    folds into the skew: tan(skew) = tan(skx)·sy/sx − tan(shear); `baseline_shear` moves the pivot to y = 0."""
+    folds into the skew: tan(skew) = tan(skx)·sy/sx − tan(shear); `baseline_shear` moves the pivot to y = 0.
+    A per-glyph reveal (`el.canonical.glyphs`) becomes the reveal's Linear Wipe (D15)."""
     effects = {"skew": None, "reveal": None}
     if any(key.v != 0 for key in tracks["sky"].keys):
         warnings.append(f"y skew of {eid} is not represented")
@@ -201,6 +206,18 @@ def _effects(tracks, fps, warnings, eid, shear_deg=0.0):
     if any(key.v != 1 for key in tracks["reveal"].keys):
         effects["reveal"] = {"completion": _scalar(tracks["reveal"], fps, -100, 100),
                              "angle": 270, "feather": 0}
+    g = el.canonical.glyphs if el is not None else None
+    if g is not None:
+        # ponytail: one wipe whose completion is the revealed share of the glyph columns (times a reveal track's),
+        # from the side the stagger starts; the per-glyph fades are lost — upgrade: a text animator Expression Selector
+        w, start = np.diff(glyph_edges(g, el.canonical.width)), el.visible[0]
+        end = min(el.visible[1], max(start + math.ceil(max(g.delays) + g.ramp), tracks["reveal"].keys[-1].t))
+        shown = [eval_track(tracks["reveal"], f) * glyph_alphas(g, f - start) @ w / max(w.sum(), 1)
+                 for f in range(start, end + 1)]
+        keys, _ = reduce_curve(np.array(shown), start, ERR["reveal"])
+        effects["reveal"] = {"completion": _scalar(Track(keys=keys), fps, -100, 100),
+                             "angle": 270 if np.dot(np.subtract(g.x, np.mean(g.x)), g.delays) >= 0 else 90, "feather": 0}
+        warnings.append(f"per-glyph reveal of {eid} exported as a wipe")
     return effects
 
 
@@ -520,10 +537,12 @@ def _layer(el: Element, scene_dir, assets, fps, fonts, label, wait=True):
     props = _props(tracks, fix, fps, warnings, el.id)
     if kind == "model":
         props.update(rotation_x=_scalar(tracks["rx"], fps), rotation_y=_scalar(tracks["ry"], fps))
+    elif kind != "null" and (el.pending_asset or el.kind) != "3d" and ("rx" in el.tracks or "ry" in el.tracks):
+        props.update(rotation_x=_scalar(tracks["rx"], fps, AE_TILT_SIGN), rotation_y=_scalar(tracks["ry"], fps, AE_TILT_SIGN))
     return {"id": f"kf:{el.id}", "kind": kind, "name": f"{el.id} · {el.label or el.kind}",
             "label": label, "in": el.visible[0], "out": el.visible[1],
             "source": source, "anchor": anchor, "props": props,
-            "effects": {**_effects(tracks, fps, warnings, el.id, shear), **styled}, "warnings": warnings}
+            "effects": {**_effects(tracks, fps, warnings, el.id, shear, el), **styled}, "warnings": warnings}
 
 
 def _background(scene, scene_dir, assets, wait=True):
@@ -599,6 +618,8 @@ def comp_spec_json(scene: Scene, scene_dir: Path, *, project: str, scene_id: str
 
 def spec_level(spec: dict) -> int:
     """The SPEC_LEVEL a panel needs to draw `spec` (older panels ignore or reject what they do not know)."""
+    if any(layer["kind"] != "model" and "rotation_x" in layer["props"] for layer in spec["layers"]):
+        return 4
     if any(layer["kind"] == "footage" and "stretch" in layer["source"] for layer in spec["layers"]):
         return 3
     for layer in spec["layers"]:

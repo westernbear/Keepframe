@@ -219,7 +219,7 @@ def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
     """`fonts`: the project's registry (uploads); bundled fonts only when None. `scene_dir` resolves pinned font
     files for the overflow measurement."""
     from ..fonts.registry import FontRegistry
-    from .apply import text_width
+    from .apply import _group_items, text_width
 
     fonts = fonts or FontRegistry()
     items: list[Target] = []
@@ -232,12 +232,14 @@ def plan(scene: Scene, intent: Intent, *, fonts=None, scene_dir=None) -> Plan:
         el = source.element(t.element) if t.element else None
         items.append(t)
         if t.property == "timing":
-            if el is not None:
-                _, end = retimed_range(el, *timing_args(t, el, timing_scene.fps))
-                if end > timing_scene.frames - 1:
-                    conflicts.append(Conflict(id="timing_overflow", element=el.id, choices=["extend_scene"],
-                                              reason=f"장면 끝({timing_scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
-            apply_timing(timing_scene, [t], {"timing_overflow": "extend_scene"})
+            for m in _group_items(timing_scene, [t])[0]:   # D16: a group member's timing moves the whole group
+                el = timing_scene.element(m.element) if m.element else None
+                if el is not None:
+                    _, end = retimed_range(el, *timing_args(m, el, timing_scene.fps))
+                    if end > timing_scene.frames - 1:
+                        conflicts.append(Conflict(id="timing_overflow", element=el.id, choices=["extend_scene"],
+                                                  reason=f"장면 끝({timing_scene.frames}프레임)을 넘어 {end + 1}프레임까지 이어집니다."))
+                apply_timing(timing_scene, [m], {"timing_overflow": "extend_scene"})
         if t.property == "text" and t.value and el is not None:
             if text_width(el, t.value, fonts=fonts, scene_dir=scene_dir) > el.canonical.width * 1.15:
                 conflicts.append(Conflict(

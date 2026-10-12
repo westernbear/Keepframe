@@ -48,6 +48,11 @@ def _model_signature(sd, model):
     return json.loads(path.read_text())["signature"] if path.is_file() else None
 
 
+def _solids(props: dict) -> dict:
+    """The solids among the props: elements with `fragments` that are not merged titles (kind "text")."""
+    return {k: p for k, p in props.items() if not k.startswith("_") and "fragments" in p and p.get("kind") != "text"}
+
+
 def index_legacy_solid_models(sd):
     """Associate pre-signature GLBs using the old stages, before analysis overwrites them."""
     stages = sd / "stages"
@@ -55,9 +60,7 @@ def index_legacy_solid_models(sd):
         return
     props = pickle.loads((stages / "props.pkl").read_bytes())
     ids = json.loads((stages / "ids.json").read_text())
-    for key, p in props.items():
-        if key.startswith("_") or "fragments" not in p:
-            continue
+    for key, p in _solids(props).items():
         for related in (key, *p["fragments"]):
             if related not in ids:
                 continue
@@ -73,8 +76,8 @@ def _known_solid(sd, eid):
         return None
     props = pickle.loads((stages / "props.pkl").read_bytes())
     ids = json.loads((stages / "ids.json").read_text())
-    return next(((k, p, ids) for k, p in props.items() if not k.startswith("_") and "fragments" in p and
-                 (ids.get(k) == eid or any(ids.get(m) == eid for m in p["fragments"]))), None)
+    return next(((k, p, ids) for k, p in _solids(props).items()
+                 if ids.get(k) == eid or any(ids.get(m) == eid for m in p["fragments"])), None)
 
 
 def reference_crop(scene, sd, eid):
@@ -207,7 +210,7 @@ def prepare_solid_assets(jobs, generate=True):
     generation_jobs, indices = [], []
     for i, job in enumerate(jobs):
         scene, sd, props, ids, previous, messages = (job[k] for k in ("scene", "sd", "props", "ids", "previous", "messages"))
-        solids = {k: p for k, p in props.items() if not k.startswith("_") and "fragments" in p}
+        solids = _solids(props)
         if not solids:
             continue
         if previous is not None:
@@ -239,7 +242,7 @@ def finish_solid_assets(scene, sd, frames, props, ids, raws, messages, generate=
     """Apply the fidelity decision before semantics/constraints see the final elements."""
     from .pipeline import _elements_from_props
 
-    solids = {k: p for k, p in props.items() if not k.startswith("_") and "fragments" in p}
+    solids = _solids(props)
     if not solids:
         return []
     from ..progress import report_stage

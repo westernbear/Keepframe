@@ -1325,3 +1325,44 @@ test("task14: the ES3 checker rejects regex flags and groups ExtendScript lacks"
   checkES3Syntax("var r = /^(text|footage)$/gi, s = /\\.(mp4|mov)$/i, q = /(?:a)(?=b)(?!c)/m;");
   checkES3Syntax(fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8"));
 });
+
+function tiltedTextFixture() {
+  const f = createAE();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../../extension/host/keepframe.jsx"), "utf8"), f.context);
+  const key = (v) => [[0, v, null, null]];
+  const spec = {schema: "keepframe.ae-comp/1", project: "demo", comp: {tag: "kf", name: "C",
+    width: 640, height: 480, fps: 30, frames: 60}, assets: [], warnings: [],
+    layers: [{id: "t", order: 1, kind: "text", name: "t", label: null, in: 0, out: 59,
+      source: {text: "Hi", font: {postscript: null, family: "Example", style: null, substituted: false},
+        size_px: 20, color: "#000000", anchor_fraction: [0.5, 0.5], box: [40, 20]},
+      anchor: null, warnings: [], effects: {reveal: null, skew: null},
+      props: {position_x: key(100), position_y: key(80), scale: key([100, 100]), rotation: key(0), opacity: key(100),
+        rotation_x: [[0, -10, null, null], [30, -40, null, null]], rotation_y: key(25)}}]};
+  const sync = () => JSON.parse(f.context.kfSync(JSON.stringify(spec), "{}", "false"));
+  assert.equal(sync().ok, true);
+  const layer = () => f.context.app.project.items[3].layers[1];
+  return {...f, spec, sync, layer};
+}
+
+test("tilted text layer becomes 3D with Rotate X/Y keys", () => {
+  const f = tiltedTextFixture(), t = f.layer().property("ADBE Transform Group");
+  assert.equal(f.layer().threeDLayer, true);
+  const x = t.property("ADBE Rotate X"), y = t.property("ADBE Rotate Y");
+  assert.deepEqual([x.numKeys, x.keyValue(1), x.keyValue(2)], [2, -10, -40]);
+  assert.equal(y.valueAtTime(0, true), 25);
+  assert.deepEqual(Array.from(t.property("ADBE Orientation").value), [0, 0, 0]);
+  assert.equal(t.property("ADBE Position_2").value, 0);
+});
+
+test("resync of a tilted layer is a no-op", () => {
+  const f = tiltedTextFixture(), writes = f.counters.writes;
+  assert.equal(f.sync().applied, true);
+  assert.equal(f.counters.writes - writes, 0);
+});
+
+test("untilting turns 3D off", () => {
+  const f = tiltedTextFixture();
+  delete f.spec.layers[0].props.rotation_x; delete f.spec.layers[0].props.rotation_y;
+  assert.equal(f.sync().ok, true);
+  assert.equal(f.layer().threeDLayer, false);
+});
