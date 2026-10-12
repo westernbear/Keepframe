@@ -23,7 +23,7 @@ from .report import write_report
 from .semantics import assign_roles, group_by_motion
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
-from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_cuts, split_junk_text, text_exclusion_mask, text_props, track_text
+from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
 from .plane import tilted_raw
 from .titles import MERGE_WORSE, guard_titles, merge_titles, text_groups
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
@@ -498,7 +498,6 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         log.info("sprites movers=%s kept=%s %.2fs", len(movers), len(kept), time.perf_counter() - t0)
         t0 = time.perf_counter()
     workers = max(1, min(8, os.cpu_count() or 4))
-    text_tracks = split_cuts(text_tracks)
     with ThreadPoolExecutor(max_workers=workers) as ex:
         jobs = [(t, is_text, []) for tracks, is_text in ((text_tracks, True), (shape_tracks, False)) for t in tracks]
         text_futs = {   # text that fades takes its canonical frame at full opacity (Task 9b)
@@ -511,8 +510,6 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
             p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last}
             if is_text:
                 p.update(text=t.text, font=font, color=color, reveal=t.reveal)
-                if t.cut_of is not None:   # pieces of one track split at a cut: one group, never merged back
-                    p["text_group"] = f"cut_t{t.cut_of}"
             else:
                 p.update(z=0, ocr_text=t.text)
             if notes:

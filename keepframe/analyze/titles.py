@@ -8,7 +8,7 @@ import math, re, time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import cv2, numpy as np
-from ..ir.colour import delta_e, lab_to_srgb, rgb8_to_hex, srgb8_to_lab, srgb_to_lab
+from ..ir.colour import rgb8_to_hex
 from ..ir.schema import DEFAULTS, PROPS, GlyphReveal, Group
 from ..ir.tracks import glyph_edges, is_tilted, perspective_px, projective_matrix
 from ..log import describe, get
@@ -17,14 +17,13 @@ from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
 from .text import _compact, _glyph_core_mask, on_line, partial_ratio, read_cover
-from .textstyle import _mode, glyph_centres
+from .textstyle import glyph_centres
 
 log = get("keepframe.analyze")
 
 LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBSTRING = 1.6, 0.5, 1.2, 20.0, 1.0, 2.0, 0.5, 0.8
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
-ROT_DEG, CONTAIN, CONCURRENT, INSIDE = 5.0, 0.5, 0.5, 0.25
-PIECE = 0.6   # a piece's misread text in its title's (`partial_ratio`, "vew" in "New Arrivals" 0.67); "STOP" in "SCROLLING" 0.5
+ROT_DEG, CONTAIN, CONCURRENT = 5.0, 0.5, 0.5
 MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
 
 
@@ -38,19 +37,20 @@ class Fragment:
     lab: np.ndarray                                        # mean opaque colour, CIE Lab
     h: float                                               # median line height (canonical height × sy)
     rot: float                                             # median rotation, degrees
-    kind: str = "text"                                     # the prop's: "text" (a text track) or "sprite"
 
 
-def _boxes_of(p: dict, size) -> dict[int, tuple[float, float, float, float]]:
-    """A prop's scene bbox per frame it is drawn, of what is shown (a reveal clips the canon's end)."""
+def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
+    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them) and video
+    sprites (and anything visible in fewer than MIN_FRAMES frames)."""
+    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("kind") not in ("text", "sprite"):
+        return None
     raw, canon = p["raw"], p["canon"]
     ch, cw = canon.shape[:2]
-    boxes = {}
+    corners = np.array([[-cw / 2, -ch / 2, 1], [cw / 2, -ch / 2, 1], [cw / 2, ch / 2, 1], [-cw / 2, ch / 2, 1]], float)
+    boxes, hs, rots = {}, [], []
     for f in np.flatnonzero(np.isfinite(raw[:, 0])):
         q = {k: float(raw[f, i]) if i < raw.shape[1] and np.isfinite(raw[f, i]) else DEFAULTS[k] for i, k in enumerate(PROPS)}
         q["sky"] = 0.0
-        xr = cw * (min(1.0, max(0.0, q["reveal"])) - 0.5)
-        corners = np.array([[-cw / 2, -ch / 2, 1], [xr, -ch / 2, 1], [xr, ch / 2, 1], [-cw / 2, ch / 2, 1]], float)
         if is_tilted(q, "sprite"):
             P = corners @ projective_matrix(q, size).T
             P = P[:, :2] / P[:, 2:]
@@ -59,29 +59,13 @@ def _boxes_of(p: dict, size) -> dict[int, tuple[float, float, float, float]]:
             M = np.array([[np.cos(r), -np.sin(r)], [np.sin(r), np.cos(r)]]) @ np.array([[1, k], [0, 1]]) @ np.diag([q["sx"], q["sy"]])
             P = corners[:, :2] @ M.T + [q["x"], q["y"]]
         boxes[int(f)] = (float(P[:, 0].min()), float(P[:, 1].min()), float(P[:, 0].max()), float(P[:, 1].max()))
-    return boxes
-
-
-def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
-    """None for movers, solids, solid members (`members`: their `o<id>` keys, still props before the solid takes them),
-    video sprites and the pieces of a track split at a cut (`text_group`: never merged back into one canon), and
-    anything visible in fewer than MIN_FRAMES frames."""
-    if key in members or key.startswith(("m", "solid")) or p.get("mover") or p.get("video") or p.get("text_group") \
-            or p.get("kind") not in ("text", "sprite"):
-        return None
-    raw, canon = p["raw"], p["canon"]
-    ch = canon.shape[0]
-    boxes, hs, rots = _boxes_of(p, size), [], []
-    for f in boxes:
-        hs.append(ch * (raw[f, 3] if np.isfinite(raw[f, 3]) else 1.0))
-        rots.append(raw[f, 4] if np.isfinite(raw[f, 4]) else 0.0)
+        hs.append(ch * q["sy"]); rots.append(q["rot"])
     if len(boxes) < MIN_FRAMES:
         return None
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
     lab = cv2.cvtColor(rgb.mean(0).astype(np.float32).reshape(1, 1, 3) / 255, cv2.COLOR_RGB2Lab)[0, 0]
-    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)),
-                    float(np.median(rots)), p["kind"])
+    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)))
 
 
 def _digits_agree(a: str, b: str) -> bool:
@@ -104,30 +88,9 @@ def _sprite(f: Fragment) -> bool:
     return not f.text
 
 
-def _inside(a: Fragment, b: Fragment, h: float, fps: float) -> bool:
-    """V5: of two text tracks, the one with the shorter string, a piece of the other's (`partial_ratio` ≥ PIECE, its
-    digits in the other's: not "Step 9" before "Step 10", not "STOP" before "SCROLLING"), lies inside the other's
-    widest box along the line (± INSIDE·h) and within INSIDE·h of its median line centre at ≥ half its frames, within
-    the other's life (± SUCCESSION_S): the title read in pieces while a sprite crossed it or as it faded in (seeds
-    4/6), whatever the pieces' onsets, the jumps of their boxes (each holds what is read at a frame) and the colour of
-    their canons (a sprite crossing one at its canonical frame).
-    ponytail: a title that holds still (a moving one's widest box is one frame's); upgrade path: its widest box near
-    each frame."""
-    p, t = sorted((a, b), key=lambda f: len(_compact(f.text)))
-    span = SUCCESSION_S * fps
-    if (a.kind, b.kind) != ("text", "text") or len(_compact(p.text)) >= len(_compact(t.text)) \
-            or p.first < t.first - span or p.last > t.last + span \
-            or partial_ratio(p.text, t.text) < PIECE or not _digits_agree(p.text, t.text):
-        return False
-    W, m = max(t.boxes.values(), key=lambda q: q[2] - q[0]), INSIDE * h
-    c = np.median([(q[1] + q[3]) / 2 for q in t.boxes.values()])
-    return float(np.mean([W[0] - m <= q[0] and q[2] <= W[2] + m and abs((q[1] + q[3]) / 2 - c) <= m
-                          for q in p.boxes.values()])) >= CONTAIN
-
-
 def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool:
     h = max(a.h, b.h)
-    if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or abs(a.rot - b.rot) > ROT_DEG:
+    if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or np.linalg.norm(a.lab - b.lab) > COLOUR_DE or abs(a.rot - b.rot) > ROT_DEG:
         return False
     common = sorted(a.boxes.keys() & b.boxes.keys())
     cy = lambda f, i: (f.boxes[i][1] + f.boxes[i][3]) / 2
@@ -140,15 +103,14 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
     for s, ref in ((a, b), (b, a)):   # glyph-sized and mostly concurrent with the text it joins
         if _sprite(s) and (not _is_glyph(s, ref) or len(common) < CONCURRENT * len(s.boxes)):
             return False
-    side = _inside(a, b, h, fps)   # V5: a piece of the title, whatever the colour of its canon
-    if not side and np.linalg.norm(a.lab - b.lab) > COLOUR_DE:
-        return False
-    if not side and common:   # concurrent and side by side
+    if common:   # concurrent and side by side
         gap = np.median([max(a.boxes[i][0], b.boxes[i][0]) - min(a.boxes[i][2], b.boxes[i][2]) for i in common])
         va = np.diff([(a.boxes[i][0] + a.boxes[i][2]) / 2 for i in common]), np.diff([cy(a, i) for i in common])
         vb = np.diff([(b.boxes[i][0] + b.boxes[i][2]) / 2 for i in common]), np.diff([cy(b, i) for i in common])
         dv = float(np.median(np.hypot(va[0] - vb[0], va[1] - vb[1]))) if len(common) > 1 else 0.0
         side = gap <= GAP_H * h and abs(a.first - b.first) / fps <= ONSET_S and dv <= MOTION_PX
+    else:
+        side = False
     if not side:   # successive in place: the later one starts after the earlier one ends, inside its box, repeating part of its string
         e, l = (a, b) if a.last <= b.first else (b, a)
         if l.first < e.last:
@@ -196,10 +158,7 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
 # --- the merged title ---------------------------------------------------------------------------------------------
 
 MERGE_FAILED = "merge_failed"   # fail-soft code (R52): a title left as its fragments
-CF_OPACITY, CF_AREA, CF_AWAY, SPACE_GAP, SPACE_H = 0.9, 0.8, 1.0, 2.0, 0.3
-BLOB, GLYPH_DE, CARD_DE = 0.2, 10.0, 20.0   # I2: half a stroke is under this many line heights (bold display faces
-                                            # ≈ 0.06); a glyph pixel is within GLYPH_DE of the title's colour; glyphs
-                                            # on a card differ from it by more than CARD_DE (ΔE76)
+CF_OPACITY, CF_AREA, CF_CLUTTER, SPACE_GAP, SPACE_H = 0.9, 0.8, 0.02, 2.0, 0.3
 TILT_ROT, TILT_CONVERGE, TILT_LEN = 2.0, 0.8, 5.0   # D12 with R8 (a yawed title converges only ≈ cap·tan(ry)/d)
 LEN_TOL = 0.25   # a VLM line replaces an OCR string only within 25 % of its compact length (final review I2)
 
@@ -276,50 +235,29 @@ def _on_colour(crop, behind) -> tuple[np.ndarray, np.ndarray]:
     return fg, fg & on_line(crop, behind, np.median(crop[fg].astype(np.float32), axis=0))
 
 
-def _unblobbed(on, h: float, img=None, colour=None) -> np.ndarray:
-    """`on` less its solid blobs (I2: seed 6's square near the title's colour): the pixels within BLOB·h of a pixel
-    over BLOB·h deep inside it, where no stroke is that thick, except (given `img` and the title's `colour`) those
-    within GLYPH_DE of that colour: a glyph over the blob, or touching it, stays."""
-    r = max(1, int(round(BLOB * h)))
-    deep = (cv2.distanceTransform(on.astype(np.uint8), cv2.DIST_L2, 3) > r).astype(np.uint8)
-    blob = cv2.dilate(deep, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1,) * 2)) > 0
-    if colour is not None and blob.any():
-        blob &= delta_e(srgb8_to_lab(img), srgb8_to_lab(np.rint(np.broadcast_to(colour, img.shape)).astype(np.uint8))) > GLYPH_DE
-    return on & ~blob
+def _title_contrast(crop, B) -> np.ndarray:
+    """The contrast of the pixels with the title's colour (`_on_colour`): what crosses the title is not tracked."""
+    return contrast(crop, B) * _on_colour(crop, np.ascontiguousarray(np.broadcast_to(B, crop.shape)))[1]
 
 
-def _title_contrast(crop, B, colour, h: float | None = None) -> np.ndarray:
-    """The contrast of the foreground `on_line` of the title's colour (`_colour`), less its solid blobs given the line
-    height `h`, as the template has them: what crosses the title is not tracked (V5: the crop's own median foreground
-    was a sprite's colour where one filled it, and ECC saw glyph edges only).
-    ponytail: one colour for the whole life; a title whose colour animates loses ECC away from the frames it was
-    measured on (held, placed by its boxes); upgrade path: the colour of the frame tracked last."""
-    B = np.ascontiguousarray(np.broadcast_to(B, crop.shape))
-    on = foreground_mask_plate(crop, B) & on_line(crop, B, colour)
-    return contrast(crop, B) * (_unblobbed(on, h, crop, colour) if h else on)   # `h`: blobs out, as from the template
-
-
-def _settled(group: list[Fragment], frames, plate, op, others=()) -> int:
-    """cf: of the frames at ≥ 90 % of the peak opacity `op` (per frame) with a union box ≥ 80 % of the largest (a
-    title turning in perspective changes its box) that no other prop's box (`others`, per frame) crosses when there
-    are any (≤ 16 of them, evenly spread), those whose box is nearest the candidates' per-pixel median (within
-    CF_AWAY grey levels of the best: nothing crosses the title there that is not there most of the time), then the one
-    with the least motion in the box (the mean change to frames f ± 1). Round 2: not the frames showing the most
-    members (a piece read apart only while a sprite crossed the title pulled cf there, where the members' boxes missed
-    the letter under the sprite: seeds 6 and 8 lost their "N"), nor the least clutter by colour (seed 3's card over
-    "g" was as title-coloured as the plate's own noise)."""
+def _settled(group: list[Fragment], frames, plate, op) -> int:
+    """cf: of the frames that show the most members at ≥ 90 % of their peak opacity `op` (per frame) and with a union
+    box ≥ 80 % of the largest (a title turning in perspective changes its box; ≤ 16 of them, evenly spread), those
+    whose foreground in the box is most the title's colour (within 0.02 of the best: the least clutter on or under
+    it), then the one with the least motion in the box (the mean change to frames f ± 1)."""
     seen = sorted(set().union(*(g.boxes for g in group)))
-    top = [f for f in seen if op[f] >= CF_OPACITY * max(op[seen])] or seen
+    count = {f: sum(f in g.boxes for g in group) for f in seen}
+    top = [f for f in seen if count[f] == max(count.values())]
+    top = [f for f in top if op[f] >= CF_OPACITY * max(op[top])] or top
     area = {f: float(np.prod(_size(_at(group, f)))) for f in top}
     cand = [f for f, a in area.items() if a >= CF_AREA * max(area.values())]
-    hit = lambda a, b: a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-    cand = [f for f in cand if not any(f in o and hit(o[f], _at(group, f)) for o in others)] or cand
     cand = [cand[i] for i in sorted(set(np.linspace(0, len(cand) - 1, min(16, len(cand))).round().astype(int)))]
     boxes = {f: _box(group, f, frames.shape[1:3]) for f in cand}
-    hh, ww = min(b[3] - b[1] for b in boxes.values()), min(b[2] - b[0] for b in boxes.values())
-    crops = {f: frames[f, b[1]:b[1] + hh, b[0]:b[0] + ww].astype(np.float32) for f, b in boxes.items()}
-    med = np.median(np.stack(list(crops.values())), axis=0)
-    away = {f: float(np.abs(c - med).mean()) for f, c in crops.items()}
+
+    def clutter(f):
+        x0, y0, x1, y1 = boxes[f]
+        fg, on = _on_colour(frames[f, y0:y1, x0:x1], np.broadcast_to(plate.at(f), frames.shape[1:])[y0:y1, x0:x1])
+        return 1.0 - on.sum() / max(fg.sum(), 1)
 
     def motion(f):
         x0, y0, x1, y1 = boxes[f]
@@ -327,7 +265,8 @@ def _settled(group: list[Fragment], frames, plate, op, others=()) -> int:
         d = [np.abs(frames[e, y0:y1, x0:x1] - here).mean() for e in (f - 1, f + 1) if 0 <= e < len(frames)]
         return float(np.mean(d)) if d and here.size else 0.0
 
-    return min((f for f in cand if away[f] <= min(away.values()) + CF_AWAY), key=lambda f: (motion(f), f))
+    c = {f: clutter(f) for f in cand}
+    return min((f for f in cand if c[f] <= min(c.values()) + CF_CLUTTER), key=lambda f: (motion(f), f))
 
 
 def _still(group: list[Fragment], frames, cf: int, box) -> np.ndarray:
@@ -353,48 +292,15 @@ def _still(group: list[Fragment], frames, cf: int, box) -> np.ndarray:
     return np.median(np.stack(crops), axis=0).round().astype(np.uint8)
 
 
-def _glyph_mask(group: list[Fragment], frames, B, cf: int, colour=None) -> np.ndarray:
-    """The union glyph mask at cf (frame-sized): `_on_colour` on `_still` (`colour`: the foreground `on_line` of
-    it, the title's; the still's median foreground is a sprite's where one fills the box: seed 8's mask kept glyph
-    edges only), inside the members' union box padded by 0.1·h, less its solid blobs (`_unblobbed`).
-    ponytail: a blob within GLYPH_DE of the title's colour stays (it cannot be told from the glyphs by colour);
-    upgrade path: the other props' alpha at cf."""
+def _glyph_mask(group: list[Fragment], frames, B, cf: int) -> np.ndarray:
+    """The union glyph mask at cf (frame-sized): `_on_colour` on `_still`, inside the members' union box padded by
+    0.1·h."""
     box = _box(group, cf, frames.shape[1:3])
     m = np.zeros(frames.shape[1:3], bool)
     if box[2] > box[0] and box[3] > box[1]:
         behind = np.ascontiguousarray(np.broadcast_to(B, frames.shape[1:])[box[1]:box[3], box[0]:box[2]])
-        still = _still(group, frames, cf, box)
-        on = _on_colour(still, behind)[1] if colour is None else \
-            foreground_mask_plate(still, behind) & on_line(still, behind, colour)
-        m[box[1]:box[3], box[0]:box[2]] = _unblobbed(on, max(g.h for g in group), still, colour)
+        m[box[1]:box[3], box[0]:box[2]] = _on_colour(_still(group, frames, cf, box), behind)[1]
     return m
-
-
-def _colour(group: list[Fragment], frames, plate, op) -> np.ndarray | None:
-    """A title's colour: the dominant colour (`_mode`) of the more contrasting half of the thin foreground in the
-    members' union box over ≤ 5 frames spread over those at ≥ 90 % of the peak opacity `op` (None without one): the
-    foreground less its solid blobs (`_unblobbed`: a sprite), plus the pixels inside a blob that differ from it by
-    > CARD_DE (text on a card: ig1's notes). The members' `text_props` colours and the median of the foreground at cf are a sprite's where one
-    fills the box (round 2: seed 6's subtitle took its square's, seed 10's title a mover's, seed 8's mask its mover's).
-    ponytail: one blob colour per box (the median of its blobs); upgrade path: a colour per blob component."""
-    seen = sorted(set().union(*(g.boxes for g in group)))
-    top = [f for f in seen if op[f] >= CF_OPACITY * max(op[seen])] or seen
-    h, px, ink = max(g.h for g in group), [], []
-    for f in [top[i] for i in sorted(set(np.linspace(0, len(top) - 1, min(5, len(top))).round().astype(int)))]:
-        x0, y0, x1, y1 = _box(group, f, frames.shape[1:3])
-        crop = frames[f, y0:y1, x0:x1]
-        behind = np.ascontiguousarray(np.broadcast_to(plate.at(f), frames.shape[1:])[y0:y1, x0:x1])
-        fg = foreground_mask_plate(crop, behind)
-        thin = _unblobbed(fg, h)
-        if (blob := fg & ~thin).any():
-            lab = srgb8_to_lab(crop)
-            thin |= blob & (delta_e(lab, np.median(lab[blob], axis=0)) > CARD_DE)
-        px.append(crop[thin])
-        ink.append(contrast(crop, behind)[thin])
-    if not px or not len(px := np.concatenate(px)):
-        return None
-    ink = np.concatenate(ink)   # the stronger half: anti-aliased fringes outnumber thin strokes' cores (ig1's notes)
-    return np.float32(lab_to_srgb(_mode(srgb_to_lab(px[ink >= np.median(ink)].astype(np.float32)))))
 
 
 def _join(pieces, alpha, h: float) -> str:
@@ -412,26 +318,18 @@ def _join(pieces, alpha, h: float) -> str:
     return out
 
 
-def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], multi: bool = True,
-               seen: list[int] | None = None) -> tuple[str, str, str | None]:
+def _reconcile(read: str, joined: str, texts: list[str], strings: list[str], multi: bool = True) -> tuple[str, str, str | None]:
     """(text, text_source, text_unverified), D2/D8: the VLM line within ratio 0.8 and of a close length (`_vlm_line`)
     of the OCR string (the re-read, else the fragments joined) wins; else the line of a length close to the joined
     fragments that all fragment texts sit on wins, flagged as disagreeing with OCR; without such a line the OCR string
     stays, flagged as disagreeing with the reading (or as unverified without one). R24, without a VLM: the re-read
     stands only for a group of several fragments (`multi`) and only when it is no shorter than its longest fragment
     text; else the fragments' string (a single tilted track: its own consensus text). R25: that string is the first
-    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join. V5: the
-    text seen in more frames (`seen`, per text) than all the others together, which holds each other text at the
-    misread bar (`read_cover` ≥ PIECE: "Arwwials" 0.75), is the string, unless the re-read is longer: the title read
-    whole most of the time, its pieces and misreads split off while a sprite crossed it.
-    ponytail: a misread piece below PIECE ("Am Tvals") keeps the join; upgrade path: weigh each piece by its frames."""
+    fragment text (`texts` come most-seen first) that holds every other (`read_cover` ≥ 0.8), else the join."""
     if not strings:
         if not (multi and len(_compact(read)) >= max((len(_compact(t)) for t in texts), default=0)):
             read = ""
         joined = next((c for c in texts if all(read_cover(t, c) >= SUBSTRING for t in texts)), joined)
-        if seen and len(texts) > 1 and 2 * seen[0] > sum(seen) and all(read_cover(t, texts[0]) >= PIECE for t in texts[1:]) \
-                and len(_compact(read)) <= len(_compact(texts[0])):
-            read, joined = "", texts[0]
     ocr, source = (read, "ocr") if read else (joined, "fragments")
     if strings:
         if best := _vlm_line(ocr, strings):
@@ -476,13 +374,9 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
     n = len(frames)
     seen = sorted(set().union(*(g.boxes for g in group)))
     op = _opacity(group, props, n)
-    colour = _colour(group, frames, plate, op)
-    keys = {g.key for g in group}
-    others = [_boxes_of(q, size) for k, q in props.items()
-              if k not in keys and not k.startswith("_") and isinstance(q, dict) and "raw" in q and "canon" in q]
-    cf = _settled(group, frames, plate, op, others)
+    cf = _settled(group, frames, plate, op)
     B = np.broadcast_to(plate.at(cf), frames[cf].shape)
-    mask = _glyph_mask(group, frames, B, cf, colour)
+    mask = _glyph_mask(group, frames, B, cf)
     found = text_quad(mask)
     if found is None:
         return None
@@ -495,10 +389,7 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
         quad = np.array([bl + (tl - bl) * h / np.linalg.norm(tl - bl), br + (tr - br) * h / np.linalg.norm(tr - br), br, bl])
     tpl, H0 = rectify(contrast(frames[cf], B) * mask, quad)   # the glyphs only: clutter at cf is not the title
     wh = tpl.shape[1::-1]
-    if colour is None:
-        colour = np.median(frames[cf][mask].astype(np.float32), axis=0)
-    hh = max(g.h for g in group)
-    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=lambda c, b: _title_contrast(c, b, colour, hh))
+    Hs, held = track_plane(frames, plate, tpl, H0, cf, (seen[0], seen[-1]), prep=_title_contrast)
     if not tilted:   # sub-pixel ECC noise reads as degrees of rx/ry: fit the affine part only
         Hs = {f: _affine(H, wh) for f, H in Hs.items()}
     raw = plane_raw({f: Hs[f] for f in seen}, wh, size, n, op)
@@ -525,10 +416,8 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
             x0, y0, x1, y1 = g.boxes[cf]
             q = np.array([[x0, y0, 1], [x1, y0, 1], [x1, y1, 1], [x0, y1, 1]], float) @ Hi.T
             pieces.append((g.text, float((q[:, 0] / q[:, 2]).min()), float((q[:, 0] / q[:, 2]).max())))
-    texted = sorted((g for g in group if g.text), key=lambda g: -len(g.boxes))   # most-seen first (R25)
-    texts = [g.text for g in texted]
-    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1,
-                                          [len(g.boxes) for g in texted])
+    texts = [g.text for g in sorted(group, key=lambda g: -len(g.boxes)) if g.text]   # most-seen first (R25)
+    text, source, unverified = _reconcile(read, _join(pieces, alpha, cap) or " ".join(texts), texts, strings, len(group) > 1)
     boxes = np.full((n, 4), np.nan)
     for f in seen:
         boxes[f] = np.round(_at(group, f))
@@ -636,12 +525,10 @@ def glyph_reveal(p: dict, frames, plate, size, text: str, *, fps: float = 30.0) 
 
 def _grows(p: dict) -> bool:
     """R16: an unmerged text whose OCR box widens from a steady left edge over its first frames: < 0.8× its width at
-    cf on its first frame (sx times the revealed share: `text_props` reveals the canon's start where the read is
-    its start), the left edge there within 0.25 line heights of cf's (a reveal read as it grew)."""
+    cf on its first frame, the left edge there within 0.25 line heights of cf's (a reveal read as it grew)."""
     raw, (ch, cw), f, cf = p["raw"], p["canon"].shape[:2], int(p["first"]), int(p["cf"])
     left = raw[:, 0] - raw[:, 2] * cw / 2
-    shown = raw[:, 2] * (np.nan_to_num(raw[:, PROPS.index("reveal")], nan=1.0) if raw.shape[1] > PROPS.index("reveal") else 1.0)
-    return bool(shown[f] < GROW_W * shown[cf] and abs(left[f] - left[cf]) <= GROW_X * raw[cf, 3] * ch)
+    return bool(raw[f, 2] < GROW_W * raw[cf, 2] and abs(left[f] - left[cf]) <= GROW_X * raw[cf, 3] * ch)
 
 
 def _glyph_mode(p: dict, frames, plate, size, fps, hold: bool = False) -> bool:
@@ -670,10 +557,8 @@ def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> 
     """D12 on a single text track at its settled frame: the quad of its glyph mask turns ≥ 2° or converges ≥ 0.8°.
     A failure leaves the track on the text_props path and `notes` one message per phase."""
     try:
-        op = _opacity([f], props, len(frames))
-        cf = _settled([f], frames, plate, op)
-        colour = _colour([f], frames, plate, op)
-        found = text_quad(_glyph_mask([f], frames, plate.at(cf), cf, colour))
+        cf = _settled([f], frames, plate, _opacity([f], props, len(frames)))
+        found = text_quad(_glyph_mask([f], frames, plate.at(cf), cf))
         return found is not None and _tilted(*found)
     except Exception as e:   # fail soft: the track stays on the text_props path
         log.warning("tilt test failed for %s: %s", f.key, describe(e, trace=True))

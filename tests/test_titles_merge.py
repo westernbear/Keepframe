@@ -5,9 +5,8 @@ import json, pickle, shutil
 import cv2, numpy as np, pytest
 from keepframe.analyze import pipeline
 from keepframe.analyze.pipeline import AnalyzeOptions, analyze, fallback_ids, rerun
-from keepframe.analyze.matting import as_plate
 from keepframe.analyze.reading import parse_reading
-from keepframe.analyze.titles import _colour, _glyph_mask, _perspective, _reconcile, _settled, _title_contrast, _vlm_line, fragment, merge_title
+from keepframe.analyze.titles import _perspective, _reconcile, _vlm_line, fragment, merge_title
 from keepframe.fonts import match as fontmatch
 from keepframe.fonts.raster import render_styled
 from keepframe.ir.schema import PROPS, Background, Canonical, Element, FontGuess, Keyframe, Scene, Track
@@ -319,11 +318,6 @@ def test_reconcile_codes():
     assert _reconcile("", "Grand Openin", ["Openin", "Grand"], [])[0] == "Grand Openin"   # none holds the other: join
     assert _reconcile("Grand Opening", "", ["Grand"], ["This Friday only"]) == ("Grand Opening", "ocr", "vlm_ocr_disagree")
     assert _reconcile("Grand 0pening", "", ["Grand"], [TITLE]) == (TITLE, "vlm", None)
-    # V5 (seed 4): a text seen in more frames than the others together is the string, not the join of split reads
-    assert _reconcile("", "New ArrivalsArrivals", ["New Arrivals", "Arrivals", "Arwwials"], [], seen=[57, 5, 4])[0] == "New Arrivals"
-    # ... only when it holds the others (C1: a word seen one frame more is not the title) and no longer re-read wins
-    assert _reconcile("Grand Opening", "Grand Opening", ["Grand", "Opening"], [], seen=[30, 29]) == ("Grand Opening", "ocr", "no_vlm")
-    assert _reconcile("Sales", "Sale", ["Sale"], [], seen=[40])[0] == "Sales"   # a missed glyph became a sprite
 
 
 def test_vlm_line_never_widens_the_title():
@@ -383,97 +377,7 @@ def test_turned_note_keeps_rx_ry_zero():
     assert abs(abs(out["raw"][0, PROPS.index("rot")]) - 13) < 1.5, out["raw"][0]
 
 
-def test_title_contrast_keeps_the_glyphs_under_a_sprite():
-    """V5 (seed 4): a dark striped sprite filling most of the tracked crop was its median foreground, so the
-    title's red glyphs fell off that colour's line and ECC saw their edges only (it held 43 frames of a still title)."""
-    B = np.full((40, 200, 3), (60, 200, 160), np.uint8)
-    crop = B.copy()
-    crop[:, 60:200] = (20, 40, 50)
-    crop[10:30, 10:50] = (170, 0, 10)   # a glyph
-    assert _title_contrast(crop, B, np.float32([170, 0, 10]))[15:25, 15:45].min() > 0
-
-
-def _words(words, size=(640, 360), n=8, gap=40, y=180):
-    """Words drawn side by side (Inter 40, `gap` px apart) on a flat plate: (frames, plate, the words' boxes)."""
-    plate = np.full((size[1], size[0], 3), (240, 230, 200), np.uint8)
-    frame, x, boxes = plate.astype(np.float32), 100, []
-    for w in words:
-        a = render_styled([w], FontGuess(family_guess="Inter", weight=700, size_px=40, source="bundled"), "#202020", None)[..., 3]
-        ys, xs = np.nonzero(a > 127)
-        a = a[ys.min():ys.max() + 1, xs.min():xs.max() + 1, None].astype(np.float32) / 255
-        h, w_ = a.shape[:2]
-        sl = np.s_[y - h // 2:y - h // 2 + h, x:x + w_]
-        frame[sl] = frame[sl] * (1 - a) + np.float32([32, 32, 32]) * a
-        boxes.append((x, y - h // 2, x + w_, y - h // 2 + h))
-        x += w_ + gap
-    return np.repeat(np.rint(frame).astype(np.uint8)[None], n, 0), plate, boxes
-
-
-def _box_prop(text, box, frames, first, last, n):
-    x0, y0, x1, y1 = box
-    raw = np.full((n, 11), np.nan)
-    raw[first:last + 1] = [(x0 + x1) / 2, (y0 + y1) / 2, 1, 1, 0, 0, 0, 1, 1, 0, 0]
-    canon = np.dstack([frames[first, y0:y1, x0:x1], np.full((y1 - y0, x1 - x0), 255, np.uint8)])
-    return {"raw": raw, "canon": canon, "kind": "text", "first": first, "last": last, "text": text, "font": None, "cf": first}
-
-
-def test_side_by_side_words_keep_the_whole_string():
-    """C1: without a VLM, two words of a title seen in unequal frame counts merge to both words, not the more-seen."""
-    frames, plate, (b0, b1) = _words(["New", "Arrivals"])
-    props = {"t1": _box_prop("New", b0, frames, 0, 7, 8), "t2": _box_prop("Arrivals", b1, frames, 1, 7, 8)}
-    out = merge_title([fragment(k, p, (640, 360)) for k, p in props.items()], props, frames, plate, ocr=None, strings=[],
-                      size=(640, 360), fps=30.0)
-    assert out["text"] == "New Arrivals", out["text"]
-
-
-def test_glyph_mask_leaves_out_a_solid_blob():
-    """I2 (seed 6): a square in the title's colour inside its box is no glyph (no stroke is that thick)."""
-    frames, plate, (b0,) = _words(["Sale"], gap=0)
-    frames[:, 160:220, b0[2] + 10:b0[2] + 70] = 32   # a 60 px square of the title's colour beside it
-    x0, y0, x1, y1 = b0[0], 160, b0[2] + 70, 220
-    p = _box_prop("Sale", (x0, y0, x1, y1), frames, 0, 7, 8)
-    m = _glyph_mask([fragment("t1", p, (640, 360))], frames, plate, 0)
-    assert not m[190, b0[2] + 40] and m[b0[1]:b0[3], b0[0]:b0[2]].sum() > 0.5 * (frames[0, b0[1]:b0[3], b0[0]:b0[2], 0] < 100).sum()
-
-
 def test_perspective_needs_a_cap_a_yaw_can_converge():
     """M1: lines converging 1.2° on a 20 px cap at 1920 wide are glyph noise (a 45° yaw converges them 0.43°)."""
     assert not _perspective({"rot_deg": 0.0, "converge_deg": 1.2, "cap_px": 20.0}, (1920, 1080))
     assert _perspective({"rot_deg": 0.0, "converge_deg": 1.2, "cap_px": 60.0}, (1920, 1080))
-
-
-def test_cf_is_not_where_a_piece_only_reads_during_a_crossing():
-    """Round 2 (seeds 6 and 8): a piece read apart only while a sprite crossed the title ("ew" of "New Arrivals")
-    pulled cf to those frames, where the members' boxes missed the "N" under the sprite; cf is taken by the union
-    box, so the title whole."""
-    frames, plate, (b0, b1) = _words(["New", "Arrivals"], n=12)
-    x0, y0, x1, y1 = b0[0], b0[1], b1[2], b1[3]
-    title = _box_prop("New Arrivals", (x0, y0, x1, y1), frames, 0, 11, 12)
-    title["raw"][5:8, 0] += (b0[2] - b0[0]) / 2   # f5-7: its box misses "N"
-    title["raw"][5:8, 2] = (x1 - b0[2]) / (x1 - x0)
-    props = {"t1": title, "t2": _box_prop("ew", (b0[0] + 10, y0, b0[2], y1), frames, 5, 7, 12)}
-    group = [fragment(k, p, (640, 360)) for k, p in props.items()]
-    assert _settled(group, frames, as_plate(plate), np.ones(12)) not in (5, 6, 7)
-
-
-def test_blob_cut_keeps_a_glyph_touching_a_sprite():
-    """Round 2: a sprite near the title's colour touching and overlapping a glyph at cf goes; the glyph stays."""
-    frames, plate, (b0,) = _words(["Sale"], gap=0)
-    text = frames[0, b0[1]:b0[3], b0[0]:b0[2]].copy()
-    sq = np.s_[:, 160:220, b0[2] - 8:b0[2] + 52]
-    frames[sq] = (20, 45, 60)   # ΔE ≈ 15 from the title's #202020, over the end of the "e"
-    frames[:, b0[1]:b0[3], b0[0]:b0[2]] = np.where(text < 100, text, frames[0, b0[1]:b0[3], b0[0]:b0[2]])   # the glyph in front
-    p = _box_prop("Sale", (b0[0], 160, b0[2] + 52, 220), frames, 0, 7, 8)
-    m = _glyph_mask([fragment("t1", p, (640, 360))], frames, plate, 0, np.float32([32, 32, 32]))
-    glyph = text[..., 0] < 100
-    assert m[b0[1]:b0[3], b0[0]:b0[2]][glyph].mean() > 0.95 and not m[190, b0[2] + 30]
-
-
-def test_title_colour_is_its_glyphs_not_a_sprite_in_its_box():
-    """Round 2 (seeds 6, 8, 10): a solid sprite filling much of the title's box was the members' core colour and the
-    box's median foreground; the title's colour is the dominant colour of its thin foreground."""
-    frames, plate, (b0,) = _words(["Sale"], gap=0)
-    frames[:, 150:230, b0[2]:b0[2] + 80] = (20, 120, 200)   # a square bigger than the glyphs' ink
-    p = _box_prop("Sale", (b0[0], 150, b0[2] + 80, 230), frames, 0, 7, 8)
-    colour = _colour([fragment("t1", p, (640, 360))], frames, as_plate(plate), np.ones(8))
-    assert np.abs(colour - 32).max() < 12, colour

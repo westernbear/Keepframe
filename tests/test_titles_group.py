@@ -114,19 +114,3 @@ def test_flicker_piece_stays_out():   # R25 (ig1): a piece OCR saw in 1-2 frames
     assert fragment("t2", prop("Arrivals", 190, 140, 10, 11), SIZE) is None
     f = frags(("t1", prop("New", 100, 80)), ("t2", prop("Arrivals", 190, 140, 10, 12)))   # three frames do join
     assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]
-
-
-def test_piece_read_inside_a_still_title_joins_it():   # V5 (seed 4): "Arrivals" read apart over f55-59, a sprite in its canon
-    f = frags(("t1", prop("New Arrivals", 100, 260)), ("t2", prop("Arrivals", 190, 170, 50, 60, rgb=(60, 60, 60))))
-    assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]
-
-
-def test_short_cards_in_place_stay_separate():   # C2: a short card then the next in place is no piece of it
-    for a, b in (("Step 9", "Step 10"), ("STOP", "SCROLLING")):
-        f = frags(("t1", prop(a, 100, 120, 20, 30)), ("t2", prop(b, 100, 120, 31, 60)))
-        assert len(group_fragments(f, [], FPS)) == 2, (a, b)
-        assert len(group_fragments(f, [a, b], FPS)) == 2, (a, b)
-
-
-def test_pieces_of_a_cut_are_not_fragments():   # ig3: a track split at a cut is never merged back into one canon
-    assert fragment("t1", prop("You just speak", 100, 200, extra={"text_group": "cut_t1"}), SIZE) is None

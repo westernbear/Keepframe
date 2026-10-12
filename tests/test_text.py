@@ -2,7 +2,7 @@ import cv2, numpy as np, pytest
 from keepframe.ir.synth import make_synthetic_scene
 from keepframe.ir.tracks import element_bbox, eval_props
 from keepframe.analyze.composite import composite_scene
-from keepframe.analyze.text import TextBox, TextTrack, best_read, keep_text_track, ocr_frames, split_cuts, track_text, apply_copy, text_exclusion_mask, text_props
+from keepframe.analyze.text import TextBox, TextTrack, best_read, keep_text_track, ocr_frames, track_text, apply_copy, text_exclusion_mask, text_props
 
 class FakeOcr:
     """Returns the golden text box (jittered) so tracking can be tested without a real OCR model."""
@@ -153,16 +153,6 @@ def test_rapidocr_reads_synthetic_text(tmp_scene_dir):
     assert res and max(difflib.SequenceMatcher(None, t.lower(), gold.canonical.text.lower()).ratio() for t, _, _ in res) >= 0.6
 
 
-def test_canonical_frame_holds_the_whole_text():
-    """V1 (ig3 e1): a zoom made the box of a piece ("You just") the largest; the canon is taken where the read holds
-    the track's text, else the style and the font are fitted to fewer glyphs than the string they lay out."""
-    boxes = {f: TextBox(f, "You just speak", (20, 40, 320, 70), 0.9) for f in (0, 1)}
-    boxes.update({f: TextBox(f, "You just", (10, 20, 300, 100), 0.9) for f in (2, 3)})
-    _, _, cf, _, _ = text_props(TextTrack(1, boxes, "You just speak"), np.zeros((4, 120, 400, 3), np.uint8), (0, 0, 0), 4, 0,
-                                infer_font=False, full_opacity=False)
-    assert cf in (0, 1)
-
-
 def test_opacity_ignores_a_sprite_crossing_the_text():
     """V4 (seed 9 e3 at f39-44): a bright pill behind a dark title was its most contrasting decile, read 0.18 opaque."""
     plate = np.full((80, 300, 3), (40, 40, 80), np.uint8)
@@ -173,27 +163,3 @@ def test_opacity_ignores_a_sprite_crossing_the_text():
     track = TextTrack(1, {f: TextBox(f, "Weekend", (4, 14, 230, 70), 0.9) for f in (0, 1)}, "Weekend")
     raw, _, cf, _, _ = text_props(track, frames, (40, 40, 80), 2, 0, infer_font=False, plate=plate, full_opacity=False)
     assert cf == 0 and raw[1, 7] > 0.9, raw[:, 7]
-
-
-def test_a_word_not_in_yet_reveals_the_canon_start():
-    """ig3 f2-22: the read is the text's start ("You" of "You just speak") over several frames: the canon at the box's
-    scale, its start revealed to the box's width, not the whole line squeezed into it."""
-    boxes = {f: TextBox(f, "You", (20, 40, 80, 70), 0.9) for f in (0, 1, 2)}
-    boxes.update({f: TextBox(f, "You just speak", (20, 40, 220, 70), 0.9) for f in (3, 4)})
-    boxes[5] = TextBox(5, "You just", (20, 40, 140, 70), 0.9)   # one frame: OCR flicker, as measured
-    raw, _, cf, _, _ = text_props(TextTrack(1, boxes, "You just speak"), np.zeros((6, 120, 400, 3), np.uint8), (0, 0, 0), 6, 0,
-                                  infer_font=False, full_opacity=False)
-    assert cf in (3, 4) and raw[0, 2] == raw[0, 3] == 1.0 and raw[0, 0] == 120 and abs(raw[0, 8] - 0.3) < 1e-6, raw[0]
-    assert raw[5, 2] == 0.6 and raw[5, 8] == 1.0
-
-
-def test_a_track_joined_across_a_cut_is_split():
-    """ig3 t1 at f57: the box doubles in height and the reads stop showing the text or its start (a cut to a 2x
-    "just"): two pieces, one group (`cut_of`); OCR noise of one or two frames, or a word typed in, is no cut."""
-    boxes = {f: TextBox(f, "You just speak" if f > 2 else "You", (10, 40, 210, 70), 0.9) for f in range(8)}
-    boxes.update({f: TextBox(f, "just" if f < 10 else "ust", (0, 10, 150, 100), 0.9) for f in range(8, 13)})
-    a, b = split_cuts([TextTrack(4, boxes, "You just speak")])
-    assert (a.id, sorted(a.boxes), a.text, a.cut_of) == (4, list(range(8)), "You just speak", 4)
-    assert (b.id, sorted(b.boxes), b.text, b.cut_of) == (5, list(range(8, 13)), "just", 4)
-    noise = {f: TextBox(f, "You just speak" if f != 5 else "ust", (10, 40, 210, 70 if f != 5 else 100), 0.9) for f in range(10)}
-    assert len(split_cuts([TextTrack(1, noise, "You just speak")])) == 1
