@@ -660,9 +660,8 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     """(TextStyle, fill hex, info) for a text element from its matted texture (un-premultiplied RGBA, padding 0) and
     the frames / plate it was matted from. core: today's core-mask colour (hex), the tie-breaker when the fill
     measured may be the surroundings the matte kept (`core_fill`). info: stroke_px, cap_px, spread, unfilled (the
-    share of stroke centres the fill does not draw), centres, alpha (the fill's glyph coverage, unfaded; the
-    unfaded texture alpha where the fill does not draw the line, `unfilled` > UNFILLED: a second colour or a ramp it
-    missed, whose glyphs the font fit would lose, spreading the string over the rest, V2) and seconds."""
+    share of stroke centres the fill does not draw), centres, alpha (the fill's glyph coverage, unfaded) and
+    seconds."""
     t0 = time.perf_counter()
     rgba = np.asarray(rgba)
     meta = meta or TextureMeta(method="binary", frames=[], confidence=matting.METHOD_FACTOR["binary"])
@@ -752,11 +751,8 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
         conf *= 0.8
     style = TextStyle(fill=grad, fade=fade, effects=effects, stroke_ratio=round(sw / cap, 4) if cap > 0 and sw > 0 else None,
                       confidence=round(conf, 3))
-    # ponytail: a_n also holds what the matte kept besides the glyphs (a shadow, a glow, a sprite), read as glyph
-    # by the font fit; upgrade path: a_n less the effects' and the other layers' alpha.
-    cover = a_g if unfilled <= UNFILLED else a_n
     info = {"stroke_px": round(sw, 3), "cap_px": round(cap, 3), "spread": round(spread, 3),
-            "unfilled": round(unfilled, 3), "centres": glyph_centres(cover, text or ""), "alpha": cover,
+            "unfilled": round(unfilled, 3), "centres": glyph_centres(a_g, text or ""), "alpha": a_g,
             "seconds": round(time.perf_counter() - t0, 4)}
     return style, hexv, info
 

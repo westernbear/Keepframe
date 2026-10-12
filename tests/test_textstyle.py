@@ -327,7 +327,6 @@ def test_two_colour_line_takes_the_larger_glyph_area(tmp_path):
     assert float(delta_e(ramp, srgb_to_lab(np.float32(hex_to_rgb8(colour)))).min()) < 6
     assert _de(colour, "#c4dbf8") > 40
     assert info["unfilled"] > textstyle.UNFILLED and style.confidence < c.meta.confidence
-    assert info["alpha"].sum() > 0.9 * c.alpha.sum()   # V2 (ig3 e59, dx -103): the font fit reads the blue words too
 
 
 # --- real textures (the first Stage A clip run, R66: envato1, ig3, ig2) ---------------------------------------------
