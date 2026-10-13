@@ -43,6 +43,26 @@ def test_not_cuts_fade_slide_flash_zoom_build_swap():
         assert detect_boundaries(clip) == []
 
 
+def test_gradual_transitions_split_when_the_picture_is_replaced():
+    a, b = _card((240, 236, 228), "Every Build"), _card((228, 224, 212), "Clear Grow")   # one ground: only the cover splits
+
+    def blocks(base, k):   # four orange columns drop in over the picture
+        im = base.copy()
+        for c in range(4):
+            im[:int(np.clip((k - c) / 5, 0, 1) * 120), c * 50:(c + 1) * 50] = (255, 90, 40)
+        return im
+
+    def covered(x, y):
+        return np.stack([x] * 6 + [blocks(x, k) for k in range(1, 9)] + [blocks(y, k) for k in range(8, 0, -1)] + [y] * 6)
+
+    assert [(x.frame, x.transition) for x in detect_boundaries(covered(a, b))] == [(13, "transition")]
+    assert detect_boundaries(covered(a, a)) == []   # the same title comes back: the cover splits nothing
+    dark, light = _card((15, 15, 40), "Ship faster"), _card((240, 240, 245), "Plan today")
+    yy, xx = np.mgrid[:120, :200]
+    circle = [np.where(((xx - 100) ** 2 + (yy - 60) ** 2 < (15 * r) ** 2)[..., None], light, dark).astype(np.uint8) for r in range(1, 9)]
+    assert [x.transition for x in detect_boundaries(np.stack([dark] * 6 + circle + [light] * 6))] == ["transition"]
+
+
 def test_auto_scenes_split_at_cuts_and_merge_short_ones():
     a, b = _card((20, 20, 60), "Ship faster"), _card((240, 240, 245), "Plan today")
     scenes, transitions = auto_scenes(np.stack([a] * 8 + [b] * 10), start=10)

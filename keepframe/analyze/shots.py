@@ -107,7 +107,7 @@ def _structure(frame: np.ndarray) -> np.ndarray:
     return cv2.GaussianBlur(np.abs(g - cv2.GaussianBlur(g, (0, 0), 2.0)), (0, 0), 1.0)
 
 
-SCALES = 2.0 ** np.linspace(-1.5, 1.5, 13)   # a zoom step between 0.35x and 2.8x keeps its content
+SCALES = 2.0 ** np.linspace(-2.5, 2.5, 21)   # a zoom step between 0.18x and 5.7x keeps its content
 
 
 def _kept(a: np.ndarray, b: np.ndarray) -> float:
@@ -136,7 +136,9 @@ def _kept_pixels(a: np.ndarray, b: np.ndarray) -> float | None:
     content = np.abs(sa - _ground(a).astype(np.int16)).max(axis=2) > CONTENT_DE
     if content.sum() < 16:
         return None
-    same = (np.abs(sa - sb).max(axis=2) <= 2 * CONTENT_DE) & (np.abs(_structure(a) - _structure(b)) <= 4.0)
+    k = np.ones((5, 5), np.uint8)   # inside a wide flat region (a revealed bar) moving edges do not matter; on strokes they do
+    inside = cv2.erode(cv2.morphologyEx(content.astype(np.uint8), cv2.MORPH_OPEN, k), np.ones((3, 3), np.uint8)).astype(bool)
+    same = (np.abs(sa - sb).max(axis=2) <= 2 * CONTENT_DE) & ((np.abs(_structure(a) - _structure(b)) <= 4.0) | inside)
     return float((same & content).sum() / content.sum())
 
 
@@ -169,10 +171,69 @@ def _is_cut(a: np.ndarray, b: np.ndarray) -> bool:
     return _kept(a, b) < KEPT and _kept(b, a) < KEPT
 
 
+PAN_RESPONSE = 0.3                  # phase-correlation response above which consecutive frames are one picture shifted
+SCENE_SHARE = 0.01                  # a picture whose content covers less of the frame is still emerging, not a scene to leave
+TRANSITION_AREA = 0.1               # a transition on one ground changes a tenth of the frame; text animations change a few percent
+
+
+def _content_share(frame: np.ndarray) -> float:
+    small = _small(frame)
+    return float((np.abs(small.astype(np.int16) - _ground(frame).astype(np.int16)).max(axis=2) > CONTENT_DE).mean())
+
+
+def _covered(window: np.ndarray, before: np.ndarray, after: np.ndarray) -> bool:
+    """A frame of the window is an empty ground of a colour new to both sides: a cover hid both pictures."""
+    return any(_content_share(f) < SCENE_SHARE and _new_ground(before, f) and _new_ground(after, f) for f in window)
+
+
+def _changed(a: np.ndarray, b: np.ndarray) -> float:
+    """The share of the frame whose colour changes visibly from a to b."""
+    return float((np.abs(_small(a).astype(np.int16) - _small(b).astype(np.int16)).max(axis=2) > 2 * CONTENT_DE).mean())
+
+
+def _pan(frames: np.ndarray) -> bool:
+    """Frame to frame, the window is one picture translated (a pan or whip): every step's phase correlation is clear."""
+    g = [cv2.cvtColor(_small(f), cv2.COLOR_RGB2GRAY).astype(np.float32) for f in frames]
+    return all(cv2.phaseCorrelate(a, b)[1] >= PAN_RESPONSE for a, b in zip(g, g[1:]))
+
+
+def _windows(scores: list[float]) -> list[tuple[int, int]]:
+    """Runs of at least three changing frames (score ≥ FLOOR, one quiet frame bridged; runs less than a scene apart
+    joined), as (first, last) frame indices."""
+    moving = [i + 1 for i, s in enumerate(scores) if s >= FLOOR]
+    runs: list[list[int]] = []
+    for f in moving:
+        if runs and f - runs[-1][-1] <= 2:
+            runs[-1].append(f)
+        else:
+            runs.append([f])
+    runs = [r for r in runs if r[-1] - r[0] >= 2]
+    merged: list[list[int]] = []   # a hold shorter than a scene inside a transition (blocks covering the frame) joins it
+    for r in runs:
+        if merged and r[0] - merged[-1][-1] < MIN_SCENE_FRAMES:
+            merged[-1] += r
+        else:
+            merged.append(list(r))
+    return [(r[0], r[-1]) for r in merged]
+
+
+def _settled(scores: list[float], f: int, step: int) -> int:
+    """The first frame from f (going `step`) whose own changes are quiet, within a scene's length: the transition's
+    leftovers (a last block leaving) are not the picture on that side of it."""
+    for g in range(f, f + step * MIN_SCENE_FRAMES, step):
+        if 0 < g < len(scores) and max(scores[g - 1], scores[g]) < FLOOR / 3:
+            return g
+    return f
+
+
 def detect_boundaries(frames: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> list[Boundary]:
     """Hard cuts: a change score that stands out against its neighbours (a spike, not motion; repeated frames are no
     neighbours) between two pictures that `_is_cut`; a cut and its return within FLASH_FRAMES to the first ground is a
-    flash and splits nothing. Gradual transitions (wipes, dissolves) are not detected here."""
+    flash and splits nothing. Gradual transitions (a wipe, blocks, a dissolve, a zoom-blur): a run of changing frames,
+    not one picture panned, whose first bracketing frame holds a scene (a reveal out of an empty or barely opened ground
+    is not a transition) and whose brackets `_is_cut` with a new ground or TRANSITION_AREA of the frame changed; behind a
+    solid cover only the content decides. The boundary is the run's largest change; a transition that holds a cut keeps
+    the cut. shortcut: a step zoom past ~4x whose big side is cropped by the frame reads as a cut (mk544 f149)."""
     scores = frame_change_scores(frames)
     moving = [j for j, s in enumerate(scores) if s > DUPLICATE]
     cuts = []
@@ -184,7 +245,21 @@ def detect_boundaries(frames: np.ndarray, threshold: float = DEFAULT_THRESHOLD) 
     for a, b in zip(cuts, cuts[1:]):
         if b - a <= FLASH_FRAMES and not _new_ground(frames[a - 1], frames[b]) and _new_ground(frames[a - 1], frames[a]):
             flash |= {a, b}
-    return [Boundary(f, scores[f - 1], f, f, "cut") for f in cuts if f not in flash]
+    out = [Boundary(f, scores[f - 1], f, f, "cut") for f in cuts if f not in flash]
+    for a, z in _windows(scores):
+        if any(a - 1 <= c <= z + 1 for c in cuts):   # a cut inside (or a flash: the flash rule decided)
+            continue
+        before, after = frames[_settled(scores, a - 1, -1)], frames[_settled(scores, min(z + 1, len(frames) - 1), 1)]
+        if _content_share(before) < SCENE_SHARE or _pan(frames[a - 1:z + 2]):
+            continue
+        if _covered(frames[a:z + 1], before, after):   # blocks or a flash of colour hid everything: the content decides
+            if _same_picture(before, after) or (_kept_pixels(before, after) or 0.0) >= KEPT:
+                continue
+        elif not _is_cut(before, after) or not (_new_ground(before, after) or _changed(before, after) >= TRANSITION_AREA):
+            continue
+        peak = max(range(a, z + 1), key=lambda f: scores[f - 1])
+        out.append(Boundary(peak, scores[peak - 1], a, z, "transition"))
+    return sorted(out, key=lambda b: b.frame)
 
 
 def auto_scenes(frames: np.ndarray, start: int = 0) -> tuple[list[dict], list[dict]]:
