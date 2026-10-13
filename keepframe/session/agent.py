@@ -70,7 +70,8 @@ def _scene_summary(ctx: SessionContext) -> str:
     except Exception:  # noqa: BLE001
         log.exception("scene brief failed scene=%s version=%s", ctx.scene_id, ctx.version)
         return ""
-    if os.environ.get("KEEPFRAME_AGENT_VIEW") == "kfscript":   # P1: the kf-script view; the brief stays the default
+    # kf-script by default since the pre-registered A/B (docs/qa/kfscript/ab-test.md); KEEPFRAME_AGENT_VIEW=brief opts out
+    if os.environ.get("KEEPFRAME_AGENT_VIEW", "kfscript") == "kfscript":
         try:
             from ..ir.store import scene_dir
             from ..kfscript.emit import view

@@ -59,7 +59,7 @@ P3 extends the vocabulary: props `w`, `h`, `stroke_w`, mask edges, counter value
 
 - The kf-script page without vendor code, fonts or data URIs (asset names instead).
 - Budget `VIEW_CHARS` (initially 24 000, set from P1 measurements). Elements ranked by `ir.importance.rank_elements`; the lowest are dropped until under budget, then `<!-- omitted N: ids… -->`.
-- `KEEPFRAME_AGENT_VIEW=brief|kfscript` picks the agent's second system message (`session/agent._scene_summary`). The default stays `brief` until the A/B says otherwise (pre-registered rule in P1 Task 7).
+- `KEEPFRAME_AGENT_VIEW=brief|kfscript` picks the agent's second system message (`session/agent._scene_summary`). The default is `kfscript` since the pre-registered A/B on 32 fresh round-trip clips (`docs/qa/kfscript/ab-test.md`); `brief` opts out, and any view error falls back to the brief.
 
 ## Redesigned analysis (P3–P4)
 

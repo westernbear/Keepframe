@@ -37,7 +37,8 @@ class CaptureLLM:
         return AssistantReply(content="ok")
 
 
-def test_session_agent_sends_brief(tmp_path):
+def test_session_agent_sends_brief(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "brief")
     scene = _scene()
     init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [200, 100], "mode": "range", "range": [0, 29]}, scene)
     llm = CaptureLLM()
@@ -250,6 +251,7 @@ def test_session_agent_brief_respects_selected_version(tmp_path):
 
 
 def test_scene_summary_logs_brief_failure(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "brief")
     init_project(tmp_path, {"file": "ref.mp4"}, _scene())
     error = RuntimeError("brief formatting failed")
 
@@ -265,22 +267,26 @@ def test_scene_summary_logs_brief_failure(tmp_path, monkeypatch, caplog):
     assert records[0].exc_info[1] is error
 
 
-def test_agent_sends_kfscript_when_env(tmp_path, monkeypatch):
+def test_agent_sends_kfscript_by_default_and_brief_on_opt_out(tmp_path, monkeypatch):
     scene = _scene()
     init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [200, 100], "mode": "range", "range": [0, 29]}, scene)
-    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "kfscript")
+    monkeypatch.delenv("KEEPFRAME_AGENT_VIEW", raising=False)
     llm = CaptureLLM()
     SessionAgent(llm).turn(SessionContext(root=tmp_path, scene_id="s1"), "hi", [])
     text = llm.messages[1]["content"]
     assert text.startswith("<!-- kf-script v0 · ") and 'id="el-e1"' in text and 'S["e1"]' in text
     assert "moves right 160px" not in text
+    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "brief")
+    llm = CaptureLLM()
+    SessionAgent(llm).turn(SessionContext(root=tmp_path, scene_id="s1"), "hi", [])
+    assert "moves right 160px" in llm.messages[1]["content"]
 
 
 def test_kfscript_failure_falls_back_to_brief(tmp_path, monkeypatch):
     import keepframe.kfscript.emit as emit
     scene = _scene()
     init_project(tmp_path, {"file": "ref.mp4", "fps": 30, "size": [200, 100], "mode": "range", "range": [0, 29]}, scene)
-    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "kfscript")
+    monkeypatch.delenv("KEEPFRAME_AGENT_VIEW", raising=False)
     monkeypatch.setattr(emit, "view", lambda *a, **k: 1 / 0)
     llm = CaptureLLM()
     SessionAgent(llm).turn(SessionContext(root=tmp_path, scene_id="s1"), "hi", [])
