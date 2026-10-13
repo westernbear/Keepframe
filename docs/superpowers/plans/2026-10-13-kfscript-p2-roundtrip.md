@@ -90,9 +90,9 @@ Kinds: `kinetic_title` (word/glyph stagger through a mask, reversed exit); `logo
 
 ## Task 6: baseline (controller)
 
-- [ ] 8 kinds × seed 1 (+ seeds 2–3 if time) + mk571 gold → `docs/qa/kfscript/p2-baseline.{json,md}` and sheets, with commit, timings and the read → measurement → render table.
-- [ ] A rerun with `--reuse` gives identical pages, truth and metrics.
-- [ ] Review; push.
+- [x] 8 kinds × seed 1 (seeds 2–3 not run) + mk571 gold → `docs/qa/kfscript/p2-baseline.{json,md}` and sheets, with commit, timings and the read → measurement → render table.
+- [x] A rerun with `--reuse` gives identical pages, truth and metrics.
+- [x] Review; push.
 
 ## Time budget
 

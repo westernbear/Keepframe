@@ -63,9 +63,9 @@
 
 ## Task 0: rules, spec, plans, disk, baseline (controller)
 
-- [ ] `CLAUDE.md`, the spec and the five plans committed and pushed.
-- [ ] Analysed projects copied to `eval/kf/` without `stages/*.pkl`, `frames.npy`, `plate_frames.npy`, `analysis/`; `project.json` sources point at `eval/refs/`.
-- [ ] Fast-suite baseline recorded in `docs/qa/kfscript/p1.md`.
+- [x] `CLAUDE.md`, the spec and the five plans committed and pushed.
+- [x] Analysed projects copied to `eval/kf/` without `stages/*.pkl`, `frames.npy`, `plate_frames.npy`, `analysis/`; `project.json` sources point at `eval/refs/`.
+- [x] Fast-suite baseline recorded in `docs/qa/kfscript/p1.md`.
 - [ ] Eval clips: the user uploads ig1–ig3, envato1 to `eval/clips/`; clip gates are "not run" until then.
 
 ## Task 1: template hook
@@ -151,9 +151,9 @@ def emit_page(scene, scene_dir, out, *, fonts=None) -> Path
 
 ## Task 8: final run (controller)
 
-- [ ] Fast suite (no new failures vs Task 0) and the touched browser tests.
-- [ ] `docs/qa/kfscript/p1.md`: parity, fidelity table, chars, A/B results with caveats, the read → measurement → render table for mk571.
-- [ ] Review the whole diff; push.
+- [x] Fast suite (no new failures vs Task 0) and the touched browser tests.
+- [x] `docs/qa/kfscript/p1.md`: parity, fidelity table, chars, A/B results with caveats, the read → measurement → render table for mk571.
+- [x] Review the whole diff; push.
 
 ## Time budget
 

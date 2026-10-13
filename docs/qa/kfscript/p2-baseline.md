@@ -86,6 +86,11 @@ The read was done from contact sheets of each source video (frame numbers burned
 
 Read ↔ measurement disagreements on the synthetic pages: none after the template fixes. The truth is the page, so a remaining disagreement would be a read error. On mk571 the P1 corrections stand (3 of 8 events were wrong in the read).
 
+## Tests
+
+- Fast suite after P2: 2899 passed, 7 failed, 2 skipped (23 min). The 7 are the base commit's environment failures listed in `p1.md` (`litellm` is not installed; one 20 s timing budget). No new failures.
+- Browser and touched tests, run sequentially so load cannot time out Playwright: 55 passed. They cover `test_kfscript_browser`, `_synth`, `_gold`, `_diff`, `test_roundtrip`, `test_ab_views`, `test_composite::test_compositor_matches_browser`, `test_glyph_reveal`, `test_perspective`, `test_renderer` and `test_composer`.
+
 ## Confirmation A/B on fresh clips (P1's switch condition)
 
 `scripts/ab_views.py synth-gold` + `packets` on the eight round-trip analyses → `ab-synth/`. Questions:
