@@ -344,7 +344,24 @@ def best_read(reads: list[str]) -> str:
     common = counts.most_common(READ_CANDIDATES)
     cands = [c for c, n in common if n >= 2] or [c for c, _ in common]
     best = max(cands, key=lambda c: (sum(n * read_cover(r, c) for r, n in counts.items()), counts[c]))
-    return max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
+    best = max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
+    return _drop_caret(best, counts)
+
+
+CARET = set("|li1!")   # casefolded: | l I 1 ! i
+
+
+def _drop_caret(best: str, reads) -> str:
+    """A blinking caret rides at the end of a typed line: OCR reads it as a trailing l / I / | on the growing prefixes
+    ("Shipl", "Ship cl"), and `read_cover` keeps the longest read, caret included. Two distinct reads that end in a
+    caret-like character after a proper prefix of the line, and are not themselves a prefix of it ("Hel" of "Hello"
+    is), mark it: the line drops its last character."""
+    b = _compact(best)
+    if len(b) < 2 or b[-1] not in CARET:
+        return best
+    riding = {c for r in reads if len(c := _compact(r)) >= 2 and c[-1] in CARET and len(c) < len(b)
+              and b[:-1].startswith(c[:-1]) and not b.startswith(c)}
+    return best.rstrip()[:-1].rstrip() if len(riding) >= 2 else best
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
