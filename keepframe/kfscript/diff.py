@@ -87,7 +87,8 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
         # fragments: IR elements with at least half their box inside the truth box; pieces: the same over its life
         frags = sorted(_inside(irs, mids[r], tbox[r]))
         a, z = e["visible"]
-        pieces = sorted(set().union(*(_inside(irs, int(f), e["boxes"][str(int(f))]) for f in {a, z, mids[r], *np.linspace(a, z, 5).round()})))
+        life = {a, z, mids[r], *range(a, z + 1, max(1, (z - a) // 40))}   # ≤ 40 samples: short-lived pieces count too
+        pieces = sorted(set().union(*(_inside(irs, f, e["boxes"][str(f)]) for f in life)))
         row = {"id": e["id"], "kind": e["kind"], "match": None, "iou": round(float(M[r].max()), 3) if irs else 0.0,
                "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags], "pieces": len(pieces),
                "piece_ids": [irs[i][0].id for i in pieces]}
