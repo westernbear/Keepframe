@@ -633,6 +633,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
     raw = np.full((n_frames, 9), np.nan)
+    full_text = _compact(track.text)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
         px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate, col))
@@ -640,10 +641,12 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
             opacity = opacity_against_plate(px, bg_px, col)
-        # A reveal clips the full texture; shrinking sx too would clip twice.
-        x = x0 + cw / 2 if reveal else (x0 + x1) / 2
-        sx = 1.0 if reveal else (x1 - x0) / cw
-        fraction = float(np.clip((x1 - cb[0]) / cw, 0, 1)) if reveal else 1.0
+        # A reveal clips the full texture from its own left edge while the read still grows (shrinking sx too would
+        # clip twice); once the whole string reads, the box is the text (a shrink after the build is a scale).
+        grows = reveal and _compact(b.text) != full_text and full_text.startswith(_compact(b.text))
+        x = x0 + cw / 2 if grows else (x0 + x1) / 2
+        sx = 1.0 if grows else (x1 - x0) / cw
+        fraction = float(np.clip((x1 - x0) / cw, 0, 1)) if grows else 1.0
         raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None

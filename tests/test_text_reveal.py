@@ -220,14 +220,16 @@ def test_full_width_text_and_ocr_shapes_have_no_reveal_or_lost_motion():
         assert raw[0, 0] == 70 and raw[0, 2] == 0.5
 
 
-def test_reveal_fraction_is_clipped_to_zero_and_one():
+def test_reveal_grows_from_its_own_left_edge_and_a_full_read_scales():
     frames = np.zeros((3, 80, 260, 3), np.uint8)
     track = _track(1, "Build", 0, 2, (100, 20, 200, 50))
     track.reveal = True
-    track.boxes[0].bbox = (20, 20, 40, 50)
-    track.boxes[2].bbox = (210, 20, 240, 50)
+    track.boxes[0] = TextBox(0, "Bu", (110, 20, 150, 50), 0.6)   # growing, its left edge drifted
+    track.boxes[2].bbox = (125, 27, 175, 43)                     # the whole string, shrinking about its centre
     raw, _, _, _, _ = text_module.text_props(track, frames, (255, 255, 255), 3, 0, infer_font=False)
-    np.testing.assert_array_equal(raw[:, 8], [0.0, 1.0, 1.0])
+    np.testing.assert_allclose(raw[:, 8], [0.4, 1.0, 1.0])
+    np.testing.assert_allclose(raw[0, [0, 2]], [160, 1.0])   # left edge 110 + cw/2, clipped at 150: the box's right edge
+    np.testing.assert_allclose(raw[2, [0, 2, 3]], [150, 0.5, 16 / 30])
 
 
 def test_region_rerun_keeps_full_reveal_exclusion_during_ocr_gaps(tmp_path, monkeypatch):
