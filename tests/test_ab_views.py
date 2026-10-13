@@ -62,8 +62,8 @@ def test_synth_gold_from_roundtrip(tmp_path):
         {"id": "bg", "role": "background", "kind": "shape"}, {"id": "name", "role": "brand_name", "kind": "text"},
         {"id": "b0", "role": "bubble", "kind": "shape"}, {"id": "b1", "role": "bubble", "kind": "shape"},
         {"id": "url", "role": "url", "kind": "text"}]}))
-    rows = [{"id": "bg", "fragment_ids": ["e0"]}, {"id": "name", "fragment_ids": ["e3", "e4"]}, {"id": "b0", "fragment_ids": ["e5"]},
-            {"id": "b1", "fragment_ids": ["e6"]}, {"id": "url", "fragment_ids": []}]
+    rows = [{"id": "bg", "piece_ids": ["e0"]}, {"id": "name", "piece_ids": ["e3", "e4"]}, {"id": "b0", "piece_ids": ["e5"]},
+            {"id": "b1", "piece_ids": ["e6"]}, {"id": "url", "piece_ids": []}]
     (tmp_path / "metrics.json").write_text(json.dumps({"cases": [{"name": "logo_sting-1", "kind": "logo_sting", "diff": {"rows": rows}},
                                                                  {"name": "mk571", "kind": "gold", "diff": {"rows": []}}]}))
     g = ab_views.synth_gold(tmp_path)

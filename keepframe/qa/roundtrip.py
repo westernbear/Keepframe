@@ -74,7 +74,7 @@ def _gold(out: Path, name: str, clip: Path, root: Path) -> dict:
         t0 = time.perf_counter()
         analyze(clip, 0, truth["frames"] - 1, root, AnalyzeOptions(generate_3d=False))
         seconds = time.perf_counter() - t0
-    probe_boxes(page, truth)
+    probe_boxes(page, truth, frames=False)
     (out / "cases").mkdir(parents=True, exist_ok=True)
     (out / "cases" / f"{name}.truth.json").write_text(json.dumps(truth, indent=1))
     return _measure(out, name, page, root, truth, seconds)
@@ -87,12 +87,12 @@ def _fmt(v, nd=4) -> str:
 def _summary(m: dict) -> str:
     lines = ["# kf-script round trip", "", f"Gate: kf_parity ≤ {ROUNDTRIP_GATES['kf_parity']} on every case → **{'pass' if m['passed'] else 'FAIL'}**. "
              "Everything else is recorded (P2 baseline; P3/P4 must beat it).", "",
-             "| Case | Scenes | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Text | ΔE | Centre px | Visible err f | Structure found / missed / unsupported | DL ratio | Analyse s |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| Case | Scenes | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Pieces | Text | ΔE | Centre px | Visible err f | Structure found / missed / unsupported | DL ratio | Analyse s |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in m["cases"]:
         d, s = r["diff"], r["diff"]["structure"]
         lines.append(f"| {r['name']} | {r['scenes']} | {_fmt(r['l1_page'])} | {_fmt(r['l1_recon'])} | {_fmt(r['l1_kf'])} | {r['kf_parity']:.6f} | "
-                     f"{d['truth_elements']} / {d['ir_elements']} | {_fmt(d['matched_rate'], 2)} | {_fmt(d['fragments_mean'], 2)} | "
+                     f"{d['truth_elements']} / {d['ir_elements']} | {_fmt(d['matched_rate'], 2)} | {_fmt(d['fragments_mean'], 2)} | {_fmt(d['pieces_mean'], 2)} | "
                      f"{_fmt(d['text_ratio'], 2)} | {_fmt(d['colour_de'], 1)} | {_fmt(d['centre_px'], 1)} | {_fmt(d['visible_err'], 1)} | "
                      f"{len(s['found'])} / {len(s['missed'])} / {len(s['unsupported'])} | {_fmt(d['dl_ratio'], 2)} | {_fmt(r['analyse_seconds'], 0)} |")
     return "\n".join(lines) + "\n"

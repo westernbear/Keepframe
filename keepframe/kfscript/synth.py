@@ -315,9 +315,10 @@ def _clip(box, size) -> list[float]:
             round(min(max(x1, 0), size[0]), 1), round(min(max(y1, 0), size[1]), 1)]
 
 
-def probe_boxes(page: Path, truth: dict) -> np.ndarray:
+def probe_boxes(page: Path, truth: dict, frames: bool = True) -> np.ndarray | None:
     """Fill truth["elements"][*]["boxes"] (clipped to the stage) and narrow "visible" to frames with area on the stage,
-    probing the page through window.__bbox. Returns the rendered frames (uint8)."""
+    probing the page through window.__bbox. Returns the rendered frames (uint8) unless `frames` is False (a 1080p gold
+    page's 482 frames are 3 GB)."""
     import tempfile
     from ..ir.schema import Background, Canonical, Element, Scene
     from ..render.renderer import load_frame, render
@@ -327,14 +328,14 @@ def probe_boxes(page: Path, truth: dict) -> np.ndarray:
                  elements=[Element(id=i, kind="sprite", visible=(0, n - 1), canonical=Canonical(width=1, height=1)) for i in ids])
     with tempfile.TemporaryDirectory(prefix="keepframe-truth-") as td:
         res = render(page, stub, Path(td), probe=True)
-        frames = np.stack([(load_frame(res.frames_dir / f"f_{i:05d}.png") * 255).round().astype(np.uint8) for i in range(n)])
+        out = np.stack([(load_frame(res.frames_dir / f"f_{i:05d}.png") * 255).round().astype(np.uint8) for i in range(n)]) if frames else None
     for e in truth["elements"]:
         a, b = e["visible"]
         boxes = {f: _clip(res.bboxes[e["id"]][f], size) for f in range(a, b + 1)}
         on = [f for f, x in boxes.items() if x[2] > x[0] and x[3] > x[1]]
         e["visible"] = [on[0], on[-1]] if on else [a, a - 1]
         e["boxes"] = {str(f): boxes[f] for f in on}
-    return frames
+    return out
 
 
 def render_template(kind: str, seed: int, out: Path) -> tuple[Path, Path]:

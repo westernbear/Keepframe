@@ -29,7 +29,7 @@ T = _truth(("title", "text", (100, 100, 500, 180), (0, 59), "Ship faster"), ("ca
 def test_identity_perfect():
     d = diff(T, [(_scene(_el("e1", (100, 100, 500, 180), (0, 59), "Ship faster", glyphs=True), _el("e2", (600, 300, 900, 500), (10, 59))), 0)])
     assert d["matched_rate"] == 1 and d["text_ratio"] == 1 and d["colour_de"] == 0 and d["centre_px"] == 0 and d["visible_err"] == 0
-    assert [r["match"] for r in d["rows"]] == ["e1", "e2"] and d["over_split"] == 0
+    assert [r["match"] for r in d["rows"]] == ["e1", "e2"] and d["over_split"] == 0 and d["pieces_mean"] == 1
     assert d["structure"] == {"found": ["typing"], "missed": [], "unsupported": ["stagger"]}
 
 
@@ -66,3 +66,12 @@ def test_pop_and_drift_found_on_tracks():
     assert diff(t, [(_scene(mark, url), 0)])["structure"]["found"] == ["pop", "drift"]
     url.tracks["y"] = Track(keys=[Keyframe(t=0, v=420), Keyframe(t=30, v=405)])   # moves up: not the declared drift
     assert diff(t, [(_scene(mark, url), 0)])["structure"]["missed"] == ["drift"]
+
+
+def test_pieces_over_life():
+    # the title is one element early and another late (a temporal split): one fragment at mid, two pieces over its life
+    early, late = _el("a", (100, 100, 500, 180), (0, 20), "Ship faster", glyphs=True), _el("b", (100, 100, 500, 180), (21, 59), "Ship faster")
+    d = diff(T, [(_scene(early, late), 0)])
+    title = d["rows"][0]
+    assert title["fragments"] == 1 and title["pieces"] == 2 and title["piece_ids"] == ["a", "b"]
+    assert d["structure"]["found"] == ["typing"]   # the reveal lives on the early piece

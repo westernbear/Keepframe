@@ -23,7 +23,8 @@ def _span(e, prop: str) -> float:
     return keys[-1].v - keys[0].v if keys else 0.0
 
 
-# Structure the IR already expresses, seen on the IR elements inside the targets (half the declared move counts).
+# Structure the IR already expresses, seen on the IR elements inside the targets over their life (half the declared
+# move counts).
 FOUND = {"typing": lambda els, p: any(e.canonical.glyphs for e in els),
          "pop": lambda els, p: any("sx" in e.tracks and e.tracks["sx"].keys[0].v < 0.5 <= _span(e, "sx") for e in els),
          "drift": lambda els, p: any(_span(e, p["axis"]) * p["px"] >= 0.5 * p["px"] ** 2 for e in els)}
@@ -52,6 +53,11 @@ def _ir_box(el, start, scene: Scene, f: int):
     return b if _area(b) > 0 else None
 
 
+def _inside(irs, f: int, tb) -> set[int]:
+    """Indices of IR elements visible at f with at least half their box inside the truth box tb."""
+    return {i for i, (el, start, sc) in enumerate(irs) if (b := _ir_box(el, start, sc, f)) and _inter(b, tb) >= 0.5 * _area(b)}
+
+
 def _de(a: str, b: str) -> float:
     return float(delta_e(srgb8_to_lab(np.array(hex_to_rgb8(a))), srgb8_to_lab(np.array(hex_to_rgb8(b)))))
 
@@ -78,10 +84,13 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
                 match[r] = c
     rows, texts, colours, centres, vis = [], [], [], [], []
     for r, e in enumerate(tels):
-        # fragments: IR elements with at least half their box inside the truth box
-        frags = [i for i, b in enumerate(boxes[r]) if b and _inter(b, tbox[r]) >= 0.5 * _area(b)]
+        # fragments: IR elements with at least half their box inside the truth box; pieces: the same over its life
+        frags = sorted(_inside(irs, mids[r], tbox[r]))
+        a, z = e["visible"]
+        pieces = sorted(set().union(*(_inside(irs, int(f), e["boxes"][str(int(f))]) for f in {a, z, mids[r], *np.linspace(a, z, 5).round()})))
         row = {"id": e["id"], "kind": e["kind"], "match": None, "iou": round(float(M[r].max()), 3) if irs else 0.0,
-               "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags]}
+               "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags], "pieces": len(pieces),
+               "piece_ids": [irs[i][0].id for i in pieces]}
         c = match.get(r)
         if c is not None:
             el, start, _ = irs[c]
@@ -105,12 +114,13 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
         if s["ir"] != "now" or s["type"] not in FOUND:
             structure["unsupported"].append(s["type"])
             continue
-        inside = [els[i] for t in s["targets"] if t in by_id for i in by_id[t]["fragment_ids"]]
-        structure["found" if FOUND[s["type"]](inside, s.get("params", {})) else "missed"].append(s["type"])
+        over_life = [els[i] for t in s["targets"] if t in by_id for i in by_id[t]["piece_ids"]]
+        structure["found" if FOUND[s["type"]](over_life, s.get("params", {})) else "missed"].append(s["type"])
     n = len(tels)
     return {"truth_elements": n, "ir_elements": len(irs), "matched": len(match), "matched_rate": round(len(match) / n, 4) if n else None,
             "fragments_mean": _mean([row["fragments"] for row in rows if row["fragments"]]),
-            "over_split": sum(row["fragments"] > 1 for row in rows), "text_ratio": _mean(texts), "colour_de": _mean(colours),
+            "over_split": sum(row["fragments"] > 1 for row in rows), "pieces_mean": _mean([row["pieces"] for row in rows if row["pieces"]]),
+            "text_ratio": _mean(texts), "colour_de": _mean(colours),
             "centre_px": _mean(centres), "visible_err": _mean(vis), "structure": structure,
             "shots": {"truth": len(truth.get("shots", [])), "ir_scenes": len(scenes)},
             "dl_ratio": round(view_chars / truth_chars, 3) if view_chars and truth_chars else None, "rows": rows}

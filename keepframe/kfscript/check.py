@@ -19,12 +19,13 @@ def fidelity(root: Path, scene_id: str, html: Path, *, every: int = 4, max_frame
     root = Path(root)
     scene, _ = current_scene(root, scene_id)
     frames = list(range(0, scene.frames, every))[:max_frames]
-    src = _source_frames(root, scene_id, frames)
+    # uint8 at once: float32 source frames of a 1080p clip are 25 MB each
+    src = {f: v.round().clip(0, 255).astype(np.uint8) for f, v in _source_frames(root, scene_id, frames).items()}
     frames = [f for f in frames if f in src]
     with tempfile.TemporaryDirectory(prefix="keepframe-kf-") as td:
         res = render(Path(html), scene, Path(td), frames=frames, probe=False)
         got = [(load_frame(res.frames_dir / f"f_{i:05d}.png") * 255).round().astype(np.uint8) for i in range(len(frames))]
-    want = [src[f].round().clip(0, 255).astype(np.uint8) for f in frames]
+    want = [src[f] for f in frames]
     pairs = [compare_frames(w, g) for w, g in zip(want, got)]
     l1 = [p[0] for p in pairs]
     worst = int(np.argmax(l1))
