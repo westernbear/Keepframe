@@ -127,6 +127,8 @@ Disagreements, not resolved here:
 ## Limits
 
 - The answers come from a proxy model (Sonnet subagents); the production model has no credentials in this container. When it does, `scripts/ab_views.py run` re-asks the same packets.
-- The clips are synthetic round-trip templates, not the eval clips (ig1–ig3, envato1), which are still to be uploaded.
+- The clips are synthetic round-trip templates, not the eval clips (ig1–ig3, envato1).
+  - On those real clips (`clips.md`), the kf-script view reaches its 48 000-character budget. It keeps motion for only 8–25 elements, against 40 in the brief.
+  - So this result does not cover dense real clips. A real-clip A/B is still to be run.
 - **Cost.** The kf-script view is longer. The median is 19 228 characters against the brief's 2 777 (×6.9); the largest is 47 690 against 8 122.
 - **Rule.** Any later confirmation uses seeds ≥ 6 (pre-registered); seeds 2–5 are not re-run.

@@ -1,0 +1,244 @@
+{
+ "machine": "cloud container, 4 CPU, 15 GB RAM, no GPU, Chromium 1194",
+ "commit": "78e9bc9",
+ "inputs": {
+  "clips": {
+   "envato1": {
+    "size": [
+     2560,
+     1440
+    ],
+    "fps": "60000/1001",
+    "frames": 3186
+   },
+   "ig1": {
+    "size": [
+     1916,
+     1080
+    ],
+    "fps": "30/1",
+    "frames": 3691
+   },
+   "ig2": {
+    "size": [
+     1920,
+     1080
+    ],
+    "fps": "60/1",
+    "frames": 900
+   },
+   "ig3": {
+    "size": [
+     1920,
+     1080
+    ],
+    "fps": "30/1",
+    "frames": 642
+   }
+  },
+  "window": "source frames 0-149",
+  "gate": "keepframe gate-m2-real --clips eval/clips --out eval/out/clips-78e9bc9 --max-frames 150 --render-check",
+  "kf": "per scene: emit_page + kfscript.check.fidelity (every 4th frame), compose page for parity"
+ },
+ "context_round2_final_2026-10-06": {
+  "envato1": [
+   0.0674,
+   0.0791
+  ],
+  "ig1": [
+   0.0402,
+   0.0455
+  ],
+  "ig2": [
+   0.0646,
+   0.0712
+  ],
+  "ig3": [
+   0.0183,
+   0.0228
+  ],
+  "_cols": "mean_l1, render_l1; other code, context only"
+ },
+ "rows": [
+  {
+   "clip": "envato1.mp4",
+   "frames": 150,
+   "size": [
+    2560,
+    1440
+   ],
+   "live_action": null,
+   "elements": 55,
+   "kinds": {
+    "sprite": 47,
+    "text": 8
+   },
+   "mean_l1": 0.06859271357456843,
+   "low_conf": 49,
+   "keep_on": 906,
+   "constraints": 916,
+   "seconds": 832.7,
+   "render_l1": 0.06826610664526621,
+   "render_frames": 15,
+   "messages": 16,
+   "messages_head": [
+    "text tracks reclassified as shapes: 31",
+    "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e18: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture"
+   ],
+   "kf": {
+    "s1": {
+     "frames": [
+      0,
+      149
+     ],
+     "elements": 55,
+     "l1_kf": 0.07221,
+     "worst_kf": [
+      0.1475,
+      144
+     ],
+     "l1_compose": 0.07222,
+     "parity": 5.8e-06,
+     "recon": 0.06859271357456843,
+     "view_chars": 47409
+    }
+   }
+  },
+  {
+   "clip": "ig1.mp4",
+   "frames": 150,
+   "size": [
+    1916,
+    1080
+   ],
+   "live_action": null,
+   "elements": 101,
+   "kinds": {
+    "text": 43,
+    "sprite": 58
+   },
+   "mean_l1": 0.030549590879430374,
+   "low_conf": 69,
+   "keep_on": 3461,
+   "constraints": 3461,
+   "seconds": 547.6,
+   "render_l1": 0.03196194190531969,
+   "render_frames": 15,
+   "messages": 48,
+   "messages_head": [
+    "text tracks reclassified as shapes: 31",
+    "e14: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e14: font not matched (scene work cap reached); kept sans-serif"
+   ],
+   "kf": {
+    "s1": {
+     "frames": [
+      0,
+      149
+     ],
+     "elements": 101,
+     "l1_kf": 0.03786,
+     "worst_kf": [
+      0.2587,
+      24
+     ],
+     "l1_compose": 0.03787,
+     "parity": 5.4e-06,
+     "recon": 0.030549590879430374,
+     "view_chars": 44596
+    }
+   }
+  },
+  {
+   "clip": "ig2.mp4",
+   "frames": 150,
+   "size": [
+    1920,
+    1080
+   ],
+   "live_action": null,
+   "elements": 29,
+   "kinds": {
+    "sprite": 16,
+    "text": 13
+   },
+   "mean_l1": 0.04566448933755358,
+   "low_conf": 27,
+   "keep_on": 645,
+   "constraints": 648,
+   "seconds": 596.1,
+   "render_l1": 0.05142726165552934,
+   "render_frames": 15,
+   "messages": 15,
+   "messages_head": [
+    "text tracks reclassified as shapes: 21",
+    "e2: 2741 px of its texture under text are filled in (synthetic)",
+    "e22: matted texture at low confidence (0.00); it replaced the binary texture"
+   ],
+   "kf": {
+    "s1": {
+     "frames": [
+      0,
+      149
+     ],
+     "elements": 29,
+     "l1_kf": 0.04742,
+     "worst_kf": [
+      0.1312,
+      40
+     ],
+     "l1_compose": 0.04744,
+     "parity": 1.64e-05,
+     "recon": 0.04566448933755358,
+     "view_chars": 47754
+    }
+   }
+  },
+  {
+   "clip": "ig3.mp4",
+   "frames": 150,
+   "size": [
+    1920,
+    1080
+   ],
+   "live_action": null,
+   "elements": 63,
+   "kinds": {
+    "text": 7,
+    "sprite": 56
+   },
+   "mean_l1": 0.016387893911451103,
+   "low_conf": 34,
+   "keep_on": 655,
+   "constraints": 655,
+   "seconds": 208.1,
+   "render_l1": 0.023123905047153434,
+   "render_frames": 15,
+   "messages": 20,
+   "messages_head": [
+    "text tracks reclassified as shapes: 22",
+    "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e14: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture"
+   ],
+   "kf": {
+    "s1": {
+     "frames": [
+      0,
+      149
+     ],
+     "elements": 63,
+     "l1_kf": 0.02446,
+     "worst_kf": [
+      0.0679,
+      112
+     ],
+     "l1_compose": 0.02445,
+     "parity": 5e-07,
+     "recon": 0.016387893911451103,
+     "view_chars": 47846
+    }
+   }
+  }
+ ]
+}

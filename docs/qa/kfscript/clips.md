@@ -92,6 +92,81 @@ Read vs measurement:
 | ig2 | globe scene "holds, small drifts" | content drifts ≈ 544 px left over f63–104 | measurement (magnitude) |
 | ig3 | f57 "zoom in (camera push)" at 6 frames | one-frame change: a cut | measurement (timing) |
 
-## 3. IR and render
+## 3. IR and render (opened after section 1–2 were committed at `6ce4003`)
 
-*(added after the gate finished; see below)*
+**Runs.**
+- Gate: `keepframe gate-m2-real --clips eval/clips --out eval/out/clips-78e9bc9 --max-frames 150 --render-check` at `78e9bc9`. Cloud container: 4 CPU, 15 GB, no GPU, Chromium 1194. The analysis took 36 minutes for the four clips.
+- kf-script fidelity: for each scene, `emit_page` + `kfscript.check.fidelity` (every 4th frame), as in the round trip.
+- Rows: `clips.json`.
+
+| Clip | Elements (sprite / text) | mean_l1 (recon) | render_l1 (compose, every 10th f) | **L1 kf** (every 4th f) | worst kf frame | kf_parity | view: full / summaries | s | Context: round 2 final mean / render (other code) |
+|---|---|---|---|---|---|---|---|---|---|
+| envato1 | 55 (47 / 8) | 0.0686 | 0.0683 | **0.0722** | f144 (0.148) | 0.000006 | 14 / 41 | 833 | 0.0674 / 0.0791 |
+| ig1 | 101 (58 / 43) | 0.0305 | 0.0320 | **0.0379** | f24 (0.259) | 0.000005 | 8 / 93 | 548 | 0.0402 / 0.0455 |
+| ig2 | 29 (16 / 13) | 0.0457 | 0.0514 | **0.0474** | f40 (0.131) | 0.000016 | 19 / 10 | 596 | 0.0646 / 0.0712 |
+| ig3 | 63 (56 / 7) | 0.0164 | 0.0231 | **0.0245** | f112 (0.068) | 0.0000005 | 25 / 38 | 208 | 0.0183 / 0.0228 |
+
+- Every clip analyses as one scene, `s1` covering f0–149. No shot boundary was found: not envato1's cut at f140, ig2's cut at f59, ig3's cut at f57, nor ig1's wipe.
+- `kf_parity` ≤ 0.00002 everywhere (gate 0.001), so the kf-script page renders like compose.
+
+**kf-script view on real clips.** All four views reach the 48 000-character budget (44 596–47 846 chars). Only 8–25 elements keep markup and motion; the rest are one-line summaries "motion not shown". The kept ones are the main titles:
+- envato1: "B", "sull", "Build SaaSPromo", "ere"/"e"/"f";
+- ig1: "Every day.", "Every day, ideas are born", "inside your walls.", "And every day,";
+- ig2: "A Weekend Away";
+- ig3: "You just speak", "Your idea", "and it builts for you".
+
+The synthetic A/B clips had a median view of 19 228 chars, so the budget rarely bit there. **The A/B result does not cover clips this dense.** On ig1 the brief carries a motion summary for 40 elements; the kf-script view, for 8.
+
+### envato1
+
+| Item | Read | Measurement | IR | Render (kf page) |
+|---|---|---|---|---|
+| shots | one shot, cut at f140 | cut f140 (difference spike) | one scene. The new title starts at f141 as fragments "ere", "e", "f" (e44, e45, e49) | f144 is the worst frame (0.148): the pieces overlap and miss "ered fo" |
+| "Build" | one word, letters revealed one by one with blur, sliding in | slides left, ease-out f9–37, still f38, accelerating left f39–77 | **fragmented**: text "B" (e4, f11–68), text "sull" (e8, OCR of "uild", f18–40) and about 10 letter-sized sprites. e4's `x` keys follow the measured profile: 974 → 578 decelerating f11–32, flat, then 578 → 194 accelerating. The brief prints it as "moves left 781px linear" | f48 (0.099): "B" text plus sprite pieces of "uild", a stray stroke; ghost "Build" in the background video at f0 |
+| "<" chevron | enters f62, slides with "Build" | — | not identified as its own element (inside the moving sprites) | — |
+| "Build SaaS Promo" | one line; word focus Build → SaaS → Promo f84–102; whitens; shrinks f128–139 | width 1447 → 913 px (f111 → f135) **about a fixed centre** (cx 1284) | e37 "Build SaaSPromo" (space lost) plus duplicates e38 "Saas" and e40 "Promo" (#7c758a: the blurred word). **The shrink is modelled as `x` +358 px to the right, `reveal` 1 → 0.75 and opacity 0.98 → 0.52**, with no scale track | f100 (0.035): "Build SaaSPr…" cut by the reveal; ghost "Build Saa" in the background video |
+| glow | rises and falls; part of the background | luma 0.04 → 0.20 | background video **plus** about 8 near-full-frame gradient sprites (e1, e10, e13, e33, e53, e54) with rotations | glow shape differs (purple patches) |
+
+### ig1
+
+| Item | Read | Measurement | IR | Render |
+|---|---|---|---|---|
+| shots | dark scene, circle wipe f18–26, light scene | difference peak f25; luma 0.03 → 0.81 | one scene with a background video. **No element for the circle** | f24, the worst frame (0.259): the circle is missing |
+| "Every day," (dark) | white, word by word | line grows and re-centres: −470 px f1–23 | e1 "Every day." (comma read as a period), **colour #010005 (black)** on a white box; the growth is modelled as moves left 679 px + scale ×0.48 | f0 (0.072): a white box with black condensed "EVERY…", where the source has white text on dark |
+| "Every day, ideas are born / inside your walls." | words one at a time; "ideas" in a blue box that fades | — | e7 "Every day, ideas are born" (one string, from f25), e10 "ideas" #6677ea (the box, f28–32), e13 "inside your walls." (reveals left → right f55–60) | f48 (0.015): right string; bold "ideas" lost (one weight) |
+| UI cards | about 8 cards fly in f56–66, then drift | — | OCR texts of the cards, with misreads: "hhhh" (the bar chart), "Seomm", "What if wecreatea", "ashboard". Sprites for the card bodies. Several cards are **split in time** (e18/e68 "2d ago", e22/e67, e31/e66: one card, two elements) | f100 (0.019): cards in place, handwriting re-typeset in a sans font |
+| "And every day," / "too many of them" | built word by word f96–108 / f126–138 | — | e61 and e80 as whole strings from their first frame; the build is modelled as scale ×2.58 / ×2.51 | f100: the full "And every day," while the source shows "And every" |
+
+### ig2
+
+| Item | Read | Measurement | IR | Render |
+|---|---|---|---|---|
+| shots | scroll scene, cut f59, globe scene | cut f59 | one scene with a background video. The globe sprite e2 is **visible f0–149** (covered by full-frame sprites before f59) | — |
+| scrolling "A Weekend Away" | huge red text scrolls left | speed fast → slow → fast; ≈ −4 090 px f1–57 | text fragments "eel", "e", "ken", "n" (e5, e6, e8, e12), each moving left about 720–1 366 px linearly, plus sprites; **not grouped as one title** | f40, the worst frame (0.131): "e"/"eke" pieces; the page background is white where the source is a pink gradient |
+| title on the globe | types on letter by letter f59–84 | content drifts −544 px f63–104 | e20 "A Weekend Away" #ad0104 from f59 (entrance right). The type-on is modelled as **scale ×6.11** + left move 564 px (the drift magnitude agrees) | f100 (0.017) and f148 (0.010): close |
+| stickers | suitcase, "Lets Goooo", photos, "Party Time", green chip, plane | — | OCR "Gaaaaao", "Panty"/"Paintye"/"Tine"/"Time" (grouped as one text_fragments title "Time Time Panty Paintye"), "Visitor"; photos as sprites | stickers mostly present |
+
+### ig3
+
+| Item | Read | Measurement | IR | Render |
+|---|---|---|---|---|
+| shots | cut f57 (close-up), whip pans f87–122 and f123–149 | cut f57; pan peaks f102 and f128/133 | one scene, colour background #fdfefe | — |
+| "You just speak" | word by word; "speak" glitches (f36) and becomes a mic (f42) | re-centring shifts f9–14, f21–26 | e1 "You just speak" f2–73: **the string never loses "speak"**, and runs past the cut. The mic is read as "U" (e14) | f48 (0.010): "You just spe…" where the source shows "You just 🎤" + cursor; mic and cursor missing |
+| close-up and click | navy "just" and a pill with a mic; blue disc on click f58–68; waveform f69–90 | — | "1sr" (e23) and "ust" (e33): OCR of "just". Waveform bars as thin sprites (e26, e27, e29) f73–79; cursor and disc as sprites | f100 (0.029): **the white pill is missing**; pale mic |
+| "Your idea" | slides in with pan 1; letters light blue → navy f108–122 | pan ≈ −970 px, peak f102 | e49 "Your idea" #17325b f103–128, moves left 384 px, one colour | f112, the worst frame (0.068): letter spacing too tight ("Youridea"); the colour gradient is lost |
+| "and it builts for you" | word by word, light blue → black | pan 2 ≈ −1 300 px | e56 "and" + e59 "and it builts for you" (exact, including "builts"), #303030 | f148 (0.021): one grey, condensed |
+
+### Disagreements (none resolved here)
+
+1. **Shots.** No clip was split at its cut or wipe (f140, f59, f57, ig1's wipe f18–26), so a single scene spans two compositions. In ig2 a sprite is visible across the cut. ig1's circle is not an element.
+2. **Word-by-word and letter type-on builds** come out as scale and translation of the whole string; the string appears whole from its first frame (ig1 e1 ×0.48, e61 ×2.58, e80 ×2.51; ig2 e20 ×6.11). ig3's "speak" → mic swap is not in the IR.
+3. **A centred shrink becomes a slide plus a clip** (envato1 e37: `x` +358, `reveal` 0.75, no scale), where the measurement shows a fixed centre and width ×0.63.
+4. **Fragmented titles.** "Build" = "B" + "sull" + sprites; the scrolling "A Weekend Away" = 4 pieces, not grouped. Card texts are split in time (ig1).
+5. **Colours.** ig1's white-on-dark "Every day," is stored black on a white box. Colour gradients across words are one colour (ig3).
+6. **Background.** The glow (envato1) and the pink gradient (ig2) are split between the background video and big gradient sprites. The background video keeps ghost titles (envato1 f0, f100).
+7. **Agrees with measurement.**
+   - envato1 "B": two-phase motion (ease-out in, hold, accelerating out) in its keys.
+   - ig2 title drift (564 px vs 544 px measured).
+   - Entrance times at the cuts (f141 vs f140; f59 vs f59; ig3 "Your idea" f103 vs f102).
+   - Exact strings "A Weekend Away" and "and it builts for you".
+8. **View budget.** On these clips the kf-script view keeps motion for 8–25 elements; the rest are summaries without motion (see above).

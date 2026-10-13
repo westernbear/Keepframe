@@ -115,4 +115,4 @@ Read ↔ measurement disagreements on the synthetic pages: none after the templa
 ## Not done
 
 - Seeds 2–3 (the plan's optional extension). One seed per kind keeps the baseline at about 14 min. P3/P4 should add seeds when a kind's numbers move.
-- The eval clips (ig1–ig3, envato1) are still missing from `eval/clips/`; their gates were not run.
+- The eval clips (ig1–ig3, envato1) were missing during P2. They were downloaded and gated later: `clips.md`.
