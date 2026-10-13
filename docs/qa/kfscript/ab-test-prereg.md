@@ -32,6 +32,16 @@ Does the kf-script view help the session agent understand an analysed motion-gra
 - One attempt per packet. The answer is the first `{…}` object in that file; a missing or invalid answer scores 0.
 - The production model (`gpt-6.1-sol`) has no credentials in this container, so Sonnet is a proxy, as in P1 and P2.
 
+## Before the freeze (disclosed)
+
+- **Dev smoke run.** The seed-1 clips had been seen before, so this run only checked the harness (`ab-dev/`, at the final analysis and view code):
+  - comprehension: kf 94.0, brief 90.3, difference +3.75 [−0.81, +7.94];
+  - old question set: +5.56 [+1.32, +10.76];
+  - edit: kf 100, brief 89.5.
+
+  Nothing was tuned on its answers. One harness bug found there was fixed (`07d0012`): the "movement" golds now use the analysis's own tolerance (scale in pixels). It changed no dev question.
+- **Power.** The dev run's clip-clustered SE was ≈ 2.2 points at 8 clips, smaller than the confirmation run's 6.0 (more questions per clip). That gives ≈ 1.1 at 32 clips, so a true +3.75 would show with about 92 % power. If the spread is like the confirmation run's, power is the lower figure given below.
+
 ## Analysis and decision rule
 
 `scripts/ab_views.py score --dir docs/qa/kfscript/ab-test`. The interval statistic is the paired difference per question (kf-script − brief), with a 95 % bootstrap that resamples clips: 10 000 resamples, numpy seed 0. Questions within a clip are correlated (Miller 2024, arXiv 2411.00640).
