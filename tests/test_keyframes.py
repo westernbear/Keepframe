@@ -68,3 +68,16 @@ def test_a_hold_does_not_break_the_move_after_it():
     v = np.r_[np.full(10, 100.0), 101.9, np.linspace(101.9, 300, 20)]
     keys, err = reduce_curve(v, 0, 2.0)
     assert err <= 2.0 and np.abs(dense(Track(keys=keys), len(v)) - v).max() <= 2.0
+
+
+def test_scale_tolerance_is_in_pixels():
+    """A 40 px wide element whose measured width flickers by ±0.5 px (sx ±0.0125) holds; the same flicker on a 400 px
+    element (±5 px) is keyed."""
+    from keepframe.analyze.keyframes import tolerance
+    assert tolerance("sx", (20, 40)) == pytest.approx(0.05) and tolerance("sx", (20, 400)) == ERR["sx"] and tolerance("x", (20, 40)) == 2.0
+    rng = np.random.default_rng(2)
+    raw = np.tile([[100, 100, 1, 1, 0, 0, 0, 1]], (30, 1)).astype(float)
+    raw[:, 2] = 1.5 + rng.uniform(-0.0125, 0.0125, 30)
+    small, _ = tracks_from_raw(raw, 0, (20, 40))
+    big, _ = tracks_from_raw(raw, 0, (20, 400))
+    assert len(small["sx"].keys) == 1 and len(big["sx"].keys) > 1

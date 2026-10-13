@@ -651,7 +651,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         raw_full = fill_gaps(p["raw"])
         valid = np.flatnonzero(~np.isnan(raw_full[:, 0]))
         first, last = int(valid[0]), int(valid[-1])
-        tracks, fe = tracks_from_raw(raw_full[first:last + 1], first)
+        tracks, fe = tracks_from_raw(raw_full[first:last + 1], first, p["canon"].shape[:2])
         (sd / "assets").mkdir(parents=True, exist_ok=True)
         _write_replacing(sd / "assets" / f"{eid}.png",
                          lambda t: cv2.imwrite(str(t), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA)))

@@ -94,7 +94,15 @@ def fill_gaps(raw_full: np.ndarray) -> np.ndarray:
     return out
 
 
-def tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitError]:
+def tolerance(prop: str, size: tuple[int, int] | None = None) -> float:
+    """ERR, except scale given the canonical (h, w): a scale error may move an edge by half the position tolerance at
+    most (ERR["x"] / w), so a small element's box flicker is not keyed every frame."""
+    if size and prop in ("sx", "sy"):
+        return max(ERR[prop], ERR["x"] / max(size[1 if prop == "sx" else 0], 1))
+    return ERR[prop]
+
+
+def tracks_from_raw(raw: np.ndarray, first: int, size: tuple[int, int] | None = None) -> tuple[dict[str, Track], FitError]:
     tracks: dict[str, Track] = {}
     max_px, max_frames = 0.0, 0
     over_tolerance = np.zeros(len(raw), dtype=bool)
@@ -102,12 +110,13 @@ def tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitE
         col = raw[:, i]
         if np.isnan(col).all():
             continue
-        if np.abs(col - DEFAULTS[prop]).max() <= ERR[prop]:
+        tol = tolerance(prop, size)
+        if np.abs(col - DEFAULTS[prop]).max() <= tol:
             continue
-        keys, err = reduce_curve(col, first, ERR[prop])
+        keys, err = reduce_curve(col, first, tol)
         track = Track(keys=keys)
         tracks[prop] = track
-        over_tolerance |= np.abs(np.array([eval_track(track, first + j) for j in range(len(col))]) - col) > ERR[prop]
+        over_tolerance |= np.abs(np.array([eval_track(track, first + j) for j in range(len(col))]) - col) > tol
         if prop in ("x", "y"):
             max_px = max(max_px, err)
     run = longest = 0
