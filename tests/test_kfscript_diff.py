@@ -51,7 +51,7 @@ def test_dl_ratio_and_split_scenes():
     # the analysis split the clip at frame 30: the second scene's frames are offset, the card is still matched
     first, second = _scene(_el("e1", (100, 100, 500, 180), (0, 29), "Ship faster")), _scene(_el("e2", (600, 300, 900, 500), (0, 29)))
     d = diff(T, [(first, 0), (second, 30)], view_chars=500, truth_chars=2000)
-    assert d["dl_ratio"] == 0.25 and d["shots"] == {"truth": 1, "ir_scenes": 2}
+    assert d["dl_ratio"] == 0.25 and d["shots"] == {"truth": 1, "ir_scenes": 2, "boundaries": [30], "f1": 0.0}   # a split the truth has not
     card = d["rows"][1]
     assert card["match"] == "e2" and card["visible_err"] == 20   # IR 30–59 vs truth 10–59
 
@@ -66,6 +66,29 @@ def test_pop_and_drift_found_on_tracks():
     assert diff(t, [(_scene(mark, url), 0)])["structure"]["found"] == ["pop", "drift"]
     url.tracks["y"] = Track(keys=[Keyframe(t=0, v=420), Keyframe(t=30, v=405)])   # moves up: not the declared drift
     assert diff(t, [(_scene(mark, url), 0)])["structure"]["missed"] == ["drift"]
+
+
+def test_shot_f1():
+    from keepframe.kfscript.diff import shot_f1
+    cut = {"shots": [[0, 44], [45, 89]], "transitions": [{"type": "cut", "frames": [45, 45]}]}
+    assert shot_f1(cut, [45])["f1"] == 1 and shot_f1(cut, [46])["f1"] == 1 and shot_f1(cut, [48])["f1"] == 0
+    assert shot_f1(cut, [])["f1"] == 0 and shot_f1(cut, [20, 45])["f1"] == 0.667
+    wipe = {"shots": [[0, 43], [44, 89]], "transitions": [{"type": "wipe", "frames": [40, 48]}]}
+    assert shot_f1(wipe, [48])["f1"] == 1 and shot_f1(wipe, [39])["f1"] == 1 and shot_f1(wipe, [51])["f1"] == 0
+    assert shot_f1({"shots": [[0, 89]]}, [])["f1"] == 1
+
+
+def test_build_and_shrink_found_on_tracks():
+    t = _truth(("l1", "text", (100, 100, 500, 180), (0, 59), "Ship faster"),
+               structure=[{"type": "build", "targets": ["l1"], "params": {"unit": "word"}, "ir": "now"},
+                          {"type": "shrink", "targets": ["l1"], "params": {"scale": [1, 0.55]}, "ir": "now"}])
+    grown = _el("e1", (100, 100, 500, 180), (0, 59), "Ship faster")   # the build read as a growing box: neither
+    grown.tracks["sx"] = Track(keys=[Keyframe(t=0, v=0.4), Keyframe(t=20, v=1.0)])
+    assert diff(t, [(_scene(grown), 0)])["structure"]["missed"] == ["build", "shrink"]
+    typed = _el("e1", (100, 100, 500, 180), (0, 59), "Ship faster", glyphs=True)   # glyphs, then a shrink about its centre
+    typed.tracks.update(sx=Track(keys=[Keyframe(t=0, v=1.0), Keyframe(t=40, v=1.0), Keyframe(t=55, v=0.6)]),
+                        sy=Track(keys=[Keyframe(t=0, v=1.0), Keyframe(t=40, v=1.0), Keyframe(t=55, v=0.6)]))
+    assert diff(t, [(_scene(typed), 0)])["structure"]["found"] == ["build", "shrink"]
 
 
 def test_pieces_over_life():

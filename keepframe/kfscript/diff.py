@@ -23,11 +23,48 @@ def _span(e, prop: str) -> float:
     return keys[-1].v - keys[0].v if keys else 0.0
 
 
+def _rise(e, prop: str) -> float:
+    """The largest increase of `prop` along its keys (0 when it never rises)."""
+    vs = [k.v for k in e.tracks[prop].keys] if prop in e.tracks else []
+    return max((b - min(vs[:i + 1]) for i, b in enumerate(vs)), default=0.0)
+
+
+def _fall(e, prop: str) -> float:
+    """How far `prop` falls from its peak to its last key, as a share of the peak."""
+    vs = [k.v for k in e.tracks[prop].keys] if prop in e.tracks else []
+    return (max(vs) - vs[-1]) / max(vs) if vs and max(vs) > 0 else 0.0
+
+
+def _built(e) -> bool:
+    """Its text comes in step by step: glyph delays that spread, or a reveal rising to the full width."""
+    g, rv = e.canonical.glyphs, [k.v for k in e.tracks["reveal"].keys] if "reveal" in e.tracks else []
+    return bool(g and max(g.delays) - min(g.delays) >= 2) or bool(rv and min(rv) < 0.9 <= max(rv))
+
+
 # Structure the IR already expresses, seen on the IR elements inside the targets over their life (half the declared
-# move counts).
+# move counts). A build is not a growing box: no piece's scale rises by more than 0.2 while it comes in.
 FOUND = {"typing": lambda els, p: any(e.canonical.glyphs for e in els),
          "pop": lambda els, p: any("sx" in e.tracks and e.tracks["sx"].keys[0].v < 0.5 <= _span(e, "sx") for e in els),
-         "drift": lambda els, p: any(_span(e, p["axis"]) * p["px"] >= 0.5 * p["px"] ** 2 for e in els)}
+         "drift": lambda els, p: any(_span(e, p["axis"]) * p["px"] >= 0.5 * p["px"] ** 2 for e in els),
+         "build": lambda els, p: any(_built(e) for e in els) and not any(_rise(e, "sx") > 0.2 for e in els),
+         "shrink": lambda els, p: any(min(_fall(e, "sx"), _fall(e, "sy")) >= (1 - p["scale"][1]) / 2 for e in els)}
+
+
+def shot_f1(truth: dict, starts: list[int]) -> dict:
+    """Shot boundaries found vs declared: a truth boundary inside a declared transition matches an analysed scene start
+    anywhere in that transition (±1 frame), any other within ±1 frame; one match each."""
+    want = [s[0] for s in truth.get("shots", [])[1:]]
+    spans = [next(((t["frames"][0] - 1, t["frames"][1] + 1) for t in truth.get("transitions", [])
+                   if t["frames"][0] <= b <= t["frames"][1] + 1), (b - 1, b + 1)) for b in want]
+    got, hit = sorted(starts), 0
+    for lo, hi in spans:
+        m = next((g for g in got if lo <= g <= hi), None)
+        if m is not None:
+            got.remove(m); hit += 1
+    p = hit / (hit + len(got)) if hit + len(got) else 1.0
+    r = hit / len(want) if want else 1.0
+    return {"truth": len(want) + 1, "ir_scenes": len(starts) + 1, "boundaries": sorted(starts),
+            "f1": round(2 * p * r / (p + r), 3) if p + r else 0.0}
 
 
 def _area(b) -> float:
@@ -123,5 +160,6 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
             "over_split": sum(row["fragments"] > 1 for row in rows), "pieces_mean": _mean([row["pieces"] for row in rows if row["pieces"]]),
             "text_ratio": _mean(texts), "colour_de": _mean(colours),
             "centre_px": _mean(centres), "visible_err": _mean(vis), "structure": structure,
-            "shots": {"truth": len(truth.get("shots", [])), "ir_scenes": len(scenes)},
+            "shots": shot_f1(truth, [start for _, start in scenes[1:]]),
+            "keys_mean": _mean([sum(len(t.keys) for t in el.tracks.values()) for el, _, _ in irs]),
             "dl_ratio": round(view_chars / truth_chars, 3) if view_chars and truth_chars else None, "rows": rows}

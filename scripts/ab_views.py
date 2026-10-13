@@ -202,11 +202,12 @@ def packets(root: Path, out: Path) -> dict:
     gold = json.loads((out / "read_gold.json").read_text())
     (out / "packets").mkdir(parents=True, exist_ok=True)
     questions, index = {}, {}
-    for clip in [c for c in gold if not c.startswith("_")]:
-        scene, _ = current_scene(root / clip, "s1")
+    for clip in [c for c in gold if not c.startswith("_")]:   # a key "clip:sN" is one scene of a clip the analysis split
+        base, _, sid = clip.partition(":")
+        scene, _ = current_scene(root / base, sid or "s1")
         qs = auto_questions(scene) + motion_questions(scene) + read_questions(gold[clip])
         questions[clip] = qs
-        texts = {"brief": scene_brief(scene), "kfscript": view(scene, scene_dir(root / clip, "s1"))}
+        texts = {"brief": scene_brief(scene), "kfscript": view(scene, scene_dir(root / base, sid or "s1"))}
         for v in VIEWS:
             name = hashlib.sha1(f"keepframe-ab:{clip}:{v}".encode()).hexdigest()[:12]
             (out / "packets" / f"{name}.md").write_text(_packet(texts[v], qs))
@@ -262,8 +263,8 @@ def paired_ci(rows: list[dict], cats: set[str], n: int = BOOT, seed: int = BOOT_
             pairs.setdefault((r["clip"], r["q"]), {})[r["view"]] = r["score"]
     by: dict[str, list[float]] = {}
     for (clip, _), v in pairs.items():
-        if len(v) == 2:
-            by.setdefault(clip, []).append(v["kfscript"] - v["brief"])
+        if len(v) == 2:   # the scenes of one clip ("clip:sN") resample together
+            by.setdefault(clip.partition(":")[0], []).append(v["kfscript"] - v["brief"])
     if not by:
         return {"mean": 0.0, "lo": 0.0, "hi": 0.0, "clips": 0, "n": 0}
     clips = sorted(by)

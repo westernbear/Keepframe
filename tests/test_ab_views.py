@@ -97,3 +97,6 @@ def test_paired_ci_resamples_clips():
     ci = ab_views.paired_ci(rows, {"auto"})
     assert ci["mean"] == 50 and ci["lo"] == 0 and ci["hi"] == 100 and ci["clips"] == 2 and ci["n"] == 20
     assert ab_views.paired_ci(rows, {"edit"})["n"] == 0
+    # the scenes of one clip are one cluster: a:s1 and a:s2 resample together
+    split = [{**r, "clip": f"a:s{1 + int(r['q'][1:]) % 2}"} if r["clip"] == "a" else r for r in rows]
+    assert ab_views.paired_ci(split, {"auto"})["clips"] == 2
