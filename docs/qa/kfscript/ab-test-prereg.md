@@ -28,7 +28,7 @@ Does the kf-script view help the session agent understand an analysed motion-gra
 ## Answerer protocol
 
 - One fresh Claude subagent (Sonnet) per packet, 64 packets in all.
-- The packet text goes inline in the prompt. The subagent's only tool use is to write its one JSON object of answers to a given `answers/<hash>.json` path. It reads no file, so it never sees `index.json`, the other view or any path that names the view.
+- The subagent reads exactly one file, its packet `packets/<hash>.md` (the hash never names the view), and writes its JSON answers to `answers/<hash>.json`. It is told to open, list or search nothing else, so it never sees `index.json` or the other view. Compliance is checked from each run's tool-use count: one read (two if the packet is read in parts) plus one write.
 - One attempt per packet. The answer is the first `{…}` object in that file; a missing or invalid answer scores 0.
 - The production model (`gpt-6.1-sol`) has no credentials in this container, so Sonnet is a proxy, as in P1 and P2.
 
