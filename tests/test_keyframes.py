@@ -44,3 +44,27 @@ def test_fill_gaps_interpolates_interior_only():
     raw = np.full((6, 8), np.nan); raw[1] = 0; raw[2] = np.nan; raw[3] = 2; raw[4] = 3
     out = fill_gaps(raw)
     assert np.isnan(out[0]).all() and np.isnan(out[5]).all() and out[2, 0] == pytest.approx(1.0)
+
+def test_flat_noisy_stretch_is_a_hold():
+    """V3: a move, then ±1 px of noise until the end. The stretch was one segment with an ease chosen by the noise and
+    a last key at the last raw sample (a 1 px 'settle'); it is a hold: equal values, no ease."""
+    rng = np.random.default_rng(0)
+    tr = Track(keys=[Keyframe(t=0, v=0.0, ease=PRESET_EASES["out_cubic"]), Keyframe(t=12, v=248.0)])
+    v = np.r_[dense(tr, 13), 248 + rng.uniform(-0.9, 0.9, 77)]
+    v[-1] = 247.0
+    keys, err = reduce_curve(v, 0, 2.0)
+    assert err <= 2.0 and keys[-1].v == keys[-2].v and keys[-2].ease is None and keys[-1].t == 89
+    assert np.abs(dense(Track(keys=keys), 90) - v).max() <= 2.0
+
+
+def test_constant_track_is_one_key():
+    rng = np.random.default_rng(1)
+    keys, err = reduce_curve(0.5 + rng.uniform(-0.004, 0.004, 30), 7, 0.01)
+    assert len(keys) == 1 and keys[0].t == 7 and keys[0].ease is None and err <= 0.01
+
+
+def test_a_hold_does_not_break_the_move_after_it():
+    """Snapping a hold's end shifts the next segment's start; a shift the move cannot absorb keeps the raw value."""
+    v = np.r_[np.full(10, 100.0), 101.9, np.linspace(101.9, 300, 20)]
+    keys, err = reduce_curve(v, 0, 2.0)
+    assert err <= 2.0 and np.abs(dense(Track(keys=keys), len(v)) - v).max() <= 2.0

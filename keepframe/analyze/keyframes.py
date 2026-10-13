@@ -45,10 +45,42 @@ def reduce_curve(values: np.ndarray, t0: int, max_err: float) -> tuple[list[Keyf
         right, er = rec(split, b)
         return left + right, max(el, er)
 
-    parts, err = rec(0, n - 1)
-    keys = [Keyframe(t=t0 + a, v=v, ease=ease) for a, v, ease in parts]
-    keys.append(Keyframe(t=t0 + n - 1, v=float(values[-1])))
-    return keys, err
+    parts, _ = rec(0, n - 1)
+    keys = _holds(values, [list(p) for p in parts] + [[n - 1, float(values[-1]), None]], max_err)
+    err = max(_fit(values, a, b, va, vb, ease) for (a, va, ease), (b, vb, _) in zip(keys, keys[1:])) if len(keys) > 1 \
+        else float(np.abs(values - keys[0][1]).max())
+    return [Keyframe(t=t0 + a, v=v, ease=ease) for a, v, ease in keys], err
+
+
+def _fit(values: np.ndarray, a: int, b: int, va: float, vb: float, ease: Ease | None) -> float:
+    """Largest |Δ| of the segment a→b drawn from va to vb with `ease` against the samples."""
+    u = np.arange(b - a + 1) / max(b - a, 1)
+    e = np.array([bezier_y(x, ease) for x in u]) if ease else u
+    return float(np.abs(va + (vb - va) * e - values[a:b + 1]).max())
+
+
+def _holds(values: np.ndarray, keys: list[list], max_err: float) -> list[list]:
+    """Flat stretches as holds. A key pair whose samples all lie within max_err of its start value is a hold: its end
+    takes the start value and it loses its ease (raw noise picked both, and they read as motion), unless the segment
+    after it would then miss its samples by more than max_err. Equal runs keep their ends; a track with one value
+    is one key."""
+    for i in range(len(keys) - 1):
+        (a, va, _), (b, _, eb) = keys[i], keys[i + 1]
+        if np.abs(values[a:b + 1] - va).max() > max_err:
+            continue
+        if i + 2 < len(keys) and _fit(values, b, keys[i + 2][0], va, keys[i + 2][1], eb) > max_err:
+            continue
+        keys[i][2], keys[i + 1][1] = None, va
+    out = [keys[0]]
+    for prev, k, nxt in zip(keys, keys[1:], keys[2:]):
+        if prev[1] == k[1] == nxt[1]:   # the middle of a hold
+            continue
+        out.append(k)
+    out.append(keys[-1])
+    for k, nxt in zip(out, out[1:]):
+        if k[1] == nxt[1]:
+            k[2] = None
+    return [out[0][:2] + [None]] if all(k[1] == out[0][1] for k in out) else out
 
 
 def fill_gaps(raw_full: np.ndarray) -> np.ndarray:
