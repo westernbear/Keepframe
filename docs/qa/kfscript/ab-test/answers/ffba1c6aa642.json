@@ -1,0 +1,20 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 4.367,
+  "Q4": [],
+  "Q5": "in_out_quad",
+  "Q6": "busywork bigger Grow",
+  "Q7": "#e8effd",
+  "Q8": "e1",
+  "Q9": 0.433,
+  "Q10": "e5",
+  "Q11": 0.267,
+  "Q12": [183, 393],
+  "Q13": 1,
+  "Q14": ["e1", "e3", "e4"],
+  "Q15": ["e2"],
+  "Q16": {"element": "e1", "property": "color"},
+  "Q17": {"element": "e2", "property": "text"},
+  "Q18": {"element": "e1", "property": "timing"}
+}

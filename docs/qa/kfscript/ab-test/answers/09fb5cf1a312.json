@@ -1,0 +1,20 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 2.5,
+  "Q4": [],
+  "Q5": "linear",
+  "Q6": "Clear Think busywork",
+  "Q7": "#1c1b17",
+  "Q8": "e18",
+  "Q9": 0.3,
+  "Q10": "e3",
+  "Q11": 0.17,
+  "Q12": [480, 362.6],
+  "Q13": 1.0,
+  "Q14": ["e3"],
+  "Q15": ["e15"],
+  "Q16": {"element": "e3", "property": "text"},
+  "Q17": {"element": "e15", "property": "text"},
+  "Q18": {"element": "e3", "property": "timing"}
+}
