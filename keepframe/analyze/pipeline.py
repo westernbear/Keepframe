@@ -214,7 +214,35 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
                 _pk(sd, "tracks", obj_tracks)
             report_stage("plate")
     model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, busy)
+    if fresh and busy is None:
+        try:
+            held = _held_in_pass1(model, pass1)
+            if held >= opts.min_area:   # pass 1's regions only outline an element that held still: cut them again
+                t0 = time.perf_counter()
+                again = _stage_regions(frames, bg, boxes, opts, sd, plate=model.at(0), text_tracks=text_tracks, shape_tracks=shape_tracks)
+                tracks = _stage_tracking(again, sd)
+                model = _stage_plate(frames, fps, again, boxes, text_tracks, shape_tracks, tracks, bg, bconf, pass1, opts, sd)
+                rbf, obj_tracks = again, tracks
+                log.info("plate held %s px of a still element in pass 1: regions again %.2fs", held, time.perf_counter() - t0)
+        except Exception:   # fail soft: pass 1's regions and tracks, in the caches too
+            log.exception("still-element regions failed; pass 1 regions kept")
+            _pk(sd, "regions", rbf)
+            _pk(sd, "tracks", obj_tracks)
     return model, rbf, obj_tracks
+
+
+def _held_in_pass1(model: PlateModel, pass1) -> int:
+    """Pixels inside the plate's filled holes where pass 1 (a median over time) still shows something: an element that
+    held still for most of the scene (a footer through a whole shot), which pass 1's regions only outline. 0 when there
+    is no pass 1 or the plate moves or is a picture. shortcut: a picture plate keeps pass 1's regions."""
+    if pass1 is None or model.kind not in ("color", "gradient") or _moving(model) is not None:
+        return 0
+    inside = np.zeros(pass1.shape[:2], bool)
+    for h in model.stats.get("holes", []):
+        x0, y0, x1, y1 = h["bbox"]
+        inside[y0:y1, x0:x1] = True
+    held = cv2.morphologyEx((foreground_mask_plate(pass1, model.at(0)) & inside).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    return int(held.sum())
 
 
 def _moving(model: PlateModel):
