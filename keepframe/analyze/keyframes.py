@@ -60,17 +60,20 @@ def _fit(values: np.ndarray, a: int, b: int, va: float, vb: float, ease: Ease | 
 
 
 def _holds(values: np.ndarray, keys: list[list], max_err: float) -> list[list]:
-    """Flat stretches as holds. A key pair whose samples all lie within max_err of its start value is a hold: its end
-    takes the start value and it loses its ease (raw noise picked both, and they read as motion), unless the segment
-    after it would then miss its samples by more than max_err. Equal runs keep their ends; a track with one value
-    is one key."""
+    """Flat stretches as holds. A key pair whose samples all lie within max_err of their median is a hold: both keys
+    take the median and the pair loses its ease (raw noise picked the end samples and the ease, and they read as
+    motion), unless a neighbouring segment would then miss its samples by more than max_err. Equal runs keep their
+    ends; a track with one value is one key."""
     for i in range(len(keys) - 1):
-        (a, va, _), (b, _, eb) = keys[i], keys[i + 1]
-        if np.abs(values[a:b + 1] - va).max() > max_err:
+        (a, _, _), (b, _, eb) = keys[i], keys[i + 1]
+        c = float(np.median(values[a:b + 1]))   # the best constant: a raw end sample is up to max_err off
+        if np.abs(values[a:b + 1] - c).max() > max_err:
             continue
-        if i + 2 < len(keys) and _fit(values, b, keys[i + 2][0], va, keys[i + 2][1], eb) > max_err:
+        if i and _fit(values, keys[i - 1][0], a, keys[i - 1][1], c, keys[i - 1][2]) > max_err:
             continue
-        keys[i][2], keys[i + 1][1] = None, va
+        if i + 2 < len(keys) and _fit(values, b, keys[i + 2][0], c, keys[i + 2][1], eb) > max_err:
+            continue
+        keys[i][1], keys[i][2], keys[i + 1][1] = c, None, c
     out = [keys[0]]
     for prev, k, nxt in zip(keys, keys[1:], keys[2:]):
         if prev[1] == k[1] == nxt[1]:   # the middle of a hold
