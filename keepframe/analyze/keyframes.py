@@ -105,6 +105,17 @@ def tolerance(prop: str, size: tuple[int, int] | None = None) -> float:
     return ERR[prop]
 
 
+def noise_tolerance(col: np.ndarray) -> float:
+    """The largest deviation measurement noise alone gives a sampled curve: σ·√(2 ln n), with σ the MAD of its third
+    differences (eases and holds have almost none; i.i.d. noise σ gives σ·√20) over 0.6745. shortcut: a curve in fast,
+    jerky motion over most of its frames reads as noisy and loses detail up to that bound; upgrade: σ from residuals."""
+    v = col[np.isfinite(col)]
+    d = np.diff(v, 3)
+    if len(d) < 8:
+        return 0.0
+    return float(np.median(np.abs(d - np.median(d))) / 0.6745 / np.sqrt(20) * np.sqrt(2 * np.log(len(v))))
+
+
 def tracks_from_raw(raw: np.ndarray, first: int, size: tuple[int, int] | None = None) -> tuple[dict[str, Track], FitError]:
     tracks: dict[str, Track] = {}
     max_px, max_frames = 0.0, 0
@@ -113,7 +124,7 @@ def tracks_from_raw(raw: np.ndarray, first: int, size: tuple[int, int] | None = 
         col = raw[:, i]
         if np.isnan(col).all():
             continue
-        tol = tolerance(prop, size)
+        tol = max(tolerance(prop, size), noise_tolerance(col))   # jitter is not motion: no key per noisy frame
         if np.abs(col - DEFAULTS[prop]).max() <= tol:
             continue
         keys, err = reduce_curve(col, first, tol)

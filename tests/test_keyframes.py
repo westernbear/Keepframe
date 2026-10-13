@@ -71,13 +71,26 @@ def test_a_hold_does_not_break_the_move_after_it():
 
 
 def test_scale_tolerance_is_in_pixels():
-    """A 40 px wide element whose measured width flickers by ±0.5 px (sx ±0.0125) holds; the same flicker on a 400 px
-    element (±5 px) is keyed."""
+    """A 40 px wide element whose measured width steps by 1.2 px (sx 0.03) holds; the same step on a 400 px element
+    (12 px) is keyed."""
     from keepframe.analyze.keyframes import tolerance
     assert tolerance("sx", (20, 40)) == pytest.approx(0.05) and tolerance("sx", (20, 400)) == ERR["sx"] and tolerance("x", (20, 40)) == 2.0
-    rng = np.random.default_rng(2)
     raw = np.tile([[100, 100, 1, 1, 0, 0, 0, 1]], (30, 1)).astype(float)
-    raw[:, 2] = 1.5 + rng.uniform(-0.0125, 0.0125, 30)
+    raw[:, 2] = 1.5 + 0.03 * (np.arange(30) >= 15)
     small, _ = tracks_from_raw(raw, 0, (20, 40))
     big, _ = tracks_from_raw(raw, 0, (20, 400))
     assert len(small["sx"].keys) == 1 and len(big["sx"].keys) > 1
+
+
+def test_measurement_jitter_is_not_keyed_but_the_move_is():
+    """K1: ±3 px box jitter around a move is noise (no key per frame); the move between the holds stays."""
+    from keepframe.analyze.keyframes import noise_tolerance
+    rng = np.random.default_rng(3)
+    move = Track(keys=[Keyframe(t=0, v=100.0, ease=PRESET_EASES["in_out_cubic"]), Keyframe(t=12, v=400.0)])
+    clean = np.r_[np.full(40, 100.0), dense(move, 13), np.full(40, 400.0)]
+    raw = np.tile([[0, 300, 1, 1, 0, 0, 0, 1]], (len(clean), 1)).astype(float)
+    raw[:, 0] = clean + rng.normal(0, 3, len(clean))
+    tracks, _ = tracks_from_raw(raw, 0)
+    assert len(tracks["x"].keys) <= 12   # 56 at the fixed 2 px tolerance
+    assert np.abs(dense(tracks["x"], len(clean)) - clean).max() <= 2 * noise_tolerance(raw[:, 0])
+    assert noise_tolerance(clean) < ERR["x"]   # a clean ease reads as noise-free: its keys are as before
