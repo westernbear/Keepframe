@@ -278,6 +278,23 @@ def test_giant_glyph_that_touches_its_box(tmp_path):
     assert _de(colour, "#f3f0f8") < 10 and style.effects == []
 
 
+def test_text_on_a_kept_surface_takes_the_glyph_colour(tmp_path):
+    """Round-trip chat_ui / counter shape: white text on a blue card over a dark plate. The matte kept the card (an
+    opaque box: the region under the text was cut out, so nothing composites it back), the card is far from the plate,
+    so the kept-plate test fails and the densest colour is the card. A border far from the core colour is a surface
+    the text sits on: the glyphs are what contrasts with it, so the fill is white, not the card."""
+    card = np.zeros((90, 300, 4), np.uint8)
+    card[...] = (*hex_to_rgb8("#3b6cff"), 255)
+    c = _case(tmp_path, text="Hours saved", size=32, weight=600, fill="#ffffff", bg=Background(kind="color", value="#0b1020"),
+              others=[("card", card, CX, CY, 1)])
+    x0, y0, x1, y1 = c.box
+    rgba = np.dstack([c.frames[0][y0:y1, x0:x1], np.full((y1 - y0, x1 - x0), 255, np.uint8)])
+    core = _core(c, "#0b1020")
+    assert _de(core, "#ffffff") < 10
+    style, colour, _ = textstyle.analyse_text_style(rgba, c.meta, c.frames, c.plate, c.raw, c.text, core=core)
+    assert _de(colour, "#ffffff") < 5
+
+
 def test_a_shape_kept_behind_the_title_is_not_the_fill(tmp_path):
     """Synthetic seed 6's shape: a teal title partly over a dark-teal block the analysis missed; the matte kept the
     block and the core-mask colour is the block's (it stands out more from the beige plate). The core's colour has
