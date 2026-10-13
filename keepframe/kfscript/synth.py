@@ -309,7 +309,7 @@ GROUNDS = [("#0b1020", "#f5f6fb"), ("#1b0f2e", "#f4f1ea"), ("#050505", "#ffffff"
 def _hard_cut(r: random.Random, pal, font) -> Template:
     """Title cards cut on the beat. Shot 1: a light title over a dark gradient with a glow that rises and falls; a hard
     cut to shot 2: a dark title and its subtitle on a light ground, where later the title alone is swapped for another
-    on the same ground (a swap inside a shot, as the reads mark it: not a cut)."""
+    on the same ground while the subtitle and a footer stay (a swap inside a shot, as the reads mark it: not a cut)."""
     _, _, acc, _ = pal
     dark, light = r.choice(GROUNDS)
     a, b, c = (" ".join(r.sample(WORDS, 2)) for _ in range(3))
@@ -321,15 +321,19 @@ def _hard_cut(r: random.Random, pal, font) -> Template:
                      f"#s2 {{ inset: 0; background: {light}; visibility: hidden; }}",
                      "#t1 { left: 480px; top: 250px; font-size: 84px; font-weight: 800; color: #ffffff; }",
                      "#t2, #t3 { left: 480px; top: 240px; font-size: 72px; font-weight: 700; color: #14161c; visibility: hidden; }",
-                     "#sub2 { left: 480px; top: 330px; font-size: 28px; color: #14161c; visibility: hidden; }"])
+                     "#sub2 { left: 480px; top: 330px; font-size: 28px; color: #14161c; visibility: hidden; }",
+                     f"#foot {{ left: 60px; top: 440px; width: 840px; height: 64px; border-radius: 16px; background: {acc}; "
+                     "color: #ffffff; font-size: 30px; font-weight: 700; line-height: 64px; text-indent: 28px; visibility: hidden; }"])
+    brand = r.choice(BRANDS)
     body = "\n".join(['<div id="s1" class="a"></div>', '<div id="glow" class="a"></div>', '<div id="s2" class="a"></div>',
                       f'<div id="t1" class="c">{html.escape(a)}</div>', f'<div id="t2" class="c">{html.escape(b)}</div>',
-                      f'<div id="sub2" class="c">{html.escape(sub)}</div>', f'<div id="t3" class="c">{html.escape(c)}</div>'])
+                      f'<div id="sub2" class="c">{html.escape(sub)}</div>', f'<div id="t3" class="c">{html.escape(c)}</div>',
+                      f'<div id="foot" class="a">{html.escape(brand)}</div>'])
     show = lambda ids, v, f: f'tl.set({json.dumps(ids)}, {{visibility: "{v}"}}, {f / FPS:.4f});'
     js = "\n".join(['tl.fromTo("#glow", {opacity: 0.25, scale: 0.85}, {opacity: 0.9, scale: 1.15, duration: 0.6, ease: "sine.inOut", '
                     'yoyo: true, repeat: 1}, 0);',
                     'tl.from("#t1", {autoAlpha: 0, y: 30, duration: 0.5, ease: "power3.out"}, 0.2);',
-                    show(["#s1", "#glow", "#t1"], "hidden", c1), show(["#s2", "#t2", "#sub2"], "visible", c1),
+                    show(["#s1", "#glow", "#t1"], "hidden", c1), show(["#s2", "#t2", "#sub2", "#foot"], "visible", c1),
                     f'tl.from("#t2", {{x: 60, duration: 0.5, ease: "power3.out"}}, {c1 / FPS:.4f});',
                     f'tl.from("#sub2", {{autoAlpha: 0, duration: 0.4}}, {c1 / FPS + 0.4:.4f});',
                     show(["#t2"], "hidden", sw), show(["#t3"], "visible", sw),
@@ -337,7 +341,8 @@ def _hard_cut(r: random.Random, pal, font) -> Template:
     truth = {"elements": [_el("t1", "headline", "text", (_f(0.2), c1 - 1), a, "#ffffff", font),
                           _el("t2", "headline_2", "text", (c1, sw - 1), b, "#14161c", font),
                           _el("sub2", "subheadline", "text", (c1 + _f(0.4), 119), sub, "#14161c", font),
-                          _el("t3", "headline_3", "text", (sw, 119), c, "#14161c", font)],
+                          _el("t3", "headline_3", "text", (sw, 119), c, "#14161c", font),
+                          _el("foot", "footer", "shape", (c1, 119), brand, acc, font)],
              "shots": [[0, c1 - 1], [c1, 119]], "transitions": [{"type": "cut", "frames": [c1, c1]}],
              "structure": []}
     return Template(_page(dark, font, css, body, js), truth, frames=120)

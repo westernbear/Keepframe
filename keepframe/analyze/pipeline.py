@@ -956,6 +956,19 @@ def analyze(
     t = time.perf_counter()
     frames, fps = read_frames(video, start, end)
     _stage_done("frames", t)
+    shots_note = None
+    if scenes is None and existing is None:   # a fresh analysis given no scenes splits at its cuts
+        try:
+            from .shots import auto_scenes
+            scenes, transitions = auto_scenes(frames, start)
+        except Exception as e:   # fail soft: one scene
+            log.warning("shot detection failed: %s", describe(e, trace=True))
+            shots_note = "shots_failed"
+    elif scenes is None:   # a re-analysis keeps the project's scenes when they cover this range
+        refs = [{"id": r.id, "frames": list(r.frames)} for r in existing.scenes]
+        if refs and refs[0]["frames"][0] == start and refs[-1]["frames"][1] == end:
+            scenes, transitions = refs, [r.transition_out | {"from": r.id, "to": n.id} for r, n in zip(existing.scenes, existing.scenes[1:])
+                                         if r.transition_out]
     layout = scenes or [{"id": "s1", "frames": [start, end]}]
     by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
     analyzed: list[Scene] = []
@@ -982,6 +995,8 @@ def analyze(
     links = link_adjacent_scenes(analyzed, out_root)
     analysis_files = {scene.id: snapshot_from_stages(_scene_dir(out_root, scene.id), scene) for scene in analyzed}
     source = {"file": str(video), "fps": fps, "size": [width, height], "mode": mode, "range": [start, end] if mode == "range" else None}
+    if shots_note:
+        source["shots_note"] = shots_note
     if existing:
         from ..ir.schema import SceneRef
         for scene in analyzed:

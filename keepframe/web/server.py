@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.constraints import KEEP_PRESETS, apply_keep_preset
 from keepframe.analyze.device import gpu_status
-from keepframe.analyze.shots import boundary_digest as make_boundary_digest, scene_layout, validate_scenes
+from keepframe.analyze.shots import auto_scenes, boundary_digest as make_boundary_digest, validate_scenes
 from keepframe.analyze.video import read_frames
 from keepframe.ae.api import AERoutes
 from keepframe.fonts.upload import (MAX_FONT_BYTES, FontRejected, UploadIncomplete, font_ext, list_fonts, public_font,
@@ -1419,12 +1419,10 @@ def make_server(
                                 for scene in scenes
                                 if scene["frames"][1] - scene["frames"][0] + 1 < 6
                             ]
-                        elif mode == "range":
-                            scenes = [{"id": "s1", "frames": [start, end]}]
-                            transitions, warnings = [], []
-                        else:
+                        else:   # split at the cuts, as analyze() does when given no scenes; short scenes are merged
                             sampled, _ = read_frames(video, start, end)
-                            scenes, transitions, warnings = scene_layout(sampled, global_start=start)
+                            scenes, transitions = auto_scenes(sampled, start)
+                            warnings = []
                     except ValueError as exc:
                         return self._json(400, {"error": str(exc)})
                     digest = make_boundary_digest(scenes)
