@@ -54,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     ee.add_argument("--renderer", choices=["browser", "numpy"], default="browser"); ee.add_argument("--strict", action="store_true")
     ee.add_argument("--refine", action=argparse.BooleanOptionalAction, default=None,
                     help="sprite refine (default: off for synthetic, analysis default for clips)")
+    rt = sub.add_parser("eval-roundtrip", help="synthetic reference pages → analysis → kf-script → diff against the truth")
+    rt.add_argument("--out", required=True); rt.add_argument("--kinds", nargs="+", default=None); rt.add_argument("--seeds", type=int, default=1)
+    rt.add_argument("--reuse", action="store_true"); rt.add_argument("--gold", action="append", default=[], metavar="NAME=CLIP,ROOT")
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
@@ -176,6 +179,15 @@ def main(argv: list[str] | None = None) -> int:
         print(Path(a.out) / "metrics.json")
         print(json.dumps({g: {k: v["passed"] for k, v in gates.items()} for g, gates in m["gates"].items()}, indent=2))
         return 1 if a.strict and not m["passed"] else 0
+    if a.cmd == "eval-roundtrip":
+        from .kfscript.synth import KINDS
+        from .qa.roundtrip import eval_roundtrip
+        if a.kinds and set(a.kinds) - set(KINDS):
+            rt.error(f"unknown kinds {sorted(set(a.kinds) - set(KINDS))}; choose from {', '.join(KINDS)}")
+        if any("=" not in g or "," not in g.split("=", 1)[1] for g in a.gold):
+            rt.error("--gold takes NAME=CLIP,ROOT")
+        m = eval_roundtrip(Path(a.out), tuple(a.kinds or KINDS), a.seeds, a.reuse, a.gold)
+        print(Path(a.out) / "summary.md"); return 0 if m["passed"] else 1
     if a.cmd == "serve":
         from .web.server import JOBS, make_server
         configure()

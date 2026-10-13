@@ -57,11 +57,14 @@ html, body {{ margin: 0; width: {W}px; height: {H}px; overflow: hidden; backgrou
 <script src="{(VENDOR / "gsap.min.js").as_uri()}"></script>
 <script>
 const FPS = {FPS}, tl = gsap.timeline({{paused: true}});
+// Build after the face has loaded: GSAP reads CSS translate(-50%) as pixels on first touch, so a fallback-font width
+// would shift centred text. fonts.ready alone can resolve before the face starts loading.
+Promise.all([document.fonts.load("16px F"), document.fonts.ready]).then(() => {{
 {js}
+window.__seek(0); window.__ready = true; }});
 window.__seek = f => {{ tl.seek(f / FPS, false); return f; }};
 window.__bbox = id => {{ const r = document.getElementById(id).getBoundingClientRect(), s = document.getElementById("stage").getBoundingClientRect();
   return [r.left - s.left, r.top - s.top, r.right - s.left, r.bottom - s.top]; }};
-document.fonts.ready.then(() => {{ window.__seek(0); window.__ready = true; }});
 </script></body></html>
 """
 
@@ -304,28 +307,37 @@ def _clip(box, size) -> list[float]:
             round(min(max(x1, 0), size[0]), 1), round(min(max(y1, 0), size[1]), 1)]
 
 
+def probe_boxes(page: Path, truth: dict) -> np.ndarray:
+    """Fill truth["elements"][*]["boxes"] (clipped to the stage) and narrow "visible" to frames with area on the stage,
+    probing the page through window.__bbox. Returns the rendered frames (uint8)."""
+    import tempfile
+    from ..ir.schema import Background, Canonical, Element, Scene
+    from ..render.renderer import load_frame, render
+    size, n = tuple(truth["size"]), truth["frames"]
+    ids = [e["id"] for e in truth["elements"]]
+    stub = Scene(id="truth", size=size, fps=truth["fps"], frames=n, background=Background(kind="color", value="#000000"),
+                 elements=[Element(id=i, kind="sprite", visible=(0, n - 1), canonical=Canonical(width=1, height=1)) for i in ids])
+    with tempfile.TemporaryDirectory(prefix="keepframe-truth-") as td:
+        res = render(page, stub, Path(td), probe=True)
+        frames = np.stack([(load_frame(res.frames_dir / f"f_{i:05d}.png") * 255).round().astype(np.uint8) for i in range(n)])
+    for e in truth["elements"]:
+        a, b = e["visible"]
+        boxes = {f: _clip(res.bboxes[e["id"]][f], size) for f in range(a, b + 1)}
+        on = [f for f, x in boxes.items() if x[2] > x[0] and x[3] > x[1]]
+        e["visible"] = [on[0], on[-1]] if on else [a, a - 1]
+        e["boxes"] = {str(f): boxes[f] for f in on}
+    return frames
+
+
 def render_template(kind: str, seed: int, out: Path) -> tuple[Path, Path]:
     """page.html, source.mp4 (as the analysis will see it) and truth.json with Chromium-probed boxes per visible frame."""
     from ..analyze.video import write_video
-    from ..ir.schema import Background, Canonical, Element, Scene
-    from ..render.renderer import load_frame, render
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     t = make_template(kind, seed)
     page = out / "page.html"
     page.write_text(t.doc)
-    ids = [e["id"] for e in t.truth["elements"]]
-    stub = Scene(id=f"{kind}-{seed}", size=t.size, fps=t.fps, frames=t.frames, background=Background(kind="color", value="#000000"),
-                 elements=[Element(id=i, kind="sprite", visible=(0, t.frames - 1), canonical=Canonical(width=1, height=1)) for i in ids])
-    res = render(page, stub, out / "render", probe=True)
-    frames = np.stack([(load_frame(res.frames_dir / f"f_{i:05d}.png") * 255).round().astype(np.uint8) for i in range(t.frames)])
-    mp4 = write_video(frames, t.fps, out / "source.mp4")
-    for e in t.truth["elements"]:
-        a, b = e["visible"]
-        boxes = {f: _clip(res.bboxes[e["id"]][f], t.size) for f in range(a, b + 1)}
-        on = [f for f, x in boxes.items() if x[2] > x[0] and x[3] > x[1]]
-        e["visible"] = [on[0], on[-1]] if on else [a, a - 1]
-        e["boxes"] = {str(f): boxes[f] for f in on}
+    mp4 = write_video(probe_boxes(page, t.truth), t.fps, out / "source.mp4")
     truth = out / "truth.json"
     truth.write_text(json.dumps(t.truth, indent=1))
     return mp4, truth
