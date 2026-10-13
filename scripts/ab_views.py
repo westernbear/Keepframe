@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from keepframe.analyze.keyframes import ERR
+from keepframe.analyze.keyframes import tolerance
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
 from keepframe.ir.importance import rank_elements
 from keepframe.ir.schema import Scene
@@ -41,8 +41,13 @@ def _ease(e) -> str:
     return "linear" if e is None else EASES.get(tuple(e), "custom")
 
 
+def _tol(el, p: str) -> float:
+    """What the analysis counts as a change of `p` for this element (its own tolerance: scale in pixels of its size)."""
+    return tolerance(p, (el.canonical.height, el.canonical.width))
+
+
 def _last_move(el) -> int | None:
-    ends = [b.t for p, tr in el.tracks.items() for a, b in zip(tr.keys, tr.keys[1:]) if abs(b.v - a.v) > ERR.get(p, 0.01)]
+    ends = [b.t for p, tr in el.tracks.items() for a, b in zip(tr.keys, tr.keys[1:]) if abs(b.v - a.v) > _tol(el, p)]
     return max(ends) if ends else None
 
 
@@ -91,12 +96,12 @@ def auto_questions(scene: Scene) -> list[dict]:
 
 
 def _moves(el, p: str):
-    """Moves on one axis: maximal runs of consecutive key segments each over ERR in the same direction, as
-    (|total|, start frame, end frame)."""
+    """Moves on one axis: maximal runs of consecutive key segments each over the analysis tolerance in the same
+    direction, as (|total|, start frame, end frame)."""
     out, run = [], None
     for a, b in zip(el.tracks[p].keys, el.tracks[p].keys[1:]) if p in el.tracks else ():
         d = b.v - a.v
-        if abs(d) <= ERR.get(p, 0.01):
+        if abs(d) <= _tol(el, p):
             run = None
             continue
         if run and (d > 0) == (run[3] > 0):
