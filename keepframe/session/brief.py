@@ -117,7 +117,13 @@ def scene_brief(scene: Scene) -> str:
         )
     if len(order) > MAX_ELEMENTS:
         lines.append(f"... {len(order) - MAX_ELEMENTS} smaller or shorter elements omitted")
-    present = {e.id: e for e in scene.elements}
+    return "\n".join(lines + group_lines(scene))
+
+
+def group_lines(scene: Scene) -> list[str]:
+    """One line per group (a fragmented title with the string its pieces spell), shared by the brief and the kf-script
+    view."""
+    present, lines = {e.id: e for e in scene.elements}, []
     for g in scene.groups:
         reason = " ".join(g.reason.split())[:80]
         lines.append(f"group {g.id}: {', '.join(g.members)} ({reason})")
@@ -128,4 +134,4 @@ def scene_brief(scene: Scene) -> str:
     if any(g.reason == "text_fragments" for g in scene.groups):
         lines.append('a text_fragments group is one title in pieces: a text edit on any member replaces the whole title, '
                      'so give the whole new string (to change "speak" in "You just speak", send "You just talk")')
-    return "\n".join(lines)
+    return lines

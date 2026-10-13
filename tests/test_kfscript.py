@@ -101,3 +101,32 @@ def test_cli_kfscript_page_and_view(tmp_scene_dir, capsys):
     assert out["page_chars"] > out["view_chars"] > 0
     assert (tmp_scene_dir / "kf.html").read_text().startswith("<!doctype html>\n<!-- kf-script v0")
     assert (tmp_scene_dir / "view.txt").read_text().startswith("<!-- kf-script v0")
+
+
+def test_view_summarises_every_element_and_prints_groups(tmp_scene_dir):
+    """V1/V2: each shown element has its summary comment (size, entrance position, visible seconds) before its markup,
+    so the agent need not dig the position out of the script; groups appear as in the brief."""
+    from keepframe.ir.schema import GlyphReveal, Group
+    from keepframe.kfscript.emit import view
+    scene = make_synthetic_scene(tmp_scene_dir, seed=2, n_elements=4)
+    el = scene.elements[0]
+    el.canonical.glyphs = GlyphReveal(x=[0.2, 0.8], delays=[0, 6], ramp=2)
+    scene.groups = [Group(id="g1", members=[e.id for e in scene.elements[:2]], reason="moves together")]
+    v = view(scene, tmp_scene_dir, max_chars=10**9)
+    for e in scene.elements:
+        line = next(ln for ln in v.splitlines() if ln.startswith(f"<!-- {e.id} "))
+        assert re.search(r"\d+x\d+px at \(-?\d+, -?\d+\) visible \d+\.\d\d–\d+\.\d\d s", line) and "motion not shown" not in line
+        assert v.index(line) < v.index(f'id="el-{e.id}"')
+    assert "types glyph by glyph" in next(ln for ln in v.splitlines() if ln.startswith(f"<!-- {el.id} "))
+    assert f"group g1: {scene.elements[0].id}, {scene.elements[1].id} (moves together)" in v
+
+
+def test_view_steps_start_and_end_at_real_changes():
+    """Holds before the first change and after the last are not printed as steps (they read as motion)."""
+    from keepframe.kfscript.emit import _element_view_js
+    el = _el("e1", {"x": Track(keys=[Keyframe(t=0, v=10.0), Keyframe(t=6, v=10.0), Keyframe(t=12, v=90.0),
+                                     Keyframe(t=20, v=90.0), Keyframe(t=30, v=40.0), Keyframe(t=59, v=40.0)]),
+                    "y": Track(keys=[Keyframe(t=0, v=5.0)])})
+    js = _element_view_js(el, 30.0, {})
+    assert "tl.to(S[\"e1\"], {keyframes: [{x: 90, duration: 0.200" in js and "0.200);   // x f6–f30" in js
+    assert js.count("tl.to") == 1   # the constant y is only the gsap.set

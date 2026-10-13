@@ -17,6 +17,7 @@ from ..ir.gradient import gradient_at, gradient_css
 from ..ir.importance import rank_elements
 from ..ir.schema import Element, Scene
 from ..ir.tracks import PRESET_EASES, eval_track
+from ..session.brief import group_lines
 
 _PRESET_NAMES = {tuple(v): k for k, v in PRESET_EASES.items() if k != "linear"}
 VIEW_CHARS = 48_000   # the agent view budget (≈ 12k tokens; P1 Task 5, sizes in docs/qa/kfscript/p1.md)
@@ -129,7 +130,9 @@ def header(scene: Scene) -> str:
         "conventions: each .el is placed at its anchor; S[id] holds its state: x, y anchor px; sx, sy scale; "
         "rot, skx deg; rx, ry tilt deg; opacity; reveal = visible fraction left→right. "
         "data-track-index is the stacking order (higher is in front). "
-        "Glyph reveals and visibility follow data-glyph-edges and the element's visible range.",
+        "Each element's summary comment gives its size, entrance position and visible range; glyph-by-glyph typing is "
+        "marked there (reveal is a box wipe, not typing).",
+        *group_lines(scene),
     ])
     # inside an HTML comment: no "--", no ">" and no template placeholders
     body = body.replace("--", "—").replace(">", "›").replace("{{", "{ {")
@@ -171,9 +174,11 @@ def _element_view_js(el: Element, fps: float, names: dict[tuple, str]) -> str:
     target = f"S[{_script_json(el.id)}]"
     lines = [f"gsap.set({target}, {{{', '.join(f'{p}: {_r(p, t.keys[0].v)}' for p, t in el.tracks.items())}}});"]
     for prop, track in el.tracks.items():
-        keys = track.keys
-        if len(keys) < 2:
+        # holds before the first change and after the last are no steps (values clamp outside the keys): read as motion
+        moving = [i for i, (a, b) in enumerate(zip(track.keys, track.keys[1:])) if a.v != b.v]
+        if not moving:
             continue
+        keys = track.keys[moving[0]:moving[-1] + 2]
         steps = [f'{{{prop}: {_r(prop, b.v)}, duration: {(b.t - a.t) / fps:.3f}, ease: "{names[tuple(a.ease)] if a.ease and tuple(a.ease) != _LINEAR else "none"}"}}'
                  for a, b in zip(keys, keys[1:])]
         body = steps[0][1:-1] if len(steps) == 1 else f"keyframes: [{', '.join(steps)}]"
@@ -192,14 +197,19 @@ def _stage(scene: Scene) -> str:
     return f'<div id="stage" style="width:{scene.size[0]}px;height:{scene.size[1]}px;background:{css}">\n'
 
 
-def _stub(el: Element) -> str:
-    """One comment line for an element whose full block does not fit: like a brief row, never dropped."""
+def _stub(el: Element, fps: float, shown: bool = False) -> str:
+    """The element's summary comment, like a brief row: kind/role, text, size, entrance position, visible range and
+    glyph-by-glyph typing. Before every shown element's markup (its position is otherwise only in the script), and in
+    place of an element whose full block does not fit the budget (never dropped)."""
     c, f = el.canonical, el.visible[0]
     pos = [eval_track(el.tracks[p], f) if p in el.tracks else 0.0 for p in ("x", "y")]
     text = f' "{html.escape(" ".join(c.text.split())[:60])}"' if c.text else ""
     body = (f"{_script_json(el.id)[1:-1]} {el.kind}/{html.escape(el.label or el.role)}{text} {c.width:.0f}x{c.height:.0f}px "
-            f"at ({pos[0]:.0f}, {pos[1]:.0f}) visible f{el.visible[0]}–f{el.visible[1]} (motion not shown)")
-    return f"<!-- {body.replace('--', '—')} -->"
+            f"at ({pos[0]:.0f}, {pos[1]:.0f}) visible {el.visible[0] / fps:.2f}–{(el.visible[1] + 1) / fps:.2f} s "
+            f"(f{el.visible[0]}–f{el.visible[1]})")
+    if c.glyphs:
+        body += f" · types glyph by glyph {(f + min(c.glyphs.delays)) / fps:.2f}–{(f + max(c.glyphs.delays) + c.glyphs.ramp) / fps:.2f} s"
+    return f"<!-- {(body + ('' if shown else ' (motion not shown)')).replace('--', '—')} -->"
 
 
 def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: FontRegistry | None = None) -> str:
@@ -207,9 +217,9 @@ def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: F
     Elements are kept in `rank_elements` order while they fit `max_chars`; the rest are listed as omitted."""
     names = _ease_names(scene)
     eases = [f'CustomEase.create("{n}", "M0,0 C{_num(e[0])},{_num(e[1])} {_num(e[2])},{_num(e[3])} 1,1");' for e, n in names.items()]
-    blocks = {el.id: (_markup(el, Path(scene_dir), scene.fps, scene.ui, fonts), _element_view_js(el, scene.fps, names))
-              for el in scene.elements}
-    stubs = {el.id: _stub(el) for el in scene.elements}
+    blocks = {el.id: (_stub(el, scene.fps, shown=True) + "\n" + _markup(el, Path(scene_dir), scene.fps, scene.ui, fonts),
+                      _element_view_js(el, scene.fps, names)) for el in scene.elements}
+    stubs = {el.id: _stub(el, scene.fps) for el in scene.elements}
     fixed = header(scene) + _stage(scene) + "</div>\n<script>\n" + "\n".join(eases) + "\n</script>\n"
     used, kept = len(fixed) + sum(len(x) + 1 for x in stubs.values()), set()
     for el in rank_elements(scene):   # a full block replaces the element's stub while the budget allows
