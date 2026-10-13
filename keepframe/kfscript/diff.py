@@ -16,8 +16,17 @@ from ..ir.schema import Scene
 from ..ir.tracks import element_bbox
 
 MATCH_IOU = 0.5
-# Structure the IR already expresses, seen on the IR elements inside the targets.
-FOUND = {"typing": lambda els: any(e.canonical.glyphs for e in els)}
+
+
+def _span(e, prop: str) -> float:
+    keys = e.tracks[prop].keys if prop in e.tracks else []
+    return keys[-1].v - keys[0].v if keys else 0.0
+
+
+# Structure the IR already expresses, seen on the IR elements inside the targets (half the declared move counts).
+FOUND = {"typing": lambda els, p: any(e.canonical.glyphs for e in els),
+         "pop": lambda els, p: any("sx" in e.tracks and e.tracks["sx"].keys[0].v < 0.5 <= _span(e, "sx") for e in els),
+         "drift": lambda els, p: any(_span(e, p["axis"]) * p["px"] >= 0.5 * p["px"] ** 2 for e in els)}
 
 
 def _area(b) -> float:
@@ -97,7 +106,7 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
             structure["unsupported"].append(s["type"])
             continue
         inside = [els[i] for t in s["targets"] if t in by_id for i in by_id[t]["fragment_ids"]]
-        structure["found" if FOUND[s["type"]](inside) else "missed"].append(s["type"])
+        structure["found" if FOUND[s["type"]](inside, s.get("params", {})) else "missed"].append(s["type"])
     n = len(tels)
     return {"truth_elements": n, "ir_elements": len(irs), "matched": len(match), "matched_rate": round(len(match) / n, 4) if n else None,
             "fragments_mean": _mean([row["fragments"] for row in rows if row["fragments"]]),

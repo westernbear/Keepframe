@@ -54,3 +54,15 @@ def test_dl_ratio_and_split_scenes():
     assert d["dl_ratio"] == 0.25 and d["shots"] == {"truth": 1, "ir_scenes": 2}
     card = d["rows"][1]
     assert card["match"] == "e2" and card["visible_err"] == 20   # IR 30–59 vs truth 10–59
+
+
+def test_pop_and_drift_found_on_tracks():
+    t = _truth(("mark", "image", (400, 200, 500, 300), (0, 59), None), ("url", "text", (300, 400, 600, 440), (0, 59), "www.x.com"),
+               structure=[{"type": "pop", "targets": ["mark"], "params": {}, "ir": "now"},
+                          {"type": "drift", "targets": ["url"], "params": {"axis": "y", "px": 24}, "ir": "now"}])
+    mark, url = _el("e1", (400, 200, 500, 300), (0, 59)), _el("e2", (300, 400, 600, 440), (0, 59), "www.x.com")
+    mark.tracks["sx"] = Track(keys=[Keyframe(t=0, v=0.1), Keyframe(t=10, v=1.0)])
+    url.tracks["y"] = Track(keys=[Keyframe(t=0, v=405), Keyframe(t=30, v=420)])
+    assert diff(t, [(_scene(mark, url), 0)])["structure"]["found"] == ["pop", "drift"]
+    url.tracks["y"] = Track(keys=[Keyframe(t=0, v=420), Keyframe(t=30, v=405)])   # moves up: not the declared drift
+    assert diff(t, [(_scene(mark, url), 0)])["structure"]["missed"] == ["drift"]

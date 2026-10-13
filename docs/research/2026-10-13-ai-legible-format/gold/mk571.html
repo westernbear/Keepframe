@@ -30,6 +30,8 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
 <script src="../../../../keepframe/compose/vendor/gsap.min.js"></script>
 <script>
 const tl = gsap.timeline({ paused: true });
+// build after Roboto has loaded: GSAP reads the url's translate(-50%) as pixels on first touch
+Promise.all([document.fonts.load("26px Roboto"), document.fonts.ready]).then(() => {
 tl.addLabel("sh1", 0)
   // teal opens from the centre outward: a slow slit (f14–f44), then a snap open (f44–f90)
   .fromTo("#bg",  { clipPath: "inset(0% 50%)" }, { clipPath: "inset(0% 35.2%)", duration: 0.50, ease: "power2.in" }, 0.23)
@@ -51,7 +53,8 @@ tl.addLabel("sh1", 0)
   .from("#name .w:nth-child(3) > span", { yPercent: 100, duration: 0.95, ease: "power4.out" }, 3.05)
   // frame settles in a little around the name (f250–f290), then everything holds to the end
   .to("#frame",   { width: 1012, height: 298, duration: 0.65, ease: "power2.inOut" }, 4.17);
+window.__seek(0); window.__ready = true; });
 window.__seek = f => { tl.seek(f / 59.94, false); return f; };
-document.fonts.ready.then(() => { window.__seek(0); window.__ready = true; });
+window.__bbox = id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
 </script>
 </body></html>

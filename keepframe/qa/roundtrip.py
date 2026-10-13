@@ -17,7 +17,7 @@ from ..kfscript import emit_page
 from ..kfscript.check import fidelity
 from ..kfscript.diff import diff
 from ..kfscript.emit import view
-from ..kfscript.synth import KINDS, make_template, probe_boxes, render_template
+from ..kfscript.synth import KINDS, make_template, probe_boxes, render_template, template_id
 from .edits import _analyse
 
 ROUNDTRIP_GATES = {"kf_parity": 0.001}   # |L1 kf-script page − L1 compose page|, per case
@@ -57,7 +57,8 @@ def _synthetic(out: Path, kind: str, seed: int, reuse: bool) -> dict:
     name = f"{kind}-{seed}"
     case = out / "cases" / name
     page, mp4, truth = case / "page.html", case / "source.mp4", case / "truth.json"
-    fresh = not (reuse and mp4.exists() and truth.exists() and page.exists() and page.read_text() == make_template(kind, seed).doc)
+    fresh = not (reuse and mp4.exists() and truth.exists()
+                 and json.loads(truth.read_text()).get("template") == template_id(make_template(kind, seed)))
     if fresh:
         render_template(kind, seed, case)
     t = json.loads(truth.read_text())

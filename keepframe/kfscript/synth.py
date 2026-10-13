@@ -5,6 +5,7 @@ motion graphics (docs/research/2026-10-13-ai-legible-format/gold-reads.md), not 
 element; level (b) `structure` lists what the IR cannot say yet (`ir: "P3"`) or can (`ir: "now"`). Boxes are added by
 `render_template`, probed in Chromium through `window.__bbox`."""
 from __future__ import annotations
+import hashlib
 import html
 import json
 import random
@@ -128,6 +129,8 @@ def _logo_sting(r: random.Random, pal, font) -> Template:
                           _el("mark", "logo", "shape", (_f(1.3), 149), brand[0], bg, font), _el("name", "brand_name", "text", (_f(2.6), 149), brand, fg, font),
                           _el("url", "url", "text", (_f(3.0), 149), f"www.{brand.split()[0].lower()}.com", fg, font)],
              "structure": [{"type": "mask", "targets": ["bg"], "params": {"from": "centre"}, "ir": "P3"},
+                           {"type": "pop", "targets": ["mark"], "params": {"scale": [0, 1]}, "ir": "now"},
+                           {"type": "drift", "targets": ["url"], "params": {"axis": "y", "px": 20}, "ir": "now"},
                            {"type": "shape-size", "targets": ["frame"], "params": {"w": [0, s, w2], "stroke": stroke}, "ir": "P3"},
                            {"type": "split", "targets": ["name"], "params": {"unit": "word"}, "ir": "P3"},
                            {"type": "stagger", "targets": ["name"], "params": {"each": 0.1, "from": "start"}, "ir": "P3"},
@@ -301,6 +304,11 @@ def make_template(kind: str, seed: int) -> Template:
     return t
 
 
+def template_id(t: Template) -> str:
+    """Changes whenever the page or its declared truth changes (round-trip --reuse keys on it)."""
+    return hashlib.sha1((t.doc + json.dumps(t.truth, sort_keys=True)).encode()).hexdigest()[:12]
+
+
 def _clip(box, size) -> list[float]:
     x0, y0, x1, y1 = box
     return [round(min(max(x0, 0), size[0]), 1), round(min(max(y0, 0), size[1]), 1),
@@ -337,7 +345,8 @@ def render_template(kind: str, seed: int, out: Path) -> tuple[Path, Path]:
     t = make_template(kind, seed)
     page = out / "page.html"
     page.write_text(t.doc)
+    tid = template_id(t)
     mp4 = write_video(probe_boxes(page, t.truth), t.fps, out / "source.mp4")
     truth = out / "truth.json"
-    truth.write_text(json.dumps(t.truth, indent=1))
+    truth.write_text(json.dumps({**t.truth, "template": tid}, indent=1))
     return mp4, truth
