@@ -86,6 +86,27 @@ The read was done from contact sheets of each source video (frame numbers burned
 
 Read ↔ measurement disagreements on the synthetic pages: none after the template fixes. The truth is the page, so a remaining disagreement would be a read error. On mk571 the P1 corrections stand (3 of 8 events were wrong in the read).
 
+## Confirmation A/B on fresh clips (P1's switch condition)
+
+`scripts/ab_views.py synth-gold` + `packets` on the eight round-trip analyses → `ab-synth/`. Questions:
+- **Auto gold:** the same pre-registered generator as P1, built from `scene.json`.
+- **Read gold:** for each truth element whose role is unique in its case, the IR ids inside it over its life. An id inside several truth boxes belongs to the smallest one.
+- **Edit:** one colour edit per case.
+
+80 questions, 16 packets, one fresh Sonnet subagent per packet — the same setup as P1 run 2. The packets were not seen or tuned before the run.
+
+| | Brief | kf-script |
+|---|---|---|
+| auto (IR facts) | 83.6 | **91.8** |
+| read (roles → ids) | 74.1 | 71.7 |
+| comprehension (auto + read) | 81.8 | **88.0** |
+| edit target (n = 5) | **100** | 80 |
+| rule (kf edit ≥ brief and kf comp ≥ brief + 10) | | **not met** |
+
+- **kf-script wins** on eases (4 of 4 disagreements: the brief has no exact ease), on the largest text and its colour, and on clips whose brief summarises away motion (logo_sting 94.9 vs 61.5, counter 100 vs 85.7, scroller 100 vs 85.7).
+- **kf-script loses** on "when does X finish its last movement" (3 of 5 disagreements). The view prints every sub-threshold settle and hold key, so readers count noise as movement, as in P1. It also loses one role guess: in chat_ui, "the title" was read as the largest headline instead of the header's "Support", which cost the one edit miss.
+- **Decision: the default view stays `brief`.** The P1 run 2 gain (+12) shrinks to +6 on fresh clips, and edit accuracy drops. Both kf-script losses trace to the IR's noise keys and unlabelled roles, which are P4's targets (hold fitting, read pass), not to the format. Rerun this A/B after P4.
+
 ## Not done
 
 - Seeds 2–3 (the plan's optional extension). One seed per kind keeps the baseline at about 14 min. P3/P4 should add seeds when a kind's numbers move.
