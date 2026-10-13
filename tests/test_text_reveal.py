@@ -174,14 +174,19 @@ def test_merge_uses_requested_max_gap_and_widest_frame_text():
     assert later.text == "B"  # Canonical copy follows the widest frame, rather than the latest frame.
 
 
-def test_zoomed_suffix_and_shifted_reveals_stay_separate():
+def test_zoomed_suffix_and_unanchored_reveals_stay_separate_centred_and_right_builds_merge():
     title = _track(1, "You just", 0, 2, (20, 20, 220, 50))
     zoom = _track(2, "ust", 3, 5, (-120, -30, 260, 150))
     assert text_module.merge_reveals([title, zoom]) == [title, zoom]
-    for bbox in ((100, 20, 220, 50), (60, 20, 180, 50)):
+    for bbox, merges in (((40, 20, 160, 50), False), ((100, 20, 220, 50), True), ((60, 20, 180, 50), True)):
         prefix = _track(3, "You", 0, 2, bbox)
         full = _track(4, "You just", 3, 5, (20, 20, 220, 50))
-        assert text_module.merge_reveals([prefix, full]) == [prefix, full]
+        assert text_module.merge_reveals([prefix, full]) == ([full] if merges else [prefix, full])
+    centred = TextTrack(id=5, text="You just", boxes={0: TextBox(0, "You", (60, 20, 180, 50), 0.6),
+                                                      1: TextBox(1, "You just", (20, 20, 220, 50), 0.6)})
+    merged, = text_module.merge_reveals([centred])   # a line re-centring as its words land: the reveal follows its left edge
+    raw, _, _, _, _ = text_module.text_props(merged, np.zeros((2, 80, 260, 3), np.uint8), (255, 255, 255), 2, 0, infer_font=False)
+    assert merged.reveal and raw[0, 0] == 160 and raw[0, 8] == 0.6 and raw[0, 2] == 1.0
 
 
 def test_two_title_lines_remain_two_text_elements(tmp_path):

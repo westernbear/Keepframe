@@ -365,9 +365,11 @@ def _drop_caret(best: str, reads) -> str:
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
-    # The shorter box sets the tolerance, so a zoom cannot relax alignment.
+    """One line growing from a steady anchor: its left edge, centre or right edge (a line re-centring as words land;
+    the reveal follows the left edge per frame). The shorter box sets the tolerance, so a zoom cannot relax alignment."""
     height = min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1])
-    return height > 0 and abs(a.bbox[0] - b.bbox[0]) <= 0.25 * height and abs(a.bbox[3] - b.bbox[3]) <= 0.3 * height
+    anchor = min(abs(a.bbox[0] - b.bbox[0]), abs(a.bbox[2] - b.bbox[2]), abs(a.bbox[0] + a.bbox[2] - b.bbox[0] - b.bbox[2]) / 2)
+    return height > 0 and anchor <= 0.25 * height and abs(a.bbox[3] - b.bbox[3]) <= 0.3 * height
 
 
 def _widest_box(track: TextTrack) -> TextBox:
@@ -376,8 +378,8 @@ def _widest_box(track: TextTrack) -> TextBox:
 
 def merge_reveals(tracks: list[TextTrack], max_gap: int = 3) -> list[TextTrack]:
     """Fold aligned prefixes into the later track, retaining each frame's OCR box."""
-    # ponytail: left-to-right reveals only; right/centre reveals stay separate tracks
-    # Upgrade path: infer the reveal direction and expose it in the IR.
+    # shortcut: the read grows at its end (left to right) from any anchor; a line built from its end stays separate
+    # tracks. Upgrade path: infer the reveal direction and expose it in the IR.
     for track in tracks:
         full = _widest_box(track)
         full_text = _compact(full.text)
