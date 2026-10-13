@@ -70,6 +70,12 @@ window.__bbox = id => {{ const r = document.getElementById(id).getBoundingClient
 """
 
 
+def _ink(surface: str) -> str:
+    """A label colour readable on `surface` (#rrggbb): dark on light surfaces, white otherwise."""
+    r, g, b = (int(surface[i:i + 2], 16) for i in (1, 3, 5))
+    return "#111111" if 0.2126 * r + 0.7152 * g + 0.0722 * b > 160 else "#ffffff"
+
+
 def _words(text: str) -> str:
     return " ".join(f'<span class="w"><span>{html.escape(w)}</span></span>' for w in text.split())
 
@@ -210,7 +216,12 @@ def _block_transition(r: random.Random, pal, font) -> Template:
 def _prompt_typing(r: random.Random, pal, font) -> Template:
     bg, fg, acc, surf = pal
     head = r.choice(["Ask. And move forward.", "Just ask.", "What should we build?"])
-    typed = " ".join(r.sample(WORDS, 4)).capitalize() + "."
+    typed = ""
+    for word in r.sample(WORDS, 6):   # the line must fit the bar left of the button (≈ 22 characters at 30 px)
+        if len(typed) + len(word) + 2 > 22:
+            break
+        typed = f"{typed} {word}".strip()
+    typed = typed.capitalize() + "."
     t0, cps = 0.8, r.choice([16, 20, 24])
     times, t = [], t0
     for ch in typed:
@@ -221,7 +232,7 @@ def _prompt_typing(r: random.Random, pal, font) -> Template:
                      f"border: 2px solid {acc}; background: {surf}; }}",
                      f"#typed {{ left: 236px; top: 258px; font-size: 30px; font-weight: 500; color: {fg}; }} #typed .ch {{ display: none; }}",
                      f"#caret {{ display: inline-block; width: 3px; height: 30px; background: {fg}; vertical-align: -4px; margin-left: 2px; }}",
-                     f"#btn {{ left: 640px; top: 252px; width: 104px; height: 48px; border-radius: 24px; background: {acc}; color: #fff; "
+                     f"#btn {{ left: 640px; top: 252px; width: 104px; height: 48px; border-radius: 24px; background: {acc}; color: {_ink(acc)}; "
                      "font-size: 24px; font-weight: 700; line-height: 48px; text-align: center; }",
                      "#cursor { left: 0; top: 0; width: 28px; height: 28px; }",
                      f"#chip {{ left: 50%; top: 360px; transform: translateX(-50%); font-size: 22px; color: {fg}; padding: 8px 20px; "
