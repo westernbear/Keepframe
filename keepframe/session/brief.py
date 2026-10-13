@@ -61,6 +61,15 @@ def describe_motion(el: Element, m: Motion, fps: float) -> str:
         return f"spins {m.mag:g}° {span}{tail}"
 
 
+def motion_text(el: Element, motions: list[Motion], fps: float) -> str:
+    """The element's motions in brief words ("static" when none): glyph typing (D15), then each motion."""
+    moves = [describe_motion(el, m, fps) for m in motions]
+    if el.canonical.glyphs:   # D15: each glyph fades in on its own delay
+        g = el.canonical.glyphs
+        moves.insert(0, f"types glyph by glyph {_sec(el.visible[0] + min(g.delays), fps)}–{_sec(el.visible[0] + max(g.delays) + g.ramp, fps)}")
+    return "; ".join(moves) or "static"
+
+
 def _content(el: Element) -> str:
     bits = []
     if el.canonical.text:
@@ -83,7 +92,7 @@ def _background_text(bg) -> str:
 def scene_brief(scene: Scene) -> str:
     W, H = scene.size
     motions: dict[str, list[Motion]] = {}
-    for m in extract_motions(scene):
+    for m in extract_motions(scene, steps=True):
         motions.setdefault(m.element, []).append(m)
     keep = sum(c.keep for c in scene.constraints)
     lines = [
@@ -103,12 +112,7 @@ def scene_brief(scene: Scene) -> str:
         what = el.kind + (f"/{label}" if label else "")
         if el.pending_asset == "3d":
             what += " (3D 후보)"
-        moves = [describe_motion(el, m, scene.fps) for m in motions.get(el.id, [])]
-        if el.canonical.glyphs:   # D15: each glyph fades in on its own delay
-            g = el.canonical.glyphs
-            moves.insert(0, f"types glyph by glyph {_sec(el.visible[0] + min(g.delays), scene.fps)}–"
-                            f"{_sec(el.visible[0] + max(g.delays) + g.ramp, scene.fps)}")
-        moves = "; ".join(moves) or "static"
+        moves = motion_text(el, motions.get(el.id, []), scene.fps)
         # size: the element at its clearest frame (canonical), not its entrance (a pop starts tiny)
         lines.append(
             f"{el.id} | {what} | {_content(el)} | at ({(x0 + x1) / 2 / W * 100:.0f}%, {(y0 + y1) / 2 / H * 100:.0f}%) "

@@ -311,3 +311,18 @@ def test_brief_says_glyph_by_glyph_typing():
     el.visible, el.tracks = (6, 29), {}
     el.canonical.glyphs = GlyphReveal(x=[0.1, 0.4, 0.6, 0.9], delays=[0, 3, 6, 9], ramp=2)
     assert "| 0.20s–1.00s | types glyph by glyph 0.20s–0.57s" in scene_brief(scene)
+
+
+def test_brief_and_view_stub_show_a_one_frame_step():
+    """V1: a scale set in one instant step (stepped zoom) is motion, not "static"; an element the view budget leaves as
+    a summary carries the same motion words."""
+    from keepframe.kfscript.emit import _stub
+    from keepframe.session.brief import motion_text
+    from keepframe.verify.matrix import extract_motions
+    scene = _scene()
+    step = Track(keys=[Keyframe(t=0, v=2.4), Keyframe(t=10, v=2.4), Keyframe(t=11, v=0.5), Keyframe(t=29, v=0.5)])
+    scene.elements[0].tracks = {"sx": step, "sy": step}
+    assert "scales ×0.21 0.33s–0.37s" in scene_brief(scene)
+    assert not extract_motions(scene)   # the predicates' motions are unchanged: steps are opt-in
+    words = motion_text(scene.elements[0], extract_motions(scene, steps=True), scene.fps)
+    assert _stub(scene.elements[0], scene.fps, words).endswith(f" · {words} -->") and "scales" in words

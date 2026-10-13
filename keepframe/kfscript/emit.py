@@ -18,7 +18,8 @@ from ..ir.gradient import gradient_at, gradient_css
 from ..ir.importance import rank_elements
 from ..ir.schema import Element, Scene
 from ..ir.tracks import PRESET_EASES, eval_track
-from ..session.brief import group_lines
+from ..session.brief import group_lines, motion_text
+from ..verify.matrix import extract_motions
 
 _PRESET_NAMES = {tuple(v): k for k, v in PRESET_EASES.items() if k != "linear"}
 VIEW_CHARS = 48_000   # the agent view budget (≈ 12k tokens; P1 Task 5, sizes in docs/qa/kfscript/p1.md)
@@ -203,19 +204,21 @@ def _stage(scene: Scene) -> str:
     return f'<div id="stage" style="width:{scene.size[0]}px;height:{scene.size[1]}px;background:{css}">\n'
 
 
-def _stub(el: Element, fps: float, shown: bool = False) -> str:
+def _stub(el: Element, fps: float, motion: str | None = None) -> str:
     """The element's summary comment, like a brief row: kind/role, text, size, entrance position, visible range and
-    glyph-by-glyph typing. Before every shown element's markup (its position is otherwise only in the script), and in
-    place of an element whose full block does not fit the budget (never dropped)."""
+    glyph-by-glyph typing. Before every shown element's markup (its position is otherwise only in the script), and,
+    with its `motion` in brief words, in place of an element whose full block does not fit the budget (never dropped)."""
     c, f = el.canonical, el.visible[0]
     pos = [eval_track(el.tracks[p], f) if p in el.tracks else 0.0 for p in ("x", "y")]
     text = f' "{html.escape(" ".join(c.text.split())[:60])}"' if c.text else ""
     body = (f"{_script_json(el.id)[1:-1]} {el.kind}/{html.escape(el.label or el.role)}{text} {c.width:.0f}x{c.height:.0f}px "
             f"at ({pos[0]:.0f}, {pos[1]:.0f}) visible {el.visible[0] / fps:.2f}–{(el.visible[1] + 1) / fps:.2f} s "
             f"(f{el.visible[0]}–f{el.visible[1]})")
-    if c.glyphs:
+    if motion is not None:   # a summary row: the brief's motion words carry its glyph typing too
+        body += f" · {motion}"
+    elif c.glyphs:
         body += f" · types glyph by glyph {(f + min(c.glyphs.delays)) / fps:.2f}–{(f + max(c.glyphs.delays) + c.glyphs.ramp) / fps:.2f} s"
-    return f"<!-- {(body + ('' if shown else ' (motion not shown)')).replace('--', '—')} -->"
+    return f"<!-- {body.replace('--', '—')} -->"
 
 
 def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: FontRegistry | None = None) -> str:
@@ -223,20 +226,23 @@ def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: F
     Elements are kept in `rank_elements` order while they fit `max_chars`; the rest are listed as omitted."""
     names = _ease_names(scene)
     eases = [f'CustomEase.create("{n}", "M0,0 C{_num(e[0])},{_num(e[1])} {_num(e[2])},{_num(e[3])} 1,1");' for e, n in names.items()]
-    blocks = {el.id: (_stub(el, scene.fps, shown=True) + "\n" + _markup(el, Path(scene_dir), scene.fps, scene.ui, fonts),
+    blocks = {el.id: (_stub(el, scene.fps) + "\n" + _markup(el, Path(scene_dir), scene.fps, scene.ui, fonts),
                       _element_view_js(el, scene.fps, names)) for el in scene.elements}
-    stubs = {el.id: _stub(el, scene.fps) for el in scene.elements}
+    motions: dict[str, list] = {}
+    for m in extract_motions(scene, steps=True):
+        motions.setdefault(m.element, []).append(m)
+    stubs = {el.id: _stub(el, scene.fps, motion_text(el, motions.get(el.id, []), scene.fps)) for el in scene.elements}
     fixed = header(scene) + _stage(scene) + "</div>\n<script>\n" + "\n".join(eases) + "\n</script>\n"
     used, kept = len(fixed) + sum(len(x) + 1 for x in stubs.values()), set()
     for el in rank_elements(scene):   # a full block replaces the element's stub while the budget allows
         size = sum(map(len, blocks[el.id])) + 2 - len(stubs[el.id]) - 1
-        if kept and used + size > max_chars:
-            break
+        if kept and used + size > max_chars:   # a smaller block further down may still fit
+            continue
         kept.add(el.id)
         used += size
     markup = [blocks[el.id][0] if el.id in kept else stubs[el.id] for el in scene.elements]
     out = (header(scene) + _stage(scene) + "\n".join(markup) + "\n</div>\n<script>\n"
            + "\n".join(eases + [blocks[el.id][1] for el in scene.elements if el.id in kept and blocks[el.id][1]]) + "\n</script>\n")
     if len(kept) < len(scene.elements):
-        out += f"<!-- {len(scene.elements) - len(kept)} elements shown as one-line summaries (motion not shown) to fit the budget -->\n"
+        out += f"<!-- {len(scene.elements) - len(kept)} elements shown as one-line summaries (motion in words, no script) to fit the budget -->\n"
     return out
