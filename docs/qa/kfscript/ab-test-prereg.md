@@ -1,6 +1,6 @@
 # Pre-registration: brief vs kf-script view, fresh round-trip clips (seeds 2–5)
 
-**Status: draft.** The freeze is the commit that changes this line to "frozen"; the test run uses exactly that commit's code, and that commit comes before any analysis, view, question or answer of the test clips exists. Only the decision rule's numbers below decide the outcome; the result is reported whatever it is (user decision, 2026-10-13: report and stop if it fails).
+**Status: frozen** (2026-10-13). The commit that wrote this line is the freeze: the test run uses exactly its code, from a pinned worktree, and no analysis, view, question or answer of the test clips existed before it. Tests at the freeze: fast suite 2922 passed, 0 failed; touched browser and unit tests 175 passed. Only the decision rule's numbers below decide the outcome; the result is reported whatever it is (user decision, 2026-10-13: report and stop if it fails).
 
 ## Question
 

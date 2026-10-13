@@ -24,3 +24,5 @@ prompt_typing-1 is not like-for-like: its template was fixed in `07fcde7` (a sho
   - For the A/B both views print glyph reveals now, so this changes the truth only for the round trip's structure metric.
 
 Gold: mk571 and e24 hold (`fixes.md`, T6). Not re-checked after the median-hold revision; mk571 had passed (0.0191 against its 0.0192 limit) with the start-value holds, which were worse on every synthetic case.
+
+Tests at `07d0012` (code as frozen for the A/B): fast suite 2922 passed, 2 skipped, 0 failed (the 6 litellm failures fixed by installing the existing `llm` extra; the font_match timing test passed this time); touched browser and unit tests 175 passed.
