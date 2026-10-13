@@ -9,11 +9,34 @@ from .render.renderer import render, render_result_from_json
 from .verify.verifier import verify
 
 
+def score_sheet(scene, root: Path, out: Path, n: int = 6) -> list[int]:
+    """Six evenly spaced frames, numbered and ruled every 100 px, to check a score against what the frames show."""
+    import cv2, numpy as np
+    from .ir.synth import render_frames
+    frames = sorted({round(i * (scene.frames - 1) / (n - 1)) for i in range(n)})
+    tiles = []
+    for f, img in zip(frames, render_frames(scene, root, frames)):
+        t = cv2.cvtColor(np.clip(img, 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+        for x in range(100, t.shape[1], 100):
+            cv2.line(t, (x, 0), (x, 8), (0, 0, 255), 1); cv2.putText(t, str(x), (x + 2, 20), cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 0, 255), 1)
+        for y in range(100, t.shape[0], 100):
+            cv2.line(t, (0, y), (8, y), (0, 0, 255), 1); cv2.putText(t, str(y), (10, y + 4), cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 0, 255), 1)
+        for colour, width in (((0, 0, 0), 3), ((255, 255, 255), 1)):
+            cv2.putText(t, f"f{f}", (8, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.9, colour, width)
+        tiles.append(t)
+    tiles += [np.zeros_like(tiles[0])] * (len(tiles) % 2)
+    cv2.imwrite(str(out), np.vstack([np.hstack(tiles[i:i + 2]) for i in range(0, len(tiles), 2)]))
+    return frames
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="keepframe")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("synth"); s.add_argument("--out", required=True); s.add_argument("--seed", type=int, default=1)
     s.add_argument("--frames", type=int, default=60); s.add_argument("--no-text", action="store_true")
+    sc = sub.add_parser("score", help="print a scene as a Motion Score (keepframe.score/2)")
+    sc.add_argument("--scene", required=True); sc.add_argument("--out", default=None)
+    sc.add_argument("--sheet", default=None, help="also write rendered frames with frame labels and a 100 px ruler (PNG)")
     c = sub.add_parser("compose"); c.add_argument("--scene", required=True); c.add_argument("--out", required=True)
     r = sub.add_parser("render"); r.add_argument("--scene", required=True); r.add_argument("--html", required=True)
     r.add_argument("--out", required=True); r.add_argument("--frames", default=None); r.add_argument("--mp4", action="store_true")
@@ -70,6 +93,17 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(a.out)
         scene = make_synthetic_scene(out, seed=a.seed, frames=a.frames, with_text=not a.no_text)
         save_scene(scene, out / "scene.json"); print(out / "scene.json"); return 0
+    if a.cmd == "score":
+        from .ir.score import dumps, to_score
+        scene = load_scene(Path(a.scene))
+        text = dumps(to_score(scene))
+        if a.sheet:
+            score_sheet(scene, Path(a.scene).parent, Path(a.sheet))
+        if a.out:
+            Path(a.out).write_text(text, encoding="utf-8"); print(a.out)
+        else:
+            sys.stdout.write(text)
+        return 0
     if a.cmd == "compose":
         sp = Path(a.scene); print(compose(load_scene(sp), sp.parent, Path(a.out))); return 0
     if a.cmd == "render":

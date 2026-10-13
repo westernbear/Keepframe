@@ -1,0 +1,96 @@
+{
+  "format": "keepframe.score/2",
+  "id": "s1",
+  "canvas": {"w": 1080, "h": 1920, "fps": 30.0, "frames": 150},
+  "plate": {
+    "kind": "gradient",
+    "confidence": 0.9,
+    "gradient": {"stops": [{"offset": 0.0, "color": "#ffffff"}, {"offset": 1.0, "color": "#ffe3ea"}], "angle": 90.0},
+    "gradient_keys": [
+      {
+        "t": 0,
+        "gradient": {"stops": [{"offset": 0.0, "color": "#ffffff"}, {"offset": 1.0, "color": "#ffe3ea"}], "angle": 90.0}
+      }
+    ],
+    "poster": "assets/plate.png"
+  },
+  "layers": [
+    {
+      "id": "title",
+      "type": "text",
+      "span": [18, 149],
+      "size": [420.0, 96.0],
+      "role": "primary",
+      "text": "A Weekend Away",
+      "font": {
+        "family_guess": "Urbanist",
+        "weight": 800,
+        "size_px": 96.0,
+        "candidates": ["Urbanist", "Outfit"],
+        "scores": [0.9, 0.7],
+        "source": "bundled"
+      },
+      "color": "#a8001c",
+      "style": {
+        "fill": {"stops": [{"offset": 0.0, "color": "#ffffff"}, {"offset": 1.0, "color": "#ffe3ea"}], "angle": 90.0},
+        "effects": [{"kind": "shadow", "color": "#000000", "opacity": 0.3, "dy": 6.0, "blur": 18.0}],
+        "tracking_em": -0.02
+      },
+      "glyphs": {"x": [0.1, 0.5, 0.9], "delays": [0.0, 2.0, 4.0], "ramp": 5.0},
+      "src": "assets/title.png",
+      "texture_meta": {"method": "two_colour", "frames": [30, 40], "confidence": 0.8},
+      "texture_pad": 12.0,
+      "motion": [
+        {
+          "keys": {
+            "y": [[18, 900.0, "out_cubic"], [30, 820.0]],
+            "x": [[18, 540.0, [0.2, 0.0, 0.1, 1.0]], [30, 541.5]],
+            "ry": [[18, -30.0], [60, 0.0]]
+          }
+        }
+      ],
+      "z": [[0, 3.0], [90, 7.0]],
+      "raw": "assets/title_raw.npz",
+      "err": {"max_px": 1.4, "max_frames": 1},
+      "conf": 0.91,
+      "label": "headline",
+      "caption": "big title"
+    },
+    {
+      "id": "globe",
+      "type": "video",
+      "span": [0, 149],
+      "size": [300.0, 300.0],
+      "anchor": [0.5, 0.6],
+      "src": "assets/globe.png",
+      "video": "assets/globe.webm",
+      "video_rate": 0.5,
+      "motion": [{"keys": {"x": [[0, 200.0]]}}],
+      "z": 1.0,
+      "manual": true
+    },
+    {
+      "id": "cube",
+      "type": "model3d",
+      "span": [10, 100],
+      "size": [120.0, 120.0],
+      "model": "assets/cube.glb",
+      "motion": [{"keys": {"ry": [[10, 0.0], [100, 360.0]]}}],
+      "z": [[5, 2.0]],
+      "pending": "3d"
+    }
+  ],
+  "groups": [{"id": "g1", "members": ["title", "globe"], "reason": "text_fragments"}],
+  "predicates": [{"pred": "type(m_title,'translation')", "keep": true}, {"pred": "before(m_title,m_cube)"}],
+  "ui": {
+    "components": [
+      {
+        "id": "card",
+        "kind": "card",
+        "bbox": [10.0, 10.0, 200.0, 120.0],
+        "text": "Pro",
+        "states": [{"frames": [0, 20], "state": {"hover": true}}]
+      }
+    ]
+  }
+}
