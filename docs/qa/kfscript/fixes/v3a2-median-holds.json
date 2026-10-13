@@ -1,0 +1,606 @@
+{
+ "id": "v3a2-median-holds",
+ "commit": "2198acb",
+ "before": "rt-b2",
+ "after": "rt-v3a2",
+ "machine": "cloud container, 4 CPU, no GPU",
+ "command": "keepframe eval-roundtrip --seeds 1 --reuse (renders from rt-base)",
+ "cases": {
+  "kinetic_title-1": {
+   "l1_kf": [
+    0.01766,
+    0.01728
+   ],
+   "kf_parity": [
+    7e-07,
+    9e-07
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    15.0,
+    15.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.235,
+    0.235
+   ],
+   "centre_px": [
+    2.5,
+    2.0
+   ],
+   "visible_err": [
+    3.5,
+    3.5
+   ],
+   "dl_ratio": [
+    7.891,
+    7.715
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 4
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 4
+    }
+   ],
+   "text": {
+    "title": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "sub": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "logo_sting-1": {
+   "l1_kf": [
+    0.02829,
+    0.02814
+   ],
+   "kf_parity": [
+    1.4e-06,
+    4.7e-06
+   ],
+   "matched_rate": [
+    0.8,
+    0.8
+   ],
+   "pieces_mean": [
+    4.2,
+    4.2
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.95,
+    0.95
+   ],
+   "centre_px": [
+    1.225,
+    1.05
+   ],
+   "visible_err": [
+    22.75,
+    22.75
+   ],
+   "dl_ratio": [
+    5.197,
+    4.837
+   ],
+   "structure": [
+    {
+     "found": 1,
+     "missed": 1,
+     "unsupported": 5
+    },
+    {
+     "found": 1,
+     "missed": 1,
+     "unsupported": 5
+    }
+   ],
+   "text": {
+    "name": [
+     1.0,
+     1.0,
+     0.55,
+     0.55
+    ],
+    "url": [
+     1.0,
+     1.0,
+     1.35,
+     1.35
+    ]
+   }
+  },
+  "chat_ui-1": {
+   "l1_kf": [
+    0.01474,
+    0.01487
+   ],
+   "kf_parity": [
+    1.6e-06,
+    0.0001739
+   ],
+   "matched_rate": [
+    0.8333,
+    0.8333
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0833
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    2.66,
+    2.8833
+   ],
+   "centre_px": [
+    2.14,
+    2.13
+   ],
+   "visible_err": [
+    4.6,
+    4.6
+   ],
+   "dl_ratio": [
+    9.217,
+    8.773
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "title": [
+     1.0,
+     1.0,
+     0.51,
+     0.51
+    ],
+    "t0": [
+     1.0,
+     1.0,
+     4.6,
+     4.6
+    ],
+    "t1": [
+     1.0,
+     1.0,
+     5.83,
+     5.83
+    ],
+    "t2": [
+     1.0,
+     1.0,
+     2.21,
+     2.54
+    ],
+    "t3": [
+     1.0,
+     1.0,
+     0.6,
+     0.6
+    ],
+    "t4": [
+     1.0,
+     1.0,
+     2.21,
+     3.22
+    ]
+   }
+  },
+  "scroller-1": {
+   "l1_kf": [
+    0.06858,
+    0.06801
+   ],
+   "kf_parity": [
+    7.8e-06,
+    1.1e-05
+   ],
+   "matched_rate": [
+    0.5,
+    0.5
+   ],
+   "pieces_mean": [
+    5.625,
+    5.625
+   ],
+   "text_ratio": [
+    0.494,
+    0.494
+   ],
+   "colour_de": [
+    0.47,
+    0.47
+   ],
+   "centre_px": [
+    11.3,
+    11.425
+   ],
+   "visible_err": [
+    10.5,
+    10.5
+   ],
+   "dl_ratio": [
+    20.332,
+    20.169
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "l0": [
+     0.952,
+     0.952,
+     0.47,
+     0.47
+    ],
+    "l1": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l2": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l3": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l4": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l5": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l6": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l7": [
+     0.0,
+     0.0,
+     null,
+     null
+    ]
+   }
+  },
+  "block_transition-1": {
+   "l1_kf": [
+    0.04979,
+    0.04961
+   ],
+   "kf_parity": [
+    6e-07,
+    7e-07
+   ],
+   "matched_rate": [
+    0.1667,
+    0.1667
+   ],
+   "pieces_mean": [
+    3.5,
+    2.6667
+   ],
+   "text_ratio": [
+    0.5,
+    0.5
+   ],
+   "colour_de": [
+    0.55,
+    0.55
+   ],
+   "centre_px": [
+    2.5,
+    2.5
+   ],
+   "visible_err": [
+    11.0,
+    11.0
+   ],
+   "dl_ratio": [
+    4.859,
+    4.081
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "ta": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "tb": [
+     1.0,
+     1.0,
+     0.55,
+     0.55
+    ]
+   }
+  },
+  "prompt_typing-1": {
+   "l1_kf": [
+    0.01181,
+    0.01144
+   ],
+   "kf_parity": [
+    1e-07,
+    1e-07
+   ],
+   "matched_rate": [
+    0.8333,
+    0.8333
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.8133,
+    0.8133
+   ],
+   "centre_px": [
+    0.88,
+    0.86
+   ],
+   "visible_err": [
+    1.0,
+    1.0
+   ],
+   "dl_ratio": [
+    2.423,
+    2.278
+   ],
+   "structure": [
+    {
+     "found": 1,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 1,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "head": [
+     1.0,
+     1.0,
+     1.73,
+     1.73
+    ],
+    "typed": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "chip": [
+     1.0,
+     1.0,
+     0.71,
+     0.71
+    ]
+   }
+  },
+  "counter-1": {
+   "l1_kf": [
+    0.0254,
+    0.02538
+   ],
+   "kf_parity": [
+    0.0,
+    2e-07
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    6.6667,
+    6.6667
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    1.7825,
+    1.7825
+   ],
+   "centre_px": [
+    1.3833,
+    1.4
+   ],
+   "visible_err": [
+    17.1667,
+    17.1667
+   ],
+   "dl_ratio": [
+    11.481,
+    10.928
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "l1": [
+     1.0,
+     1.0,
+     0.6,
+     0.6
+    ],
+    "l2": [
+     1.0,
+     1.0,
+     6.53,
+     6.53
+    ],
+    "n1": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "n2": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "stepped_zoom-1": {
+   "l1_kf": [
+    0.01995,
+    0.01994
+   ],
+   "kf_parity": [
+    0.0,
+    0.0
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.3333,
+    1.3333
+   ],
+   "text_ratio": [
+    0.9733,
+    0.9733
+   ],
+   "colour_de": [
+    0.4533,
+    0.4533
+   ],
+   "centre_px": [
+    1.7333,
+    1.7333
+   ],
+   "visible_err": [
+    0.6667,
+    0.6667
+   ],
+   "dl_ratio": [
+    2.288,
+    2.043
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 1
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 1
+    }
+   ],
+   "text": {
+    "word": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "lab1": [
+     0.96,
+     0.96,
+     0.68,
+     0.68
+    ],
+    "lab2": [
+     0.96,
+     0.96,
+     0.68,
+     0.68
+    ]
+   }
+  }
+ }
+}

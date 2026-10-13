@@ -130,3 +130,17 @@ def test_view_steps_start_and_end_at_real_changes():
     js = _element_view_js(el, 30.0, {})
     assert "tl.to(S[\"e1\"], {keyframes: [{x: 90, duration: 0.200" in js and "0.200);   // x f6–f30" in js
     assert js.count("tl.to") == 1   # the constant y is only the gsap.set
+
+
+def test_view_shows_sub_tolerance_changes_as_holds():
+    """A 1 px settle after a move and ±0.5 px wiggles are within the analysis tolerance (2 px): the view does not print
+    them as motion. A slow drift that adds up past the tolerance still shows."""
+    from keepframe.kfscript.emit import _element_view_js
+    el = _el("e1", {"x": Track(keys=[Keyframe(t=0, v=10.0, ease=OUT_CUBIC), Keyframe(t=12, v=248.0), Keyframe(t=20, v=248.5),
+                                     Keyframe(t=30, v=247.6), Keyframe(t=59, v=247.0)]),
+                    "y": Track(keys=[Keyframe(t=0, v=50.0), Keyframe(t=20, v=51.0), Keyframe(t=40, v=52.0), Keyframe(t=59, v=53.0)])})
+    js = _element_view_js(el, 30.0, {tuple(OUT_CUBIC): "out_cubic"})
+    x = next(ln for ln in js.splitlines() if "// x" in ln)
+    assert x.endswith("// x f0–f12") and "248.5" not in x and "247" not in x
+    y = next(ln for ln in js.splitlines() if "// y" in ln)
+    assert "y: 53" in y and "y: 51" not in y   # 50 → 53 shows once past 2 px; the 1 px steps do not

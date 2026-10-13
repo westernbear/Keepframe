@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..analyze.keyframes import tolerance
 from ..compose.composer import _element_html, _script_json, compose
 from ..fonts.registry import FontRegistry
 from ..ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
@@ -174,12 +175,17 @@ def _element_view_js(el: Element, fps: float, names: dict[tuple, str]) -> str:
     target = f"S[{_script_json(el.id)}]"
     lines = [f"gsap.set({target}, {{{', '.join(f'{p}: {_r(p, t.keys[0].v)}' for p, t in el.tracks.items())}}});"]
     for prop, track in el.tracks.items():
-        # holds before the first change and after the last are no steps (values clamp outside the keys): read as motion
-        moving = [i for i, (a, b) in enumerate(zip(track.keys, track.keys[1:])) if a.v != b.v]
+        # a change within the analysis tolerance is not motion: it shows as a hold at the last value shown (a slow drift
+        # still shows once it adds up); holds before the first change and after the last are no steps (values clamp)
+        tol, shown = tolerance(prop, (el.canonical.height, el.canonical.width)), []
+        for k in track.keys:
+            moved = not shown or abs(k.v - shown[-1].v) > tol
+            shown.append(k if moved else k.model_copy(update={"v": shown[-1].v}))
+        moving = [i for i, (a, b) in enumerate(zip(shown, shown[1:])) if a.v != b.v]
         if not moving:
             continue
-        keys = track.keys[moving[0]:moving[-1] + 2]
-        steps = [f'{{{prop}: {_r(prop, b.v)}, duration: {(b.t - a.t) / fps:.3f}, ease: "{names[tuple(a.ease)] if a.ease and tuple(a.ease) != _LINEAR else "none"}"}}'
+        keys = shown[moving[0]:moving[-1] + 2]
+        steps = [f'{{{prop}: {_r(prop, b.v)}, duration: {(b.t - a.t) / fps:.3f}, ease: "{names[tuple(a.ease)] if a.v != b.v and a.ease and tuple(a.ease) != _LINEAR else "none"}"}}'
                  for a, b in zip(keys, keys[1:])]
         body = steps[0][1:-1] if len(steps) == 1 else f"keyframes: [{', '.join(steps)}]"
         lines.append(f"tl.to({target}, {{{body}}}, {keys[0].t / fps:.3f});   // {prop} f{keys[0].t}–f{keys[-1].t}")
