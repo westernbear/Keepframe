@@ -1,0 +1,82 @@
+{
+ "ff897464a5b7": {
+  "clip": "kinetic_title-1",
+  "view": "brief",
+  "chars": 3102
+ },
+ "02b50c73428f": {
+  "clip": "kinetic_title-1",
+  "view": "kfscript",
+  "chars": 19174
+ },
+ "d309ec83e293": {
+  "clip": "logo_sting-1",
+  "view": "brief",
+  "chars": 1766
+ },
+ "2c0b2a3ad4d3": {
+  "clip": "logo_sting-1",
+  "view": "kfscript",
+  "chars": 15873
+ },
+ "2d30917f28e8": {
+  "clip": "chat_ui-1",
+  "view": "brief",
+  "chars": 3942
+ },
+ "66ff4a5d59e9": {
+  "clip": "chat_ui-1",
+  "view": "kfscript",
+  "chars": 34986
+ },
+ "4a37d5a450ea": {
+  "clip": "scroller-1",
+  "view": "brief",
+  "chars": 6973
+ },
+ "77bd81327c62": {
+  "clip": "scroller-1",
+  "view": "kfscript",
+  "chars": 46926
+ },
+ "46056fbabd52": {
+  "clip": "block_transition-1",
+  "view": "brief",
+  "chars": 1958
+ },
+ "2d06543e3434": {
+  "clip": "block_transition-1",
+  "view": "kfscript",
+  "chars": 12108
+ },
+ "082573671ec6": {
+  "clip": "prompt_typing-1",
+  "view": "brief",
+  "chars": 1932
+ },
+ "8a350c7f2f38": {
+  "clip": "prompt_typing-1",
+  "view": "kfscript",
+  "chars": 18583
+ },
+ "fbdc97fc18c6": {
+  "clip": "counter-1",
+  "view": "brief",
+  "chars": 3772
+ },
+ "3e635bd8f1d4": {
+  "clip": "counter-1",
+  "view": "kfscript",
+  "chars": 32611
+ },
+ "2e54a71179ae": {
+  "clip": "stepped_zoom-1",
+  "view": "brief",
+  "chars": 684
+ },
+ "649e2c7e6fcb": {
+  "clip": "stepped_zoom-1",
+  "view": "kfscript",
+  "chars": 5034
+ }
+}

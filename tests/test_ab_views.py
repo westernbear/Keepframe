@@ -58,15 +58,19 @@ def test_edit_scoring_accepts_several_targets():
 
 def test_synth_gold_from_roundtrip(tmp_path):
     (tmp_path / "cases" / "logo_sting-1").mkdir(parents=True)
+    box = lambda *b: {"visible": [0, 0], "boxes": {"0": list(b)}}
     (tmp_path / "cases" / "logo_sting-1" / "truth.json").write_text(json.dumps({"elements": [
-        {"id": "bg", "role": "background", "kind": "shape"}, {"id": "name", "role": "brand_name", "kind": "text"},
-        {"id": "b0", "role": "bubble", "kind": "shape"}, {"id": "b1", "role": "bubble", "kind": "shape"},
-        {"id": "url", "role": "url", "kind": "text"}]}))
-    rows = [{"id": "bg", "piece_ids": ["e0"]}, {"id": "name", "piece_ids": ["e3", "e4"]}, {"id": "b0", "piece_ids": ["e5"]},
-            {"id": "b1", "piece_ids": ["e6"]}, {"id": "url", "piece_ids": []}]
+        {"id": "bg", "role": "background", "kind": "shape", **box(0, 0, 960, 540)},
+        {"id": "frame", "role": "frame", "kind": "shape", **box(100, 100, 800, 300)},
+        {"id": "name", "role": "brand_name", "kind": "text", **box(200, 150, 700, 250)},
+        {"id": "b0", "role": "bubble", "kind": "shape", **box(0, 400, 100, 450)}, {"id": "b1", "role": "bubble", "kind": "shape", **box(0, 460, 100, 500)},
+        {"id": "url", "role": "url", "kind": "text", **box(300, 350, 600, 380)}]}))
+    rows = [{"id": "bg", "piece_ids": ["e0"]}, {"id": "frame", "piece_ids": ["e2", "e3", "e4"]}, {"id": "name", "piece_ids": ["e3", "e4"]},
+            {"id": "b0", "piece_ids": ["e5"]}, {"id": "b1", "piece_ids": ["e6"]}, {"id": "url", "piece_ids": []}]
     (tmp_path / "metrics.json").write_text(json.dumps({"cases": [{"name": "logo_sting-1", "kind": "logo_sting", "diff": {"rows": rows}},
                                                                  {"name": "mk571", "kind": "gold", "diff": {"rows": []}}]}))
     g = ab_views.synth_gold(tmp_path)
     assert set(g) == {"_note", "logo_sting-1"}   # gold rows keep their hand-written read gold
-    assert g["logo_sting-1"]["read"] == [{"q": "Which element id(s) make up the brand name (text)? (list)", "ids": ["e3", "e4"], "set": True}]
+    assert g["logo_sting-1"]["read"] == [{"q": "Which element id(s) make up the frame (shape)? (list)", "ids": ["e2"], "set": True},
+                                         {"q": "Which element id(s) make up the brand name (text)? (list)", "ids": ["e3", "e4"], "set": True}]
     assert g["logo_sting-1"]["edit"] == [{"q": "make the brand name red", "ids": ["e3", "e4"], "property": "color"}]
