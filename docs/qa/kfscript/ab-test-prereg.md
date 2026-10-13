@@ -10,7 +10,10 @@ Does the kf-script view help the session agent understand an analysed motion-gra
 
 - 32 clips: the 8 round-trip kinds × seeds 2, 3, 4, 5 (`keepframe/kfscript/synth.py`).
 - Pages for these seeds were rendered and their contact sheets read for template defects before this commit (P2 practice). Two prompt_typing defects were fixed in `07fcde7` (line overflowing the bar; white-on-white button label). Nothing else about these clips has been looked at.
-- Analysis: `keepframe eval-roundtrip --out eval/out/rt-test --first-seed 2 --seeds 4 --reuse`, run from a git worktree pinned at the freeze commit, with `AnalyzeOptions(refine=False, generate_3d=False)` and no captioner.
+- Analysis is run from a git worktree pinned at the freeze commit, with `AnalyzeOptions(refine=False, generate_3d=False)` and no captioner. Disk allows about 8 cases of stage caches at once, so it runs seed by seed:
+  1. `keepframe eval-roundtrip --out eval/out/rt-test --first-seed S --seeds 1 --reuse` for S = 2, 3, 4, 5;
+  2. after each seed, delete its `stages/frames.npy`, `stages/*.pkl` and `analysis/sources/*.npy`;
+  3. once more over all seeds, `keepframe eval-roundtrip --out eval/out/rt-test --first-seed 2 --seeds 4 --reuse`, which re-analyses nothing and writes the 32-case `metrics.json` the questions use.
 - **Exclusions**, decided now: a clip is dropped from both views only if its analysis crashes or its `kf_parity` exceeds 0.001.
 
 ## Questions (generator frozen at this commit)
