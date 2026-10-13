@@ -59,3 +59,24 @@ def test_seek_order_independent(tmp_scene_dir):
     fwd = dict(zip(frames, render(page, scene, tmp_scene_dir / "a", frames=frames, probe=False).hashes))
     mix = dict(zip(shuffled, render(page, scene, tmp_scene_dir / "b", frames=shuffled, probe=False).hashes))
     assert fwd == mix
+
+
+def test_fidelity_range_project(tmp_path):
+    """A range project (source frames 3..): the page is compared with the source frames it replaces."""
+    from keepframe.analyze.video import write_video
+    from keepframe.ir.store import init_project_scenes, scene_dir
+    from keepframe.kfscript.check import fidelity
+    from keepframe.ir.synth import render_frames
+    scene = make_synthetic_scene(tmp_path / "src", seed=1, frames=12)
+    frames = render_frames(scene, tmp_path / "src", range(12), renderer="browser")
+    lead = [np.zeros_like(frames[0])] * 3   # three black frames before the range
+    clip = write_video(np.stack([f.round().clip(0, 255).astype(np.uint8) for f in lead + frames]), scene.fps, tmp_path / "clip.mp4")
+    root = tmp_path / "proj"
+    init_project_scenes(root, {"file": str(clip), "fps": scene.fps, "size": list(scene.size), "mode": "range", "range": [3, 14]},
+                        [(scene, (3, 14), None)])
+    sd = scene_dir(root, scene.id)
+    import shutil
+    shutil.copytree(tmp_path / "src" / "assets", sd / "assets", dirs_exist_ok=True)
+    page = emit_page(scene, sd, tmp_path / "kf.html")
+    res = fidelity(root, scene.id, page, every=3)
+    assert res["frames"] == 4 and res["l1"] < 0.02, res

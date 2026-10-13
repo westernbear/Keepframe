@@ -5,17 +5,22 @@ per-element state objects `S[id]` that the composer runtime applies (so rx/ry ke
 from __future__ import annotations
 import html
 import json
+import re
 from pathlib import Path
 
 import numpy as np
 
-from ..compose.composer import _script_json, compose
+from ..compose.composer import _element_html, _script_json, compose
 from ..fonts.registry import FontRegistry
 from ..ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
+from ..ir.gradient import gradient_at, gradient_css
+from ..ir.importance import rank_elements
 from ..ir.schema import Element, Scene
 from ..ir.tracks import PRESET_EASES
 
 _PRESET_NAMES = {tuple(v): k for k, v in PRESET_EASES.items() if k != "linear"}
+VIEW_CHARS = 48_000   # the agent view budget (≈ 12k tokens; P1 Task 5, sizes in docs/qa/kfscript/p1.md)
+_URI = re.compile(r'(src|poster|data-model)="data:[^"]*"')
 _LINEAR = tuple(PRESET_EASES["linear"])   # the bezier y = x: written as GSAP's "none"
 
 
@@ -141,3 +146,70 @@ def attrs(el: Element) -> str:
 def emit_page(scene: Scene, scene_dir: Path, out: Path, *, fonts: FontRegistry | None = None) -> Path:
     """An executable kf-script page: renders like `compose()` and reads as the scene's description."""
     return compose(scene, scene_dir, out, fonts=fonts, timeline=timeline_js(scene), header=header(scene), attrs=attrs)
+
+
+def _markup(el: Element, scene_dir: Path, fps: float, ui, fonts) -> str:
+    """The element's page markup with data URIs replaced by its asset paths (the view carries no pixels)."""
+    c = el.canonical
+    names = {"src": c.video or c.texture, "poster": c.texture, "data-model": c.model}
+    return _URI.sub(lambda m: f'{m.group(1)}="{names.get(m.group(1)) or "asset"}"',
+                    _element_html(el, scene_dir, fps, ui, fonts, attrs(el)))
+
+
+_ROUND = {"x": 1, "y": 1, "rot": 1, "skx": 1, "rx": 1, "ry": 1}   # display precision; scale, opacity, reveal: 3
+
+
+def _r(prop: str, v: float) -> str:
+    return _num(round(float(v), _ROUND.get(prop, 3)))
+
+
+def _element_view_js(el: Element, fps: float, names: dict[tuple, str]) -> str:
+    """One line per property: the start value, then GSAP keyframes (display-rounded; the page has the exact tweens)."""
+    if not el.tracks:
+        return ""
+    target = f"S[{_script_json(el.id)}]"
+    lines = [f"gsap.set({target}, {{{', '.join(f'{p}: {_r(p, t.keys[0].v)}' for p, t in el.tracks.items())}}});"]
+    for prop, track in el.tracks.items():
+        keys = track.keys
+        if len(keys) < 2:
+            continue
+        steps = [f'{{{prop}: {_r(prop, b.v)}, duration: {(b.t - a.t) / fps:.3f}, ease: "{names[tuple(a.ease)] if a.ease and tuple(a.ease) != _LINEAR else "none"}"}}'
+                 for a, b in zip(keys, keys[1:])]
+        body = steps[0][1:-1] if len(steps) == 1 else f"keyframes: [{', '.join(steps)}]"
+        lines.append(f"tl.to({target}, {{{body}}}, {keys[0].t / fps:.3f});   // {prop} f{keys[0].t}–f{keys[-1].t}")
+    return "\n".join(lines)
+
+
+def _stage(scene: Scene) -> str:
+    bg = scene.background
+    if bg.kind == "gradient":
+        css = gradient_css(gradient_at(bg, 0), *scene.size) + (f"   /* animates: {len(bg.gradient_keys)} keys */" if bg.gradient_keys else "")
+    elif bg.kind in ("image", "video"):
+        css = f'url("{bg.poster or bg.value}")' + (f"   /* video {bg.value} */" if bg.kind == "video" else "")
+    else:
+        css = bg.value
+    return f'<div id="stage" style="width:{scene.size[0]}px;height:{scene.size[1]}px;background:{css}">\n'
+
+
+def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: FontRegistry | None = None) -> str:
+    """The agent's kf-script: header, stage, element markup and timeline without vendor code, fonts or pixels.
+    Elements are kept in `rank_elements` order while they fit `max_chars`; the rest are listed as omitted."""
+    names = _ease_names(scene)
+    eases = [f'CustomEase.create("{n}", "M0,0 C{_num(e[0])},{_num(e[1])} {_num(e[2])},{_num(e[3])} 1,1");' for e, n in names.items()]
+    blocks = {el.id: (_markup(el, Path(scene_dir), scene.fps, scene.ui, fonts), _element_view_js(el, scene.fps, names))
+              for el in scene.elements}
+    fixed = header(scene) + _stage(scene) + "</div>\n<script>\n" + "\n".join(eases) + "\n</script>\n"
+    used, kept = len(fixed), set()
+    for el in rank_elements(scene):
+        size = sum(map(len, blocks[el.id])) + 2
+        if kept and used + size > max_chars:
+            break
+        kept.add(el.id)
+        used += size
+    order = [el.id for el in scene.elements if el.id in kept]
+    omitted = [el.id for el in scene.elements if el.id not in kept]
+    out = (header(scene) + _stage(scene) + "\n".join(blocks[i][0] for i in order) + "\n</div>\n<script>\n"
+           + "\n".join(eases + [blocks[i][1] for i in order if blocks[i][1]]) + "\n</script>\n")
+    if omitted:
+        out += f"<!-- omitted {len(omitted)} smaller or shorter elements: {' '.join(omitted)} -->\n"
+    return out

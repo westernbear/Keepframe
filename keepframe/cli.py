@@ -15,6 +15,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("synth"); s.add_argument("--out", required=True); s.add_argument("--seed", type=int, default=1)
     s.add_argument("--frames", type=int, default=60); s.add_argument("--no-text", action="store_true")
     c = sub.add_parser("compose"); c.add_argument("--scene", required=True); c.add_argument("--out", required=True)
+    kf = sub.add_parser("kfscript", help="emit a kf-script page (and the agent view) for a scene; --check renders it vs the source")
+    kf.add_argument("--scene", required=True); kf.add_argument("--out", required=True); kf.add_argument("--view", default=None)
+    kf.add_argument("--check", action="store_true"); kf.add_argument("--every", type=int, default=4)
     r = sub.add_parser("render"); r.add_argument("--scene", required=True); r.add_argument("--html", required=True)
     r.add_argument("--out", required=True); r.add_argument("--frames", default=None); r.add_argument("--mp4", action="store_true")
     v = sub.add_parser("verify"); v.add_argument("--scene", required=True); v.add_argument("--render-json", default=None)
@@ -72,6 +75,17 @@ def main(argv: list[str] | None = None) -> int:
         save_scene(scene, out / "scene.json"); print(out / "scene.json"); return 0
     if a.cmd == "compose":
         sp = Path(a.scene); print(compose(load_scene(sp), sp.parent, Path(a.out))); return 0
+    if a.cmd == "kfscript":
+        from .kfscript.emit import emit_page, view
+        sp = Path(a.scene); scene = load_scene(sp)
+        page = emit_page(scene, sp.parent, Path(a.out))
+        out = {"page": str(page), "page_chars": len(page.read_text())}
+        if a.view:
+            text = view(scene, sp.parent); Path(a.view).write_text(text); out["view_chars"] = len(text)
+        if a.check:   # against the project's source frames (scenes/<id>/scene.vN.json → project root, scene id)
+            from .kfscript.check import fidelity
+            out.update(fidelity(sp.parent.parents[1], sp.parent.name, page, every=a.every))
+        print(json.dumps(out)); return 0
     if a.cmd == "render":
         sp = Path(a.scene); frames = [int(x) for x in a.frames.split(",")] if a.frames else None
         res = render(Path(a.html), load_scene(sp), Path(a.out), frames=frames, mp4=a.mp4)

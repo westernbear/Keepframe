@@ -64,3 +64,40 @@ def test_state_keys_are_json_escaped(tmp_scene_dir):
     page = emit_page(scene, tmp_scene_dir, tmp_scene_dir / "kf.html").read_text()
     assert "window.pwned=1</script>" not in page.split("<body>")[1].split("<script>")[0]
     assert "&lt;/div&gt;&lt;b&gt;x&lt;/b&gt;" in page
+
+
+def test_view_strips_vendor_and_data_uris(tmp_scene_dir):
+    from keepframe.kfscript.emit import view
+    scene = make_synthetic_scene(tmp_scene_dir, seed=1)
+    text = view(scene, tmp_scene_dir)
+    assert text.startswith("<!-- kf-script v0 · synth1") and '<div id="stage" style="width:640px;height:360px;' in text
+    assert "data:" not in text and "gsap 3.12" not in text.lower() and "@font-face" not in text
+    sprite = next(e for e in scene.elements if e.canonical.texture)
+    assert f'src="{sprite.canonical.texture}"' in text
+    assert all(f'S["{e.id}"]' in text for e in scene.elements if e.tracks) and "omitted" not in text
+
+
+def test_view_budget_by_rank(tmp_scene_dir):
+    from keepframe.ir.importance import rank_elements
+    from keepframe.kfscript.emit import view
+    scene = make_synthetic_scene(tmp_scene_dir, seed=2, n_elements=8)
+    full = view(scene, tmp_scene_dir, max_chars=10**9)
+    small = view(scene, tmp_scene_dir, max_chars=len(full) // 2)
+    assert len(small) < len(full) and "<!-- omitted " in small
+    first = rank_elements(scene)[0].id
+    assert f'id="el-{first}"' in small
+    omitted = small.split("<!-- omitted ")[1].split(": ")[1].split(" -->")[0].split()
+    assert omitted and all(f'id="el-{i}"' not in small for i in omitted)
+
+
+def test_cli_kfscript_page_and_view(tmp_scene_dir, capsys):
+    import json
+    from keepframe.cli import main
+    assert main(["synth", "--out", str(tmp_scene_dir)]) == 0
+    capsys.readouterr()
+    assert main(["kfscript", "--scene", str(tmp_scene_dir / "scene.json"), "--out", str(tmp_scene_dir / "kf.html"),
+                 "--view", str(tmp_scene_dir / "view.txt")]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["page_chars"] > out["view_chars"] > 0
+    assert (tmp_scene_dir / "kf.html").read_text().startswith("<!doctype html>\n<!-- kf-script v0")
+    assert (tmp_scene_dir / "view.txt").read_text().startswith("<!-- kf-script v0")

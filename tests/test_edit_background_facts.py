@@ -232,7 +232,7 @@ assert.equal(chatReply({reply: 'done', results: []}), 'done');
     assert "appendAgent(confirmedLine(res))" in source and "const reply = chatReply(turn);" in source
 
 
-RULE = ("When the scene brief shows a picture, gradient or video background, ask the user before replacing it with a "
+RULE = ("When the scene description (brief or kf-script) shows a picture, gradient or video background, ask the user before replacing it with a "
         "flat colour: offer tint")
 
 
