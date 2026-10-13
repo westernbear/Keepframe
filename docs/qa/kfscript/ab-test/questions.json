@@ -1,0 +1,4306 @@
+{
+ "kinetic_title-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 1.60 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e32 visible at t = 1.60 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 2.7666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e33's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "smarter today busywork"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 2.40 s, which element is in front: e2 or e28?",
+   "gold": [
+    "e28"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 first appear?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e15?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e33's biggest horizontal move take?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the subheadline (text)? (list)",
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the subheadline text to 'Hello'",
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ],
+   "property": "timing"
+  }
+ ],
+ "logo_sting-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e13 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e16 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e16 finish its last movement?",
+   "gold": 3.066666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Kiro Labs"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#15161c"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e1 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e16 first appear?",
+   "gold": 2.7333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e16 or e13?",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e1's biggest horizontal move take?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e16 at t = 4.03 s? (answer [x, y] in pixels)",
+   "gold": [
+    416.0,
+    269.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e16's opacity at t = 4.03 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the frame (shape)? (list)",
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (shape)? (list)",
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the brand name (text)? (list)",
+   "gold": [
+    "e15",
+    "e16"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the url (text)? (list)",
+   "gold": [
+    "e17"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame red",
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo red",
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the brand name text to 'Hello'",
+   "gold": [
+    "e15",
+    "e16"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the url text to 'Hello'",
+   "gold": [
+    "e17"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame appear 0.5 s later",
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ],
+   "property": "timing"
+  }
+ ],
+ "chat_ui-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e5 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e12 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e5 finish its last movement?",
+   "gold": 4.366666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e8's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "in_out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "busywork bigger Grow"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#e8effd"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e5 first appear?",
+   "gold": 0.43333333333333335,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e5 or e8?",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e7's biggest vertical move take?",
+   "gold": 2.066666666666667,
+   "tol": 0.20666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e5 at t = 1.97 s? (answer [x, y] in pixels)",
+   "gold": [
+    181.5,
+    393.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e5's opacity at t = 1.97 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the header (shape)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the title (text)? (list)",
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header red",
+   "gold": [
+    "e3"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the title text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header appear 0.5 s later",
+   "gold": [
+    "e3"
+   ],
+   "property": "timing"
+  }
+ ],
+ "scroller-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 finish its last movement?",
+   "gold": 2.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e6's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "MOVEGROW"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#e8f1ff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e6 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 first appear?",
+   "gold": 0.4666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e6 or e7?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e6's biggest vertical move take?",
+   "gold": 2.966666666666667,
+   "tol": 0.2966666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e4 at t = 0.13 s? (answer [x, y] in pixels)",
+   "gold": [
+    287.5,
+    270.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e4's opacity at t = 0.13 s? (0 to 1)",
+   "gold": 0.0,
+   "tol": 0.05
+  }
+ ],
+ "block_transition-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 finish its last movement?",
+   "gold": 2.0,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e3's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "channel together"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#1c1b17"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 first appear?",
+   "gold": 1.8,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e6 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e3's biggest horizontal move take?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e6 at t = 2.50 s? (answer [x, y] in pixels)",
+   "gold": [
+    481.5,
+    287.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e6's opacity at t = 2.50 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "prompt_typing-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e9 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 finish its last movement?",
+   "gold": 0.5666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e3's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Just ask."
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#fafafa"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e3 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e3 or e8?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e3's biggest vertical move take?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e8 at t = 2.50 s? (answer [x, y] in pixels)",
+   "gold": [
+    381.75,
+    278.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e8's opacity at t = 2.50 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the input (shape)? (list)",
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the typed prompt (text)? (list)",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the button (shape)? (list)",
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the chip (text)? (list)",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e3"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the input red",
+   "gold": [
+    "e4",
+    "e7"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the typed prompt text to 'Hello'",
+   "gold": [
+    "e8"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the button red",
+   "gold": [
+    "e5",
+    "e6"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the chip text to 'Hello'",
+   "gold": [
+    "e9"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e3"
+   ],
+   "property": "timing"
+  }
+ ],
+ "counter-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e26 visible at t = 2.00 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 2.00 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e26 finish its last movement?",
+   "gold": 1.8333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e5's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "125K"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#00b38f"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e26 first appear?",
+   "gold": 1.5,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e26 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e5's biggest vertical move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e28 at t = 2.97 s? (answer [x, y] in pixels)",
+   "gold": [
+    587.5,
+    304.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e28's opacity at t = 2.97 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "stepped_zoom-2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e1 finish its last movement?",
+   "gold": 0.7,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Flowly"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 first appear?",
+   "gold": 0.8333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e1 or e2?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e1 at t = 1.83 s? (answer [x, y] in pixels)",
+   "gold": [
+    479.0,
+    254.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e1's opacity at t = 1.83 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (text)? (list)",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the logo text to 'Hello'",
+   "gold": [
+    "e1"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo appear 0.5 s later",
+   "gold": [
+    "e1"
+   ],
+   "property": "timing"
+  }
+ ],
+ "kinetic_title-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.60 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e16 visible at t = 1.60 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 finish its last movement?",
+   "gold": 2.5,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e19's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Clear Think busywork"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#1c1b17"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 2.70 s, which element is in front: e27 or e18?",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e3 or e15?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e19's biggest horizontal move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e15 at t = 1.67 s? (answer [x, y] in pixels)",
+   "gold": [
+    478.5,
+    360.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e15's opacity at t = 1.67 s? (0 to 1)",
+   "gold": 0.9996520280838013,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the subheadline (text)? (list)",
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the subheadline text to 'Hello'",
+   "gold": [
+    "e15"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ],
+   "property": "timing"
+  }
+ ],
+ "logo_sting-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e15 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e18 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e18 finish its last movement?",
+   "gold": 4.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Mosaic Labs"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e1 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e18 first appear?",
+   "gold": 2.7333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e18 or e11?",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e1's biggest horizontal move take?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e1 at t = 0.13 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.0,
+    270.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e1's opacity at t = 0.13 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the frame (shape)? (list)",
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (shape)? (list)",
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the brand name (text)? (list)",
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the url (text)? (list)",
+   "gold": [
+    "e19"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame red",
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo red",
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the brand name text to 'Hello'",
+   "gold": [
+    "e17",
+    "e18"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the url text to 'Hello'",
+   "gold": [
+    "e19"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame appear 0.5 s later",
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ],
+   "property": "timing"
+  }
+ ],
+ "chat_ui-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e7 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e14 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 finish its last movement?",
+   "gold": 3.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e16's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "together smarter team faster"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#1e2025"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e7 or e6?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 first appear?",
+   "gold": 0.43333333333333335,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e7 or e10?",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e9's biggest vertical move take?",
+   "gold": 2.6666666666666665,
+   "tol": 0.26666666666666666
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e7 at t = 4.47 s? (answer [x, y] in pixels)",
+   "gold": [
+    206.5,
+    169.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e7's opacity at t = 4.47 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the header (shape)? (list)",
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the title (text)? (list)",
+   "gold": [
+    "e4",
+    "e6"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header red",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the title text to 'Hello'",
+   "gold": [
+    "e4",
+    "e6"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "timing"
+  }
+ ],
+ "scroller-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e12 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e13 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e12 finish its last movement?",
+   "gold": 2.933333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e11's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "TODAYLAUNCH"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.30 s, which element is in front: e12 or e6?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e22 first appear?",
+   "gold": 0.4666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e12 or e22?",
+   "gold": [
+    "e12"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e11's biggest vertical move take?",
+   "gold": 2.966666666666667,
+   "tol": 0.2966666666666667
+  }
+ ],
+ "block_transition-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e8 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e8 finish its last movement?",
+   "gold": 2.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e7's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "busywork together"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#1c1b17"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e3?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e8 first appear?",
+   "gold": 1.8666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e8 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e3's biggest horizontal move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 0.63 s? (answer [x, y] in pixels)",
+   "gold": [
+    482.0,
+    285.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 0.63 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "prompt_typing-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e10 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 finish its last movement?",
+   "gold": 0.5666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Move smarter busywork."
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#e9f0fe"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e3 or e5?",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e3 or e9?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e3 at t = 2.77 s? (answer [x, y] in pixels)",
+   "gold": [
+    477.5,
+    161.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e3's opacity at t = 2.77 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the input (shape)? (list)",
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the typed prompt (text)? (list)",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the button (shape)? (list)",
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the chip (text)? (list)",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e3"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the input red",
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the typed prompt text to 'Hello'",
+   "gold": [
+    "e9"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the button red",
+   "gold": [
+    "e5",
+    "e6"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the chip text to 'Hello'",
+   "gold": [
+    "e10"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e3"
+   ],
+   "property": "timing"
+  }
+ ],
+ "counter-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e24 visible at t = 2.00 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 2.00 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e24 finish its last movement?",
+   "gold": 1.8666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "125K"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#111111"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e24 first appear?",
+   "gold": 1.4,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e24 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest vertical move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e24 at t = 2.93 s? (answer [x, y] in pixels)",
+   "gold": [
+    238.0,
+    308.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e24's opacity at t = 2.93 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "stepped_zoom-3": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e1 finish its last movement?",
+   "gold": 0.7,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Orbit"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 first appear?",
+   "gold": 0.8333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e1 or e2?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e1's biggest horizontal move take?",
+   "gold": 0.03333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e1 at t = 1.83 s? (answer [x, y] in pixels)",
+   "gold": [
+    482.5,
+    249.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e1's opacity at t = 1.83 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (text)? (list)",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the logo text to 'Hello'",
+   "gold": [
+    "e1"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo appear 0.5 s later",
+   "gold": [
+    "e1"
+   ],
+   "property": "timing"
+  }
+ ],
+ "kinetic_title-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e7 visible at t = 1.60 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e24 visible at t = 1.60 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 finish its last movement?",
+   "gold": 2.6666666666666665,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e18's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "steps team Move"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#d6ff39"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 2.70 s, which element is in front: e24 or e18?",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 first appear?",
+   "gold": 0.43333333333333335,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e7 or e16?",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e18's biggest horizontal move take?",
+   "gold": 0.2,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e7 at t = 1.63 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.5,
+    267.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e7's opacity at t = 1.63 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the subheadline (text)? (list)",
+   "gold": [
+    "e16"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the subheadline text to 'Hello'",
+   "gold": [
+    "e16"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ],
+   "property": "timing"
+  }
+ ],
+ "logo_sting-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e9 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e9 finish its last movement?",
+   "gold": 2.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "口"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#00b38f"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e1 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e9 first appear?",
+   "gold": 2.7,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e9 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e5's biggest horizontal move take?",
+   "gold": 0.5333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e1 at t = 0.10 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.0,
+    270.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e1's opacity at t = 0.10 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the frame (shape)? (list)",
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (shape)? (list)",
+   "gold": [
+    "e5",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the brand name (text)? (list)",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the url (text)? (list)",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame red",
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo red",
+   "gold": [
+    "e5",
+    "e8"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the brand name text to 'Hello'",
+   "gold": [
+    "e9"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the url text to 'Hello'",
+   "gold": [
+    "e10"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame appear 0.5 s later",
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ],
+   "property": "timing"
+  }
+ ],
+ "chat_ui-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e8 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e14 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e8 finish its last movement?",
+   "gold": 4.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e14's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "forward your flows faster"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#7c3fe5"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e3 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e8 first appear?",
+   "gold": 1.4666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e8 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e5's biggest vertical move take?",
+   "gold": 1.1666666666666667,
+   "tol": 0.11666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e4 at t = 4.67 s? (answer [x, y] in pixels)",
+   "gold": [
+    167.5,
+    166.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e4's opacity at t = 4.67 s? (0 to 1)",
+   "gold": 0.9971638321876526,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the header (shape)? (list)",
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the title (text)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header red",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the title text to 'Hello'",
+   "gold": [
+    "e3"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "timing"
+  }
+ ],
+ "scroller-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e4 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e11 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e4 finish its last movement?",
+   "gold": 2.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e4's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "TOCGETHER YOUR"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#e8f1ff"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e35 first appear?",
+   "gold": 0.7333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e4 or e35?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e4's biggest vertical move take?",
+   "gold": 2.966666666666667,
+   "tol": 0.2966666666666667
+  }
+ ],
+ "block_transition-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 1.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "busywork Plan"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e4 first appear?",
+   "gold": 1.8666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e4?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest horizontal move take?",
+   "gold": 0.1,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 0.60 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.0,
+    280.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 0.60 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "prompt_typing-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e10 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 finish its last movement?",
+   "gold": 0.5666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e3's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Justask."
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#787b83"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e3 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e3 or e8?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e3's biggest vertical move take?",
+   "gold": 0.23333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e3 at t = 2.77 s? (answer [x, y] in pixels)",
+   "gold": [
+    479.5,
+    158.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e3's opacity at t = 2.77 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the input (shape)? (list)",
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the typed prompt (text)? (list)",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the button (shape)? (list)",
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the chip (text)? (list)",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e3"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the input red",
+   "gold": [
+    "e4",
+    "e7"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the typed prompt text to 'Hello'",
+   "gold": [
+    "e8"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the button red",
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the chip text to 'Hello'",
+   "gold": [
+    "e10"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e3"
+   ],
+   "property": "timing"
+  }
+ ],
+ "counter-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e29 visible at t = 2.00 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 2.00 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e29 finish its last movement?",
+   "gold": 1.9,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "125K"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e29 first appear?",
+   "gold": 1.5,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e29 or e34?",
+   "gold": [
+    "e29"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest vertical move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e29 at t = 2.93 s? (answer [x, y] in pixels)",
+   "gold": [
+    232.5,
+    303.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e29's opacity at t = 2.93 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "stepped_zoom-4": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 0.7,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Mosaic"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ff5a20"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.8333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e3?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest horizontal move take?",
+   "gold": 0.03333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 1.83 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.5,
+    258.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 1.83 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (text)? (list)",
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the logo text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "timing"
+  }
+ ],
+ "kinetic_title-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e7 visible at t = 1.60 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e32 visible at t = 1.60 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 finish its last movement?",
+   "gold": 2.5,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e7's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Work Plan"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.30 s, which element is in front: e6 or e4?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e7 first appear?",
+   "gold": 0.3333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e7 or e11?",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e7's biggest horizontal move take?",
+   "gold": 0.03333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the subheadline (text)? (list)",
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the subheadline text to 'Hello'",
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ],
+   "property": "timing"
+  }
+ ],
+ "logo_sting-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e10 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e13 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e13 finish its last movement?",
+   "gold": 3.066666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Pulse Studio"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#15161c"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e1 or e2?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e13 first appear?",
+   "gold": 2.7333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e13 or e10?",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e1's biggest horizontal move take?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e13 at t = 4.03 s? (answer [x, y] in pixels)",
+   "gold": [
+    458.0,
+    271.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e13's opacity at t = 4.03 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the frame (shape)? (list)",
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (shape)? (list)",
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the brand name (text)? (list)",
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the url (text)? (list)",
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame red",
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo red",
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the brand name text to 'Hello'",
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the url text to 'Hello'",
+   "gold": [
+    "e15"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the frame appear 0.5 s later",
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ],
+   "property": "timing"
+  }
+ ],
+ "chat_ui-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e12 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e14 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e12 finish its last movement?",
+   "gold": 3.533333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e11's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "channel forward bigger Work"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#16171d"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e4?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e12 first appear?",
+   "gold": 1.9666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e12 or e6?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e4's biggest vertical move take?",
+   "gold": 0.9666666666666667,
+   "tol": 0.09666666666666668
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 0.20 s? (answer [x, y] in pixels)",
+   "gold": [
+    99.5,
+    34.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 0.20 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the header (shape)? (list)",
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the title (text)? (list)",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header red",
+   "gold": [
+    "e1",
+    "e5"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the title text to 'Hello'",
+   "gold": [
+    "e2"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the header appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e5"
+   ],
+   "property": "timing"
+  }
+ ],
+ "scroller-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e8 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 finish its last movement?",
+   "gold": 2.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e6's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "TEAM FASTER"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#1c1b17"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 1.20 s, which element is in front: e6 or e18?",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e15 first appear?",
+   "gold": 0.43333333333333335,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e6 or e15?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e6's biggest vertical move take?",
+   "gold": 2.966666666666667,
+   "tol": 0.2966666666666667
+  }
+ ],
+ "block_transition-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 1.3666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "faster today"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#15161c"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e4 first appear?",
+   "gold": 1.8666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e4?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest horizontal move take?",
+   "gold": 0.03333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 0.63 s? (answer [x, y] in pixels)",
+   "gold": [
+    478.5,
+    279.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 0.63 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "prompt_typing-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e5 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e11 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e5 finish its last movement?",
+   "gold": 0.5666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e5's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Ask. And move forward."
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#d1fa38"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.50 s, which element is in front: e5 or e6?",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e5 first appear?",
+   "gold": 0.26666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e5 or e10?",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e5's biggest vertical move take?",
+   "gold": 0.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e5 at t = 2.77 s? (answer [x, y] in pixels)",
+   "gold": [
+    480.0,
+    155.0
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e5's opacity at t = 2.77 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline (text)? (list)",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the input (shape)? (list)",
+   "gold": [
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the typed prompt (text)? (list)",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the button (shape)? (list)",
+   "gold": [
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the chip (text)? (list)",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline text to 'Hello'",
+   "gold": [
+    "e5"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the input red",
+   "gold": [
+    "e6",
+    "e9"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the typed prompt text to 'Hello'",
+   "gold": [
+    "e10"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the button red",
+   "gold": [
+    "e7",
+    "e8"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the chip text to 'Hello'",
+   "gold": [
+    "e11"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline appear 0.5 s later",
+   "gold": [
+    "e5"
+   ],
+   "property": "timing"
+  }
+ ],
+ "counter-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e30 visible at t = 2.00 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e23 visible at t = 2.00 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e30 finish its last movement?",
+   "gold": 3.966666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "out_quad"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "200K"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ffffff"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e30 first appear?",
+   "gold": 1.8666666666666667,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e30 or e32?",
+   "gold": [
+    "e30"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest vertical move take?",
+   "gold": 0.16666666666666666,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e32 at t = 2.97 s? (answer [x, y] in pixels)",
+   "gold": [
+    623.0,
+    299.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e32's opacity at t = 2.97 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  }
+ ],
+ "stepped_zoom-5": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 1.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 1.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 0.8333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Lumen"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#00b38f"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e2 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 first appear?",
+   "gold": 0.8333333333333334,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e3?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e2's biggest vertical move take?",
+   "gold": 0.03333333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e2 at t = 1.90 s? (answer [x, y] in pixels)",
+   "gold": [
+    482.0,
+    256.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e2's opacity at t = 1.90 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the logo (text)? (list)",
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the logo text to 'Hello'",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the logo appear 0.5 s later",
+   "gold": [
+    "e1",
+    "e2"
+   ],
+   "property": "timing"
+  }
+ ]
+}
