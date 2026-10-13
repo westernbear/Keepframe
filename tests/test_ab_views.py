@@ -54,3 +54,19 @@ def test_edit_scoring_accepts_several_targets():
     assert ab_views.score_one(q, {"element": ["e64", "e65"], "property": "font"}) == 1
     assert ab_views.score_one(q, [{"element": "e64", "property": "font"}, {"element": "e65", "property": "font"}]) == 1
     assert ab_views.score_one(q, [{"element": "e64", "property": "font"}, {"element": "e9", "property": "font"}]) == 0
+
+
+def test_synth_gold_from_roundtrip(tmp_path):
+    (tmp_path / "cases" / "logo_sting-1").mkdir(parents=True)
+    (tmp_path / "cases" / "logo_sting-1" / "truth.json").write_text(json.dumps({"elements": [
+        {"id": "bg", "role": "background", "kind": "shape"}, {"id": "name", "role": "brand_name", "kind": "text"},
+        {"id": "b0", "role": "bubble", "kind": "shape"}, {"id": "b1", "role": "bubble", "kind": "shape"},
+        {"id": "url", "role": "url", "kind": "text"}]}))
+    rows = [{"id": "bg", "fragment_ids": ["e0"]}, {"id": "name", "fragment_ids": ["e3", "e4"]}, {"id": "b0", "fragment_ids": ["e5"]},
+            {"id": "b1", "fragment_ids": ["e6"]}, {"id": "url", "fragment_ids": []}]
+    (tmp_path / "metrics.json").write_text(json.dumps({"cases": [{"name": "logo_sting-1", "kind": "logo_sting", "diff": {"rows": rows}},
+                                                                 {"name": "mk571", "kind": "gold", "diff": {"rows": []}}]}))
+    g = ab_views.synth_gold(tmp_path)
+    assert set(g) == {"_note", "logo_sting-1"}   # gold rows keep their hand-written read gold
+    assert g["logo_sting-1"]["read"] == [{"q": "Which element id(s) make up the brand name (text)? (list)", "ids": ["e3", "e4"], "set": True}]
+    assert g["logo_sting-1"]["edit"] == [{"q": "make the brand name red", "ids": ["e3", "e4"], "property": "color"}]
