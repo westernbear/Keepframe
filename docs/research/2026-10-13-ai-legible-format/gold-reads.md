@@ -57,3 +57,24 @@ mk544 (measured per 2 frames: bg luminance, blue/white coverage and boxes)
 
 mk543 (from the pipeline's measured scroll, every line moves up ≈166 px at 0.77 / 1.57 / 2.34 / 3.10 / 3.90 s)
 - Cadence is ≈47 f (0.78 s), not 42 f.
+
+# SaaS promo segments (Envato previews, 960x540, 30 fps) — read from 3-frame sheets, then measured
+
+e24 f120–269 (Veluna AI)
+- Read: previous section blurs out; "Ask. And move forward." word by word with blur; prompt pill + "Ask AI"; "Make my next launch happen." typed f135–174;
+  cursor enters ~f138 bottom-right, to the button ~f156–162, click ~f177–183; hint chip ~f192; heading blurs out ~f234; "Veluna AI" + stacked dashboards with counting numbers from f246.
+- Measured: words 2 f apart (Ask. f127, And f129, move f131, forward. f133); bar/button visible from f122 (full by f128); typing f133–f174, pauses at f140–142;
+  cursor (884,409) at f142 → (784,289) at f162, then covers the button until f192 (no press flash); chip f193–196; heading exits right-to-left f230–f238
+  (forward. first); eyebrow crossfades with the previous one (f122–f128); background glow drifts (top-left at f124, top-right at f247). Missed by the read:
+  crossfade, drifting glow, reverse exit order; "click" not visible.
+
+e07 f360–509 (Flow AI)
+- Read: two lime cards fade/scale in (f360–369); "Tickets Resolved" 1K, 5K, 12K, 20K, 31K, 42K, 54K, 67K, 79K, 91K, 101K, 111K, 118K, 123K, 125K (every 3 f from f363);
+  "Integrations" 0 … 150 (f366–f411); hold; cards slide right f432–444; cut f447; fanned app cards swing in; "One inbox." / "Every channel." blur in f456–465.
+- Measured: per-frame OCR gives the same values; cards at x 148–518 and 531–821, y 141–400; they slide right accelerating f426–f444.
+
+e11 f240–389 (MotionAxx)
+- Read: typing "How can I get the best results?" in a big search field while the view pans with the caret; magnifier and a purple cursor exit left;
+  cut f282 to "best results" (gradient glow → dark grey, slight zoom out); cut f324 to "start here" pill scaling down; cursor in f351, on the button f369, press f375–381, text turns blue.
+- Measured: purple cursor at the left edge leaving f237–243; "best results" ink width shrinks 559→509 px (f300–f321); pill ink 524→324 px (f324–f372);
+  cursor (809,523) f351 → (483,342) f375, nudges up f378–390 while the text changes colour.

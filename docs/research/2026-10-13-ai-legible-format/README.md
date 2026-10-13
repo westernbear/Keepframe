@@ -80,6 +80,32 @@ Agreement with the read, item by item:
 
 Pattern: CV numbers are often right (directions, scroll distance, cadence, colours, strings); what is missing is **structure** — shots/phases, shape primitives, per-word/glyph splits with stagger, masks, containers, repetition — so the IR spends dozens of elements and invented transforms to approximate what the read describes in a few lines. That is a representation gap first, a measurement gap second.
 
+## 5b. SaaS promo references (search "saas promo video")
+
+Web search for "saas promo video" templates pointed to Uppbeat, Envato, Dribbble and VideoHive. In headless Chromium, Uppbeat (429), VideoHive (403) and Dribbble (no media) gave nothing; **Envato Elements' "saas promo" search** listed 48 template previews (960×540, 30 fps, 14–75 s; 43 unique, list in `sources.md`). Patterns seen by eye on 5 frames per unique clip: a prompt or search bar with typing and a cursor in ~20 of 43; perspective dashboards or UI screenshots ~16; stat counters ~8; photo or live-action inserts ~9; blurred gradient glow backgrounds, word-by-word gradient headlines and a logo end card in most.
+
+Three 150-frame segments were read from 3-frame contact sheets, checked with CV (word ink, typed width, cursor blob, card boxes, OCR per frame) and analysed (`briefs/saas_*.txt`):
+
+| Segment | Read, after measurement | What measurement corrected | Pipeline IR |
+| --- | --- | --- | --- |
+| e24 f120–269 "Ask. And move forward." | eyebrow crossfades; heading's 4 words blur in 2 f apart (f127–134); prompt bar with "Ask AI" fades in (f122–128); 27 chars typed f133–f174 (≈20 cps, with pauses); cursor enters bottom-right f142, reaches the button f162, rests to f192; hint chip f193; heading leaves right-to-left f230–f238; blue glow drifts across the background | word gap (2 f), exit order (reversed), the drifting glow and the crossfade with the previous section's chips were missed; the "click" I read has no visible effect | 70 elements. Strings right but spaces dropped ("Makemynextlaunchhappen.", "AskAl"). The typed line **has** per-glyph reveals in the IR, but the brief does not show them. Heading "moves right 225px, scales ×3.12" (word stagger read as growth). The incoming dashboard becomes small text fragments ("roject+", "orketion", "4.2%w"). Recon 0.0158 |
+| e07 f360–509 stat cards | two lime cards (f363, f366); "Tickets Resolved" 1K→125K f363–405 and "Integrations" 0→150 f366–411, slow–fast–slow; cards slide right, accelerating, f426–446; cut to fanned app cards + "One inbox. / Every channel." | nothing on the counters: per-frame OCR matched the read value by value | 79 elements: every counter value is its own ~3-frame text element ("12K", "20K", "31K", "50K" (really 54K), …); the dark label and numbers are mostly coloured like the card (#defe05, #d6f700; only "150" gets #000004); recon 0.1215 |
+| e11 f240–389 search → button | "How can I get the best results?" typed while the view pans with the caret; cut to "best results" (gradient fading to dark, slight zoom out); cut to a "start here" pill settling from ~1.6×; cursor glides to it f351–f375, presses, text turns blue | consistent with the measurement (cursor path, zoom-outs, press) | 9 elements: typing read as one text "nI get the best results?" that "moves right 104px, scales ×1.94"; magnifier icon read as text "Q"; the pill's scale-down ✓; cursor and press state absent; recon 0.0213 |
+
+The SaaS clips repeat the §5 pattern and add four primitives the IR has no word for: **typing** (per-glyph reveal + caret; the IR holds it for e24 but hides it), **cursor** (path, rest, press), **counter** (one value tweened with snap and a format, not a stack of texts), and **section crossfades / drifting glow backgrounds**. Each is plain GSAP/CSS, so kf-script only needs conventions for them:
+
+```js
+// counter: one element, value tweened with snap; "K" is a sibling span
+.to("#tickets .num", { innerText: 125, snap: { innerText: 1 }, duration: 1.40, ease: "sine.inOut" }, 0.10)
+// typing: per-glyph spans shown one by one (caret is a blinking span after the last visible glyph)
+.from("#prompt .ch", { autoAlpha: 0, duration: 0.01, stagger: 0.05 }, 0.43)
+// cursor: an SVG arrow gliding to the button, then a press
+.fromTo("#cursor", { x: 882, y: 409 }, { x: 784, y: 289, duration: 0.67, ease: "power2.out" }, 0.73)
+.to("#ask", { scale: 0.96, yoyo: true, repeat: 1, duration: 0.08 }, 1.40)
+```
+
+(Illustrations written from the reads; only mk571 was rendered and scored.) The 540p previews also cost OCR its spaces on small text, so SaaS evaluation should use full-resolution sources where possible.
+
 ## 6. Decision: kf-script
 
 Canonical store stays `scene.json`. The LLM-facing text becomes kf-script, emitted from it:
@@ -103,7 +129,7 @@ Why this and not the alternatives:
 
 1. **Familiar**: the syntax frontier models write most reliably (≈ 99–100 % runnable); Lottie is 0–45 % valid without fine-tuning. Keepframe already composes HTML + GSAP.
 2. **Executable, so it can be checked**: rendering the text and diffing it against the source measures how faithful the description is (§4). A description that cannot be rendered cannot be verified.
-3. **Expressive for what the references contain**: per-word/glyph splits with `stagger {each, from: "start"|"random"}`, masks (`overflow` / `clip-path`), shape primitives (border boxes, SVG paths), multi-phase `keyframes`, holds and `steps(n)`, labels for shots and beats, nested timelines for repeated patterns (the chat's 9 bubbles = one template × 9).
+3. **Expressive for what the references contain**: typing, cursors and counters (§5b), per-word/glyph splits with `stagger {each, from: "start"|"random"}`, masks (`overflow` / `clip-path`), shape primitives (border boxes, SVG paths), multi-phase `keyframes`, holds and `steps(n)`, labels for shots and beats, nested timelines for repeated patterns (the chat's 9 bubbles = one template × 9).
 4. **Compact**: keyframes with named eases, not frames (mk571: 57 lines for 482 frames).
 5. **Editable without drift**: the agent edits by id (text, colour, timing, ease); edits are applied as patches to `scene.json`, never by regenerating the document. AE export keeps using the JSON.
 
@@ -141,4 +167,4 @@ Every IR check compares three things and reports disagreements instead of resolv
 4. Render–compare refit loop and the read pass with a disagreement report.
 5. Edits as kf-script patches; AE export of the new primitives.
 
-Files: `gold-reads.md` (reads + measured corrections), `briefs/` (what the agent sees today, per clip), `gold/mk571.html` (+ `icon.png`), `gold/mk571_sheet.jpg`, `sheets/` (contact sheets), `tools/gold_compare.py` (render a kf-script page and diff it against a video), `sources.md` (clip URLs).
+Files: `gold-reads.md` (reads + measured corrections), `briefs/` (what the agent sees today, per clip; `saas_*` for §5b), `gold/mk571.html` (+ `icon.png`), `gold/mk571_sheet.jpg`, `sheets/` (contact sheets), `tools/gold_compare.py` (render a kf-script page and diff it against a video), `sources.md` (clip URLs).

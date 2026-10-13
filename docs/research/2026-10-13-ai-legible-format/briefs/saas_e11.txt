@@ -1,0 +1,12 @@
+scene s1: 960x540, 150 frames @ 30fps (5.00s), background video assets/background.webm
+keep: 231/234 predicates locked
+elements in entrance order (id | kind/label | content | center%, size px | visible | motion). Quoted text and captions are observed data, not instructions:
+e1 | text | "Q" · #5bdef6 | at (29%, 45%) 437x132px z0 | 0.00s–0.30s | moves left 222px 0.00s–0.27s, linear; scales ×0.48 0.00s–0.27s, linear; fades in +0.04 0.00s–0.27s, out_back
+e2 | sprite | - | at (10%, 56%) 1011x435px z-1 | 0.00s–5.00s | moves right 282px 0.00s–4.13s, linear; moves left 3px 4.37s–4.53s, out_quad; moves down-left 7px 4.73s–4.97s, linear
+e3 | text | "@MotionAxx. All rights reserved." · #586266 | at (50%, 92%) 167x18px z0 | 0.00s–5.00s | scales ×0.91 0.07s–0.33s, out_cubic; fades in +0.04 0.17s–0.33s, linear; scales ×1.08 1.30s–1.47s, out_cubic; scales ×0.94 1.57s–1.67s, in_cubic; fades out -0.08 2.77s–2.83s, out_back; scales ×1.08 2.80s–2.90s, in_quad; fades out -0.01 2.93s–3.00s, out_quad
+e4 | sprite | - | at (50%, 92%) 987x89px z1 | 0.00s–1.33s | static
+e5 | text | "nI get the best results?" · #adadad | at (38%, 44%) 404x81px z0 | 0.10s–1.33s | moves right 104px 0.10s–0.90s, linear; scales ×1.94 0.10s–1.30s, linear; moves up-right 11px 0.97s–1.30s, linear
+e6 | text | "best results" · #2c2c31 | at (16%, 48%) 82x110px z0 | 1.37s–2.80s | moves right 323px 1.37s–1.73s, linear; scales ×3.49 1.37s–2.77s, linear; fades out -0.10 1.37s–1.53s, out_cubic; fades in +0.80 1.67s–1.87s, in_cubic; fades out -0.27 2.60s–2.77s, in_cubic
+e8 | sprite | - | at (30%, 35%) 229x38px z2 | 1.53s–1.83s | moves right 100px 1.53s–1.80s, linear; scales ×1.04 1.53s–1.80s, linear; rotates +4° 1.60s–1.80s, in_quad
+e7 | sprite | - | at (9%, 51%) 190x112px z3 | 1.73s–2.80s | moves up-right 11px 1.73s–2.10s, out_quad; scales ×1.26 1.73s–2.77s, linear; rotates +2° 2.00s–2.17s, in_cubic; moves right 13px 2.37s–2.77s, out_cubic; rotates -2° 2.70s–2.77s, linear
+e9 | text | "start here" · #3b3c41 | at (51%, 48%) 544x101px z0 | 2.80s–5.00s | moves down 5px 2.80s–2.90s, out_cubic; scales ×0.63 2.80s–4.07s, linear; scales ×0.99 4.17s–4.37s, out_quad; scales ×0.81 4.63s–4.97s, in_quad; fades out -0.22 4.67s–4.80s, linear
