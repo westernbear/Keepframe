@@ -41,13 +41,13 @@ def _measure(out: Path, name: str, page: Path, root: Path, truth: dict, seconds:
                           "view_chars": len(view(scene, sd))}
     first = scenes[0][0].id
     src = fidelity(root, first, page) if len(scenes) == 1 else None   # the reference page itself: codec floor / gold ceiling
-    n = len(rows)
+    w = {scene.id: scene.frames for scene, _ in scenes}   # a split clip: each scene weighs by its frames
+    avg = lambda get: round(sum(get(r) * w[sid] for sid, r in rows.items()) / sum(w.values()), 5)
     parity = max(abs(r["kf"]["l1"] - r["compose"]["l1"]) for r in rows.values())
     d = diff(truth, scenes, view_chars=sum(r["view_chars"] for r in rows.values()), truth_chars=len(page.read_text()))
     return {"name": name, "kind": truth.get("kind", "gold"), "seed": truth.get("seed"), "frames": truth["frames"],
-            "scenes": len(scenes), "l1_page": src["l1"] if src else None, "l1_recon": round(sum(r["recon"] for r in rows.values()) / n, 5),
-            "l1_kf": round(sum(r["kf"]["l1"] for r in rows.values()) / n, 5),
-            "l1_compose": round(sum(r["compose"]["l1"] for r in rows.values()) / n, 5), "kf_parity": round(parity, 7),
+            "scenes": len(scenes), "l1_page": src["l1"] if src else None, "l1_recon": avg(lambda r: r["recon"]),
+            "l1_kf": avg(lambda r: r["kf"]["l1"]), "l1_compose": avg(lambda r: r["compose"]["l1"]), "kf_parity": round(parity, 7),
             "worst_kf": {sid: [round(r["kf"]["worst"], 4), r["kf"]["worst_frame"]] for sid, r in rows.items()},
             "analyse_seconds": round(seconds, 1) if seconds is not None else None,
             "measure_seconds": round(time.perf_counter() - t0, 1), "diff": d}
@@ -87,14 +87,14 @@ def _fmt(v, nd=4) -> str:
 def _summary(m: dict) -> str:
     lines = ["# kf-script round trip", "", f"Gate: kf_parity ≤ {ROUNDTRIP_GATES['kf_parity']} on every case → **{'pass' if m['passed'] else 'FAIL'}**. "
              "Everything else is recorded (P2 baseline; P3/P4 must beat it).", "",
-             "| Case | Scenes | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Pieces | Text | ΔE | Centre px | Visible err f | Structure found / missed / unsupported | DL ratio | Analyse s |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| Case | Scenes | Shot F1 | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Pieces | Text | ΔE | Centre px | Visible err f | Structure found / missed / unsupported | Keys / el | DL ratio | Analyse s |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in m["cases"]:
         d, s = r["diff"], r["diff"]["structure"]
-        lines.append(f"| {r['name']} | {r['scenes']} | {_fmt(r['l1_page'])} | {_fmt(r['l1_recon'])} | {_fmt(r['l1_kf'])} | {r['kf_parity']:.6f} | "
+        lines.append(f"| {r['name']} | {r['scenes']} | {_fmt(d['shots']['f1'], 2)} | {_fmt(r['l1_page'])} | {_fmt(r['l1_recon'])} | {_fmt(r['l1_kf'])} | {r['kf_parity']:.6f} | "
                      f"{d['truth_elements']} / {d['ir_elements']} | {_fmt(d['matched_rate'], 2)} | {_fmt(d['fragments_mean'], 2)} | {_fmt(d['pieces_mean'], 2)} | "
                      f"{_fmt(d['text_ratio'], 2)} | {_fmt(d['colour_de'], 1)} | {_fmt(d['centre_px'], 1)} | {_fmt(d['visible_err'], 1)} | "
-                     f"{len(s['found'])} / {len(s['missed'])} / {len(s['unsupported'])} | {_fmt(d['dl_ratio'], 2)} | {_fmt(r['analyse_seconds'], 0)} |")
+                     f"{len(s['found'])} / {len(s['missed'])} / {len(s['unsupported'])} | {_fmt(d['keys_mean'], 1)} | {_fmt(d['dl_ratio'], 2)} | {_fmt(r['analyse_seconds'], 0)} |")
     return "\n".join(lines) + "\n"
 
 

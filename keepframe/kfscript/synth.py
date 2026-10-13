@@ -307,38 +307,40 @@ GROUNDS = [("#0b1020", "#f5f6fb"), ("#1b0f2e", "#f4f1ea"), ("#050505", "#ffffff"
 
 
 def _hard_cut(r: random.Random, pal, font) -> Template:
-    """Two title cards cut on a beat. Shot 1: a light title over a dark gradient with a glow that rises and falls;
-    shot 2: a dark title on a light ground, or (half the seeds) the same ground and glow with only the title swapped."""
+    """Title cards cut on the beat. Shot 1: a light title over a dark gradient with a glow that rises and falls; a hard
+    cut to shot 2: a dark title and its subtitle on a light ground, where later the title alone is swapped for another
+    on the same ground (a swap inside a shot, as the reads mark it: not a cut)."""
     _, _, acc, _ = pal
-    same, (dark, light) = r.random() < 0.5, r.choice(GROUNDS)
-    a, b, sub = " ".join(r.sample(WORDS, 2)), " ".join(r.sample(WORDS, 2)), " ".join(r.sample(WORDS, 3)).lower()
-    cut = r.choice([42, 45, 48])
-    ink2 = "#ffffff" if same else "#14161c"
+    dark, light = r.choice(GROUNDS)
+    a, b, c = (" ".join(r.sample(WORDS, 2)) for _ in range(3))
+    sub = " ".join(r.sample(WORDS, 3)).lower()
+    c1, sw = r.choice([38, 40, 42]), r.choice([78, 80, 82])
     css = "\n".join([f"#s1 {{ inset: 0; background: linear-gradient(180deg, {dark} 45%, {acc} 170%); }}",
                      f"#glow {{ left: 80px; top: 300px; width: 800px; height: 480px; border-radius: 50%; "
                      f"background: radial-gradient(closest-side, {acc}, transparent); }}",
                      f"#s2 {{ inset: 0; background: {light}; visibility: hidden; }}",
                      "#t1 { left: 480px; top: 250px; font-size: 84px; font-weight: 800; color: #ffffff; }",
-                     f"#t2 {{ left: 480px; top: 240px; font-size: 72px; font-weight: 700; color: {ink2}; visibility: hidden; }}",
-                     f"#sub2 {{ left: 480px; top: 330px; font-size: 28px; color: {ink2}; visibility: hidden; }}"])
+                     "#t2, #t3 { left: 480px; top: 240px; font-size: 72px; font-weight: 700; color: #14161c; visibility: hidden; }",
+                     "#sub2 { left: 480px; top: 330px; font-size: 28px; color: #14161c; visibility: hidden; }"])
     body = "\n".join(['<div id="s1" class="a"></div>', '<div id="glow" class="a"></div>', '<div id="s2" class="a"></div>',
                       f'<div id="t1" class="c">{html.escape(a)}</div>', f'<div id="t2" class="c">{html.escape(b)}</div>',
-                      f'<div id="sub2" class="c">{html.escape(sub)}</div>'])
-    tc = cut / FPS
-    out = ["#t1"] if same else ["#s1", "#glow", "#t1"]
-    into = ["#t2", "#sub2"] if same else ["#s2", "#t2", "#sub2"]
-    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.25, scale: 0.85}, {opacity: 0.9, scale: 1.15, duration: 0.75, ease: "sine.inOut", '
-                    'yoyo: true, repeat: 3}, 0);',
+                      f'<div id="sub2" class="c">{html.escape(sub)}</div>', f'<div id="t3" class="c">{html.escape(c)}</div>'])
+    show = lambda ids, v, f: f'tl.set({json.dumps(ids)}, {{visibility: "{v}"}}, {f / FPS:.4f});'
+    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.25, scale: 0.85}, {opacity: 0.9, scale: 1.15, duration: 0.6, ease: "sine.inOut", '
+                    'yoyo: true, repeat: 1}, 0);',
                     'tl.from("#t1", {autoAlpha: 0, y: 30, duration: 0.5, ease: "power3.out"}, 0.2);',
-                    f'tl.set({json.dumps(out)}, {{visibility: "hidden"}}, {tc:.4f}); tl.set({json.dumps(into)}, {{visibility: "visible"}}, {tc:.4f});',
-                    f'tl.from("#t2", {{x: 60, duration: 0.5, ease: "power3.out"}}, {tc:.4f});',
-                    f'tl.from("#sub2", {{autoAlpha: 0, duration: 0.4}}, {tc + 0.4:.4f});'])
-    truth = {"elements": [_el("t1", "headline", "text", (_f(0.2), cut - 1), a, "#ffffff", font),
-                          _el("t2", "headline", "text", (cut, 89), b, ink2, font),
-                          _el("sub2", "subheadline", "text", (cut + _f(0.4), 89), sub, ink2, font)],
-             "shots": [[0, cut - 1], [cut, 89]], "transitions": [{"type": "cut", "frames": [cut, cut]}],
+                    show(["#s1", "#glow", "#t1"], "hidden", c1), show(["#s2", "#t2", "#sub2"], "visible", c1),
+                    f'tl.from("#t2", {{x: 60, duration: 0.5, ease: "power3.out"}}, {c1 / FPS:.4f});',
+                    f'tl.from("#sub2", {{autoAlpha: 0, duration: 0.4}}, {c1 / FPS + 0.4:.4f});',
+                    show(["#t2"], "hidden", sw), show(["#t3"], "visible", sw),
+                    f'tl.from("#t3", {{y: 40, duration: 0.4, ease: "power3.out"}}, {sw / FPS:.4f});'])
+    truth = {"elements": [_el("t1", "headline", "text", (_f(0.2), c1 - 1), a, "#ffffff", font),
+                          _el("t2", "headline_2", "text", (c1, sw - 1), b, "#14161c", font),
+                          _el("sub2", "subheadline", "text", (c1 + _f(0.4), 119), sub, "#14161c", font),
+                          _el("t3", "headline_3", "text", (sw, 119), c, "#14161c", font)],
+             "shots": [[0, c1 - 1], [c1, 119]], "transitions": [{"type": "cut", "frames": [c1, c1]}],
              "structure": []}
-    return Template(_page(dark, font, css, body, js), truth, frames=90)
+    return Template(_page(dark, font, css, body, js), truth, frames=120)
 
 
 def _wipe(r: random.Random, pal, font) -> Template:
@@ -398,18 +400,18 @@ def _whip_pan(r: random.Random, pal, font) -> Template:
     bg, fg, acc, surf = pal
     a, b = " ".join(r.sample(WORDS, 2)), " ".join(r.sample(WORDS, 2))
     t0, dur = r.choice([1.0, 1.2]), r.choice([0.4, 0.5])
-    card = f"position: absolute; top: 150px; width: 520px; height: 240px; border-radius: 24px; background: {surf}; "
+    card = f"position: absolute; top: 150px; width: 520px; height: 240px; border-radius: 24px; background: {acc}; "
     css = "\n".join(["#pan { left: 0; top: 0; width: 1920px; height: 540px; }",
                      f"#ca {{ {card} left: 220px; }} #cb {{ {card} left: 1180px; }}",
-                     f".ct {{ position: absolute; left: 40px; top: 80px; font-size: 56px; font-weight: 700; color: {fg}; white-space: nowrap; }}"])
+                     f".ct {{ position: absolute; left: 40px; top: 80px; font-size: 56px; font-weight: 700; color: {_ink(acc)}; white-space: nowrap; }}"])
     body = (f'<div id="pan" class="a"><div id="ca"><div id="ta" class="ct">{html.escape(a)}</div></div>'
             f'<div id="cb"><div id="tb" class="ct">{html.escape(b)}</div></div></div>')
     js = "\n".join(['tl.from("#ca", {autoAlpha: 0, y: 30, duration: 0.4, ease: "power2.out"}, 0.2);',
                     f'tl.to("#pan", {{x: -960, duration: {dur}, ease: "power3.inOut"}}, {t0});',
                     f'tl.to("#pan", {{filter: "blur(10px)", duration: {dur / 2}, yoyo: true, repeat: 1, ease: "power2.in"}}, {t0});'])
     end = _f(t0 + dur)
-    truth = {"elements": [_el("ca", "card", "shape", (_f(0.2), end), colour=surf), _el("ta", "card_title", "text", (_f(0.2), end), a, fg, font),
-                          _el("cb", "card_2", "shape", (_f(t0), 89), colour=surf), _el("tb", "card_title_2", "text", (_f(t0), 89), b, fg, font)],
+    truth = {"elements": [_el("ca", "card", "shape", (_f(0.2), end), colour=acc), _el("ta", "card_title", "text", (_f(0.2), end), a, _ink(acc), font),
+                          _el("cb", "card_2", "shape", (_f(t0), 89), colour=acc), _el("tb", "card_title_2", "text", (_f(t0), 89), b, _ink(acc), font)],
              "structure": [{"type": "pan", "targets": ["ca", "cb"], "params": {"px": -960, "frames": [_f(t0), end]}, "ir": "P3"}]}
     return Template(_page(bg, font, css, body, js), truth, frames=90)
 

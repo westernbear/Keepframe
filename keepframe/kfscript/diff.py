@@ -110,7 +110,8 @@ def _mean(xs) -> float | None:
 def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = None, truth_chars: int | None = None) -> dict:
     tels = [e for e in truth["elements"] if e.get("boxes")]
     irs = [(el, start, sc) for sc, start in scenes for el in sc.elements if el.kind != "group"]
-    mids = [(e["visible"][0] + e["visible"][1]) // 2 for e in tels]
+    # the annotated frame nearest the middle (synthetic truth has a box on every visible frame; a read gold, on a few)
+    mids = [min(map(int, e["boxes"]), key=lambda f: abs(f - (e["visible"][0] + e["visible"][1]) / 2)) for e in tels]
     tbox = [e["boxes"][str(m)] for e, m in zip(tels, mids)]
     boxes = [[_ir_box(el, s, sc, m) for el, s, sc in irs] for m in mids]
     M = np.array([[_iou(t, b) if b else 0.0 for b in row] for t, row in zip(tbox, boxes)]).reshape(len(tels), len(irs))
@@ -125,7 +126,7 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
         frags = sorted(_inside(irs, mids[r], tbox[r]))
         a, z = e["visible"]
         life = {a, z, mids[r], *range(a, z + 1, max(1, (z - a) // 40))}   # ≤ 40 samples: short-lived pieces count too
-        pieces = sorted(set().union(*(_inside(irs, f, e["boxes"][str(f)]) for f in life)))
+        pieces = sorted(set().union(*(_inside(irs, f, e["boxes"][str(f)]) for f in life if str(f) in e["boxes"])))
         row = {"id": e["id"], "kind": e["kind"], "match": None, "iou": round(float(M[r].max()), 3) if irs else 0.0,
                "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags], "pieces": len(pieces),
                "piece_ids": [irs[i][0].id for i in pieces]}
