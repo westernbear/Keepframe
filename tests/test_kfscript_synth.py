@@ -58,3 +58,14 @@ def test_render_template_mp4_and_boxes(tmp_path):
     w = lambda f: word["boxes"][str(f)][2] - word["boxes"][str(f)][0]
     assert w(12) < w(24) < w(5)   # the stepped zoom holds: big, small, settle
     assert np.abs(frames[5].astype(float) - frames[12].astype(float)).mean() > 1
+
+
+def test_template_id_ignores_the_checkout(monkeypatch):
+    """A worktree links the same fonts and GSAP from another path; the page is the same."""
+    from pathlib import Path
+    from keepframe.kfscript import synth
+    a = synth.template_id(synth.make_template("counter", 1))
+    monkeypatch.setattr(synth, "FONT_DIR", Path("/elsewhere/fonts/files"))
+    monkeypatch.setattr(synth, "VENDOR", Path("/elsewhere/compose/vendor"))
+    t = synth.make_template("counter", 1)
+    assert "/elsewhere/" in t.doc and synth.template_id(t) == a

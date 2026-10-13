@@ -1,6 +1,6 @@
 # Analysis fixes: one change per round trip
 
-Machine: cloud container (4 CPU, no GPU), Chromium 1194. Each row compares the 8-case synthetic round trip (seed 1; renders reused from `eval/out/rt-base`) at the change's commit with the run before it. Each run is analysed from a git worktree pinned at that commit (`keepframe eval-roundtrip --seeds 1 --reuse`). Before/after JSON for every case is in `fixes/<id>.json`.
+Machine: cloud container (4 CPU, no GPU), Chromium 1194. Each row compares the 8-case synthetic round trip (seed 1) at the change's commit with the run before it. The pages come from the same templates; each worktree re-rendered them, because the template id hashed the checkout's font and GSAP paths (fixed in `synth.template_id`). The renders are deterministic, so the sources are the same. Each run is analysed from a git worktree pinned at that commit (`keepframe eval-roundtrip --seeds 1 --reuse`). Before/after JSON for every case is in `fixes/<id>.json`.
 
 Accept rule (plan, 2026-10-13):
 - `kf_parity` ≤ 0.001 on every case;

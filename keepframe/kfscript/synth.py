@@ -316,8 +316,10 @@ def make_template(kind: str, seed: int) -> Template:
 
 
 def template_id(t: Template) -> str:
-    """Changes whenever the page or its declared truth changes (round-trip --reuse keys on it)."""
-    return hashlib.sha1((t.doc + json.dumps(t.truth, sort_keys=True)).encode()).hexdigest()[:12]
+    """Changes whenever the page or its declared truth changes (round-trip --reuse keys on it); not with the checkout
+    the bundled fonts and GSAP are linked from."""
+    doc = t.doc.replace(VENDOR.as_uri(), "vendor:").replace(FONT_DIR.as_uri(), "fonts:")
+    return hashlib.sha1((doc + json.dumps(t.truth, sort_keys=True)).encode()).hexdigest()[:12]
 
 
 def _clip(box, size) -> list[float]:
