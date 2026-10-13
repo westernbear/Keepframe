@@ -20,7 +20,7 @@ from .movers import mover_cover, mover_frames, mover_props, mover_video
 from .plate import FALLBACK_CONF, FRAMES_PATH, MOVERS_FAILED, PLATE_FAILED, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
-from .semantics import assign_roles, group_by_motion
+from .semantics import assign_roles, group_by_motion, group_successions
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
@@ -704,7 +704,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
             log.warning("captions skipped: %s", describe(e, trace=True))
             messages.append("captions skipped (captions_failed)")
     # ponytail: parsed UI has no measured motion tracks (nor the analysis' text elements).
-    scene.groups = [] if scene.ui is not None else text_groups(props or {}, ids or {}) + group_by_motion(scene.elements, raws)
+    scene.groups = [] if scene.ui is not None else (text_groups(props or {}, ids or {}) + group_by_motion(scene.elements, raws)
+                                                    + group_successions(scene.elements))
     t = _stage_done("semantics", t)
     report_stage("constraints")
     scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
