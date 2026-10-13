@@ -87,6 +87,7 @@ def test_real_gate_reports_null_for_unmatchable_annotations(tmp_path, monkeypatc
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
     monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    monkeypatch.setattr(store, "load_project", lambda *_args: SimpleNamespace(scenes=[SimpleNamespace(id="s1", frames=(0, 0))]))
     (tmp_path / "scene").mkdir()
     (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
     monkeypatch.setattr("keepframe.verify.matrix.animation_matrix", lambda _scene: {})
@@ -114,6 +115,7 @@ def test_real_gate_reports_malformed_ground_truth(tmp_path, monkeypatch):
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
     monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    monkeypatch.setattr(store, "load_project", lambda *_args: SimpleNamespace(scenes=[SimpleNamespace(id="s1", frames=(0, 0))]))
     (tmp_path / "scene").mkdir()
     (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
 
@@ -141,6 +143,7 @@ def test_real_gate_keeps_processing_after_malformed_annotation_entry(tmp_path, m
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
     monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    monkeypatch.setattr(store, "load_project", lambda *_args: SimpleNamespace(scenes=[SimpleNamespace(id="s1", frames=(0, 0))]))
     (tmp_path / "scene").mkdir()
     (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
 
@@ -170,6 +173,7 @@ def test_real_gate_keeps_processing_after_malformed_elements_container(tmp_path,
     monkeypatch.setattr("keepframe.analyze.pipeline.analyze", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(store, "current_scene", lambda *_args: (scene, None))
     monkeypatch.setattr(store, "scene_dir", lambda *_args: tmp_path / "scene")
+    monkeypatch.setattr(store, "load_project", lambda *_args: SimpleNamespace(scenes=[SimpleNamespace(id="s1", frames=(0, 0))]))
     (tmp_path / "scene").mkdir()
     (tmp_path / "scene" / "report.json").write_text(json.dumps({"reconstruction": {"mean_l1": 0.0}, "messages": []}))
 

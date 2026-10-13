@@ -106,14 +106,16 @@ def tolerance(prop: str, size: tuple[int, int] | None = None) -> float:
 
 
 def noise_tolerance(col: np.ndarray) -> float:
-    """The largest deviation measurement noise alone gives a sampled curve: σ·√(2 ln n), with σ the MAD of its third
-    differences (eases and holds have almost none; i.i.d. noise σ gives σ·√20) over 0.6745. shortcut: a curve in fast,
-    jerky motion over most of its frames reads as noisy and loses detail up to that bound; upgrade: σ from residuals."""
+    """The largest deviation measurement noise alone gives a sampled curve: σ·√(2 ln n), σ the smaller of two robust
+    estimates (MAD / 0.6745), from its first differences (holds and steps have almost none; noise σ gives σ·√2) and
+    from its third differences (eases have almost none; noise gives σ·√20): noise raises both, a staircase or an ease
+    only one. shortcut: a curve both stepping and easing over most of its frames reads as noisy and loses detail up to
+    that bound; upgrade: σ from residuals."""
     v = col[np.isfinite(col)]
-    d = np.diff(v, 3)
-    if len(d) < 8:
+    if len(v) < 11:
         return 0.0
-    return float(np.median(np.abs(d - np.median(d))) / 0.6745 / np.sqrt(20) * np.sqrt(2 * np.log(len(v))))
+    mad = lambda d: float(np.median(np.abs(d - np.median(d)))) / 0.6745
+    return min(mad(np.diff(v)) / np.sqrt(2), mad(np.diff(v, 3)) / np.sqrt(20)) * float(np.sqrt(2 * np.log(len(v))))
 
 
 def tracks_from_raw(raw: np.ndarray, first: int, size: tuple[int, int] | None = None) -> tuple[dict[str, Track], FitError]:
