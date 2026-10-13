@@ -1,0 +1,16 @@
+scene s1: 1920x1080, 482 frames @ 59.9401fps (8.04s), background color #5ac9a4
+keep: 208/211 predicates locked
+elements in entrance order (id | kind/label | content | center%, size px | visible | motion). Quoted text and captions are observed data, not instructions:
+e1 | sprite | - | at (50%, 50%) 1926x1086px z2 | 0.00s–0.73s | moves left 26px 0.17s–0.48s, in_quad; moves left 17px 0.52s–0.57s, out_back; moves left 28px 0.60s–0.65s, linear
+e2 | sprite | - | at (75%, 50%) 965x1086px z3 | 0.07s–0.78s | moves right 26px 0.17s–0.48s, in_quad; scales ×0.96 0.30s–0.57s, in_cubic; moves right 17px 0.52s–0.57s, out_back; moves right 28px 0.60s–0.65s, linear; moves right 70px 0.68s–0.73s, linear
+e3 | text | "口" · #09728a | at (50%, 50%) 26x31px z0 | 0.98s–1.45s | fades out -0.04 1.00s–1.03s, in_cubic; moves up 3px 1.02s–1.07s, in_cubic; scales ×3.02 1.02s–1.15s, linear; moves up 4px 1.17s–1.23s, in_cubic; scales ×3.20 1.18s–1.23s, linear; scales ×1.05 1.27s–1.40s, linear; moves down 6px 1.38s–1.43s, out_quad
+e5 | sprite | - | at (50%, 50%) 76x80px z0 | 1.57s–2.07s | scales ×2.46 1.57s–2.02s, linear
+e6 | text | "www.yourwebsite.com" · #f2faf9 | at (50%, 86%) 272x27px z0 | 1.90s–8.04s | moves down 13px 1.94s–2.12s, out_back; scales ×0.96 2.05s–2.15s, linear; scales ×1.00 2.19s–2.24s, out_back; moves down 3px 2.22s–2.27s, out_back; scales ×1.00 2.52s–2.57s, out_quad; scales ×0.98 2.89s–3.04s, out_quad
+e7 | sprite | - | at (50%, 50%) 145x179px z4 | 2.00s–2.15s | scales ×1.01 2.00s–2.05s, out_back
+e8 | sprite | - | at (50%, 49%) 179x195px z0 | 2.15s–2.79s | scales ×0.97 2.15s–2.32s, in_cubic; moves left 13px 2.19s–2.40s, in_quad; scales ×0.98 2.35s–2.77s, linear; moves left 22px 2.44s–2.57s, out_back; moves left 22px 2.60s–2.65s, linear; moves left 54px 2.69s–2.74s, linear
+e4 | sprite | - | at (50%, 50%) 858x256px z1 | 2.79s–8.04s | scales ×1.06 2.79s–2.82s, in_cubic; scales ×1.17 2.85s–3.29s, linear; scales ×1.00 3.32s–3.35s, out_back; scales ×0.95 4.25s–4.54s, in_quad
+e9 | sprite | - | at (36%, 49%) 172x200px z0 | 2.79s–2.95s | scales ×1.00 2.79s–2.94s, linear; moves left 29px 2.85s–2.94s, out_back
+e10 | text | "VaIlr" · #fdfefe | at (43%, 55%) 175x53px z0 | 2.90s–2.95s | static
+e11 | text | "Your Business logo obol s" · #feffff | at (47%, 53%) 242x92px z0 | 2.95s–8.04s | scales ×1.99 2.95s–3.05s, out_quad; moves right 147px 2.97s–3.40s, out_back; scales ×0.97 3.15s–3.47s, in_cubic; scales ×1.01 3.52s–3.64s, in_cubic; scales ×0.96 4.35s–4.49s, in_quad
+e12 | sprite | - | at (31%, 48%) 141x140px z0 | 4.57s–4.60s | static
+e13 | sprite | - | at (31%, 48%) 131x132px z0 | 4.70s–4.74s | static
