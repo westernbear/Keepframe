@@ -1,0 +1,62 @@
+{
+ "3d6901399600": {
+  "clip": "mk571",
+  "view": "brief",
+  "chars": 2620
+ },
+ "2d6e1b8aa22c": {
+  "clip": "mk571",
+  "view": "kfscript",
+  "chars": 22099
+ },
+ "84ce149ee936": {
+  "clip": "mk544",
+  "view": "brief",
+  "chars": 6632
+ },
+ "3089f144f97e": {
+  "clip": "mk544",
+  "view": "kfscript",
+  "chars": 47187
+ },
+ "3059ca0f15b2": {
+  "clip": "mk543",
+  "view": "brief",
+  "chars": 17852
+ },
+ "fae397155500": {
+  "clip": "mk543",
+  "view": "kfscript",
+  "chars": 41014
+ },
+ "30b9963f7038": {
+  "clip": "e24",
+  "view": "brief",
+  "chars": 8070
+ },
+ "02fd829c778e": {
+  "clip": "e24",
+  "view": "kfscript",
+  "chars": 47909
+ },
+ "1b5caae0b2e6": {
+  "clip": "e07",
+  "view": "brief",
+  "chars": 9512
+ },
+ "c4313af52bb3": {
+  "clip": "e07",
+  "view": "kfscript",
+  "chars": 45144
+ },
+ "3b9711160be3": {
+  "clip": "e11",
+  "view": "brief",
+  "chars": 2207
+ },
+ "d801a114fc97": {
+  "clip": "e11",
+  "view": "kfscript",
+  "chars": 21982
+ }
+}

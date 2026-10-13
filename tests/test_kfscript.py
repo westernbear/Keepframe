@@ -74,7 +74,7 @@ def test_view_strips_vendor_and_data_uris(tmp_scene_dir):
     assert "data:" not in text and "gsap 3.12" not in text.lower() and "@font-face" not in text
     sprite = next(e for e in scene.elements if e.canonical.texture)
     assert f'src="{sprite.canonical.texture}"' in text
-    assert all(f'S["{e.id}"]' in text for e in scene.elements if e.tracks) and "omitted" not in text
+    assert all(f'S["{e.id}"]' in text for e in scene.elements if e.tracks) and "one-line summaries" not in text
 
 
 def test_view_budget_by_rank(tmp_scene_dir):
@@ -83,11 +83,11 @@ def test_view_budget_by_rank(tmp_scene_dir):
     scene = make_synthetic_scene(tmp_scene_dir, seed=2, n_elements=8)
     full = view(scene, tmp_scene_dir, max_chars=10**9)
     small = view(scene, tmp_scene_dir, max_chars=len(full) // 2)
-    assert len(small) < len(full) and "<!-- omitted " in small
+    assert len(small) < len(full) and "one-line summaries" in small
     first = rank_elements(scene)[0].id
     assert f'id="el-{first}"' in small
-    omitted = small.split("<!-- omitted ")[1].split(": ")[1].split(" -->")[0].split()
-    assert omitted and all(f'id="el-{i}"' not in small for i in omitted)
+    stubbed = [e.id for e in scene.elements if f'id="el-{e.id}"' not in small]
+    assert stubbed and all(f"<!-- {i} " in small and f'S["{i}"]' not in small for i in stubbed)
 
 
 def test_cli_kfscript_page_and_view(tmp_scene_dir, capsys):

@@ -16,7 +16,7 @@ from ..ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
 from ..ir.gradient import gradient_at, gradient_css
 from ..ir.importance import rank_elements
 from ..ir.schema import Element, Scene
-from ..ir.tracks import PRESET_EASES
+from ..ir.tracks import PRESET_EASES, eval_track
 
 _PRESET_NAMES = {tuple(v): k for k, v in PRESET_EASES.items() if k != "linear"}
 VIEW_CHARS = 48_000   # the agent view budget (≈ 12k tokens; P1 Task 5, sizes in docs/qa/kfscript/p1.md)
@@ -128,6 +128,7 @@ def header(scene: Scene) -> str:
         "intent: (unread)",
         "conventions: each .el is placed at its anchor; S[id] holds its state: x, y anchor px; sx, sy scale; "
         "rot, skx deg; rx, ry tilt deg; opacity; reveal = visible fraction left→right. "
+        "data-track-index is the stacking order (higher is in front). "
         "Glyph reveals and visibility follow data-glyph-edges and the element's visible range.",
     ])
     # inside an HTML comment: no "--", no ">" and no template placeholders
@@ -191,6 +192,16 @@ def _stage(scene: Scene) -> str:
     return f'<div id="stage" style="width:{scene.size[0]}px;height:{scene.size[1]}px;background:{css}">\n'
 
 
+def _stub(el: Element) -> str:
+    """One comment line for an element whose full block does not fit: like a brief row, never dropped."""
+    c, f = el.canonical, el.visible[0]
+    pos = [eval_track(el.tracks[p], f) if p in el.tracks else 0.0 for p in ("x", "y")]
+    text = f' "{html.escape(" ".join(c.text.split())[:60])}"' if c.text else ""
+    body = (f"{_script_json(el.id)[1:-1]} {el.kind}/{html.escape(el.label or el.role)}{text} {c.width:.0f}x{c.height:.0f}px "
+            f"at ({pos[0]:.0f}, {pos[1]:.0f}) visible f{el.visible[0]}–f{el.visible[1]} (motion not shown)")
+    return f"<!-- {body.replace('--', '—')} -->"
+
+
 def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: FontRegistry | None = None) -> str:
     """The agent's kf-script: header, stage, element markup and timeline without vendor code, fonts or pixels.
     Elements are kept in `rank_elements` order while they fit `max_chars`; the rest are listed as omitted."""
@@ -198,18 +209,18 @@ def view(scene: Scene, scene_dir: Path, *, max_chars: int = VIEW_CHARS, fonts: F
     eases = [f'CustomEase.create("{n}", "M0,0 C{_num(e[0])},{_num(e[1])} {_num(e[2])},{_num(e[3])} 1,1");' for e, n in names.items()]
     blocks = {el.id: (_markup(el, Path(scene_dir), scene.fps, scene.ui, fonts), _element_view_js(el, scene.fps, names))
               for el in scene.elements}
+    stubs = {el.id: _stub(el) for el in scene.elements}
     fixed = header(scene) + _stage(scene) + "</div>\n<script>\n" + "\n".join(eases) + "\n</script>\n"
-    used, kept = len(fixed), set()
-    for el in rank_elements(scene):
-        size = sum(map(len, blocks[el.id])) + 2
+    used, kept = len(fixed) + sum(len(x) + 1 for x in stubs.values()), set()
+    for el in rank_elements(scene):   # a full block replaces the element's stub while the budget allows
+        size = sum(map(len, blocks[el.id])) + 2 - len(stubs[el.id]) - 1
         if kept and used + size > max_chars:
             break
         kept.add(el.id)
         used += size
-    order = [el.id for el in scene.elements if el.id in kept]
-    omitted = [el.id for el in scene.elements if el.id not in kept]
-    out = (header(scene) + _stage(scene) + "\n".join(blocks[i][0] for i in order) + "\n</div>\n<script>\n"
-           + "\n".join(eases + [blocks[i][1] for i in order if blocks[i][1]]) + "\n</script>\n")
-    if omitted:
-        out += f"<!-- omitted {len(omitted)} smaller or shorter elements: {' '.join(omitted)} -->\n"
+    markup = [blocks[el.id][0] if el.id in kept else stubs[el.id] for el in scene.elements]
+    out = (header(scene) + _stage(scene) + "\n".join(markup) + "\n</div>\n<script>\n"
+           + "\n".join(eases + [blocks[el.id][1] for el in scene.elements if el.id in kept and blocks[el.id][1]]) + "\n</script>\n")
+    if len(kept) < len(scene.elements):
+        out += f"<!-- {len(scene.elements) - len(kept)} elements shown as one-line summaries (motion not shown) to fit the budget -->\n"
     return out

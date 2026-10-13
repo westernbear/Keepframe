@@ -1,0 +1,67 @@
+{
+  "_note": "Read-gold: questions written from docs/research/2026-10-13-ai-legible-format/gold-reads.md, answered with the analysed IR ids (eval/kf/<clip>, scene s1 v1). Acceptable id sets list every IR element that carries the thing read.",
+  "mk571": {
+    "read": [
+      {"q": "Which element id is the brand name text ('Your Business logo')?", "ids": ["e11"]},
+      {"q": "Which element id is the website URL text?", "ids": ["e6"]},
+      {"q": "Which element id is the outline frame around the logo once the frame has stretched to full width?", "ids": ["e4"]}
+    ],
+    "edit": [
+      {"q": "URL 글자를 빨간색으로 바꿔줘", "ids": ["e6"], "property": "color"},
+      {"q": "브랜드 이름을 'Acme Studio'로 바꿔줘", "ids": ["e11"], "property": "text"},
+      {"q": "배경을 남색으로 바꿔줘", "ids": [null], "property": "background"}
+    ]
+  },
+  "mk544": {
+    "read": [
+      {"q": "Which element id is the final blue logo word 'Mixkit'?", "ids": ["e60"]},
+      {"q": "Which element ids are the two small 'FOR CREATIVES' labels under the final logo? (list)", "ids": ["e64", "e65"], "set": true}
+    ],
+    "edit": [
+      {"q": "마지막 Mixkit 로고를 빨간색으로 바꿔줘", "ids": ["e60"], "property": "color"},
+      {"q": "로고 아래 'FOR CREATIVES' 라벨 두 개의 글꼴을 Inter로 바꿔줘", "ids": ["e64", "e65"], "property": "font"}
+    ]
+  },
+  "mk543": {
+    "read": [
+      {"q": "Which element id is the chat header title?", "ids": ["e4"]},
+      {"q": "Which element id is the user's message containing the email address?", "ids": ["e44"]}
+    ],
+    "edit": [
+      {"q": "채팅 헤더 제목을 'Help Desk'로 바꿔줘", "ids": ["e4"], "property": "text"},
+      {"q": "이메일 주소 메시지 글자를 초록색으로 바꿔줘", "ids": ["e44"], "property": "color"}
+    ]
+  },
+  "e24": {
+    "read": [
+      {"q": "Which element id is the prompt text typed into the input bar?", "ids": ["e13"]},
+      {"q": "Which element id is the main headline 'Ask. And move forward.'?", "ids": ["e8"]},
+      {"q": "Which element id is the label of the blue 'Ask AI' button?", "ids": ["e7"]}
+    ],
+    "edit": [
+      {"q": "입력창에 타이핑되는 문장을 'Plan my product launch.'로 바꿔줘", "ids": ["e13"], "property": "text"},
+      {"q": "헤드라인 'Ask. And move forward.'을 흰색으로 바꿔줘", "ids": ["e8"], "property": "color"},
+      {"q": "Ask AI 버튼 글자가 0.3초 늦게 나오게 해줘", "ids": ["e7"], "property": "timing"}
+    ]
+  },
+  "e07": {
+    "read": [
+      {"q": "Which element id shows the final 'Tickets Resolved' count (125K)?", "ids": ["e25"]},
+      {"q": "Which element id is the 'Integrations' card label?", "ids": ["e6"]}
+    ],
+    "edit": [
+      {"q": "최종 숫자 125K를 200K로 바꿔줘", "ids": ["e25"], "property": "text"},
+      {"q": "'One inbox.' 문구를 라임색으로 바꿔줘", "ids": ["e40"], "property": "color"}
+    ]
+  },
+  "e11": {
+    "read": [
+      {"q": "Which element id is the search query being typed?", "ids": ["e5"]},
+      {"q": "Which element id is the 'start here' button label?", "ids": ["e9"]}
+    ],
+    "edit": [
+      {"q": "'start here'를 'get started'로 바꿔줘", "ids": ["e9"], "property": "text"},
+      {"q": "'best results' 글자를 보라색으로 바꿔줘", "ids": ["e6"], "property": "color"}
+    ]
+  }
+}
