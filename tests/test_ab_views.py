@@ -100,3 +100,23 @@ def test_paired_ci_resamples_clips():
     # the scenes of one clip are one cluster: a:s1 and a:s2 resample together
     split = [{**r, "clip": f"a:s{1 + int(r['q'][1:]) % 2}"} if r["clip"] == "a" else r for r in rows]
     assert ab_views.paired_ci(split, {"auto"})["clips"] == 2
+    assert ab_views.paired_ci(split, {"auto"}, by_scene=True)["clips"] == 3   # real clips: each scene its own cluster
+
+
+def test_real_gold_from_read_boxes(tmp_path):
+    """Read boxes measured on source frames name roles; the IR ids inside each (≥ 60 % of their own box) at that frame
+    answer them, each id owned by the smallest box holding it."""
+    from keepframe.ir.tracks import element_bbox
+    scene = make_reference_scene(tmp_path / "src", 9, plate="flat", title="stagger").model_copy(update={"id": "s1"})
+    init_project(tmp_path / "kf" / "clipA", {"file": "x.mp4", "fps": scene.fps, "size": list(scene.size), "mode": "range",
+                                             "range": [0, scene.frames - 1]}, scene)
+    f = scene.frames - 1
+    on = [e for e in scene.elements if e.visible[0] <= f <= e.visible[1]]
+    small = [round(v) for v in element_bbox(on[0], f, scene.size)]
+    big = [0, 0, scene.size[0], scene.size[1]]
+    boxes = [{"clip": "clipA", "frame": f, "role": "title", "kind": "text", "box": [small[0] - 2, small[1] - 2, small[2] + 2, small[3] + 2]},
+             {"clip": "clipA", "frame": f, "role": "whole frame", "kind": "shape", "box": big}]
+    gold = ab_views.real_gold(tmp_path / "kf", boxes)["clipA:s1"]
+    title, frame = (r["ids"] for r in gold["read"])
+    assert on[0].id in title and on[0].id not in frame and set(title) | set(frame) == {e.id for e in on}
+    assert [e["property"] for e in gold["edit"]] == ["text", "timing", "color"]

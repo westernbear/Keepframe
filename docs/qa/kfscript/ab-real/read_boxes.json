@@ -1,0 +1,682 @@
+[
+ {
+  "clip": "envato1",
+  "frame": 45,
+  "role": "big title 'Build'",
+  "kind": "text",
+  "text": "Build",
+  "visual": [
+   267,
+   341,
+   2448,
+   1093
+  ],
+  "box": [
+   267,
+   341,
+   2448,
+   1093
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "envato1",
+  "frame": 70,
+  "role": "'<' chevron",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   2160,
+   520,
+   2520,
+   965
+  ],
+  "box": [
+   2160,
+   520,
+   2520,
+   965
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "envato1",
+  "frame": 110,
+  "role": "title line 'Build SaaS Promo'",
+  "kind": "text",
+  "text": "Build SaaS Promo",
+  "visual": [
+   547,
+   640,
+   2027,
+   805
+  ],
+  "box": [
+   547,
+   640,
+   2027,
+   805
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "envato1",
+  "frame": 147,
+  "role": "big title of the second shot",
+  "kind": "text",
+  "text": null,
+  "visual": [
+   0,
+   320,
+   2560,
+   1093
+  ],
+  "box": [
+   0,
+   320,
+   2560,
+   1093
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 12,
+  "role": "headline of the dark scene ('Every day,')",
+  "kind": "text",
+  "text": "Every day,",
+  "visual": [
+   579,
+   455,
+   1397,
+   635
+  ],
+  "box": [
+   579,
+   455,
+   1397,
+   635
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "headline 'Every day, ideas are born inside your walls.'",
+  "kind": "text",
+  "text": "Every day, ideas are born inside your walls.",
+  "visual": [
+   543,
+   471,
+   1369,
+   639
+  ],
+  "box": [
+   551,
+   481,
+   1364,
+   643
+  ],
+  "method": "ink"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "'Conversations' card",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   136,
+   30,
+   623,
+   313
+  ],
+  "box": [
+   136,
+   30,
+   623,
+   313
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "'Sara' chat card",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   824,
+   34,
+   1218,
+   220
+  ],
+  "box": [
+   824,
+   34,
+   1218,
+   220
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "line chart card (top right)",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1341,
+   0,
+   1916,
+   279
+  ],
+  "box": [
+   1341,
+   0,
+   1916,
+   279
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "'Research Projects' bar chart card",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   0,
+   683,
+   669,
+   1080
+  ],
+  "box": [
+   0,
+   683,
+   669,
+   1080
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "'Prof. Shemiz' message card",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1222,
+   808,
+   1916,
+   1080
+  ],
+  "box": [
+   1222,
+   808,
+   1916,
+   1080
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "sticky note 'New aproach for renewable energy storage?'",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   200,
+   409,
+   395,
+   643
+  ],
+  "box": [
+   200,
+   409,
+   395,
+   643
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 80,
+  "role": "sticky note 'Collaborate across departments'",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1441,
+   389,
+   1717,
+   649
+  ],
+  "box": [
+   1441,
+   389,
+   1717,
+   649
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig1",
+  "frame": 105,
+  "role": "headline 'And every day,'",
+  "kind": "text",
+  "text": "And every day,",
+  "visual": [
+   665,
+   489,
+   1253,
+   603
+  ],
+  "box": [
+   667,
+   502,
+   1248,
+   602
+  ],
+  "method": "ink"
+ },
+ {
+  "clip": "ig1",
+  "frame": 140,
+  "role": "headline 'too many of them'",
+  "kind": "text",
+  "text": "too many of them",
+  "visual": [
+   733,
+   509,
+   1198,
+   569
+  ],
+  "box": [
+   732,
+   512,
+   1196,
+   568
+  ],
+  "method": "ink"
+ },
+ {
+  "clip": "ig2",
+  "frame": 30,
+  "role": "big scrolling title (first scene)",
+  "kind": "text",
+  "text": "A Weekend Away",
+  "visual": [
+   210,
+   210,
+   1920,
+   830
+  ],
+  "box": [
+   210,
+   210,
+   1920,
+   830
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "globe",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   644,
+   216,
+   1264,
+   840
+  ],
+  "box": [
+   644,
+   216,
+   1264,
+   840
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "small red title 'A Weekend Away'",
+  "kind": "text",
+  "text": "A Weekend Away",
+  "visual": [
+   430,
+   444,
+   1480,
+   564
+  ],
+  "box": [
+   430,
+   444,
+   1480,
+   564
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "suitcase sticker",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   856,
+   596,
+   960,
+   780
+  ],
+  "box": [
+   856,
+   596,
+   960,
+   780
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "palm island sticker",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   940,
+   310,
+   1040,
+   410
+  ],
+  "box": [
+   940,
+   310,
+   1040,
+   410
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "landscape photo (top right of the globe)",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   1106,
+   176,
+   1266,
+   280
+  ],
+  "box": [
+   1106,
+   176,
+   1266,
+   280
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "'Party Time' badge",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   1082,
+   566,
+   1240,
+   630
+  ],
+  "box": [
+   1082,
+   566,
+   1240,
+   630
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "plane sticker",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   1254,
+   750,
+   1370,
+   800
+  ],
+  "box": [
+   1254,
+   750,
+   1370,
+   800
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "green 'Visitor' chip",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1440,
+   644,
+   1536,
+   692
+  ],
+  "box": [
+   1440,
+   644,
+   1536,
+   692
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig2",
+  "frame": 120,
+  "role": "pin icon above the globe",
+  "kind": "image",
+  "text": null,
+  "visual": [
+   932,
+   92,
+   992,
+   152
+  ],
+  "box": [
+   932,
+   92,
+   992,
+   152
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 25,
+  "role": "headline 'You just speak'",
+  "kind": "text",
+  "text": "You just speak",
+  "visual": [
+   550,
+   476,
+   1280,
+   584
+  ],
+  "box": [
+   550,
+   476,
+   1280,
+   584
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 50,
+  "role": "mic button (white circle)",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1044,
+   452,
+   1212,
+   620
+  ],
+  "box": [
+   1044,
+   452,
+   1212,
+   620
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 50,
+  "role": "cursor",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1186,
+   596,
+   1276,
+   684
+  ],
+  "box": [
+   1186,
+   596,
+   1276,
+   684
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 75,
+  "role": "navy word 'just' (close-up)",
+  "kind": "text",
+  "text": "just",
+  "visual": [
+   0,
+   376,
+   490,
+   656
+  ],
+  "box": [
+   0,
+   384,
+   486,
+   656
+  ],
+  "method": "ink"
+ },
+ {
+  "clip": "ig3",
+  "frame": 75,
+  "role": "white pill (close-up)",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   780,
+   130,
+   1920,
+   860
+  ],
+  "box": [
+   780,
+   130,
+   1920,
+   860
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 75,
+  "role": "mic icon in the pill",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   800,
+   360,
+   1030,
+   680
+  ],
+  "box": [
+   800,
+   360,
+   1030,
+   680
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 75,
+  "role": "waveform bars",
+  "kind": "shape",
+  "text": null,
+  "visual": [
+   1186,
+   306,
+   1900,
+   756
+  ],
+  "box": [
+   1186,
+   306,
+   1900,
+   756
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 115,
+  "role": "headline 'Your idea'",
+  "kind": "text",
+  "text": "Your idea",
+  "visual": [
+   290,
+   410,
+   1730,
+   670
+  ],
+  "box": [
+   290,
+   410,
+   1730,
+   670
+  ],
+  "method": "visual"
+ },
+ {
+  "clip": "ig3",
+  "frame": 146,
+  "role": "headline 'and it builts for you'",
+  "kind": "text",
+  "text": "and it builts for you",
+  "visual": [
+   370,
+   480,
+   1540,
+   590
+  ],
+  "box": [
+   370,
+   480,
+   1540,
+   590
+  ],
+  "method": "visual"
+ }
+]
