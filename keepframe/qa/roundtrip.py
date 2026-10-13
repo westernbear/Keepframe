@@ -98,10 +98,10 @@ def _summary(m: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def eval_roundtrip(out: Path, kinds=KINDS, seeds: int = 1, reuse: bool = False, gold: list[str] = ()) -> dict:
+def eval_roundtrip(out: Path, kinds=KINDS, seeds: int = 1, reuse: bool = False, gold: list[str] = (), first_seed: int = 1) -> dict:
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    cases = [_synthetic(out, k, s, reuse) for s in range(1, seeds + 1) for k in kinds]
+    cases = [_synthetic(out, k, s, reuse) for s in range(first_seed, first_seed + seeds) for k in kinds]
     for g in gold:
         name, paths = g.split("=", 1)
         clip, root = paths.split(",", 1)

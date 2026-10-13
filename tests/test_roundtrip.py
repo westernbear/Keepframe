@@ -13,8 +13,8 @@ def test_cli_eval_roundtrip_args(monkeypatch, tmp_path):
     got = {}
     monkeypatch.setattr(rt, "eval_roundtrip", lambda *a: got.setdefault("args", a) and {"passed": True})
     assert cli.main(["eval-roundtrip", "--out", str(tmp_path), "--kinds", "counter", "chat_ui", "--seeds", "2", "--reuse",
-                     "--gold", "mk571=a.mp4,eval/kf/mk571"]) == 0
-    assert got["args"] == (tmp_path, ("counter", "chat_ui"), 2, True, ["mk571=a.mp4,eval/kf/mk571"])
+                     "--gold", "mk571=a.mp4,eval/kf/mk571", "--first-seed", "3"]) == 0
+    assert got["args"] == (tmp_path, ("counter", "chat_ui"), 2, True, ["mk571=a.mp4,eval/kf/mk571"], 3)
     for bad in (["--kinds", "nope"], ["--gold", "mk571"]):
         with pytest.raises(SystemExit):
             cli.main(["eval-roundtrip", "--out", str(tmp_path), *bad])

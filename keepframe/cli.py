@@ -56,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="sprite refine (default: off for synthetic, analysis default for clips)")
     rt = sub.add_parser("eval-roundtrip", help="synthetic reference pages → analysis → kf-script → diff against the truth")
     rt.add_argument("--out", required=True); rt.add_argument("--kinds", nargs="+", default=None); rt.add_argument("--seeds", type=int, default=1)
+    rt.add_argument("--first-seed", type=int, default=1, help="seeds first-seed .. first-seed + seeds - 1")
     rt.add_argument("--reuse", action="store_true"); rt.add_argument("--gold", action="append", default=[], metavar="NAME=CLIP,ROOT")
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
@@ -186,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             rt.error(f"unknown kinds {sorted(set(a.kinds) - set(KINDS))}; choose from {', '.join(KINDS)}")
         if any("=" not in g or "," not in g.split("=", 1)[1] for g in a.gold):
             rt.error("--gold takes NAME=CLIP,ROOT")
-        m = eval_roundtrip(Path(a.out), tuple(a.kinds or KINDS), a.seeds, a.reuse, a.gold)
+        m = eval_roundtrip(Path(a.out), tuple(a.kinds or KINDS), a.seeds, a.reuse, a.gold, a.first_seed)
         print(Path(a.out) / "summary.md"); return 0 if m["passed"] else 1
     if a.cmd == "serve":
         from .web.server import JOBS, make_server

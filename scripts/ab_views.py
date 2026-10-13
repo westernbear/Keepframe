@@ -5,24 +5,30 @@
   run     --dir docs/qa/kfscript/ab                     answer every packet with make_llm() (needs credentials)
   synth-gold --rt eval/out/rt-base --out docs/qa/kfscript/ab-synth   read_gold.json from round-trip truth (fresh clips)
 
-Questions per clip: auto-gold from scene.json (visibility, end of last move, glyph reveal, ease, largest text, z order)
-and read-gold from read_gold.json (ids of things the agent's read names; edit targets). Packets never name the view.
-Pre-registered rule: kf-script becomes the default view only if its edit accuracy >= the brief's and its
-comprehension accuracy >= the brief's + 10 points."""
+Questions per clip: auto-gold from scene.json (visibility, end of last move, glyph reveal, ease, largest text, z order),
+motion detail from scene.json (entrance, order, move duration, position and opacity at a held frame) and read-gold from
+read_gold.json (ids of things the agent's read names; edit targets). Packets never name the view.
+Decision (pre-registered 2026-10-13, docs/qa/kfscript/ab-test-prereg.md): kf-script becomes the default view when
+H1 (comprehension kf − brief, paired, clip-clustered bootstrap 95 % CI lower bound > 0) and H2 (edit-target
+accuracy kf − brief, same interval, lower bound > −10 points) hold. The P1 rule (point estimate + 10) is reported."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import math
 import re
+from itertools import groupby
 from pathlib import Path
+
+import numpy as np
 
 from keepframe.analyze.keyframes import ERR
 from keepframe.ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
 from keepframe.ir.importance import rank_elements
 from keepframe.ir.schema import Scene
 from keepframe.ir.store import current_scene, scene_dir
-from keepframe.ir.tracks import PRESET_EASES, eval_z
+from keepframe.ir.tracks import PRESET_EASES, element_bbox, eval_props, eval_track, eval_z
 from keepframe.kfscript.emit import view
 from keepframe.session.agent import SYSTEM
 from keepframe.session.brief import scene_brief
@@ -84,6 +90,61 @@ def auto_questions(scene: Scene) -> list[dict]:
     return qs
 
 
+def _moves(el, p: str):
+    """Moves on one axis: maximal runs of consecutive key segments each over ERR in the same direction, as
+    (|total|, start frame, end frame)."""
+    out, run = [], None
+    for a, b in zip(el.tracks[p].keys, el.tracks[p].keys[1:]) if p in el.tracks else ():
+        d = b.v - a.v
+        if abs(d) <= ERR.get(p, 0.01):
+            run = None
+            continue
+        if run and (d > 0) == (run[3] > 0):
+            run[0], run[2], run[3] = run[0] + abs(d), b.t, run[3] + d
+        else:
+            run = [abs(d), a.t, b.t, d]
+            out.append(run)
+    return [(r[0], r[1], r[2]) for r in out]
+
+
+def _held(el, f: int) -> bool:
+    return all(abs(eval_track(t, g) - eval_track(t, f)) < 1e-9 for t in el.tracks.values() for g in (f - 2, f + 2))
+
+
+def motion_questions(scene: Scene) -> list[dict]:
+    """Motion detail an editor needs (pre-registered 2026-10-13, docs/qa/kfscript/ab-test-prereg.md): entrance time,
+    which of two appears first, the duration of the biggest move, and position and opacity at a frame where the
+    element holds still. Gold from the IR, the same for both views."""
+    fps, ranked, qs = scene.fps, rank_elements(scene)[:12], []
+    late = next((e for e in ranked if e.visible[0] > 0), None)
+    if late:
+        qs.append({"cat": "motion", "kind": "number", "q": f"At what time (seconds) does element {late.id} first appear?",
+                   "gold": late.visible[0] / fps, "tol": 2 / fps})
+    pair = next(((a, b) for i, a in enumerate(ranked) for b in ranked[i + 1:] if abs(a.visible[0] - b.visible[0]) >= 3), None)
+    if pair:
+        a, b = pair
+        qs.append({"cat": "motion", "kind": "id", "q": f"Which element appears first: {a.id} or {b.id}?",
+                   "gold": [a.id if a.visible[0] < b.visible[0] else b.id]})
+    best = max(((m, e, p) for e in ranked for p in ("x", "y") for m in _moves(e, p) if m[0] > 10), key=lambda t: t[0][0], default=None)
+    if best:
+        (_, t0, t1), e, p = best
+        qs.append({"cat": "motion", "kind": "number", "q": f"How long (seconds) does element {e.id}'s biggest "
+                   f"{'horizontal' if p == 'x' else 'vertical'} move take?", "gold": (t1 - t0) / fps, "tol": max(2 / fps, 0.1 * (t1 - t0) / fps)})
+    for e in ranked:
+        held = [f for f in range(e.visible[0] + 2, e.visible[1] - 1) if _held(e, f)]
+        if not held:
+            continue
+        longest = max(([f for _, f in g] for _, g in groupby(enumerate(held), key=lambda t: t[1] - t[0])), key=len)
+        f = longest[len(longest) // 2]
+        x0, y0, x1, y1 = element_bbox(e, f, scene.size)
+        qs.append({"cat": "motion", "kind": "point", "q": f"Where is the centre of element {e.id} at t = {f / fps:.2f} s? "
+                   "(answer [x, y] in pixels)", "gold": [(x0 + x1) / 2, (y0 + y1) / 2], "tol": 8.0})
+        qs.append({"cat": "motion", "kind": "number", "q": f"What is element {e.id}'s opacity at t = {f / fps:.2f} s? (0 to 1)",
+                   "gold": eval_props(e, f)["opacity"], "tol": 0.05})
+        break
+    return qs
+
+
 def read_questions(gold: dict) -> list[dict]:
     qs = [{"cat": "read", "kind": "idset" if r.get("set") else "id", "q": r["q"], "gold": r["ids"]} for r in gold.get("read", [])]
     qs += [{"cat": "edit", "kind": "edit", "q": "Edit request: " + r["q"], "gold": r["ids"], "property": r["property"]}
@@ -94,7 +155,8 @@ def read_questions(gold: dict) -> list[dict]:
 def synth_gold(rt: Path) -> dict:
     """read_gold.json for round-trip cases (eval-roundtrip output): one question per truth element whose role is unique in
     its case, answered by the IR ids the diff found inside it over its life (each id owned by the smallest truth element
-    containing it); one colour edit on the first such text element."""
+    containing it); one edit per such element (a text's text, a shape's colour) and one timing edit (pre-registered
+    2026-10-13)."""
     gold = {"_note": "generated by synth_gold from eval-roundtrip truth and diff fragments"}
     for case in json.loads((rt / "metrics.json").read_text())["cases"]:
         if case["kind"] == "gold":
@@ -112,8 +174,10 @@ def synth_gold(rt: Path) -> dict:
         unique = [e for e in truth["elements"] if roles.count(e["role"]) == 1 and e["role"] != "background" and frags.get(e["id"])]
         read = [{"q": f"Which element id(s) make up the {e['role'].replace('_', ' ')} ({e['kind']})? (list)", "ids": frags[e["id"]], "set": True}
                 for e in unique]
-        text = next((e for e in unique if e["kind"] == "text"), None)
-        edit = [{"q": f"make the {text['role'].replace('_', ' ')} red", "ids": frags[text["id"]], "property": "color"}] if text else []
+        name = lambda e: e["role"].replace("_", " ")
+        edit = [{"q": f"change the {name(e)} text to 'Hello'", "ids": frags[e["id"]], "property": "text"} if e["kind"] == "text"
+                else {"q": f"make the {name(e)} red", "ids": frags[e["id"]], "property": "color"} for e in unique]
+        edit += [{"q": f"make the {name(unique[0])} appear 0.5 s later", "ids": frags[unique[0]["id"]], "property": "timing"}] if unique else []
         gold[case["name"]] = {"read": read, "edit": edit}
     return gold
 
@@ -135,7 +199,7 @@ def packets(root: Path, out: Path) -> dict:
     questions, index = {}, {}
     for clip in [c for c in gold if not c.startswith("_")]:
         scene, _ = current_scene(root / clip, "s1")
-        qs = auto_questions(scene) + read_questions(gold[clip])
+        qs = auto_questions(scene) + motion_questions(scene) + read_questions(gold[clip])
         questions[clip] = qs
         texts = {"brief": scene_brief(scene), "kfscript": view(scene, scene_dir(root / clip, "s1"))}
         for v in VIEWS:
@@ -164,6 +228,9 @@ def score_one(q: dict, a) -> float:
             return float(_norm(a) == _norm(q["gold"]))
         if k == "colour":
             return float(float(delta_e(srgb8_to_lab(hex_to_rgb8(str(a))), srgb8_to_lab(hex_to_rgb8(q["gold"])))) < 10)
+        if k == "point":
+            xy = [float(v) for v in (re.findall(r"-?\d+(?:\.\d+)?", a) if isinstance(a, str) else a)][:2]
+            return float(len(xy) == 2 and math.dist(xy, q["gold"]) <= q["tol"])
         if k == "id":
             return float(str(a).strip() in q["gold"])
         if k == "idset":
@@ -176,6 +243,30 @@ def score_one(q: dict, a) -> float:
     except (TypeError, ValueError, KeyError, AttributeError):
         return 0.0
     return 0.0
+
+
+EDIT_MARGIN, BOOT, BOOT_SEED = 10.0, 10_000, 0   # pre-registered 2026-10-13 (docs/qa/kfscript/ab-test-prereg.md)
+
+
+def paired_ci(rows: list[dict], cats: set[str], n: int = BOOT, seed: int = BOOT_SEED) -> dict:
+    """kf-script − brief accuracy (points) over the questions in `cats`, paired per question, with a 95 % bootstrap
+    interval that resamples clips (questions within a clip are correlated; Miller 2024, arXiv 2411.00640)."""
+    pairs: dict[tuple, dict] = {}
+    for r in rows:
+        if r["cat"] in cats:
+            pairs.setdefault((r["clip"], r["q"]), {})[r["view"]] = r["score"]
+    by: dict[str, list[float]] = {}
+    for (clip, _), v in pairs.items():
+        if len(v) == 2:
+            by.setdefault(clip, []).append(v["kfscript"] - v["brief"])
+    if not by:
+        return {"mean": 0.0, "lo": 0.0, "hi": 0.0, "clips": 0, "n": 0}
+    clips = sorted(by)
+    sums, counts = np.array([sum(by[c]) for c in clips]), np.array([len(by[c]) for c in clips])
+    idx = np.random.default_rng(seed).integers(0, len(clips), (n, len(clips)))
+    means = sums[idx].sum(1) / counts[idx].sum(1)
+    return {"mean": round(100 * sums.sum() / counts.sum(), 2), "lo": round(100 * float(np.percentile(means, 2.5)), 2),
+            "hi": round(100 * float(np.percentile(means, 97.5)), 2), "clips": len(clips), "n": int(counts.sum())}
 
 
 def score(d: Path) -> dict:
@@ -192,9 +283,13 @@ def score(d: Path) -> dict:
     acc = {f"{v}/{c}": round(100 * sum(s) / len(s), 1) for (v, c), s in sorted(totals.items())}
     comp = {v: [s for (vv, c), ss in totals.items() if vv == v and c != "edit" for s in ss] for v in VIEWS}
     acc.update({f"{v}/comprehension": round(100 * sum(s) / len(s), 1) for v, s in comp.items() if s})
-    rule = (acc.get("kfscript/edit", 0) >= acc.get("brief/edit", 0)
-            and acc.get("kfscript/comprehension", 0) >= acc.get("brief/comprehension", 0) + 10)
-    res = {"accuracy": acc, "switch_default_to_kfscript": rule, "rows": rows}
+    ci = {"comprehension": paired_ci(rows, {"auto", "motion", "read"}), "comprehension_old_set": paired_ci(rows, {"auto", "read"}),
+          "edit": paired_ci(rows, {"edit"})}
+    h1 = ci["comprehension"]["lo"] > 0                              # superiority, primary
+    h2 = ci["edit"]["n"] == 0 or ci["edit"]["lo"] > -EDIT_MARGIN    # non-inferiority of edit targets
+    p1 = (acc.get("kfscript/edit", 0) >= acc.get("brief/edit", 0)   # the P1 rule, reported for continuity only
+          and acc.get("kfscript/comprehension", 0) >= acc.get("brief/comprehension", 0) + 10)
+    res = {"accuracy": acc, "ci": ci, "h1": h1, "h2": h2, "switch_default_to_kfscript": h1 and h2, "p1_rule": p1, "rows": rows}
     (d / "results.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
     return res
 
@@ -225,7 +320,8 @@ def main(argv=None) -> int:
     elif a.cmd == "packets":
         print(json.dumps(packets(Path(a.root), Path(a.out)), indent=1))
     elif a.cmd == "score":
-        print(json.dumps(score(Path(a.dir))["accuracy"], indent=1))
+        res = score(Path(a.dir))
+        print(json.dumps({k: res[k] for k in ("accuracy", "ci", "h1", "h2", "switch_default_to_kfscript", "p1_rule")}, indent=1))
     else:
         run(Path(a.dir))
     return 0

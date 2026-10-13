@@ -24,6 +24,8 @@ def test_scoring():
     assert s({"kind": "edit", "gold": [None], "property": "background"}, [{"element": None, "property": "background"}]) == 1
     assert s({"kind": "text", "gold": "Ask.And move forward."}, "ask. and move forward.") == 1
     assert s({"kind": "id", "gold": ["e3"]}, None) == 0
+    assert s({"kind": "point", "gold": [100, 50], "tol": 8}, [104, 47]) == 1 and s({"kind": "point", "gold": [100, 50], "tol": 8}, "[120, 50]") == 0
+    assert s({"kind": "point", "gold": [100, 50], "tol": 8}, "x=99.5, y=52") == 1
 
 
 def test_packets_blind(tmp_path):
@@ -73,4 +75,25 @@ def test_synth_gold_from_roundtrip(tmp_path):
     assert set(g) == {"_note", "logo_sting-1"}   # gold rows keep their hand-written read gold
     assert g["logo_sting-1"]["read"] == [{"q": "Which element id(s) make up the frame (shape)? (list)", "ids": ["e2"], "set": True},
                                          {"q": "Which element id(s) make up the brand name (text)? (list)", "ids": ["e3", "e4"], "set": True}]
-    assert g["logo_sting-1"]["edit"] == [{"q": "make the brand name red", "ids": ["e3", "e4"], "property": "color"}]
+    assert g["logo_sting-1"]["edit"] == [{"q": "make the frame red", "ids": ["e2"], "property": "color"},
+                                         {"q": "change the brand name text to 'Hello'", "ids": ["e3", "e4"], "property": "text"},
+                                         {"q": "make the frame appear 0.5 s later", "ids": ["e2"], "property": "timing"}]
+
+
+def test_motion_questions_from_ir(tmp_scene_dir):
+    scene = make_reference_scene(tmp_scene_dir, 4, plate="flat", mover=True, logo=True)
+    qs = ab_views.motion_questions(scene)
+    assert {q["cat"] for q in qs} == {"motion"} and {"number", "id", "point"} <= {q["kind"] for q in qs}
+    entrance = next(q for q in qs if "first appear" in q["q"])
+    el = scene.element(entrance["q"].split()[6])
+    assert entrance["gold"] == el.visible[0] / scene.fps
+
+
+def test_paired_ci_resamples_clips():
+    """Two clips, kf-script right on every question of one and level on the other: +50 points; the interval spans the
+    clip spread (0 to +100), not the question count."""
+    rows = [{"clip": c, "view": v, "q": f"Q{i}", "cat": "auto", "score": float(v == "kfscript" or c == "b")}
+            for c in ("a", "b") for v in ab_views.VIEWS for i in range(10)]
+    ci = ab_views.paired_ci(rows, {"auto"})
+    assert ci["mean"] == 50 and ci["lo"] == 0 and ci["hi"] == 100 and ci["clips"] == 2 and ci["n"] == 20
+    assert ab_views.paired_ci(rows, {"edit"})["n"] == 0
