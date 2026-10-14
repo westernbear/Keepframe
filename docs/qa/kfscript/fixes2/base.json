@@ -1,0 +1,1982 @@
+{
+ "gates": {
+  "kf_parity": 0.001
+ },
+ "passed": true,
+ "cases": [
+  {
+   "name": "kinetic_title-1",
+   "kind": "kinetic_title",
+   "seed": 1,
+   "frames": 96,
+   "scenes": 1,
+   "l1_page": 0.00012962490165819413,
+   "l1_recon": 0.00535,
+   "l1_kf": 0.01729,
+   "l1_compose": 0.0173,
+   "kf_parity": 9e-07,
+   "worst_kf": {
+    "s1": [
+     0.0488,
+     16
+    ]
+   },
+   "analyse_seconds": 41.4,
+   "measure_seconds": 10.2,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 30,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "pieces_mean": 15.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.235,
+    "centre_px": 2.0,
+    "visible_err": 3.5,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "split",
+      "stagger",
+      "mask",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 6.3333,
+    "dl_ratio": 8.921,
+    "rows": [
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e7",
+      "iou": 0.91,
+      "fragments": 1,
+      "fragment_ids": [
+       "e7"
+      ],
+      "pieces": 29,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10",
+       "e11",
+       "e12",
+       "e14",
+       "e15",
+       "e16",
+       "e17",
+       "e18",
+       "e19",
+       "e20",
+       "e21",
+       "e22",
+       "e23",
+       "e24",
+       "e25",
+       "e26",
+       "e27",
+       "e28",
+       "e29",
+       "e30"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 4,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "sub",
+      "kind": "text",
+      "match": "e13",
+      "iou": 0.908,
+      "fragments": 1,
+      "fragment_ids": [
+       "e13"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e13"
+      ],
+      "centre_px": 1.5,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "logo_sting-1",
+   "kind": "logo_sting",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0011707269489992227,
+   "l1_recon": 0.0254,
+   "l1_kf": 0.02818,
+   "l1_compose": 0.02818,
+   "kf_parity": 2e-07,
+   "worst_kf": {
+    "s1": [
+     0.4321,
+     16
+    ]
+   },
+   "analyse_seconds": 63.4,
+   "measure_seconds": 13.1,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 13,
+    "matched": 4,
+    "matched_rate": 0.8,
+    "fragments_mean": 1.6,
+    "over_split": 2,
+    "pieces_mean": 4.2,
+    "text_ratio": 1.0,
+    "colour_de": 0.95,
+    "centre_px": 1.05,
+    "visible_err": 22.75,
+    "structure": {
+     "found": [
+      "drift"
+     ],
+     "missed": [
+      "pop"
+     ],
+     "unsupported": [
+      "mask",
+      "shape-size",
+      "split",
+      "stagger",
+      "mask"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 11.3846,
+    "dl_ratio": 4.485,
+    "rows": [
+     {
+      "id": "bg",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.16,
+      "fragments": 2,
+      "fragment_ids": [
+       "e8",
+       "e9"
+      ],
+      "pieces": 11,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e8",
+       "e9",
+       "e11",
+       "e12",
+       "e13"
+      ]
+     },
+     {
+      "id": "frame",
+      "kind": "shape",
+      "match": "e9",
+      "iou": 0.944,
+      "fragments": 3,
+      "fragment_ids": [
+       "e9",
+       "e11",
+       "e12"
+      ],
+      "pieces": 6,
+      "piece_ids": [
+       "e5",
+       "e6",
+       "e8",
+       "e9",
+       "e11",
+       "e12"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 45
+     },
+     {
+      "id": "mark",
+      "kind": "shape",
+      "match": "e12",
+      "iou": 0.513,
+      "fragments": 1,
+      "fragment_ids": [
+       "e12"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e8",
+       "e12"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 42
+     },
+     {
+      "id": "name",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.732,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e11"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.55
+     },
+     {
+      "id": "url",
+      "kind": "text",
+      "match": "e13",
+      "iou": 0.652,
+      "fragments": 1,
+      "fragment_ids": [
+       "e13"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e13"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.35
+     }
+    ]
+   }
+  },
+  {
+   "name": "chat_ui-1",
+   "kind": "chat_ui",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0012063864044643197,
+   "l1_recon": 0.00627,
+   "l1_kf": 0.01544,
+   "l1_compose": 0.01544,
+   "kf_parity": 1.3e-06,
+   "worst_kf": {
+    "s1": [
+     0.0268,
+     108
+    ]
+   },
+   "analyse_seconds": 77.4,
+   "measure_seconds": 13.5,
+   "diff": {
+    "truth_elements": 12,
+    "ir_elements": 19,
+    "matched": 10,
+    "matched_rate": 0.8333,
+    "fragments_mean": 1.75,
+    "over_split": 8,
+    "pieces_mean": 2.0833,
+    "text_ratio": 1.0,
+    "colour_de": 2.7983,
+    "centre_px": 2.16,
+    "visible_err": 4.6,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "repeat",
+      "container",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 20.4211,
+    "dl_ratio": 7.23,
+    "rows": [
+     {
+      "id": "head",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.07,
+      "fragments": 3,
+      "fragment_ids": [
+       "e1",
+       "e5",
+       "e6"
+      ],
+      "pieces": 3,
+      "piece_ids": [
+       "e1",
+       "e5",
+       "e6"
+      ]
+     },
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.78,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 3.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.51
+     },
+     {
+      "id": "b0",
+      "kind": "shape",
+      "match": "e11",
+      "iou": 0.885,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e11"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e4",
+       "e11"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 27
+     },
+     {
+      "id": "t0",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.812,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 6.71
+     },
+     {
+      "id": "b1",
+      "kind": "shape",
+      "match": "e8",
+      "iou": 0.897,
+      "fragments": 2,
+      "fragment_ids": [
+       "e8",
+       "e12"
+      ],
+      "pieces": 3,
+      "piece_ids": [
+       "e7",
+       "e8",
+       "e12"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 2
+     },
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e12",
+      "iou": 0.798,
+      "fragments": 1,
+      "fragment_ids": [
+       "e12"
+      ],
+      "pieces": 3,
+      "piece_ids": [
+       "e8",
+       "e9",
+       "e12"
+      ],
+      "centre_px": 3.9,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 5.83
+     },
+     {
+      "id": "b2",
+      "kind": "shape",
+      "match": "e13",
+      "iou": 0.676,
+      "fragments": 2,
+      "fragment_ids": [
+       "e13",
+       "e14"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e13",
+       "e14"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 2
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e14",
+      "iou": 0.836,
+      "fragments": 2,
+      "fragment_ids": [
+       "e13",
+       "e14"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e13",
+       "e14"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 2.54
+     },
+     {
+      "id": "b3",
+      "kind": "shape",
+      "match": "e15",
+      "iou": 0.889,
+      "fragments": 2,
+      "fragment_ids": [
+       "e15",
+       "e17"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e15",
+       "e17"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 2
+     },
+     {
+      "id": "t3",
+      "kind": "text",
+      "match": "e17",
+      "iou": 0.819,
+      "fragments": 1,
+      "fragment_ids": [
+       "e17"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e15",
+       "e17"
+      ],
+      "centre_px": 3.2,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.6
+     },
+     {
+      "id": "b4",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.426,
+      "fragments": 2,
+      "fragment_ids": [
+       "e18",
+       "e19"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e18",
+       "e19"
+      ]
+     },
+     {
+      "id": "t4",
+      "kind": "text",
+      "match": "e19",
+      "iou": 0.796,
+      "fragments": 2,
+      "fragment_ids": [
+       "e18",
+       "e19"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e18",
+       "e19"
+      ],
+      "centre_px": 3.5,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.6
+     }
+    ]
+   }
+  },
+  {
+   "name": "scroller-1",
+   "kind": "scroller",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.00048547271162893506,
+   "l1_recon": 0.05971,
+   "l1_kf": 0.06806,
+   "l1_compose": 0.06805,
+   "kf_parity": 1.07e-05,
+   "worst_kf": {
+    "s1": [
+     0.2604,
+     48
+    ]
+   },
+   "analyse_seconds": 109.5,
+   "measure_seconds": 9.5,
+   "diff": {
+    "truth_elements": 8,
+    "ir_elements": 49,
+    "matched": 4,
+    "matched_rate": 0.5,
+    "fragments_mean": 1.5,
+    "over_split": 4,
+    "pieces_mean": 5.625,
+    "text_ratio": 0.494,
+    "colour_de": 0.47,
+    "centre_px": 11.425,
+    "visible_err": 10.5,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "transition",
+      "repeat"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 23.8776,
+    "dl_ratio": 21.673,
+    "rows": [
+     {
+      "id": "l0",
+      "kind": "text",
+      "match": "e6",
+      "iou": 0.693,
+      "fragments": 1,
+      "fragment_ids": [
+       "e6"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e6",
+       "e12"
+      ],
+      "centre_px": 7.9,
+      "visible_err": 15,
+      "text_ratio": 0.952,
+      "colour_de": 0.47
+     },
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.913,
+      "fragments": 2,
+      "fragment_ids": [
+       "e8",
+       "e10"
+      ],
+      "pieces": 4,
+      "piece_ids": [
+       "e1",
+       "e8",
+       "e10",
+       "e34"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 14,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": null,
+      "iou": 0.373,
+      "fragments": 2,
+      "fragment_ids": [
+       "e5",
+       "e14"
+      ],
+      "pieces": 4,
+      "piece_ids": [
+       "e5",
+       "e8",
+       "e14",
+       "e21"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l3",
+      "kind": "text",
+      "match": "e9",
+      "iou": 0.913,
+      "fragments": 1,
+      "fragment_ids": [
+       "e9"
+      ],
+      "pieces": 5,
+      "piece_ids": [
+       "e9",
+       "e11",
+       "e32",
+       "e34",
+       "e49"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "l4",
+      "kind": "text",
+      "match": null,
+      "iou": 0.378,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e15"
+      ],
+      "pieces": 5,
+      "piece_ids": [
+       "e2",
+       "e3",
+       "e4",
+       "e15",
+       "e32"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l5",
+      "kind": "text",
+      "match": "e19",
+      "iou": 0.883,
+      "fragments": 1,
+      "fragment_ids": [
+       "e19"
+      ],
+      "pieces": 8,
+      "piece_ids": [
+       "e19",
+       "e20",
+       "e22",
+       "e23",
+       "e29",
+       "e33",
+       "e38",
+       "e46"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 13,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "l6",
+      "kind": "text",
+      "match": null,
+      "iou": 0.376,
+      "fragments": 2,
+      "fragment_ids": [
+       "e26",
+       "e27"
+      ],
+      "pieces": 10,
+      "piece_ids": [
+       "e25",
+       "e26",
+       "e27",
+       "e35",
+       "e37",
+       "e38",
+       "e39",
+       "e40",
+       "e41",
+       "e45"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l7",
+      "kind": "text",
+      "match": null,
+      "iou": 0.45,
+      "fragments": 1,
+      "fragment_ids": [
+       "e42"
+      ],
+      "pieces": 7,
+      "piece_ids": [
+       "e37",
+       "e38",
+       "e42",
+       "e43",
+       "e44",
+       "e47",
+       "e48"
+      ],
+      "text_ratio": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "block_transition-1",
+   "kind": "block_transition",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0013426921403737729,
+   "l1_recon": 0.0486,
+   "l1_kf": 0.04974,
+   "l1_compose": 0.04974,
+   "kf_parity": 7e-07,
+   "worst_kf": {
+    "s1": [
+     0.2261,
+     56
+    ]
+   },
+   "analyse_seconds": 71.2,
+   "measure_seconds": 8.0,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 14,
+    "matched": 1,
+    "matched_rate": 0.1667,
+    "fragments_mean": 3.5,
+    "over_split": 2,
+    "pieces_mean": 2.6667,
+    "text_ratio": 0.5,
+    "colour_de": 0.55,
+    "centre_px": 2.5,
+    "visible_err": 11.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition",
+      "stagger",
+      "repeat"
+     ]
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 0.0
+    },
+    "keys_mean": 6.0714,
+    "dl_ratio": 4.438,
+    "rows": [
+     {
+      "id": "ta",
+      "kind": "text",
+      "match": null,
+      "iou": 0.453,
+      "fragments": 2,
+      "fragment_ids": [
+       "e1",
+       "e3"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e3"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "tb",
+      "kind": "text",
+      "match": "e7",
+      "iou": 0.824,
+      "fragments": 5,
+      "fragment_ids": [
+       "e7",
+       "e8",
+       "e11",
+       "e13",
+       "e14"
+      ],
+      "pieces": 5,
+      "piece_ids": [
+       "e7",
+       "e8",
+       "e11",
+       "e13",
+       "e14"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 11,
+      "text_ratio": 1.0,
+      "colour_de": 0.55
+     },
+     {
+      "id": "k0",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "k1",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "k2",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "pieces": 1,
+      "piece_ids": [
+       "e7"
+      ]
+     },
+     {
+      "id": "k3",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.25,
+      "fragments": 0,
+      "fragment_ids": [],
+      "pieces": 0,
+      "piece_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "prompt_typing-1",
+   "kind": "prompt_typing",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0014050689693247884,
+   "l1_recon": 0.0051,
+   "l1_kf": 0.01131,
+   "l1_compose": 0.01131,
+   "kf_parity": 2e-07,
+   "worst_kf": {
+    "s1": [
+     0.014,
+     128
+    ]
+   },
+   "analyse_seconds": 55.9,
+   "measure_seconds": 12.9,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 11,
+    "matched": 5,
+    "matched_rate": 0.8333,
+    "fragments_mean": 2.0,
+    "over_split": 2,
+    "pieces_mean": 2.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.8167,
+    "centre_px": 0.76,
+    "visible_err": 1.8,
+    "structure": {
+     "found": [],
+     "missed": [
+      "typing"
+     ],
+     "unsupported": [
+      "blink",
+      "cursor",
+      "press"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 17.0,
+    "dl_ratio": 2.626,
+    "rows": [
+     {
+      "id": "head",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.668,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e5"
+      ],
+      "centre_px": 0.1,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 1.73
+     },
+     {
+      "id": "bar",
+      "kind": "shape",
+      "match": "e9",
+      "iou": 0.97,
+      "fragments": 5,
+      "fragment_ids": [
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10"
+      ],
+      "pieces": 5,
+      "piece_ids": [
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 5
+     },
+     {
+      "id": "typed",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.913,
+      "fragments": 1,
+      "fragment_ids": [
+       "e10"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e10"
+      ],
+      "centre_px": 1.6,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.36
+     },
+     {
+      "id": "btn",
+      "kind": "shape",
+      "match": "e7",
+      "iou": 0.82,
+      "fragments": 2,
+      "fragment_ids": [
+       "e7",
+       "e8"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e7",
+       "e8"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 1
+     },
+     {
+      "id": "cursor",
+      "kind": "image",
+      "match": null,
+      "iou": 0.331,
+      "fragments": 0,
+      "fragment_ids": [],
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "chip",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.541,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e11"
+      ],
+      "centre_px": 2.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.36
+     }
+    ]
+   }
+  },
+  {
+   "name": "counter-1",
+   "kind": "counter",
+   "seed": 1,
+   "frames": 120,
+   "scenes": 1,
+   "l1_page": 0.001409625225261572,
+   "l1_recon": 0.00983,
+   "l1_kf": 0.0255,
+   "l1_compose": 0.0255,
+   "kf_parity": 1e-07,
+   "worst_kf": {
+    "s1": [
+     0.0354,
+     32
+    ]
+   },
+   "analyse_seconds": 64.3,
+   "measure_seconds": 10.8,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 27,
+    "matched": 6,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.6667,
+    "over_split": 2,
+    "pieces_mean": 6.6667,
+    "text_ratio": 1.0,
+    "colour_de": 2.055,
+    "centre_px": 1.4,
+    "visible_err": 17.1667,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "counter",
+      "counter",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 9.4074,
+    "dl_ratio": 10.733,
+    "rows": [
+     {
+      "id": "c1",
+      "kind": "shape",
+      "match": "e3",
+      "iou": 0.896,
+      "fragments": 3,
+      "fragment_ids": [
+       "e2",
+       "e3",
+       "e26"
+      ],
+      "pieces": 9,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e8",
+       "e11",
+       "e16",
+       "e18",
+       "e23",
+       "e26"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1
+     },
+     {
+      "id": "c2",
+      "kind": "shape",
+      "match": "e6",
+      "iou": 0.845,
+      "fragments": 3,
+      "fragment_ids": [
+       "e5",
+       "e6",
+       "e27"
+      ],
+      "pieces": 12,
+      "piece_ids": [
+       "e5",
+       "e6",
+       "e7",
+       "e9",
+       "e10",
+       "e13",
+       "e15",
+       "e19",
+       "e21",
+       "e24",
+       "e25",
+       "e27"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1
+     },
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.793,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 1.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.6
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.772,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e5"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.62
+     },
+     {
+      "id": "n1",
+      "kind": "text",
+      "match": "e26",
+      "iou": 0.673,
+      "fragments": 1,
+      "fragment_ids": [
+       "e26"
+      ],
+      "pieces": 7,
+      "piece_ids": [
+       "e1",
+       "e8",
+       "e11",
+       "e16",
+       "e18",
+       "e23",
+       "e26"
+      ],
+      "centre_px": 2.7,
+      "visible_err": 50,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     },
+     {
+      "id": "n2",
+      "kind": "text",
+      "match": "e27",
+      "iou": 0.734,
+      "fragments": 1,
+      "fragment_ids": [
+       "e27"
+      ],
+      "pieces": 10,
+      "piece_ids": [
+       "e7",
+       "e9",
+       "e10",
+       "e13",
+       "e15",
+       "e19",
+       "e21",
+       "e24",
+       "e25",
+       "e27"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 49,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "stepped_zoom-1",
+   "kind": "stepped_zoom",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0025179450224355267,
+   "l1_recon": 0.0128,
+   "l1_kf": 0.01994,
+   "l1_compose": 0.01994,
+   "kf_parity": 0.0,
+   "worst_kf": {
+    "s1": [
+     0.0529,
+     0
+    ]
+   },
+   "analyse_seconds": 24.9,
+   "measure_seconds": 8.0,
+   "diff": {
+    "truth_elements": 3,
+    "ir_elements": 4,
+    "matched": 3,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "pieces_mean": 1.3333,
+    "text_ratio": 0.9733,
+    "colour_de": 0.4533,
+    "centre_px": 1.7333,
+    "visible_err": 0.6667,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "steps"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 7.25,
+    "dl_ratio": 2.197,
+    "rows": [
+     {
+      "id": "word",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.746,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e2"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     },
+     {
+      "id": "lab1",
+      "kind": "text",
+      "match": "e3",
+      "iou": 0.819,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e3"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 0.96,
+      "colour_de": 0.68
+     },
+     {
+      "id": "lab2",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.79,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 0.96,
+      "colour_de": 0.68
+     }
+    ]
+   }
+  },
+  {
+   "name": "hard_cut-1",
+   "kind": "hard_cut",
+   "seed": 1,
+   "frames": 120,
+   "scenes": 1,
+   "l1_page": 0.0014399850217864927,
+   "l1_recon": 0.02816,
+   "l1_kf": 0.03525,
+   "l1_compose": 0.03523,
+   "kf_parity": 2.47e-05,
+   "worst_kf": {
+    "s1": [
+     0.0432,
+     4
+    ]
+   },
+   "analyse_seconds": 107.8,
+   "measure_seconds": 12.1,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 10,
+    "matched": 5,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.6,
+    "over_split": 2,
+    "pieces_mean": 1.6,
+    "text_ratio": 1.0,
+    "colour_de": 24.7075,
+    "centre_px": 6.28,
+    "visible_err": 0.4,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 0.0
+    },
+    "keys_mean": 9.6,
+    "dl_ratio": 3.227,
+    "rows": [
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.782,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 11.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 95.7
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e7",
+      "iou": 0.818,
+      "fragments": 1,
+      "fragment_ids": [
+       "e7"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e7"
+      ],
+      "centre_px": 6.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "sub2",
+      "kind": "text",
+      "match": "e8",
+      "iou": 0.827,
+      "fragments": 1,
+      "fragment_ids": [
+       "e8"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e8"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 2.19
+     },
+     {
+      "id": "t3",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.802,
+      "fragments": 2,
+      "fragment_ids": [
+       "e9",
+       "e10"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e9",
+       "e10"
+      ],
+      "centre_px": 9.0,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47
+     },
+     {
+      "id": "foot",
+      "kind": "shape",
+      "match": "e5",
+      "iou": 0.908,
+      "fragments": 3,
+      "fragment_ids": [
+       "e3",
+       "e5",
+       "e6"
+      ],
+      "pieces": 3,
+      "piece_ids": [
+       "e3",
+       "e5",
+       "e6"
+      ],
+      "centre_px": 1.3,
+      "visible_err": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "wipe-1",
+   "kind": "wipe",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0014828994891927067,
+   "l1_recon": 0.01394,
+   "l1_kf": 0.01357,
+   "l1_compose": 0.01357,
+   "kf_parity": 3.8e-06,
+   "worst_kf": {
+    "s1": [
+     0.136,
+     44
+    ]
+   },
+   "analyse_seconds": 62.8,
+   "measure_seconds": 9.3,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 4,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "pieces_mean": 1.0,
+    "text_ratio": 1.0,
+    "colour_de": 4.055,
+    "centre_px": 5.3,
+    "visible_err": 1.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition"
+     ]
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 0.0
+    },
+    "keys_mean": 16.75,
+    "dl_ratio": 2.707,
+    "rows": [
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.865,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 6.7,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.836,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 8.11
+     }
+    ]
+   }
+  },
+  {
+   "name": "word_build-1",
+   "kind": "word_build",
+   "seed": 1,
+   "frames": 111,
+   "scenes": 1,
+   "l1_page": 0.00015235469187675071,
+   "l1_recon": 0.00383,
+   "l1_kf": 0.00559,
+   "l1_compose": 0.00559,
+   "kf_parity": 1e-06,
+   "worst_kf": {
+    "s1": [
+     0.0203,
+     24
+    ]
+   },
+   "analyse_seconds": 27.0,
+   "measure_seconds": 9.4,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 2,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "pieces_mean": 1.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.0,
+    "centre_px": 2.2,
+    "visible_err": 0.0,
+    "structure": {
+     "found": [
+      "build"
+     ],
+     "missed": [
+      "build",
+      "shrink"
+     ],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 25.0,
+    "dl_ratio": 1.756,
+    "rows": [
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.86,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.662,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 1.9,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "whip_pan-1",
+   "kind": "whip_pan",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0006053786718659553,
+   "l1_recon": 0.00264,
+   "l1_kf": 0.00906,
+   "l1_compose": 0.00906,
+   "kf_parity": 4e-07,
+   "worst_kf": {
+    "s1": [
+     0.0161,
+     44
+    ]
+   },
+   "analyse_seconds": 39.5,
+   "measure_seconds": 8.5,
+   "diff": {
+    "truth_elements": 4,
+    "ir_elements": 4,
+    "matched": 4,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.5,
+    "over_split": 2,
+    "pieces_mean": 1.5,
+    "text_ratio": 1.0,
+    "colour_de": 111.32,
+    "centre_px": 1.375,
+    "visible_err": 1.75,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "pan"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 16.5,
+    "dl_ratio": 2.478,
+    "rows": [
+     {
+      "id": "ca",
+      "kind": "shape",
+      "match": "e2",
+      "iou": 0.964,
+      "fragments": 2,
+      "fragment_ids": [
+       "e1",
+       "e2"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e2"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 2
+     },
+     {
+      "id": "ta",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.733,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 1.8,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 111.32
+     },
+     {
+      "id": "cb",
+      "kind": "shape",
+      "match": "e3",
+      "iou": 0.964,
+      "fragments": 2,
+      "fragment_ids": [
+       "e3",
+       "e4"
+      ],
+      "pieces": 2,
+      "piece_ids": [
+       "e3",
+       "e4"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 2
+     },
+     {
+      "id": "tb",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.901,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 111.32
+     }
+    ]
+   }
+  },
+  {
+   "name": "mk571",
+   "kind": "gold",
+   "seed": null,
+   "frames": 482,
+   "scenes": 1,
+   "l1_page": 0.00656186612881472,
+   "l1_recon": 0.01646,
+   "l1_kf": 0.01866,
+   "l1_compose": 0.01866,
+   "kf_parity": 1e-07,
+   "worst_kf": {
+    "s1": [
+     0.2529,
+     44
+    ]
+   },
+   "analyse_seconds": null,
+   "measure_seconds": 125.7,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 13,
+    "matched": 4,
+    "matched_rate": 0.8,
+    "fragments_mean": 1.6,
+    "over_split": 2,
+    "pieces_mean": 5.2,
+    "text_ratio": 0.9185,
+    "colour_de": 2.02,
+    "centre_px": 8.0,
+    "visible_err": 79.25,
+    "structure": {
+     "found": [
+      "pop",
+      "drift"
+     ],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "shape-size",
+      "split",
+      "stagger",
+      "mask"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 21.4615,
+    "dl_ratio": 4.036,
+    "rows": [
+     {
+      "id": "bg",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.167,
+      "fragments": 3,
+      "fragment_ids": [
+       "e4",
+       "e6",
+       "e11"
+      ],
+      "pieces": 10,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e11"
+      ]
+     },
+     {
+      "id": "frame",
+      "kind": "shape",
+      "match": "e4",
+      "iou": 0.975,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e11"
+      ],
+      "pieces": 8,
+      "piece_ids": [
+       "e3",
+       "e4",
+       "e5",
+       "e7",
+       "e8",
+       "e9",
+       "e11",
+       "e13"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 115
+     },
+     {
+      "id": "mark",
+      "kind": "image",
+      "match": "e13",
+      "iou": 0.566,
+      "fragments": 1,
+      "fragment_ids": [
+       "e13"
+      ],
+      "pieces": 6,
+      "piece_ids": [
+       "e5",
+       "e7",
+       "e8",
+       "e9",
+       "e12",
+       "e13"
+      ],
+      "centre_px": 19.6,
+      "visible_err": 198
+     },
+     {
+      "id": "url",
+      "kind": "text",
+      "match": "e6",
+      "iou": 0.846,
+      "fragments": 1,
+      "fragment_ids": [
+       "e6"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e6"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 3.68
+     },
+     {
+      "id": "name",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.85,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "pieces": 1,
+      "piece_ids": [
+       "e11"
+      ],
+      "centre_px": 10.5,
+      "visible_err": 2,
+      "text_ratio": 0.837,
+      "colour_de": 0.36
+     }
+    ]
+   }
+  }
+ ],
+ "_note": "rt2-base with hard_cut-1 analysed at 329a3b9 on the 9a09950 template (footer), the render every later run uses"
+}
