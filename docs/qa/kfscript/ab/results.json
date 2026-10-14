@@ -1,0 +1,1522 @@
+{
+ "accuracy": {
+  "brief/auto": 76.7,
+  "brief/edit": 100.0,
+  "brief/read": 100.0,
+  "kfscript/auto": 93.0,
+  "kfscript/edit": 100.0,
+  "kfscript/read": 100.0,
+  "brief/comprehension": 82.5,
+  "kfscript/comprehension": 94.7
+ },
+ "switch_default_to_kfscript": true,
+ "rows": [
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.4,
+   "gold": 4.8048
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Your Business logo obol s",
+   "gold": "Your Business logo obol s"
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#feffff",
+   "gold": "#feffff"
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e11",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": null,
+    "property": "background"
+   },
+   "gold": [
+    null
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 8.03,
+   "gold": 4.8048
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Your Business logo obol s",
+   "gold": "Your Business logo obol s"
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#feffff",
+   "gold": "#feffff"
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "e11",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e11",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "mk571",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": null,
+    "property": "background"
+   },
+   "gold": [
+    null
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.65,
+   "gold": 2.65265
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "out_back",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "THE BEST FOR",
+   "gold": "Mixkit"
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "#ffffff",
+   "gold": "#216bf7"
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e60",
+   "gold": [
+    "e60"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e64",
+    "e65"
+   ],
+   "gold": [
+    "e64",
+    "e65"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e60",
+    "property": "color"
+   },
+   "gold": [
+    "e60"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": [
+     "e64",
+     "e65"
+    ],
+    "property": "font"
+   },
+   "gold": [
+    "e64",
+    "e65"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.64,
+   "gold": 2.65265
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Mixkit",
+   "gold": "Mixkit"
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#216bf7",
+   "gold": "#216bf7"
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e60",
+   "gold": [
+    "e60"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e64",
+    "e65"
+   ],
+   "gold": [
+    "e64",
+    "e65"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e60",
+    "property": "color"
+   },
+   "gold": [
+    "e60"
+   ]
+  },
+  {
+   "clip": "mk544",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": [
+    {
+     "element": "e64",
+     "property": "font"
+    },
+    {
+     "element": "e65",
+     "property": "font"
+    }
+   ],
+   "gold": [
+    "e64",
+    "e65"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.7,
+   "gold": 4.7047
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "I am trying to find video files to",
+   "gold": "I am trying to find video files to"
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#0ea1f9",
+   "gold": "#0ea1f9"
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e44",
+   "gold": [
+    "e44"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "text"
+   },
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e44",
+    "property": "color"
+   },
+   "gold": [
+    "e44"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.7,
+   "gold": 4.7047
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "I am trying to find video files to",
+   "gold": "I am trying to find video files to"
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#0ea1f9",
+   "gold": "#0ea1f9"
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e44",
+   "gold": [
+    "e44"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "text"
+   },
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "mk543",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e44",
+    "property": "color"
+   },
+   "gold": [
+    "e44"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.9,
+   "gold": 3.9
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": [],
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "Veluna Al",
+   "gold": "Ask.And move forward."
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#c2ecee",
+   "gold": "#bbe0f2"
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e13",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e8",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e13",
+    "property": "text"
+   },
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "color"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.9,
+   "gold": 3.9
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e13"
+   ],
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Ask.And move forward.",
+   "gold": "Ask.And move forward."
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#bbe0f2",
+   "gold": "#bbe0f2"
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e13",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e8",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e13",
+    "property": "text"
+   },
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "color"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "e24",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.8,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Every channel.",
+   "gold": "Every channel."
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#fdfefa",
+   "gold": "#fdfefa"
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e25",
+   "gold": [
+    "e25"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e25",
+    "property": "text"
+   },
+   "gold": [
+    "e25"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e40",
+    "property": "color"
+   },
+   "gold": [
+    "e40"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.97,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Every channel.",
+   "gold": "Every channel."
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#fdfefa",
+   "gold": "#fdfefa"
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e25",
+   "gold": [
+    "e25"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e25",
+    "property": "text"
+   },
+   "gold": [
+    "e25"
+   ]
+  },
+  {
+   "clip": "e07",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e40",
+    "property": "color"
+   },
+   "gold": [
+    "e40"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.3,
+   "gold": 1.3
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "Q",
+   "gold": "nI get the best results?"
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "#5bdef6",
+   "gold": "#adadad"
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e9",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.3,
+   "gold": 1.3
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "nI get the best results?",
+   "gold": "nI get the best results?"
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#adadad",
+   "gold": "#adadad"
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": "e9",
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "e11",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6"
+   ]
+  }
+ ]
+}

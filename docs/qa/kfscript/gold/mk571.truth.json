@@ -1,0 +1,27 @@
+{
+ "kind": "gold",
+ "name": "mk571",
+ "source": "Mixkit 571 \"Swipe Corporate Logo\" (eval/refs/mk571.mp4; download link in docs/research/2026-10-13-ai-legible-format/sources.md)",
+ "page": "docs/research/2026-10-13-ai-legible-format/gold/mk571.html",
+ "basis": "gold-reads.md: the read, corrected by CV measurement where they disagree (bg opens centre-out, frame widens symmetrically and settles, url drifts down)",
+ "size": [1920, 1080],
+ "fps": 59.94005994005994,
+ "frames": 482,
+ "shots": [[0, 481]],
+ "elements": [
+  {"id": "bg", "role": "background", "kind": "shape", "text": null, "colour": "#5ac9a4", "font": null, "visible": [14, 481]},
+  {"id": "frame", "role": "frame", "kind": "shape", "text": null, "colour": "#09728a", "font": null, "visible": [46, 481]},
+  {"id": "mark", "role": "logo_mark", "kind": "image", "text": null, "colour": "#ffffff", "font": null, "visible": [83, 481]},
+  {"id": "url", "role": "url", "kind": "text", "text": "www.yourwebsite.com", "colour": "#ffffff", "font": "Roboto", "visible": [112, 481]},
+  {"id": "name", "role": "brand_name", "kind": "text", "text": "Your Business logo", "colour": "#ffffff", "font": "Roboto", "visible": [175, 481]}
+ ],
+ "structure": [
+  {"type": "mask", "targets": ["bg"], "params": {"from": "centre", "frames": [14, 90]}, "ir": "P3"},
+  {"type": "shape-size", "targets": ["frame"], "params": {"w": [0, 241, 1076, 1012], "h": [0, 241, 312, 298], "stroke": [39, 21], "frames": [46, 290]}, "ir": "P3"},
+  {"type": "pop", "targets": ["mark"], "params": {"scale": [0, 1], "frames": [83, 108]}, "ir": "now"},
+  {"type": "drift", "targets": ["url"], "params": {"axis": "y", "px": 24, "frames": [112, 190]}, "ir": "now"},
+  {"type": "split", "targets": ["name"], "params": {"unit": "word", "n": 3}, "ir": "P3"},
+  {"type": "stagger", "targets": ["name"], "params": {"frames": [175, 175, 183]}, "ir": "P3"},
+  {"type": "mask", "targets": ["name"], "params": {"edge": "bottom"}, "ir": "P3"}
+ ]
+}

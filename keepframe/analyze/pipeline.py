@@ -20,7 +20,7 @@ from .movers import mover_cover, mover_frames, mover_props, mover_video
 from .plate import FALLBACK_CONF, FRAMES_PATH, MOVERS_FAILED, PLATE_FAILED, PlateModel, background_for, build_plate, busy_plate, fallback_plate, load_plate, save_plate, write_video
 from .regions import build_palette, extract_regions, merge_adjacent_regions
 from .report import write_report
-from .semantics import assign_roles, group_by_motion
+from .semantics import assign_roles, group_by_motion, group_successions
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
@@ -214,7 +214,48 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
                 _pk(sd, "tracks", obj_tracks)
             report_stage("plate")
     model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, busy)
+    if fresh and busy is None:
+        try:
+            held = _held_in_pass1(model, pass1, frames)
+            if held >= opts.min_area:   # pass 1's regions only outline an element that held still: cut them again
+                t0 = time.perf_counter()
+                again = _stage_regions(frames, bg, boxes, opts, sd, plate=model.at(0), text_tracks=text_tracks, shape_tracks=shape_tracks)
+                tracks = _stage_tracking(again, sd)
+                model = _stage_plate(frames, fps, again, boxes, text_tracks, shape_tracks, tracks, bg, bconf, pass1, opts, sd)
+                rbf, obj_tracks = again, tracks
+                log.info("plate held %s px of a still element in pass 1: regions again %.2fs", held, time.perf_counter() - t0)
+        except Exception:   # fail soft: pass 1's regions and tracks, in the caches too
+            log.exception("still-element regions failed; pass 1 regions kept")
+            _pk(sd, "regions", rbf)
+            _pk(sd, "tracks", obj_tracks)
     return model, rbf, obj_tracks
+
+
+HELD_SHARE = 0.9   # a pixel of pass 1 is a still element when nearly every sampled frame shows it (not a scroll's smear)
+
+
+def _held_in_pass1(model: PlateModel, pass1, frames) -> int:
+    """Pixels inside the plate's filled holes where pass 1 (a median over time) still shows something that ≥ HELD_SHARE
+    of the sampled frames show too: an element that held still through the scene (a footer through a whole shot), which
+    pass 1's regions only outline. Content moving through a spot more than half the time also sits in the median, but
+    the frames disagree with it there; a mover's boxes (a globe spinning in place) are the plate stage's already. 0 when
+    there is no pass 1 or the plate moves or is a picture. shortcut: a picture plate keeps pass 1's regions."""
+    if pass1 is None or model.kind not in ("color", "gradient") or _moving(model) is not None:
+        return 0
+    inside = np.zeros(pass1.shape[:2], bool)
+    for h in model.stats.get("holes", []):
+        x0, y0, x1, y1 = h["bbox"]
+        inside[y0:y1, x0:x1] = True
+    for m in model.movers:   # a mover (a globe spinning in place) is the plate stage's already, not a still element
+        for (x0, y0, x1, y1), _ in m.frames.values():
+            inside[max(0, y0):y1, max(0, x0):x1] = False
+    held = foreground_mask_plate(pass1, model.at(0)) & inside
+    if held.any():
+        lab = rgb_to_lab(pass1)
+        sample = np.linspace(0, len(frames) - 1, min(len(frames), 12)).round().astype(int)
+        still = np.mean([~foreground_mask_plate(frames[f], pass1, plate_lab=lab) for f in sample], axis=0) >= HELD_SHARE
+        held &= still
+    return int(cv2.morphologyEx(held.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).sum())
 
 
 def _moving(model: PlateModel):
@@ -651,7 +692,7 @@ def _elements_from_props(props: dict, sd: Path, ids: dict) -> tuple[list[Element
         raw_full = fill_gaps(p["raw"])
         valid = np.flatnonzero(~np.isnan(raw_full[:, 0]))
         first, last = int(valid[0]), int(valid[-1])
-        tracks, fe = tracks_from_raw(raw_full[first:last + 1], first)
+        tracks, fe = tracks_from_raw(raw_full[first:last + 1], first, p["canon"].shape[:2])
         (sd / "assets").mkdir(parents=True, exist_ok=True)
         _write_replacing(sd / "assets" / f"{eid}.png",
                          lambda t: cv2.imwrite(str(t), cv2.cvtColor(p["canon"], cv2.COLOR_RGBA2BGRA)))
@@ -704,7 +745,8 @@ def _finish(sd: Path, scene: Scene, frames: np.ndarray, raws: dict, messages: li
             log.warning("captions skipped: %s", describe(e, trace=True))
             messages.append("captions skipped (captions_failed)")
     # ponytail: parsed UI has no measured motion tracks (nor the analysis' text elements).
-    scene.groups = [] if scene.ui is not None else text_groups(props or {}, ids or {}) + group_by_motion(scene.elements, raws)
+    scene.groups = [] if scene.ui is not None else (text_groups(props or {}, ids or {}) + group_by_motion(scene.elements, raws)
+                                                    + group_successions(scene.elements))
     t = _stage_done("semantics", t)
     report_stage("constraints")
     scene.constraints = apply_keep_preset(extract_constraints(scene), DEFAULT_KEEP_PRESET)
@@ -955,6 +997,19 @@ def analyze(
     t = time.perf_counter()
     frames, fps = read_frames(video, start, end)
     _stage_done("frames", t)
+    shots_note = None
+    if scenes is None and existing is None:   # a fresh analysis given no scenes splits at its cuts
+        try:
+            from .shots import auto_scenes
+            scenes, transitions = auto_scenes(frames, start)
+        except Exception as e:   # fail soft: one scene
+            log.warning("shot detection failed: %s", describe(e, trace=True))
+            shots_note = "shots_failed"
+    elif scenes is None:   # a re-analysis keeps the project's scenes when they cover this range
+        refs = [{"id": r.id, "frames": list(r.frames)} for r in existing.scenes]
+        if refs and refs[0]["frames"][0] == start and refs[-1]["frames"][1] == end:
+            scenes, transitions = refs, [r.transition_out | {"from": r.id, "to": n.id} for r, n in zip(existing.scenes, existing.scenes[1:])
+                                         if r.transition_out]
     layout = scenes or [{"id": "s1", "frames": [start, end]}]
     by_pair = {(item.get("from"), item.get("to")): item for item in transitions or []}
     analyzed: list[Scene] = []
@@ -981,6 +1036,8 @@ def analyze(
     links = link_adjacent_scenes(analyzed, out_root)
     analysis_files = {scene.id: snapshot_from_stages(_scene_dir(out_root, scene.id), scene) for scene in analyzed}
     source = {"file": str(video), "fps": fps, "size": [width, height], "mode": mode, "range": [start, end] if mode == "range" else None}
+    if shots_note:
+        source["shots_note"] = shots_note
     if existing:
         from ..ir.schema import SceneRef
         for scene in analyzed:

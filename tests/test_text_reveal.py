@@ -174,14 +174,19 @@ def test_merge_uses_requested_max_gap_and_widest_frame_text():
     assert later.text == "B"  # Canonical copy follows the widest frame, rather than the latest frame.
 
 
-def test_zoomed_suffix_and_shifted_reveals_stay_separate():
+def test_zoomed_suffix_and_unanchored_reveals_stay_separate_centred_and_right_builds_merge():
     title = _track(1, "You just", 0, 2, (20, 20, 220, 50))
     zoom = _track(2, "ust", 3, 5, (-120, -30, 260, 150))
     assert text_module.merge_reveals([title, zoom]) == [title, zoom]
-    for bbox in ((100, 20, 220, 50), (60, 20, 180, 50)):
+    for bbox, merges in (((40, 20, 160, 50), False), ((100, 20, 220, 50), True), ((60, 20, 180, 50), True)):
         prefix = _track(3, "You", 0, 2, bbox)
         full = _track(4, "You just", 3, 5, (20, 20, 220, 50))
-        assert text_module.merge_reveals([prefix, full]) == [prefix, full]
+        assert text_module.merge_reveals([prefix, full]) == ([full] if merges else [prefix, full])
+    centred = TextTrack(id=5, text="You just", boxes={0: TextBox(0, "You", (60, 20, 180, 50), 0.6),
+                                                      1: TextBox(1, "You just", (20, 20, 220, 50), 0.6)})
+    merged, = text_module.merge_reveals([centred])   # a line re-centring as its words land: the reveal follows its left edge
+    raw, _, _, _, _ = text_module.text_props(merged, np.zeros((2, 80, 260, 3), np.uint8), (255, 255, 255), 2, 0, infer_font=False)
+    assert merged.reveal and raw[0, 0] == 160 and raw[0, 8] == 0.6 and raw[0, 2] == 1.0
 
 
 def test_two_title_lines_remain_two_text_elements(tmp_path):
@@ -220,14 +225,16 @@ def test_full_width_text_and_ocr_shapes_have_no_reveal_or_lost_motion():
         assert raw[0, 0] == 70 and raw[0, 2] == 0.5
 
 
-def test_reveal_fraction_is_clipped_to_zero_and_one():
+def test_reveal_grows_from_its_own_left_edge_and_a_full_read_scales():
     frames = np.zeros((3, 80, 260, 3), np.uint8)
     track = _track(1, "Build", 0, 2, (100, 20, 200, 50))
     track.reveal = True
-    track.boxes[0].bbox = (20, 20, 40, 50)
-    track.boxes[2].bbox = (210, 20, 240, 50)
+    track.boxes[0] = TextBox(0, "Bu", (110, 20, 150, 50), 0.6)   # growing, its left edge drifted
+    track.boxes[2].bbox = (125, 27, 175, 43)                     # the whole string, shrinking about its centre
     raw, _, _, _, _ = text_module.text_props(track, frames, (255, 255, 255), 3, 0, infer_font=False)
-    np.testing.assert_array_equal(raw[:, 8], [0.0, 1.0, 1.0])
+    np.testing.assert_allclose(raw[:, 8], [0.4, 1.0, 1.0])
+    np.testing.assert_allclose(raw[0, [0, 2]], [160, 1.0])   # left edge 110 + cw/2, clipped at 150: the box's right edge
+    np.testing.assert_allclose(raw[2, [0, 2, 3]], [150, 0.5, 16 / 30])
 
 
 def test_region_rerun_keeps_full_reveal_exclusion_during_ocr_gaps(tmp_path, monkeypatch):

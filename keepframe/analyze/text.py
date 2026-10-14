@@ -344,13 +344,32 @@ def best_read(reads: list[str]) -> str:
     common = counts.most_common(READ_CANDIDATES)
     cands = [c for c, n in common if n >= 2] or [c for c, _ in common]
     best = max(cands, key=lambda c: (sum(n * read_cover(r, c) for r, n in counts.items()), counts[c]))
-    return max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
+    best = max((c for c in cands if _compact(c) == _compact(best)), key=lambda c: len(c.split()))   # spaced variant
+    return _drop_caret(best, counts)
+
+
+CARET = set("|li1!")   # casefolded: | l I 1 ! i
+
+
+def _drop_caret(best: str, reads) -> str:
+    """A blinking caret rides at the end of a typed line: OCR reads it as a trailing l / I / | on the growing prefixes
+    ("Shipl", "Ship cl"), and `read_cover` keeps the longest read, caret included. Two distinct reads that end in a
+    caret-like character after a proper prefix of the line, and are not themselves a prefix of it ("Hel" of "Hello"
+    is), mark it: the line drops its last character."""
+    b = _compact(best)
+    if len(b) < 2 or b[-1] not in CARET:
+        return best
+    riding = {c for r in reads if len(c := _compact(r)) >= 2 and c[-1] in CARET and len(c) < len(b)
+              and b[:-1].startswith(c[:-1]) and not b.startswith(c)}
+    return best.rstrip()[:-1].rstrip() if len(riding) >= 2 else best
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
-    # The shorter box sets the tolerance, so a zoom cannot relax alignment.
+    """One line growing from a steady anchor: its left edge, centre or right edge (a line re-centring as words land;
+    the reveal follows the left edge per frame). The shorter box sets the tolerance, so a zoom cannot relax alignment."""
     height = min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1])
-    return height > 0 and abs(a.bbox[0] - b.bbox[0]) <= 0.25 * height and abs(a.bbox[3] - b.bbox[3]) <= 0.3 * height
+    anchor = min(abs(a.bbox[0] - b.bbox[0]), abs(a.bbox[2] - b.bbox[2]), abs(a.bbox[0] + a.bbox[2] - b.bbox[0] - b.bbox[2]) / 2)
+    return height > 0 and anchor <= 0.25 * height and abs(a.bbox[3] - b.bbox[3]) <= 0.3 * height
 
 
 def _widest_box(track: TextTrack) -> TextBox:
@@ -359,8 +378,8 @@ def _widest_box(track: TextTrack) -> TextBox:
 
 def merge_reveals(tracks: list[TextTrack], max_gap: int = 3) -> list[TextTrack]:
     """Fold aligned prefixes into the later track, retaining each frame's OCR box."""
-    # ponytail: left-to-right reveals only; right/centre reveals stay separate tracks
-    # Upgrade path: infer the reveal direction and expose it in the IR.
+    # shortcut: the read grows at its end (left to right) from any anchor; a line built from its end stays separate
+    # tracks. Upgrade path: infer the reveal direction and expose it in the IR.
     for track in tracks:
         full = _widest_box(track)
         full_text = _compact(full.text)
@@ -616,6 +635,7 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
     color = "#%02x%02x%02x" % tuple(int(v) for v in col)
     c = col - np.array(bg_rgb, np.float32); n = float(np.dot(c, c))
     raw = np.full((n_frames, 9), np.nan)
+    full_text = _compact(track.text)
     for f, b in track.boxes.items():
         x0, y0, x1, y1 = b.bbox
         px, bg_px = (a.astype(np.float32) for a in _core_pixels(frames[f], b.bbox, bg_rgb, plate, col))
@@ -623,10 +643,12 @@ def text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: in
             opacity = float(np.clip(np.median(((px - np.array(bg_rgb, np.float32)) @ c) / n), 0, 1)) if (n > 1e-6 and len(px)) else 1.0
         else:
             opacity = opacity_against_plate(px, bg_px, col)
-        # A reveal clips the full texture; shrinking sx too would clip twice.
-        x = x0 + cw / 2 if reveal else (x0 + x1) / 2
-        sx = 1.0 if reveal else (x1 - x0) / cw
-        fraction = float(np.clip((x1 - cb[0]) / cw, 0, 1)) if reveal else 1.0
+        # A reveal clips the full texture from its own left edge while the read still grows (shrinking sx too would
+        # clip twice); once the whole string reads, the box is the text (a shrink after the build is a scale).
+        grows = reveal and _compact(b.text) != full_text and full_text.startswith(_compact(b.text))
+        x = x0 + cw / 2 if grows else (x0 + x1) / 2
+        sx = 1.0 if grows else (x1 - x0) / cw
+        fraction = float(np.clip((x1 - x0) / cw, 0, 1)) if grows else 1.0
         raw[f - first_frame] = [x, (y0 + y1) / 2, sx, (y1 - y0) / ch, 0.0, 0.0, 0.0, opacity, fraction]
     if not infer_font:
         return raw, canon, cf, None, None

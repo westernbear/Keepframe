@@ -51,21 +51,26 @@ def stagger(tmp_path_factory):
     return truth, tmp / "truth", current_scene(tmp / "project", "s1")[0], scene_dir(tmp / "project", "s1")
 
 
-def _wiped(tex, reveal, opacity, n=30):
+def _wiped(tex, reveal, opacity, n=30, under=None):
     """`n` frames of the RGBA `tex` at (X0, Y0) over a flat plate, column-wiped to `reveal(f)` and faded to `opacity(f)`,
     and its text prop as `text_props` makes a revealed text: the full box, reveal = the revealed fraction, cf the
-    last frame (canon α binary)."""
+    last frame (canon α binary). `under`: an RGB surface under the text's box in every frame (an input bar), which
+    the binary canon keeps (α 255 over the whole box)."""
     h, w = tex.shape[:2]
     plate = np.full((SIZE[1], SIZE[0], 3), 40, np.uint8)
-    frames, raw = np.repeat(plate[None], n, 0), np.full((n, 9), np.nan)
+    base = plate.copy()
+    if under is not None:
+        base[Y0:Y0 + h, X0:X0 + w] = under
+    frames, raw = np.repeat(base[None], n, 0), np.full((n, 9), np.nan)
     for f in range(n):
         r, o = reveal(f), opacity(f)
         if r > 0 and o > 0:
             a = tex[..., 3:] / 255.0 * o * (np.arange(w) < round(r * w))[None, :, None]
-            frames[f, Y0:Y0 + h, X0:X0 + w] = np.rint(a * tex[..., :3] + (1 - a) * 40).astype(np.uint8)
+            frames[f, Y0:Y0 + h, X0:X0 + w] = np.rint(a * tex[..., :3] + (1 - a) * base[Y0:Y0 + h, X0:X0 + w]).astype(np.uint8)
             raw[f] = [X0 + w / 2, Y0 + h / 2, 1, 1, 0, 0, 0, o, r]
     rows = np.flatnonzero(np.isfinite(raw[:, 0]))
-    canon = np.dstack([frames[-1, Y0:Y0 + h, X0:X0 + w], np.where(tex[..., 3] > 127, 255, 0).astype(np.uint8)])
+    alpha = np.full((h, w), 255, np.uint8) if under is not None else np.where(tex[..., 3] > 127, 255, 0).astype(np.uint8)
+    canon = np.dstack([frames[-1, Y0:Y0 + h, X0:X0 + w], alpha])
     return frames, plate, {"raw": raw, "canon": canon, "cf": n - 1, "kind": "text", "first": int(rows[0]), "last": int(rows[-1]), "reveal": True}
 
 
@@ -163,6 +168,20 @@ def test_growing_box_holds_its_cf_box_in_glyph_mode(tmp_path):
     window = slice(p["first"], p["first"] + int(np.ceil(max(g["delays"]) + g["ramp"])) + 1)
     assert len(g["x"]) == 6 and np.all(r[window, 0] == X0 + w / 2) and np.all(r[window, 2] == 1)
 
+
+
+def test_typing_over_a_bar_is_a_glyph_reveal(tmp_path):
+    """Round-trip prompt_typing: the typed line sits on an input bar, so the binary canon kept the bar (its rim is
+    opaque) and the title's colour, the foreground's median, was the bar's: every column read as in from the first
+    frame and the reveal fell back to box mode. Measured against the surface it sits on, the glyphs come in one by one."""
+    tex = _text(tmp_path, "REVEAL")
+    w = tex.shape[1]
+    frames, plate, p = _wiped(tex, lambda f: np.clip((f - 4) / 16, 0, 1), lambda f: 1.0, under=(30, 50, 110))
+    r = p["raw"]
+    r[:, 0], r[:, 2], r[:, 8] = X0 + r[:, 8] * w / 2, r[:, 8], np.where(np.isfinite(r[:, 8]), 1.0, np.nan)   # OCR's box grew
+    p["text"], p["reveal"] = "REVEAL", False
+    merge_titles({"t1": p}, frames, plate, ocr=None, reading=None, fps=30.0, notes=[])
+    assert len(p["glyphs"]["x"]) == 6 and np.ptp(p["glyphs"]["delays"]) > GLYPH_SPREAD
 
 
 def test_glyph_curves_the_model_misses_stay_box_mode(tmp_path):

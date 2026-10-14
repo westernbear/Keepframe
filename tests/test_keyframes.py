@@ -44,3 +44,53 @@ def test_fill_gaps_interpolates_interior_only():
     raw = np.full((6, 8), np.nan); raw[1] = 0; raw[2] = np.nan; raw[3] = 2; raw[4] = 3
     out = fill_gaps(raw)
     assert np.isnan(out[0]).all() and np.isnan(out[5]).all() and out[2, 0] == pytest.approx(1.0)
+
+def test_flat_noisy_stretch_is_a_hold():
+    """V3: a move, then ±1 px of noise until the end. The stretch was one segment with an ease chosen by the noise and
+    a last key at the last raw sample (a 1 px 'settle'); it is a hold: equal values, no ease."""
+    rng = np.random.default_rng(0)
+    tr = Track(keys=[Keyframe(t=0, v=0.0, ease=PRESET_EASES["out_cubic"]), Keyframe(t=12, v=248.0)])
+    v = np.r_[dense(tr, 13), 248 + rng.uniform(-0.9, 0.9, 77)]
+    v[-1] = 247.0
+    keys, err = reduce_curve(v, 0, 2.0)
+    assert err <= 2.0 and keys[-1].v == keys[-2].v and keys[-2].ease is None and keys[-1].t == 89
+    assert np.abs(dense(Track(keys=keys), 90) - v).max() <= 2.0
+
+
+def test_constant_track_is_one_key():
+    rng = np.random.default_rng(1)
+    keys, err = reduce_curve(0.5 + rng.uniform(-0.004, 0.004, 30), 7, 0.01)
+    assert len(keys) == 1 and keys[0].t == 7 and keys[0].ease is None and err <= 0.01
+
+
+def test_a_hold_does_not_break_the_move_after_it():
+    """Snapping a hold's end shifts the next segment's start; a shift the move cannot absorb keeps the raw value."""
+    v = np.r_[np.full(10, 100.0), 101.9, np.linspace(101.9, 300, 20)]
+    keys, err = reduce_curve(v, 0, 2.0)
+    assert err <= 2.0 and np.abs(dense(Track(keys=keys), len(v)) - v).max() <= 2.0
+
+
+def test_scale_tolerance_is_in_pixels():
+    """A 40 px wide element whose measured width steps by 1.2 px (sx 0.03) holds; the same step on a 400 px element
+    (12 px) is keyed."""
+    from keepframe.analyze.keyframes import tolerance
+    assert tolerance("sx", (20, 40)) == pytest.approx(0.05) and tolerance("sx", (20, 400)) == ERR["sx"] and tolerance("x", (20, 40)) == 2.0
+    raw = np.tile([[100, 100, 1, 1, 0, 0, 0, 1]], (30, 1)).astype(float)
+    raw[:, 2] = 1.5 + 0.03 * (np.arange(30) >= 15)
+    small, _ = tracks_from_raw(raw, 0, (20, 40))
+    big, _ = tracks_from_raw(raw, 0, (20, 400))
+    assert len(small["sx"].keys) == 1 and len(big["sx"].keys) > 1
+
+
+def test_measurement_jitter_is_not_keyed_but_the_move_is():
+    """K1: ±3 px box jitter around a move is noise (no key per frame); the move between the holds stays."""
+    from keepframe.analyze.keyframes import noise_tolerance
+    rng = np.random.default_rng(3)
+    move = Track(keys=[Keyframe(t=0, v=100.0, ease=PRESET_EASES["in_out_cubic"]), Keyframe(t=12, v=400.0)])
+    clean = np.r_[np.full(40, 100.0), dense(move, 13), np.full(40, 400.0)]
+    raw = np.tile([[0, 300, 1, 1, 0, 0, 0, 1]], (len(clean), 1)).astype(float)
+    raw[:, 0] = clean + rng.normal(0, 3, len(clean))
+    tracks, _ = tracks_from_raw(raw, 0)
+    assert len(tracks["x"].keys) <= 12   # 56 at the fixed 2 px tolerance
+    assert np.abs(dense(tracks["x"], len(clean)) - clean).max() <= 2 * noise_tolerance(raw[:, 0])
+    assert noise_tolerance(clean) < ERR["x"]   # a clean ease reads as noise-free: its keys are as before

@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>{{ID}}</title>
+{{HEADER}}<html><head><meta charset="utf-8"><title>{{ID}}</title>
 <style>
   html,body{margin:0;padding:0;background:{{PAGEBG}};overflow:hidden}
   #stage{position:relative;isolation:isolate;width:{{WIDTH}}px;height:{{HEIGHT}}px;background:{{BG}};{{PERSPECTIVE}}overflow:hidden}
@@ -26,6 +26,8 @@ const FPS = SCENE.fps;
 const DEFAULTS = {x:0,y:0,sx:1,sy:1,rot:0,skx:0,sky:0,opacity:1,reveal:1,rx:0,ry:0};
 gsap.registerPlugin(CustomEase);
 const tl = gsap.timeline({paused:true});
+const EXPLICIT = {{EXPLICIT}};   // a kf-script page: the timeline below is written out, not built from SCENE tracks
+const S = {};
 const appliers = [];
 const uiStates = [...document.querySelectorAll('[data-ui-states]')].map(node => {
   const label = node.querySelector(':scope > .ui-component__text');
@@ -65,7 +67,7 @@ const modelPromises = [...document.querySelectorAll('.model-canvas')].map(canvas
 for (const el of SCENE.elements) {
   const node = document.getElementById('el-' + el.id);
   const canvas = node.querySelector('.model-canvas');
-  const st = Object.assign({}, DEFAULTS);
+  const st = S[el.id] = Object.assign({}, DEFAULTS);
   // rx/ry tilt a 2D element under #stage's perspective (tracks.projective_matrix). Kind "3d" spins its model with
   // them; a 3D candidate (pending_asset) stays flat until its model exists.
   const tilt = (el.pending_asset || el.kind) !== '3d' && ('rx' in el.tracks || 'ry' in el.tracks);
@@ -78,7 +80,7 @@ for (const el of SCENE.elements) {
     const object = el.kind === '3d' ? modelObjects.get(canvas) : null;
     if (object) object.rotation.set(st.rx * Math.PI / 180, st.ry * Math.PI / 180, 0);
   };
-  for (const [prop, track] of Object.entries(el.tracks)) {
+  if (!EXPLICIT) for (const [prop, track] of Object.entries(el.tracks)) {
     const keys = track.keys;
     st[prop] = keys[0].v;
     for (let i = 0; i < keys.length - 1; i++) {
@@ -101,6 +103,7 @@ for (const el of SCENE.elements) {
       `linear-gradient(to right, ${alphas.map((a, i) => `rgba(0,0,0,${a}) ${edges[i]}px ${edges[i + 1]}px`).join(', ')})`;
   });
 }
+{{TIMELINE}}
 const BG = SCENE.background, STAGE = document.getElementById('stage');
 const num = (v) => { const s = (+v).toFixed(4).replace(/0+$/, '').replace(/\.$/, ''); return s === '-0' ? '0' : s; };
 const hex8 = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));

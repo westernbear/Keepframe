@@ -1,0 +1,166 @@
+{
+ "_note": "Shot boundaries of the research references, taken from the reads and measurements in docs/research/2026-10-13-ai-legible-format/gold-reads.md (read before this work). Frames are local to the range. A boundary inside a declared transition may be found anywhere in it (±1 frame); a cut within ±1 frame. 'not' lists events that must not split. The eval clips (ig1–ig3, envato1) are deliberately absent: they are report-only.",
+ "e07": {
+  "clip": "eval/refs/e07.mp4",
+  "range": [
+   360,
+   509
+  ],
+  "shots": [
+   [
+    0,
+    86
+   ],
+   [
+    87,
+    149
+   ]
+  ],
+  "transitions": [
+   {
+    "type": "cut",
+    "frames": [
+     87,
+     87
+    ]
+   }
+  ],
+  "not": [
+   "cards slide right f66–84"
+  ]
+ },
+ "e11": {
+  "clip": "eval/refs/e11.mp4",
+  "range": [
+   240,
+   389
+  ],
+  "shots": [
+   [
+    0,
+    39
+   ],
+   [
+    40,
+    83
+   ],
+   [
+    84,
+    149
+   ]
+  ],
+  "transitions": [
+   {
+    "type": "cut",
+    "frames": [
+     40,
+     40
+    ]
+   },
+   {
+    "type": "cut",
+    "frames": [
+     84,
+     84
+    ]
+   }
+  ],
+  "not": [
+   "view pans with the caret"
+  ],
+  "measured": "read 'cut f282'; measured: the typed line is gone at f280 (local 40), the new words are legible from f282"
+ },
+ "mk544": {
+  "clip": "eval/refs/mk544.mp4",
+  "range": [
+   0,
+   218
+  ],
+  "shots": [
+   [
+    0,
+    115
+   ],
+   [
+    116,
+    218
+   ]
+  ],
+  "transitions": [
+   {
+    "type": "blocks",
+    "frames": [
+     82,
+     148
+    ]
+   }
+  ],
+  "not": [
+   "inverse flash f30–43 (the scroller continues through it)",
+   "Mixkit step zoom f142–155 (same content)"
+  ]
+ },
+ "mk571": {
+  "clip": "eval/refs/mk571.mp4",
+  "range": [
+   0,
+   481
+  ],
+  "shots": [
+   [
+    0,
+    481
+   ]
+  ],
+  "transitions": [],
+  "not": [
+   "centre-out reveal from black f14–90, snap f44–47"
+  ]
+ },
+ "mk543": {
+  "clip": "eval/refs/mk543.mp4",
+  "range": [
+   0,
+   418
+  ],
+  "shots": [
+   [
+    0,
+    418
+   ]
+  ],
+  "transitions": [],
+  "not": [
+   "chat bubbles pop and scroll"
+  ]
+ },
+ "mk800": {
+  "clip": "eval/refs/mk800.mp4",
+  "range": [
+   0,
+   119
+  ],
+  "shots": [
+   [
+    0,
+    93
+   ],
+   [
+    94,
+    119
+   ]
+  ],
+  "transitions": [
+   {
+    "type": "zoom-blur",
+    "frames": [
+     88,
+     100
+    ]
+   }
+  ],
+  "not": [
+   "glyphs grow in left→right f0–56"
+  ]
+ }
+}

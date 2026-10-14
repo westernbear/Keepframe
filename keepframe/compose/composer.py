@@ -88,7 +88,8 @@ def _ui_html(model: UIModel | None, element_id: str) -> str:
     return _ui_component(component) if component is not None else ""
 
 
-def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, fonts: FontRegistry | None = None) -> str:
+def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, fonts: FontRegistry | None = None,
+                  attrs: str = "") -> str:
     c = el.canonical
     ax, ay = c.anchor
     style = (
@@ -121,7 +122,7 @@ def _element_html(el: Element, scene_dir: Path, fps: float, ui: UIModel | None, 
     glyphs = f' data-glyph-edges="{",".join(map(str, glyph_edges(c.glyphs, c.width)))}"' if c.glyphs else ""
     return (
         f'<div class="el" id="el-{html.escape(el.id)}" data-start="{start:.4f}" data-duration="{dur:.4f}" '
-        f'data-track-index="{eval_z(el, 0)}"{glyphs} style="{style}">{inner}</div>'
+        f'data-track-index="{eval_z(el, 0)}"{glyphs}{attrs} style="{style}">{inner}</div>'
     )
 
 
@@ -179,15 +180,19 @@ def _font_issues(scene: Scene, scene_dir: Path, fonts: FontRegistry, font_wait: 
 
 
 def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistry | None = None,
-            font_wait: float | None = None, warnings: list | None = None) -> Path:
+            font_wait: float | None = None, warnings: list | None = None, timeline: str | None = None,
+            header: str = "", attrs=None) -> Path:
     """`fonts`: the project's registry (uploads); bundled fonts only when None. `font_wait`: final renders wait this
     long (css.FINAL_WAIT_S) for every embedded face and raise css.FontEmbedError instead of falling back (also for an
     uploaded family that is gone); previews (None) wait css.SUBSET_WAIT_S and embed what is ready. `warnings`
-    collects the uploaded-font issues (css.uploaded_font_issues) the composition was made with."""
+    collects the uploaded-font issues (css.uploaded_font_issues) the composition was made with. A kf-script page
+    (keepframe.kfscript) passes `timeline` (JS run on the state objects `S` instead of the per-track loop), `header`
+    (an HTML comment) and `attrs(el) -> str` (extra .el attributes)."""
     scene_dir, out_html = Path(scene_dir), Path(out_html)
     fonts = fonts or FontRegistry()
     _font_issues(scene, scene_dir, fonts, font_wait, warnings)
-    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts) for e in scene.elements)
+    elements = "\n".join(_element_html(e, scene_dir, scene.fps, scene.ui, fonts, attrs(e) if attrs else "")
+                         for e in scene.elements)
     clip = _video_uri(scene_dir, scene.background.value) if scene.background.kind == "video" else None
     if clip:   # under every layer; the stage keeps the poster behind it
         elements = (f'<video class="bg-video" muted playsinline preload="auto" data-start="0"{_rate(scene.background.video_rate)} '
@@ -204,6 +209,10 @@ def compose(scene: Scene, scene_dir: Path, out_html: Path, *, fonts: FontRegistr
     # a tilted 2D element (the template's `tilt`) needs the stage perspective; without one the stage CSS is unchanged
     tilted = any((e.pending_asset or e.kind) != "3d" and ("rx" in e.tracks or "ry" in e.tracks) for e in scene.elements)
     for k, v in {
+        # first: HEADER and TIMELINE are ours; later values (elements, scene JSON) carry observed text
+        "{{HEADER}}": header,
+        "{{EXPLICIT}}": "true" if timeline is not None else "false",
+        "{{TIMELINE}}": timeline or "",
         "{{ID}}": html.escape(scene.id),
         "{{WIDTH}}": str(scene.size[0]),
         "{{HEIGHT}}": str(scene.size[1]),

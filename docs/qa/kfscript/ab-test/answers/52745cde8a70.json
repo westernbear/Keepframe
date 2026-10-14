@@ -1,0 +1,18 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 2.5,
+  "Q4": [],
+  "Q5": "linear",
+  "Q6": "Work Plan",
+  "Q7": "#ffffff",
+  "Q8": "e6",
+  "Q9": 0.33,
+  "Q10": "e7",
+  "Q11": 0.23,
+  "Q12": ["e7"],
+  "Q13": ["e11"],
+  "Q14": {"element": "e7", "property": "text"},
+  "Q15": {"element": "e11", "property": "text"},
+  "Q16": {"element": "e7", "property": "timing"}
+}

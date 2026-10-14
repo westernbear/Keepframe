@@ -6,6 +6,8 @@ from ..ir.tracks import element_bbox, eval_props
 
 COLS = ("x", "y", "sx", "sy", "rot", "opacity")
 EPS = {"translation": 0.5, "rotation": 0.25, "scale": 0.002, "opacity": 0.005, "reveal": 0.005, "spin": 0.25}
+# a one-frame change this large is a step the keys carry (keyframes.ERR), not noise; the brief shows it (steps=True)
+STEP = {"translation": 2.0, "rotation": 1.0, "scale": 0.01, "opacity": 0.02, "reveal": 0.01, "spin": 1.0}
 TYPE_ORDER = ("translation", "rotation", "scale", "opacity", "reveal", "spin")
 
 
@@ -42,8 +44,9 @@ class Motion:
     dur: int
 
 
-def _runs(moving: np.ndarray) -> list[tuple[int, int]]:
-    """Contiguous True runs over the derivative index; bridges single-frame gaps; drops runs < 2."""
+def _runs(moving: np.ndarray, steps: np.ndarray | None = None) -> list[tuple[int, int]]:
+    """Contiguous True runs over the derivative index; bridges single-frame gaps; drops runs < 2 unless they hold a
+    `steps` frame."""
     idx = np.flatnonzero(moving)
     if idx.size == 0:
         return []
@@ -53,7 +56,7 @@ def _runs(moving: np.ndarray) -> list[tuple[int, int]]:
             runs.append((s, prev)); s = i
         prev = i
     runs.append((s, prev))
-    return [(a, b) for a, b in runs if b - a + 1 >= 2]
+    return [(a, b) for a, b in runs if b - a + 1 >= 2 or (steps is not None and steps[a:b + 1].any())]
 
 
 def _validated_matrices(scene: Scene, matrices: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -93,6 +96,7 @@ def extract_motions_from_matrices(
     eps: dict[str, float] | None = None,
     *,
     extra_channels: dict[str, np.ndarray] | None = None,
+    steps: bool = False,
 ) -> list[Motion]:
     """Extract motions from six-column transforms and optional reveal/rx/ry.
 
@@ -118,7 +122,7 @@ def extract_motions_from_matrices(
         }
         for typ in signals:
             sig = np.nan_to_num(signals[typ], nan=0.0)
-            for a, b in _runs(sig > eps[typ]):
+            for a, b in _runs(sig > eps[typ], sig > STEP[typ] if steps else None):
                 start, end = int(a), int(b) + 1
                 if typ == "translation":
                     v = m[end, :2] - m[start, :2]
@@ -161,8 +165,8 @@ def extract_motions_from_matrices(
             if el.kind == "3d":
                 channels.extend([("spin", 1), ("spin", 2)])
             for typ, channel in channels:
-                signal = np.abs(delta[:, channel])
-                for a, b in _runs(np.nan_to_num(signal, nan=0.0) > eps[typ]):
+                signal = np.nan_to_num(np.abs(delta[:, channel]), nan=0.0)
+                for a, b in _runs(signal > eps[typ], signal > STEP[typ] if steps else None):
                     start, end = int(a), int(b) + 1
                     mag = float(values[end, channel] - values[start, channel])
                     motions.append(Motion("", el.id, typ, start, end, None, mag, end - start))
@@ -175,7 +179,7 @@ def extract_motions_from_matrices(
     return ordered
 
 
-def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]:
+def extract_motions(scene: Scene, eps: dict[str, float] | None = None, *, steps: bool = False) -> list[Motion]:
     extra = {}
     for el in scene.elements:
         values = np.full((scene.frames, 3), np.nan)
@@ -183,4 +187,4 @@ def extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[M
             props = eval_props(el, f)
             values[f] = [props["reveal"], props["rx"], props["ry"]]
         extra[el.id] = values
-    return extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps, extra_channels=extra)
+    return extract_motions_from_matrices(scene, animation_matrix(scene), eps=eps, extra_channels=extra, steps=steps)

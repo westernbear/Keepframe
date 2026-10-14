@@ -44,6 +44,16 @@ def test_track_text_takes_the_read_that_covers_the_others():
     assert best_read(["Arrivals"] * 6 + ["ivals"] * 6 + ["wArrivals"] * 4 + ["ew Arri"] * 4 + ["New Arrivals"] * 4) == "New Arrivals"
     assert best_read(["New"] * 5 + ["New Arrivals"] * 8 + ["New Arrivals Up to 50% off"]) == "New Arrivals"   # junk seen once
     assert best_read(["Sale", "Sole"]) == "Sale"   # none seen twice: every read is a candidate, the first wins a tie
+
+
+def test_best_read_drops_a_blinking_caret():
+    """Round-trip prompt_typing: the caret blinks at the end of the typed line, so the growing prefixes are read with
+    a trailing l / I and the longest read keeps it. Static dropouts and typed letters are no caret."""
+    typed = ["Shipl", "Ship I", "Ship", "Ship cl", "Ship ch"] + ["Ship channel build launch.l"] * 6 + ["Ship channel build launch."] * 6
+    assert best_read(typed) == "Ship channel build launch."
+    assert best_read(["Hotel"] * 6 + ["Hote"] * 4) == "Hotel"                          # a dropout, no caret reads
+    assert best_read(["G", "Go"] + ["Go!"] * 5) == "Go!"                               # a typed "!" is text
+    assert best_read(["He", "Hel", "Hell"] + ["Hello world"] * 5 + ["Hello wl"]) == "Hello world"   # "Hel" is a prefix
     boxes = [[TextBox(f, t, (10, 10, 10 + 12 * len(t), 30), 0.9)] for f, t in enumerate(["New"] * 3 + ["New Arrivals"] * 2)]
     assert [t.text for t in track_text(boxes)] == ["New Arrivals"]
     glyph = track_text([[TextBox(f, t, (10, 10, 22, 30), 0.5)] for f, t in enumerate(["O"] * 5 + ["OO"] * 2)])

@@ -83,7 +83,7 @@ def test_real_gate_continues_after_render_check_failure(tmp_path, monkeypatch, e
     (clips / "b-good.mp4").write_bytes(first.read_bytes())
     first.with_suffix(".gt.json").write_text(json.dumps({"elements": []}))
 
-    def render_check(root, scene_id, clip, sample_every=10, max_frames=150):
+    def render_check(root, scene_id, clip, sample_every=10, max_frames=150, start=0):
         if clip.name == "a-failed.mp4":
             raise error
         return {"render_l1": 0.125, "frames": [0, 10]}

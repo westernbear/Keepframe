@@ -1,0 +1,606 @@
+{
+ "id": "v3a-holds",
+ "commit": "3f50f11",
+ "before": "rt-b2",
+ "after": "rt-v3a",
+ "machine": "cloud container, 4 CPU, no GPU",
+ "command": "keepframe eval-roundtrip --seeds 1 --reuse (renders from rt-base)",
+ "cases": {
+  "kinetic_title-1": {
+   "l1_kf": [
+    0.01766,
+    0.01747
+   ],
+   "kf_parity": [
+    7e-07,
+    2.2e-06
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    15.0,
+    15.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.235,
+    0.235
+   ],
+   "centre_px": [
+    2.5,
+    3.3
+   ],
+   "visible_err": [
+    3.5,
+    3.5
+   ],
+   "dl_ratio": [
+    7.891,
+    7.738
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 4
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 4
+    }
+   ],
+   "text": {
+    "title": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "sub": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "logo_sting-1": {
+   "l1_kf": [
+    0.02829,
+    0.02894
+   ],
+   "kf_parity": [
+    1.4e-06,
+    2.01e-05
+   ],
+   "matched_rate": [
+    0.8,
+    0.8
+   ],
+   "pieces_mean": [
+    4.2,
+    4.2
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.95,
+    0.95
+   ],
+   "centre_px": [
+    1.225,
+    1.4
+   ],
+   "visible_err": [
+    22.75,
+    22.75
+   ],
+   "dl_ratio": [
+    5.197,
+    4.843
+   ],
+   "structure": [
+    {
+     "found": 1,
+     "missed": 1,
+     "unsupported": 5
+    },
+    {
+     "found": 1,
+     "missed": 1,
+     "unsupported": 5
+    }
+   ],
+   "text": {
+    "name": [
+     1.0,
+     1.0,
+     0.55,
+     0.55
+    ],
+    "url": [
+     1.0,
+     1.0,
+     1.35,
+     1.35
+    ]
+   }
+  },
+  "chat_ui-1": {
+   "l1_kf": [
+    0.01474,
+    0.01632
+   ],
+   "kf_parity": [
+    1.6e-06,
+    7e-07
+   ],
+   "matched_rate": [
+    0.8333,
+    0.8333
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    2.66,
+    2.66
+   ],
+   "centre_px": [
+    2.14,
+    2.74
+   ],
+   "visible_err": [
+    4.6,
+    4.6
+   ],
+   "dl_ratio": [
+    9.217,
+    8.758
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "title": [
+     1.0,
+     1.0,
+     0.51,
+     0.51
+    ],
+    "t0": [
+     1.0,
+     1.0,
+     4.6,
+     4.6
+    ],
+    "t1": [
+     1.0,
+     1.0,
+     5.83,
+     5.83
+    ],
+    "t2": [
+     1.0,
+     1.0,
+     2.21,
+     2.21
+    ],
+    "t3": [
+     1.0,
+     1.0,
+     0.6,
+     0.6
+    ],
+    "t4": [
+     1.0,
+     1.0,
+     2.21,
+     2.21
+    ]
+   }
+  },
+  "scroller-1": {
+   "l1_kf": [
+    0.06858,
+    0.06893
+   ],
+   "kf_parity": [
+    7.8e-06,
+    6e-06
+   ],
+   "matched_rate": [
+    0.5,
+    0.5
+   ],
+   "pieces_mean": [
+    5.625,
+    5.625
+   ],
+   "text_ratio": [
+    0.494,
+    0.494
+   ],
+   "colour_de": [
+    0.47,
+    0.47
+   ],
+   "centre_px": [
+    11.3,
+    11.3
+   ],
+   "visible_err": [
+    10.5,
+    10.5
+   ],
+   "dl_ratio": [
+    20.332,
+    20.168
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "l0": [
+     0.952,
+     0.952,
+     0.47,
+     0.47
+    ],
+    "l1": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l2": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l3": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l4": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l5": [
+     1.0,
+     1.0,
+     0.47,
+     0.47
+    ],
+    "l6": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "l7": [
+     0.0,
+     0.0,
+     null,
+     null
+    ]
+   }
+  },
+  "block_transition-1": {
+   "l1_kf": [
+    0.04979,
+    0.0505
+   ],
+   "kf_parity": [
+    6e-07,
+    3.56e-05
+   ],
+   "matched_rate": [
+    0.1667,
+    0.1667
+   ],
+   "pieces_mean": [
+    3.5,
+    3.5
+   ],
+   "text_ratio": [
+    0.5,
+    0.5
+   ],
+   "colour_de": [
+    0.55,
+    0.55
+   ],
+   "centre_px": [
+    2.5,
+    0.7
+   ],
+   "visible_err": [
+    11.0,
+    11.0
+   ],
+   "dl_ratio": [
+    4.859,
+    4.072
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "ta": [
+     0.0,
+     0.0,
+     null,
+     null
+    ],
+    "tb": [
+     1.0,
+     1.0,
+     0.55,
+     0.55
+    ]
+   }
+  },
+  "prompt_typing-1": {
+   "l1_kf": [
+    0.01181,
+    0.01452
+   ],
+   "kf_parity": [
+    1e-07,
+    0.0
+   ],
+   "matched_rate": [
+    0.8333,
+    0.8333
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.8133,
+    0.8133
+   ],
+   "centre_px": [
+    0.88,
+    0.96
+   ],
+   "visible_err": [
+    1.0,
+    1.0
+   ],
+   "dl_ratio": [
+    2.423,
+    2.287
+   ],
+   "structure": [
+    {
+     "found": 1,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 1,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "head": [
+     1.0,
+     1.0,
+     1.73,
+     1.73
+    ],
+    "typed": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "chip": [
+     1.0,
+     1.0,
+     0.71,
+     0.71
+    ]
+   }
+  },
+  "counter-1": {
+   "l1_kf": [
+    0.0254,
+    0.02584
+   ],
+   "kf_parity": [
+    0.0,
+    2e-07
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    6.6667,
+    6.6667
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    1.7825,
+    1.93
+   ],
+   "centre_px": [
+    1.3833,
+    1.2833
+   ],
+   "visible_err": [
+    17.1667,
+    17.1667
+   ],
+   "dl_ratio": [
+    11.481,
+    10.956
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 3
+    }
+   ],
+   "text": {
+    "l1": [
+     1.0,
+     1.0,
+     0.6,
+     0.6
+    ],
+    "l2": [
+     1.0,
+     1.0,
+     6.53,
+     7.12
+    ],
+    "n1": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "n2": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "stepped_zoom-1": {
+   "l1_kf": [
+    0.01995,
+    0.01985
+   ],
+   "kf_parity": [
+    0.0,
+    1e-07
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.3333,
+    1.3333
+   ],
+   "text_ratio": [
+    0.9733,
+    0.9733
+   ],
+   "colour_de": [
+    0.4533,
+    0.4533
+   ],
+   "centre_px": [
+    1.7333,
+    2.3667
+   ],
+   "visible_err": [
+    0.6667,
+    0.6667
+   ],
+   "dl_ratio": [
+    2.288,
+    2.038
+   ],
+   "structure": [
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 1
+    },
+    {
+     "found": 0,
+     "missed": 0,
+     "unsupported": 1
+    }
+   ],
+   "text": {
+    "word": [
+     1.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    "lab1": [
+     0.96,
+     0.96,
+     0.68,
+     0.68
+    ],
+    "lab2": [
+     0.96,
+     0.96,
+     0.68,
+     0.68
+    ]
+   }
+  }
+ }
+}

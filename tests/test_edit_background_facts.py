@@ -108,7 +108,10 @@ def test_agent_tool_result_carries_background_facts(tmp_path, monkeypatch):
     from keepframe.session.tools import TOOL_SCHEMAS
     root, sd, scene = _project(tmp_path, "gradient", monkeypatch)
     ctx = SessionContext(root, "s1")
-    assert "background gradient linear 135°" in _scene_summary(ctx)        # the agent sees the kind before acting
+    assert "background:linear-gradient(135deg" in _scene_summary(ctx)      # the agent sees the kind before acting
+    monkeypatch.setenv("KEEPFRAME_AGENT_VIEW", "brief")
+    assert "background gradient linear 135°" in _scene_summary(ctx)
+    monkeypatch.delenv("KEEPFRAME_AGENT_VIEW")
     tool = next(t for t in TOOL_SCHEMAS if t["function"]["name"] == "edit")["function"]
     assert "A background colour edit replaces the whole background" in tool["description"]
     assert tool["parameters"]["properties"]["targets"]["items"]["properties"]["mode"]["anyOf"][0]["enum"] == ["replace", "tint"]
@@ -232,7 +235,7 @@ assert.equal(chatReply({reply: 'done', results: []}), 'done');
     assert "appendAgent(confirmedLine(res))" in source and "const reply = chatReply(turn);" in source
 
 
-RULE = ("When the scene brief shows a picture, gradient or video background, ask the user before replacing it with a "
+RULE = ("When the scene description (brief or kf-script) shows a picture, gradient or video background, ask the user before replacing it with a "
         "flat colour: offer tint")
 
 
@@ -255,6 +258,6 @@ def test_agent_is_told_to_ask_before_flattening_a_picture_background(tmp_path, m
     assert turn.reply.startswith("Tint")
     system, brief = seen[0][0]["content"], seen[0][1]["content"]
     assert RULE in system and 'mode: "tint"' in system and "flat replace" in system
-    assert "background image" in brief                                      # the brief states the kind
+    assert 'background:url("' in brief                                      # the view states the kind (a picture)
     done = edit(root, "s1", "navy", confirm=True, intent=_colour_intent())  # and a flat replace still applies
     assert done.status == "done" and current_scene(root, "s1")[0].background.kind == "color"

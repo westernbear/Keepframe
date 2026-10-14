@@ -67,8 +67,9 @@ def m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict:
             "passed": l1_ok >= math.ceil(0.8 * n) and trk_ok and temporal >= 0.7, "rows": rows}
 
 
-def render_fidelity(root: Path, scene_id: str, clip: Path, sample_every: int = 10, max_frames: int = 150) -> dict:
-    """Return normalized browser/source L1 and compared frame indices, starting at source zero."""
+def render_fidelity(root: Path, scene_id: str, clip: Path, sample_every: int = 10, max_frames: int = 150, start: int = 0) -> dict:
+    """Return normalized browser/source L1 and compared frame indices (scene-local), the scene starting at source frame
+    `start`."""
     import cv2, numpy as np
     from .ir.store import current_scene, scene_dir
 
@@ -82,6 +83,8 @@ def render_fidelity(root: Path, scene_id: str, clip: Path, sample_every: int = 1
     try:
         if not cap.isOpened():
             raise FileNotFoundError(clip)
+        for _ in range(start):
+            cap.grab()
         with tempfile.TemporaryDirectory(prefix="keepframe-fidelity-") as tmp:
             tmp = Path(tmp)
             html = compose(scene, scene_dir(root, scene_id), tmp / "composition.html")
@@ -114,7 +117,7 @@ def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options
     import json, time, cv2, numpy as np
     from collections import Counter
     from .analyze.pipeline import AnalyzeOptions, analyze
-    from .ir.store import current_scene, scene_dir
+    from .ir.store import current_scene, load_project, scene_dir
     from .verify.matrix import animation_matrix
     from .web.liveaction import looks_live_action
     rows = []
@@ -126,25 +129,29 @@ def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options
         root = Path(out_root) / clip.stem
         t0 = time.perf_counter()
         analyze(clip, 0, end, root, options or AnalyzeOptions())
-        scene, _ = current_scene(root, "s1")
-        rep = json.loads((scene_dir(root, "s1") / "report.json").read_text())
-        row = {"clip": clip.name, "frames": scene.frames, "size": list(scene.size),
-               "live_action": looks_live_action(clip), "elements": len(scene.elements),
-               "kinds": dict(Counter(e.kind for e in scene.elements)),
-               "mean_l1": rep["reconstruction"]["mean_l1"],
-               "low_conf": sum(e.confidence < 0.7 for e in scene.elements),
-               "keep_on": sum(c.keep for c in scene.constraints), "constraints": len(scene.constraints),
-               "seconds": round(time.perf_counter() - t0, 1), "messages": rep["messages"]}
+        refs = load_project(root).scenes   # the analysis splits a clip at its cuts: every scene counts
+        scenes = [current_scene(root, ref.id)[0] for ref in refs]
+        reps = [json.loads((scene_dir(root, ref.id) / "report.json").read_text()) for ref in refs]
+        weigh = lambda vals, ws: sum(v * w for v, w in zip(vals, ws)) / max(sum(ws), 1)
+        scene, els = scenes[0], [e for sc in scenes for e in sc.elements]
+        row = {"clip": clip.name, "frames": sum(sc.frames for sc in scenes), "size": list(scene.size),
+               "live_action": looks_live_action(clip), "elements": len(els), "kinds": dict(Counter(e.kind for e in els)),
+               "scenes": [[ref.id, *ref.frames] for ref in refs],
+               "mean_l1": weigh([r["reconstruction"]["mean_l1"] for r in reps], [sc.frames for sc in scenes]),
+               "low_conf": sum(e.confidence < 0.7 for e in els),
+               "keep_on": sum(c.keep for sc in scenes for c in sc.constraints), "constraints": sum(len(sc.constraints) for sc in scenes),
+               "seconds": round(time.perf_counter() - t0, 1),
+               "messages": [f"{ref.id}: {m}" if len(refs) > 1 else m for ref, r in zip(refs, reps) for m in r["messages"]]}
         row["render_l1"] = None
         row["render_frames"] = None
         if render_check:
             try:
-                fidelity = render_fidelity(root, "s1", clip, max_frames=max_frames)
+                fid = [render_fidelity(root, ref.id, clip, max_frames=max_frames, start=ref.frames[0]) for ref in refs]
             except Exception as e:
                 row["messages"].append(f"render check failed: {type(e).__name__}: {e}"[:200])
             else:
-                row["render_l1"] = fidelity["render_l1"]
-                row["render_frames"] = len(fidelity["frames"])
+                row["render_l1"] = weigh([f["render_l1"] for f in fid], [len(f["frames"]) for f in fid])
+                row["render_frames"] = sum(len(f["frames"]) for f in fid)
         gt = clip.with_suffix(".gt.json")
         if gt.exists():
             try:

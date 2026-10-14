@@ -1,0 +1,12116 @@
+{
+ "accuracy": {
+  "brief/auto": 92.2,
+  "brief/edit": 88.2,
+  "brief/motion": 84.5,
+  "brief/read": 63.4,
+  "kfscript/auto": 99.6,
+  "kfscript/edit": 94.7,
+  "kfscript/motion": 93.9,
+  "kfscript/read": 68.1,
+  "brief/comprehension": 86.1,
+  "kfscript/comprehension": 93.8
+ },
+ "ci": {
+  "comprehension": {
+   "mean": 7.73,
+   "lo": 4.72,
+   "hi": 10.88,
+   "clips": 32,
+   "n": 448
+  },
+  "comprehension_old_set": {
+   "mean": 6.87,
+   "lo": 3.8,
+   "hi": 10.1,
+   "clips": 32,
+   "n": 300
+  },
+  "edit": {
+   "mean": 6.58,
+   "lo": 0.0,
+   "hi": 13.95,
+   "clips": 20,
+   "n": 76
+  }
+ },
+ "h1": true,
+ "h2": true,
+ "switch_default_to_kfscript": true,
+ "p1_rule": false,
+ "rows": [
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.77,
+   "gold": 2.7666666666666666
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "smarter today busywork",
+   "gold": "smarter today busywork"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e28",
+   "gold": [
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.27,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "read",
+   "score": 0.043478260869565216,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.058823529411764705,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.77,
+   "gold": 2.7666666666666666
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "smarter today busywork",
+   "gold": "smarter today busywork"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e28",
+   "gold": [
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.267,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "read",
+   "score": 0.043478260869565216,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.058823529411764705,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-2",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e4",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43",
+    "e44",
+    "e45",
+    "e46",
+    "e47",
+    "e48",
+    "e49",
+    "e50",
+    "e51"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.03,
+   "gold": 3.066666666666667
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Kiro Labs",
+   "gold": "Kiro Labs"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.73,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e13",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.2,
+   "gold": 0.3
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    419,
+    286
+   ],
+   "gold": [
+    416.0,
+    269.5
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.0,
+   "answer": [
+    "e3",
+    "e4"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.14285714285714285,
+   "answer": [
+    "e6",
+    "e7",
+    "e9",
+    "e10"
+   ],
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e16"
+   ],
+   "gold": [
+    "e15",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e17"
+   ],
+   "gold": [
+    "e17"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e16",
+    "property": "text"
+   },
+   "gold": [
+    "e15",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e17",
+    "property": "text"
+   },
+   "gold": [
+    "e17"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.07,
+   "gold": 3.066666666666667
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Kiro Labs",
+   "gold": "Kiro Labs"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.73,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e13",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.033,
+   "gold": 0.3
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    416,
+    269.5
+   ],
+   "gold": [
+    416.0,
+    269.5
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.2,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.14285714285714285,
+   "answer": [
+    "e6",
+    "e7",
+    "e9",
+    "e10"
+   ],
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e16"
+   ],
+   "gold": [
+    "e15",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e17"
+   ],
+   "gold": [
+    "e17"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e11",
+    "e12",
+    "e13"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e16",
+    "property": "text"
+   },
+   "gold": [
+    "e15",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e17",
+    "property": "text"
+   },
+   "gold": [
+    "e17"
+   ]
+  },
+  {
+   "clip": "logo_sting-2",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "timing"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.37,
+   "gold": 4.366666666666666
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "linear",
+   "gold": "in_out_quad"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork bigger Grow",
+   "gold": "busywork bigger Grow"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8effd",
+   "gold": "#e8effd"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.26,
+   "gold": 2.066666666666667
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    179,
+    394
+   ],
+   "gold": [
+    181.5,
+    393.0
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.0,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e1",
+    "e3",
+    "e4"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.367,
+   "gold": 4.366666666666666
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "in_out_quad",
+   "gold": "in_out_quad"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork bigger Grow",
+   "gold": "busywork bigger Grow"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8effd",
+   "gold": "#e8effd"
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.433,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.267,
+   "gold": 2.066666666666667
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    183,
+    393
+   ],
+   "gold": [
+    181.5,
+    393.0
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e1",
+    "e3",
+    "e4"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-2",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "MOVEGROW",
+   "gold": "MOVEGROW"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8f1ff",
+   "gold": "#e8f1ff"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.47,
+   "gold": 0.4666666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    288,
+    270
+   ],
+   "gold": [
+    287.5,
+    270.0
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 1,
+   "gold": 0.0
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "MOVEGROW",
+   "gold": "MOVEGROW"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8f1ff",
+   "gold": "#e8f1ff"
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.47,
+   "gold": 0.4666666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    287.5,
+    270
+   ],
+   "gold": [
+    287.5,
+    270.0
+   ]
+  },
+  {
+   "clip": "scroller-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0,
+   "gold": 0.0
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.0,
+   "gold": 2.0
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "channel together",
+   "gold": "channel together"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.8,
+   "gold": 1.8
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.94,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    485,
+    292
+   ],
+   "gold": [
+    481.5,
+    287.5
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.0,
+   "gold": 2.0
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "channel together",
+   "gold": "channel together"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.8,
+   "gold": 1.8
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.333,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    481.5,
+    287.5
+   ],
+   "gold": [
+    481.5,
+    287.5
+   ]
+  },
+  {
+   "clip": "block_transition-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.53,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Just ask.",
+   "gold": "Just ask."
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#fafafa",
+   "gold": "#fafafa"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.27,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.26,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    384,
+    275.4
+   ],
+   "gold": [
+    381.75,
+    278.0
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7"
+   ],
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "text"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "brief",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.567,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Just ask.",
+   "gold": "Just ask."
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#fafafa",
+   "gold": "#fafafa"
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.267,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    380.5,
+    278
+   ],
+   "gold": [
+    381.75,
+    278.0
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7"
+   ],
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "text"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-2",
+   "view": "kfscript",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8333333333333333
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.5,
+   "gold": 1.5
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.17,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    585.6,
+    302.4
+   ],
+   "gold": [
+    587.5,
+    304.5
+   ]
+  },
+  {
+   "clip": "counter-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.967,
+   "gold": 1.8333333333333333
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.5,
+   "gold": 1.5
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.167,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    587.5,
+    304.5
+   ],
+   "gold": [
+    587.5,
+    304.5
+   ]
+  },
+  {
+   "clip": "counter-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Flowly",
+   "gold": "Flowly"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    259.2
+   ],
+   "gold": [
+    479.0,
+    254.0
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "text"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.7,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Flowly",
+   "gold": "Flowly"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    479,
+    254
+   ],
+   "gold": [
+    479.0,
+    254.0
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "text"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-2",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.5,
+   "gold": 2.5
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Clear Think busywork",
+   "gold": "Clear Think busywork"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.17,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    362.6
+   ],
+   "gold": [
+    478.5,
+    360.5
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.0,
+   "gold": 0.9996520280838013
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.058823529411764705,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.5,
+   "gold": 2.5
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Clear Think busywork",
+   "gold": "Clear Think busywork"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.133,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    478.5,
+    360.5
+   ],
+   "gold": [
+    478.5,
+    360.5
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 0.9996520280838013
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.058823529411764705,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "kinetic_title-3",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e13",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.0,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Mosaic Labs",
+   "gold": "Mosaic Labs"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.73,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e11",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.17,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    270
+   ],
+   "gold": [
+    480.0,
+    270.0
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.14285714285714285,
+   "answer": [
+    "e6",
+    "e12"
+   ],
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e11",
+    "e15"
+   ],
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e18"
+   ],
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e19"
+   ],
+   "gold": [
+    "e19"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e12",
+    "property": "color"
+   },
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "color"
+   },
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e18",
+    "property": "text"
+   },
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e19",
+    "property": "text"
+   },
+   "gold": [
+    "e19"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e12",
+    "property": "timing"
+   },
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.967,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Mosaic Labs",
+   "gold": "Mosaic Labs"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.733,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e11",
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.033,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    270
+   ],
+   "gold": [
+    480.0,
+    270.0
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.14285714285714285,
+   "answer": [
+    "e6",
+    "e12"
+   ],
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.6666666666666666,
+   "answer": [
+    "e7",
+    "e8",
+    "e11",
+    "e15"
+   ],
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e17",
+    "e18"
+   ],
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e19"
+   ],
+   "gold": [
+    "e19"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e12",
+    "property": "color"
+   },
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "color"
+   },
+   "gold": [
+    "e6",
+    "e7",
+    "e8",
+    "e11",
+    "e13",
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e18",
+    "property": "text"
+   },
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e19",
+    "property": "text"
+   },
+   "gold": [
+    "e19"
+   ]
+  },
+  {
+   "clip": "logo_sting-3",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e12",
+    "property": "timing"
+   },
+   "gold": [
+    "e3",
+    "e5",
+    "e10",
+    "e12",
+    "e14",
+    "e16"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.97,
+   "gold": 3.966666666666667
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "together smarter team faster",
+   "gold": "together smarter team faster"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1e2025",
+   "gold": "#1e2025"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.3,
+   "gold": 2.6666666666666665
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    200,
+    173
+   ],
+   "gold": [
+    206.5,
+    169.5
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e2",
+    "e3"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e4"
+   ],
+   "gold": [
+    "e4",
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "text"
+   },
+   "gold": [
+    "e4",
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.97,
+   "gold": 3.966666666666667
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "together smarter team faster",
+   "gold": "together smarter team faster"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1e2025",
+   "gold": "#1e2025"
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.133,
+   "gold": 2.6666666666666665
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    206.5,
+    169.5
+   ],
+   "gold": [
+    206.5,
+    169.5
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e2",
+    "e3"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e4"
+   ],
+   "gold": [
+    "e4",
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "text"
+   },
+   "gold": [
+    "e4",
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-3",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.93,
+   "gold": 2.933333333333333
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TODAYLAUNCH",
+   "gold": "TODAYLAUNCH"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.47,
+   "gold": 0.4666666666666667
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e12",
+   "gold": [
+    "e12"
+   ]
+  },
+  {
+   "clip": "scroller-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.93,
+   "gold": 2.933333333333333
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TODAYLAUNCH",
+   "gold": "TODAYLAUNCH"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.47,
+   "gold": 0.4666666666666667
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e12",
+   "gold": [
+    "e12"
+   ]
+  },
+  {
+   "clip": "scroller-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 2.37,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork together",
+   "gold": "busywork together"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.93,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    286.2
+   ],
+   "gold": [
+    482.0,
+    285.5
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork together",
+   "gold": "busywork together"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.233,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    482,
+    285.5
+   ],
+   "gold": [
+    482.0,
+    285.5
+   ]
+  },
+  {
+   "clip": "block_transition-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.5,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Move smarter busywork.",
+   "gold": "Move smarter busywork."
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e9f0fe",
+   "gold": "#e9f0fe"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    163.8
+   ],
+   "gold": [
+    477.5,
+    161.5
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7",
+    "e8"
+   ],
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.567,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Move smarter busywork.",
+   "gold": "Move smarter busywork."
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e9f0fe",
+   "gold": "#e9f0fe"
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    477.5,
+    161.5
+   ],
+   "gold": [
+    477.5,
+    161.5
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7",
+    "e8"
+   ],
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-3",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 1.77,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#111111",
+   "gold": "#111111"
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.4,
+   "gold": 1.4
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.17,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    238,
+    308
+   ],
+   "gold": [
+    238.0,
+    308.5
+   ]
+  },
+  {
+   "clip": "counter-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.867,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#111111",
+   "gold": "#111111"
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.4,
+   "gold": 1.4
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.167,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    238,
+    308.5
+   ],
+   "gold": [
+    238.0,
+    308.5
+   ]
+  },
+  {
+   "clip": "counter-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Orbit",
+   "gold": "Orbit"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": null,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    499.2,
+    243
+   ],
+   "gold": [
+    482.5,
+    249.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "text"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.7,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Orbit",
+   "gold": "Orbit"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.033,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    482.5,
+    249.5
+   ],
+   "gold": [
+    482.5,
+    249.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "text"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-3",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.67,
+   "gold": 2.6666666666666665
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "steps team Move",
+   "gold": "steps team Move"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#d6ff39",
+   "gold": "#d6ff39"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.2,
+   "gold": 0.2
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    478,
+    292
+   ],
+   "gold": [
+    480.5,
+    267.5
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.0625,
+   "answer": [
+    "e7"
+   ],
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e16"
+   ],
+   "gold": [
+    "e16"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "text"
+   },
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e16",
+    "property": "text"
+   },
+   "gold": [
+    "e16"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.67,
+   "gold": 2.6666666666666665
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "steps team Move",
+   "gold": "steps team Move"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#d6ff39",
+   "gold": "#d6ff39"
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.2,
+   "gold": 0.2
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480.5,
+    267.5
+   ],
+   "gold": [
+    480.5,
+    267.5
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.1875,
+   "answer": [
+    "e7",
+    "e17",
+    "e24"
+   ],
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e16"
+   ],
+   "gold": [
+    "e16"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "text"
+   },
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e16",
+    "property": "text"
+   },
+   "gold": [
+    "e16"
+   ]
+  },
+  {
+   "clip": "kinetic_title-4",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e2",
+    "e7",
+    "e8",
+    "e9",
+    "e14",
+    "e15",
+    "e17",
+    "e18",
+    "e19",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "口",
+   "gold": "口"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.7,
+   "gold": 2.7
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.5,
+   "gold": 0.5333333333333333
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    270
+   ],
+   "gold": [
+    480.0,
+    270.0
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.0,
+   "answer": [
+    "e1",
+    "e2"
+   ],
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e3",
+    "e4",
+    "e5",
+    "e8"
+   ],
+   "gold": [
+    "e5",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "口",
+   "gold": "口"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.7,
+   "gold": 2.7
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.067,
+   "gold": 0.5333333333333333
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    270
+   ],
+   "gold": [
+    480.0,
+    270.0
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.25,
+   "answer": [
+    "e4"
+   ],
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e5",
+    "e8"
+   ],
+   "gold": [
+    "e5",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e9"
+   ],
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e9",
+    "property": "text"
+   },
+   "gold": [
+    "e9"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-4",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "timing"
+   },
+   "gold": [
+    "e3",
+    "e4",
+    "e6",
+    "e7"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 4.33,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "forward your flows faster",
+   "gold": "forward your flows faster"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#7c3fe5",
+   "gold": "#7c3fe5"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.47,
+   "gold": 1.4666666666666666
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.3,
+   "gold": 1.1666666666666667
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    172,
+    174
+   ],
+   "gold": [
+    167.5,
+    166.5
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 0.9971638321876526
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1",
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 4.97,
+   "gold": 4.966666666666667
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "forward your flows faster",
+   "gold": "forward your flows faster"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#7c3fe5",
+   "gold": "#7c3fe5"
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.47,
+   "gold": 1.4666666666666666
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.267,
+   "gold": 1.1666666666666667
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    167.5,
+    166.5
+   ],
+   "gold": [
+    167.5,
+    166.5
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.997,
+   "gold": 0.9971638321876526
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e1",
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "chat_ui-4",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TOCGETHER YOUR",
+   "gold": "TOCGETHER YOUR"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8f1ff",
+   "gold": "#e8f1ff"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.73,
+   "gold": 0.7333333333333333
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "scroller-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TOCGETHER YOUR",
+   "gold": "TOCGETHER YOUR"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#e8f1ff",
+   "gold": "#e8f1ff"
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.733,
+   "gold": 0.7333333333333333
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "scroller-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.3,
+   "gold": 1.3
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork Plan",
+   "gold": "busywork Plan"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.1,
+   "gold": 0.1
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    281
+   ],
+   "gold": [
+    480.0,
+    280.0
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.3,
+   "gold": 1.3
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "busywork Plan",
+   "gold": "busywork Plan"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.867,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.033,
+   "gold": 0.1
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    280
+   ],
+   "gold": [
+    480.0,
+    280.0
+   ]
+  },
+  {
+   "clip": "block_transition-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 0.47,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Justask.",
+   "gold": "Justask."
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#787b83",
+   "gold": "#787b83"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.27,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.2,
+   "gold": 0.23333333333333334
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    157.8
+   ],
+   "gold": [
+    479.5,
+    158.5
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.54,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7"
+   ],
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "text"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "brief",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.5,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Justask.",
+   "gold": "Justask."
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#787b83",
+   "gold": "#787b83"
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.27,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e3",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.233,
+   "gold": 0.23333333333333334
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    478.5,
+    158.5
+   ],
+   "gold": [
+    479.5,
+    158.5
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e3"
+   ],
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e4",
+    "e7"
+   ],
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "text"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e4",
+    "property": "color"
+   },
+   "gold": [
+    "e4",
+    "e7"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "text"
+   },
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-4",
+   "view": "kfscript",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e3",
+    "property": "timing"
+   },
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 1.8,
+   "gold": 1.9
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.5,
+   "gold": 1.5
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e29",
+   "gold": [
+    "e29"
+   ]
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.17,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    233,
+    302
+   ],
+   "gold": [
+    232.5,
+    303.0
+   ]
+  },
+  {
+   "clip": "counter-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.9,
+   "gold": 1.9
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "125K",
+   "gold": "125K"
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.5,
+   "gold": 1.5
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e29",
+   "gold": [
+    "e29"
+   ]
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.167,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    232,
+    303
+   ],
+   "gold": [
+    232.5,
+    303.0
+   ]
+  },
+  {
+   "clip": "counter-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Mosaic",
+   "gold": "Mosaic"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ff5a20",
+   "gold": "#ff5a20"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": null,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    528,
+    281
+   ],
+   "gold": [
+    480.5,
+    258.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.7,
+   "gold": 0.7
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Mosaic",
+   "gold": "Mosaic"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ff5a20",
+   "gold": "#ff5a20"
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.033,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480.5,
+    258.5
+   ],
+   "gold": [
+    480.5,
+    258.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-4",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.5,
+   "gold": 2.5
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Work Plan",
+   "gold": "Work Plan"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.33,
+   "gold": 0.3333333333333333
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.23,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "read",
+   "score": 0.045454545454545456,
+   "answer": [
+    "e7"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.047619047619047616,
+   "answer": [
+    "e11"
+   ],
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.5,
+   "gold": 2.5
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Work Plan",
+   "gold": "Work Plan"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.33,
+   "gold": 0.3333333333333333
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e7",
+   "gold": [
+    "e7"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.033,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "read",
+   "score": 0.09090909090909091,
+   "answer": [
+    "e7",
+    "e32"
+   ],
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "read",
+   "score": 0.047619047619047616,
+   "answer": [
+    "e11"
+   ],
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e29",
+    "e30",
+    "e31"
+   ]
+  },
+  {
+   "clip": "kinetic_title-5",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e32",
+    "e33",
+    "e34",
+    "e35",
+    "e36",
+    "e37",
+    "e38",
+    "e39",
+    "e40",
+    "e41",
+    "e42",
+    "e43"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": 3.0,
+   "gold": 3.066666666666667
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Pulse Studio",
+   "gold": "Pulse Studio"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.73,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e10",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.2,
+   "gold": 0.3
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    463,
+    286
+   ],
+   "gold": [
+    458.0,
+    271.0
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.0,
+   "answer": [
+    "e6"
+   ],
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 0.25,
+   "answer": [
+    "e13"
+   ],
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 0.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e13",
+    "property": "text"
+   },
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "timing"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.07,
+   "gold": 3.066666666666667
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Pulse Studio",
+   "gold": "Pulse Studio"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.73,
+   "gold": 2.7333333333333334
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e10",
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.033,
+   "gold": 0.3
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    458,
+    271
+   ],
+   "gold": [
+    458.0,
+    271.0
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.3333333333333333,
+   "answer": [
+    "e8"
+   ],
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.6666666666666666,
+   "answer": [
+    "e7",
+    "e10"
+   ],
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 0.25,
+   "answer": [
+    "e13"
+   ],
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e15"
+   ],
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "color"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e9",
+    "e10"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e13",
+    "property": "text"
+   },
+   "gold": [
+    "e11",
+    "e12",
+    "e13",
+    "e14"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e15",
+    "property": "text"
+   },
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "clip": "logo_sting-5",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e8",
+    "property": "timing"
+   },
+   "gold": [
+    "e5",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.53,
+   "gold": 3.533333333333333
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "channel forward bigger Work",
+   "gold": "channel forward bigger Work"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#16171d",
+   "gold": "#16171d"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.97,
+   "gold": 1.9666666666666666
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 1.07,
+   "gold": 0.9666666666666667
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    96,
+    32.4
+   ],
+   "gold": [
+    99.5,
+    34.5
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.53,
+   "gold": 3.533333333333333
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "channel forward bigger Work",
+   "gold": "channel forward bigger Work"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#16171d",
+   "gold": "#16171d"
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e4",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.97,
+   "gold": 1.9666666666666666
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.2,
+   "gold": 0.9666666666666667
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    99.5,
+    34.5
+   ],
+   "gold": [
+    99.5,
+    34.5
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e1"
+   ],
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "color"
+   },
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "chat_ui-5",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e1",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e5"
+   ]
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TEAM FASTER",
+   "gold": "TEAM FASTER"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.43,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.97,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "TEAM FASTER",
+   "gold": "TEAM FASTER"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#1c1b17",
+   "gold": "#1c1b17"
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e18",
+   "gold": [
+    "e18"
+   ]
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.433,
+   "gold": 0.43333333333333335
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "scroller-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 2.967,
+   "gold": 2.966666666666667
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.37,
+   "gold": 1.3666666666666667
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "faster today",
+   "gold": "faster today"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.1,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    280.8
+   ],
+   "gold": [
+    478.5,
+    279.5
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 1.367,
+   "gold": 1.3666666666666667
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "faster today",
+   "gold": "faster today"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#15161c",
+   "gold": "#15161c"
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.867,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.033,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    478.5,
+    279.5
+   ],
+   "gold": [
+    478.5,
+    279.5
+   ]
+  },
+  {
+   "clip": "block_transition-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.5,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Ask. And move forward.",
+   "gold": "Ask. And move forward."
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#d1fa38",
+   "gold": "#d1fa38"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.27,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": 0.23,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    155.4
+   ],
+   "gold": [
+    480.0,
+    155.0
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.0,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e6"
+   ],
+   "gold": [
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e7"
+   ],
+   "gold": [
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e11"
+   ],
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "text"
+   },
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "brief",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "timing"
+   },
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.567,
+   "gold": 0.5666666666666667
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Ask. And move forward.",
+   "gold": "Ask. And move forward."
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#d1fa38",
+   "gold": "#d1fa38"
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e6",
+   "gold": [
+    "e6"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.267,
+   "gold": 0.26666666666666666
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e5",
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.3,
+   "gold": 0.3
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    480,
+    155
+   ],
+   "gold": [
+    480.0,
+    155.0
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e5"
+   ],
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e6"
+   ],
+   "gold": [
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e10"
+   ],
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q17",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e7"
+   ],
+   "gold": [
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q18",
+   "cat": "read",
+   "score": 1.0,
+   "answer": [
+    "e11"
+   ],
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q19",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "text"
+   },
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q20",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e6",
+    "property": "color"
+   },
+   "gold": [
+    "e6",
+    "e9"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q21",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e10",
+    "property": "text"
+   },
+   "gold": [
+    "e10"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q22",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e7",
+    "property": "color"
+   },
+   "gold": [
+    "e7",
+    "e8"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q23",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e11",
+    "property": "text"
+   },
+   "gold": [
+    "e11"
+   ]
+  },
+  {
+   "clip": "prompt_typing-5",
+   "view": "kfscript",
+   "q": "Q24",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e5",
+    "property": "timing"
+   },
+   "gold": [
+    "e5"
+   ]
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": null,
+   "gold": 3.966666666666667
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "200K",
+   "gold": "200K"
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.87,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e30",
+   "gold": [
+    "e30"
+   ]
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.17,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    624,
+    297
+   ],
+   "gold": [
+    623.0,
+    299.5
+   ]
+  },
+  {
+   "clip": "counter-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 3.967,
+   "gold": 3.966666666666667
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "out_quad",
+   "gold": "out_quad"
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "200K",
+   "gold": "200K"
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#ffffff",
+   "gold": "#ffffff"
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1.867,
+   "gold": 1.8666666666666667
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e30",
+   "gold": [
+    "e30"
+   ]
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.167,
+   "gold": 0.16666666666666666
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    623,
+    299.5
+   ],
+   "gold": [
+    623.0,
+    299.5
+   ]
+  },
+  {
+   "clip": "counter-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 0.0,
+   "answer": "in_cubic",
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Lumen",
+   "gold": "Lumen"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.83,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.06,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 0.0,
+   "answer": [
+    480,
+    277.8
+   ],
+   "gold": [
+    482.0,
+    256.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "brief",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q1",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "yes",
+   "gold": "yes"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q2",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "no",
+   "gold": "no"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q3",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": 0.833,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q4",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": [],
+   "gold": []
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q5",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "linear",
+   "gold": "linear"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q6",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "Lumen",
+   "gold": "Lumen"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q7",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "#00b38f",
+   "gold": "#00b38f"
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q8",
+   "cat": "auto",
+   "score": 1.0,
+   "answer": "e1",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q9",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.833,
+   "gold": 0.8333333333333334
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q10",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": "e2",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q11",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 0.033,
+   "gold": 0.03333333333333333
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q12",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": [
+    482,
+    256.5
+   ],
+   "gold": [
+    482.0,
+    256.5
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q13",
+   "cat": "motion",
+   "score": 1.0,
+   "answer": 1,
+   "gold": 1.0
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q14",
+   "cat": "read",
+   "score": 0.5,
+   "answer": [
+    "e2"
+   ],
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q15",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "text"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  },
+  {
+   "clip": "stepped_zoom-5",
+   "view": "kfscript",
+   "q": "Q16",
+   "cat": "edit",
+   "score": 1.0,
+   "answer": {
+    "element": "e2",
+    "property": "timing"
+   },
+   "gold": [
+    "e1",
+    "e2"
+   ]
+  }
+ ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Protocol
 import numpy as np
 from ..ir.schema import Element, Group
+from ..ir.tracks import element_bbox
 
 # ponytail: heuristic roles and motion-correlation groups; VLM captions are opt-in through Captioner and never touch timing.
 
@@ -53,3 +54,34 @@ def group_by_motion(elements: list[Element], raws: dict[str, np.ndarray], corr_t
         buckets.setdefault(find(e.id), []).append(e.id)
     groups = [sorted(m) for m in buckets.values() if len(m) >= 2]
     return [Group(id=f"g{i}", members=m, reason="moves together") for i, m in enumerate(sorted(groups), 1)]
+
+
+def _iou(a, b) -> float:
+    ix, iy = max(0.0, min(a[2], b[2]) - max(a[0], b[0])), max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - ix * iy
+    return ix * iy / union if union > 0 else 0.0
+
+
+def group_successions(elements: list[Element], gap: int = 2, iou_thr: float = 0.5) -> list[Group]:
+    """Elements that take over where another left off, the same place one after another (a counter's values, the
+    pieces of a pop or a stagger the analysis split in time): B starts 0..gap frames after A's last frame and A's
+    last box overlaps B's first at IoU ≥ iou_thr. An observation for the readers, not one object: renders and
+    tracks are untouched."""
+    parent = {e.id: e.id for e in elements}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+
+    ends = {e.id: element_bbox(e, e.visible[1]) for e in elements}
+    for a in elements:
+        for b in elements:
+            if b is not a and 0 <= b.visible[0] - a.visible[1] <= gap and _iou(ends[a.id], element_bbox(b, b.visible[0])) >= iou_thr:
+                parent[find(a.id)] = find(b.id)
+    start = {e.id: e.visible[0] for e in elements}
+    buckets: dict[str, list[str]] = {}
+    for e in elements:
+        buckets.setdefault(find(e.id), []).append(e.id)
+    groups = sorted(sorted(m, key=lambda i: (start[i], i)) for m in buckets.values() if len(m) >= 2)
+    return [Group(id=f"seq{i}", members=m, reason="same place, one after another") for i, m in enumerate(groups, 1)]

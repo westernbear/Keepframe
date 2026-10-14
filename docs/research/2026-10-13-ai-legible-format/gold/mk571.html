@@ -1,0 +1,60 @@
+<!doctype html>
+<!--
+kf-script v0 · mk571 "Swipe Corporate Logo" (Mixkit 571)
+size 1920x1080 · fps 59.94 · 482 frames (8.04 s) · times in seconds (frame = s × 59.94)
+shots: sh1 0.00–8.04 "logo sting" (one shot, no cuts)
+style: palette bg #5ac9a4 · line #09728a · ink #ffffff · base #000000 | type Roboto 700 77px (name), Roboto 400 26px (url)
+intent: corporate logo reveal — teal opens from the centre, a frame pops, the mark pops inside it,
+        the frame stretches sideways to make room and the brand name rises into it; the url drifts down underneath.
+source of numbers: CV measurement of the source frames (see gold-reads.md); eases are GSAP presets picked by eye from the samples.
+-->
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: Roboto; src: url(../../../../keepframe/fonts/files/Roboto.woff2); font-weight: 100 900; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+#bg    { position: absolute; inset: 0; background: #5ac9a4; }
+.c     { position: absolute; transform: translate(-50%, -50%); }   /* positioned by centre */
+#frame { left: 959.5px; top: 538.5px; width: 241px; height: 241px; box-sizing: border-box; border: 21px solid #09728a; }
+#mark  { left: 959.5px; top: 538.5px; width: 160px; height: 191px; background: url(icon.png) center / contain no-repeat; }
+#name  { position: absolute; left: 702px; top: 489px; font: 700 77px/1.3 Roboto; letter-spacing: 2px; color: #fff; white-space: nowrap; }
+#name .w { display: inline-block; overflow: hidden; vertical-align: top; }
+#name .w > span { display: inline-block; }
+#url   { left: 960px; top: 947px; font: 400 26px Roboto; color: #fff; white-space: nowrap; }
+</style></head>
+<body>
+<div id="bg"      data-role="background"></div>
+<div id="frame"   data-role="frame"      class="c"></div>
+<div id="mark"    data-role="logo_mark"  class="c"></div>
+<div id="name"    data-role="brand_name"><span class="w"><span>Your</span></span> <span class="w"><span>Business</span></span> <span class="w"><span>logo</span></span></div>
+<div id="url"     data-role="url"        class="c">www.yourwebsite.com</div>
+<script src="../../../../keepframe/compose/vendor/gsap.min.js"></script>
+<script>
+const tl = gsap.timeline({ paused: true });
+// build after Roboto has loaded: GSAP reads the url's translate(-50%) as pixels on first touch
+Promise.all([document.fonts.load("26px Roboto"), document.fonts.ready]).then(() => {
+tl.addLabel("sh1", 0)
+  // teal opens from the centre outward: a slow slit (f14–f44), then a snap open (f44–f90)
+  .fromTo("#bg",  { clipPath: "inset(0% 50%)" }, { clipPath: "inset(0% 35.2%)", duration: 0.50, ease: "power2.in" }, 0.23)
+  .to("#bg",      { clipPath: "inset(0% 0%)", duration: 0.77, ease: "expo.out" }, 0.73)
+  // frame pops from a dot: a filled square grows (f46–f70), opens into an outline whose stroke thins 39→21 px (f70–f100)
+  .fromTo("#frame", { width: 0, height: 0, borderWidth: 0 }, { keyframes: [
+      { width: 55,  height: 55,  borderWidth: 27.5, duration: 0.40, ease: "power2.in" },
+      { width: 209, height: 209, borderWidth: 39,   duration: 0.10, ease: "none" },
+      { width: 241, height: 241, borderWidth: 21,   duration: 0.40, ease: "power2.out" } ] }, 0.77)
+  // mark pops inside the frame (f83–f108)
+  .from("#mark",  { scale: 0, duration: 0.42, ease: "power3.inOut" }, 1.38)
+  // url drifts down into place (f112–f190)
+  .from("#url",   { y: -26, opacity: 0, duration: 1.30, ease: "expo.out" }, 1.87)
+  // frame stretches sideways about its centre; the mark slides to the left edge with it (f118–f214)
+  .to("#frame",   { width: 1076, height: 312, duration: 1.60, ease: "expo.inOut" }, 1.97)
+  .to("#mark",    { x: -372, duration: 1.60, ease: "expo.inOut" }, 1.97)
+  // name rises through a mask word by word: "Your Business" fast (f175–f183), "logo" slow (f183–f240)
+  .from("#name .w:nth-child(1) > span, #name .w:nth-child(2) > span", { yPercent: 100, duration: 0.13, ease: "power2.out" }, 2.92)
+  .from("#name .w:nth-child(3) > span", { yPercent: 100, duration: 0.95, ease: "power4.out" }, 3.05)
+  // frame settles in a little around the name (f250–f290), then everything holds to the end
+  .to("#frame",   { width: 1012, height: 298, duration: 0.65, ease: "power2.inOut" }, 4.17);
+window.__seek(0); window.__ready = true; });
+window.__seek = f => { tl.seek(f / 59.94, false); return f; };
+window.__bbox = id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; };
+</script>
+</body></html>

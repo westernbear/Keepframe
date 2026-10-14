@@ -17,7 +17,7 @@ from .keyframes import fill_gaps
 from .matting import as_plate
 from .plane import PAD, contrast, fit_props, plane_raw, quad_tilted, rectify, text_quad, track_plane
 from .text import _compact, _glyph_core_mask, on_line, partial_ratio, read_cover
-from .textstyle import glyph_centres
+from .textstyle import contrast_glyphs, glyph_centres
 
 log = get("keepframe.analyze")
 
@@ -433,6 +433,7 @@ def merge_title(group, props, frames, plate, *, ocr, strings, size, fps) -> dict
 GLYPHS_FAILED = "glyphs_failed"   # fail-soft code (R52): a title left in box mode
 GLYPH_SPREAD, GLYPH_ON, GLYPH_RAMP, GLYPH_S = 3, 0.5, (0.1, 0.9), 3.0   # onset spread (frames), onset and ramp levels, window (s)
 GLYPH_IN, GLYPH_FIT, BOX_FIT = 0.98, 0.05, 0.02   # in-frame share; the glyph model's largest mean |Δ|; box-fit slack (R18)
+SURFACE_RIM = 0.9   # a binary canon this opaque on its rim kept the surface under the text (an input bar)
 GROW_W, GROW_X = 0.8, 0.25   # a growing box (R16): its first width over cf's, its left edge's drift in line heights
 
 
@@ -468,14 +469,19 @@ def glyph_reveal(p: dict, frames, plate, size, text: str, *, fps: float = 30.0) 
     h, w = canon.shape[:2]
     L = np.array([[1.0, 0.0, -w / 2], [0.0, 1.0, -h / 2], [0.0, 0.0, 1.0]])
     frame_ones = np.ones(frames.shape[1:3], np.float32)
+    rim = np.concatenate([canon[0], canon[-1], canon[:, 0], canon[:, -1]])
+    # the binary canon kept a surface the text sits on (an input bar): the glyphs are measured against it, not the plate
+    surface = np.median(rim[:, :3].astype(np.float32), axis=0) if (rim[:, 3] > 127).mean() >= SURFACE_RIM else None
 
     def rectified(f):   # (I_f, B_f, the share inside the frame) in canonical space
         q = {**DEFAULTS, **{k: float(v) for k, v in zip(PROPS, raw[f]) if np.isfinite(v)}, "sky": 0.0}
         M = projective_matrix(q, size) @ L
-        return [cv2.warpPerspective(np.ascontiguousarray(img), M, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
-                for img in (frames[f], np.broadcast_to(plate.at(f), frames[f].shape), frame_ones)]
+        I, B, m = [cv2.warpPerspective(np.ascontiguousarray(img), M, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+                   for img in (frames[f], np.broadcast_to(plate.at(f), frames[f].shape), frame_ones)]
+        return I, (np.broadcast_to(surface, I.shape) if surface is not None else B), m
 
-    ink = (canon[..., 3] > 127) & _on_colour(canon[..., :3], rectified(cf)[1])[1]
+    ink = (canon[..., 3] > 127) & (contrast_glyphs(canon[..., :3], surface) if surface is not None
+                                   else _on_colour(canon[..., :3], rectified(cf)[1])[1])
     cols, n = np.flatnonzero(ink.any(0)), len("".join(text.split()))
     if n < 2 or not len(cols):
         return None

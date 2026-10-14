@@ -15,6 +15,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("synth"); s.add_argument("--out", required=True); s.add_argument("--seed", type=int, default=1)
     s.add_argument("--frames", type=int, default=60); s.add_argument("--no-text", action="store_true")
     c = sub.add_parser("compose"); c.add_argument("--scene", required=True); c.add_argument("--out", required=True)
+    kf = sub.add_parser("kfscript", help="emit a kf-script page (and the agent view) for a scene; --check renders it vs the source")
+    kf.add_argument("--scene", required=True); kf.add_argument("--out", required=True); kf.add_argument("--view", default=None)
+    kf.add_argument("--check", action="store_true"); kf.add_argument("--every", type=int, default=4)
     r = sub.add_parser("render"); r.add_argument("--scene", required=True); r.add_argument("--html", required=True)
     r.add_argument("--out", required=True); r.add_argument("--frames", default=None); r.add_argument("--mp4", action="store_true")
     v = sub.add_parser("verify"); v.add_argument("--scene", required=True); v.add_argument("--render-json", default=None)
@@ -51,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     ee.add_argument("--renderer", choices=["browser", "numpy"], default="browser"); ee.add_argument("--strict", action="store_true")
     ee.add_argument("--refine", action=argparse.BooleanOptionalAction, default=None,
                     help="sprite refine (default: off for synthetic, analysis default for clips)")
+    rt = sub.add_parser("eval-roundtrip", help="synthetic reference pages → analysis → kf-script → diff against the truth")
+    rt.add_argument("--out", required=True); rt.add_argument("--kinds", nargs="+", default=None); rt.add_argument("--seeds", type=int, default=1)
+    rt.add_argument("--first-seed", type=int, default=1, help="seeds first-seed .. first-seed + seeds - 1")
+    rt.add_argument("--reuse", action="store_true"); rt.add_argument("--gold", action="append", default=[], metavar="NAME=CLIP,ROOT")
     sv = sub.add_parser("serve"); sv.add_argument("--workspace", required=True); sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--admin", action=argparse.BooleanOptionalAction, default=True)
@@ -72,6 +79,17 @@ def main(argv: list[str] | None = None) -> int:
         save_scene(scene, out / "scene.json"); print(out / "scene.json"); return 0
     if a.cmd == "compose":
         sp = Path(a.scene); print(compose(load_scene(sp), sp.parent, Path(a.out))); return 0
+    if a.cmd == "kfscript":
+        from .kfscript.emit import emit_page, view
+        sp = Path(a.scene); scene = load_scene(sp)
+        page = emit_page(scene, sp.parent, Path(a.out))
+        out = {"page": str(page), "page_chars": len(page.read_text())}
+        if a.view:
+            text = view(scene, sp.parent); Path(a.view).write_text(text); out["view_chars"] = len(text)
+        if a.check:   # against the project's source frames (scenes/<id>/scene.vN.json → project root, scene id)
+            from .kfscript.check import fidelity
+            out.update(fidelity(sp.parent.parents[1], sp.parent.name, page, every=a.every))
+        print(json.dumps(out)); return 0
     if a.cmd == "render":
         sp = Path(a.scene); frames = [int(x) for x in a.frames.split(",")] if a.frames else None
         res = render(Path(a.html), load_scene(sp), Path(a.out), frames=frames, mp4=a.mp4)
@@ -162,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
         print(Path(a.out) / "metrics.json")
         print(json.dumps({g: {k: v["passed"] for k, v in gates.items()} for g, gates in m["gates"].items()}, indent=2))
         return 1 if a.strict and not m["passed"] else 0
+    if a.cmd == "eval-roundtrip":
+        from .kfscript.synth import KINDS
+        from .qa.roundtrip import eval_roundtrip
+        if a.kinds and set(a.kinds) - set(KINDS):
+            rt.error(f"unknown kinds {sorted(set(a.kinds) - set(KINDS))}; choose from {', '.join(KINDS)}")
+        if any("=" not in g or "," not in g.split("=", 1)[1] for g in a.gold):
+            rt.error("--gold takes NAME=CLIP,ROOT")
+        m = eval_roundtrip(Path(a.out), tuple(a.kinds or KINDS), a.seeds, a.reuse, a.gold, a.first_seed)
+        print(Path(a.out) / "summary.md"); return 0 if m["passed"] else 1
     if a.cmd == "serve":
         from .web.server import JOBS, make_server
         configure()

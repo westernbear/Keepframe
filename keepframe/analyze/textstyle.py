@@ -676,11 +676,18 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
     pe = int(max(4, round(0.5 * cap0)))
     crop = _effect_crop(raw, a_tex, frames, plate, others_at, pe, meta) if cap0 >= 4 and not tilted_raw(raw) else None
     B_box = crop[1][pe:pe + h, pe:pe + w] if crop is not None else None
-    edge = np.concatenate([F[0], F[-1], F[:, 0], F[:, -1]])
-    if B_box is not None and (a_tex >= 0.98).mean() >= BOX_SHARE and float(delta_e(
-            _mode(srgb_to_lab(edge)), srgb_to_lab(np.median(B_box.reshape(-1, 3), axis=0)))) < KEPT_PLATE_DE:
+    edge_lab = _mode(srgb_to_lab(np.concatenate([F[0], F[-1], F[:, 0], F[:, -1]])))
+    opaque = (a_tex >= 0.98).mean() >= BOX_SHARE
+    if B_box is not None and opaque and float(delta_e(
+            edge_lab, srgb_to_lab(np.median(B_box.reshape(-1, 3), axis=0)))) < KEPT_PLATE_DE:
         # the matte kept its box and the plate in it: colour and glyph measures only, glyphs by contrast
         a_tex = contrast_glyphs(F, B_box).astype(np.float32)
+        matted = False
+    elif opaque and core and float(delta_e(edge_lab, srgb_to_lab(np.float32(hex_to_rgb8(core))))) >= CORE_DE:
+        # the matte kept a surface the text sits on (bubble, card), not the plate: the glyphs are what contrasts with it.
+        # shortcut: dark text on a light card over a dark plate stays wrong (its core is the card); upgrade with a
+        # local-surface model.
+        a_tex = contrast_glyphs(F, lab_to_srgb(edge_lab)).astype(np.float32)
         matted = False
     elif B_box is not None:   # texture pixels that are the local plate (a texture that kept it) are not glyph
         fg = delta_e(srgb_to_lab(F), srgb_to_lab(B_box)) >= FG_DE
