@@ -1,0 +1,356 @@
+{
+ "clips": 4,
+ "max_frames": 150,
+ "rows": [
+  {
+   "clip": "envato1.mp4",
+   "frames": 150,
+   "size": [
+    2560,
+    1440
+   ],
+   "live_action": null,
+   "elements": 55,
+   "kinds": {
+    "sprite": 47,
+    "text": 8
+   },
+   "scenes": [
+    [
+     "s1",
+     0,
+     149
+    ]
+   ],
+   "mean_l1": 0.06750027572115262,
+   "low_conf": 49,
+   "keep_on": 827,
+   "constraints": 837,
+   "seconds": 716.0,
+   "messages": [
+    "text tracks reclassified as shapes: 31",
+    "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e18: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e22: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e26: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e34: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e35: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e3: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e7: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e10: matted texture at low confidence (0.05); it replaced the binary texture",
+    "e13: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e33: matted texture at low confidence (0.00); it replaced the binary texture",
+    "3D \ud6c4\ubcf4 1\uac1c",
+    "3D \ud6c4\ubcf4 1\uac1c: \uc0dd\uc131\uae30 \ubbf8\uc124\uc815",
+    "3D \ucda9\uc2e4\ub3c4 e39: fragments=0.100015, still=0.198508, model=None; fragments"
+   ],
+   "render_l1": 0.0683629099279642,
+   "render_frames": 15
+  },
+  {
+   "clip": "ig1.mp4",
+   "frames": 150,
+   "size": [
+    1916,
+    1080
+   ],
+   "live_action": null,
+   "elements": 103,
+   "kinds": {
+    "text": 43,
+    "sprite": 60
+   },
+   "scenes": [
+    [
+     "s1",
+     0,
+     25
+    ],
+    [
+     "s2",
+     26,
+     149
+    ]
+   ],
+   "mean_l1": 0.02849737689209481,
+   "low_conf": 72,
+   "keep_on": 3754,
+   "constraints": 3757,
+   "seconds": 368.7,
+   "messages": [
+    "s1: text tracks reclassified as shapes: 3",
+    "s1: e2: 21087 px of its texture under text are filled in (synthetic)",
+    "s1: e3: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "s1: 3D \ud6c4\ubcf4 0\uac1c",
+    "s2: text tracks reclassified as shapes: 29",
+    "s2: e1: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "s2: e9: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s2: e15: matted texture at low confidence (0.03); it replaced the binary texture",
+    "s2: e15: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e23: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e22: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e25: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e46: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e45: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e47: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e67: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e73: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e72: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e57: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s2: e77: matted texture at low confidence (0.05); it replaced the binary texture",
+    "s2: e79: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s2: e21: title text not verified (no_vlm)",
+    "s2: e27: title text not verified (no_vlm)",
+    "s2: e13: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e13: title merge undone (merge_worse); kept as measured",
+    "s2: e66: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e66: title merge undone (merge_worse); kept as measured",
+    "s2: e17: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e17: title merge undone (merge_worse); kept as measured",
+    "s2: e65: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e65: title merge undone (merge_worse); kept as measured",
+    "s2: e26: title merge undone (merge_worse); kept as measured",
+    "s2: e64: title merge undone (merge_worse); kept as measured",
+    "s2: e43: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e43: title merge undone (merge_worse); kept as measured",
+    "s2: e50: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e50: title merge undone (merge_worse); kept as measured",
+    "s2: e18: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e18: title merge undone (merge_worse); kept as measured",
+    "s2: e36: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s2: e36: title merge undone (merge_worse); kept as measured",
+    "s2: e39: title merge undone (merge_worse); kept as measured",
+    "s2: e42: title merge undone (merge_worse); kept as measured",
+    "s2: e52: title merge undone (merge_worse); kept as measured",
+    "s2: e59: title merge undone (merge_worse); kept as measured",
+    "s2: e69: title merge undone (merge_worse); kept as measured",
+    "s2: e71: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e71: title merge undone (merge_worse); kept as measured",
+    "s2: e74: font not matched (scene work cap reached); kept sans-serif",
+    "s2: e74: title merge undone (merge_worse); kept as measured",
+    "s2: 3D \ud6c4\ubcf4 0\uac1c"
+   ],
+   "render_l1": 0.030043903272598982,
+   "render_frames": 16
+  },
+  {
+   "clip": "ig2.mp4",
+   "frames": 150,
+   "size": [
+    1920,
+    1080
+   ],
+   "live_action": null,
+   "elements": 76,
+   "kinds": {
+    "text": 13,
+    "sprite": 63
+   },
+   "scenes": [
+    [
+     "s1",
+     0,
+     58
+    ],
+    [
+     "s2",
+     59,
+     149
+    ]
+   ],
+   "mean_l1": 0.03633734916647275,
+   "low_conf": 64,
+   "keep_on": 2562,
+   "constraints": 2568,
+   "seconds": 333.1,
+   "messages": [
+    "s1: text tracks reclassified as shapes: 11",
+    "s1: e29: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "s1: e39: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "s1: e41: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "s1: e6: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s1: e12: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s1: e14: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s1: e16: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s1: e21: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s1: 3D \ud6c4\ubcf4 1\uac1c",
+    "s1: 3D \ud6c4\ubcf4 1\uac1c: \uc0dd\uc131\uae30 \ubbf8\uc124\uc815",
+    "s1: 3D \ucda9\uc2e4\ub3c4 e1: fragments=0.123126, still=0.202054, model=None; fragments",
+    "s2: text tracks reclassified as shapes: 10",
+    "s2: e4: 9305 px of its texture under text are filled in (synthetic)",
+    "s2: e17: matted texture at low confidence (0.00); it replaced the binary texture",
+    "s2: e8: title merge undone (merge_worse); kept as measured",
+    "s2: e13: title merge undone (merge_worse); kept as measured",
+    "s2: e16: title merge undone (merge_worse); kept as measured",
+    "s2: e18: title merge undone (merge_worse); kept as measured",
+    "s2: 3D \ud6c4\ubcf4 0\uac1c"
+   ],
+   "render_l1": 0.035798655706457794,
+   "render_frames": 16
+  },
+  {
+   "clip": "ig3.mp4",
+   "frames": 150,
+   "size": [
+    1920,
+    1080
+   ],
+   "live_action": null,
+   "elements": 63,
+   "kinds": {
+    "text": 7,
+    "sprite": 56
+   },
+   "scenes": [
+    [
+     "s1",
+     0,
+     149
+    ]
+   ],
+   "mean_l1": 0.016417124757232764,
+   "low_conf": 34,
+   "keep_on": 676,
+   "constraints": 676,
+   "seconds": 169.5,
+   "messages": [
+    "text tracks reclassified as shapes: 22",
+    "e1: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e14: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e12: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e15: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e16: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e18: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e19: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e22: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e25: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e34: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e45: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e3: matted texture at low confidence (0.04); it replaced the binary texture",
+    "e8: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e17: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e20: not matted, other layers cover it (or it is off-frame) in every usable frame; kept the binary texture",
+    "e33: matted texture at low confidence (0.00); it replaced the binary texture",
+    "e33: title text not verified (no_vlm)",
+    "e59: title merge undone (merge_worse); kept as measured",
+    "3D \ud6c4\ubcf4 0\uac1c"
+   ],
+   "render_l1": 0.023184872899825373,
+   "render_frames": 15
+  }
+ ],
+ "kf": {
+  "envato1": {
+   "s1": {
+    "frames": [
+     0,
+     149
+    ],
+    "elements": 55,
+    "l1_kf": 0.07224,
+    "worst_kf": [
+     0.1475,
+     144
+    ],
+    "l1_compose": 0.07225,
+    "parity": 4.1e-06,
+    "recon": 0.06750027572115262,
+    "view_chars": 48095,
+    "summaries": 31
+   }
+  },
+  "ig1": {
+   "s1": {
+    "frames": [
+     0,
+     25
+    ],
+    "elements": 7,
+    "l1_kf": 0.02629,
+    "worst_kf": [
+     0.0754,
+     24
+    ],
+    "l1_compose": 0.02629,
+    "parity": 6e-07,
+    "recon": 0.02047908605219653,
+    "view_chars": 9803,
+    "summaries": 0
+   },
+   "s2": {
+    "frames": [
+     26,
+     149
+    ],
+    "elements": 96,
+    "l1_kf": 0.0329,
+    "worst_kf": [
+     0.1074,
+     112
+    ],
+    "l1_compose": 0.0329,
+    "parity": 1.4e-06,
+    "recon": 0.030178631423041224,
+    "view_chars": 47988,
+    "summaries": 87
+   }
+  },
+  "ig2": {
+   "s1": {
+    "frames": [
+     0,
+     58
+    ],
+    "elements": 58,
+    "l1_kf": 0.05597,
+    "worst_kf": [
+     0.0727,
+     4
+    ],
+    "l1_compose": 0.05596,
+    "parity": 5.9e-06,
+    "recon": 0.055053093044434565,
+    "view_chars": 47976,
+    "summaries": 36
+   },
+   "s2": {
+    "frames": [
+     59,
+     149
+    ],
+    "elements": 18,
+    "l1_kf": 0.02827,
+    "worst_kf": [
+     0.0441,
+     28
+    ],
+    "l1_compose": 0.02831,
+    "parity": 4.41e-05,
+    "recon": 0.024202965773068942,
+    "view_chars": 30289,
+    "summaries": 0
+   }
+  },
+  "ig3": {
+   "s1": {
+    "frames": [
+     0,
+     149
+    ],
+    "elements": 63,
+    "l1_kf": 0.02443,
+    "worst_kf": [
+     0.0679,
+     112
+    ],
+    "l1_compose": 0.02443,
+    "parity": 1.1e-06,
+    "recon": 0.016417124757232764,
+    "view_chars": 48028,
+    "summaries": 28
+   }
+  }
+ },
+ "_run": "keepframe gate-m2-real --clips eval/clips --out eval/out/clips-after --max-frames 150 --render-check at 5ce591a (analysis code; docs to ef5bafb); kf: emit_page + kfscript.check.fidelity per scene"
+}
