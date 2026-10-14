@@ -216,7 +216,7 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
     model = _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, pass1, opts, sd, busy)
     if fresh and busy is None:
         try:
-            held = _held_in_pass1(model, pass1)
+            held = _held_in_pass1(model, pass1, frames)
             if held >= opts.min_area:   # pass 1's regions only outline an element that held still: cut them again
                 t0 = time.perf_counter()
                 again = _stage_regions(frames, bg, boxes, opts, sd, plate=model.at(0), text_tracks=text_tracks, shape_tracks=shape_tracks)
@@ -231,18 +231,28 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
     return model, rbf, obj_tracks
 
 
-def _held_in_pass1(model: PlateModel, pass1) -> int:
-    """Pixels inside the plate's filled holes where pass 1 (a median over time) still shows something: an element that
-    held still for most of the scene (a footer through a whole shot), which pass 1's regions only outline. 0 when there
-    is no pass 1 or the plate moves or is a picture. shortcut: a picture plate keeps pass 1's regions."""
+HELD_SHARE = 0.9   # a pixel of pass 1 is a still element when nearly every sampled frame shows it (not a scroll's smear)
+
+
+def _held_in_pass1(model: PlateModel, pass1, frames) -> int:
+    """Pixels inside the plate's filled holes where pass 1 (a median over time) still shows something that ≥ HELD_SHARE
+    of the sampled frames show too: an element that held still through the scene (a footer through a whole shot), which
+    pass 1's regions only outline. Content moving through a spot more than half the time also sits in the median, but
+    the frames disagree with it there. 0 when there is no pass 1 or the plate moves or is a picture. shortcut: a picture
+    plate keeps pass 1's regions."""
     if pass1 is None or model.kind not in ("color", "gradient") or _moving(model) is not None:
         return 0
     inside = np.zeros(pass1.shape[:2], bool)
     for h in model.stats.get("holes", []):
         x0, y0, x1, y1 = h["bbox"]
         inside[y0:y1, x0:x1] = True
-    held = cv2.morphologyEx((foreground_mask_plate(pass1, model.at(0)) & inside).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    return int(held.sum())
+    held = foreground_mask_plate(pass1, model.at(0)) & inside
+    if held.any():
+        lab = rgb_to_lab(pass1)
+        sample = np.linspace(0, len(frames) - 1, min(len(frames), 12)).round().astype(int)
+        still = np.mean([~foreground_mask_plate(frames[f], pass1, plate_lab=lab) for f in sample], axis=0) >= HELD_SHARE
+        held &= still
+    return int(cv2.morphologyEx(held.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).sum())
 
 
 def _moving(model: PlateModel):
