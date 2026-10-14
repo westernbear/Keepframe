@@ -170,3 +170,36 @@ The synthetic A/B clips had a median view of 19 228 chars, so the budget rarely 
    - Entrance times at the cuts (f141 vs f140; f59 vs f59; ig3 "Your idea" f103 vs f102).
    - Exact strings "A Weekend Away" and "and it builts for you".
 8. **View budget.** On these clips the kf-script view keeps motion for 8–25 elements; the rest are summaries without motion (see above).
+
+## 4. After the fixes (`fixes2.md`), report only
+
+**Run.**
+- Gate: `keepframe gate-m2-real --clips eval/clips --out eval/out/clips-after --max-frames 150 --render-check` at `5ce591a`, the head after Phase B.
+- kf-script fidelity: per scene, as in §3.
+- Rows: `clips-after.json`.
+- Nothing was tuned on these clips (CLAUDE.md §3). The fixes were accepted on the synthetic round trip and gold references. Section 1's read (committed at `6ce4003`) is the reference here as before.
+
+| Clip | Scenes (from the analysis) | Elements | mean_l1 | render_l1 | **L1 kf** before → after (frame-weighted) | worst kf frame before → after | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | s1 f0–149 | 55 | 0.0675 | 0.0684 | 0.0722 → **0.0722** | f144 0.148 → f144 0.148 | 0.000004 | 716 |
+| ig1 | **s1 f0–25, s2 f26–149** | 7 + 96 | 0.0285 | 0.0300 | 0.0379 → **0.0318** (s1 0.0263, s2 0.0329) | f24 **0.259** → s1 f24 0.075, s2 f112 0.107 | ≤ 0.0000014 | 369 |
+| ig2 | **s1 f0–58, s2 f59–149** | 58 + 18 | 0.0363 | 0.0358 | 0.0474 → **0.0392** (s1 0.0560, s2 0.0283) | f40 0.131 → s1 f4 0.073, s2 f28 0.044 | ≤ 0.000044 | 333 |
+| ig3 | s1 f0–149 | 63 | 0.0164 | 0.0232 | 0.0245 → **0.0244** | f112 0.068 → f112 0.068 | 0.000001 | 170 |
+
+**Disagreements of §3, after the fixes** (read and measurement as in §1–2):
+
+| # | Item | Read / measurement | IR after the fixes | Status |
+|---|---|---|---|---|
+| 1 | shots | ig1 wipe f18–26 (peak f25); ig2 cut f59; envato1 cut f140; ig3 cut f57 | ig1 splits at **f26** and ig2 at **f59**. **envato1 and ig3 stay one scene.** envato1 f140 is a clear spike (0.496), but 63 % of f139's off-ground pixels, mostly the glow continuing across the cut, are unchanged: `_content` takes the border colour for the ground, a recorded shortcut. ig3's f57 spike is 0.048, below FLOOR (0.063) | 2 of 4 fixed |
+| 2 | word / letter builds | ig1 "Every day," and "And every day," word by word; ig2 title types on | ig1 e1 sx 0.15 → 1, e59 0.23 → 1, e75 0.21 → 1; ig2 e3 sx 0.09 → 1: **still scale**. Fixed on the synthetic centred build (T2). These tracks never became reveals. Not diagnosed: the OCR caches were pruned | not fixed on these clips |
+| 3 | centred shrink (envato1 e37) | width ×0.63 f111–135 about a fixed centre (cx 1284) | **sx 0.94 → 0.62 over f116–135, x 1297 → 1284** (reveal only during the build f83–106) | **fixed; agrees with measurement** |
+| 4 | fragmented titles | "Build" one word; scrolling "A Weekend Away" one title | "B" + "sull" (envato1); "eel", "e", "ken", "n" (ig2 s1) | unchanged (B5 not done) |
+| 5 | colours | ig1 dark-scene text white | ig1 s1 e1 **#f8f7fc** (before #010005 on a white box); the white full-frame sprite is gone with the split | **fixed** |
+| 6 | background | glow and gradient split into sprites; ghost titles | unchanged (B8 not done) | unchanged |
+| 8 | view budget | — | Summary rows now carry motion words: envato1 10 / 31, ig1 s2 58 / 87, ig2 s1 23 / 36, ig3 12 / 28 (the rest are static). ig1 s1 and ig2 s2 fit in full | **fixed (V1)** |
+
+**Also new:**
+- ig3 "and it builts for you" (e59) is a reveal 0.22 → 1.
+- The ig2 globe scene `s2` begins at the cut; its sprites no longer cover the scroll scene.
+
+The real-clip A/B on these projects is in `ab-real.md`.
