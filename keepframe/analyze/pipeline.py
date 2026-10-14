@@ -238,14 +238,17 @@ def _held_in_pass1(model: PlateModel, pass1, frames) -> int:
     """Pixels inside the plate's filled holes where pass 1 (a median over time) still shows something that ≥ HELD_SHARE
     of the sampled frames show too: an element that held still through the scene (a footer through a whole shot), which
     pass 1's regions only outline. Content moving through a spot more than half the time also sits in the median, but
-    the frames disagree with it there. 0 when there is no pass 1 or the plate moves or is a picture. shortcut: a picture
-    plate keeps pass 1's regions."""
+    the frames disagree with it there; a mover's boxes (a globe spinning in place) are the plate stage's already. 0 when
+    there is no pass 1 or the plate moves or is a picture. shortcut: a picture plate keeps pass 1's regions."""
     if pass1 is None or model.kind not in ("color", "gradient") or _moving(model) is not None:
         return 0
     inside = np.zeros(pass1.shape[:2], bool)
     for h in model.stats.get("holes", []):
         x0, y0, x1, y1 = h["bbox"]
         inside[y0:y1, x0:x1] = True
+    for m in model.movers:   # a mover (a globe spinning in place) is the plate stage's already, not a still element
+        for (x0, y0, x1, y1), _ in m.frames.values():
+            inside[max(0, y0):y1, max(0, x0):x1] = False
     held = foreground_mask_plate(pass1, model.at(0)) & inside
     if held.any():
         lab = rgb_to_lab(pass1)
