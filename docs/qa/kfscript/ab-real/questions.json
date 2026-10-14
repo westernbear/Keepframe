@@ -1,0 +1,1022 @@
+{
+ "envato1:s1": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e33 visible at t = 1.25 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e4 visible at t = 1.25 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e4 finish its last movement?",
+   "gold": 1.1344666666666667,
+   "tol": 0.03336666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e53's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "sull"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#e1ddf3"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.75 s, which element is in front: e4 or e13?",
+   "gold": [
+    "e13"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e4 first appear?",
+   "gold": 0.18351666666666666,
+   "tol": 0.03336666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e4 or e8?",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e33's biggest horizontal move take?",
+   "gold": 0.33366666666666667,
+   "tol": 0.03336666666666667
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the big title 'Build' (text)? (list)",
+   "gold": [
+    "e4"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the '<' chevron (shape)? (list)",
+   "gold": [
+    "e31"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the title line 'Build SaaS Promo' (text)? (list)",
+   "gold": [
+    "e37"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the big title of the second shot (text)? (list)",
+   "gold": [
+    "e44",
+    "e45",
+    "e46",
+    "e49"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the big title 'Build' text to 'Hello'",
+   "gold": [
+    "e4"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the big title 'Build' appear 0.5 s later",
+   "gold": [
+    "e4"
+   ],
+   "property": "timing"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the '<' chevron red",
+   "gold": [
+    "e31"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the title line 'Build SaaS Promo' text to 'Hello'",
+   "gold": [
+    "e37"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the big title of the second shot text to 'Hello'",
+   "gold": [
+    "e44",
+    "e45",
+    "e46",
+    "e49"
+   ],
+   "property": "text"
+  }
+ ],
+ "ig1:s1": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e1 visible at t = 0.43 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 0.43 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e1 finish its last movement?",
+   "gold": 0.8,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e3's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Every day."
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#f8f7fc"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e1 or e2?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 first appear?",
+   "gold": 0.8,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e1 or e6?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e1's biggest horizontal move take?",
+   "gold": 0.6,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline of the dark scene ('Every day,') (text)? (list)",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline of the dark scene ('Every day,') text to 'Hello'",
+   "gold": [
+    "e1"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline of the dark scene ('Every day,') appear 0.5 s later",
+   "gold": [
+    "e1"
+   ],
+   "property": "timing"
+  }
+ ],
+ "ig1:s2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 2.07 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e59 visible at t = 2.07 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 2.2,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Every day, ideas are born"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#34333a"
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e29 first appear?",
+   "gold": 1.3,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e29?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e36's biggest horizontal move take?",
+   "gold": 1.1,
+   "tol": 0.11000000000000001
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline 'Every day, ideas are born inside your walls.' (text)? (list)",
+   "gold": [
+    "e2",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the 'Conversations' card (shape)? (list)",
+   "gold": [
+    "e13",
+    "e30",
+    "e47",
+    "e49",
+    "e9"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the 'Sara' chat card (shape)? (list)",
+   "gold": [
+    "e17",
+    "e18",
+    "e24",
+    "e25"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the line chart card (top right) (shape)? (list)",
+   "gold": [
+    "e46"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the 'Research Projects' bar chart card (shape)? (list)",
+   "gold": [
+    "e28",
+    "e29",
+    "e45"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the 'Prof. Shemiz' message card (shape)? (list)",
+   "gold": [
+    "e36",
+    "e37",
+    "e39",
+    "e42"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the sticky note 'New aproach for renewable energy storage?' (shape)? (list)",
+   "gold": [
+    "e20",
+    "e21",
+    "e22"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the sticky note 'Collaborate across departments' (shape)? (list)",
+   "gold": [
+    "e26",
+    "e27",
+    "e34"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline 'And every day,' (text)? (list)",
+   "gold": [
+    "e59"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline 'too many of them' (text)? (list)",
+   "gold": [
+    "e75"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline 'Every day, ideas are born inside your walls.' text to 'Hello'",
+   "gold": [
+    "e2",
+    "e8"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline 'Every day, ideas are born inside your walls.' appear 0.5 s later",
+   "gold": [
+    "e2",
+    "e8"
+   ],
+   "property": "timing"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the 'Conversations' card red",
+   "gold": [
+    "e13",
+    "e30",
+    "e47",
+    "e49",
+    "e9"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the 'Sara' chat card red",
+   "gold": [
+    "e17",
+    "e18",
+    "e24",
+    "e25"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the line chart card (top right) red",
+   "gold": [
+    "e46"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the 'Research Projects' bar chart card red",
+   "gold": [
+    "e28",
+    "e29",
+    "e45"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the 'Prof. Shemiz' message card red",
+   "gold": [
+    "e36",
+    "e37",
+    "e39",
+    "e42"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the sticky note 'New aproach for renewable energy storage?' red",
+   "gold": [
+    "e20",
+    "e21",
+    "e22"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the sticky note 'Collaborate across departments' red",
+   "gold": [
+    "e26",
+    "e27",
+    "e34"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline 'And every day,' text to 'Hello'",
+   "gold": [
+    "e59"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline 'too many of them' text to 'Hello'",
+   "gold": [
+    "e75"
+   ],
+   "property": "text"
+  }
+ ],
+ "ig2:s1": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e2 visible at t = 0.48 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e24 visible at t = 0.48 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 finish its last movement?",
+   "gold": 0.8166666666666667,
+   "tol": 0.03333333333333333
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e17's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "n"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#f80202"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.08 s, which element is in front: e48 or e49?",
+   "gold": [
+    "e49"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e2 first appear?",
+   "gold": 0.13333333333333333,
+   "tol": 0.03333333333333333
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e2 or e10?",
+   "gold": [
+    "e2"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e17's biggest horizontal move take?",
+   "gold": 0.35,
+   "tol": 0.035
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the big scrolling title (first scene) (text)? (list)",
+   "gold": [
+    "e10",
+    "e11",
+    "e12",
+    "e14",
+    "e15",
+    "e2",
+    "e50",
+    "e51",
+    "e52",
+    "e55",
+    "e56",
+    "e57",
+    "e58",
+    "e6",
+    "e8"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the big scrolling title (first scene) text to 'Hello'",
+   "gold": [
+    "e10",
+    "e11",
+    "e12",
+    "e14",
+    "e15",
+    "e2",
+    "e50",
+    "e51",
+    "e52",
+    "e55",
+    "e56",
+    "e57",
+    "e58",
+    "e6",
+    "e8"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the big scrolling title (first scene) appear 0.5 s later",
+   "gold": [
+    "e10",
+    "e11",
+    "e12",
+    "e14",
+    "e15",
+    "e2",
+    "e50",
+    "e51",
+    "e52",
+    "e55",
+    "e56",
+    "e57",
+    "e58",
+    "e6",
+    "e8"
+   ],
+   "property": "timing"
+  }
+ ],
+ "ig2:s2": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e3 visible at t = 0.75 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e6 visible at t = 0.75 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e3 finish its last movement?",
+   "gold": 1.5,
+   "tol": 0.03333333333333333
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e2's biggest vertical move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "A Weekend Away"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#ad0004"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 0.00 s, which element is in front: e3 or e4?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e6 first appear?",
+   "gold": 0.18333333333333332,
+   "tol": 0.03333333333333333
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e3 or e6?",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e15's biggest horizontal move take?",
+   "gold": 0.6166666666666667,
+   "tol": 0.06166666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "point",
+   "q": "Where is the centre of element e4 at t = 0.83 s? (answer [x, y] in pixels)",
+   "gold": [
+    1012.5,
+    517.5
+   ],
+   "tol": 8.0
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "What is element e4's opacity at t = 0.83 s? (0 to 1)",
+   "gold": 1.0,
+   "tol": 0.05
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the small red title 'A Weekend Away' (text)? (list)",
+   "gold": [
+    "e3"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the 'Party Time' badge (image)? (list)",
+   "gold": [
+    "e17",
+    "e18"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the green 'Visitor' chip (shape)? (list)",
+   "gold": [
+    "e15"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the small red title 'A Weekend Away' text to 'Hello'",
+   "gold": [
+    "e3"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the small red title 'A Weekend Away' appear 0.5 s later",
+   "gold": [
+    "e3"
+   ],
+   "property": "timing"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the 'Party Time' badge red",
+   "gold": [
+    "e17",
+    "e18"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the green 'Visitor' chip red",
+   "gold": [
+    "e15"
+   ],
+   "property": "color"
+  }
+ ],
+ "ig3:s1": [
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e23 visible at t = 2.50 s? (yes/no)",
+   "gold": "yes"
+  },
+  {
+   "cat": "auto",
+   "kind": "yesno",
+   "q": "Is element e49 visible at t = 2.50 s? (yes/no)",
+   "gold": "no"
+  },
+  {
+   "cat": "auto",
+   "kind": "number",
+   "q": "At what time (seconds) does element e49 finish its last movement?",
+   "gold": 4.233333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "auto",
+   "kind": "idset",
+   "q": "Which element ids reveal their text glyph by glyph (typing)? (list, or [] if none)",
+   "gold": []
+  },
+  {
+   "cat": "auto",
+   "kind": "exact",
+   "q": "Which easing does element e1's biggest horizontal move use? (one of: linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back, custom)",
+   "gold": "linear"
+  },
+  {
+   "cat": "auto",
+   "kind": "text",
+   "q": "What is the exact text of the largest text element (largest box area, width × height)?",
+   "gold": "Your idea"
+  },
+  {
+   "cat": "auto",
+   "kind": "colour",
+   "q": "What is the colour (#rrggbb) of the largest text element (largest box area, width × height)?",
+   "gold": "#17325b"
+  },
+  {
+   "cat": "auto",
+   "kind": "id",
+   "q": "At t = 2.00 s, which element is in front: e1 or e8?",
+   "gold": [
+    "e8"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "At what time (seconds) does element e49 first appear?",
+   "gold": 3.433333333333333,
+   "tol": 0.06666666666666667
+  },
+  {
+   "cat": "motion",
+   "kind": "id",
+   "q": "Which element appears first: e49 or e1?",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "motion",
+   "kind": "number",
+   "q": "How long (seconds) does element e30's biggest horizontal move take?",
+   "gold": 0.8666666666666667,
+   "tol": 0.08666666666666667
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline 'You just speak' (text)? (list)",
+   "gold": [
+    "e1"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the mic button (white circle) (shape)? (list)",
+   "gold": [
+    "e12"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the mic icon in the pill (shape)? (list)",
+   "gold": [
+    "e24",
+    "e28",
+    "e8"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the waveform bars (shape)? (list)",
+   "gold": [
+    "e26",
+    "e27",
+    "e29",
+    "e31",
+    "e32"
+   ]
+  },
+  {
+   "cat": "read",
+   "kind": "idset",
+   "q": "Which element id(s) make up the headline 'and it builts for you' (text)? (list)",
+   "gold": [
+    "e59",
+    "e63"
+   ]
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline 'You just speak' text to 'Hello'",
+   "gold": [
+    "e1"
+   ],
+   "property": "text"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the headline 'You just speak' appear 0.5 s later",
+   "gold": [
+    "e1"
+   ],
+   "property": "timing"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the mic button (white circle) red",
+   "gold": [
+    "e12"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the mic icon in the pill red",
+   "gold": [
+    "e24",
+    "e28",
+    "e8"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: make the waveform bars red",
+   "gold": [
+    "e26",
+    "e27",
+    "e29",
+    "e31",
+    "e32"
+   ],
+   "property": "color"
+  },
+  {
+   "cat": "edit",
+   "kind": "edit",
+   "q": "Edit request: change the headline 'and it builts for you' text to 'Hello'",
+   "gold": [
+    "e59",
+    "e63"
+   ],
+   "property": "text"
+  }
+ ]
+}
