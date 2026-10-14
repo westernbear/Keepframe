@@ -1,0 +1,22 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 1.13,
+  "Q4": ["e37"],
+  "Q5": "linear",
+  "Q6": "sull",
+  "Q7": "#e1ddf3",
+  "Q8": "e13",
+  "Q9": 0.18,
+  "Q10": "e4",
+  "Q11": 0.46,
+  "Q12": ["e4", "e8"],
+  "Q13": [],
+  "Q14": ["e37", "e38", "e40"],
+  "Q15": ["e44", "e45", "e49"],
+  "Q16": {"element": "e4", "property": "text"},
+  "Q17": {"element": "e4", "property": "timing"},
+  "Q18": {"element": null, "property": "color"},
+  "Q19": {"element": "e37", "property": "text"},
+  "Q20": {"element": "e44", "property": "text"}
+}
