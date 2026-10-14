@@ -28,6 +28,34 @@ These fix the defects the real-clip gate found (`clips.md`, `e392534`); the plan
 | t2-centred-build | `25d0d53` | A build may grow from its left edge, centre or right edge (same baseline); the reveal follows each frame's left edge | `build` found on word_build's centred, re-centring l1 | word_build structure missed `build` → **none missed** (found build, build, shrink). L1 kf 0.0059 → **0.0046**, recon 0.0041 → 0.0023 (l1 was a scale ×0.22 → 1) | hard_cut back to B1's pieces and keys (2.4 pieces, 10.8 keys/el); rest unchanged; mk571 0.0187 = 0.0187; e24 23 glyphs | **Accepted** |
 | k1-noise-keys | `894e5fd` + fix `01937c1` (measured as `a10dc78` = T2 + both) | A track's key tolerance is at least its own noise bound σ·√(2 ln n), σ the smaller of the first- and third-difference MADs | Fewer keys where measured boxes jitter; no L1 cost; steps kept | keys/el: scroller 23.9 → **19.6**, counter 9.4 → **8.3**, logo_sting 11.4 → **10.9**; clean tracks unchanged | L1 kf unchanged on every case; mk571 0.0187 = 0.0187; e24 23 glyphs. hard_cut's s1 title overlaps 5 or 6 pieces from run to run (T1 6, T2 5, K1 6): analysis variation, not this change | **Accepted.** The first version (`894e5fd`, third differences only) read a letter-by-letter staircase as noise and smoothed it into a ramp (`test_letter_by_letter_ocr_becomes_one_reveal_without_sprite_fragments`); it was never measured on its own |
 | v1-view-motion | `cb8f9df` | A summary row carries the brief's motion words; packing continues past a block that does not fit; the brief (and those words) counts a one-frame step the keys carry | Every element's motion in the view; stepped_zoom's brief not 'static' | Dense views (pre-fix eval-clip projects): summary rows with motion words 0 → **60 / 94** (ig1), **16 / 39** (envato1), **15 / 41** (ig3), **3 / 10** (ig2); the rest read 'static'. stepped_zoom's word: 'scales ×1.01' → **'scales ×0.28 0.30s; scales ×2.03 0.67s; …'** | Round trip unchanged (its views rarely reach the budget; scroller DL 22.02 → 22.08). The longer rows cost markup: elements kept in full ig1 8 → 7, ig3 25 → 22, envato1 14 → 16 | **Accepted** (view and brief only: no analysis change) |
+| b1b-still-elements (first version) | `9419cbb` | When pass 1 shows something inside the final colour/gradient plate's filled holes, cut regions again against that plate | hard_cut's footer (still for its whole shot) rendered whole | hard_cut L1 kf 0.0259 → **0.0063** (footer solid; recon 0.0238 → 0.0042). Fired on 4 cases | chat_ui L1 kf 0.0153 → 0.0144 (matched 0.83 → 0.92); wipe pieces 2 → 1. **scroller: fragments 1.50 → 2.88, pieces 5.6 → 12.5, sprites 34 → 88** (L1 0.0679 → 0.0629): its lines pass a band more than half the time, so pass 1 held their smear, and cutting again against the flat plate split the text. mk571 and e24 unchanged | **Rejected** (structure regression on scroller). Revised in `c958ddf`: a held pixel counts only where ≥ 90 % of 12 sampled frames show pass 1 |
+| b1b2-still-elements | `c958ddf` | As above, but a held pixel counts only where ≥ 90 % of 12 sampled frames show pass 1 (still, not a scroll's smear) | hard_cut's footer whole; no fragmentation | hard_cut L1 kf 0.0259 → **0.0063** (recon 0.0238 → 0.0042). Fires on hard_cut (32 864 px) and chat_ui (70 px) only | chat_ui L1 kf 0.0153 → **0.0143**, matched 0.83 → 0.92, visible err 4.6 → 2.1 f; scroller and wipe unchanged; mk571, e24 unchanged. Only the four cases the first version fired on were analysed again (a stricter trigger fires on a subset); the rest are rt2-v1's projects | **Accepted** |
+
+## After all fixes (C1): head `c958ddf` against the base (`fixes2/final-vs-base.json`)
+
+No flag on any case; `kf_parity` ≤ 0.001 everywhere.
+
+| Case | Shot F1 | L1 kf | Other |
+|---|---|---|---|
+| hard_cut | 0 → 1.00 (2 scenes) | 0.0352 → **0.0063** | text ΔE 24.7 → 0.8 |
+| block_transition | 0 → 1.00 | 0.0497 → **0.0217** | matched 0.17 → 0.33, text ratio 0.50 → 1.00 |
+| wipe | 0 → 1.00 | 0.0136 → **0.0066** | ΔE 4.1 → 2.4 |
+| word_build | 1.00 | 0.0056 → **0.0046** | structure found `build` → `build`, `build`, `shrink` (none missed) |
+| chat_ui | 1.00 | 0.0154 → **0.0143** | matched 0.83 → 0.92 |
+| scroller, counter, logo_sting | 1.00 | unchanged | keys/el 23.9 → 19.6, 9.4 → 8.3, 11.4 → 10.9 |
+| kinetic_title, prompt_typing, stepped_zoom, whip_pan, mk571 | 1.00 | unchanged | — |
+
+e24's typed prompt keeps its 23-glyph reveal.
+
+**Not fixed, recorded:**
+- **B5 (title pieces):** the `same_title` motion gate and `group_by_motion`'s start rule are unchanged. No synthetic case showed the symptom beyond the scroller's lines.
+- **B8 (ghost titles and glow sprites in the background):** unchanged.
+- **B9 (texts past the font work cap keep sans-serif):** unchanged.
+- **B2 (a read that stops growing splits the track, ig3's "speak" → mic):** not done as a separate pass.
+- **Remaining defects:**
+  - whip_pan's card text colour (ΔE 111: the dark ink read on the accent card's surface; the text-on-surface class of `fixes.md` b1);
+  - hard_cut's "Orbit" label drawn as teal on a white box (same class);
+  - colour gradients across one word.
 
 ## Notes
 
