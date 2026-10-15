@@ -453,20 +453,22 @@ def _word_swap(r: random.Random, pal, font) -> Template:
 
 
 def _big_scroll(r: random.Random, pal, font) -> Template:
-    """A huge headline crossing the frame right to left, fast, slow at the middle, fast again, blurred while fast: only
-    a word or two shows at a time."""
+    """A huge tracked-out headline crossing the frame right to left, fast, slow at the middle, fast again, its letters
+    coming out of a blur one by one as it enters and the whole line blurring as it leaves: a word or two shows at a time."""
     bg, fg, acc, surf = pal
     text = " ".join(r.sample(WORDS, 3))
     t0, dur = 0.3, r.choice([2.4, 2.6])
+    letters = "".join(f'<span class="l">{html.escape(c)}</span>' if c != " " else " " for c in text)
     css = "\n".join([f"#bg {{ inset: 0; background: linear-gradient(90deg, {surf}, {bg}); }}",
-                     f"#big {{ left: 960px; top: 90px; font-size: 300px; font-weight: 800; line-height: 360px; color: {acc}; }}"])
-    body = f'<div id="bg" class="a"></div><div id="big" class="a">{html.escape(text)}</div>'
+                     f"#big {{ left: 960px; top: 90px; font-size: 300px; font-weight: 800; line-height: 360px; color: {acc}; letter-spacing: 0.15em; }}",
+                     "#big .l { display: inline-block; }"])
+    body = f'<div id="bg" class="a"></div><div id="big" class="a">{letters}</div>'
     js = "\n".join([f'tl.to("#big", {{xPercent: -50, x: -480, duration: {dur / 2}, ease: "power2.out"}}, {t0});',
                     f'tl.to("#big", {{xPercent: -100, x: -960, duration: {dur / 2}, ease: "power2.in"}}, {t0 + dur / 2});',
-                    f'tl.fromTo("#big", {{filter: "blur(8px)"}}, {{filter: "blur(0px)", duration: {dur / 2}, ease: "power2.out"}}, {t0});',
+                    f'tl.from("#big .l", {{opacity: 0, filter: "blur(16px)", duration: 0.4, stagger: 0.05, ease: "power1.out"}}, {t0});',
                     f'tl.to("#big", {{filter: "blur(8px)", duration: {dur / 2}, ease: "power2.in"}}, {t0 + dur / 2});'])
     frames = _f(t0 + dur) + 6
-    truth = {"elements": [_el("big", "headline", "text", (0, frames - 1), text, acc, font)], "structure": []}
+    truth = {"elements": [_el("big", "headline", "text", (_f(t0), frames - 1), text, acc, font)], "structure": []}
     return Template(_page(bg, font, css, body, js), truth, frames=frames)
 
 
