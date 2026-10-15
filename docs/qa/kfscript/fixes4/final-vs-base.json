@@ -1,8 +1,8 @@
 {
  "id": "final-vs-base",
- "commit": "30c610a",
+ "commit": "de74495",
  "before": "rt4-base",
- "after": "rt4-b11",
+ "after": "rt4-b8d2",
  "machine": "cloud container, 4 CPU, no GPU",
  "command": "eval/out/rt4-after-wt.sh (keepframe eval-roundtrip --seeds 1 --reuse on rt4-base renders, fresh analyses; --gold mk571; keepframe analyze e24 f120-269 --no-captions)",
  "cases": {
@@ -787,7 +787,7 @@
    ],
    "kf_parity": [
     4.7e-06,
-    4.7e-06
+    0.0002546
    ],
    "ghost_de": [
     0.602,
@@ -963,7 +963,7 @@
    ],
    "kf_parity": [
     8e-07,
-    7e-07
+    8e-07
    ],
    "ghost_de": [
     null,
@@ -1495,7 +1495,7 @@
    ],
    "ghost_de": [
     1.688,
-    0.886
+    0.885
    ],
    "matched_rate": [
     1.0,
