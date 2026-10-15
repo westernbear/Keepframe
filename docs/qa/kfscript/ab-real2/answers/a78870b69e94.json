@@ -1,0 +1,22 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 1.5,
+  "Q4": [],
+  "Q5": "linear",
+  "Q6": "A Weekend Away",
+  "Q7": "#ad0004",
+  "Q8": "e3",
+  "Q9": 0.18,
+  "Q10": "e3",
+  "Q11": 0.083,
+  "Q12": [1012.5, 517.5],
+  "Q13": 1,
+  "Q14": ["e3"],
+  "Q15": ["e7", "e12", "e13", "e15", "e16", "e17"],
+  "Q16": ["e14"],
+  "Q17": {"element": "e3", "property": "text"},
+  "Q18": {"element": "e3", "property": "timing"},
+  "Q19": {"element": "e12", "property": "color"},
+  "Q20": {"element": "e14", "property": "color"}
+}
