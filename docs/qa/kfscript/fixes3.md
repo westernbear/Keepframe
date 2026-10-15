@@ -74,15 +74,20 @@ The template was changed, not any rule (`2915676`). The headline is now tracked 
 | word_swap-1 | B2 | `short` and `icon` unmatched (matched 0.33). `full` lives 42 frames too long. Text 0.50. |
 | big_scroll-1 | B5 | Matched 0, fragments 2, units 2, pieces 35, text 0, stray 0.135, L1 kf 0.0745 |
 | glow_title-1 | B8 | Ghost ΔE 0.76, stray 0.266 (glow sprites e1 and e2), title in 3 pieces |
-| hard_cut-1 | B8 | Ghost ΔE 0.83, stray 0.768 |
+| hard_cut-1 | B8 | Ghost ΔE 0.56 (0.83 before `fb73b58`, see below), stray 0.768 |
 | label_grid-1 | B9 | Font rate 0.46. Nine "font not matched (scene work cap reached); kept sans-serif" messages. |
 | mk571 (gold) | — | L1 kf 0.0187, matched 0.80 |
 | e24 (gold) | — | `e13` 23 glyphs, "Makemynextlaunchhappen." |
 
 `fixes3/base.json` holds the full metrics.
 
+**`ghost_de` corrected (`fb73b58`).** A truth text's box is held outside the text's life. So in a multi-shot case, `ghost_de` also scored the boxes of texts from other shots, which never appear in the scene. On hard_cut, after B8b put the glow into the video, this read the glow's own shading inside two second-shot boxes as residue (sub2 1.23 → 2.96). The metric now measures only the texts living in the scene's frames. Every run's `ghost_de` was re-measured from its saved background video (`metrics.orig.json` keeps the first value). Only hard_cut changes: 0.83 → 0.56 at baseline.
+
 ## Fixes
 
 | Id | Commit | Change | Target before → after | Other changes | Decision |
 |---|---|---|---|---|---|
 | B9 | `911604e` | Past the work cap, a text borrows the family and weight of its nearest matched style twin (cap height within 1.25×, fill within ΔE 20, stroke ratio within `RATIO_TOL`), at its own size and confidence ≤ 0.5. One text per style is matched first. | label_grid font rate 0.458 → **0.479**. All 11 capped texts borrowed, so no text keeps sans-serif. But the 16 px labels' own matches spread over nine families, so nearest-twin borrowing mostly copied a wrong guess (Unbounded 6, Geist 4, Poppins 4). | label_grid L1 kf 0.0194 → 0.0192. Nothing else moved. e24 `e13` keeps 23 glyphs. | **accepted** (the target moved, no flag); the weak effect leads to B9b |
+| B2 | `6aafdba` | A track whose whole read was seen for ≥ 3 frames, then reads only its first words for ≥ 0.5 s, splits in two. The pieces share a `cut`, so the title merge keeps them apart. | word_swap matched 0.33 → **1.00**, text 0.50 → **1.00**, `full` visible error 42 → **0**. `short` and `icon` are both matched with visible error 0. L1 kf 0.0032 → 0.0018. | scroller L1 kf 0.0679 → **0.0621**: "STEPS CLEAR" (f0–89) became "STEPS CLEAR" f0–6 + "STEPS" f7–89, because "CLEAR" scrolls out while "STEPS" stays (the read does change). Pieces 5.62 → 5.75. Nothing else moved. e24 keeps 23 glyphs. | **accepted** |
+| B8a | `ad56ed5` | Each text's box is kept out of the background video, interpolated across OCR gaps, and for 0.3 s before and after its reads. | Ghost ΔE: glow_title 0.756 → **0.666** (the blur-in no longer leaves the title in the video), but hard_cut 0.561 → **0.884**. hard_cut's "bigger team" pops in at f6. In the pad frames f0–8, the still plate's polynomial fill replaced the true background (residue 0.5 → 1.6 there, unchanged from f12). | L1 kf unchanged everywhere. e24 keeps 23 glyphs. | **rejected as is** (the target moved both ways); revised by B8a2 |
+| B8b | `8a635ee` | When the background is a video, an object track or mover that is soft light in place (median box ≥ 4 % of the frame, centre within half its diagonal, outline gradient < 1 ΔE/px) stays in the video and becomes no sprite. | Stray area: hard_cut 0.768 → **0.031**, glow_title 0.266 → **0.053**. L1 kf: hard_cut 0.0063 → 0.0056, glow_title 0.0092 → 0.0059. glow_title pieces 3 → 2. | Ghost ΔE hard_cut 0.884 → 1.285. All of it falls in B8a's pad frames f0–8 (a still patch now against a live glow); from f12 the runs are equal. glow_title 0.666 → 0.684. **e24 gold fails:** its prompt bar, a soft surface holding the typed prompt, went into the video. The prompt's glyph timing, measured against the plate behind it, was lost (`e13` 23 glyphs → none; "A brighterway to think,create and" gained 29). | **rejected as is** (gold); revised by B8b2 |

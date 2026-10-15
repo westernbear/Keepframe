@@ -4,7 +4,7 @@
  "before": "rt2-base3",
  "after": "rt3-b9",
  "machine": "cloud container, 4 CPU, no GPU",
- "command": "eval/out/rt3-after.sh (keepframe eval-roundtrip --seeds 1 --reuse on rt2-base3 renders, fresh analyses; --gold mk571; keepframe analyze e24 f120-269 --no-captions)",
+ "command": "eval/out/rt3-after.sh or rt3-after-wt.sh (keepframe eval-roundtrip --seeds 1 --reuse on rt2-base3 renders, fresh analyses; --gold mk571; keepframe analyze e24 f120-269 --no-captions)",
  "cases": {
   "kinetic_title-1": {
    "scenes": [
@@ -790,8 +790,8 @@
     4.7e-06
    ],
    "ghost_de": [
-    0.832,
-    0.832
+    0.561,
+    0.561
    ],
    "matched_rate": [
     1.0,

@@ -1499,7 +1499,7 @@
     ]
    },
    "analyse_seconds": 59.5,
-   "ghost_de": 0.832,
+   "ghost_de": 0.561,
    "measure_seconds": 18.2,
    "diff": {
     "truth_elements": 5,
