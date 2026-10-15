@@ -62,7 +62,7 @@ def test_mover_search_and_classification_failures_are_codes(tmp_path, monkeypatc
 def test_solids_with_movers_failure_is_a_code(tmp_path, monkeypatch):
     calls = []
 
-    def find(frames, fg, tracks, excluded):
+    def find(frames, fg, tracks, excluded, **kw):
         calls.append(1)
         if len(calls) == 1:
             raise RuntimeError(LEAK)

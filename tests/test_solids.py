@@ -300,7 +300,8 @@ def _legacy_find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_mem
 def compare_legacy_tracking(request, monkeypatch):
     if request.node.originalname in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
                                      "test_two_thousand_tiny_components_are_skipped_before_tracking",
-                                     "test_changing_blob_uses_median_bbox_area_limit"}:
+                                     "test_changing_blob_uses_median_bbox_area_limit",
+                                     "test_a_candidate_holding_a_read_text_is_the_rest_of_a_title"}:   # B11: new semantics
         return
     from keepframe.analyze.solids import solid_props
     optimized = find_solids
@@ -325,3 +326,14 @@ def compare_legacy_tracking(request, monkeypatch):
         return actual
 
     monkeypatch.setattr(__import__(__name__, fromlist=["find_solids"]), "find_solids", compared)
+
+
+def test_a_candidate_holding_a_read_text_is_the_rest_of_a_title():
+    """B11: the same spinning candidate with a read text box inside it on most frames is a title's unread letters, not
+    an object; a text box elsewhere changes nothing."""
+    frames, fg, text = sphere_inputs()
+    box = find_solids(frames, fg, [], text)[0].frames[0][0]
+    cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+    inside = [[(cx - 4, cy - 3, cx + 4, cy + 3)]] * len(frames)
+    assert find_solids(frames, fg, [], text, text_boxes=inside) == []
+    assert len(find_solids(frames, fg, [], text, text_boxes=[[(0, 0, 4, 3)]] * len(frames))) == 1

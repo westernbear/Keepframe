@@ -42,8 +42,22 @@ def _change(frames, solid):
     return stable and bool(changes), float(np.mean(changes)) if changes else 0.0
 
 
-def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, change_thr=0.15) -> list[Solid]:
-    """Track 5px-dilated components, retaining only cropped foreground support."""
+TITLE_SHARE = 0.5   # B11: a candidate holding a text box on this share of its frames is the rest of that title
+
+
+def _holds_title(solid: Solid, text_boxes) -> bool:
+    """B11: half a text box or more lies inside the candidate's box on TITLE_SHARE of its frames: the unread letters
+    around a title's read pieces (ig2's scrolling "A Weekend Away"), not an object; its one texture cannot follow the
+    letters passing through."""
+    hits = sum(any(max(0, min(x1, X1) - max(x0, X0)) * max(0, min(y1, Y1) - max(y0, Y0)) >= 0.5 * max(1, (x1 - x0) * (y1 - y0))
+                   for x0, y0, x1, y1 in (text_boxes[f] if f < len(text_boxes) else ()))
+               for f, ((X0, Y0, X1, Y1), _) in solid.frames.items())
+    return hits >= TITLE_SHARE * len(solid.frames)
+
+
+def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, change_thr=0.15, text_boxes=None) -> list[Solid]:
+    """Track 5px-dilated components, retaining only cropped foreground support. `text_boxes`: per frame, the read text
+    boxes (x0, y0, x1, y1), for B11."""
     kernel = np.ones((11, 11), np.uint8)  # radius 5px
     floor = max(min_life, int(np.ceil(0.30 * len(frames))))
     min_area = max(1, int(np.ceil(0.001 * frames.shape[1] * frames.shape[2])))
@@ -123,7 +137,7 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
                 members.append(track)
         fragmented = len(members) >= min_members and np.median([len(t.regions) for t in members]) < life * 0.50
         stable, change = _change(frames, solid)
-        if fragmented or (stable and change >= change_thr):
+        if (fragmented or (stable and change >= change_thr)) and not (text_boxes and _holds_title(solid, text_boxes)):
             solid.members = [t.id for t in members]
             result.append(solid)
     return result

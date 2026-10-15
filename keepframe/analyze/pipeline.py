@@ -468,7 +468,8 @@ def _stage_solids(frames, bg, boxes, obj_tracks, sd, plate=None, movers=(), note
         fg = (mask(i, f) for i, f in enumerate(frames))
         excluded = ((text_exclusion_mask(b, shape) | mover_cover(movers, f, shape)) if movers else text_exclusion_mask(b, shape)
                     for f, b in enumerate(boxes))
-        return find_solids(frames, fg, _unclaimed(obj_tracks, [], movers)[0], excluded)
+        return find_solids(frames, fg, _unclaimed(obj_tracks, [], movers)[0], excluded,
+                           text_boxes=[[b.bbox for b in fb] for fb in boxes])
 
     try:
         solids = run(movers)
