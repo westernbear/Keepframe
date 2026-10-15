@@ -340,3 +340,12 @@ def test_pieces_of_a_changed_read_are_not_joined_again():
     assert not same_title(a, b, [], 30.0)
     a.cut = b.cut = None
     assert same_title(a, b, [], 30.0)   # unmarked, a succession in place joins as before
+
+
+def test_text_cover_spans_gaps_and_pads_the_life():
+    """B8a: a text read on frames 10 and 14 (moving right) covers 11–13 interpolated and 10 ± 9 / 14 + 9 held, at 30 fps."""
+    t = TextTrack(1, {10: TextBox(10, "Hi", (100, 50, 200, 90), 0.9), 14: TextBox(14, "Hi", (140, 50, 240, 90), 0.9)}, "Hi")
+    cover = text_module.text_cover([t], n=30, fps=30.0)
+    assert sorted(cover) == list(range(1, 24))
+    assert cover[12] == [(120, 50, 220, 90)] and cover[1] == [(100, 50, 200, 90)] and cover[23] == [(140, 50, 240, 90)]
+    assert max(text_module.text_cover([t], n=16)) == 15   # clipped to the scene

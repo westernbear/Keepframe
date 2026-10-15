@@ -465,6 +465,24 @@ def reveal_exclusion_boxes(tracks: list[TextTrack]) -> dict[int, list[tuple[int,
     return boxes
 
 
+COVER_S = 0.3   # B8a: a text stays out of the background video this long around its reads (a fade or blur-in)
+
+
+def text_cover(tracks: list[TextTrack], n: int, fps: float = 30.0) -> dict[int, list[tuple[int, int, int, int]]]:
+    """B8a: each text's box from COVER_S before its first read to COVER_S after its last, for the video plate only:
+    interpolated per coordinate across OCR gaps, held at the end boxes outside the track.
+    shortcut: a text that moves fast while it blurs in leaves its earlier positions uncovered; extrapolate if one shows."""
+    pad, out = round(COVER_S * fps), {}
+    for t in tracks:
+        fs = sorted(t.boxes)
+        if not fs:
+            continue
+        xs = np.array([t.boxes[f].bbox for f in fs], float)
+        for g in range(max(0, fs[0] - pad), min(n, fs[-1] + pad + 1)):
+            out.setdefault(g, []).append(tuple(int(round(np.interp(g, fs, xs[:, k]))) for k in range(4)))
+    return out
+
+
 def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_thr: float = 0.3,
                max_dist: float = 60.0, max_gap: int = 3) -> list[TextTrack]:
     tracks: list[TextTrack] = []

@@ -157,7 +157,7 @@ def _stage_plate(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
     try:
         model = build_plate(frames, rbf, boxes, text_tracks, shape_tracks, bg_rgb=bg, bconf=bconf,
                             bg_override=opts.bg_override, pass1=pass1, obj_tracks=obj_tracks, frames_out=sd / FRAMES_PATH,
-                            try_keys=busy is not None)
+                            try_keys=busy is not None, fps=fps)
         if busy is not None:
             model.stats.update(busy_pass1=busy["busy_pass1"], moved_de=busy["moved_de"], resegmented=busy["kind"])
         model = write_video(sd, model, fps)

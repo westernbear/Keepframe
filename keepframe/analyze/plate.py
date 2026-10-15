@@ -17,7 +17,7 @@ from ..log import describe, get
 from . import videoasset
 from .background import PLATE_PATH
 from .gradient_fit import fit_gradient, fit_like, follow, measure, shrink, stop_range
-from .text import reveal_exclusion_boxes
+from .text import reveal_exclusion_boxes, text_cover
 
 log = get("keepframe.analyze")
 
@@ -519,7 +519,7 @@ def _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tr
 
 
 def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1,
-                obj_tracks=None, frames_out=None, try_keys=False) -> PlateModel:
+                obj_tracks=None, frames_out=None, try_keys=False, fps: float = 30.0) -> PlateModel:
     """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none.
     `frames_out` (FRAMES_PATH) enables video plates; `try_keys`: see classify."""
     n, H, W = frames.shape[:3]
@@ -563,7 +563,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         model.stats["message"] = f"plate classification skipped ({PLATE_CLASSIFY_FAILED})"
         failed = True
     if model.stats.get("video_candidate") and frames_out is not None:
-        model = _video_plate(model, frames, rbf, boxes, reveal, frames_out)
+        cover = text_cover(text_tracks, n, fps)   # B8a: a fading title out of the background video too
+        model = _video_plate(model, frames, rbf, boxes, {f: reveal.get(f, []) + cover.get(f, []) for f in range(n)}, frames_out)
     t.append(time.perf_counter())
     if model.kind == "color":   # a flat colour never shows the filled pixels
         model.synthetic = None
