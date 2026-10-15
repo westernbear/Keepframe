@@ -3,7 +3,7 @@ import cv2, numpy as np, pytest
 from keepframe.analyze.background import background_plate, estimate_background
 from keepframe.analyze.plate import (build_plate, fill_holes, find_holes, masked_median, occupancy, sample_frames)
 from keepframe.analyze.regions import Region
-from keepframe.analyze.text import TextBox
+from keepframe.analyze.text import TextBox, TextTrack
 from keepframe.ir.colour import delta_e, srgb_to_lab
 from keepframe.ir.schema import Keyframe, Track
 from keepframe.ir.synth import ground_truth, make_reference_scene, render_frames, true_plate
@@ -265,6 +265,10 @@ def test_a_soft_glow_in_place_is_background_and_a_card_is_not():
     assert background_tracks(*scene(glow(lambda f: 100))) == [7]
     assert background_tracks(*scene(card)) == []
     assert background_tracks(*scene(glow(lambda f: 30 + 25 * f))) == []
+    frames, tracks = scene(glow(lambda f: 100))   # B8b2: a text on the glow makes it that text's surface
+    on_it = TextTrack(1, {f: TextBox(f, "Hi", (80, 50, 120, 70), 0.9) for f in range(n)}, "Hi")
+    assert background_tracks(frames, tracks, [on_it]) == [] and background_tracks(frames, tracks, [TextTrack(2, {
+        f: TextBox(f, "Hi", (80, 50, 120, 70), 0.9) for f in range(n, n + 3)}, "Hi")]) == [7]   # after the glow: no matter
     tracks = scene(glow(lambda f: 100))[1]
     video = SimpleNamespace(kind="video", stats={"background_tracks": [7]})
     assert _foreground(tracks, video) == [] and _foreground(tracks, SimpleNamespace(kind="image", stats=video.stats)) == tracks
