@@ -25,6 +25,7 @@ LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBST
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
 ROT_DEG, CONTAIN, CONCURRENT = 5.0, 0.5, 0.5
 MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
+STEP_S = 0.1     # B5a: pieces' velocities are compared over this step, not per frame (box jitter of a blurred piece)
 
 
 @dataclass
@@ -90,6 +91,14 @@ def _sprite(f: Fragment) -> bool:
     return not f.text
 
 
+def _dv(a: Fragment, b: Fragment, common, k: int, x) -> float:
+    """Median difference of a's and b's velocities (px per frame, over k-frame steps of the common frames), `x` the
+    horizontal anchor of a box; the vertical one is its centre."""
+    pa, pb = (np.array([[x(f.boxes[i]), (f.boxes[i][1] + f.boxes[i][3]) / 2] for i in common]) for f in (a, b))
+    d = ((pa[k:] - pa[:-k]) - (pb[k:] - pb[:-k])) / k
+    return float(np.median(np.hypot(d[:, 0], d[:, 1])))
+
+
 def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool:
     h = max(a.h, b.h)
     if a.cut is not None and a.cut == b.cut:   # B2: a text that changed, split on purpose
@@ -109,9 +118,10 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
             return False
     if common:   # concurrent and side by side
         gap = np.median([max(a.boxes[i][0], b.boxes[i][0]) - min(a.boxes[i][2], b.boxes[i][2]) for i in common])
-        va = np.diff([(a.boxes[i][0] + a.boxes[i][2]) / 2 for i in common]), np.diff([cy(a, i) for i in common])
-        vb = np.diff([(b.boxes[i][0] + b.boxes[i][2]) / 2 for i in common]), np.diff([cy(b, i) for i in common])
-        dv = float(np.median(np.hypot(va[0] - vb[0], va[1] - vb[1]))) if len(common) > 1 else 0.0
+        # B5a: moving together by the left edges, the right edges or the centres (a piece clipped by the frame or
+        # widening as its letters sharpen keeps one edge with the other), over STEP_S steps
+        k = max(1, min(round(STEP_S * fps), len(common) - 1))
+        dv = min(_dv(a, b, common, k, x) for x in (lambda q: q[0], lambda q: q[2], lambda q: (q[0] + q[2]) / 2)) if len(common) > 1 else 0.0
         side = gap <= GAP_H * h and abs(a.first - b.first) / fps <= ONSET_S and dv <= MOTION_PX
     else:
         side = False
