@@ -114,3 +114,37 @@ def test_flicker_piece_stays_out():   # R25 (ig1): a piece OCR saw in 1-2 frames
     assert fragment("t2", prop("Arrivals", 190, 140, 10, 11), SIZE) is None
     f = frags(("t1", prop("New", 100, 80)), ("t2", prop("Arrivals", 190, 140, 10, 12)))   # three frames do join
     assert keys(group_fragments(f, [], FPS)) == [["t1", "t2"]]
+
+
+def test_pieces_moving_together_join_despite_jitter_or_a_clipped_edge():
+    """B5a (ig2, envato1): side-by-side pieces of one moving title join when their left edges, right edges or centres
+    keep one velocity over 0.1 s steps: per-frame box jitter or a box clipped by the frame no longer splits them. A moving
+    piece next to a still one stays apart."""
+    rng = np.random.default_rng(0)
+    a, b = prop("Wor", 100, 120, vx=-6.0), prop("king", 230, 140, 5, 60, vx=-6.0)
+    for p in (a, b):
+        p["raw"][:, 0] += rng.normal(0, 2.0, N)
+    assert keys(group_fragments(frags(("t1", a), ("t2", b)), [], FPS)) == [["t1", "t2"]]
+    clipped = prop("king", 380, 140, 5, 60, vx=-6.0)   # its right edge held at the frame edge (x 640) as it slides left
+    for f in range(5, 61):
+        left = 380 - 6.0 * f
+        clipped["raw"][f, 0], clipped["raw"][f, 2] = (left + 640) / 2, (640 - left) / 140
+    a = prop("Wor", 250, 120, vx=-6.0)
+    assert keys(group_fragments(frags(("t1", a), ("t2", clipped)), [], FPS)) == [["t1", "t2"]]
+    assert len(group_fragments(frags(("t1", prop("Wor", 100, 120, vx=-6.0)), ("t2", prop("king", 230, 140, 5, 60))), [], FPS)) == 2
+
+
+def test_only_pieces_the_old_test_joins_merge_the_rest_are_bound():
+    """B5a2: jittered pieces that only the 0.1 s steps join are bound as one group, not merged (a merge re-reads and
+    re-renders the string); pieces the per-frame test joins still merge."""
+    from keepframe.analyze.titles import merge_plan
+    rng = np.random.default_rng(0)
+    a, b = prop("Wor", 100, 120, vx=-6.0), prop("king", 230, 140, 5, 60, vx=-6.0)
+    for p in (a, b):
+        p["raw"][:, 0] += rng.normal(0, 2.0, N)
+    is_text = lambda f: True
+    merge, bind = merge_plan(frags(("t1", a), ("t2", b)), [], FPS, is_text)
+    assert merge == [] and keys(bind) == [["t1", "t2"]]
+    steady = frags(("t1", prop("New", 100, 80)), ("t2", prop("Arrivals", 190, 140, 5, 60)))
+    merge, bind = merge_plan(steady, [], FPS, is_text)
+    assert keys(merge) == [["t1", "t2"]] and bind == []

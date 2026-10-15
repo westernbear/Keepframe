@@ -315,3 +315,50 @@ def test_whole_range_sprite_corrections_accept_mixed_raw_widths(tmp_path, monkey
     with np.load(scene_dir(root, "s1") / merged.raw) as measured:
         assert measured["raw"].shape == (6, 9)
         np.testing.assert_array_equal(measured["raw"][:, 8], [1.0] * 6)
+
+
+def test_a_read_that_loses_its_last_word_splits_the_track():
+    """B2: "You just speak" for 10 frames, then "You just" for 20 (the word replaced by an icon) is two texts: the
+    whole one, then the rest (new id), both marked with the same cut. A prefix flicker or a lost trailing mark stays one."""
+    reads = [("You", 30)] * 3 + [("You just", 120)] * 3 + [("You just speak", 220)] * 10 + [("You just", 140)] * 20
+    tracks = text_module.track_text([[TextBox(f, t, (20, 20, 20 + w, 60), 0.9)] for f, (t, w) in enumerate(reads)])
+    assert len(tracks) == 1
+    whole, rest = text_module.split_swaps(tracks, fps=30.0)
+    assert (whole.id, whole.text, whole.last, rest.id, rest.text, rest.first) == (1, "You just speak", 15, 2, "You just", 16)
+    assert whole.cut == rest.cut == 1
+    flicker = [[TextBox(f, t, (20, 20, 20 + w, 50), 0.95)] for f, (t, w) in enumerate([("Buy", 60), ("Buy now", 200)] * 20)]
+    assert len(text_module.split_swaps(text_module.track_text(flicker))) == 1
+    mark = [[TextBox(f, t, (20, 20, 120, 50), 0.95)] for f, t in enumerate(["Sale."] * 10 + ["Sale"] * 20)]
+    assert len(text_module.split_swaps(text_module.track_text(mark))) == 1
+
+
+def test_pieces_of_a_changed_read_are_not_joined_again():
+    from keepframe.analyze.titles import Fragment, same_title
+    lab = np.zeros(3)
+    a = Fragment("t1", "You just speak", 0, 15, {f: (20, 20, 240, 60) for f in range(16)}, lab, 40.0, 0.0, cut=1)
+    b = Fragment("t2", "You just", 16, 35, {f: (20, 20, 160, 60) for f in range(16, 36)}, lab, 40.0, 0.0, cut=1)
+    assert not same_title(a, b, [], 30.0)
+    a.cut = b.cut = None
+    assert same_title(a, b, [], 30.0)   # unmarked, a succession in place joins as before
+
+
+def test_text_cover_spans_gaps_and_pads_the_life():
+    """B8a: a text read on frames 10 and 14 (moving right) covers 11–13 interpolated in its life; the pads 10 − 9 and
+    14 + 9 (at 30 fps) hold the end boxes, apart (B8a2: only while something shows in them)."""
+    t = TextTrack(1, {10: TextBox(10, "Hi", (100, 50, 200, 90), 0.9), 14: TextBox(14, "Hi", (140, 50, 240, 90), 0.9)}, "Hi")
+    life, near = text_module.text_cover([t], n=30, fps=30.0)
+    assert sorted(life) == list(range(10, 15)) and sorted(near) == [*range(1, 10), *range(15, 24)]
+    assert life[12] == [(120, 50, 220, 90)] and near[1] == [(100, 50, 200, 90)] and near[23] == [(140, 50, 240, 90)]
+    assert max(text_module.text_cover([t], n=16)[1]) == 15   # clipped to the scene
+
+
+def test_a_pad_box_is_kept_out_only_while_something_shows():
+    """B8a2: in a pad frame a text's box is kept out while ≥ 2 % of it is ΔE > 8 off the still plate (a title fading
+    in); a background matching the still plate within that is left to the video."""
+    from keepframe.analyze.plate import _present
+    still = np.full((60, 100, 3), 40, np.uint8)
+    frame = still.copy()
+    frame[20:30, 30:50] = 90                       # the title fading in
+    frame[0:15, 75:95] = 43                        # the background, a little off the still plate
+    assert _present(frame, still, (20, 15, 60, 35)) and not _present(frame, still, (75, 0, 95, 15))
+    assert not _present(frame, still, (200, 0, 220, 10))   # off the frame

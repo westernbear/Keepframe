@@ -53,3 +53,28 @@ def test_fake_analysis_end_to_end(monkeypatch, tmp_path):
     again = rt.eval_roundtrip(tmp_path, ("stepped_zoom",), 1, reuse=True)
     strip = lambda c: {k: v for k, v in c.items() if not k.endswith("_seconds")}
     assert strip(again["cases"][0]) == strip(case)
+
+
+def test_ghost_de_sees_text_left_in_a_video_background(tmp_path):
+    """B8 measuring stick: a background video that keeps a title's ghost inside its box scores higher than a clean one."""
+    import cv2
+    import numpy as np
+    from keepframe.ir.schema import Background, Scene
+    from keepframe.qa.roundtrip import ghost_de
+    truth = {"elements": [{"id": "t", "kind": "text", "visible": [0, 7], "boxes": {str(f): [40, 40, 120, 70] for f in range(8)}}]}
+    ramp = np.tile(np.linspace(30, 90, 160, dtype=np.uint8)[None, :, None], (120, 1, 3))
+    scores = []
+    for ghost in (False, True):
+        root = tmp_path / str(ghost)
+        (root / "scenes" / "s1" / "assets").mkdir(parents=True)
+        w = cv2.VideoWriter(str(root / "scenes" / "s1" / "assets" / "bg.avi"), cv2.VideoWriter_fourcc(*"MJPG"), 30, (160, 120))
+        for _ in range(8):
+            f = ramp.copy()
+            if ghost:
+                f[48:62, 50:110] = 220
+            w.write(f)
+        w.release()
+        scene = Scene(id="s1", size=(160, 120), fps=30, frames=8, background=Background(kind="video", value="assets/bg.avi"), elements=[])
+        scores.append(ghost_de([(scene, 0)], root, truth))
+    assert scores[0] < 3 < scores[1]
+    assert ghost_de([(scene, 8)], root, truth) is None   # a scene (shot) the text never lives in measures nothing of it

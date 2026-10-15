@@ -256,6 +256,7 @@ class TextTrack:
     boxes: dict[int, TextBox] = field(default_factory=dict)
     text: str = ""
     reveal: bool = False
+    cut: int | None = None   # B2: the id of the track this one was split from (with its other piece), else None
 
     @property
     def first(self) -> int:
@@ -364,6 +365,36 @@ def _drop_caret(best: str, reads) -> str:
     return best.rstrip()[:-1].rstrip() if len(riding) >= 2 else best
 
 
+SWAP_S = 0.5   # a shorter read held this long (and MIN_TEXT_FRAMES frames) is the text changing, not a flicker
+
+
+def _word_prefix(read: str, full: str) -> bool:
+    """`read` is the first words of `full` (spacing ignored) and drops at least two letters or digits."""
+    words, r = full.split(), _compact(read)
+    return len(_compact(full)) - len(r) >= 2 and any(r == _compact(" ".join(words[:k])) for k in range(1, len(words)))
+
+
+def split_swaps(tracks: list[TextTrack], fps: float = 30.0) -> list[TextTrack]:
+    """B2: a track whose read, after the whole string was seen (MIN_TEXT_FRAMES frames), shows only its first words for
+    SWAP_S or longer is two texts — the whole one, then what remains (a last word replaced by an icon) — split at the
+    first such read; later reads stay with the second piece, which gets a new id. Both carry `cut` so the title merge
+    keeps them apart. A flicker, a lost trailing mark or a backspace (reads ending mid-word) stays one track."""
+    out, next_id = [], max((t.id for t in tracks), default=0) + 1
+    need = max(MIN_TEXT_FRAMES, round(SWAP_S * fps))
+    for t in tracks:
+        full = [f for f in sorted(t.boxes) if _compact(t.boxes[f].text) == _compact(t.text)]
+        short = [f for f in sorted(t.boxes) if full and f > full[-1] and _word_prefix(t.boxes[f].text, t.text)]
+        if len(full) < MIN_TEXT_FRAMES or len(short) < need:
+            out.append(t)
+            continue
+        s = short[0]
+        rest = {f: b for f, b in t.boxes.items() if f >= s}
+        out += [TextTrack(t.id, {f: b for f, b in t.boxes.items() if f < s}, t.text, t.reveal, t.id),
+                TextTrack(next_id, rest, best_read([rest[f].text for f in sorted(rest)]), False, t.id)]
+        next_id += 1
+    return out
+
+
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:
     """One line growing from a steady anchor: its left edge, centre or right edge (a line re-centring as words land;
     the reveal follows the left edge per frame). The shorter box sets the tolerance, so a zoom cannot relax alignment."""
@@ -432,6 +463,25 @@ def reveal_exclusion_boxes(tracks: list[TextTrack]) -> dict[int, list[tuple[int,
             for frame in range(track.first, track.last + 1):
                 boxes.setdefault(frame, []).append(full)
     return boxes
+
+
+COVER_S = 0.3   # B8a: a text stays out of the background video this long around its reads (a fade or blur-in)
+
+
+def text_cover(tracks: list[TextTrack], n: int, fps: float = 30.0) -> tuple[dict, dict]:
+    """B8a: each text's box for the video plate only, as (life, pad): {frame: [box]} from its first read to its last,
+    interpolated per coordinate across OCR gaps, and the COVER_S before and after, held at the end boxes (B8a2: there
+    a box is kept out only while something shows in it, `plate._present`).
+    shortcut: a text that moves fast while it blurs in leaves its earlier positions uncovered; extrapolate if one shows."""
+    pad, life, near = round(COVER_S * fps), {}, {}
+    for t in tracks:
+        fs = sorted(t.boxes)
+        if not fs:
+            continue
+        xs = np.array([t.boxes[f].bbox for f in fs], float)
+        for g in range(max(0, fs[0] - pad), min(n, fs[-1] + pad + 1)):
+            (life if fs[0] <= g <= fs[-1] else near).setdefault(g, []).append(tuple(int(round(np.interp(g, fs, xs[:, k]))) for k in range(4)))
+    return life, near
 
 
 def track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_thr: float = 0.3,

@@ -25,6 +25,7 @@ LINE_H_RATIO, LINE_DY, GAP_H, COLOUR_DE, ONSET_S, MOTION_PX, SUCCESSION_S, SUBST
 GLYPH_MAX = (1.6, 2.5)   # a sprite fragment's (height, width) in line heights
 ROT_DEG, CONTAIN, CONCURRENT = 5.0, 0.5, 0.5
 MIN_FRAMES = 3   # R25: a piece seen in fewer frames is OCR flicker, not a fragment (it would pull cf to its frame)
+STEP_S = 0.1     # B5a: pieces' velocities are compared over this step, not per frame (box jitter of a blurred piece)
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Fragment:
     lab: np.ndarray                                        # mean opaque colour, CIE Lab
     h: float                                               # median line height (canonical height × sy)
     rot: float                                             # median rotation, degrees
+    cut: int | None = None                                 # B2: the pieces of one track whose read changed share it
 
 
 def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
@@ -65,7 +67,8 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
     lab = cv2.cvtColor(rgb.mean(0).astype(np.float32).reshape(1, 1, 3) / 255, cv2.COLOR_RGB2Lab)[0, 0]
-    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)))
+    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)),
+                    p.get("cut"))
 
 
 def _digits_agree(a: str, b: str) -> bool:
@@ -88,8 +91,19 @@ def _sprite(f: Fragment) -> bool:
     return not f.text
 
 
-def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool:
+def _dv(a: Fragment, b: Fragment, common, k: int, x) -> float:
+    """Median difference of a's and b's velocities (px per frame, over k-frame steps of the common frames), `x` the
+    horizontal anchor of a box; the vertical one is its centre."""
+    pa, pb = (np.array([[x(f.boxes[i]), (f.boxes[i][1] + f.boxes[i][3]) / 2] for i in common]) for f in (a, b))
+    d = ((pa[k:] - pa[:-k]) - (pb[k:] - pb[:-k])) / k
+    return float(np.median(np.hypot(d[:, 0], d[:, 1])))
+
+
+def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float, steps: bool = True) -> bool:
+    """`steps` False: the test before B5a (per-frame centre velocities), which decides what merges (B5a2)."""
     h = max(a.h, b.h)
+    if a.cut is not None and a.cut == b.cut:   # B2: a text that changed, split on purpose
+        return False
     if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or np.linalg.norm(a.lab - b.lab) > COLOUR_DE or abs(a.rot - b.rot) > ROT_DEG:
         return False
     common = sorted(a.boxes.keys() & b.boxes.keys())
@@ -105,9 +119,11 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
             return False
     if common:   # concurrent and side by side
         gap = np.median([max(a.boxes[i][0], b.boxes[i][0]) - min(a.boxes[i][2], b.boxes[i][2]) for i in common])
-        va = np.diff([(a.boxes[i][0] + a.boxes[i][2]) / 2 for i in common]), np.diff([cy(a, i) for i in common])
-        vb = np.diff([(b.boxes[i][0] + b.boxes[i][2]) / 2 for i in common]), np.diff([cy(b, i) for i in common])
-        dv = float(np.median(np.hypot(va[0] - vb[0], va[1] - vb[1]))) if len(common) > 1 else 0.0
+        # B5a: moving together by the left edges, the right edges or the centres (a piece clipped by the frame or
+        # widening as its letters sharpen keeps one edge with the other), over STEP_S steps
+        k = max(1, min(round(STEP_S * fps), len(common) - 1)) if steps else 1
+        anchors = (lambda q: q[0], lambda q: q[2], lambda q: (q[0] + q[2]) / 2) if steps else (lambda q: (q[0] + q[2]) / 2,)
+        dv = min(_dv(a, b, common, k, x) for x in anchors) if len(common) > 1 else 0.0
         side = gap <= GAP_H * h and abs(a.first - b.first) / fps <= ONSET_S and dv <= MOTION_PX
     else:
         side = False
@@ -128,7 +144,7 @@ def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool
     return True
 
 
-def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> list[list[Fragment]]:
+def group_fragments(frags: list[Fragment], strings: list[str], fps: float, steps: bool = True) -> list[list[Fragment]]:
     """Texts join through text-text `same_title` links only (union-find); a text-less sprite joins the one text group it
     qualifies for, and no group when it qualifies for several (it would bridge separate titles). Input order."""
     parent = list(range(len(frags)))
@@ -141,12 +157,12 @@ def group_fragments(frags: list[Fragment], strings: list[str], fps: float) -> li
     texts = [i for i, f in enumerate(frags) if not _sprite(f)]
     for n, i in enumerate(texts):
         for j in texts[n + 1:]:
-            if same_title(frags[i], frags[j], strings, fps):
+            if same_title(frags[i], frags[j], strings, fps, steps):
                 parent[find(j)] = find(i)
     roots = {find(i) for i in texts}
     for i, f in enumerate(frags):
         if _sprite(f):
-            near = {find(j) for j in texts if same_title(f, frags[j], strings, fps)}
+            near = {find(j) for j in texts if same_title(f, frags[j], strings, fps, steps)}
             if len(near) == 1:
                 parent[i] = near.pop()
     groups: dict[int, list[Fragment]] = {}
@@ -573,6 +589,21 @@ def _tilted_track(f: Fragment, props: dict, frames, plate, notes: list[str]) -> 
         return False
 
 
+def merge_plan(frags: list[Fragment], strings: list[str], fps: float, is_text) -> tuple[list, list]:
+    """B5a2: (groups to merge, groups to bind). Only pieces joined under the test before B5a merge, as before (a merge
+    re-reads and re-renders the string: scroller's joined lines came out "STEPS CLEEAR"). A group that only the 0.1 s
+    steps or an edge joined (`group_fragments`) is bound as one `text_fragments` group around its merges and pieces."""
+    merge, bind = [], []
+    for g in group_fragments(frags, strings, fps):
+        if len(g) < 2 or not any(is_text(f) for f in g):
+            continue
+        parts = group_fragments(g, strings, fps, steps=False)
+        merge += [q for q in parts if len(q) > 1 and any(is_text(f) for f in q)]
+        if len(parts) > 1:
+            bind.append(g)
+    return merge, bind
+
+
 def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) -> list[str]:
     """In place: each title's fragments (`group_fragments`, a group with a text track) and each tilted single text
     track (D12) become one text prop `title_<first text key>` (`merge_title`), the fragments under its `fragments`;
@@ -588,8 +619,9 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
         size = (frames.shape[2], frames.shape[1])
         strings = [r.string for r in reading.strings] if reading is not None else []
         frags = [g for k, p in props.items() if not k.startswith("_") and isinstance(p, dict) and (g := fragment(k, p, size, members))]
-        groups = [g for g in group_fragments(frags, strings, fps) if len(g) > 1 and any(props[f.key]["kind"] == "text" for f in g)]
+        groups, bind = merge_plan(frags, strings, fps, lambda f: props[f.key]["kind"] == "text")
         grouped = {f.key for g in groups for f in g}
+        into: dict[str, str] = {}   # fragment key -> the merged title that took it
         groups += [[f] for f in frags if f.key not in grouped and props[f.key]["kind"] == "text" and _tilted_track(f, props, frames, plate, notes)]
         for group in groups:
             keys = [f.key for f in group]
@@ -605,8 +637,14 @@ def merge_titles(props, frames, plate, *, ocr, reading, fps, notes, members=()) 
             key = "title_" + next(k for k in keys if props[k]["kind"] == "text")
             for k in keys:
                 del props[k]
+                into[k] = key
             props[key] = p
             done.append(key)
+        for g in bind:   # B5a2: one text_fragments group (text_groups), its merged titles and pieces as they are
+            ks = list(dict.fromkeys(into.get(f.key, f.key) for f in g))
+            for k in ks:
+                if k in props:
+                    props[k]["text_group"] = "bind_" + ks[0]
         for k, p in props.items():   # a matching VLM line corrects OCR typos in a title left as it was
             if strings and k not in done and isinstance(p, dict) and p.get("kind") == "text" and p.get("text"):
                 best = _vlm_line(p["text"], strings)

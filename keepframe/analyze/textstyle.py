@@ -766,7 +766,7 @@ def analyse_text_style(rgba, meta: TextureMeta | None, frames, plate, raw, text:
 
 # --- the pipeline phase -------------------------------------------------------------------------------------------
 
-def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None):
+def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None, colour: str | None = None):
     """The font-matching input of a text element: the glyph coverage the style analysis left (the texture's alpha
     when it failed, or for a tilted title: D14 skips its effect crop, so its coverage, with no plate to model a fade
     or a ramp on, drops the glyphs they lighten; V2: seed 10's faded right half went, the fit spread the whole string
@@ -778,7 +778,7 @@ def _font_job(k: str, p: dict, style: TextStyle | None, info: dict | None):
     else:
         alpha = np.asarray(p["canon"])[..., 3].astype(np.float32) / 255.0
         centres, ratio = glyph_centres(alpha, text), None
-    return TextJob(k, alpha, text, ratio, centres, p.get("font"))
+    return TextJob(k, alpha, text, ratio, centres, p.get("font"), colour)
 
 
 def _pen_at_ink(job, res):
@@ -830,7 +830,7 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
         results = list(ex.map(run, keys))
     t1 = time.perf_counter()
     try:
-        jobs = [_font_job(k, props[k], style, info) for k, style, _, info, _ in results]
+        jobs = [_font_job(k, props[k], style, info, colour) for k, style, colour, info, _ in results]
         found = fontmatch.font_guesses(jobs, registry)
         for j in jobs:
             found[j.key] = _pen_at_ink(j, found.get(j.key, ("error", fontmatch.MATCH_FAILED)))
@@ -842,7 +842,7 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
     for k, style, colour, info, err in results:
         p = props[k]
         p.setdefault("core_color", p.get("color"))
-        for name in ("style", "style_error", "font_error", "font_skipped"):
+        for name in ("style", "style_error", "font_error", "font_skipped", "font_borrowed"):
             p.pop(name, None)
         res = found.get(k, ("error", fontmatch.MATCH_FAILED))
         counts[res[0]] += 1
@@ -852,7 +852,9 @@ def style_props(props: dict, frames: np.ndarray, plate, *, workers: int = 4, fon
                 style = style.model_copy(update=res[2])
         else:
             prior = p.get("font")
-            if prior is not None:
+            if len(res) == 4:   # past the work cap, the family and weight of a matched twin (B9)
+                p["font"], p["font_borrowed"] = res[2], res[3]
+            elif prior is not None:
                 p["font"] = prior.model_copy(update={"confidence": min(0.5, prior.confidence)})
             p["font_error" if res[0] == "error" else "font_skipped"] = res[1]
         if err is not None:

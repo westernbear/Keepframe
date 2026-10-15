@@ -522,3 +522,41 @@ def test_sans_prior_includes_rounded_not_condensed(monkeypatch):
     pulled Oswald / Barlow Condensed over the humanist and geometric truth), so a serif 0.03 ahead keeps its place."""
     assert _kept_fits(monkeypatch, "bundled", "serif", "rounded_sans") == ["Plain Sans", "Brand Script"]
     assert _kept_fits(monkeypatch, "bundled", "serif", "condensed_sans") == ["Brand Script", "Plain Sans"]
+
+
+def test_past_the_cap_a_twin_lends_its_family_at_its_own_size():
+    """B9: one text per style is matched first; a text past the cap whose cap height (within 1.25x), fill and stroke
+    ratio match a matched one takes that family and weight at its own size and confidence ≤ 0.5; an unlike text stays
+    skipped with the plain code."""
+    from keepframe.fonts.match import TextJob, font_guesses
+    big = make_font_sample(811, text="Grand Opening", size_px=64.0)
+    near = make_font_sample(811, text="Spring Sale", size_px=58.0)   # the same family, a little smaller
+    small = make_font_sample(813, text="This Friday", size_px=28.0)
+    jobs = [TextJob(k, s.alpha, s.text, **_inputs(s.alpha, s.text), colour="#ffffff")
+            for k, s in (("near", near), ("big", big), ("small", small))]
+    out = font_guesses(jobs, REG, max_renders=1)
+    assert out["big"][0] == "ok"
+    status, code, guess, twin = out["near"]
+    assert (status, code, twin) == ("skipped", "work_cap", "big") and guess.family_guess == out["big"][1].family_guess
+    assert guess.confidence <= 0.5 and guess.size_px < out["big"][1].size_px
+    assert out["small"] == ("skipped", "work_cap")   # 28 px is another style: nothing to borrow
+
+
+def test_past_the_cap_the_twins_vote_on_the_family(monkeypatch):
+    """B9b: a skipped text takes the family most of its matched twins got, from the nearest twin with that family, not
+    the nearest twin's own (noisy) match."""
+    from keepframe.fonts import match
+    from keepframe.fonts.match import TextJob, font_guesses
+    from keepframe.ir.schema import FontGuess
+    s = make_font_sample(811, text="Label one", size_px=20.0)
+    fams = {"c": "Unbounded", "a": "Urbanist", "b": "Urbanist"}
+
+    def fake(alpha, text, registry, **kw):   # one render each, a preset family
+        match._RENDERS.get()[0] += 1
+        return FontGuess(family_guess=fams[text], size_px=20.0, confidence=0.8), None
+
+    monkeypatch.setattr(match, "font_guess", fake)
+    jobs = [TextJob(k, s.alpha, k, **_inputs(s.alpha, s.text), colour="#ffffff") for k in ("c", "a", "b", "d")]
+    out = font_guesses(jobs, REG, max_renders=3)
+    assert [out[k][0] for k in "cab"] == ["ok"] * 3
+    assert out["d"][:2] == ("skipped", "work_cap") and out["d"][2].family_guess == "Urbanist" and out["d"][3] == "a"

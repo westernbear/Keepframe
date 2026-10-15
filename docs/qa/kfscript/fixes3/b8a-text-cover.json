@@ -1,0 +1,1623 @@
+{
+ "id": "b8a-text-cover",
+ "commit": "ad56ed5",
+ "before": "rt3-b2",
+ "after": "rt3-b8a",
+ "machine": "cloud container, 4 CPU, no GPU",
+ "command": "eval/out/rt3-after.sh or rt3-after-wt.sh (keepframe eval-roundtrip --seeds 1 --reuse on rt2-base3 renders, fresh analyses; --gold mk571; keepframe analyze e24 f120-269 --no-captions)",
+ "cases": {
+  "kinetic_title-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00535,
+    0.00535
+   ],
+   "l1_kf": [
+    0.01729,
+    0.01729
+   ],
+   "kf_parity": [
+    9e-07,
+    9e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    15.0,
+    15.0
+   ],
+   "font_rate": [
+    0.5,
+    0.5
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.235,
+    0.235
+   ],
+   "centre_px": [
+    2.0,
+    2.0
+   ],
+   "visible_err": [
+    3.5,
+    3.5
+   ],
+   "keys_mean": [
+    6.3333,
+    6.3333
+   ],
+   "dl_ratio": [
+    8.921,
+    8.921
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "split",
+      "stagger",
+      "stagger"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "split",
+      "stagger",
+      "stagger"
+     ]
+    }
+   ]
+  },
+  "logo_sting-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.02541,
+    0.02541
+   ],
+   "l1_kf": [
+    0.02818,
+    0.02818
+   ],
+   "kf_parity": [
+    0.0,
+    0.0
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.8,
+    0.8
+   ],
+   "fragments_mean": [
+    1.6,
+    1.6
+   ],
+   "units_mean": [
+    1.6,
+    1.6
+   ],
+   "pieces_mean": [
+    4.2,
+    4.2
+   ],
+   "font_rate": [
+    0.0,
+    0.0
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.95,
+    0.95
+   ],
+   "centre_px": [
+    1.05,
+    1.05
+   ],
+   "visible_err": [
+    22.75,
+    22.75
+   ],
+   "keys_mean": [
+    10.8462,
+    10.8462
+   ],
+   "dl_ratio": [
+    4.381,
+    4.381
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [
+      "drift"
+     ],
+     "missed": [
+      "pop"
+     ],
+     "unsupported": [
+      "mask",
+      "mask",
+      "shape-size",
+      "split",
+      "stagger"
+     ]
+    },
+    {
+     "found": [
+      "drift"
+     ],
+     "missed": [
+      "pop"
+     ],
+     "unsupported": [
+      "mask",
+      "mask",
+      "shape-size",
+      "split",
+      "stagger"
+     ]
+    }
+   ]
+  },
+  "chat_ui-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00493,
+    0.00493
+   ],
+   "l1_kf": [
+    0.01443,
+    0.01443
+   ],
+   "kf_parity": [
+    1.4e-06,
+    1.4e-06
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.9167,
+    0.9167
+   ],
+   "fragments_mean": [
+    1.5,
+    1.5
+   ],
+   "units_mean": [
+    1.4167,
+    1.4167
+   ],
+   "pieces_mean": [
+    1.9167,
+    1.9167
+   ],
+   "font_rate": [
+    0.6667,
+    0.6667
+   ],
+   "stray_area": [
+    0.0136,
+    0.0136
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    2.7983,
+    2.7983
+   ],
+   "centre_px": [
+    1.9727,
+    1.9727
+   ],
+   "visible_err": [
+    2.0909,
+    2.0909
+   ],
+   "keys_mean": [
+    25.2857,
+    25.2857
+   ],
+   "dl_ratio": [
+    6.28,
+    6.28
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "repeat",
+      "stagger"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "repeat",
+      "stagger"
+     ]
+    }
+   ]
+  },
+  "scroller-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.05746,
+    0.05746
+   ],
+   "l1_kf": [
+    0.06213,
+    0.06213
+   ],
+   "kf_parity": [
+    1.43e-05,
+    1.43e-05
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.5,
+    0.5
+   ],
+   "fragments_mean": [
+    1.5,
+    1.5
+   ],
+   "units_mean": [
+    1.5,
+    1.5
+   ],
+   "pieces_mean": [
+    5.75,
+    5.75
+   ],
+   "font_rate": [
+    0.75,
+    0.75
+   ],
+   "stray_area": [
+    3.8239,
+    3.8239
+   ],
+   "text_ratio": [
+    0.494,
+    0.494
+   ],
+   "colour_de": [
+    0.47,
+    0.47
+   ],
+   "centre_px": [
+    11.425,
+    11.425
+   ],
+   "visible_err": [
+    10.5,
+    10.5
+   ],
+   "keys_mean": [
+    19.42,
+    19.42
+   ],
+   "dl_ratio": [
+    22.188,
+    22.188
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "repeat",
+      "transition"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "repeat",
+      "transition"
+     ]
+    }
+   ]
+  },
+  "block_transition-1": {
+   "scenes": [
+    2,
+    2
+   ],
+   "l1_recon": [
+    0.0238,
+    0.0238
+   ],
+   "l1_kf": [
+    0.02171,
+    0.02171
+   ],
+   "kf_parity": [
+    3e-07,
+    3e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.3333,
+    0.3333
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.0,
+    1.0
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    2.0049,
+    2.0049
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.55,
+    0.55
+   ],
+   "centre_px": [
+    1.8,
+    1.8
+   ],
+   "visible_err": [
+    8.0,
+    8.0
+   ],
+   "keys_mean": [
+    6.3333,
+    6.3333
+   ],
+   "dl_ratio": [
+    2.603,
+    2.603
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "repeat",
+      "stagger",
+      "transition"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "repeat",
+      "stagger",
+      "transition"
+     ]
+    }
+   ]
+  },
+  "prompt_typing-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.0051,
+    0.0051
+   ],
+   "l1_kf": [
+    0.01131,
+    0.01131
+   ],
+   "kf_parity": [
+    2e-07,
+    2e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.8333,
+    0.8333
+   ],
+   "fragments_mean": [
+    2.0,
+    2.0
+   ],
+   "units_mean": [
+    2.0,
+    2.0
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0
+   ],
+   "font_rate": [
+    0.6667,
+    0.6667
+   ],
+   "stray_area": [
+    0.0005,
+    0.0005
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.8167,
+    0.8167
+   ],
+   "centre_px": [
+    0.76,
+    0.76
+   ],
+   "visible_err": [
+    1.8,
+    1.8
+   ],
+   "keys_mean": [
+    17.0,
+    17.0
+   ],
+   "dl_ratio": [
+    2.626,
+    2.626
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [
+      "typing"
+     ],
+     "unsupported": [
+      "blink",
+      "cursor",
+      "press"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [
+      "typing"
+     ],
+     "unsupported": [
+      "blink",
+      "cursor",
+      "press"
+     ]
+    }
+   ]
+  },
+  "counter-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00981,
+    0.00981
+   ],
+   "l1_kf": [
+    0.02547,
+    0.02547
+   ],
+   "kf_parity": [
+    4e-07,
+    4e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.6667,
+    1.6667
+   ],
+   "units_mean": [
+    1.5,
+    1.5
+   ],
+   "pieces_mean": [
+    6.6667,
+    6.6667
+   ],
+   "font_rate": [
+    0.75,
+    0.75
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    2.055,
+    2.055
+   ],
+   "centre_px": [
+    1.4,
+    1.4
+   ],
+   "visible_err": [
+    17.1667,
+    17.1667
+   ],
+   "keys_mean": [
+    8.3333,
+    8.3333
+   ],
+   "dl_ratio": [
+    10.371,
+    10.371
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "counter",
+      "counter",
+      "stagger"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "counter",
+      "counter",
+      "stagger"
+     ]
+    }
+   ]
+  },
+  "stepped_zoom-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.0128,
+    0.0128
+   ],
+   "l1_kf": [
+    0.01994,
+    0.01994
+   ],
+   "kf_parity": [
+    0.0,
+    0.0
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.3333,
+    1.3333
+   ],
+   "font_rate": [
+    0.6667,
+    0.6667
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    0.9733,
+    0.9733
+   ],
+   "colour_de": [
+    0.4533,
+    0.4533
+   ],
+   "centre_px": [
+    1.7333,
+    1.7333
+   ],
+   "visible_err": [
+    0.6667,
+    0.6667
+   ],
+   "keys_mean": [
+    7.25,
+    7.25
+   ],
+   "dl_ratio": [
+    2.197,
+    2.197
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "steps"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "steps"
+     ]
+    }
+   ]
+  },
+  "hard_cut-1": {
+   "scenes": [
+    2,
+    2
+   ],
+   "l1_recon": [
+    0.00422,
+    0.00422
+   ],
+   "l1_kf": [
+    0.00631,
+    0.00632
+   ],
+   "kf_parity": [
+    4.7e-06,
+    4.7e-06
+   ],
+   "ghost_de": [
+    0.561,
+    0.884
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.2,
+    1.2
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    2.2,
+    2.2
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    0.7683,
+    0.7683
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.7825,
+    0.7825
+   ],
+   "centre_px": [
+    6.02,
+    6.02
+   ],
+   "visible_err": [
+    0.4,
+    0.4
+   ],
+   "keys_mean": [
+    12.8235,
+    12.8235
+   ],
+   "dl_ratio": [
+    5.967,
+    5.967
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "wipe-1": {
+   "scenes": [
+    2,
+    2
+   ],
+   "l1_recon": [
+    0.00608,
+    0.00608
+   ],
+   "l1_kf": [
+    0.0066,
+    0.0066
+   ],
+   "kf_parity": [
+    4.2e-06,
+    4.2e-06
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    2.0,
+    2.0
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    0.3,
+    0.3
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    2.375,
+    2.375
+   ],
+   "centre_px": [
+    5.3,
+    5.3
+   ],
+   "visible_err": [
+    1.0,
+    1.0
+   ],
+   "keys_mean": [
+    15.75,
+    15.75
+   ],
+   "dl_ratio": [
+    4.504,
+    4.504
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition"
+     ]
+    }
+   ]
+  },
+  "word_build-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00228,
+    0.00228
+   ],
+   "l1_kf": [
+    0.00458,
+    0.00458
+   ],
+   "kf_parity": [
+    8e-07,
+    7e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.0,
+    1.0
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.0,
+    0.0
+   ],
+   "centre_px": [
+    1.8,
+    1.8
+   ],
+   "visible_err": [
+    0.0,
+    0.0
+   ],
+   "keys_mean": [
+    26.0,
+    26.0
+   ],
+   "dl_ratio": [
+    1.688,
+    1.688
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [
+      "build",
+      "build",
+      "shrink"
+     ],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [
+      "build",
+      "build",
+      "shrink"
+     ],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "whip_pan-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00264,
+    0.00264
+   ],
+   "l1_kf": [
+    0.00906,
+    0.00906
+   ],
+   "kf_parity": [
+    4e-07,
+    4e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.5,
+    1.5
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.5,
+    1.5
+   ],
+   "font_rate": [
+    0.0,
+    0.0
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    111.32,
+    111.32
+   ],
+   "centre_px": [
+    1.375,
+    1.375
+   ],
+   "visible_err": [
+    1.75,
+    1.75
+   ],
+   "keys_mean": [
+    16.5,
+    16.5
+   ],
+   "dl_ratio": [
+    2.478,
+    2.478
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "pan"
+     ]
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "pan"
+     ]
+    }
+   ]
+  },
+  "word_swap-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00084,
+    0.00084
+   ],
+   "l1_kf": [
+    0.00181,
+    0.00181
+   ],
+   "kf_parity": [
+    0.0,
+    0.0
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    1.0,
+    1.0
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.47,
+    0.47
+   ],
+   "centre_px": [
+    2.8667,
+    2.8667
+   ],
+   "visible_err": [
+    0.0,
+    0.0
+   ],
+   "keys_mean": [
+    6.0,
+    6.0
+   ],
+   "dl_ratio": [
+    1.324,
+    1.324
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "big_scroll-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.06633,
+    0.06633
+   ],
+   "l1_kf": [
+    0.07452,
+    0.07452
+   ],
+   "kf_parity": [
+    1.38e-05,
+    1.38e-05
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.0,
+    0.0
+   ],
+   "fragments_mean": [
+    2.0,
+    2.0
+   ],
+   "units_mean": [
+    2.0,
+    2.0
+   ],
+   "pieces_mean": [
+    35.0,
+    35.0
+   ],
+   "font_rate": [
+    null,
+    null
+   ],
+   "stray_area": [
+    0.1351,
+    0.1351
+   ],
+   "text_ratio": [
+    0.0,
+    0.0
+   ],
+   "colour_de": [
+    null,
+    null
+   ],
+   "centre_px": [
+    null,
+    null
+   ],
+   "visible_err": [
+    null,
+    null
+   ],
+   "keys_mean": [
+    10.1395,
+    10.1395
+   ],
+   "dl_ratio": [
+    15.509,
+    15.509
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "glow_title-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00943,
+    0.00944
+   ],
+   "l1_kf": [
+    0.0092,
+    0.0092
+   ],
+   "kf_parity": [
+    0.0,
+    0.0
+   ],
+   "ghost_de": [
+    0.756,
+    0.666
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0,
+    1.0
+   ],
+   "units_mean": [
+    1.0,
+    1.0
+   ],
+   "pieces_mean": [
+    3.0,
+    3.0
+   ],
+   "font_rate": [
+    1.0,
+    1.0
+   ],
+   "stray_area": [
+    0.2657,
+    0.2657
+   ],
+   "text_ratio": [
+    1.0,
+    1.0
+   ],
+   "colour_de": [
+    0.0,
+    0.0
+   ],
+   "centre_px": [
+    14.2,
+    14.2
+   ],
+   "visible_err": [
+    3.0,
+    3.0
+   ],
+   "keys_mean": [
+    18.375,
+    18.375
+   ],
+   "dl_ratio": [
+    4.247,
+    4.247
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "label_grid-1": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.00721,
+    0.00721
+   ],
+   "l1_kf": [
+    0.01919,
+    0.01919
+   ],
+   "kf_parity": [
+    6e-07,
+    6e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    1.0,
+    1.0
+   ],
+   "fragments_mean": [
+    1.0417,
+    1.0417
+   ],
+   "units_mean": [
+    1.0417,
+    1.0417
+   ],
+   "pieces_mean": [
+    1.125,
+    1.125
+   ],
+   "font_rate": [
+    0.4792,
+    0.4792
+   ],
+   "stray_area": [
+    0.5111,
+    0.5111
+   ],
+   "text_ratio": [
+    0.9933,
+    0.9933
+   ],
+   "colour_de": [
+    5.3004,
+    5.3004
+   ],
+   "centre_px": [
+    0.9062,
+    0.9062
+   ],
+   "visible_err": [
+    1.0,
+    1.0
+   ],
+   "keys_mean": [
+    14.7808,
+    14.7808
+   ],
+   "dl_ratio": [
+    6.28,
+    6.28
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    }
+   ]
+  },
+  "mk571": {
+   "scenes": [
+    1,
+    1
+   ],
+   "l1_recon": [
+    0.01646,
+    0.01646
+   ],
+   "l1_kf": [
+    0.01866,
+    0.01866
+   ],
+   "kf_parity": [
+    1e-07,
+    1e-07
+   ],
+   "ghost_de": [
+    null,
+    null
+   ],
+   "matched_rate": [
+    0.8,
+    0.8
+   ],
+   "fragments_mean": [
+    1.6,
+    1.6
+   ],
+   "units_mean": [
+    1.6,
+    1.6
+   ],
+   "pieces_mean": [
+    5.2,
+    5.2
+   ],
+   "font_rate": [
+    0.0,
+    0.0
+   ],
+   "stray_area": [
+    0.0,
+    0.0
+   ],
+   "text_ratio": [
+    0.9185,
+    0.9185
+   ],
+   "colour_de": [
+    2.02,
+    2.02
+   ],
+   "centre_px": [
+    8.0,
+    8.0
+   ],
+   "visible_err": [
+    79.25,
+    79.25
+   ],
+   "keys_mean": [
+    21.4615,
+    21.4615
+   ],
+   "dl_ratio": [
+    4.036,
+    4.036
+   ],
+   "shot_f1": [
+    1.0,
+    1.0
+   ],
+   "structure": [
+    {
+     "found": [
+      "drift",
+      "pop"
+     ],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "mask",
+      "shape-size",
+      "split",
+      "stagger"
+     ]
+    },
+    {
+     "found": [
+      "drift",
+      "pop"
+     ],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "mask",
+      "shape-size",
+      "split",
+      "stagger"
+     ]
+    }
+   ]
+  }
+ },
+ "gold": {
+  "e24": [
+   {
+    "scenes": [
+     [
+      "s1",
+      120,
+      269
+     ]
+    ],
+    "glyph_texts": [
+     [
+      "s1",
+      "e13",
+      23,
+      "Makemynextlaunchhappen."
+     ]
+    ]
+   },
+   {
+    "scenes": [
+     [
+      "s1",
+      120,
+      269
+     ]
+    ],
+    "glyph_texts": [
+     [
+      "s1",
+      "e13",
+      23,
+      "Makemynextlaunchhappen."
+     ]
+    ]
+   }
+  ]
+ },
+ "flags": []
+}

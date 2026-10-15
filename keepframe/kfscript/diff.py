@@ -107,6 +107,26 @@ def _mean(xs) -> float | None:
     return round(float(np.mean(xs)), 4) if xs else None
 
 
+def _family(s) -> str:
+    """A font family name as truth (file stem, "DMSans") and the IR (display name, "DM Sans") both spell it."""
+    return re.sub(r"\s+", "", s or "").casefold()
+
+
+def _units(irs) -> list:
+    """Each IR element's unit: the members of a scene's groups (joined transitively) count as one."""
+    root = {(sc.id, el.id): (sc.id, el.id) for el, _, sc in irs}
+    def find(k):
+        while root[k] != k:
+            k = root[k]
+        return k
+    for sc in {id(sc): sc for _, _, sc in irs}.values():
+        for g in sc.groups:
+            ks = [(sc.id, m) for m in g.members if (sc.id, m) in root]
+            for k in ks[1:]:
+                root[find(k)] = find(ks[0])
+    return [find((sc.id, el.id)) for el, _, sc in irs]
+
+
 def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = None, truth_chars: int | None = None) -> dict:
     tels = [e for e in truth["elements"] if e.get("boxes")]
     irs = [(el, start, sc) for sc, start in scenes for el in sc.elements if el.kind != "group"]
@@ -120,7 +140,8 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
         for r, c in zip(*linear_sum_assignment(-M)):
             if M[r, c] >= MATCH_IOU:
                 match[r] = c
-    rows, texts, colours, centres, vis = [], [], [], [], []
+    rows, texts, colours, centres, vis, fonts = [], [], [], [], [], []
+    unit = _units(irs)
     for r, e in enumerate(tels):
         # fragments: IR elements with at least half their box inside the truth box; pieces: the same over its life
         frags = sorted(_inside(irs, mids[r], tbox[r]))
@@ -128,7 +149,8 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
         life = {a, z, mids[r], *range(a, z + 1, max(1, (z - a) // 40))}   # ≤ 40 samples: short-lived pieces count too
         pieces = sorted(set().union(*(_inside(irs, f, e["boxes"][str(f)]) for f in life if str(f) in e["boxes"])))
         row = {"id": e["id"], "kind": e["kind"], "match": None, "iou": round(float(M[r].max()), 3) if irs else 0.0,
-               "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags], "pieces": len(pieces),
+               "fragments": len(frags), "fragment_ids": [irs[i][0].id for i in frags], "units": len({unit[i] for i in frags}),
+               "pieces": len(pieces),
                "piece_ids": [irs[i][0].id for i in pieces]}
         c = match.get(r)
         if c is not None:
@@ -145,6 +167,9 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
             if got and got.color and e.get("colour"):
                 row["colour_de"] = round(_de(e["colour"], got.color), 2)
                 colours.append(row["colour_de"])
+            if got and got.font and e.get("font"):
+                row["font"] = got.font.family_guess
+                fonts.append(float(_family(e["font"]) == _family(got.font.family_guess)))
         rows.append(row)
     by_id = {row["id"]: row for row in rows}
     els = {el.id: el for el, _, _ in irs}
@@ -155,10 +180,19 @@ def diff(truth: dict, scenes: list[tuple[Scene, int]], view_chars: int | None = 
             continue
         over_life = [els[i] for t in s["targets"] if t in by_id for i in by_id[t]["piece_ids"]]
         structure["found" if FOUND[s["type"]](over_life, s.get("params", {})) else "missed"].append(s["type"])
+    # stray: IR elements matching no truth row and lying (at their own mid frame) at least half inside no truth box
+    stray = 0.0
+    for i, (el, start, sc) in enumerate(irs):
+        f = start + (el.visible[0] + el.visible[1]) // 2
+        b = _ir_box(el, start, sc, f)
+        if b and i not in match.values() and not any(str(f) in e["boxes"] and _inter(b, e["boxes"][str(f)]) >= 0.5 * _area(b) for e in tels):
+            stray += _area(b) / (sc.size[0] * sc.size[1])
     n = len(tels)
     return {"truth_elements": n, "ir_elements": len(irs), "matched": len(match), "matched_rate": round(len(match) / n, 4) if n else None,
             "fragments_mean": _mean([row["fragments"] for row in rows if row["fragments"]]),
-            "over_split": sum(row["fragments"] > 1 for row in rows), "pieces_mean": _mean([row["pieces"] for row in rows if row["pieces"]]),
+            "over_split": sum(row["fragments"] > 1 for row in rows), "units_mean": _mean([row["units"] for row in rows if row["fragments"]]),
+            "pieces_mean": _mean([row["pieces"] for row in rows if row["pieces"]]),
+            "font_rate": _mean(fonts), "stray_area": round(stray, 4),
             "text_ratio": _mean(texts), "colour_de": _mean(colours),
             "centre_px": _mean(centres), "visible_err": _mean(vis), "structure": structure,
             "shots": shot_f1(truth, [start for _, start in scenes[1:]]),

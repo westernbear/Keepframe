@@ -17,7 +17,7 @@ from ..log import describe, get
 from . import videoasset
 from .background import PLATE_PATH
 from .gradient_fit import fit_gradient, fit_like, follow, measure, shrink, stop_range
-from .text import reveal_exclusion_boxes
+from .text import reveal_exclusion_boxes, text_cover
 
 log = get("keepframe.analyze")
 
@@ -36,6 +36,12 @@ INPAINT_RADIUS = 5
 FALLBACK_CONF = 0.5
 # Fail-soft codes (R52): what report messages and stage data say; the exception itself goes to the log only.
 PLATE_FAILED, MOVERS_FAILED, PLATE_CLASSIFY_FAILED = "plate_failed", "movers_failed", "plate_classify_failed"
+BACKGROUND_FAILED = "background_motion_failed"
+# B8b: an object track is light in the background video (a glow), not a sprite, when its median box covers BG_AREA
+# of the frame, its centroid stays within BG_RANGE of its median diagonal (a clipped glow scaling ±15 % moves it
+# about a third; a flying card more than one) and its outline is soft: median Lab gradient below BG_EDGE ΔE/px
+# (glows measured 0.2–0.3; card edges 13–16, the faintest a light bubble on a light ground at 1.8).
+BG_AREA, BG_RANGE, BG_EDGE = 0.04, 0.5, 1.0
 STATIC_P95 = 1.5          # temporal ΔE76 p95 below which the plate holds still
 GRADIENT_P95 = 1.5        # a static plate within this of its fitted gradient (at fit size) is that gradient …
 GRADIENT_FULL_P95 = 3.0   # … when it also stays within this at ≤ 640 px (R19, without its 3×3 blur)
@@ -427,6 +433,64 @@ def classify(model: PlateModel, stats: dict, frames, sample, occ, try_keys: bool
     return replace(model, kind="image", stats=st)
 
 
+def _edge(frame, bbox, mask, pad=4) -> float:
+    """Median Lab gradient (ΔE per px, after a σ=1 blur) on a mask's outline (holes filled) ± 2 px, seen in a crop `pad`
+    px wider than its box so an outline on the box edge counts."""
+    from scipy.ndimage import binary_fill_holes
+    H, W = frame.shape[:2]
+    x0, y0, x1, y1 = bbox
+    X0, Y0, X1, Y1 = max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad)
+    m = np.zeros((Y1 - Y0, X1 - X0), np.uint8)
+    m[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0] = binary_fill_holes(mask.astype(bool))
+    lab = cv2.GaussianBlur(cv2.cvtColor(np.ascontiguousarray(frame[Y0:Y1, X0:X1]).astype(np.float32) / 255, cv2.COLOR_RGB2Lab), (0, 0), 1.0)
+    g = np.sqrt(sum(cv2.Sobel(lab[..., c], cv2.CV_32F, 1, 0) ** 2 + cv2.Sobel(lab[..., c], cv2.CV_32F, 0, 1) ** 2 for c in range(3))) / 8
+    k = np.ones((5, 5), np.uint8)
+    on = (cv2.dilate(m, k) > 0) & ~(cv2.erode(m, k, borderValue=0) > 0)
+    return float(np.median(g[on])) if on.any() else float("inf")
+
+
+def _holds_text(per_frame: dict, text_tracks) -> bool:
+    """B8b2: half a text box or more lies inside its box on a common frame: the text's surface (a card or a field with a
+    soft edge, as e24's prompt bar, whose glyph timing is measured against it), not light in the background."""
+    for t in text_tracks or ():
+        for f, b in t.boxes.items():
+            if f in per_frame:
+                (x0, y0, x1, y1), (X0, Y0, X1, Y1) = b.bbox, per_frame[f][0]
+                if max(0, min(x1, X1) - max(x0, X0)) * max(0, min(y1, Y1) - max(y0, Y0)) >= 0.5 * max(1, (x1 - x0) * (y1 - y0)):
+                    return True
+    return False
+
+
+def _soft_in_place(frames, per_frame: dict, text_tracks=()) -> bool:
+    """B8b: soft light in place (BG_AREA, BG_RANGE; BG_EDGE on ≤ 8 sampled frames) that holds no text (B8b2),
+    `per_frame` {frame: (bbox, mask)}."""
+    H, W = frames.shape[1:3]
+    fs = sorted(per_frame)
+    if _holds_text(per_frame, text_tracks):
+        return False
+    bb = np.array([per_frame[f][0] for f in fs], float)
+    wh, c = bb[:, 2:] - bb[:, :2], (bb[:, :2] + bb[:, 2:]) / 2
+    if np.median(wh.prod(1)) < BG_AREA * W * H or np.hypot(*(c.max(0) - c.min(0))) > BG_RANGE * np.median(np.hypot(*wh.T)):
+        return False
+    return np.median([_edge(frames[f], *per_frame[f]) for f in fs[::max(1, len(fs) // 8)]]) < BG_EDGE
+
+
+def background_tracks(frames, obj_tracks, text_tracks=()) -> list[int]:
+    """B8b: ids of the object tracks that are soft light in place: they belong to the background video, not to a sprite."""
+    return [t.id for t in obj_tracks or () if _soft_in_place(frames, {f: (r.bbox, r.mask) for f, r in t.regions.items()}, text_tracks)]
+
+
+PAD_SHARE = 0.02   # B8a2: a text's box in a pad frame holds something when this share of it is ΔE76 > MASK_DE off the still plate
+
+
+def _present(frame, still, box) -> bool:
+    """B8a2: something is in `box` (a title fading in or out), not only the background the still plate stands for."""
+    from .movers import MASK_DE
+    H, W = still.shape[:2]
+    x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(W, box[2]), min(H, box[3])
+    return x1 > x0 and y1 > y0 and float(np.mean(delta_e(srgb8_to_lab(frame[y0:y1, x0:x1]), srgb8_to_lab(still[y0:y1, x0:x1])) > MASK_DE)) >= PAD_SHARE
+
+
 def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateModel:
     """A video candidate as a video plate: every frame's occupancy (movers included) in a temporary memmap, then
     fill_video_plate behind the still plate. Without a VP9 encoder: the still image and its message; on any error,
@@ -519,7 +583,7 @@ def _movers(frames, sample, occ, raw, counts, plate, rbf, boxes, reveal, text_tr
 
 
 def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf, bg_override, pass1,
-                obj_tracks=None, frames_out=None, try_keys=False) -> PlateModel:
+                obj_tracks=None, frames_out=None, try_keys=False, fps: float = 30.0) -> PlateModel:
     """`obj_tracks` (the tracking output) enables the mover search; a plate that is already flat has none.
     `frames_out` (FRAMES_PATH) enables video plates; `try_keys`: see classify."""
     n, H, W = frames.shape[:3]
@@ -563,7 +627,20 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         model.stats["message"] = f"plate classification skipped ({PLATE_CLASSIFY_FAILED})"
         failed = True
     if model.stats.get("video_candidate") and frames_out is not None:
-        model = _video_plate(model, frames, rbf, boxes, reveal, frames_out)
+        life, near = text_cover(text_tracks, n, fps)   # B8a: a fading title out of the background video too …
+        near = {f: [b for b in bs if _present(frames[f], model.image, b)] for f, bs in near.items()}   # … B8a2: while it shows
+        try:   # B8b: a glow (object track or mover) stays in the video's pixels and becomes no sprite (pipeline)
+            glow = background_tracks(frames, obj_tracks, text_tracks)
+            soft = [m.id for m in model.movers or () if _soft_in_place(frames, m.frames, text_tracks)]
+        except Exception as e:   # fail soft: every track and mover stays a sprite
+            log.warning("background tracks failed: %s", describe(e, trace=True))
+            glow, soft, model.stats["background_message"] = [], [], f"glow tracks kept as sprites ({BACKGROUND_FAILED})"
+        drop = {(f, r.bbox, r.label) for t in obj_tracks or () if t.id in glow for f, r in t.regions.items()}
+        keep = [[r for r in rs if (f, r.bbox, r.label) not in drop] for f, rs in enumerate(rbf)] if drop else rbf
+        lit = replace(model, movers=[m for m in model.movers or () if m.id not in soft])
+        model = replace(_video_plate(lit, frames, keep, boxes, {f: reveal.get(f, []) + life.get(f, []) + near.get(f, []) for f in range(n)},
+                                     frames_out), movers=model.movers)
+        model.stats.update({k: v for k, v in (("background_tracks", glow), ("background_movers", soft)) if v})
     t.append(time.perf_counter())
     if model.kind == "color":   # a flat colour never shows the filled pixels
         model.synthetic = None

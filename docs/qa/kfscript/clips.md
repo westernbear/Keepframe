@@ -203,3 +203,35 @@ The synthetic A/B clips had a median view of 19 228 chars, so the budget rarely 
 - The ig2 globe scene `s2` begins at the cut; its sprites no longer cover the scroll scene.
 
 The real-clip A/B on these projects is in `ab-real.md`.
+
+## 5. After B2/B5/B8/B9 (`fixes3.md`), report only
+
+**Run.**
+- Gate: `keepframe gate-m2-real --max-frames 150 --render-check`, one clip at a time (`eval/out/clips-after2.sh`), at `686e914` (code as `b6d3a4a`).
+- kf-script fidelity: per scene, as in §3.
+- Measurements: `eval/out/clips5.json` (not committed: eval outputs).
+- Nothing was tuned on these clips. The fixes were accepted on the synthetic round trip and gold references (`fixes3.md`). Section 1's read is the reference.
+
+| Clip | Scenes | Elements §4 → §5 | mean_l1 | render_l1 | **L1 kf** §4 → §5 (frame-weighted) | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | s1 f0–149 | 55 → 50 | 0.0636 | 0.0698 | 0.0722 → **0.0710** | f144 0.148 → 0.155 | 0.000002 | 903 |
+| ig1 | s1 f0–25, s2 f26–149 | 103 → 98 | 0.0286 | 0.0310 | 0.0318 → **0.0330** (s1 0.0261, s2 0.0344) | s2 f112 0.107 → 0.110 | ≤ 0.0000013 | 532 |
+| ig2 | s1 f0–58, s2 f59–149 | 76 → 60 | 0.0382 | 0.0385 | 0.0392 → **0.0412** (s1 0.0560 → 0.0626, s2 0.0283 → 0.0273) | s1 f4 0.073 → f12 0.084 | ≤ 0.000044 | 396 |
+| ig3 | s1 f0–149 | 63 → 64 | 0.0169 | 0.0235 | 0.0244 → **0.0250** | f112 0.068 → 0.068 | 0.000001 | 190 |
+
+The shot splits are unchanged from §4.
+
+**The four items, against the read and measurement:**
+
+| # | Item | Read / measurement | IR after `fixes3` | Status |
+|---|---|---|---|---|
+| B2 | ig3 "You just speak" → "You just" + mic icon | The word is replaced by the mic button (read f25, f50) | e1 "You just speak" f2–40, then e6 "You just" f41–72 (before: one text f2–72) | **fixed** |
+| B5 | fragmented titles | "Build" one word (envato1); the scrolling "A Weekend Away" one title (ig2) | Unchanged: "B" f11–68 + "sull" f18–40; "eel", "e", "ken", "n", with no group. ig2's pieces differ by 4.9 px/frame, measured over the new 0.1 s steps at 41 px/frame; B5a2's grouping needs ≤ 2. envato1's left edges agree within 1.6 px/frame, but another gate keeps the pair apart. Not diagnosed further, so as not to tune on the clip. | **not fixed** |
+| B8 | glow sprites, ghost titles | envato1: purple/orange glow at the bottom; ghost "Build" in the background video at f0 (§3) | Moved into the background video: envato1 tracks 2, 11, 13, 24, 30; ig1 4, 14 / 3, 29, 32, 40, 41; ig2 1, 6, 82 / 3, 7. On envato1, tracks 2 and 30 are the bottom glow (correct), but **11, 13 and 24 are "Build"'s own letters while they blur in** (f11–17, f56–59). They are soft and in place, and no text box covers them yet. Residue in envato1's title read boxes rose (Build 10.25 → 13.60), but those boxes cover most of the frame and now hold the glow too, so the number does not separate glow from ghost. ig2 s1 renders worse: its title shows twice at f12–20. Its background video holds the same title ink as before (red share 0.104 in both), so the doubling comes from sprites. Cause not established (stage caches pruned). | **mixed**: glows moved (correct); blurred letters moved too (new defect) |
+| B9 | fonts past the work cap | — | ig1 s2: texts kept sans-serif 19 → **4**, 17 borrow a twin's family. envato1, ig2, ig3: no text reached the cap. | **fixed** (the borrowed families' correctness is not measurable here) |
+
+**Disagreements recorded, not resolved:**
+- B8b's soft-region rule also takes blurred letters before OCR reads them. The B8b2 text guard does not see them, because no text box exists yet. Upgrade path: hold out any soft region that a text track later occupies (its box within a short window), and give the synthetic glow_title a blur-in that is not yet read.
+- ig2 s1's doubled title (L1 kf +0.0066) is unexplained.
+
+The real-clip A/B on these projects is `ab-real2.md`.

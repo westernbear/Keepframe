@@ -1840,6 +1840,7 @@ class TextJob:
     stroke_ratio: float | None = None
     centres: list | None = None
     prior: object = None              # the first guess (FontGuess) kept when the text is not matched
+    colour: str | None = None         # the analysed fill (#rrggbb): one of the measures of a text's style
 
 
 def _copy_guess(job: TextJob, guess, registry: FontRegistry) -> tuple | None:
@@ -1856,10 +1857,15 @@ def _copy_guess(job: TextJob, guess, registry: FontRegistry) -> tuple | None:
     return _guess(fits, conf, (guess.fallback, guess.fallback_weight, guess.fallback_scale), registry, job.prior)
 
 
+TWIN_CAP, TWIN_DE = 1.25, 20.0   # one style: cap heights within 1.25x, fills within ΔE 20 (titles.COLOUR_DE), stroke ratios within RATIO_TOL
+
+
 def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: int | None = None) -> dict:
-    """A scene's texts matched one after another — largest cap height first, ties in the given order — until
-    `max_renders` candidate renders: per key ("ok", FontGuess, layout), ("error", MATCH_FAILED) or ("skipped",
-    WORK_CAP) — codes only: they reach stage data and report messages; exception details are logged, paths cut.
+    """A scene's texts matched one after another — largest cap height first, but one text of each style (`twin`:
+    cap height, fill, stroke ratio) before the rest, ties in the given order — until `max_renders` candidate renders:
+    per key ("ok", FontGuess, layout), ("error", MATCH_FAILED) or ("skipped", WORK_CAP). A skipped text with a
+    matched twin borrows its family and weight: ("skipped", WORK_CAP, FontGuess at its own size and confidence
+    ≤ 0.5, the twin's key), the family being the one most of its matched twins got. Codes only: they reach stage data and report messages; exception details are logged.
     Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
     (same string) is matched on its own pixels with less work when its prefilter agrees with the first match
     (`_copy_guess`), else in full."""
@@ -1871,8 +1877,29 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
         except Exception:
             return 0.0
 
+    from ..ir.colour import delta_e, hex_to_rgb8, srgb8_to_lab
+
+    caps = [cap(j) for j in jobs]
+
+    def twin(a: int, b: int) -> bool:
+        ja, jb = jobs[a], jobs[b]
+        if min(caps[a], caps[b]) <= 0 or max(caps[a], caps[b]) > TWIN_CAP * min(caps[a], caps[b]):
+            return False
+        if ja.stroke_ratio and jb.stroke_ratio and abs(ja.stroke_ratio - jb.stroke_ratio) > RATIO_TOL * max(ja.stroke_ratio, jb.stroke_ratio):
+            return False
+        try:
+            lab = lambda c: srgb8_to_lab(np.array(hex_to_rgb8(c)))
+            return not (ja.colour and jb.colour and float(delta_e(lab(ja.colour), lab(jb.colour))) > TWIN_DE)
+        except (TypeError, ValueError):   # a fill that is not #rrggbb does not tell styles apart
+            return True
+
     max_renders = SCENE_RENDERS if max_renders is None else max_renders
-    order = sorted(range(len(jobs)), key=lambda i: (-cap(jobs[i]), i))
+    by_cap = sorted(range(len(jobs)), key=lambda i: (-caps[i], i))
+    reps: list[int] = []
+    for i in by_cap:   # the scene's styles first, so a text past the cap finds a matched twin
+        if not any(twin(i, r) for r in reps):
+            reps.append(i)
+    order = reps + [i for i in by_cap if i not in set(reps)]
     counter = [0]
     token = _RENDERS.set(counter)
     out: dict = {}
@@ -1903,4 +1930,16 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
     finally:
         _RENDERS.reset(token)
         flush_cache()
+    done = [i for i, j in enumerate(jobs) if out.get(j.key, ("",))[0] == "ok"]
+    for i, j in enumerate(jobs):
+        if out.get(j.key) == ("skipped", WORK_CAP) and (twins := [d for d in done if twin(i, d)]):
+            # B9b: the family most of its matched twins got (a small text's own match is noisy; ties: more confidence),
+            # from the nearest twin with that family
+            fam = lambda d: out[jobs[d].key][1].family_guess
+            best = max({fam(d) for d in twins}, key=lambda f: (sum(fam(d) == f for d in twins),
+                                                             sum(out[jobs[d].key][1].confidence for d in twins if fam(d) == f), f))
+            d = min((d for d in twins if fam(d) == best), key=lambda d: abs(math.log(caps[d] / caps[i])))
+            g = out[jobs[d].key][1]
+            out[j.key] = ("skipped", WORK_CAP, g.model_copy(update={"size_px": g.size_px * caps[i] / caps[d],
+                                                                    "confidence": min(0.5, g.confidence)}), jobs[d].key)
     return out

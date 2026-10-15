@@ -1,0 +1,22 @@
+{
+  "Q1": "yes",
+  "Q2": "no",
+  "Q3": 1.13,
+  "Q4": ["e32"],
+  "Q5": "linear",
+  "Q6": "sull",
+  "Q7": "#e3dcf3",
+  "Q8": "e10",
+  "Q9": 0.18,
+  "Q10": "e3",
+  "Q11": 0.46,
+  "Q12": ["e3", "e5"],
+  "Q13": ["e8", "e13", "e16", "e20", "e21", "e23", "e24", "e25", "e27"],
+  "Q14": ["e32", "e33", "e35"],
+  "Q15": ["e42", "e43", "e47"],
+  "Q16": {"element": "e3", "property": "text"},
+  "Q17": {"element": "e3", "property": "timing"},
+  "Q18": {"element": "e8", "property": "color"},
+  "Q19": {"element": "e32", "property": "text"},
+  "Q20": {"element": "e42", "property": "text"}
+}
