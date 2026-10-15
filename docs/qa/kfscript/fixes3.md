@@ -85,3 +85,4 @@ The template was changed, not any rule (`2915676`). The headline is now tracked 
 
 | Id | Commit | Change | Target before → after | Other changes | Decision |
 |---|---|---|---|---|---|
+| B9 | `911604e` | Past the work cap, a text borrows the family and weight of its nearest matched style twin (cap height within 1.25×, fill within ΔE 20, stroke ratio within `RATIO_TOL`), at its own size and confidence ≤ 0.5. One text per style is matched first. | label_grid font rate 0.458 → **0.479**. All 11 capped texts borrowed, so no text keeps sans-serif. But the 16 px labels' own matches spread over nine families, so nearest-twin borrowing mostly copied a wrong guess (Unbounded 6, Geist 4, Poppins 4). | label_grid L1 kf 0.0194 → 0.0192. Nothing else moved. e24 `e13` keeps 23 glyphs. | **accepted** (the target moved, no flag); the weak effect leads to B9b |
