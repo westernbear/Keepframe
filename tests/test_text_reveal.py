@@ -350,6 +350,9 @@ def test_text_cover_spans_gaps_and_pads_the_life():
     assert sorted(life) == list(range(10, 15)) and sorted(near) == [*range(1, 10), *range(15, 24)]
     assert life[12] == [(120, 50, 220, 90)] and near[1] == [(100, 50, 200, 90)] and near[23] == [(140, 50, 240, 90)]
     assert max(text_module.text_cover([t], n=16)[1]) == 15   # clipped to the scene
+    build = TextTrack(2, {10: TextBox(10, "H", (100, 50, 140, 90), 0.9), 20: TextBox(20, "Hello", (100, 50, 300, 90), 0.9)}, "Hello")
+    life, near = text_module.text_cover([build], n=30)   # B8d: a left-to-right build is covered at its full width
+    assert life[10] == [(100, 50, 300, 90)] and life[15] == [(100, 50, 300, 90)] and near[5] == [(100, 50, 300, 90)]
 
 
 def test_a_pad_box_is_kept_out_only_while_something_shows():
