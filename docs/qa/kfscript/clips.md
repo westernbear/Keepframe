@@ -235,3 +235,28 @@ The shot splits are unchanged from §4.
 - ig2 s1's doubled title (L1 kf +0.0066) is unexplained.
 
 The real-clip A/B on these projects is `ab-real2.md`.
+
+## 6. After B8c/B8d/B8d2/B11 (`fixes4.md`), report only
+
+**Run.** `eval/out/clips-after4.sh`: the gate one clip at a time at `0fcb341` (code as `de74495`), kf fidelity per scene. Measurements: `eval/out/clips7.json` (not committed). Nothing was tuned on these clips.
+
+| Clip | Elements §5 → §6 | mean_l1 | render_l1 §5 → §6 | **L1 kf** §5 → §6 | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|
+| envato1 | 50 → 54 | 0.0696 | 0.0698 → 0.0694 | 0.0710 → **0.0742** | f144 0.155 → 0.149 | 0.000001 | 794 |
+| ig1 | 98 → 98 | 0.0288 | 0.0310 → 0.0312 | 0.0330 → 0.0332 (s1 0.0261, s2 0.0347) | s2 f112 0.110 → 0.111 | ≤ 0.000001 | 439 |
+| ig2 | 60 → 72 | 0.0364 | 0.0385 → 0.0357 | 0.0412 → **0.0390** (s1 0.0626 → **0.0572**, s2 0.0273) | s1 f12 0.084 → 0.072 | ≤ 0.000044 | 382 |
+| ig3 | 64 → 64 | 0.0169 | 0.0235 → 0.0235 | 0.0250 → 0.0250 | f112 0.068 | 0.000001 | 204 |
+
+**The two defects of §5:**
+
+| # | Item | IR after `fixes4` | Status |
+|---|---|---|---|
+| B8 | envato1's "Build" letters moved into the background video while they blur in | Only one envato1 region still goes into the video (track 11, 5 before). Ghost residue in the title read boxes: "Build" 13.60 → **9.93**, "Build SaaS Promo" 13.51 → **9.51**, second-shot title 18.01 → **12.82**. The first two are now below §4's values (10.25, 8.32, 13.24) except "Build SaaS Promo". | **fixed** |
+| ig2 | doubled scrolling title (s1 L1 kf +0.0066) | No 3D candidate in ig2 s1 (B11). s1 has 55 elements again (§4: 58) and L1 kf 0.0572 (before fixes3: 0.0560) | **fixed** |
+
+**New disagreement, recorded, not resolved: envato1 L1 kf +0.003.**
+- Per frame (every 4th) against §5, f0–56 improve (−0.001 to −0.014) and f140 improves −0.042.
+- But f76–96 (+0.005 to +0.019) and f112–136 (+0.018 to +0.030) get worse.
+- **f112–136:** sprite `o34` spans f111–149, across envato1's cut at f140, which is not detected (§4 item 1). Its single texture now holds the second shot's letters (alpha coverage 0.10 → 0.34), because those letters are no longer in the background video for matting to remove. So the letters show from f111.
+- **f76–96:** the words of "Build SaaS Promo" that are still blurred before their reads are kept out of the video (B8d, as intended), and the text element does not draw them yet.
+- The cause of the f112–136 part is the missing shot split, not B8. Upgrade path: split envato1 at f140 (the content test in `_content` takes the border colour for the ground), or cut sprites at a detected cut.

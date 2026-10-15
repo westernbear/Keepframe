@@ -57,3 +57,15 @@ Two other ideas were checked and set aside:
 ## Net effect (`final-vs-base.json`: `rt4-base` → `rt4-b8d2`, analyses at `de74495`)
 
 No flags. Only glow_letters moved: ghost ΔE 1.69 → **0.885**, stray area 0.0012 → 0.175 (explained under B8c). Gold: mk571 unchanged; e24's `e13` keeps its 23-glyph typing.
+
+## Final checks (`0fcb341`)
+
+- Browser suite: 165 passed, 1 skipped.
+- Fast suite: 2944 passed, 2 skipped, 1 failed: `test_scene_of_44_texts_within_budget`, 21.5 s against a 20 s budget. This round touched no font code. Timed again, alternating, on the same machine minutes later:
+  - the code before B9: 20.4 and 19.5 s;
+  - the head: 21.0 and 19.2 s.
+
+  Earlier the same day both ran 18–19 s. The machine had slowed (load average 1.6 with no job of this session running). The budget sits at this container's edge for both versions. It is not a regression, and the test was left as it is.
+- Real clips (report only): `clips.md` §6.
+  - Both defects are fixed: envato1's letters are out of the background video, and ig2's doubled title is gone (s1 L1 kf 0.0626 → 0.0572).
+  - envato1's L1 kf rose 0.0710 → 0.0742. That comes from a sprite crossing its undetected cut (f140), a recorded disagreement.
