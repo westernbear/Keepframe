@@ -480,12 +480,14 @@ def text_cover(tracks: list[TextTrack], n: int, fps: float = 30.0) -> tuple[dict
             continue
         xs = np.array([t.boxes[f].bbox for f in fs], float)
         # B8d: a line whose box grows (letters still blurred beyond its read) is covered at its full width, widened on
-        # each side in proportion to how far that edge moved over the life (a left-to-right build widens rightwards)
-        dl, dr = abs(xs[-1, 0] - xs[0, 0]), abs(xs[-1, 2] - xs[0, 2])
-        right, full = dr / (dl + dr) if dl + dr else 0.5, float((xs[:, 2] - xs[:, 0]).max())
+        # each side in proportion to how far that edge moved up to its widest frame (a left-to-right build widens rightwards)
+        # B8d2: only up to its widest frame: a line that shrinks or exits after that keeps its own box
+        widest = int(np.argmax(xs[:, 2] - xs[:, 0]))
+        dl, dr = abs(xs[widest, 0] - xs[0, 0]), abs(xs[widest, 2] - xs[0, 2])
+        right, full = dr / (dl + dr) if dl + dr else 0.5, float(xs[widest, 2] - xs[widest, 0])
         for g in range(max(0, fs[0] - pad), min(n, fs[-1] + pad + 1)):
             x0, y0, x1, y1 = (float(np.interp(g, fs, xs[:, k])) for k in range(4))
-            grow = full - (x1 - x0)
+            grow = full - (x1 - x0) if g < fs[widest] else 0.0
             box = tuple(int(round(v)) for v in (x0 - grow * (1 - right), y0, x1 + grow * right, y1))
             (life if fs[0] <= g <= fs[-1] else near).setdefault(g, []).append(box)
     return life, near
