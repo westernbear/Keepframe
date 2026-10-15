@@ -95,3 +95,23 @@ The template was changed, not any rule (`2915676`). The headline is now tracked 
 | B9b | `55c3b9e` | A text past the work cap takes the family most of its matched twins got (ties: summed confidence), from the nearest twin with that family. | label_grid font rate 0.479 → **0.604** (6 more labels in their true family) | label_grid L1 kf +0.0002 (noise). Nothing else moved. e24 as in the B5a run. | **accepted** |
 | B8b2 | `43164f9` | A soft region that holds half a text box or more on a common frame is that text's surface, so it stays a sprite. | **e24 gold restored:** `e13` "Makemynextlaunchhappen." 23 glyphs again; the spurious 29-glyph line is gone. | No synthetic case moved: glow_title's and hard_cut's glows hold no text and still go to the video (stray 0.053, 0.031). | **accepted** |
 | B8a2 | `2464546` | In the 0.3 s pads around a text's reads, its box is kept out of the video only while something shows in it: ≥ 2 % of the box more than ΔE76 8 off the still plate. Keeping out only the changed pixels was tried first; it left a patchwork (glow_title 0.86) and was dropped before any run. | Ghost ΔE hard_cut 1.285 → **0.602** (baseline 0.561); glow_title stays 0.685 (baseline 0.756) | Nothing else moved. e24 keeps 23 glyphs. | **accepted** |
+| B5a2 | `7f18152` | Pieces merge only when the test before B5a joins them. A group that only B5a's steps or edges joined is bound as one `text_fragments` group around its merges and pieces. | Units: big_scroll 2 → **1** ("Wc" + "ork" one group), scroller 1.50 → **1.12** | Against the B8a2 run, which still carried B5a's merges: scroller L1 kf 0.0770 → 0.0621 (B5a's regression gone), but **big_scroll 0.0583 → 0.0745 (flag)**, matched 1 → 0, because its pieces are no longer merged. Against the series without B5a, both render exactly as before (big_scroll 0.0745, scroller 0.0621) and only the units changed. mk571's B5a gain (text 1.00) stays: its pieces join under the old test. e24 keeps 23 glyphs. | **accepted**, with the flag recorded: it is B5a's merge gain given back, not a regression against the code without B5a. No rule was found that keeps big_scroll's merge but not scroller's misread (big_scroll's merged read "Wor!" was wrong too). |
+
+## Net effect (`final-vs-base.json`: `rt2-base3` → `rt3-b5a2`, analyses at `7f18152`)
+
+No flags against the baseline: parity, L1 kf on every case, and shot F1 all hold. Gold: mk571 L1 kf 0.0187 → 0.0180 and text 0.92 → 1.00; e24's `e13` keeps its 23-glyph typing.
+
+| Defect | Case | Baseline → final |
+|---|---|---|
+| B2 (a text that changes) | word_swap | matched 0.33 → **1.00**, text 0.50 → **1.00**, visible error 42 → **0**, L1 kf 0.0032 → 0.0018 |
+| | scroller | L1 kf 0.0679 → **0.0621** ("CLEAR" scrolls out of "STEPS CLEAR") |
+| B5 (title pieces) | big_scroll | units 2 → **1** (grouped, not merged), L1 unchanged |
+| | scroller | units 1.50 → **1.12** |
+| B8 (glows, ghosts) | glow_title | stray area 0.266 → **0.053**, ghost ΔE 0.756 → **0.685**, L1 kf 0.0092 → **0.0059**, pieces 3 → 2 |
+| | hard_cut | stray area 0.768 → **0.031**, L1 kf 0.0063 → **0.0056**, ghost ΔE 0.561 → 0.602 (+0.04) |
+| B9 (fonts past the cap) | label_grid | font rate 0.458 → **0.604**; no capped text keeps sans-serif |
+
+**Not done, with reasons:**
+- B5b, B5c and B5d, as planned. There is still no `merge_failed` anywhere.
+- A merged title's string re-read stays as it is. That re-read is where B5a broke.
+- The title guard compares raster stills, not the live-text render the pages use. That is why it kept scroller's bad merges. Upgrade path: guard on the rendered text.
