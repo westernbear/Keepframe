@@ -326,8 +326,9 @@ def _texture_messages(props: dict, ids: dict) -> list[str]:
         if p.get("font_error") or p.get("font_skipped"):
             family = getattr(p.get("font"), "family_guess", None)
             family = family if isinstance(family, str) and FONT_FAMILY_RE.fullmatch(family) else "sans-serif"
+            took = f"took {family} from {ids.get(p['font_borrowed'], p['font_borrowed'])} (font_borrowed)" if p.get("font_borrowed") else f"kept {family}"
             out.append(f"{ids[k]}: font match failed; kept {family}" if p.get("font_error")
-                       else f"{ids[k]}: font not matched (scene work cap reached); kept {family}")
+                       else f"{ids[k]}: font not matched (scene work cap reached); {took}")
         if p.get("merge_note"):   # a merge that failed, or that the guard undid (it rendered worse)
             what = "undone" if p["merge_note"] == MERGE_WORSE else "failed"
             out.append(f"{ids[k]}: title merge {what} ({p['merge_note']}); kept as measured")

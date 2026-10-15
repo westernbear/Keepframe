@@ -1001,6 +1001,9 @@ def test_font_and_style_failures_reach_clients_as_codes_only(tmp_path, monkeypat
                                                        "e1: font match failed; kept Inter"]
     skipped = {"o1": {"font_skipped": "work_cap", "font": None}}
     assert _texture_messages(skipped, {"o1": "e1"}) == ["e1: font not matched (scene work cap reached); kept sans-serif"]
+    borrowed = {"t2": {"font_skipped": "work_cap", "font_borrowed": "t1", "font": FontGuess(family_guess="Manrope", size_px=18)}}
+    assert _texture_messages(borrowed, {"t1": "e1", "t2": "e2"}) == [
+        "e2: font not matched (scene work cap reached); took Manrope from e1 (font_borrowed)"]   # B9
 
 
 def test_check_log_tail_starting_mid_path_leaks_no_fragment(monkeypatch, caplog):
