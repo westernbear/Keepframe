@@ -273,6 +273,13 @@ def _cached_plate(sd: Path) -> PlateModel | None:
     return model if model is not None and isinstance(model.movers, list) else None
 
 
+def _foreground(obj_tracks, model: PlateModel):
+    """B8b: the object tracks that are not light inside the background video (stats["background_tracks"]); a plate that
+    is not a video (its encode failed) keeps them all."""
+    glow = set(model.stats.get("background_tracks") or ()) if model.kind == "video" else set()
+    return [t for t in obj_tracks if t.id not in glow]
+
+
 def _unclaimed(obj_tracks, shape_tracks, movers):
     """The object and shape tracks no mover claimed as its fragments."""
     objs = {i for m in movers for i in m.claimed}
@@ -524,7 +531,10 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
     t0 = time.perf_counter()
     kept, failed = [], []
     behind = plate if plate is not None else np.full((*frames.shape[1:3], 3), bg, np.uint8)
+    glow = set(plate_model.stats.get("background_movers") or ()) if plate_model is not None and plate_model.kind == "video" else set()
     for m in movers:   # a mover that cannot become a sprite is dropped (its fragments come back), never the analysis
+        if m.id in glow:   # B8b: light inside the background video: no sprite, its fragments stay claimed
+            continue
         try:
             props[f"m{m.id}"] = mover_props(m, frames, behind, n_frames)
             kept.append(m)
@@ -535,7 +545,7 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         props["_movers_message"] = "; ".join(f"mover m{m.id} dropped ({MOVER_DROPPED})" for m in failed)
     fragments = {f"o{i}" for m in (*failed, *dropped) for i in m.claimed} \
         | {f"s{i}" for m in (*failed, *dropped) for i in m.claimed_shapes}
-    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, kept)
+    obj_tracks, shape_tracks = _unclaimed(obj_tracks, shape_tracks, kept + [m for m in movers if m.id in glow])
     if movers:
         log.info("sprites movers=%s kept=%s %.2fs", len(movers), len(kept), time.perf_counter() - t0)
         t0 = time.perf_counter()
@@ -885,6 +895,7 @@ def analyze_scene_frames(
     report_stage("plate")
     model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
     bg, plate = _plate_inputs(model)
+    obj_tracks = _foreground(obj_tracks, model)
     t = _stage_done("plate", t)
     report_stage("solids")
     notes: list[str] = []
@@ -902,7 +913,7 @@ def analyze_scene_frames(
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), model.stats.get("background_message"), *notes,
                             props.get("_message"), props.get("_movers_message"), props.get("_titles_message"),
                             props.get("_textures_message"), props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)
@@ -1117,6 +1128,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
         model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate,
                                               opts, sd, fresh=boundary <= STAGES.index("regions"))
     bg, plate = _plate_inputs(model)
+    obj_tracks = _foreground(obj_tracks, model)
     t = _stage_done("plate", t)
     redo = rebuilt or not (sd / "stages" / "solids.pkl").exists()   # solids and sprites depend on the plate and movers
     notes: list[str] = []
@@ -1142,7 +1154,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     elements, raws = _elements_from_props(props, sd, ids)
     (sd / "stages" / "ids.json").write_text(json.dumps(ids, indent=2))
     scene = Scene(id=scene_id, size=(W, H), fps=fps, frames=n, background=background_for(model, sd), elements=elements)
-    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), *notes,
+    messages = [scrub_paths(m) for m in (msg, model.stats.get("message"), model.stats.get("movers_message"), model.stats.get("background_message"), *notes,
                             props.get("_message"), props.get("_movers_message"), props.get("_titles_message"),
                             props.get("_textures_message"), props.get("_style_message")) if m]
     messages += _mover_messages(props, ids) + _texture_messages(props, ids)

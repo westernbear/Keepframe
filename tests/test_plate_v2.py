@@ -234,3 +234,55 @@ def test_plate_v2_speed():
     took = time.perf_counter() - t
     assert model.kind == "image" and len(model.stats["holes"]) == 5
     assert took < 8.0, took
+
+
+def test_a_soft_glow_in_place_is_background_and_a_card_is_not():
+    """B8b: a soft blob pulsing in place goes to the background video; a sharp card of the same size stays a sprite, and
+    so does the same blob flying across. Only a video plate drops the glow's track from the sprites."""
+    from types import SimpleNamespace
+    from keepframe.analyze.pipeline import _foreground
+    from keepframe.analyze.plate import background_tracks
+    from keepframe.analyze.regions import Region
+    from keepframe.analyze.tracking import ObjectTrack
+    n, H, W = 8, 120, 200
+    yy, xx = np.mgrid[:H, :W]
+
+    def scene(paint):
+        frames = np.full((n, H, W, 3), 12, np.uint8)
+        regions = {}
+        for f in range(n):
+            a = paint(f)
+            frames[f] = np.clip(12 + a[..., None] * np.array([150.0, 60.0, 200.0]), 0, 255).astype(np.uint8)
+            m = a > 0.1
+            ys, xs = np.nonzero(m)
+            x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+            regions[f] = Region(f, 1, (0.0, 0.0, 0.0), (int(x0), int(y0), int(x1), int(y1)), int(m.sum()),
+                                (float(xs.mean()), float(ys.mean())), m[y0:y1, x0:x1])
+        return frames, [ObjectTrack(7, regions)]
+
+    glow = lambda cx: lambda f: np.exp(-((xx - cx(f)) ** 2 + (yy - 60) ** 2) / (2 * (40 * (1 + 0.1 * (f % 3))) ** 2))
+    card = lambda f: ((abs(xx - 100) < 35) & (abs(yy - 60) < 35)).astype(float)
+    assert background_tracks(*scene(glow(lambda f: 100))) == [7]
+    assert background_tracks(*scene(card)) == []
+    assert background_tracks(*scene(glow(lambda f: 30 + 25 * f))) == []
+    tracks = scene(glow(lambda f: 100))[1]
+    video = SimpleNamespace(kind="video", stats={"background_tracks": [7]})
+    assert _foreground(tracks, video) == [] and _foreground(tracks, SimpleNamespace(kind="image", stats=video.stats)) == tracks
+
+
+def test_a_background_mover_becomes_no_sprite_and_keeps_its_fragments(tmp_path):
+    """B8b: on a video plate, a mover listed in background_movers gives no sprite and its claimed track stays claimed;
+    an unclaimed track is still a sprite."""
+    from types import SimpleNamespace
+    from keepframe.analyze.movers import Mover
+    from keepframe.analyze.pipeline import AnalyzeOptions, _stage_sprites
+    from keepframe.analyze.tracking import ObjectTrack
+    (tmp_path / "stages").mkdir()
+    frames = np.zeros((1, 60, 80, 3), np.uint8)
+    frames[0, 10:20, 10:30] = frames[0, 40:50, 50:70] = 200
+    obj = lambda i, box: ObjectTrack(i, {0: Region(0, 1, (200.0,) * 3, box, 200, (0.0, 0.0), np.ones((10, 20), bool))})
+    glow = Mover(1, {0: ((10, 10, 30, 20), np.ones((10, 20), bool))}, claimed=[3], residual=0.0, stable=True)
+    video = SimpleNamespace(kind="video", stats={"background_movers": [1]})
+    props = _stage_sprites(frames, (0, 0, 0), [], [], [obj(3, (10, 10, 30, 20)), obj(4, (50, 40, 70, 50))],
+                           AnalyzeOptions(refine=False), tmp_path, 1, movers=[glow], plate_model=video)
+    assert "m1" not in props and "o3" not in props and "o4" in props
