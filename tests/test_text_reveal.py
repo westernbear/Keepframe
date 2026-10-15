@@ -315,3 +315,28 @@ def test_whole_range_sprite_corrections_accept_mixed_raw_widths(tmp_path, monkey
     with np.load(scene_dir(root, "s1") / merged.raw) as measured:
         assert measured["raw"].shape == (6, 9)
         np.testing.assert_array_equal(measured["raw"][:, 8], [1.0] * 6)
+
+
+def test_a_read_that_loses_its_last_word_splits_the_track():
+    """B2: "You just speak" for 10 frames, then "You just" for 20 (the word replaced by an icon) is two texts: the
+    whole one, then the rest (new id), both marked with the same cut. A prefix flicker or a lost trailing mark stays one."""
+    reads = [("You", 30)] * 3 + [("You just", 120)] * 3 + [("You just speak", 220)] * 10 + [("You just", 140)] * 20
+    tracks = text_module.track_text([[TextBox(f, t, (20, 20, 20 + w, 60), 0.9)] for f, (t, w) in enumerate(reads)])
+    assert len(tracks) == 1
+    whole, rest = text_module.split_swaps(tracks, fps=30.0)
+    assert (whole.id, whole.text, whole.last, rest.id, rest.text, rest.first) == (1, "You just speak", 15, 2, "You just", 16)
+    assert whole.cut == rest.cut == 1
+    flicker = [[TextBox(f, t, (20, 20, 20 + w, 50), 0.95)] for f, (t, w) in enumerate([("Buy", 60), ("Buy now", 200)] * 20)]
+    assert len(text_module.split_swaps(text_module.track_text(flicker))) == 1
+    mark = [[TextBox(f, t, (20, 20, 120, 50), 0.95)] for f, t in enumerate(["Sale."] * 10 + ["Sale"] * 20)]
+    assert len(text_module.split_swaps(text_module.track_text(mark))) == 1
+
+
+def test_pieces_of_a_changed_read_are_not_joined_again():
+    from keepframe.analyze.titles import Fragment, same_title
+    lab = np.zeros(3)
+    a = Fragment("t1", "You just speak", 0, 15, {f: (20, 20, 240, 60) for f in range(16)}, lab, 40.0, 0.0, cut=1)
+    b = Fragment("t2", "You just", 16, 35, {f: (20, 20, 160, 60) for f in range(16, 36)}, lab, 40.0, 0.0, cut=1)
+    assert not same_title(a, b, [], 30.0)
+    a.cut = b.cut = None
+    assert same_title(a, b, [], 30.0)   # unmarked, a succession in place joins as before

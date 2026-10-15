@@ -256,6 +256,7 @@ class TextTrack:
     boxes: dict[int, TextBox] = field(default_factory=dict)
     text: str = ""
     reveal: bool = False
+    cut: int | None = None   # B2: the id of the track this one was split from (with its other piece), else None
 
     @property
     def first(self) -> int:
@@ -362,6 +363,36 @@ def _drop_caret(best: str, reads) -> str:
     riding = {c for r in reads if len(c := _compact(r)) >= 2 and c[-1] in CARET and len(c) < len(b)
               and b[:-1].startswith(c[:-1]) and not b.startswith(c)}
     return best.rstrip()[:-1].rstrip() if len(riding) >= 2 else best
+
+
+SWAP_S = 0.5   # a shorter read held this long (and MIN_TEXT_FRAMES frames) is the text changing, not a flicker
+
+
+def _word_prefix(read: str, full: str) -> bool:
+    """`read` is the first words of `full` (spacing ignored) and drops at least two letters or digits."""
+    words, r = full.split(), _compact(read)
+    return len(_compact(full)) - len(r) >= 2 and any(r == _compact(" ".join(words[:k])) for k in range(1, len(words)))
+
+
+def split_swaps(tracks: list[TextTrack], fps: float = 30.0) -> list[TextTrack]:
+    """B2: a track whose read, after the whole string was seen (MIN_TEXT_FRAMES frames), shows only its first words for
+    SWAP_S or longer is two texts — the whole one, then what remains (a last word replaced by an icon) — split at the
+    first such read; later reads stay with the second piece, which gets a new id. Both carry `cut` so the title merge
+    keeps them apart. A flicker, a lost trailing mark or a backspace (reads ending mid-word) stays one track."""
+    out, next_id = [], max((t.id for t in tracks), default=0) + 1
+    need = max(MIN_TEXT_FRAMES, round(SWAP_S * fps))
+    for t in tracks:
+        full = [f for f in sorted(t.boxes) if _compact(t.boxes[f].text) == _compact(t.text)]
+        short = [f for f in sorted(t.boxes) if full and f > full[-1] and _word_prefix(t.boxes[f].text, t.text)]
+        if len(full) < MIN_TEXT_FRAMES or len(short) < need:
+            out.append(t)
+            continue
+        s = short[0]
+        rest = {f: b for f, b in t.boxes.items() if f >= s}
+        out += [TextTrack(t.id, {f: b for f, b in t.boxes.items() if f < s}, t.text, t.reveal, t.id),
+                TextTrack(next_id, rest, best_read([rest[f].text for f in sorted(rest)]), False, t.id)]
+        next_id += 1
+    return out
 
 
 def _reveal_aligned(a: TextBox, b: TextBox) -> bool:

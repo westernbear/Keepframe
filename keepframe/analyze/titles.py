@@ -37,6 +37,7 @@ class Fragment:
     lab: np.ndarray                                        # mean opaque colour, CIE Lab
     h: float                                               # median line height (canonical height × sy)
     rot: float                                             # median rotation, degrees
+    cut: int | None = None                                 # B2: the pieces of one track whose read changed share it
 
 
 def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
@@ -65,7 +66,8 @@ def fragment(key: str, p: dict, size, members=()) -> Fragment | None:
     on = canon[..., 3] > 127 if canon.shape[2] == 4 else np.ones(canon.shape[:2], bool)
     rgb = canon[..., :3][on] if on.any() else canon[..., :3].reshape(-1, 3)
     lab = cv2.cvtColor(rgb.mean(0).astype(np.float32).reshape(1, 1, 3) / 255, cv2.COLOR_RGB2Lab)[0, 0]
-    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)))
+    return Fragment(key, p.get("text") or p.get("ocr_text") or "", min(boxes), max(boxes), boxes, lab, float(np.median(hs)), float(np.median(rots)),
+                    p.get("cut"))
 
 
 def _digits_agree(a: str, b: str) -> bool:
@@ -90,6 +92,8 @@ def _sprite(f: Fragment) -> bool:
 
 def same_title(a: Fragment, b: Fragment, strings: list[str], fps: float) -> bool:
     h = max(a.h, b.h)
+    if a.cut is not None and a.cut == b.cut:   # B2: a text that changed, split on purpose
+        return False
     if max(a.h, b.h) > LINE_H_RATIO * min(a.h, b.h) or np.linalg.norm(a.lab - b.lab) > COLOUR_DE or abs(a.rot - b.rot) > ROT_DEG:
         return False
     common = sorted(a.boxes.keys() & b.boxes.keys())

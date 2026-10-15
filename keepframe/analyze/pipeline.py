@@ -23,7 +23,7 @@ from .report import write_report
 from .semantics import assign_roles, group_by_motion, group_successions
 from .sprites import sprite_props, z_order
 from .solids import find_solids, solid_props
-from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, text_exclusion_mask, text_props, track_text
+from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, split_swaps, text_exclusion_mask, text_props, track_text
 from .plane import tilted_raw
 from .titles import MERGE_WORSE, guard_titles, merge_titles, text_groups
 from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
@@ -111,7 +111,7 @@ def _stage_background(frames, opts, sd):
     return bg, bconf, plate
 
 
-def _stage_text(frames, bg, opts, ocr, sd, reader=None, built=None):
+def _stage_text(frames, bg, opts, ocr, sd, reader=None, built=None, fps: float = 30.0):
     """`built`: a list that receives the engine this stage loads, for the sprites stage's title re-reads."""
     boxes = [[] for _ in frames]; tracks = []; shape_tracks = []; msg = None; reading = None
     if opts.ocr:
@@ -131,7 +131,7 @@ def _stage_text(frames, bg, opts, ocr, sd, reader=None, built=None):
                 log.warning("%s: %s", msg, describe(e, trace=True))
         if ocr is not None:
             boxes = ocr_frames(frames, ocr)
-            tracks = merge_reveals(track_text(boxes))
+            tracks = merge_reveals(split_swaps(track_text(boxes), fps))
             if opts.copy:
                 apply_copy(tracks, opts.copy)
             tracks, shape_tracks, n = split_junk_text(tracks)
@@ -549,7 +549,8 @@ def _stage_sprites(frames, bg, text_tracks, shape_tracks, obj_tracks, opts, sd, 
         }
         for fut, (t, is_text, notes) in text_futs.items():
             raw, canon, cf, font, color = fut.result()
-            p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last}
+            p = {"raw": raw, "canon": canon, "cf": cf, "kind": "text" if is_text else "sprite", "first": t.first, "last": t.last,
+                 "cut": getattr(t, "cut", None)}   # older text.pkl tracks have no cut
             if is_text:
                 p.update(text=t.text, font=font, color=color, reveal=t.reveal)
             else:
@@ -872,7 +873,7 @@ def analyze_scene_frames(
     t = _stage_done("background", t)
     report_stage("text")
     built: list = []   # the engine the text stage loads, if any: one RapidOCR per analysis
-    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd, captioner, built=built)
+    boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, ocr, sd, captioner, built=built, fps=fps)
     ocr = ocr if ocr is not None else next(iter(built), None)
     t = _stage_done("text", t)
     report_stage("regions")
@@ -1091,7 +1092,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     built: list = []   # the engine a rerun of the text stage loads: the sprites stage re-reads titles with it
     if boundary <= STAGES.index("text"):
         report_stage("text")
-        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd, captioner, built=built)
+        boxes, text_tracks, shape_tracks, msg = _stage_text(frames, bg, opts, None, sd, captioner, built=built, fps=fps)
     else:
         text = _pk(sd, "text")
         boxes, text_tracks = text["boxes"], text["tracks"]
