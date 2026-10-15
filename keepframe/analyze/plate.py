@@ -480,6 +480,17 @@ def background_tracks(frames, obj_tracks, text_tracks=()) -> list[int]:
     return [t.id for t in obj_tracks or () if _soft_in_place(frames, {f: (r.bbox, r.mask) for f, r in t.regions.items()}, text_tracks)]
 
 
+PAD_SHARE = 0.02   # B8a2: a text's box in a pad frame holds something when this share of it is ΔE76 > MASK_DE off the still plate
+
+
+def _present(frame, still, box) -> bool:
+    """B8a2: something is in `box` (a title fading in or out), not only the background the still plate stands for."""
+    from .movers import MASK_DE
+    H, W = still.shape[:2]
+    x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(W, box[2]), min(H, box[3])
+    return x1 > x0 and y1 > y0 and float(np.mean(delta_e(srgb8_to_lab(frame[y0:y1, x0:x1]), srgb8_to_lab(still[y0:y1, x0:x1])) > MASK_DE)) >= PAD_SHARE
+
+
 def _video_plate(model: PlateModel, frames, rbf, boxes, reveal, out) -> PlateModel:
     """A video candidate as a video plate: every frame's occupancy (movers included) in a temporary memmap, then
     fill_video_plate behind the still plate. Without a VP9 encoder: the still image and its message; on any error,
@@ -616,7 +627,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         model.stats["message"] = f"plate classification skipped ({PLATE_CLASSIFY_FAILED})"
         failed = True
     if model.stats.get("video_candidate") and frames_out is not None:
-        cover = text_cover(text_tracks, n, fps)   # B8a: a fading title out of the background video too
+        life, near = text_cover(text_tracks, n, fps)   # B8a: a fading title out of the background video too …
+        near = {f: [b for b in bs if _present(frames[f], model.image, b)] for f, bs in near.items()}   # … B8a2: while it shows
         try:   # B8b: a glow (object track or mover) stays in the video's pixels and becomes no sprite (pipeline)
             glow = background_tracks(frames, obj_tracks, text_tracks)
             soft = [m.id for m in model.movers or () if _soft_in_place(frames, m.frames, text_tracks)]
@@ -626,8 +638,8 @@ def build_plate(frames, rbf, boxes, text_tracks, shape_tracks, *, bg_rgb, bconf,
         drop = {(f, r.bbox, r.label) for t in obj_tracks or () if t.id in glow for f, r in t.regions.items()}
         keep = [[r for r in rs if (f, r.bbox, r.label) not in drop] for f, rs in enumerate(rbf)] if drop else rbf
         lit = replace(model, movers=[m for m in model.movers or () if m.id not in soft])
-        model = replace(_video_plate(lit, frames, keep, boxes, {f: reveal.get(f, []) + cover.get(f, []) for f in range(n)}, frames_out),
-                        movers=model.movers)
+        model = replace(_video_plate(lit, frames, keep, boxes, {f: reveal.get(f, []) + life.get(f, []) + near.get(f, []) for f in range(n)},
+                                     frames_out), movers=model.movers)
         model.stats.update({k: v for k, v in (("background_tracks", glow), ("background_movers", soft)) if v})
     t.append(time.perf_counter())
     if model.kind == "color":   # a flat colour never shows the filled pixels

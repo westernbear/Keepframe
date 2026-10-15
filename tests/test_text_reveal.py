@@ -343,9 +343,22 @@ def test_pieces_of_a_changed_read_are_not_joined_again():
 
 
 def test_text_cover_spans_gaps_and_pads_the_life():
-    """B8a: a text read on frames 10 and 14 (moving right) covers 11–13 interpolated and 10 ± 9 / 14 + 9 held, at 30 fps."""
+    """B8a: a text read on frames 10 and 14 (moving right) covers 11–13 interpolated in its life; the pads 10 − 9 and
+    14 + 9 (at 30 fps) hold the end boxes, apart (B8a2: only while something shows in them)."""
     t = TextTrack(1, {10: TextBox(10, "Hi", (100, 50, 200, 90), 0.9), 14: TextBox(14, "Hi", (140, 50, 240, 90), 0.9)}, "Hi")
-    cover = text_module.text_cover([t], n=30, fps=30.0)
-    assert sorted(cover) == list(range(1, 24))
-    assert cover[12] == [(120, 50, 220, 90)] and cover[1] == [(100, 50, 200, 90)] and cover[23] == [(140, 50, 240, 90)]
-    assert max(text_module.text_cover([t], n=16)) == 15   # clipped to the scene
+    life, near = text_module.text_cover([t], n=30, fps=30.0)
+    assert sorted(life) == list(range(10, 15)) and sorted(near) == [*range(1, 10), *range(15, 24)]
+    assert life[12] == [(120, 50, 220, 90)] and near[1] == [(100, 50, 200, 90)] and near[23] == [(140, 50, 240, 90)]
+    assert max(text_module.text_cover([t], n=16)[1]) == 15   # clipped to the scene
+
+
+def test_a_pad_box_is_kept_out_only_while_something_shows():
+    """B8a2: in a pad frame a text's box is kept out while ≥ 2 % of it is ΔE > 8 off the still plate (a title fading
+    in); a background matching the still plate within that is left to the video."""
+    from keepframe.analyze.plate import _present
+    still = np.full((60, 100, 3), 40, np.uint8)
+    frame = still.copy()
+    frame[20:30, 30:50] = 90                       # the title fading in
+    frame[0:15, 75:95] = 43                        # the background, a little off the still plate
+    assert _present(frame, still, (20, 15, 60, 35)) and not _present(frame, still, (75, 0, 95, 15))
+    assert not _present(frame, still, (200, 0, 220, 10))   # off the frame
