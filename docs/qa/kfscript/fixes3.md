@@ -115,3 +115,12 @@ No flags against the baseline: parity, L1 kf on every case, and shot F1 all hold
 - B5b, B5c and B5d, as planned. There is still no `merge_failed` anywhere.
 - A merged title's string re-read stays as it is. That re-read is where B5a broke.
 - The title guard compares raster stills, not the live-text render the pages use. That is why it kept scroller's bad merges. Upgrade path: guard on the rendered text.
+
+## Final checks (`50381a5`)
+
+- Fast suite: 2944 passed, 2 skipped. Browser suite: 165 passed, 1 skipped. Both ran with nothing else on the machine.
+- Two tests failed earlier only while a round trip or the clip gate ran alongside:
+  - `test_scene_of_44_texts_within_budget`: 20.3–20.7 s against a 20 s budget. Re-timed without load, the code before B9 took 19.3 and 18.9 s and the final code 18.2 and 19.6 s, so B9/B9b add no measurable time.
+  - `test_render_deterministic_with_video`: passed alone and in the full browser run.
+- Real clips (report only): `clips.md` §5. B2 is fixed on ig3, B9 on ig1, and B5 is not fixed. B8 moved the glows but also envato1's blurring letters, a recorded disagreement.
+- Real-clip A/B 2 (`ab-real2.md`): the edit lower bound is −10.34 against a −10 margin, so the agent's default view reverts to `brief`.
