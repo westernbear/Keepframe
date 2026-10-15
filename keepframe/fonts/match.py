@@ -1865,7 +1865,7 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
     cap height, fill, stroke ratio) before the rest, ties in the given order — until `max_renders` candidate renders:
     per key ("ok", FontGuess, layout), ("error", MATCH_FAILED) or ("skipped", WORK_CAP). A skipped text with a
     matched twin borrows its family and weight: ("skipped", WORK_CAP, FontGuess at its own size and confidence
-    ≤ 0.5, the twin's key). Codes only: they reach stage data and report messages; exception details are logged.
+    ≤ 0.5, the twin's key), the family being the one most of its matched twins got. Codes only: they reach stage data and report messages; exception details are logged.
     Work is counted, never timed, so the output does not depend on the host. A text repeated in the scene
     (same string) is matched on its own pixels with less work when its prefilter agrees with the first match
     (`_copy_guess`), else in full."""
@@ -1933,7 +1933,12 @@ def font_guesses(jobs: list[TextJob], registry: FontRegistry, *, max_renders: in
     done = [i for i, j in enumerate(jobs) if out.get(j.key, ("",))[0] == "ok"]
     for i, j in enumerate(jobs):
         if out.get(j.key) == ("skipped", WORK_CAP) and (twins := [d for d in done if twin(i, d)]):
-            d = min(twins, key=lambda d: abs(math.log(caps[d] / caps[i])))
+            # B9b: the family most of its matched twins got (a small text's own match is noisy; ties: more confidence),
+            # from the nearest twin with that family
+            fam = lambda d: out[jobs[d].key][1].family_guess
+            best = max({fam(d) for d in twins}, key=lambda f: (sum(fam(d) == f for d in twins),
+                                                             sum(out[jobs[d].key][1].confidence for d in twins if fam(d) == f), f))
+            d = min((d for d in twins if fam(d) == best), key=lambda d: abs(math.log(caps[d] / caps[i])))
             g = out[jobs[d].key][1]
             out[j.key] = ("skipped", WORK_CAP, g.model_copy(update={"size_px": g.size_px * caps[i] / caps[d],
                                                                     "confidence": min(0.5, g.confidence)}), jobs[d].key)
