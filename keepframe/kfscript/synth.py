@@ -27,7 +27,8 @@ WORDS = ["Ship", "faster", "Build", "together", "Plan", "smarter", "Grow", "your
          "flows", "Every", "channel", "Think", "bigger", "Move", "forward", "Clear", "steps", "Less", "busywork"]
 BRANDS = ["Nexa", "Orbit", "Flowly", "Pulse", "Lumen", "Vanta", "Kiro", "Mosaic"]
 KINDS = ("kinetic_title", "logo_sting", "chat_ui", "scroller", "block_transition", "prompt_typing", "counter", "stepped_zoom",
-         "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid", "glow_letters")
+         "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid", "glow_letters",
+         "glow_cut")
 
 
 @dataclass
@@ -518,6 +519,32 @@ def _glow_letters(r: random.Random, pal, font) -> Template:
     return Template(_page(dark, font, css, body, js), truth, frames=frames)
 
 
+def _glow_cut(r: random.Random, pal, font) -> Template:
+    """A hard cut over one pulsing glow on one ground: a small title line cuts to a single huge word while the glow goes
+    on through the cut, so most of what is off the ground stays (the cut is the title)."""
+    _, _, acc, _ = pal
+    dark, _ = r.choice(GROUNDS)
+    words = r.sample(WORDS, 4)
+    a, b = " ".join(words[:3]), words[3]
+    c = r.choice([42, 45, 48])   # whole tenths of a second: a set at a rounded-up time would land a frame late
+    css = "\n".join([f"#s1 {{ inset: 0; background: linear-gradient(180deg, {dark} 45%, {acc} 170%); }}",
+                     f"#glow {{ left: 130px; top: 270px; width: 700px; height: 240px; border-radius: 50%; "
+                     f"background: radial-gradient(closest-side, {acc}, transparent); }}",
+                     "#t1 { left: 50%; top: 120px; transform: translateX(-50%); font-size: 56px; font-weight: 700; color: #ffffff; }",
+                     "#t2 { left: 60px; top: -20px; font-size: 230px; font-weight: 800; color: #ffffff; visibility: hidden; }"])
+    body = "\n".join(['<div id="s1" class="a"></div>', '<div id="glow" class="a"></div>',
+                      f'<div id="t1" class="a">{html.escape(a)}</div>', f'<div id="t2" class="a">{html.escape(b)}</div>'])
+    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.35, scale: 0.9}, {opacity: 0.9, scale: 1.1, duration: 0.75, ease: "sine.inOut", '
+                    'yoyo: true, repeat: 4}, 0);',
+                    'tl.from("#t1", {autoAlpha: 0, y: 30, duration: 0.5, ease: "power3.out"}, 0.2);',
+                    f'tl.set("#t1", {{visibility: "hidden"}}, {c / FPS:.4f});',
+                    f'tl.set("#t2", {{visibility: "visible"}}, {c / FPS:.4f});'])
+    truth = {"elements": [_el("t1", "headline", "text", (_f(0.2), c - 1), a, "#ffffff", font),
+                          _el("t2", "headline_2", "text", (c, 119), b, "#ffffff", font)],
+             "shots": [[0, c - 1], [c, 119]], "transitions": [{"type": "cut", "frames": [c, c]}], "structure": []}
+    return Template(_page(dark, font, css, body, js), truth, frames=120)
+
+
 def _label_grid(r: random.Random, pal, font) -> Template:
     """A dense board: a grid of cells, each a bold heading in one family over a regular label in another, popping in
     row by row (more texts than a scene's font-matching budget)."""
@@ -543,7 +570,8 @@ def _label_grid(r: random.Random, pal, font) -> Template:
 _MAKERS = {"kinetic_title": _kinetic_title, "logo_sting": _logo_sting, "chat_ui": _chat_ui, "scroller": _scroller,
            "block_transition": _block_transition, "prompt_typing": _prompt_typing, "counter": _counter, "stepped_zoom": _stepped_zoom,
            "hard_cut": _hard_cut, "wipe": _wipe, "word_build": _word_build, "whip_pan": _whip_pan, "word_swap": _word_swap,
-           "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid, "glow_letters": _glow_letters}
+           "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid, "glow_letters": _glow_letters,
+           "glow_cut": _glow_cut}
 
 
 def make_template(kind: str, seed: int) -> Template:
