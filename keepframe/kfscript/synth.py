@@ -27,7 +27,7 @@ WORDS = ["Ship", "faster", "Build", "together", "Plan", "smarter", "Grow", "your
          "flows", "Every", "channel", "Think", "bigger", "Move", "forward", "Clear", "steps", "Less", "busywork"]
 BRANDS = ["Nexa", "Orbit", "Flowly", "Pulse", "Lumen", "Vanta", "Kiro", "Mosaic"]
 KINDS = ("kinetic_title", "logo_sting", "chat_ui", "scroller", "block_transition", "prompt_typing", "counter", "stepped_zoom",
-         "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid")
+         "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid", "glow_letters")
 
 
 @dataclass
@@ -492,6 +492,32 @@ def _glow_title(r: random.Random, pal, font) -> Template:
     return Template(_page(dark, font, css, body, js), truth, frames=90)
 
 
+def _glow_letters(r: random.Random, pal, font) -> Template:
+    """A title over a pulsing glow (the background is a moving picture) whose letters come out of a blur one after
+    another as the line slides in, then holds and fades: its first letters can be read while the rest are still soft."""
+    _, _, acc, _ = pal
+    dark, _ = r.choice(GROUNDS)
+    word = " ".join(r.sample(WORDS, 2))
+    t0, each = r.choice([0.3, 0.4]), r.choice([0.08, 0.1])
+    n = sum(c != " " for c in word)
+    t_out = t0 + each * n + 1.4
+    letters = "".join(f'<span class="l">{html.escape(c)}</span>' if c != " " else " " for c in word)
+    css = "\n".join([f"#s1 {{ inset: 0; background: linear-gradient(180deg, {dark} 45%, {acc} 170%); }}",
+                     f"#glow {{ left: 80px; top: 300px; width: 800px; height: 480px; border-radius: 50%; "
+                     f"background: radial-gradient(closest-side, {acc}, transparent); }}",
+                     "#title { left: 150px; top: 170px; font-size: 104px; font-weight: 800; color: #ffffff; }",
+                     "#title .l { display: inline-block; }"])
+    body = '<div id="s1" class="a"></div><div id="glow" class="a"></div>' + f'<div id="title" class="a">{letters}</div>'
+    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.25, scale: 0.85}, {opacity: 0.9, scale: 1.15, duration: 0.75, ease: "sine.inOut", '
+                    'yoyo: true, repeat: 3}, 0);',
+                    f'tl.from("#title", {{x: 160, duration: {each * n + 0.5:.2f}, ease: "power2.out"}}, {t0});',
+                    f'tl.from("#title .l", {{opacity: 0, filter: "blur(18px)", duration: 0.5, stagger: {each}, ease: "power1.out"}}, {t0});',
+                    f'tl.to("#title", {{autoAlpha: 0, duration: 0.4, ease: "power2.in"}}, {t_out:.2f});'])
+    frames = _f(t_out + 0.4) + 6
+    truth = {"elements": [_el("title", "headline", "text", (_f(t0), _f(t_out + 0.4) - 1), word, "#ffffff", font)], "structure": []}
+    return Template(_page(dark, font, css, body, js), truth, frames=frames)
+
+
 def _label_grid(r: random.Random, pal, font) -> Template:
     """A dense board: a grid of cells, each a bold heading in one family over a regular label in another, popping in
     row by row (more texts than a scene's font-matching budget)."""
@@ -517,7 +543,7 @@ def _label_grid(r: random.Random, pal, font) -> Template:
 _MAKERS = {"kinetic_title": _kinetic_title, "logo_sting": _logo_sting, "chat_ui": _chat_ui, "scroller": _scroller,
            "block_transition": _block_transition, "prompt_typing": _prompt_typing, "counter": _counter, "stepped_zoom": _stepped_zoom,
            "hard_cut": _hard_cut, "wipe": _wipe, "word_build": _word_build, "whip_pan": _whip_pan, "word_swap": _word_swap,
-           "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid}
+           "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid, "glow_letters": _glow_letters}
 
 
 def make_template(kind: str, seed: int) -> Template:
