@@ -77,3 +77,4 @@ def test_ghost_de_sees_text_left_in_a_video_background(tmp_path):
         scene = Scene(id="s1", size=(160, 120), fps=30, frames=8, background=Background(kind="video", value="assets/bg.avi"), elements=[])
         scores.append(ghost_de([(scene, 0)], root, truth))
     assert scores[0] < 3 < scores[1]
+    assert ghost_de([(scene, 8)], root, truth) is None   # a scene (shot) the text never lives in measures nothing of it

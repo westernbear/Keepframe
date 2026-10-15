@@ -30,23 +30,25 @@ SYNTH_OPTIONS = AnalyzeOptions(refine=False, generate_3d=False)
 
 
 def ghost_de(scenes, root: Path, truth: dict) -> float | None:
-    """How much text a video background holds: plate_residue's mean ΔE inside each truth text's box (the nearest annotated
-    one, so held outside its life) on every 4th frame of the decoded background video. None without a video background."""
+    """How much text a video background holds: plate_residue's mean ΔE inside the box of each truth text living in the
+    scene's frames (the nearest annotated box, so held outside its life; a text of another shot is not measured) on every
+    4th frame of the decoded background video. None without a video background."""
     from ..qa.metrics import plate_residue
     texts = [e for e in truth["elements"] if e["kind"] == "text" and e.get("boxes")]
     out = []
     for scene, start in scenes:
         if scene.background.kind != "video" or not texts:
             continue
+        own = [e for e in texts if e["visible"][0] < start + scene.frames and e["visible"][1] >= start]
         cap = cv2.VideoCapture(str(scene_dir(root, scene.id) / scene.background.value))
-        for g in range(scene.frames):
+        for g in range(scene.frames if own else 0):
             ok, bgr = cap.read()
             if not ok:
                 break
             if g % 4:
                 continue
             plate = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            for e in texts:
+            for e in own:
                 k = min(e["boxes"], key=lambda q: abs(int(q) - start - g))   # the nearest annotated box: held outside its life
                 x0, y0, x1, y1 = (int(round(v)) for v in e["boxes"][k])
                 mask = np.zeros(plate.shape[:2], bool)
