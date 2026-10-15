@@ -98,3 +98,21 @@ def test_pieces_over_life():
     title = d["rows"][0]
     assert title["fragments"] == 1 and title["pieces"] == 2 and title["piece_ids"] == ["a", "b"]
     assert d["structure"]["found"] == ["typing"]   # the reveal lives on the early piece
+
+
+def test_units_fonts_and_stray_area():
+    """B5/B8/B9 measuring stick: grouped fragments count as one unit, the matched text's family is compared (spaces and
+    case ignored), and an element matching nothing and inside no truth box adds its frame share to stray_area."""
+    from keepframe.ir.schema import FontGuess, Group
+    t = {**T, "elements": [{**e, "font": "DMSans"} if e["id"] == "title" else e for e in T["elements"]]}
+    title = _el("t", (100, 100, 500, 180), (0, 59), "Ship faster")
+    title.canonical.font = FontGuess(family_guess="DM Sans")
+    halves = [_el("a", (100, 100, 300, 180), (0, 59), "Ship"), _el("b", (300, 100, 500, 180), (0, 59), "faster")]
+    glow = _el("g", (0, 0, 960, 270), (0, 59))   # half the frame, inside no truth box
+    sc = _scene(title, *halves, glow)
+    d = diff(t, [(sc, 0)])
+    assert d["font_rate"] == 1.0 and d["rows"][0]["font"] == "DM Sans" and d["stray_area"] == 0.5
+    sc2 = _scene(*halves)
+    assert diff(t, [(sc2, 0)])["units_mean"] == 2
+    sc2.groups = [Group(id="text1", members=["a", "b"], reason="text_fragments")]
+    assert diff(t, [(sc2, 0)])["units_mean"] == 1 and diff(t, [(sc2, 0)])["rows"][0]["fragments"] == 2

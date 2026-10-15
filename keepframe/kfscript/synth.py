@@ -27,7 +27,7 @@ WORDS = ["Ship", "faster", "Build", "together", "Plan", "smarter", "Grow", "your
          "flows", "Every", "channel", "Think", "bigger", "Move", "forward", "Clear", "steps", "Less", "busywork"]
 BRANDS = ["Nexa", "Orbit", "Flowly", "Pulse", "Lumen", "Vanta", "Kiro", "Mosaic"]
 KINDS = ("kinetic_title", "logo_sting", "chat_ui", "scroller", "block_transition", "prompt_typing", "counter", "stepped_zoom",
-         "hard_cut", "wipe", "word_build", "whip_pan")
+         "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid")
 
 
 @dataclass
@@ -43,10 +43,13 @@ def _f(t: float) -> int:
     return int(round(t * FPS))
 
 
-def _page(bg: str, font: str, css: str, body: str, js: str) -> str:
+def _page(bg: str, font: str, css: str, body: str, js: str, font2: str | None = None) -> str:
+    """`font2`: a second family G (loaded and waited for too); without it the page is as before."""
+    face2 = f'\n@font-face {{ font-family: G; src: url({(FONT_DIR / f"{font2}.woff2").as_uri()}); font-weight: 100 900; }}' if font2 else ""
+    wait2 = ', document.fonts.load("16px G")' if font2 else ""
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><style>
-@font-face {{ font-family: F; src: url({(FONT_DIR / f"{font}.woff2").as_uri()}); font-weight: 100 900; }}
+@font-face {{ font-family: F; src: url({(FONT_DIR / f"{font}.woff2").as_uri()}); font-weight: 100 900; }}{face2}
 html, body {{ margin: 0; width: {W}px; height: {H}px; overflow: hidden; background: {bg}; }}
 #stage {{ position: relative; width: {W}px; height: {H}px; overflow: hidden; background: {bg}; font-family: F, sans-serif; }}
 .a {{ position: absolute; white-space: nowrap; }}
@@ -61,7 +64,7 @@ html, body {{ margin: 0; width: {W}px; height: {H}px; overflow: hidden; backgrou
 const FPS = {FPS}, tl = gsap.timeline({{paused: true}});
 // Build after the face has loaded: GSAP reads CSS translate(-50%) as pixels on first touch, so a fallback-font width
 // would shift centred text. fonts.ready alone can resolve before the face starts loading.
-Promise.all([document.fonts.load("16px F"), document.fonts.ready]).then(() => {{
+Promise.all([document.fonts.load("16px F"){wait2}, document.fonts.ready]).then(() => {{
 {js}
 window.__seek(0); window.__ready = true; }});
 window.__seek = f => {{ tl.seek(f / FPS, false); return f; }};
@@ -421,9 +424,98 @@ def _whip_pan(r: random.Random, pal, font) -> Template:
     return Template(_page(bg, font, css, body, js), truth, frames=90)
 
 
+def _word_swap(r: random.Random, pal, font) -> Template:
+    """A caption built word by word (left-aligned) whose last word is later replaced in place by an icon: the line then
+    reads only its first words (a read that changes inside a shot)."""
+    bg, fg, acc, _ = pal
+    w = r.sample(WORDS, 3)
+    each, hold = r.choice([0.25, 0.3]), r.choice([1.0, 1.2])
+    css = "\n".join([".wd { display: none; white-space: pre; }",
+                     f"#line {{ left: 120px; top: 230px; font-size: 64px; font-weight: 700; color: {fg}; }}",
+                     f"#icon {{ display: none; width: 64px; height: 64px; border-radius: 50%; background: {acc}; vertical-align: -10px; position: relative; }}",
+                     "#icon::after { content: ''; position: absolute; left: 25px; top: 18px; border-left: 18px solid #fff; "
+                     "border-top: 14px solid transparent; border-bottom: 14px solid transparent; }"])
+    body = (f'<div id="line" class="a"><span id="full"><span id="short"><span class="wd">{html.escape(w[0])} </span>'
+            f'<span class="wd">{html.escape(w[1])} </span></span><span id="w3" class="wd">{html.escape(w[2])}</span></span>'
+            '<span id="icon"></span></div>')
+    t = [0.3 + i * each for i in range(3)]
+    ts = t[-1] + hold
+    js = "\n".join([f'tl.set("#line .wd:nth-of-type({i + 1})", {{display: "inline"}}, {x:.4f});' for i, x in enumerate(t[:2])]
+                   + [f'tl.set("#w3", {{display: "inline"}}, {t[2]:.4f});', f'tl.set("#w3", {{display: "none"}}, {ts:.4f});',
+                      f'tl.set("#icon", {{display: "inline-block"}}, {ts:.4f});'])
+    frames = _f(ts + 1.4)
+    sw = _f(ts)
+    truth = {"elements": [_el("full", "caption", "text", (_f(t[0]), sw - 1), " ".join(w), fg, font),
+                          _el("short", "caption_2", "text", (sw, frames - 1), " ".join(w[:2]), fg, font),
+                          _el("icon", "icon", "shape", (sw, frames - 1), colour=acc)],
+             "structure": []}
+    return Template(_page(bg, font, css, body, js), truth, frames=frames)
+
+
+def _big_scroll(r: random.Random, pal, font) -> Template:
+    """A huge headline crossing the frame right to left, fast, slow at the middle, fast again, blurred while fast: only
+    a word or two shows at a time."""
+    bg, fg, acc, surf = pal
+    text = " ".join(r.sample(WORDS, 3))
+    t0, dur = 0.3, r.choice([2.4, 2.6])
+    css = "\n".join([f"#bg {{ inset: 0; background: linear-gradient(90deg, {surf}, {bg}); }}",
+                     f"#big {{ left: 960px; top: 90px; font-size: 300px; font-weight: 800; line-height: 360px; color: {acc}; }}"])
+    body = f'<div id="bg" class="a"></div><div id="big" class="a">{html.escape(text)}</div>'
+    js = "\n".join([f'tl.to("#big", {{xPercent: -50, x: -480, duration: {dur / 2}, ease: "power2.out"}}, {t0});',
+                    f'tl.to("#big", {{xPercent: -100, x: -960, duration: {dur / 2}, ease: "power2.in"}}, {t0 + dur / 2});',
+                    f'tl.fromTo("#big", {{filter: "blur(8px)"}}, {{filter: "blur(0px)", duration: {dur / 2}, ease: "power2.out"}}, {t0});',
+                    f'tl.to("#big", {{filter: "blur(8px)", duration: {dur / 2}, ease: "power2.in"}}, {t0 + dur / 2});'])
+    frames = _f(t0 + dur) + 6
+    truth = {"elements": [_el("big", "headline", "text", (0, frames - 1), text, acc, font)], "structure": []}
+    return Template(_page(bg, font, css, body, js), truth, frames=frames)
+
+
+def _glow_title(r: random.Random, pal, font) -> Template:
+    """A title that comes in out of a blur, holds and fades away over a dark gradient whose glow rises and falls (the
+    background is a moving picture, not a fitted gradient)."""
+    _, _, acc, _ = pal
+    dark, _ = r.choice(GROUNDS)
+    word = " ".join(r.sample(WORDS, r.choice([1, 2])))
+    t_in, t_out = r.choice([0.3, 0.4]), r.choice([2.0, 2.2])
+    css = "\n".join([f"#s1 {{ inset: 0; background: linear-gradient(180deg, {dark} 45%, {acc} 170%); }}",
+                     f"#glow {{ left: 80px; top: 300px; width: 800px; height: 480px; border-radius: 50%; "
+                     f"background: radial-gradient(closest-side, {acc}, transparent); }}",
+                     "#title { left: 480px; top: 240px; font-size: 110px; font-weight: 800; color: #ffffff; }"])
+    body = '<div id="s1" class="a"></div><div id="glow" class="a"></div>' + f'<div id="title" class="c">{html.escape(word)}</div>'
+    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.25, scale: 0.85}, {opacity: 0.9, scale: 1.15, duration: 0.75, ease: "sine.inOut", '
+                    'yoyo: true, repeat: 3}, 0);',
+                    f'tl.fromTo("#title", {{autoAlpha: 0, filter: "blur(14px)"}}, {{autoAlpha: 1, filter: "blur(0px)", duration: 0.6, ease: "power2.out"}}, {t_in});',
+                    f'tl.to("#title", {{autoAlpha: 0, filter: "blur(10px)", duration: 0.5, ease: "power2.in"}}, {t_out});'])
+    truth = {"elements": [_el("title", "headline", "text", (_f(t_in), _f(t_out + 0.5) - 1), word, "#ffffff", font)], "structure": []}
+    return Template(_page(dark, font, css, body, js), truth, frames=90)
+
+
+def _label_grid(r: random.Random, pal, font) -> Template:
+    """A dense board: a grid of cells, each a bold heading in one family over a regular label in another, popping in
+    row by row (more texts than a scene's font-matching budget)."""
+    bg, fg, _, _ = pal
+    font2 = r.choice([f for f in FONTS if f != font])
+    pairs = r.sample([f"{a} {b}" for a in WORDS for b in WORDS if a != b], 48)
+    heads, labels = pairs[:24], [p.lower() for p in pairs[24:]]
+    css = "\n".join([f".h {{ position: absolute; font-size: 21px; font-weight: 700; color: {fg}; white-space: nowrap; }}",
+                     f".l {{ position: absolute; font-family: G, sans-serif; font-size: 16px; font-weight: 400; color: {fg}; white-space: nowrap; }}"])
+    body, js, elements = [], [], []
+    for i in range(24):
+        x, y = 30 + (i % 4) * 240, 18 + (i // 4) * 88
+        body += [f'<div id="h{i}" class="h" style="left: {x}px; top: {y}px">{html.escape(heads[i])}</div>',
+                 f'<div id="l{i}" class="l" style="left: {x}px; top: {y + 32}px">{html.escape(labels[i])}</div>']
+        t = 0.2 + (i // 4) * 0.2
+        js.append(f'tl.from(["#h{i}", "#l{i}"], {{autoAlpha: 0, y: 12, duration: 0.3, ease: "power2.out"}}, {t:.4f});')
+        elements += [_el(f"h{i}", f"heading_{i}", "text", (_f(t), 89), heads[i], fg, font),
+                     _el(f"l{i}", f"label_{i}", "text", (_f(t), 89), labels[i], fg, font2)]
+    truth = {"elements": elements, "structure": []}
+    return Template(_page(bg, font, css, "\n".join(body), "\n".join(js), font2=font2), truth, frames=90)
+
+
 _MAKERS = {"kinetic_title": _kinetic_title, "logo_sting": _logo_sting, "chat_ui": _chat_ui, "scroller": _scroller,
            "block_transition": _block_transition, "prompt_typing": _prompt_typing, "counter": _counter, "stepped_zoom": _stepped_zoom,
-           "hard_cut": _hard_cut, "wipe": _wipe, "word_build": _word_build, "whip_pan": _whip_pan}
+           "hard_cut": _hard_cut, "wipe": _wipe, "word_build": _word_build, "whip_pan": _whip_pan, "word_swap": _word_swap,
+           "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid}
 
 
 def make_template(kind: str, seed: int) -> Template:

@@ -10,6 +10,9 @@ import json
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from ..analyze.pipeline import AnalyzeOptions, analyze
 from ..compose.composer import compose
 from ..ir.store import current_scene, load_project, scene_dir
@@ -24,6 +27,34 @@ ROUNDTRIP_GATES = {"kf_parity": 0.001}   # |L1 kf-script page − L1 compose pag
 REPO = Path(__file__).resolve().parents[2]
 GOLD = REPO / "docs" / "qa" / "kfscript" / "gold"
 SYNTH_OPTIONS = AnalyzeOptions(refine=False, generate_3d=False)
+
+
+def ghost_de(scenes, root: Path, truth: dict) -> float | None:
+    """How much text a video background holds: plate_residue's mean ΔE inside each truth text's box (the nearest annotated
+    one, so held outside its life) on every 4th frame of the decoded background video. None without a video background."""
+    from ..qa.metrics import plate_residue
+    texts = [e for e in truth["elements"] if e["kind"] == "text" and e.get("boxes")]
+    out = []
+    for scene, start in scenes:
+        if scene.background.kind != "video" or not texts:
+            continue
+        cap = cv2.VideoCapture(str(scene_dir(root, scene.id) / scene.background.value))
+        for g in range(scene.frames):
+            ok, bgr = cap.read()
+            if not ok:
+                break
+            if g % 4:
+                continue
+            plate = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            for e in texts:
+                k = min(e["boxes"], key=lambda q: abs(int(q) - start - g))   # the nearest annotated box: held outside its life
+                x0, y0, x1, y1 = (int(round(v)) for v in e["boxes"][k])
+                mask = np.zeros(plate.shape[:2], bool)
+                mask[max(0, y0):y1, max(0, x0):x1] = True
+                if (de := plate_residue(plate, mask)["mean_de"]) is not None:
+                    out.append(de)
+        cap.release()
+    return round(float(np.mean(out)), 3) if out else None
 
 
 def _measure(out: Path, name: str, page: Path, root: Path, truth: dict, seconds: float | None) -> dict:
@@ -50,6 +81,7 @@ def _measure(out: Path, name: str, page: Path, root: Path, truth: dict, seconds:
             "l1_kf": avg(lambda r: r["kf"]["l1"]), "l1_compose": avg(lambda r: r["compose"]["l1"]), "kf_parity": round(parity, 7),
             "worst_kf": {sid: [round(r["kf"]["worst"], 4), r["kf"]["worst_frame"]] for sid, r in rows.items()},
             "analyse_seconds": round(seconds, 1) if seconds is not None else None,
+            "ghost_de": ghost_de([(s, st) for s, st in scenes], root, truth),
             "measure_seconds": round(time.perf_counter() - t0, 1), "diff": d}
 
 
@@ -87,14 +119,15 @@ def _fmt(v, nd=4) -> str:
 def _summary(m: dict) -> str:
     lines = ["# kf-script round trip", "", f"Gate: kf_parity ≤ {ROUNDTRIP_GATES['kf_parity']} on every case → **{'pass' if m['passed'] else 'FAIL'}**. "
              "Everything else is recorded (P2 baseline; P3/P4 must beat it).", "",
-             "| Case | Scenes | Shot F1 | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Pieces | Text | ΔE | Centre px | Visible err f | Structure found / missed / unsupported | Keys / el | DL ratio | Analyse s |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| Case | Scenes | Shot F1 | L1 page | L1 recon | L1 kf | Parity | Truth / IR els | Matched | Fragments | Units | Pieces | Text | ΔE | Font | Centre px | Visible err f | Structure found / missed / unsupported | Keys / el | Stray area | Ghost ΔE | DL ratio | Analyse s |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in m["cases"]:
         d, s = r["diff"], r["diff"]["structure"]
         lines.append(f"| {r['name']} | {r['scenes']} | {_fmt(d['shots']['f1'], 2)} | {_fmt(r['l1_page'])} | {_fmt(r['l1_recon'])} | {_fmt(r['l1_kf'])} | {r['kf_parity']:.6f} | "
-                     f"{d['truth_elements']} / {d['ir_elements']} | {_fmt(d['matched_rate'], 2)} | {_fmt(d['fragments_mean'], 2)} | {_fmt(d['pieces_mean'], 2)} | "
-                     f"{_fmt(d['text_ratio'], 2)} | {_fmt(d['colour_de'], 1)} | {_fmt(d['centre_px'], 1)} | {_fmt(d['visible_err'], 1)} | "
-                     f"{len(s['found'])} / {len(s['missed'])} / {len(s['unsupported'])} | {_fmt(d['keys_mean'], 1)} | {_fmt(d['dl_ratio'], 2)} | {_fmt(r['analyse_seconds'], 0)} |")
+                     f"{d['truth_elements']} / {d['ir_elements']} | {_fmt(d['matched_rate'], 2)} | {_fmt(d['fragments_mean'], 2)} | {_fmt(d.get('units_mean'), 2)} | {_fmt(d['pieces_mean'], 2)} | "
+                     f"{_fmt(d['text_ratio'], 2)} | {_fmt(d['colour_de'], 1)} | {_fmt(d.get('font_rate'), 2)} | {_fmt(d['centre_px'], 1)} | {_fmt(d['visible_err'], 1)} | "
+                     f"{len(s['found'])} / {len(s['missed'])} / {len(s['unsupported'])} | {_fmt(d['keys_mean'], 1)} | {_fmt(d.get('stray_area'), 3)} | {_fmt(r.get('ghost_de'), 2)} | "
+                     f"{_fmt(d['dl_ratio'], 2)} | {_fmt(r['analyse_seconds'], 0)} |")
     return "\n".join(lines) + "\n"
 
 
