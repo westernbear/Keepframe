@@ -51,3 +51,8 @@ Two other ideas were checked and set aside:
 |---|---|---|---|---|---|
 | B8c | `02a17ef` | A soft region also holds a text when a text box lies inside it on the region's nearest frame up to 0.5 s away, which covers a title's letters still blurred before its first read or after its last. | glow_letters ghost ΔE 1.69 → **1.44**: the region of the first, blurred letters (f0–16) stays out of the video | glow_letters stray area 0.0012 → 0.175 and pieces 2 → 3. That region is a sprite again, as before B8b, and counts as stray because its middle frame (f8) precedes the title's annotated start (f12). L1 kf unchanged. Nothing else moved. e24 keeps 23 glyphs. | **accepted** |
 | B8d | `4d5c748` | A line whose box grows is covered at its full width while it builds, widened on each side in proportion to how far that edge moved over its life. | glow_letters ghost ΔE 1.44 → **0.886** (the letters not yet read, f16–56) | Nothing else moved. e24 keeps 23 glyphs. | **accepted** |
+| B11 | `30c610a` | A solid candidate whose box holds half or more of a read text box on half or more of its frames is the rest of that title, and stays as its pieces. | No synthetic case forms a solid, so the round trip cannot show a target. The unit test (a spinning sphere with a read text inside it is no solid; one with a text elsewhere still is) and the ig2 re-check (`clips.md` §6) stand in. | Nothing moved. e24 keeps 23 glyphs. | **accepted** (unit test, unchanged round trip, gold) |
+
+## Net effect (`final-vs-base.json`: `rt4-base` → `rt4-b11`, analyses at `30c610a`)
+
+No flags. Only glow_letters moved: ghost ΔE 1.69 → **0.886**, stray area 0.0012 → 0.175 (explained under B8c). Gold: mk571 unchanged; e24's `e13` keeps its 23-glyph typing.
