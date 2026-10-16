@@ -68,3 +68,12 @@ Web search "saas promo video" (motion graphics template / after effects) → Upp
 | e46 | Ai SaaS Promo | lolkiy | https://elements.envato.com/ai-saas-promo-YUZLHGB |
 | e47 | SaaS Product Promo for Premiere Pro | MotionAxx | https://elements.envato.com/saas-product-promo-for-premiere-pro-SXFT5G7 |
 | e48 | SaaS Promo / Software & AI Product Showcase | FXDNZ | https://elements.envato.com/saas-promo-software-ai-product-showcase-93DZPZX |
+
+
+## Learned matcher data (2026-10-16, `fixes7.md`; nothing here is committed)
+
+Fetched by `scripts/train_assoc.py fetch` into `eval/`.
+
+- **Evaluation only (Mixkit free licence):** 20 more after-effects template previews in `eval/refs2/`, 1080p, from the category pages (titles, openers, logo, …, walked page by page): mk545, mk546, mk547, mk557, mk567, mk568, mk569, mk570, mk602, mk605, mk625, mk626, mk637, mk748, mk749, mk750, mk793, mk798, mk801, mk840. URL: `https://assets.mixkit.co/video-templates/<id>/mixkit-<id>-1080.mp4`.
+- **Training: SaaS promo previews (Envato Elements; paid templates, previews never committed):** 40 hover previews (540p) read from the search pages `https://elements.envato.com/video-templates/<query>`. Item pages now sit behind a bot check this session's proxy refuses. Per query: saas+promo 40. Keyed by asset id in `eval/assoc/saas/meta.jsonl`; previews showing an eval clip are excluded (`excluded.txt`).
+- **Training: Lottie animations (LottieFiles free, Lottie Simple License):** 150 animations from the public search API (`graphql.lottiefiles.com/2022-08`, `searchPublicAnimations`), 1–10 s, at most 2048 px, 2–40 layers, no external images. Per query: saas 36, app 38, product launch 66, dashboard 10. Ids, names, authors and URLs in `eval/assoc/lottie/meta.jsonl`.
