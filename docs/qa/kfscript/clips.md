@@ -298,3 +298,48 @@ The real-clip A/B on these projects is `ab-real2.md`.
 - Upgrade path: as in §6, cut a sprite where its content changes, not only at a detected cut.
 
 **The glow_cut exception** (`fixes5.md`): a title that stays for its whole scene has no visible ground behind it. envato1's s2 title drifts, so it is not this case.
+
+## 8. After B12 and B13c (`fixes6.md`), report only
+
+**Run.**
+- `eval/out/rt6-g4.sh`: the gate one clip at a time at `a91105a` (B13c, with B12), then kf fidelity per scene.
+- On the way, B13 (`clips-after6`) and B13b (`clips-after7`) were run the same way; they are reported below where they explain a change.
+- Per-frame kf L1 of envato1: `perframe.py` (scratch).
+- Nothing was tuned on these clips.
+
+| Clip | Scenes | Elements §7 → §8 | mean_l1 §7 → §8 | render_l1 §7 → §8 | **L1 kf** §7 → §8 (frame-weighted) | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | s1 f0–139, s2 f140–149 | 47 → 51 | 0.0562 → 0.0576 | 0.0593 → 0.0603 | 0.0639 → 0.0643 (s1 0.0615 → **0.0583**, s2 0.0975 → 0.148) | s1 f36 0.142, s2 f144 0.167 | ≤ 0.000003 | 613 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 99 | 0.0288 → 0.0265 | 0.0312 → 0.0297 | 0.0332 → **0.0308** (s1 0.0261 → 0.0263, s2 0.0347 → 0.0317) | s2 f112 0.087 (§7: 0.111) | ≤ 0.000001 | 337 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 91 | 0.0364 → 0.0355 | 0.0357 → 0.0351 | 0.0390 → **0.0383** (s1 0.0572 → 0.0553, s2 0.0273) | s1 f4 0.077 | ≤ 0.000044 | 293 |
+| ig3 | s1 f0–149 | 64 → 75 | 0.0169 → 0.0164 | 0.0235 → 0.0226 | 0.0250 → **0.0246** | f112 0.068 | 0.000002 | 154 |
+
+The shot splits are unchanged from §7.
+
+**envato1 f0–24 (the request), kf L1 every 4th frame:**
+
+| | f0 | f4 | f8 | f12 | f16 | f20 | f24 |
+|---|---|---|---|---|---|---|---|
+| §6 | 0.030 | 0.009 | 0.026 | 0.043 | 0.064 | 0.075 | 0.080 |
+| §7 | 0.037 | 0.035 | 0.034 | 0.058 | 0.066 | 0.084 | 0.095 |
+| §8 | **0.006** | **0.008** | **0.012** | 0.038 | 0.057 | 0.081 | 0.086 |
+
+- The glow's sprite is cut at f15 and f23, where letter tracks join it.
+- Its first piece (f0–14) takes a glow-only texture, so no letters show before they appear.
+- The rest of the f12–24 error is the letters' blur-in.
+
+**On the way:**
+- **B13** (`clips-after6`): ig2 s1 went from 55 to 122 elements (blurred letters breaking up and rejoining read as merges every frame), and ig1 s1 doubled (0.026 → 0.054).
+- **B13b**: ig2 s1 at 71 elements; ig1 s1 still 0.054.
+- **B13c**: ig1 s1 back to 0.026, because its gap rule allows for a track's growth.
+
+**Disagreement, recorded, not resolved: envato1 s2 0.0975 → 0.148. It comes from B12, not B13.** On f140–149 analysed alone:
+- before B12 (`210aa83`): 0.106;
+- after B12 (`e2909f4`): 0.159.
+
+What changed:
+- The huge blurred word covers that hole in every frame. B12 fills it with the dark ground of its rows; the old Telea fill had smeared the word's bright halo into the plate.
+- Nothing else draws the blurred word. It is represented by three small sharp texts ("ere", "e", "f"), and its soft mover goes into the background video, where the texts' cover hides it.
+- So the old fill stood in for the word by accident.
+
+Upgrade path: draw blurred text (a blur on the text element), or keep a soft mover that a text cover would hide as a sprite.

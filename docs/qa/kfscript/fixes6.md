@@ -55,7 +55,16 @@ Against the true ground (the median of source frames f0–5, before any title ap
 
 **Stray area 1.00 on logo_sting and mk571 (B13 to B13c).** Each opens with a full-frame layer (`e1`). It is now cut where a half-frame panel takes over (f7 in logo_sting, f4 in mk571). The first piece (f0–6, f0–3) comes before any truth box, so the diff counts it as a full-frame stray. Their kf L1 roughly halves.
 
-**What the rule does not reach (envato1 f0–8).** There a "B" grows out of a blur inside the glow's own region, so no other region joins it. The glow's first piece (f0–12) still takes its texture from a frame where the "B" shows. Upgrade path: cut a track where its own appearance changes, by structure correlation between frames (as `shots._kept` does for pictures).
+**envato1 f0–24 at B13c** (kf L1 every 4th frame; §7 → B13c, from `clips.md` §8):
+
+| f0 | f4 | f8 | f12 | f16 | f20 | f24 |
+|---|---|---|---|---|---|---|
+| 0.037 → **0.006** | 0.035 → **0.008** | 0.034 → **0.012** | 0.058 → 0.038 | 0.066 → 0.057 | 0.084 → 0.081 | 0.095 → 0.086 |
+
+- The ghost letters at f0–8 are gone, and those frames are below §6's values (0.030, 0.009, 0.026).
+- The glow's first piece (f0–14) takes its texture from a glow-only frame.
+- Under B13, the f0–12 piece still held a "B": the "B" grows out of a blur inside the glow's region, and B13's cuts left it in that piece.
+- What remains at f12–24 is the letters' blur-in itself (§5's blurred-letter limit).
 
 ## Run notes
 
@@ -65,3 +74,6 @@ Against the true ground (the median of source frames f0–5, before any title ap
 ## Final checks
 
 - Browser tests of the synthetic kinds: 2 passed.
+- Real clips (report only), `clips.md` §8, at B13c:
+  - ig1 0.0332 → **0.0308**, ig2 0.0390 → **0.0383**, ig3 0.0250 → **0.0246**.
+  - envato1 0.0639 → 0.0643: its first shot is better (0.0615 → 0.0583, f0–8 fixed), its second shot worse (0.0975 → 0.148, B12's disagreement, explained there).
