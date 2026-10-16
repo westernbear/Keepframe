@@ -448,7 +448,7 @@ def _stage_tracking(rbf, sd):
     tracks = [t for t in tracks if t.regions]
     tracks = _merge_adjacent_tracks(tracks)
     try:   # after the gap merge, which would join the pieces again
-        tracks = split_merges(tracks, rbf)
+        tracks = split_merges(tracks)
     except Exception as e:   # fail soft: the tracks stay whole
         log.warning("track split skipped (%s): %s", TRACK_SPLIT_FAILED, describe(e, trace=True))
     log.info("tracking objects=%s", len(tracks))

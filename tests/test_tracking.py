@@ -112,17 +112,15 @@ def _reg(f, mask):
 def test_split_merges_cuts_a_track_where_another_region_joins_or_leaves_it():
     glow, word, crumb = (np.zeros((60, 100), bool) for _ in range(3))
     glow[40:60, :] = True                     # a glow along the bottom
-    word[10:38, 20:80] = True                 # a word that blurs in above it, then touches it
+    word[10:38, 20:80] = True                 # a word above it that touches it at f5-6
     crumb[30:38, 45:50] = True                # a speck far under a quarter of the glow
-    rbf = [[_reg(f, glow)] for f in range(4)] + [[_reg(4, glow), _reg(4, word)]] + [[_reg(f, glow | word)] for f in (5, 6)] \
-        + [[_reg(7, glow), _reg(7, word)]]
-    t = ObjectTrack(1, {f: rbf[f][0] for f in range(8)})   # the glow's region each frame: the merged one at f5-6
-    assert [sorted(p.regions) for p in split_merges([t], rbf)] == [[0, 1, 2, 3, 4], [5, 6], [7]]
-    grow = [[_reg(f, np.pad(np.ones((10 + 4 * f, 20 + 8 * f), bool), ((0, 50 - 4 * f), (0, 80 - 8 * f))))] for f in range(5)]
-    speck = [[_reg(f, glow)] for f in range(3)] + [[_reg(3, glow), _reg(3, crumb)], [_reg(4, glow | crumb)]]
-    for frames in (grow, speck):   # a region that scales up, or takes in a speck, is the same content
-        whole = ObjectTrack(2, {f: rs[0] for f, rs in enumerate(frames)})
-        assert len(split_merges([whole], frames)) == 1
-    joined = ObjectTrack(3, {0: _reg(0, glow), 1: _reg(1, glow), 5: _reg(5, crumb)})   # a gap merge to a speck
-    rbf = [[joined.regions.get(f)] if f in joined.regions else [] for f in range(6)]
-    assert [sorted(p.regions) for p in split_merges([joined], rbf)] == [[0, 1], [5]]
+    t = ObjectTrack(1, {f: _reg(f, glow | word if f in (5, 6) else glow) for f in range(10)})
+    w = ObjectTrack(2, {f: _reg(f, word) for f in (2, 3, 4, 7, 8, 9)})   # the word, an object of its own
+    assert [sorted(p.regions) for p in split_merges([t, w])] == [[0, 1, 2, 3, 4], [5, 6], [7, 8, 9], [2, 3, 4, 7, 8, 9]]
+    flicker = ObjectTrack(3, {f: _reg(f, word) for f in (3, 4)})          # a piece seen twice (letters out of a blur)
+    speck = ObjectTrack(4, {f: _reg(f, crumb) for f in (1, 2, 3, 4)})
+    grow = ObjectTrack(5, {f: _reg(f, np.pad(np.ones((10 + 4 * f, 20 + 8 * f), bool), ((0, 50 - 4 * f), (0, 80 - 8 * f))))
+                           for f in range(5)})
+    assert len(split_merges([t, flicker, speck])) == 3 and len(split_merges([grow])) == 1   # none of these is cut
+    joined = ObjectTrack(6, {0: _reg(0, glow), 1: _reg(1, glow), 5: _reg(5, crumb)})       # a gap merge to a speck
+    assert [sorted(p.regions) for p in split_merges([joined])] == [[0, 1], [5]]
