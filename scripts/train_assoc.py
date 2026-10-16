@@ -616,6 +616,8 @@ def _held_out(meta: dict) -> bool:
 def load_pairs() -> list[dict]:
     out = []
     for p in sorted((EVAL / "assoc" / "pairs").glob("*.npz")):
+        if p.with_suffix(".lock").exists():   # still being written by a data worker
+            continue
         with np.load(p) as d:
             meta = json.loads(str(d["meta"]))
             out.append({"name": p.stem, "meta": meta, "held": _held_out(meta), "X": d["X"], "ecc": d["ecc"],
