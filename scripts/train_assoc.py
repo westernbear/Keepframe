@@ -459,11 +459,11 @@ def data_lottie(ocr_box, limit: int) -> None:
             continue
         frames, own, n_own, fps = got
         parts = [clip_pairs(rbf, fr, own[a:a + len(fr)], n_own, seed=int(path.stem) % 1000)
-                 for a, fr, rbf in clip_regions(frames, fps, work / "stages", ocr_box)]
+                 for a, fr, rbf in clip_regions(frames, fps, work / "stages-lottie", ocr_box)]
         if parts:
             _save(out, {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}, source="lottie", id=path.stem)
         print("lottie", path.stem, flush=True)
-    shutil.rmtree(work / "stages", ignore_errors=True)
+    shutil.rmtree(work / "stages-lottie", ignore_errors=True)
 
 
 def data_mk571(ocr_box) -> None:
@@ -542,7 +542,7 @@ def data_saas(ocr_box) -> None:
             if frames.shape[2] != SAAS_W:
                 h = int(round(SAAS_W * frames.shape[1] / frames.shape[2] / 2) * 2)
                 frames = np.stack([cv2.resize(f, (SAAS_W, h), interpolation=cv2.INTER_AREA) for f in frames])
-            parts = [clip_pairs(rbf, fr, seed=w0) for a, fr, rbf in clip_regions(frames, fps, work / "stages", ocr_box)]
+            parts = [clip_pairs(rbf, fr, seed=w0) for a, fr, rbf in clip_regions(frames, fps, work / "stages-saas", ocr_box)]
             if parts:
                 _save(out, {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}, source="saas", id=mp4.stem, start=w0)
             print("saas", mp4.stem, w0, flush=True)
