@@ -2,23 +2,83 @@
  "machine": "cloud container, 4 CPU, no GPU; torch CPU, 2 threads",
  "command": "scripts/train_assoc.py train --no-saas --out <scratchpad>, copied to keepframe/analyze/assoc.npz",
  "features": 18,
- "choice": "18 features (16 + the two context features). The variant with the SaaS pairs is trained once the SaaS pairs are regenerated; until then the SaaS held-out row covers the SaaS clips done at training time.",
- "why_18": "The 16-feature matcher split a lone fast mover (seed-61 end-to-end test, 83 px in one frame, P 0.088): in the training data a far identical shape is almost always another copy (Lottie: 4 of 3366 same), which a pair alone cannot tell apart. With the context features the same pair scores P 0.80.",
+ "choice": "18 features, trained on synthetic kinds, the ir scene generators (seeds 5000-5059), Lottie and gold mk571, without the SaaS pairs. The variant with SaaS is trained once the SaaS pairs are regenerated; the SaaS held-out row covers the SaaS clips done at training time.",
+ "history": [
+  "16 features (e41cf3e): split a lone fast mover (seed-61 end-to-end test, P 0.088). Answer: context features.",
+  "18 features (b67b155): three fast-suite failures on keepframe.ir.synth test scenes (rotation, fades from 0, occlusion). Answer: the ir scene generators as training data (75784e4) and an occluded owner's main body labelled the same content (d4403d1).",
+  "This version: those tests pass; test_titles_guard's solid_errors patch now fails only the guard's measure (the scene's mover is found as one solid, which finish_solid_assets measures)."
+ ],
  "rho_curve": "ECC-label agreement with truth is flat from rho 0.05 to 0.65 (0.9035; 0.8551 at 0): the mask-coverage condition decides, not the correlation, which is either high or 0 (ECC non-convergence).",
  "shipped": {
-  "commit": "387eb3c",
+  "commit": "d4403d1",
   "trained_on_saas": false,
   "rho": 0.3,
-  "rho_agreement_with_truth": 0.9024,
+  "rho_agreement_with_truth": 0.9022,
   "epochs": 30,
   "train_pairs": {
    "gold": 60000,
    "lottie": 1581392,
+   "scene": 1449880,
    "synth": 1209328
   },
-  "train_clips": 206,
-  "held_out_clips": 71,
+  "train_clips": 301,
+  "held_out_clips": 107,
   "held_out": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30760,
+    "auc": 0.9941977877547136,
+    "accuracy": 0.9654614938524505
+   },
+   "saas": {
+    "pairs": 348102,
+    "same": 8496,
+    "auc": 0.9004367320009352,
+    "accuracy": 0.9384892933680358
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 31837,
+    "auc": 0.9822662949751632,
+    "accuracy": 0.9328335692900411
+   },
+   "synth": {
+    "pairs": 416222,
+    "same": 66913,
+    "auc": 0.9961325357450393,
+    "accuracy": 0.972781352259131
+   }
+  },
+  "train": {
+   "gold": {
+    "pairs": 60000,
+    "same": 7918,
+    "auc": 0.997952492367841,
+    "accuracy": 0.9740833333333333
+   },
+   "lottie": {
+    "pairs": 1581392,
+    "same": 122659,
+    "auc": 0.9964117173144389,
+    "accuracy": 0.9714492042453737
+   },
+   "scene": {
+    "pairs": 1449880,
+    "same": 133225,
+    "auc": 0.9937677782830115,
+    "accuracy": 0.9552162937622424
+   },
+   "synth": {
+    "pairs": 1209328,
+    "same": 192199,
+    "auc": 0.9972237433512747,
+    "accuracy": 0.9747231520315415
+   }
+  },
+  "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), gold mk571 (Mixkit free)"
+ },
+ "superseded": {
+  "b67b155": {
    "lottie": {
     "pairs": 479378,
     "same": 30595,
@@ -38,31 +98,7 @@
     "accuracy": 0.977175641844977
    }
   },
-  "train": {
-   "gold": {
-    "pairs": 60000,
-    "same": 7918,
-    "auc": 0.998231614845531,
-    "accuracy": 0.9734666666666667
-   },
-   "lottie": {
-    "pairs": 1581392,
-    "same": 122241,
-    "auc": 0.9967256705373365,
-    "accuracy": 0.9762411849813329
-   },
-   "synth": {
-    "pairs": 1209328,
-    "same": 192181,
-    "auc": 0.9975754014524313,
-    "accuracy": 0.9792000185226837
-   }
-  },
-  "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), gold mk571 (Mixkit free)"
- },
- "superseded_16_features": {
-  "commit": "e41cf3e",
-  "held_out": {
+  "e41cf3e": {
    "lottie": {
     "pairs": 479378,
     "same": 30611,
@@ -81,7 +117,6 @@
     "auc": 0.9952249293059708,
     "accuracy": 0.9726276190179147
    }
-  },
-  "choice": "Ship the variant without the SaaS pairs: it has the better held-out AUC on both truth-labelled sources (synthetic seeds 8-9: 0.9952 vs 0.9908; held-out Lottie: 0.9916 vs 0.9878). The variant with SaaS scores higher only against the SaaS video-derived labels (0.977 vs 0.909), which agree with truth at 0.9035 but with precision 0.636 and recall 0.726 for 'same' on the training synthetic and Lottie clips: noisy labels."
+  }
  }
 }
