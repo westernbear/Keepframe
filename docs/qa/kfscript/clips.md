@@ -260,3 +260,41 @@ The real-clip A/B on these projects is `ab-real2.md`.
 - **f112–136:** sprite `o34` spans f111–149, across envato1's cut at f140, which is not detected (§4 item 1). Its single texture now holds the second shot's letters (alpha coverage 0.10 → 0.34), because those letters are no longer in the background video for matting to remove. So the letters show from f111.
 - **f76–96:** the words of "Build SaaS Promo" that are still blurred before their reads are kept out of the video (B8d, as intended), and the text element does not draw them yet.
 - The cause of the f112–136 part is the missing shot split, not B8. Upgrade path: split envato1 at f140 (the content test in `_content` takes the border colour for the ground), or cut sprites at a detected cut.
+
+## 7. After the f140 cut fix (`fixes5.md`), report only
+
+**Run.**
+- `eval/out/clips-after5.sh`: the gate one clip at a time at `4b9e548` (code as `b288490`), then kf fidelity per scene.
+- Per-frame kf L1 of envato1, every 4th frame: `perframe.py` (scratch), against §6's projects.
+- Nothing was tuned on these clips.
+
+| Clip | Scenes | Elements §6 → §7 | mean_l1 | render_l1 §6 → §7 | **L1 kf** §6 → §7 (frame-weighted) | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | **s1 f0–139, s2 f140–149** (§6: one scene) | 54 → 39 + 8 | 0.0696 → 0.0562 | 0.0694 → 0.0593 | 0.0742 → **0.0639** (s1 0.0615, s2 0.0975) | f144 0.149 → s1 f36 0.142, s2 f144 0.116 | ≤ 0.000004 | 546 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 98 | 0.0288 | 0.0312 → 0.0312 | 0.0332 → 0.0332 | s2 f112 0.111 | ≤ 0.000001 | 300 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 72 | 0.0364 | 0.0357 → 0.0357 | 0.0390 → 0.0390 | s1 f12 0.072 | ≤ 0.000044 | 269 |
+| ig3 | s1 f0–149 | 64 → 64 | 0.0169 | 0.0235 → 0.0235 | 0.0250 → 0.0250 | f112 0.068 | 0.000001 | 134 |
+
+**Shots against the read (§1):**
+
+| Clip | Read | §6 | §7 |
+|---|---|---|---|
+| envato1 | cut f140 | one scene (missed) | **cut f140** |
+| ig1 | wipe f18–26 | f26 | f26 |
+| ig2 | cut f59 | f59 | f59 |
+| ig3 | cut f57 | one scene (spike 0.048 < FLOOR) | one scene: unchanged, not this fix's case |
+
+**envato1 per frame (kf L1, §6 → §7):**
+- **f112–136: 0.04–0.07 → 0.01–0.03.** §6's sprite o34 (f111–149, `e38` there) is gone; no element crosses f140. This was §6's recorded disagreement, and it is resolved.
+- f140–148: 0.104 / 0.149 / 0.141 → 0.067 / 0.116 / 0.110.
+- f28–68: mostly better (f48 −0.016, f52 −0.018, f64 −0.031); f36 +0.011, f40 +0.005.
+
+**New disagreement, recorded, not resolved: envato1 f0–24 and f72 got worse.**
+- f4 rose 0.009 → 0.035, f12 0.043 → 0.058, f24 0.080 → 0.095, and f72 0.043 → 0.090. f0–8 is an empty dark frame with the glow (read).
+- At f0 the page shows pieces of "Build" (`eval/out/clips-after5-kf/sheets/envato1.s1.png`). Sprite `e1` now spans f0–25 (§6: f0–15), and its one texture holds letters that appear only later.
+- Cause:
+  - The shorter scene has a different background video (background tracks 7 and 26, §6: 11), so the residual regions are tracked differently.
+  - It is the same class as o34: one texture across a content change.
+- Upgrade path: as in §6, cut a sprite where its content changes, not only at a detected cut.
+
+**The glow_cut exception** (`fixes5.md`): a title that stays for its whole scene has no visible ground behind it. envato1's s2 title drifts, so it is not this case.

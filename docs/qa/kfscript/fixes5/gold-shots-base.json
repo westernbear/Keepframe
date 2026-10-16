@@ -1,0 +1,103 @@
+{
+ "_note": "detect_boundaries / auto_scenes on the gold/shots.json ranges, scored with kfscript.diff.shot_f1",
+ "code": "c1fd238",
+ "machine": "cloud container, 4 CPU, no GPU",
+ "refs": {
+  "e07": {
+   "found": [
+    [
+     87,
+     "cut"
+    ]
+   ],
+   "scene_starts": [
+    87
+   ],
+   "truth": 2,
+   "ir_scenes": 2,
+   "boundaries": [
+    87
+   ],
+   "f1": 1.0
+  },
+  "e11": {
+   "found": [
+    [
+     40,
+     "cut"
+    ],
+    [
+     84,
+     "cut"
+    ]
+   ],
+   "scene_starts": [
+    40,
+    84
+   ],
+   "truth": 3,
+   "ir_scenes": 3,
+   "boundaries": [
+    40,
+    84
+   ],
+   "f1": 1.0
+  },
+  "mk544": {
+   "found": [
+    [
+     97,
+     "transition"
+    ],
+    [
+     149,
+     "cut"
+    ]
+   ],
+   "scene_starts": [
+    97,
+    149
+   ],
+   "truth": 2,
+   "ir_scenes": 3,
+   "boundaries": [
+    97,
+    149
+   ],
+   "f1": 0.667
+  },
+  "mk571": {
+   "found": [],
+   "scene_starts": [],
+   "truth": 1,
+   "ir_scenes": 1,
+   "boundaries": [],
+   "f1": 1.0
+  },
+  "mk543": {
+   "found": [],
+   "scene_starts": [],
+   "truth": 1,
+   "ir_scenes": 1,
+   "boundaries": [],
+   "f1": 1.0
+  },
+  "mk800": {
+   "found": [
+    [
+     97,
+     "transition"
+    ]
+   ],
+   "scene_starts": [
+    97
+   ],
+   "truth": 2,
+   "ir_scenes": 2,
+   "boundaries": [
+    97
+   ],
+   "f1": 1.0
+  }
+ }
+}
