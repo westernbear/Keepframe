@@ -544,16 +544,22 @@ def data_scenes(seeds, ocr_box) -> None:
     for seed in seeds:
         for gen in ("synthetic", "reference"):
             out = EVAL / "assoc" / "pairs" / f"scene-{gen}-{seed}.npz"
-            if out.exists() or not _claim(out):
+            skip = out.with_suffix(".skip")
+            if out.exists() or skip.exists() or not _claim(out):
                 continue
             rng, case = random.Random(seed), work / f"scene-{gen}-{seed}"
-            if gen == "synthetic":
-                scene = make_synthetic_scene(case, seed, n_elements=rng.randint(3, 6), frames=rng.choice([24, 60]),
-                                             with_text=rng.random() < 0.5, overlap=rng.random() < 0.5)
-            else:
-                scene = make_reference_scene(case, seed, plate=rng.choice(["flat", "gradient", "animated", "image"]),
-                                             n_sprites=rng.randint(1, 4), n_titles=rng.randint(1, 2),
-                                             mover=rng.choice([False, True, "inplace"]), title=rng.choice([None, "stagger", "plane"]))
+            try:
+                if gen == "synthetic":
+                    scene = make_synthetic_scene(case, seed, n_elements=rng.randint(3, 6), frames=rng.choice([24, 60]),
+                                                 with_text=rng.random() < 0.5, overlap=rng.random() < 0.5)
+                else:
+                    scene = make_reference_scene(case, seed, plate=rng.choice(["flat", "gradient", "animated", "image"]),
+                                                 n_sprites=rng.randint(1, 4), n_titles=rng.randint(1, 2),
+                                                 mover=rng.choice([False, True, "inplace"]), title=rng.choice([None, "stagger", "plane"]))
+            except Exception as err:   # fail soft: a draw the generator cannot make (a stagger title in a font without glyph centres)
+                print("scene skip", gen, seed, err, file=sys.stderr)
+                skip.touch(); out.with_suffix(".lock").unlink(missing_ok=True)
+                continue
             frames, fps = read_frames(render_scene_video(scene, case, case / "clip.mp4"))
             owners = scene_owners(scene, case)
             parts = [clip_pairs(rbf, fr, owners[a:a + len(fr)], len(scene.elements), seed=seed)
