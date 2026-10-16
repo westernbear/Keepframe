@@ -26,7 +26,7 @@ from .solids import find_solids, solid_props
 from .text import FULL_OPACITY_FAILED, FULL_OPACITY_NOTE, Ocr, apply_copy, merge_reveals, ocr_frames, reveal_exclusion_boxes, split_junk_text, split_swaps, text_exclusion_mask, text_props, track_text
 from .plane import tilted_raw
 from .titles import MERGE_WORSE, guard_titles, merge_titles, text_groups
-from .tracking import track_regions, split_merges, _merge_adjacent_tracks, _trim_tail_crumbs
+from .tracking import track_regions, _merge_adjacent_tracks, _trim_tail_crumbs
 from .video import read_frames
 from ..assets import AssetClient
 
@@ -301,7 +301,7 @@ def _mover_messages(props: dict, ids: dict) -> list[str]:
 
 
 # Fail-soft codes of the sprites stage (R52): report messages and stage data carry these, never exception text.
-MOVER_DROPPED, TEXTURES_FAILED, TRACK_SPLIT_FAILED = "mover_dropped", "textures_failed", "track_split_failed"
+MOVER_DROPPED, TEXTURES_FAILED = "mover_dropped", "textures_failed"
 LOW_TEXTURE_CONF = 0.05   # a matted texture at or below this confidence is reported (it still replaces the binary one)
 
 
@@ -447,10 +447,6 @@ def _stage_tracking(rbf, sd):
         _trim_tail_crumbs(t)
     tracks = [t for t in tracks if t.regions]
     tracks = _merge_adjacent_tracks(tracks)
-    try:   # after the gap merge, which would join the pieces again
-        tracks = split_merges(tracks)
-    except Exception as e:   # fail soft: the tracks stay whole
-        log.warning("track split skipped (%s): %s", TRACK_SPLIT_FAILED, describe(e, trace=True))
     log.info("tracking objects=%s", len(tracks))
     return _pk(sd, "tracks", tracks)
 

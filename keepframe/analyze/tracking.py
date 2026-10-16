@@ -5,8 +5,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from .regions import Region
 
-# ponytail: one-to-one matching only (a merge or split only cuts the track, split_merges). Upgrade path: Motico's eight
-# mapping types with differentiable compositing.
+# ponytail: one-to-one matching only (no split/merge). Upgrade path: Motico's eight mapping types with differentiable compositing.
 
 
 @dataclass
@@ -112,54 +111,3 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                 t = ObjectTrack(id=next_id, regions={f: r}); next_id += 1
                 tracks.append(t); active.append(t)
     return tracks
-
-
-def _overlap(a: Region, b: Region) -> int:
-    x0, y0, x1, y1 = max(a.bbox[0], b.bbox[0]), max(a.bbox[1], b.bbox[1]), min(a.bbox[2], b.bbox[2]), min(a.bbox[3], b.bbox[3])
-    if x1 <= x0 or y1 <= y0:
-        return 0
-    ma = a.mask[y0 - a.bbox[1]:y1 - a.bbox[1], x0 - a.bbox[0]:x1 - a.bbox[0]]
-    mb = b.mask[y0 - b.bbox[1]:y1 - b.bbox[1], x0 - b.bbox[0]:x1 - b.bbox[0]]
-    return int((ma & mb).sum())
-
-
-def split_merges(tracks: list[ObjectTrack]) -> list[ObjectTrack]:
-    """A track whose region takes in another track's region from its previous frame (that track ends there), or leaves
-    one behind in its next (that track starts there), changes content there (a glow that blurred letters join); so does a join across a gap (_merge_adjacent_tracks) to a
-    region under a quarter, or over four times, the size the track's own growth predicts (a speck joined to a glow; a
-    circle that wipes in keeps growing). Such a track is cut, so each piece's one texture holds only its own content.
-    The other region counts when its track is seen in at least 3 frames (an object of its own, as split_swaps asks of a
-    read; letters breaking up as they come out of a blur are not) and it is at least a quarter of the track's region
-    (the size track_regions starts a track at), half or more of it inside. The first piece keeps the id; the others
-    take new ones."""
-    by_frame: dict[int, list[tuple[ObjectTrack, Region]]] = {}
-    for u in tracks:
-        if len(u.regions) >= 3:
-            for f, r in u.regions.items():
-                by_frame.setdefault(f, []).append((u, r))
-
-    def takes_in(r: Region, own: Region, f: int, g: int, tid: int) -> bool:
-        """r (at g) holds half or more of a region at f whose track has none at g: it went into r, or came out of it
-        (a neighbour that goes on beside it, as a stripe of a sliding card, is not taken in)."""
-        return any(u.id != tid and g not in u.regions and q.area * 4 >= own.area and 2 * _overlap(r, q) >= q.area
-                   for u, q in by_frame.get(f, ()))
-
-    def jump(t: ObjectTrack, fs: list[int], i: int) -> bool:
-        """Across a gap, the region is over 4x off the size the track's own growth (its two frames before) predicts."""
-        p, f = fs[i], fs[i + 1]
-        a = float(t.regions[p].area)
-        if i > 0:
-            a *= (a / t.regions[fs[i - 1]].area) ** ((f - p) / (p - fs[i - 1]))
-        b = t.regions[f].area
-        return f - p > 1 and 4 * min(a, b) < max(a, b)
-
-    out, next_id = [], max((t.id for t in tracks), default=0) + 1
-    for t in tracks:
-        fs = sorted(t.regions)
-        cuts = [fs[i + 1] for i in range(len(fs) - 1)
-                if takes_in(t.regions[fs[i + 1]], t.regions[fs[i]], fs[i], fs[i + 1], t.id)
-                or takes_in(t.regions[fs[i]], t.regions[fs[i + 1]], fs[i + 1], fs[i], t.id) or jump(t, fs, i)]
-        for i, (a, b) in enumerate(zip([fs[0], *cuts], [*cuts, fs[-1] + 1])):
-            out.append(ObjectTrack(id=t.id if i == 0 else next_id, regions={f: t.regions[f] for f in fs if a <= f < b}))
-            next_id += i > 0
-    return out

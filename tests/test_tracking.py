@@ -5,8 +5,7 @@ from keepframe.ir.tracks import eval_props, element_bbox
 from keepframe.analyze.composite import composite_scene
 from keepframe.analyze.background import foreground_mask
 from keepframe.analyze.regions import build_palette, extract_regions
-from keepframe.analyze.regions import Region
-from keepframe.analyze.tracking import ObjectTrack, split_merges, track_regions
+from keepframe.analyze.tracking import track_regions
 
 
 def three_object_scene(d):
@@ -100,34 +99,3 @@ def test_occlusion_recovery_does_not_join_distant_same_color_objects(tmp_path):
 
     tracks = _stage_tracking(observations, tmp_path)
     assert [set(track.regions) for track in tracks] == [set(range(4)), set(range(8, 13))]
-
-
-def _reg(f, mask):
-    ys, xs = np.nonzero(mask)
-    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
-    return Region(frame=f, label=1, color=(0.0, 0.0, 0.0), bbox=(x0, y0, x1, y1), area=int(mask.sum()),
-                  centroid=(float(xs.mean()), float(ys.mean())), mask=mask[y0:y1, x0:x1].copy())
-
-
-def test_split_merges_cuts_a_track_where_another_region_joins_or_leaves_it():
-    glow, word, crumb = (np.zeros((60, 100), bool) for _ in range(3))
-    glow[40:60, :] = True                     # a glow along the bottom
-    word[10:38, 20:80] = True                 # a word above it that touches it at f5-6
-    crumb[30:38, 45:50] = True                # a speck far under a quarter of the glow
-    t = ObjectTrack(1, {f: _reg(f, glow | word if f in (5, 6) else glow) for f in range(10)})
-    w = ObjectTrack(2, {f: _reg(f, word) for f in (2, 3, 4, 7, 8, 9)})   # the word, an object of its own
-    assert [sorted(p.regions) for p in split_merges([t, w])] == [[0, 1, 2, 3, 4], [5, 6], [7, 8, 9], [2, 3, 4, 7, 8, 9]]
-    flicker = ObjectTrack(3, {f: _reg(f, word) for f in (3, 4)})          # a piece seen twice (letters out of a blur)
-    speck = ObjectTrack(4, {f: _reg(f, crumb) for f in (1, 2, 3, 4)})
-    grow = ObjectTrack(5, {f: _reg(f, np.pad(np.ones((10 + 4 * f, 20 + 8 * f), bool), ((0, 50 - 4 * f), (0, 80 - 8 * f))))
-                           for f in range(5)})
-    assert len(split_merges([t, flicker, speck])) == 3 and len(split_merges([grow])) == 1   # none of these is cut
-    stripes = [ObjectTrack(10 + k, {f: _reg(f, np.pad(np.ones((20, 6), bool), ((20, 20), (12 * k + 7 * f, 94 - 12 * k - 7 * f))))
-                                   for f in range(4)}) for k in range(3)]   # a sliding card's stripes, 7 px a frame
-    assert len(split_merges(stripes)) == 3
-    joined = ObjectTrack(6, {0: _reg(0, glow), 1: _reg(1, glow), 5: _reg(5, crumb)})       # a gap merge to a speck
-    assert [sorted(p.regions) for p in split_merges([joined])] == [[0, 1], [5]]
-    yy, xx = np.mgrid[:60, :100]
-    disc = lambda f: _reg(f, (xx - 50) ** 2 + (yy - 30) ** 2 < 2.0 ** f * 2)   # a circle wiping in: its area doubles
-    wipe = ObjectTrack(7, {f: disc(f) for f in (1, 2, 3, 6)})                    # each frame, 2 frames lost on the way
-    assert len(split_merges([wipe])) == 1
