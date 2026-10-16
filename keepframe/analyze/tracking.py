@@ -5,7 +5,8 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from .regions import Region
 
-# ponytail: one-to-one matching only (no split/merge). Upgrade path: Motico's eight mapping types with differentiable compositing.
+# ponytail: one-to-one matching only (no split/merge): a region that two others merged into scores low against
+# either with the matcher and starts a track. Upgrade path: Motico's eight mapping types with differentiable compositing.
 
 
 @dataclass
@@ -52,10 +53,13 @@ def _trim_tail_crumbs(track: ObjectTrack) -> None:
 
 
 def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_thr: float = 35.0,
-                           max_dist: float = 80.0) -> list[ObjectTrack]:
-    """Join nearby same-colour fragments across short, non-overlapping gaps."""
+                           max_dist: float = 80.0, frames: np.ndarray | None = None, matcher=None) -> list[ObjectTrack]:
+    """Join nearby same-colour fragments across short, non-overlapping gaps. With a matcher (and the frames), a join
+    needs P(same content) >= 0.5 between the one track's last region and the other's first, the most likely wins."""
     if len(tracks) < 2:
         return tracks
+    if matcher is not None and frames is not None:
+        return _merge_learned(tracks, max_gap, frames, matcher)
     colors = {t.id: np.mean([r.color for r in t.regions.values()], axis=0) for t in tracks}
     merged: list[ObjectTrack] = []
     for t in sorted(tracks, key=lambda t: t.first):
@@ -88,8 +92,68 @@ def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_th
     return merged
 
 
+class _Descriptors(dict):
+    """Region descriptors for the matcher, computed once per region."""
+
+    def __init__(self, frames: np.ndarray, first_frame: int = 0):
+        super().__init__()
+        self.frames, self.first_frame = frames, first_frame
+
+    def of(self, r: Region) -> dict:
+        key = (r.frame, r.bbox, r.area)
+        if key not in self:
+            from .assoc import descriptor
+            self[key] = descriptor(r, self.frames[r.frame - self.first_frame])
+        return self[key]
+
+
+def _probs(matcher, desc: _Descriptors, pairs: list[tuple[Region, Region, int]]) -> np.ndarray:
+    from .assoc import pair_features
+    if not pairs:
+        return np.zeros(0, np.float32)
+    return matcher.prob(np.stack([pair_features(a, desc.of(a), b, desc.of(b), gap) for a, b, gap in pairs]))
+
+
+def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, matcher) -> list[ObjectTrack]:
+    from .assoc import P_SAME
+    desc = _Descriptors(frames)
+    merged: list[ObjectTrack] = []
+    for t in sorted(tracks, key=lambda t: t.first):
+        cands = [prev for prev in merged if 1 <= t.first - prev.last <= max_gap]
+        p = _probs(matcher, desc, [(prev.regions[prev.last], t.regions[t.first], t.first - prev.last) for prev in cands])
+        if len(p) and p.max() >= P_SAME:
+            cands[int(p.argmax())].regions.update(t.regions)
+        else:
+            merged.append(t)
+    return merged
+
+
+GATE = 3.0   # with the matcher, pairs further apart than GATE x max_dist (or 2 region sizes) are not scored: speed only
+
+
 def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0,
-                  cost_thr: float = 1.2, max_gap: int = 2) -> list[ObjectTrack]:
+                  cost_thr: float = 1.2, max_gap: int = 2, frames: np.ndarray | None = None, matcher=None) -> list[ObjectTrack]:
+    """One-to-one matching of each frame's regions to the live tracks. The cost is match_cost under cost_thr, or with a
+    matcher (and the frames) 1 - P(same content), matched when P >= 0.5."""
+    if matcher is not None and frames is not None:
+        from .assoc import P_SAME
+        desc = _Descriptors(frames, first_frame)
+
+        def costs(active, regions, f):
+            C = np.full((len(active), len(regions)), 1e6)
+            pairs, where = [], []
+            for i, t in enumerate(active):
+                last = t.regions[t.last]
+                for j, r in enumerate(regions):
+                    reach = max(GATE * max_dist, 2 * math.sqrt(max(last.area, r.area)))
+                    if math.hypot(r.centroid[0] - last.centroid[0], r.centroid[1] - last.centroid[1]) <= reach:
+                        pairs.append((last, r, f - t.last)); where.append((i, j))
+            for (i, j), p in zip(where, _probs(matcher, desc, pairs)):
+                C[i, j] = 1.0 - p
+            return C, 1.0 - P_SAME
+    else:
+        def costs(active, regions, f):
+            return np.array([[match_cost(t.regions[t.last], _predict(t, f), r, max_dist) for r in regions] for t in active]), cost_thr
     tracks: list[ObjectTrack] = []
     active: list[ObjectTrack] = []
     next_id = 1
@@ -98,10 +162,10 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
         active = [t for t in active if f - t.last <= max_gap]
         matched_r: set[int] = set()
         if active and regions:
-            C = np.array([[match_cost(t.regions[t.last], _predict(t, f), r, max_dist) for r in regions] for t in active])
+            C, thr = costs(active, regions, f)
             rows, cols = linear_sum_assignment(C)
             for a, b in zip(rows, cols):
-                if C[a, b] <= cost_thr:
+                if C[a, b] <= thr:
                     active[a].regions[f] = regions[b]; matched_r.add(int(b))
         frame_max = max((r.area for r in regions), default=0)
         for j, r in enumerate(regions):

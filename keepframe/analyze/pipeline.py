@@ -203,7 +203,7 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
             try:
                 again = _stage_regions(frames, bg, boxes, opts, sd, plate_at=moving.at, text_tracks=text_tracks,
                                        shape_tracks=shape_tracks)
-                tracks = _stage_tracking(again, sd)
+                tracks = _stage_tracking(again, sd, frames)
                 rbf, obj_tracks = again, tracks
                 busy = {"kind": moving.kind, "busy_pass1": moving.stats["busy_pass1"], "moved_de": moving.stats["moved_de"]}
                 path.write_text(json.dumps(busy))
@@ -220,7 +220,7 @@ def _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks,
             if held >= opts.min_area:   # pass 1's regions only outline an element that held still: cut them again
                 t0 = time.perf_counter()
                 again = _stage_regions(frames, bg, boxes, opts, sd, plate=model.at(0), text_tracks=text_tracks, shape_tracks=shape_tracks)
-                tracks = _stage_tracking(again, sd)
+                tracks = _stage_tracking(again, sd, frames)
                 model = _stage_plate(frames, fps, again, boxes, text_tracks, shape_tracks, tracks, bg, bconf, pass1, opts, sd)
                 rbf, obj_tracks = again, tracks
                 log.info("plate held %s px of a still element in pass 1: regions again %.2fs", held, time.perf_counter() - t0)
@@ -301,7 +301,7 @@ def _mover_messages(props: dict, ids: dict) -> list[str]:
 
 
 # Fail-soft codes of the sprites stage (R52): report messages and stage data carry these, never exception text.
-MOVER_DROPPED, TEXTURES_FAILED = "mover_dropped", "textures_failed"
+MOVER_DROPPED, TEXTURES_FAILED, ASSOC_FAILED = "mover_dropped", "textures_failed", "assoc_failed"
 LOW_TEXTURE_CONF = 0.05   # a matted texture at or below this confidence is reported (it still replaces the binary one)
 
 
@@ -431,8 +431,16 @@ def _stage_regions(frames, bg, boxes, opts, sd, plate=None, text_tracks=None, sh
     return _pk(sd, "regions", rbf)
 
 
-def _stage_tracking(rbf, sd):
-    tracks = track_regions(rbf, cost_thr=2.0)
+def _stage_tracking(rbf, sd, frames=None):
+    """`frames`: the scene's frames, for the learned matcher (assoc.npz); without them, or on any error with it
+    (assoc_failed), the rules."""
+    from .assoc import load_matcher
+    matcher = load_matcher() if frames is not None else None
+    try:
+        tracks = track_regions(rbf, cost_thr=2.0, frames=frames, matcher=matcher)
+    except Exception as e:   # fail soft: the rule-based matching
+        log.warning("learned matching skipped (%s): %s", ASSOC_FAILED, describe(e, trace=True))
+        matcher, tracks = None, track_regions(rbf, cost_thr=2.0)
     ov = _load_overrides(sd)
     # overrides: forced region labels >= 1000 pin regions to an object id (label - 1000)
     for t in tracks:
@@ -446,8 +454,12 @@ def _stage_tracking(rbf, sd):
     for t in tracks:
         _trim_tail_crumbs(t)
     tracks = [t for t in tracks if t.regions]
-    tracks = _merge_adjacent_tracks(tracks)
-    log.info("tracking objects=%s", len(tracks))
+    try:
+        tracks = _merge_adjacent_tracks(tracks, frames=frames, matcher=matcher)
+    except Exception as e:   # fail soft: the rule-based joins
+        log.warning("learned joins skipped (%s): %s", ASSOC_FAILED, describe(e, trace=True))
+        tracks = _merge_adjacent_tracks(tracks)
+    log.info("tracking objects=%s matcher=%s", len(tracks), matcher is not None)
     return _pk(sd, "tracks", tracks)
 
 
@@ -891,7 +903,7 @@ def analyze_scene_frames(
     rbf = _stage_regions(frames, bg, boxes, opts, sd, plate=plate, text_tracks=text_tracks, shape_tracks=shape_tracks)
     t = _stage_done("regions", t)
     report_stage("tracking")
-    obj_tracks = _stage_tracking(rbf, sd)
+    obj_tracks = _stage_tracking(rbf, sd, frames)
     t = _stage_done("tracking", t)
     report_stage("plate")
     model, rbf, obj_tracks = _plate_stage(frames, fps, rbf, boxes, text_tracks, shape_tracks, obj_tracks, bg, bconf, plate, opts, sd)
@@ -1118,7 +1130,7 @@ def rerun(root: Path, scene_id: str, from_stage: str, note: str, options: Analyz
     t = _stage_done("regions", t)
     if boundary <= STAGES.index("tracking"):
         report_stage("tracking")
-        obj_tracks = _stage_tracking(rbf, sd)
+        obj_tracks = _stage_tracking(rbf, sd, frames)
     else:
         obj_tracks = _pk(sd, "tracks")
     t = _stage_done("tracking", t)
