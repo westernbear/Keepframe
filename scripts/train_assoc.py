@@ -437,9 +437,26 @@ def lottie_render(path: Path, work: Path):
     return frames, own, len(owners), float(doc.get("fr", 30))
 
 
+def _claim(out: Path) -> bool:
+    """One worker per clip: a claim file next to the output; one older than 30 min was left by a stopped worker."""
+    import os
+    import time
+    lock = out.with_suffix(".lock")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+        return True
+    except FileExistsError:
+        if time.time() - lock.stat().st_mtime > 1800:
+            lock.touch()
+            return True
+        return False
+
+
 def _save(path: Path, d: dict, **meta) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **d, meta=np.array(json.dumps(meta)))
+    path.with_suffix(".lock").unlink(missing_ok=True)
 
 
 def data_synth(seeds, kinds, ocr_box) -> None:
@@ -449,7 +466,7 @@ def data_synth(seeds, kinds, ocr_box) -> None:
     for seed in seeds:
         for kind in kinds or KINDS:
             out = EVAL / "assoc" / "pairs" / f"synth-{kind}-{seed}.npz"
-            if out.exists():
+            if out.exists() or not _claim(out):
                 continue
             case = work / f"synth-{kind}-{seed}"
             mp4, truth_path = render_template(kind, seed, case)
@@ -473,7 +490,7 @@ def data_lottie(ocr_box, limit: int) -> None:
     for path in sorted((EVAL / "assoc" / "lottie").glob("*.json"))[:limit]:
         out = EVAL / "assoc" / "pairs" / f"lottie-{path.stem}.npz"
         skip = out.with_suffix(".skip")
-        if out.exists() or skip.exists():
+        if out.exists() or skip.exists() or not _claim(out):
             continue
         try:
             got = lottie_render(path, work)
@@ -483,6 +500,7 @@ def data_lottie(ocr_box, limit: int) -> None:
         if got is None:
             skip.parent.mkdir(parents=True, exist_ok=True)
             skip.write_text("")
+            out.with_suffix(".lock").unlink(missing_ok=True)
             continue
         frames, own, n_own, fps = got
         parts = [clip_pairs(rbf, fr, own[a:a + len(fr)], n_own, seed=int(path.stem) % 1000)
@@ -502,7 +520,7 @@ def data_mk571(ocr_box) -> None:
     probe_boxes(ROOT / truth["page"], truth, frames=False)
     for w0 in (0, 160, 320):
         out = EVAL / "assoc" / "pairs" / f"gold-mk571-{w0}.npz"
-        if out.exists():
+        if out.exists() or not _claim(out):
             continue
         frames, fps = read_frames(ROOT / "eval/refs/mk571.mp4", w0, w0 + 149)
         frames = np.stack([cv2.resize(f, (960, 540), interpolation=cv2.INTER_AREA) for f in frames])
@@ -563,7 +581,7 @@ def data_saas(ocr_box) -> None:
         starts = [int(s) for s in np.linspace(0, max(0, n - SAAS_WINDOW), SAAS_WINDOWS)] if n > SAAS_WINDOW else [0]
         for w0 in sorted(set(starts)):
             out = EVAL / "assoc" / "pairs" / f"saas-{mp4.stem}-{w0}.npz"
-            if out.exists():
+            if out.exists() or not _claim(out):
                 continue
             frames, fps = read_frames(mp4, w0, min(n, w0 + SAAS_WINDOW) - 1)
             if frames.shape[2] != SAAS_W:
