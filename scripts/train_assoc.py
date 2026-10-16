@@ -253,14 +253,16 @@ def label_ingredients(a, ca: np.ndarray, b, cb: np.ndarray, stats: np.ndarray) -
 def truth_labels(lab: np.ndarray) -> np.ndarray:
     """Same content: one dominant owner, at most a quarter foreign (ownership overlap >= 3/4), and b where the owner's
     own motion takes a (the owner's centroid shift and scale between the two frames; within half of b's size), so two
-    parts of one layer are not the same. Two ground-dominant regions are the same when their masks overlap by half or
-    more where they sit (ground stays in place). -1 where no truth is known."""
+    parts of one layer are not the same; or a and b each the owner's main body (more than half of what shows of it),
+    wherever an occluder moved what shows. Two ground-dominant regions are the same when their masks overlap by half
+    or more where they sit (ground stays in place). -1 where no truth is known."""
     L = {c: lab[:, i] for i, c in enumerate(LAB_COLS)}
     s = np.sqrt(np.maximum(L["oarea_g"], 1) / np.maximum(L["oarea_f"], 1))
     px, py = L["ocx_g"] + s * (L["ax"] - L["ocx_f"]), L["ocy_g"] + s * (L["ay"] - L["ocy_f"])
     follows = np.hypot(L["bx"] - px, L["by"] - py) <= 0.5 * np.sqrt(L["b_area"])
+    body = (L["a_area"] > 0.5 * L["oarea_f"]) & (L["b_area"] > 0.5 * L["oarea_g"])
     same_owner = (L["dom_a"] == L["dom_b"]) & (L["oarea_g"] > 0)
-    y = np.where(L["dom_a"] == 0, L["abs_iou"] >= 0.5, same_owner & (L["overlap"] >= QUARTER) & follows)
+    y = np.where(L["dom_a"] == 0, L["abs_iou"] >= 0.5, same_owner & (L["overlap"] >= QUARTER) & (follows | body))
     y = np.where(L["dom_a"] != L["dom_b"], False, y).astype(np.int8)
     return np.where(np.isnan(L["dom_a"]), -1, y)
 
