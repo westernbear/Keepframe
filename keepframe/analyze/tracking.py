@@ -5,7 +5,8 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from .regions import Region
 
-# ponytail: one-to-one matching only (no split/merge). Upgrade path: Motico's eight mapping types with differentiable compositing.
+# ponytail: one-to-one matching only (a merge or split only cuts the track, split_merges). Upgrade path: Motico's eight
+# mapping types with differentiable compositing.
 
 
 @dataclass
@@ -111,3 +112,38 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                 t = ObjectTrack(id=next_id, regions={f: r}); next_id += 1
                 tracks.append(t); active.append(t)
     return tracks
+
+
+def _overlap(a: Region, b: Region) -> int:
+    x0, y0, x1, y1 = max(a.bbox[0], b.bbox[0]), max(a.bbox[1], b.bbox[1]), min(a.bbox[2], b.bbox[2]), min(a.bbox[3], b.bbox[3])
+    if x1 <= x0 or y1 <= y0:
+        return 0
+    ma = a.mask[y0 - a.bbox[1]:y1 - a.bbox[1], x0 - a.bbox[0]:x1 - a.bbox[0]]
+    mb = b.mask[y0 - b.bbox[1]:y1 - b.bbox[1], x0 - b.bbox[0]:x1 - b.bbox[0]]
+    return int((ma & mb).sum())
+
+
+def _takes_in(r: Region, own: Region, others: list[Region]) -> bool:
+    """r holds half or more of another region beside `own` that is at least a quarter of own's size (the size
+    track_regions starts a track at)."""
+    return any((q.bbox, q.area) != (own.bbox, own.area) and q.area * 4 >= own.area and 2 * _overlap(r, q) >= q.area
+               for q in others)
+
+
+def split_merges(tracks: list[ObjectTrack], rbf: list[list[Region]], first_frame: int = 0) -> list[ObjectTrack]:
+    """A track whose region takes in another region from its previous frame, or leaves one behind in its next, changes
+    content there (a glow that blurred letters join); so does a join across a gap (_merge_adjacent_tracks) to a region
+    under a quarter of the size, or over four times it. Such a track is cut, so each piece's one texture holds only
+    its own content. The first piece keeps the id; the others take new ones."""
+    out, next_id = [], max((t.id for t in tracks), default=0) + 1
+    for t in tracks:
+        fs = sorted(t.regions)
+        cuts = [f for p, f in zip(fs, fs[1:])
+                if _takes_in(t.regions[f], t.regions[p], rbf[p - first_frame])
+                or _takes_in(t.regions[p], t.regions[f], rbf[f - first_frame])
+                or (f - p > 1 and 4 * min(t.regions[p].area, t.regions[f].area) < max(t.regions[p].area, t.regions[f].area))]
+        for i, (a, b) in enumerate(zip([fs[0], *cuts], [*cuts, fs[-1] + 1])):
+            piece = ObjectTrack(id=t.id if i == 0 else next_id, regions={f: t.regions[f] for f in fs if a <= f < b})
+            next_id += i > 0
+            out.append(piece)
+    return out
