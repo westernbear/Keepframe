@@ -301,6 +301,8 @@ The real-clip A/B on these projects is `ab-real2.md`.
 
 ## 8. After B12 and B13c (`fixes6.md`), report only
 
+**B13c was reverted afterwards (`57b54d5`, the user's decision): §8 describes B12 with B13c. B12 alone is in the tree.**
+
 **Run.**
 - `eval/out/rt6-g4.sh`: the gate one clip at a time at `a91105a` (B13c, with B12), then kf fidelity per scene.
 - On the way, B13 (`clips-after6`) and B13b (`clips-after7`) were run the same way; they are reported below where they explain a change.
