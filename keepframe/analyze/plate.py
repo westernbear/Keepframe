@@ -247,10 +247,30 @@ def _poly_fit(crop: np.ndarray, ring: np.ndarray, hole: np.ndarray) -> tuple[np.
     return np.clip(np.rint(design(hy, hx) @ coef), 0, 255).astype(np.uint8), float(np.sqrt(np.mean(de ** 2)))
 
 
+def _fill_rows(plate, holes, comp, y, poly_max_rms) -> np.ndarray:
+    """The rows of a hole (`comp`: its mask over full-width rows from `y`) whose visible ground agrees along the whole
+    row (≥ MIN_RING pixels, RMS ΔE to their median ≤ poly_max_rms) take that median: a ground that changes only down
+    the frame, seen beside the hole. Returns the mask of the filled pixels.
+    shortcut: rows only; a ground that changes across a row (a horizontal gradient, a glow beside the hole) keeps
+    Telea; try columns too when such a hole is seen."""
+    done = np.zeros_like(comp)
+    for i in np.flatnonzero(comp.any(1)):
+        vals = plate[y + i][~holes[y + i]].astype(np.float64)
+        if len(vals) < MIN_RING:
+            continue
+        vals = vals[::max(1, len(vals) // 2000)]
+        med = np.median(vals, 0)
+        if np.sqrt(np.mean(delta_e(srgb_to_lab(vals), srgb_to_lab(med)) ** 2)) <= poly_max_rms:
+            plate[y + i][comp[i]] = np.rint(med).astype(np.uint8)
+            done[i] = comp[i]
+    return done
+
+
 def fill_holes(plate, holes, uncovered, *, poly_max_rms=POLY_MAX_RMS) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """Recovered pixels take their `uncovered` value; each hole takes a degree-2 fit of its ring
-    dilate(r)∖dilate(2), r = clip(0.25·√area, 8, 48), when the ring RMS ΔE ≤ poly_max_rms, else Telea
-    inpainting on its bbox ± 32. Returns the plate, the synthetic mask and one record per hole."""
+    dilate(r)∖dilate(2), r = clip(0.25·√area, 8, 48), when the ring RMS ΔE ≤ poly_max_rms, else its rows whose ground
+    agrees along the row take that ground (_fill_rows) and the rest Telea inpainting on its bbox ± 32. Returns the
+    plate, the synthetic mask and one record per hole."""
     plate = plate.copy()
     got = uncovered[..., 0] < SENTINEL
     plate[got] = uncovered[got]
@@ -276,15 +296,21 @@ def fill_holes(plate, holes, uncovered, *, poly_max_rms=POLY_MAX_RMS) -> tuple[n
                 plate[Y0:Y1, X0:X1][comp] = pred
                 method = "poly"
         if method == "inpaint":
+            done = np.zeros(holes.shape, bool)
+            done[y:y + h] = _fill_rows(plate, holes, lab[y:y + h] == k, y, poly_max_rms)
+            n_done = int(done.sum())
             X0, Y0, X1, Y1 = max(0, x - INPAINT_PAD), max(0, y - INPAINT_PAD), min(W, x + w + INPAINT_PAD), min(H, y + h + INPAINT_PAD)
-            todo = (holes & ~synthetic)[Y0:Y1, X0:X1]
-            comp = lab[Y0:Y1, X0:X1] == k
-            if todo.all():
-                plate[Y0:Y1, X0:X1][comp] = np.rint(plate[~holes | synthetic].mean(0)).astype(np.uint8)
-                method = "mean"
+            todo = (holes & ~synthetic & ~done)[Y0:Y1, X0:X1]
+            comp = (lab[Y0:Y1, X0:X1] == k) & ~done[Y0:Y1, X0:X1]
+            if n_done == area:
+                method = "rows"
+            elif todo.all():
+                plate[Y0:Y1, X0:X1][comp] = np.rint(plate[~holes | synthetic | done].mean(0)).astype(np.uint8)
+                method = "rows+mean" if n_done else "mean"
             else:
                 out = cv2.inpaint(np.ascontiguousarray(plate[Y0:Y1, X0:X1]), todo.astype(np.uint8), INPAINT_RADIUS, cv2.INPAINT_TELEA)
                 plate[Y0:Y1, X0:X1][comp] = out[comp]
+                method = "rows+inpaint" if n_done else "inpaint"
         synthetic[y:y + h, x:x + w] |= lab[y:y + h, x:x + w] == k
         info.append({"bbox": [x, y, x + w, y + h], "area": area, "method": method,
                      "rms": None if rms is None else round(rms, 3)})
