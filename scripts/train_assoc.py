@@ -223,15 +223,44 @@ def _abs_iou(a, b) -> float:
     return inter / max(1, a.area + b.area - inter)
 
 
-def truth_label(a, ca: np.ndarray, b, cb: np.ndarray) -> int:
-    """Same content: one dominant owner and at most a quarter foreign (ownership overlap >= 3/4); two ground-dominant
-    regions are the same when their masks overlap by half or more where they sit (ground stays in place)."""
+def owner_stats(owners: np.ndarray, n_owners: int) -> np.ndarray:
+    """Per frame and owner: (centroid x, centroid y, area)."""
+    n, H, W = owners.shape
+    yy, xx = np.mgrid[:H, :W]
+    out = np.zeros((n, n_owners + 1, 3), np.float32)
+    for f in range(n):
+        o = owners[f].ravel()
+        area = np.bincount(o, minlength=n_owners + 1).astype(np.float32)
+        cx = np.bincount(o, weights=xx.ravel(), minlength=n_owners + 1) / np.maximum(area, 1)
+        cy = np.bincount(o, weights=yy.ravel(), minlength=n_owners + 1) / np.maximum(area, 1)
+        out[f] = np.stack([cx, cy, area], 1)[: n_owners + 1]
+    return out
+
+
+LAB_COLS = ["dom_a", "dom_b", "overlap", "abs_iou", "ax", "ay", "bx", "by", "a_area", "b_area",
+            "ocx_f", "ocy_f", "oarea_f", "ocx_g", "ocy_g", "oarea_g"]
+
+
+def label_ingredients(a, ca: np.ndarray, b, cb: np.ndarray, stats: np.ndarray) -> list[float]:
+    """What a truth label needs, stored so labels can be computed (and their definition revised) at training time."""
     da, db = int(ca.argmax()), int(cb.argmax())
-    if da != db:
-        return 0
-    if da == 0:
-        return int(_abs_iou(a, b) >= 0.5)
-    return int(np.minimum(ca, cb).sum() >= QUARTER)
+    return [da, db, float(np.minimum(ca, cb).sum()), _abs_iou(a, b), *a.centroid, *b.centroid, a.area, b.area,
+            *stats[a.frame, da], *stats[b.frame, da]]
+
+
+def truth_labels(lab: np.ndarray) -> np.ndarray:
+    """Same content: one dominant owner, at most a quarter foreign (ownership overlap >= 3/4), and b where the owner's
+    own motion takes a (the owner's centroid shift and scale between the two frames; within half of b's size), so two
+    parts of one layer are not the same. Two ground-dominant regions are the same when their masks overlap by half or
+    more where they sit (ground stays in place). -1 where no truth is known."""
+    L = {c: lab[:, i] for i, c in enumerate(LAB_COLS)}
+    s = np.sqrt(np.maximum(L["oarea_g"], 1) / np.maximum(L["oarea_f"], 1))
+    px, py = L["ocx_g"] + s * (L["ax"] - L["ocx_f"]), L["ocy_g"] + s * (L["ay"] - L["ocy_f"])
+    follows = np.hypot(L["bx"] - px, L["by"] - py) <= 0.5 * np.sqrt(L["b_area"])
+    same_owner = (L["dom_a"] == L["dom_b"]) & (L["oarea_g"] > 0)
+    y = np.where(L["dom_a"] == 0, L["abs_iou"] >= 0.5, same_owner & (L["overlap"] >= QUARTER) & follows)
+    y = np.where(L["dom_a"] != L["dom_b"], False, y).astype(np.int8)
+    return np.where(np.isnan(L["dom_a"]), -1, y)
 
 
 def ecc_measure(a, b, fa: np.ndarray, fb: np.ndarray, size: int = 96):
@@ -282,8 +311,8 @@ def ecc_measure(a, b, fa: np.ndarray, fb: np.ndarray, size: int = 96):
 
 
 def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, max_pairs: int = 20000, seed: int = 0) -> dict:
-    """Candidate pairs (a at f, b at f+1..f+8 inside the tracking gate): features, truth labels (when owners are
-    known, else -1) and ECC measures (nan when ECC fails)."""
+    """Candidate pairs (a at f, b at f+1..f+8 inside the tracking gate): features, truth-label ingredients (nan
+    without owners; see truth_labels) and ECC measures (nan: too small to say)."""
     import math
     from keepframe.analyze.assoc import MAX_GAP, descriptor, pair_features
     pairs = []
@@ -298,6 +327,7 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
     if len(pairs) > max_pairs:
         pairs = [pairs[i] for i in sorted(rng.choice(len(pairs), max_pairs, replace=False))]
     desc, comp = {}, {}
+    stats = owner_stats(owners, n_owners) if owners is not None else None
 
     def d(r):
         key = (r.frame, r.bbox, r.area)
@@ -307,14 +337,14 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
                 comp[key] = composition(r, owners[r.frame], n_owners)
         return key
 
-    X, yt, ecc = [], [], []
+    X, lab, ecc = [], [], []
     for a, b, gap in pairs:
         ka, kb = d(a), d(b)
         X.append(pair_features(a, desc[ka], b, desc[kb], gap))
-        yt.append(truth_label(a, comp[ka], b, comp[kb]) if owners is not None else -1)
+        lab.append(label_ingredients(a, comp[ka], b, comp[kb], stats) if owners is not None else [np.nan] * len(LAB_COLS))
         m = ecc_measure(a, b, frames[a.frame], frames[b.frame])
         ecc.append(m if m is not None else (np.nan, np.nan, np.nan))
-    return {"X": np.array(X, np.float32).reshape(-1, 16), "y_truth": np.array(yt, np.int8),
+    return {"X": np.array(X, np.float32).reshape(-1, 16), "lab": np.array(lab, np.float32).reshape(-1, len(LAB_COLS)),
             "ecc": np.array(ecc, np.float32).reshape(-1, 3), "gap": np.array([p[2] for p in pairs], np.int8)}
 
 
@@ -562,7 +592,8 @@ def load_pairs() -> list[dict]:
     for p in sorted((EVAL / "assoc" / "pairs").glob("*.npz")):
         with np.load(p) as d:
             meta = json.loads(str(d["meta"]))
-            out.append({"name": p.stem, "meta": meta, "held": _held_out(meta), **{k: d[k] for k in ("X", "y_truth", "ecc")}})
+            out.append({"name": p.stem, "meta": meta, "held": _held_out(meta), "X": d["X"], "ecc": d["ecc"],
+                        "y_truth": truth_labels(d["lab"])})
     return out
 
 
@@ -609,6 +640,7 @@ def labelled(clips: list[dict], rho: float):
 def fit_mlp(X, y, w, epochs: int = 30, seed: int = 0) -> dict:
     import torch
     torch.manual_seed(seed)
+    torch.set_num_threads(2)   # the data workers share the 4 cores
     mean, std = X.mean(0), X.std(0) + 1e-6
     xt = torch.tensor((X - mean) / std, dtype=torch.float32)
     yt, wt = torch.tensor(y), torch.tensor(w)
@@ -616,7 +648,7 @@ def fit_mlp(X, y, w, epochs: int = 30, seed: int = 0) -> dict:
     opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
     g = torch.Generator().manual_seed(seed)
     for _ in range(epochs):
-        for idx in torch.randperm(len(yt), generator=g).split(1024):
+        for idx in torch.randperm(len(yt), generator=g).split(4096):
             loss = (torch.nn.functional.binary_cross_entropy_with_logits(net(xt[idx])[:, 0], yt[idx], reduction="none") * wt[idx]).mean()
             opt.zero_grad(); loss.backward(); opt.step()
     lin = [m for m in net if isinstance(m, torch.nn.Linear)]
