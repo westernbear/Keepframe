@@ -519,6 +519,51 @@ def data_lottie(ocr_box, limit: int) -> None:
     shutil.rmtree(work / "stages-lottie", ignore_errors=True)
 
 
+def scene_owners(scene, root: Path) -> np.ndarray:
+    """Pixel owners of an ir scene from each element's exact alpha (keepframe.ir.synth.layers): the top element covering
+    at least half of a pixel, else ground (0)."""
+    from keepframe.ir.synth import layers
+    order = sorted(scene.elements, key=lambda e: e.z.keys[0].v)   # shortcut: constant z, as the ir generators make it
+    ids = {e.id: k for k, e in enumerate(scene.elements, 1)}
+    best = np.full((scene.frames, scene.size[1], scene.size[0]), 0.5, np.float32)
+    own = np.zeros(best.shape, np.int16)
+    for eid, f, a, _ in layers(scene.model_copy(update={"elements": order}), root, range(scene.frames)):
+        m = a >= best[f]   # bottom to top: an element above takes the pixels it covers
+        best[f][m], own[f][m] = a[m], ids[eid]
+    return own
+
+
+def data_scenes(seeds, ocr_box) -> None:
+    """The ir generators the tests draw from (keepframe.ir.synth), on seeds the tests never use: rotation, scale, fades,
+    eased jumps, crossings, titles over plates and movers."""
+    import random
+    import shutil
+    from keepframe.analyze.video import read_frames, render_scene_video
+    from keepframe.ir.synth import make_reference_scene, make_synthetic_scene
+    work = EVAL / "assoc" / "work"
+    for seed in seeds:
+        for gen in ("synthetic", "reference"):
+            out = EVAL / "assoc" / "pairs" / f"scene-{gen}-{seed}.npz"
+            if out.exists() or not _claim(out):
+                continue
+            rng, case = random.Random(seed), work / f"scene-{gen}-{seed}"
+            if gen == "synthetic":
+                scene = make_synthetic_scene(case, seed, n_elements=rng.randint(3, 6), frames=rng.choice([24, 60]),
+                                             with_text=rng.random() < 0.5, overlap=rng.random() < 0.5)
+            else:
+                scene = make_reference_scene(case, seed, plate=rng.choice(["flat", "gradient", "animated", "image"]),
+                                             n_sprites=rng.randint(1, 4), n_titles=rng.randint(1, 2),
+                                             mover=rng.choice([False, True, "inplace"]), title=rng.choice([None, "stagger", "plane"]))
+            frames, fps = read_frames(render_scene_video(scene, case, case / "clip.mp4"))
+            owners = scene_owners(scene, case)
+            parts = [clip_pairs(rbf, fr, owners[a:a + len(fr)], len(scene.elements), seed=seed)
+                     for a, fr, rbf in clip_regions(frames, fps, work / "stages-scene", ocr_box)]
+            if parts:
+                _save(out, {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}, source="scene", kind=gen, seed=seed)
+            shutil.rmtree(case, ignore_errors=True)
+            print("scene", gen, seed, flush=True)
+
+
 def data_mk571(ocr_box) -> None:
     import cv2
     from keepframe.analyze.video import read_frames
@@ -604,10 +649,13 @@ def data_saas(ocr_box) -> None:
 # ---------------------------------------------------------------- train / eval
 
 def _held_out(meta: dict) -> bool:
-    """Whole clips held out: synthetic seeds 8-9, a fifth of the Lottie animations and of the SaaS videos."""
+    """Whole clips held out: synthetic seeds 8-9, a fifth of the ir scenes (seed % 5 == 0), of the Lottie animations and
+    of the SaaS videos."""
     import zlib
     if meta["source"] == "synth":
         return int(meta["seed"]) >= 8
+    if meta["source"] == "scene":
+        return int(meta["seed"]) % 5 == 0
     if meta["source"] in ("lottie", "saas"):
         return zlib.crc32(str(meta["id"]).encode()) % 5 == 0
     return False   # gold mk571 trains (the user's choice)
@@ -759,6 +807,7 @@ def main(argv=None) -> int:
     dsub = sub.add_parser("data")
     dsub.add_argument("--sources", default="synth,gold,lottie,saas")
     dsub.add_argument("--seeds", default="2-9")
+    dsub.add_argument("--scene-seeds", default="5000-5059", help="ir scene seeds (the tests use seeds below 100)")
     dsub.add_argument("--kinds", default="")
     dsub.add_argument("--lottie-limit", type=int, default=1000)
     for name in ("train", "eval"):
@@ -779,6 +828,9 @@ def main(argv=None) -> int:
                 data_synth(range(lo, hi + 1), [k for k in a.kinds.split(",") if k], ocr_box)
             elif src == "gold":
                 data_mk571(ocr_box)
+            elif src == "scene":
+                s0, s1 = (int(x) for x in a.scene_seeds.split("-"))
+                data_scenes(range(s0, s1 + 1), ocr_box)
             elif src == "lottie":
                 data_lottie(ocr_box, a.lottie_limit)
             elif src == "saas":
