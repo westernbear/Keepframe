@@ -124,22 +124,25 @@ def _overlap(a: Region, b: Region) -> int:
 
 
 def split_merges(tracks: list[ObjectTrack]) -> list[ObjectTrack]:
-    """A track whose region takes in another track's region from its previous frame, or leaves one behind in its next,
-    changes content there (a glow that blurred letters join); so does a join across a gap (_merge_adjacent_tracks) to a
+    """A track whose region takes in another track's region from its previous frame (that track ends there), or leaves
+    one behind in its next (that track starts there), changes content there (a glow that blurred letters join); so does a join across a gap (_merge_adjacent_tracks) to a
     region under a quarter, or over four times, the size the track's own growth predicts (a speck joined to a glow; a
     circle that wipes in keeps growing). Such a track is cut, so each piece's one texture holds only its own content.
     The other region counts when its track is seen in at least 3 frames (an object of its own, as split_swaps asks of a
     read; letters breaking up as they come out of a blur are not) and it is at least a quarter of the track's region
     (the size track_regions starts a track at), half or more of it inside. The first piece keeps the id; the others
     take new ones."""
-    by_frame: dict[int, list[tuple[int, Region]]] = {}
+    by_frame: dict[int, list[tuple[ObjectTrack, Region]]] = {}
     for u in tracks:
         if len(u.regions) >= 3:
             for f, r in u.regions.items():
-                by_frame.setdefault(f, []).append((u.id, r))
+                by_frame.setdefault(f, []).append((u, r))
 
-    def takes_in(r: Region, own: Region, f: int, tid: int) -> bool:
-        return any(uid != tid and q.area * 4 >= own.area and 2 * _overlap(r, q) >= q.area for uid, q in by_frame.get(f, ()))
+    def takes_in(r: Region, own: Region, f: int, g: int, tid: int) -> bool:
+        """r (at g) holds half or more of a region at f whose track has none at g: it went into r, or came out of it
+        (a neighbour that goes on beside it, as a stripe of a sliding card, is not taken in)."""
+        return any(u.id != tid and g not in u.regions and q.area * 4 >= own.area and 2 * _overlap(r, q) >= q.area
+                   for u, q in by_frame.get(f, ()))
 
     def jump(t: ObjectTrack, fs: list[int], i: int) -> bool:
         """Across a gap, the region is over 4x off the size the track's own growth (its two frames before) predicts."""
@@ -154,8 +157,8 @@ def split_merges(tracks: list[ObjectTrack]) -> list[ObjectTrack]:
     for t in tracks:
         fs = sorted(t.regions)
         cuts = [fs[i + 1] for i in range(len(fs) - 1)
-                if takes_in(t.regions[fs[i + 1]], t.regions[fs[i]], fs[i], t.id)
-                or takes_in(t.regions[fs[i]], t.regions[fs[i + 1]], fs[i + 1], t.id) or jump(t, fs, i)]
+                if takes_in(t.regions[fs[i + 1]], t.regions[fs[i]], fs[i], fs[i + 1], t.id)
+                or takes_in(t.regions[fs[i]], t.regions[fs[i + 1]], fs[i + 1], fs[i], t.id) or jump(t, fs, i)]
         for i, (a, b) in enumerate(zip([fs[0], *cuts], [*cuts, fs[-1] + 1])):
             out.append(ObjectTrack(id=t.id if i == 0 else next_id, regions={f: t.regions[f] for f in fs if a <= f < b}))
             next_id += i > 0

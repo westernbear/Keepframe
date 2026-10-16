@@ -122,6 +122,9 @@ def test_split_merges_cuts_a_track_where_another_region_joins_or_leaves_it():
     grow = ObjectTrack(5, {f: _reg(f, np.pad(np.ones((10 + 4 * f, 20 + 8 * f), bool), ((0, 50 - 4 * f), (0, 80 - 8 * f))))
                            for f in range(5)})
     assert len(split_merges([t, flicker, speck])) == 3 and len(split_merges([grow])) == 1   # none of these is cut
+    stripes = [ObjectTrack(10 + k, {f: _reg(f, np.pad(np.ones((20, 6), bool), ((20, 20), (12 * k + 7 * f, 94 - 12 * k - 7 * f))))
+                                   for f in range(4)}) for k in range(3)]   # a sliding card's stripes, 7 px a frame
+    assert len(split_merges(stripes)) == 3
     joined = ObjectTrack(6, {0: _reg(0, glow), 1: _reg(1, glow), 5: _reg(5, crumb)})       # a gap merge to a speck
     assert [sorted(p.regions) for p in split_merges([joined])] == [[0, 1], [5]]
     yy, xx = np.mgrid[:60, :100]
