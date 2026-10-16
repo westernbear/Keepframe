@@ -702,20 +702,20 @@ def metrics(weights: dict, clips: list[dict], rho: float) -> dict:
     return out
 
 
-def train_main(epochs: int, out: Path) -> None:
+def train_main(epochs: int, out: Path, saas: bool = True) -> None:
     clips = load_pairs()
     rho, agree = calibrate_rho(clips)
-    train = [c for c in clips if not c["held"]]
+    train = [c for c in clips if not c["held"] and (saas or c["meta"]["source"] != "saas")]
     held = [c for c in clips if c["held"]]
     X, y, w, src = labelled(train, rho)
     weights = fit_mlp(X, y, w, epochs)
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
-    meta = {"commit": commit, "rho": rho, "rho_agreement_with_truth": round(agree, 4), "epochs": epochs,
+    meta = {"commit": commit, "trained_on_saas": saas, "rho": rho, "rho_agreement_with_truth": round(agree, 4), "epochs": epochs,
             "train_pairs": {s_: int((src == s_).sum()) for s_ in sorted(set(src))},
             "train_clips": len(train), "held_out_clips": len(held),
             "held_out": metrics(weights, held, rho), "train": metrics(weights, train, rho),
             "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), "
-                       "gold mk571 (Mixkit free), Envato Elements SaaS previews (paid templates; previews never committed)"}
+                       "gold mk571 (Mixkit free)" + (", Envato Elements SaaS previews (paid templates; previews never committed)" if saas else "")}
     np.savez(out, **weights, meta=np.array(json.dumps(meta)))
     if out == ROOT / "keepframe" / "analyze" / "assoc.npz":   # the shipped weights: their record goes with them
         qa = ROOT / "docs" / "qa" / "assoc"
@@ -757,9 +757,10 @@ def main(argv=None) -> int:
         sp = sub.add_parser(name)
         sp.add_argument("--epochs", type=int, default=30)
         sp.add_argument("--out", type=Path, default=ROOT / "keepframe" / "analyze" / "assoc.npz")
+        sp.add_argument("--no-saas", action="store_true", help="train without the video-labelled SaaS pairs")
     a = ap.parse_args(argv)
     if a.cmd == "train":
-        train_main(a.epochs, a.out)
+        train_main(a.epochs, a.out, not a.no_saas)
     if a.cmd == "eval":
         eval_main(a.epochs)
     if a.cmd == "data":
