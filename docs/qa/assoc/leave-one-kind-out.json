@@ -1,0 +1,121 @@
+{
+ "rho": 0.3,
+ "epochs": 30,
+ "trained_on_saas": false,
+ "kinds": {
+  "big_scroll": {
+   "pairs": 56148,
+   "same": 3116,
+   "auc": 0.9243171729966222,
+   "accuracy": 0.9007800812139346
+  },
+  "block_transition": {
+   "pairs": 9159,
+   "same": 1150,
+   "auc": 0.9144398421341209,
+   "accuracy": 0.8714925210175783
+  },
+  "chat_ui": {
+   "pairs": 149035,
+   "same": 47527,
+   "auc": 0.9803768579213804,
+   "accuracy": 0.9029556815513134
+  },
+  "counter": {
+   "pairs": 45850,
+   "same": 16854,
+   "auc": 0.9992583935950181,
+   "accuracy": 0.9850381679389313
+  },
+  "glow_cut": {
+   "pairs": 176816,
+   "same": 19199,
+   "auc": 0.9993472405664048,
+   "accuracy": 0.956768618224595
+  },
+  "glow_letters": {
+   "pairs": 148997,
+   "same": 10243,
+   "auc": 0.9974934065805577,
+   "accuracy": 0.979643885447358
+  },
+  "glow_merge": {
+   "pairs": 134989,
+   "same": 21446,
+   "auc": 0.9904613781760219,
+   "accuracy": 0.9604264051144908
+  },
+  "glow_title": {
+   "pairs": 160000,
+   "same": 11054,
+   "auc": 0.9993935773600879,
+   "accuracy": 0.9866625
+  },
+  "hard_cut": {
+   "pairs": 146417,
+   "same": 16313,
+   "auc": 0.9988681566994776,
+   "accuracy": 0.9897143091307703
+  },
+  "kinetic_title": {
+   "pairs": 783,
+   "same": 7,
+   "auc": 0.9970544918998527,
+   "accuracy": 0.9565772669220945
+  },
+  "label_grid": {
+   "pairs": 160000,
+   "same": 14046,
+   "auc": 0.9998948865101225,
+   "accuracy": 0.9959
+  },
+  "logo_sting": {
+   "pairs": 94524,
+   "same": 26016,
+   "auc": 0.9889695632237239,
+   "accuracy": 0.9322076932842452
+  },
+  "prompt_typing": {
+   "pairs": 125730,
+   "same": 46644,
+   "auc": 0.9914003633893531,
+   "accuracy": 0.92543545693152
+  },
+  "scroller": {
+   "pairs": 160000,
+   "same": 4876,
+   "auc": 0.9672180393238665,
+   "accuracy": 0.962
+  },
+  "stepped_zoom": {
+   "pairs": 4268,
+   "same": 1012,
+   "auc": 1.0,
+   "accuracy": 0.9896907216494846
+  },
+  "whip_pan": {
+   "pairs": 21612,
+   "same": 6274,
+   "auc": 0.9335782256066292,
+   "accuracy": 0.8893207477327411
+  },
+  "wipe": {
+   "pairs": 23422,
+   "same": 5515,
+   "auc": 0.995775433068841,
+   "accuracy": 0.9789941081034924
+  },
+  "word_build": {
+   "pairs": 0,
+   "same": 0,
+   "auc": null,
+   "accuracy": NaN
+  },
+  "word_swap": {
+   "pairs": 7800,
+   "same": 7800,
+   "auc": null,
+   "accuracy": 1.0
+  }
+ }
+}
