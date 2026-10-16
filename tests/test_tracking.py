@@ -124,3 +124,7 @@ def test_split_merges_cuts_a_track_where_another_region_joins_or_leaves_it():
     assert len(split_merges([t, flicker, speck])) == 3 and len(split_merges([grow])) == 1   # none of these is cut
     joined = ObjectTrack(6, {0: _reg(0, glow), 1: _reg(1, glow), 5: _reg(5, crumb)})       # a gap merge to a speck
     assert [sorted(p.regions) for p in split_merges([joined])] == [[0, 1], [5]]
+    yy, xx = np.mgrid[:60, :100]
+    disc = lambda f: _reg(f, (xx - 50) ** 2 + (yy - 30) ** 2 < 2.0 ** f * 2)   # a circle wiping in: its area doubles
+    wipe = ObjectTrack(7, {f: disc(f) for f in (1, 2, 3, 6)})                    # each frame, 2 frames lost on the way
+    assert len(split_merges([wipe])) == 1

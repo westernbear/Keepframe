@@ -126,11 +126,12 @@ def _overlap(a: Region, b: Region) -> int:
 def split_merges(tracks: list[ObjectTrack]) -> list[ObjectTrack]:
     """A track whose region takes in another track's region from its previous frame, or leaves one behind in its next,
     changes content there (a glow that blurred letters join); so does a join across a gap (_merge_adjacent_tracks) to a
-    region under a quarter of the size, or over four times it. Such a track is cut, so each piece's one texture holds
-    only its own content. The other region counts when its track is seen in at least 3 frames (an object of its own,
-    as split_swaps asks of a read; letters breaking up as they come out of a blur are not) and it is at least a quarter
-    of the track's region (the size track_regions starts a track at), half or more of it inside. The first piece keeps
-    the id; the others take new ones."""
+    region under a quarter, or over four times, the size the track's own growth predicts (a speck joined to a glow; a
+    circle that wipes in keeps growing). Such a track is cut, so each piece's one texture holds only its own content.
+    The other region counts when its track is seen in at least 3 frames (an object of its own, as split_swaps asks of a
+    read; letters breaking up as they come out of a blur are not) and it is at least a quarter of the track's region
+    (the size track_regions starts a track at), half or more of it inside. The first piece keeps the id; the others
+    take new ones."""
     by_frame: dict[int, list[tuple[int, Region]]] = {}
     for u in tracks:
         if len(u.regions) >= 3:
@@ -140,12 +141,21 @@ def split_merges(tracks: list[ObjectTrack]) -> list[ObjectTrack]:
     def takes_in(r: Region, own: Region, f: int, tid: int) -> bool:
         return any(uid != tid and q.area * 4 >= own.area and 2 * _overlap(r, q) >= q.area for uid, q in by_frame.get(f, ()))
 
+    def jump(t: ObjectTrack, fs: list[int], i: int) -> bool:
+        """Across a gap, the region is over 4x off the size the track's own growth (its two frames before) predicts."""
+        p, f = fs[i], fs[i + 1]
+        a = float(t.regions[p].area)
+        if i > 0:
+            a *= (a / t.regions[fs[i - 1]].area) ** ((f - p) / (p - fs[i - 1]))
+        b = t.regions[f].area
+        return f - p > 1 and 4 * min(a, b) < max(a, b)
+
     out, next_id = [], max((t.id for t in tracks), default=0) + 1
     for t in tracks:
         fs = sorted(t.regions)
-        cuts = [f for p, f in zip(fs, fs[1:])
-                if takes_in(t.regions[f], t.regions[p], p, t.id) or takes_in(t.regions[p], t.regions[f], f, t.id)
-                or (f - p > 1 and 4 * min(t.regions[p].area, t.regions[f].area) < max(t.regions[p].area, t.regions[f].area))]
+        cuts = [fs[i + 1] for i in range(len(fs) - 1)
+                if takes_in(t.regions[fs[i + 1]], t.regions[fs[i]], fs[i], t.id)
+                or takes_in(t.regions[fs[i]], t.regions[fs[i + 1]], fs[i + 1], t.id) or jump(t, fs, i)]
         for i, (a, b) in enumerate(zip([fs[0], *cuts], [*cuts, fs[-1] + 1])):
             out.append(ObjectTrack(id=t.id if i == 0 else next_id, regions={f: t.regions[f] for f in fs if a <= f < b}))
             next_id += i > 0
