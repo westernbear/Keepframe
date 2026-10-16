@@ -724,21 +724,21 @@ def train_main(epochs: int, out: Path, saas: bool = True) -> None:
     print(json.dumps(meta, indent=1))
 
 
-def eval_main(epochs: int) -> None:
+def eval_main(epochs: int, saas: bool = True) -> None:
     """Leave one synthetic kind out: train without it (all other training data), score it."""
     clips = load_pairs()
     rho, _ = calibrate_rho(clips)
     kinds = sorted({c["meta"]["kind"] for c in clips if c["meta"]["source"] == "synth"})
     rows = {}
     for k in kinds:
-        tr = [c for c in clips if not c["held"] and c["meta"].get("kind") != k]
+        tr = [c for c in clips if not c["held"] and c["meta"].get("kind") != k and (saas or c["meta"]["source"] != "saas")]
         te = [c for c in clips if c["meta"].get("kind") == k]
         X, y, w, _ = labelled(tr, rho)
         rows[k] = metrics(fit_mlp(X, y, w, epochs), te, rho).get("synth")
         print(k, rows[k], flush=True)
     qa = ROOT / "docs" / "qa" / "assoc"
     qa.mkdir(parents=True, exist_ok=True)
-    (qa / "leave-one-kind-out.json").write_text(json.dumps({"rho": rho, "epochs": epochs, "kinds": rows}, indent=1))
+    (qa / "leave-one-kind-out.json").write_text(json.dumps({"rho": rho, "epochs": epochs, "trained_on_saas": saas, "kinds": rows}, indent=1))
 
 
 def main(argv=None) -> int:
@@ -762,7 +762,7 @@ def main(argv=None) -> int:
     if a.cmd == "train":
         train_main(a.epochs, a.out, not a.no_saas)
     if a.cmd == "eval":
-        eval_main(a.epochs)
+        eval_main(a.epochs, not a.no_saas)
     if a.cmd == "data":
         ocr_box: list = []
         lo, hi = (int(x) for x in a.seeds.split("-"))

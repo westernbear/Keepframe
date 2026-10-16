@@ -1,0 +1,123 @@
+{
+ "machine": "cloud container, 4 CPU, no GPU; torch CPU, 2 threads",
+ "command": "scripts/train_assoc.py train --no-saas (shipped) / train (variant with SaaS), both --out to the scratchpad, then copied",
+ "choice": "Ship the variant without the SaaS pairs: it has the better held-out AUC on both truth-labelled sources (synthetic seeds 8-9: 0.9952 vs 0.9908; held-out Lottie: 0.9916 vs 0.9878). The variant with SaaS scores higher only against the SaaS video-derived labels (0.977 vs 0.909), which agree with truth at 0.9035 but with precision 0.636 and recall 0.726 for 'same' on the training synthetic and Lottie clips: noisy labels.",
+ "rho_curve": "ECC-label agreement with truth is flat from rho 0.05 to 0.65 (0.9035; 0.8551 at 0): the mask-coverage condition decides, not the correlation, which is either high or 0 (ECC non-convergence).",
+ "shipped": {
+  "commit": "fe79db4",
+  "trained_on_saas": false,
+  "rho": 0.3,
+  "rho_agreement_with_truth": 0.9035,
+  "epochs": 30,
+  "train_pairs": {
+   "gold": 60000,
+   "lottie": 1581392,
+   "synth": 1224087
+  },
+  "train_clips": 206,
+  "held_out_clips": 92,
+  "held_out": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30611,
+    "auc": 0.9915659632950456,
+    "accuracy": 0.9548477401966715
+   },
+   "saas": {
+    "pairs": 596740,
+    "same": 13893,
+    "auc": 0.9087634115705656,
+    "accuracy": 0.9379595803867681
+   },
+   "synth": {
+    "pairs": 416807,
+    "same": 67222,
+    "auc": 0.9952249293059708,
+    "accuracy": 0.9726276190179147
+   }
+  },
+  "train": {
+   "gold": {
+    "pairs": 60000,
+    "same": 7918,
+    "auc": 0.9979249501623817,
+    "accuracy": 0.9648833333333333
+   },
+   "lottie": {
+    "pairs": 1581392,
+    "same": 122241,
+    "auc": 0.9954115448068327,
+    "accuracy": 0.9673060190009815
+   },
+   "synth": {
+    "pairs": 1224087,
+    "same": 192760,
+    "auc": 0.9968196136754017,
+    "accuracy": 0.974216701917429
+   }
+  },
+  "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), gold mk571 (Mixkit free)"
+ },
+ "variant_with_saas": {
+  "commit": "fe79db4",
+  "trained_on_saas": true,
+  "rho": 0.3,
+  "rho_agreement_with_truth": 0.9035,
+  "epochs": 30,
+  "train_pairs": {
+   "gold": 60000,
+   "lottie": 1581392,
+   "saas": 2281408,
+   "synth": 1224087
+  },
+  "train_clips": 296,
+  "held_out_clips": 92,
+  "held_out": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30611,
+    "auc": 0.987773236187071,
+    "accuracy": 0.9438584999728815
+   },
+   "saas": {
+    "pairs": 596740,
+    "same": 13893,
+    "auc": 0.977160400197134,
+    "accuracy": 0.9438331601702584
+   },
+   "synth": {
+    "pairs": 416807,
+    "same": 67222,
+    "auc": 0.9908330867628252,
+    "accuracy": 0.9394515927035775
+   }
+  },
+  "train": {
+   "gold": {
+    "pairs": 60000,
+    "same": 7918,
+    "auc": 0.9975411319001602,
+    "accuracy": 0.96265
+   },
+   "lottie": {
+    "pairs": 1581392,
+    "same": 122241,
+    "auc": 0.9927621639764048,
+    "accuracy": 0.9526543703269019
+   },
+   "saas": {
+    "pairs": 2281408,
+    "same": 73719,
+    "auc": 0.9844955308228395,
+    "accuracy": 0.9456164789463349
+   },
+   "synth": {
+    "pairs": 1224087,
+    "same": 192760,
+    "auc": 0.994608065548089,
+    "accuracy": 0.9590029140085631
+   }
+  },
+  "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), gold mk571 (Mixkit free), Envato Elements SaaS previews (paid templates; previews never committed)"
+ }
+}
