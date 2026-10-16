@@ -316,7 +316,7 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
     """Candidate pairs (a at f, b at f+1..f+8 inside the tracking gate): features, truth-label ingredients (nan
     without owners; see truth_labels) and ECC measures (nan: too small to say)."""
     import math
-    from keepframe.analyze.assoc import MAX_GAP, descriptor, pair_features
+    from keepframe.analyze.assoc import MAX_GAP, N_FEATURES, descriptor, nearest, pair_features
     pairs = []
     for f, regs in enumerate(rbf):
         for g in range(f + 1, min(len(rbf), f + MAX_GAP + 1)):
@@ -328,7 +328,7 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
     rng = np.random.default_rng(seed)
     if len(pairs) > max_pairs:
         pairs = [pairs[i] for i in sorted(rng.choice(len(pairs), max_pairs, replace=False))]
-    desc, comp = {}, {}
+    desc, comp, nn = {}, {}, {}
     stats = owner_stats(owners, n_owners) if owners is not None else None
 
     def d(r):
@@ -339,14 +339,20 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
                 comp[key] = composition(r, owners[r.frame], n_owners)
         return key
 
+    def near(r, f):
+        key = (r.frame, r.bbox, r.area, f)
+        if key not in nn:
+            nn[key] = nearest(r, rbf[f])
+        return nn[key]
+
     X, lab, ecc = [], [], []
     for a, b, gap in pairs:
         ka, kb = d(a), d(b)
-        X.append(pair_features(a, desc[ka], b, desc[kb], gap))
+        X.append(pair_features(a, desc[ka], b, desc[kb], gap, (near(a, b.frame), near(b, a.frame))))
         lab.append(label_ingredients(a, comp[ka], b, comp[kb], stats) if owners is not None else [np.nan] * len(LAB_COLS))
         m = ecc_measure(a, b, frames[a.frame], frames[b.frame])
         ecc.append(m if m is not None else (np.nan, np.nan, np.nan))
-    return {"X": np.array(X, np.float32).reshape(-1, 16), "lab": np.array(lab, np.float32).reshape(-1, len(LAB_COLS)),
+    return {"X": np.array(X, np.float32).reshape(-1, N_FEATURES), "lab": np.array(lab, np.float32).reshape(-1, len(LAB_COLS)),
             "ecc": np.array(ecc, np.float32).reshape(-1, 3), "gap": np.array([p[2] for p in pairs], np.int8)}
 
 
@@ -664,7 +670,7 @@ def fit_mlp(X, y, w, epochs: int = 30, seed: int = 0) -> dict:
     mean, std = X.mean(0), X.std(0) + 1e-6
     xt = torch.tensor((X - mean) / std, dtype=torch.float32)
     yt, wt = torch.tensor(y), torch.tensor(w)
-    net = torch.nn.Sequential(torch.nn.Linear(16, 32), torch.nn.ReLU(), torch.nn.Linear(32, 32), torch.nn.ReLU(), torch.nn.Linear(32, 1))
+    net = torch.nn.Sequential(torch.nn.Linear(X.shape[1], 32), torch.nn.ReLU(), torch.nn.Linear(32, 32), torch.nn.ReLU(), torch.nn.Linear(32, 1))
     opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
     g = torch.Generator().manual_seed(seed)
     for _ in range(epochs):

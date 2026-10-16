@@ -53,13 +53,15 @@ def _trim_tail_crumbs(track: ObjectTrack) -> None:
 
 
 def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_thr: float = 35.0,
-                           max_dist: float = 80.0, frames: np.ndarray | None = None, matcher=None) -> list[ObjectTrack]:
+                           max_dist: float = 80.0, frames: np.ndarray | None = None, matcher=None,
+                           regions_by_frame: list[list[Region]] | None = None) -> list[ObjectTrack]:
     """Join nearby same-colour fragments across short, non-overlapping gaps. With a matcher (and the frames), a join
-    needs P(same content) >= 0.5 between the one track's last region and the other's first, the most likely wins."""
+    needs P(same content) >= 0.5 between the one track's last region and the other's first, the most likely wins
+    (`regions_by_frame`: its context, the tracks' own regions when None)."""
     if len(tracks) < 2:
         return tracks
     if matcher is not None and frames is not None:
-        return _merge_learned(tracks, max_gap, frames, matcher)
+        return _merge_learned(tracks, max_gap, frames, matcher, regions_by_frame)
     colors = {t.id: np.mean([r.color for r in t.regions.values()], axis=0) for t in tracks}
     merged: list[ObjectTrack] = []
     for t in sorted(tracks, key=lambda t: t.first):
@@ -93,11 +95,20 @@ def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_th
 
 
 class _Descriptors(dict):
-    """Region descriptors for the matcher, computed once per region."""
+    """Region descriptors for the matcher, computed once per region, and each region's nearest distance to a frame's
+    regions (`regions_by_frame`: the frames' regions, the matcher's context)."""
 
-    def __init__(self, frames: np.ndarray, first_frame: int = 0):
+    def __init__(self, frames: np.ndarray, first_frame: int = 0, regions_by_frame: list[list[Region]] | None = None):
         super().__init__()
-        self.frames, self.first_frame = frames, first_frame
+        self.frames, self.first_frame, self.rbf, self.nn = frames, first_frame, regions_by_frame or [], {}
+
+    def near(self, r: Region, f: int) -> float:
+        key = (r.frame, r.bbox, r.area, f)
+        if key not in self.nn:
+            from .assoc import nearest
+            i = f - self.first_frame
+            self.nn[key] = nearest(r, self.rbf[i] if 0 <= i < len(self.rbf) else [])
+        return self.nn[key]
 
     def of(self, r: Region) -> dict:
         key = (r.frame, r.bbox, r.area)
@@ -111,12 +122,19 @@ def _probs(matcher, desc: _Descriptors, pairs: list[tuple[Region, Region, int]])
     from .assoc import pair_features
     if not pairs:
         return np.zeros(0, np.float32)
-    return matcher.prob(np.stack([pair_features(a, desc.of(a), b, desc.of(b), gap) for a, b, gap in pairs]))
+    return matcher.prob(np.stack([pair_features(a, desc.of(a), b, desc.of(b), gap, (desc.near(a, b.frame), desc.near(b, a.frame)))
+                                  for a, b, gap in pairs]))
 
 
-def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, matcher) -> list[ObjectTrack]:
+def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, matcher,
+                   regions_by_frame: list[list[Region]] | None) -> list[ObjectTrack]:
     from .assoc import P_SAME
-    desc = _Descriptors(frames)
+    if regions_by_frame is None:   # the tracks' own regions
+        regions_by_frame = [[] for _ in range(max(t.last for t in tracks) + 1)]
+        for t in tracks:
+            for f, r in t.regions.items():
+                regions_by_frame[f].append(r)
+    desc = _Descriptors(frames, 0, regions_by_frame)
     merged: list[ObjectTrack] = []
     for t in sorted(tracks, key=lambda t: t.first):
         cands = [prev for prev in merged if 1 <= t.first - prev.last <= max_gap]
@@ -137,7 +155,7 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
     matcher (and the frames) 1 - P(same content), matched when P >= 0.5."""
     if matcher is not None and frames is not None:
         from .assoc import P_SAME
-        desc = _Descriptors(frames, first_frame)
+        desc = _Descriptors(frames, first_frame, regions_by_frame)
 
         def costs(active, regions, f):
             C = np.full((len(active), len(regions)), 1e6)

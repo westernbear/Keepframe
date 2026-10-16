@@ -1,9 +1,11 @@
-"""The tracker's learned same-content judgement (fixes7): P(two regions in two frames hold the same content), from 16
+"""The tracker's learned same-content judgement (fixes7): P(two regions in two frames hold the same content), from 18
 pair features and a small MLP trained offline (scripts/train_assoc.py, torch) and run here in numpy.
 
 A region's descriptor (colour, colour histogram, a 24 px grey crop and its gradient) is computed once per region; a
-pair's features are cheap differences of two descriptors and their geometry. `load_matcher()` returns None when the
-weights are missing or do not fit, and the tracker keeps its rules."""
+pair's features are cheap differences of two descriptors and their geometry, plus its context: how much nearer each
+region's nearest neighbour in the other frame is (a far identical shape is a fast mover when nothing nearer could
+continue it, another copy when its own continuation is nearer). `load_matcher()` returns None when the weights are
+missing or do not fit, and the tracker keeps its rules."""
 from __future__ import annotations
 import json
 import math
@@ -16,7 +18,7 @@ from .regions import Region
 
 WEIGHTS = Path(__file__).with_name("assoc.npz")
 CROP = 24
-N_FEATURES = 16
+N_FEATURES = 18
 MAX_GAP = 8          # _merge_adjacent_tracks' longest gap: the pairs the matcher is trained on
 P_SAME = 0.5
 
@@ -70,14 +72,24 @@ def _bbox_overlap(a, b) -> tuple[float, float, float]:
     return inter / (area(a) + area(b) - inter), inter / area(a), inter / area(b)
 
 
-def pair_features(a: Region, da: dict, b: Region, db: dict, gap: int) -> np.ndarray:
-    """16 numbers for (a, b), a seen `gap` frames before b."""
+def nearest(r: Region, others: list[Region]) -> float:
+    """Distance from r's centroid to the nearest centroid among `others` (inf when there are none)."""
+    if not others:
+        return math.inf
+    c = np.array([o.centroid for o in others], np.float64)
+    return float(np.hypot(c[:, 0] - r.centroid[0], c[:, 1] - r.centroid[1]).min())
+
+
+def pair_features(a: Region, da: dict, b: Region, db: dict, gap: int, near: tuple[float, float]) -> np.ndarray:
+    """18 numbers for (a, b), a seen `gap` frames before b; `near`: a's nearest distance to b's frame's regions and
+    b's to a's frame's (`nearest`)."""
     size = math.sqrt((a.area + b.area) / 2)
+    d = math.hypot(b.centroid[0] - a.centroid[0], b.centroid[1] - a.centroid[1])
     iou, a_in, b_in = _bbox_overlap(a.bbox, b.bbox)
     wa, ha = max(1, a.bbox[2] - a.bbox[0]), max(1, a.bbox[3] - a.bbox[1])
     wb, hb = max(1, b.bbox[2] - b.bbox[0]), max(1, b.bbox[3] - b.bbox[1])
     return np.array([
-        math.log1p(math.hypot(b.centroid[0] - a.centroid[0], b.centroid[1] - a.centroid[1]) / max(size, 1.0)),
+        math.log1p(d / max(size, 1.0)),
         math.log(max(b.area, 1) / max(a.area, 1)),
         iou, a_in, b_in,
         _aligned_iou(a, b, False), _aligned_iou(a, b, True),
@@ -88,11 +100,12 @@ def pair_features(a: Region, da: dict, b: Region, db: dict, gap: int) -> np.ndar
         float(cv2.compareHist(da["hist"], db["hist"], cv2.HISTCMP_BHATTACHARYYA)),
         _ncc(da["grey"], db["grey"]), _ncc(da["grad"], db["grad"]),
         math.log(max(size, 1.0) / da["diag"]),
+        math.log((d + 1) / (min(near[0], d) + 1)), math.log((d + 1) / (min(near[1], d) + 1)),
     ], np.float32)
 
 
 class Matcher:
-    """A 16 -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features."""
+    """An 18 -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features."""
 
     def __init__(self, w: dict):
         self.mean, self.std = w["mean"].astype(np.float32), np.maximum(w["std"].astype(np.float32), 1e-6)

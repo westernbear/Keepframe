@@ -455,7 +455,7 @@ def _stage_tracking(rbf, sd, frames=None):
         _trim_tail_crumbs(t)
     tracks = [t for t in tracks if t.regions]
     try:
-        tracks = _merge_adjacent_tracks(tracks, frames=frames, matcher=matcher)
+        tracks = _merge_adjacent_tracks(tracks, frames=frames, matcher=matcher, regions_by_frame=rbf)
     except Exception as e:   # fail soft: the rule-based joins
         log.warning("learned joins skipped (%s): %s", ASSOC_FAILED, describe(e, trace=True))
         tracks = _merge_adjacent_tracks(tracks)

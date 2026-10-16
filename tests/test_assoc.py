@@ -1,8 +1,9 @@
 import json
+import math
 
 import numpy as np
 
-from keepframe.analyze.assoc import N_FEATURES, Matcher, descriptor, load_matcher, pair_features
+from keepframe.analyze.assoc import N_FEATURES, Matcher, descriptor, load_matcher, nearest, pair_features
 from keepframe.analyze.regions import Region
 from keepframe.analyze.tracking import _merge_adjacent_tracks, track_regions
 
@@ -23,11 +24,22 @@ def test_pair_features_are_finite_and_a_region_matches_itself():
     frames, m = _frames(), np.zeros((60, 100), bool)
     m[10:30, 20:50] = True
     a, b = _reg(0, m), _reg(1, m)
-    fa = pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1)
-    fb = pair_features(a, descriptor(a, frames[0]), b, descriptor(b, frames[1]), 1)
+    fa = pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1, (0.0, 0.0))
+    fb = pair_features(a, descriptor(a, frames[0]), b, descriptor(b, frames[1]), 1, (0.0, math.inf))
     assert fa.shape == (N_FEATURES,) and np.isfinite(fa).all() and np.isfinite(fb).all()
     assert fa[2] == 1.0 and fa[5] == 1.0 and abs(fa[13] - 1.0) < 1e-5   # bbox IoU, aligned IoU, grey correlation
-    assert np.array_equal(fa, pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1))   # deterministic
+    assert np.array_equal(fa, pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1, (0.0, 0.0)))   # deterministic
+
+
+def test_context_tells_a_fast_mover_from_another_copy():
+    frames, m, far = _frames(), np.zeros((60, 100), bool), np.zeros((60, 100), bool)
+    m[10:20, 10:20] = True
+    far[10:20, 70:80] = True
+    a, b, copy = _reg(0, m), _reg(1, far), _reg(1, m)
+    lone = pair_features(a, descriptor(a, frames[0]), b, descriptor(b, frames[1]), 1, (nearest(a, [b]), nearest(b, [a])))
+    two = pair_features(a, descriptor(a, frames[0]), b, descriptor(b, frames[1]), 1, (nearest(a, [b, copy]), nearest(b, [a])))
+    assert lone[16] == 0.0 and lone[17] == 0.0   # mutual nearest: nothing nearer could continue either
+    assert two[16] > 3.0 and two[17] == 0.0      # a's own continuation sits where a was
 
 
 def _weights(tmp_path, **extra):
