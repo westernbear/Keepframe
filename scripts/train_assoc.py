@@ -23,8 +23,10 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 LOTTIE_QUERIES = ["saas", "app", "product launch", "dashboard", "startup", "technology", "interface", "onboarding",
                   "chart", "notification", "logo reveal", "text animation", "kinetic typography", "intro", "business",
                   "website", "mobile app", "analytics", "payment", "marketing"]
-ENVATO_QUERIES = ["saas+promo", "product+launch", "app+promo", "product+promo", "website+promo", "tech+promo"]
-MIXKIT_PAGES = ["titles", "openers", "logo", "slideshow", "social-media", "lower-thirds", "transitions"]
+ENVATO_QUERIES = ["saas+promo", "product+launch", "app+promo", "product+promo", "website+promo", "tech+promo",
+                  "startup+promo", "software+promo", "app+launch"]
+MIXKIT_PAGES = ["titles", "openers", "logo", "slideshow", "social-media", "lower-thirds", "transitions", "business",
+                "corporate", "typography", "intro"]
 MIXKIT_SEEN = {543, 544, 571, 713, 800}   # eval/refs already
 
 
@@ -113,11 +115,11 @@ def fetch_saas(n: int) -> None:
     for found in _browser_pages([f"https://elements.envato.com/video-templates/{q}" for q in ENVATO_QUERIES], items).values():
         slugs += [s for s in found if s not in slugs]
 
-    def preview(pg, url):   # the item's own preview: the video player's source (headless, it never autoplays)
+    def preview(pg, url):   # the item's own player is the higher-quality preview; related items carry crf26 ones
         pg.goto(url, wait_until="domcontentloaded", timeout=60000)
         pg.wait_for_timeout(3000)
-        m = re.search(r'class="video-player"><video[^>]*?src="([^"]+?\.mp4)"', pg.content())
-        return (m.group(1) if m else None), pg.title().split(" - ")[0]
+        m = re.search(r'https://[^"\'\s]+?preview_540p_crf22_higher_quality\.mp4', pg.content())
+        return (m.group(0) if m else None), pg.title().split(" - ")[0]
 
     todo = [s for s in slugs if s not in have][: max(0, n - len(have))]
     for url, (mp4, title) in _browser_pages([f"https://elements.envato.com/{s}" for s in todo], preview).items():
@@ -140,12 +142,17 @@ def fetch_mixkit(n: int) -> None:
     have = {int(p.stem[2:]) for p in out.glob("mk*.mp4")}
     ids = []
     for page in MIXKIT_PAGES:
-        try:
-            html = _get(f"https://mixkit.co/free-after-effects-templates/{page}/").decode("utf-8", "ignore")
-        except Exception as err:
-            print("mixkit skip", page, err, file=sys.stderr)
-            continue
-        ids += [int(i) for i in re.findall(r"video-templates/(\d+)/", html) if int(i) not in ids]
+        for n_page in range(1, 5):   # a category lists its templates over several pages
+            url = f"https://mixkit.co/free-after-effects-templates/{page}/" + (f"?page={n_page}" if n_page > 1 else "")
+            try:
+                html = _get(url).decode("utf-8", "ignore")
+            except Exception as err:
+                print("mixkit skip", url, err, file=sys.stderr)
+                break
+            new_ids = [int(i) for i in re.findall(r"video-templates/(\d+)/", html) if int(i) not in ids]
+            if not new_ids:
+                break
+            ids += new_ids
     for i in [i for i in ids if i not in MIXKIT_SEEN and i not in have][: max(0, n - len(have))]:
         path = out / f"mk{i}.mp4"
         subprocess.run(["curl", "-sS", "-fL", "-o", str(path), f"https://assets.mixkit.co/video-templates/{i}/mixkit-{i}-1080.mp4"],
