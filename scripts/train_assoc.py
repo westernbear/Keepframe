@@ -172,7 +172,9 @@ def clip_regions(frames: np.ndarray, fps: float, work: Path, ocr_box: list):
     import shutil
     from keepframe.analyze.pipeline import AnalyzeOptions, _plate_stage, _stage_background, _stage_regions, _stage_text, _stage_tracking
     from keepframe.analyze.shots import auto_scenes
+    import os
     opts = AnalyzeOptions(refine=False, generate_3d=False)
+    work = work.with_name(f"{work.name}-{os.getpid()}")   # workers running side by side never share a stage dir
     scenes, _ = auto_scenes(frames)
     out = []
     for sc in scenes:
