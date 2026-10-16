@@ -28,7 +28,7 @@ WORDS = ["Ship", "faster", "Build", "together", "Plan", "smarter", "Grow", "your
 BRANDS = ["Nexa", "Orbit", "Flowly", "Pulse", "Lumen", "Vanta", "Kiro", "Mosaic"]
 KINDS = ("kinetic_title", "logo_sting", "chat_ui", "scroller", "block_transition", "prompt_typing", "counter", "stepped_zoom",
          "hard_cut", "wipe", "word_build", "whip_pan", "word_swap", "big_scroll", "glow_title", "label_grid", "glow_letters",
-         "glow_cut")
+         "glow_cut", "glow_merge")
 
 
 @dataclass
@@ -545,6 +545,26 @@ def _glow_cut(r: random.Random, pal, font) -> Template:
     return Template(_page(dark, font, css, body, js), truth, frames=120)
 
 
+def _glow_merge(r: random.Random, pal, font) -> Template:
+    """A glow along the bottom of an empty dark frame, then a big word whose letters come out of a blur one after
+    another just above it, close enough that their blur touches the glow: the glow alone first, glow and letters after."""
+    _, _, acc, _ = pal
+    dark, _ = r.choice(GROUNDS)
+    word = r.choice([w for w in WORDS if 5 <= len(w) <= 7])
+    t0, each = r.choice([0.5, 0.6]), r.choice([0.15, 0.2])
+    letters = "".join(f'<span class="l">{html.escape(c)}</span>' for c in word)
+    css = "\n".join([f"#s1 {{ inset: 0; background: linear-gradient(180deg, {dark} 55%, {acc} 190%); }}",
+                     f"#glow {{ left: -120px; top: 330px; width: 1200px; height: 420px; border-radius: 50%; "
+                     f"background: radial-gradient(closest-side, {acc}, transparent); }}",
+                     "#title { left: 90px; top: 230px; font-size: 190px; font-weight: 800; color: #ffffff; }",
+                     "#title .l { display: inline-block; }"])
+    body = '<div id="s1" class="a"></div><div id="glow" class="a"></div>' + f'<div id="title" class="a">{letters}</div>'
+    js = "\n".join(['tl.fromTo("#glow", {opacity: 0.7}, {opacity: 0.9, duration: 1, ease: "sine.inOut", yoyo: true, repeat: 3}, 0);',
+                    f'tl.from("#title .l", {{opacity: 0, filter: "blur(30px)", duration: 1.2, stagger: {each}, ease: "power1.in"}}, {t0});'])
+    truth = {"elements": [_el("title", "headline", "text", (_f(t0), 119), word, "#ffffff", font)], "structure": []}
+    return Template(_page(dark, font, css, body, js), truth, frames=120)
+
+
 def _label_grid(r: random.Random, pal, font) -> Template:
     """A dense board: a grid of cells, each a bold heading in one family over a regular label in another, popping in
     row by row (more texts than a scene's font-matching budget)."""
@@ -571,7 +591,7 @@ _MAKERS = {"kinetic_title": _kinetic_title, "logo_sting": _logo_sting, "chat_ui"
            "block_transition": _block_transition, "prompt_typing": _prompt_typing, "counter": _counter, "stepped_zoom": _stepped_zoom,
            "hard_cut": _hard_cut, "wipe": _wipe, "word_build": _word_build, "whip_pan": _whip_pan, "word_swap": _word_swap,
            "big_scroll": _big_scroll, "glow_title": _glow_title, "label_grid": _label_grid, "glow_letters": _glow_letters,
-           "glow_cut": _glow_cut}
+           "glow_cut": _glow_cut, "glow_merge": _glow_merge}
 
 
 def make_template(kind: str, seed: int) -> Template:
