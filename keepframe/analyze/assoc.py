@@ -46,7 +46,9 @@ def _ncc(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _aligned_iou(a: Region, b: Region, scale: bool) -> float:
-    """IoU of the two masks with their centroids on one point (b resized to a's area when `scale`)."""
+    """IoU of the two masks with their centroids on one point (b resized to a's area when `scale`).
+    shortcut: about 90 % of a pair's 4 ms is the mask centroids found here (mk571, 482 frames at 1080x1920: tracking
+    149 s against 0.5 s for the rules); take them from Region.centroid, then retrain, when tracking time matters."""
     mb = b.mask.astype(np.uint8)
     if scale:
         s = math.sqrt(max(a.area, 1) / max(b.area, 1))
