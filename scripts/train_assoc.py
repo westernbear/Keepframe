@@ -730,14 +730,15 @@ def labelled(clips: list[dict], rho: float):
     return X, y, w * len(y), src
 
 
-def fit_mlp(X, y, w, epochs: int = 30, seed: int = 0) -> dict:
+def fit_mlp(X, y, w, epochs: int = 30, seed: int = 0, hidden: int = 32) -> dict:
     import torch
     torch.manual_seed(seed)
     torch.set_num_threads(2)   # the data workers share the 4 cores
     mean, std = X.mean(0), X.std(0) + 1e-6
     xt = torch.tensor((X - mean) / std, dtype=torch.float32)
     yt, wt = torch.tensor(y), torch.tensor(w)
-    net = torch.nn.Sequential(torch.nn.Linear(X.shape[1], 32), torch.nn.ReLU(), torch.nn.Linear(32, 32), torch.nn.ReLU(), torch.nn.Linear(32, 1))
+    net = torch.nn.Sequential(torch.nn.Linear(X.shape[1], hidden), torch.nn.ReLU(), torch.nn.Linear(hidden, hidden), torch.nn.ReLU(),
+                              torch.nn.Linear(hidden, 1))
     opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
     g = torch.Generator().manual_seed(seed)
     for _ in range(epochs):
@@ -775,15 +776,15 @@ def metrics(weights: dict, clips: list[dict], rho: float) -> dict:
     return out
 
 
-def train_main(epochs: int, out: Path, saas: bool = True) -> None:
+def train_main(epochs: int, out: Path, saas: bool = True, hidden: int = 32) -> None:
     clips = load_pairs()
     rho, agree = calibrate_rho(clips)
     train = [c for c in clips if not c["held"] and (saas or c["meta"]["source"] != "saas")]
     held = [c for c in clips if c["held"]]
     X, y, w, src = labelled(train, rho)
-    weights = fit_mlp(X, y, w, epochs)
+    weights = fit_mlp(X, y, w, epochs, hidden=hidden)
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
-    meta = {"commit": commit, "trained_on_saas": saas, "rho": rho, "rho_agreement_with_truth": round(agree, 4), "epochs": epochs,
+    meta = {"commit": commit, "trained_on_saas": saas, "hidden": hidden, "rho": rho, "rho_agreement_with_truth": round(agree, 4), "epochs": epochs,
             "train_pairs": {s_: int((src == s_).sum()) for s_ in sorted(set(src))},
             "train_clips": len(train), "held_out_clips": len(held),
             "held_out": metrics(weights, held, rho), "train": metrics(weights, train, rho),
@@ -832,9 +833,10 @@ def main(argv=None) -> int:
         sp.add_argument("--epochs", type=int, default=30)
         sp.add_argument("--out", type=Path, default=ROOT / "keepframe" / "analyze" / "assoc.npz")
         sp.add_argument("--no-saas", action="store_true", help="train without the video-labelled SaaS pairs")
+        sp.add_argument("--hidden", type=int, default=32, help="units in each of the MLP's two hidden layers")
     a = ap.parse_args(argv)
     if a.cmd == "train":
-        train_main(a.epochs, a.out, not a.no_saas)
+        train_main(a.epochs, a.out, not a.no_saas, a.hidden)
     if a.cmd == "eval":
         eval_main(a.epochs, not a.no_saas)
     if a.cmd == "data":
