@@ -126,3 +126,18 @@ def test_aligned_iou_matches_the_canvas_reference():
             regs.append(_reg(f, m))
         for scale in (False, True):
             assert _aligned_iou(*regs, scale) == _aligned_iou_canvas(*regs, scale)
+
+
+def test_a_track_is_also_judged_against_its_oldest_region_in_the_window(monkeypatch):
+    import keepframe.analyze.tracking as tr
+    frames, box = _frames(12), np.zeros((60, 100), bool)
+    box[10:30, 20:40] = True
+    rbf = [[_reg(f, box)] for f in range(12)]
+
+    def probs(matcher, desc, pairs):   # drift that no single step shows: only regions 6+ frames apart differ
+        return np.array([1.0 if b.frame - a.frame < 6 else 0.0 for a, b, _ in pairs])
+
+    monkeypatch.setattr(tr, "_probs", probs)
+    tracks = track_regions(rbf, cost_thr=2.0, frames=frames, matcher=object())
+    assert sorted(t.first for t in tracks) == [0, 6]
+    assert tr._judged_against(tracks[0], 5) == [5, 0] and tr._judged_against(tracks[0], 20) == [5]

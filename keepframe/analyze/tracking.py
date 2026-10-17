@@ -56,8 +56,9 @@ def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_th
                            max_dist: float = 80.0, frames: np.ndarray | None = None, matcher=None,
                            regions_by_frame: list[list[Region]] | None = None) -> list[ObjectTrack]:
     """Join nearby same-colour fragments across short, non-overlapping gaps. With a matcher (and the frames), a join
-    needs P(same content) >= 0.5 between the one track's last region and the other's first, the most likely wins
-    (`regions_by_frame`: its context, the tracks' own regions when None)."""
+    needs P(same content) >= 0.5 between the other's first region and the one track's last (and its oldest within the
+    matcher's gap window, `_judged_against`), the most likely wins (`regions_by_frame`: its context, the tracks' own
+    regions when None)."""
     if len(tracks) < 2:
         return tracks
     if matcher is not None and frames is not None:
@@ -126,6 +127,15 @@ def _probs(matcher, desc: _Descriptors, pairs: list[tuple[Region, Region, int]])
                                   for a, b, gap in pairs]))
 
 
+def _judged_against(t: ObjectTrack, f: int) -> list[int]:
+    """The frames of t a candidate at frame f is judged against: t's last, and its oldest within MAX_GAP frames (the
+    longest gap the matcher is trained and held out on), where change that each single step hides adds up: a glow
+    taking in a little more of the letters each frame. A candidate continues t only if both say same content."""
+    from .assoc import MAX_GAP
+    early = min((k for k in t.regions if f - k <= MAX_GAP), default=t.last)
+    return [t.last] + ([early] if early != t.last else [])
+
+
 def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, matcher,
                    regions_by_frame: list[list[Region]] | None) -> list[ObjectTrack]:
     from .assoc import P_SAME
@@ -138,7 +148,11 @@ def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, 
     merged: list[ObjectTrack] = []
     for t in sorted(tracks, key=lambda t: t.first):
         cands = [prev for prev in merged if 1 <= t.first - prev.last <= max_gap]
-        p = _probs(matcher, desc, [(prev.regions[prev.last], t.regions[t.first], t.first - prev.last) for prev in cands])
+        pairs = [(i, k) for i, prev in enumerate(cands) for k in _judged_against(prev, t.first)]
+        probs = _probs(matcher, desc, [(cands[i].regions[k], t.regions[t.first], t.first - k) for i, k in pairs])
+        p = np.ones(len(cands))
+        for (i, _), q in zip(pairs, probs):
+            p[i] = min(p[i], q)
         if len(p) and p.max() >= P_SAME:
             cands[int(p.argmax())].regions.update(t.regions)
         else:
@@ -152,7 +166,8 @@ GATE = 3.0   # with the matcher, pairs further apart than GATE x max_dist (or 2 
 def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0,
                   cost_thr: float = 1.2, max_gap: int = 2, frames: np.ndarray | None = None, matcher=None) -> list[ObjectTrack]:
     """One-to-one matching of each frame's regions to the live tracks. The cost is match_cost under cost_thr, or with a
-    matcher (and the frames) 1 - P(same content), matched when P >= 0.5."""
+    matcher (and the frames) 1 - P(same content), matched when P >= 0.5, P being the lower of the track's last region's
+    and its oldest within the matcher's gap window (`_judged_against`)."""
     if matcher is not None and frames is not None:
         from .assoc import P_SAME
         desc = _Descriptors(frames, first_frame, regions_by_frame)
@@ -165,8 +180,12 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                 for j, r in enumerate(regions):
                     reach = max(GATE * max_dist, 2 * math.sqrt(max(last.area, r.area)))
                     if math.hypot(r.centroid[0] - last.centroid[0], r.centroid[1] - last.centroid[1]) <= reach:
-                        pairs.append((last, r, f - t.last)); where.append((i, j))
-            for (i, j), p in zip(where, _probs(matcher, desc, pairs)):
+                        for k in _judged_against(t, f):
+                            pairs.append((t.regions[k], r, f - k)); where.append((i, j))
+            P = {}
+            for ij, p in zip(where, _probs(matcher, desc, pairs)):
+                P[ij] = min(P.get(ij, 1.0), p)
+            for (i, j), p in P.items():
                 C[i, j] = 1.0 - p
             return C, 1.0 - P_SAME
     else:
