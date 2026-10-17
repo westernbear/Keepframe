@@ -1,5 +1,5 @@
-"""The tracker's learned same-content judgement (fixes7): P(two regions in two frames hold the same content), from 18
-pair features and a small MLP trained offline (scripts/train_assoc.py, torch) and run here in numpy.
+"""The tracker's learned same-content judgement (fixes7): P(a region continues a track's content), from 38 features of
+the region against the track's last region and its oldest within MAX_GAP frames, and a small MLP trained offline (scripts/train_assoc.py, torch) and run here in numpy.
 
 A region's descriptor (colour, colour histogram, a 24 px grey crop and its gradient) is computed once per region; a
 pair's features are cheap differences of two descriptors and their geometry, plus its context: how much nearer each
@@ -18,7 +18,7 @@ from .regions import Region
 
 WEIGHTS = Path(__file__).with_name("assoc.npz")
 CROP = 24
-N_FEATURES = 18
+N_FEATURES = 38
 MAX_GAP = 8          # _merge_adjacent_tracks' longest gap: the pairs the matcher is trained on
 P_SAME = 0.5
 
@@ -110,8 +110,34 @@ def pair_features(a: Region, da: dict, b: Region, db: dict, gap: int, near: tupl
     ], np.float32)
 
 
+def foreign(r: Region, others: list[Region], exclude: Region | None) -> float:
+    """Share of r's pixels that the regions of another frame (but `exclude`) cover where they sit: what r took in from
+    its neighbours, or what of r its neighbours now hold."""
+    x0, y0, x1, y1 = r.bbox
+    m, n = r.mask.astype(bool), 0
+    for o in others:
+        if o is exclude:
+            continue
+        ox0, oy0, ox1, oy1 = o.bbox
+        ix0, iy0, ix1, iy1 = max(x0, ox0), max(y0, oy0), min(x1, ox1), min(y1, oy1)
+        if ix1 > ix0 and iy1 > iy0:
+            n += int((m[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0] & o.mask[iy0 - oy0:iy1 - oy0, ix0 - ox0:ix1 - ox0].astype(bool)).sum())
+    return min(1.0, n / max(int(m.sum()), 1))
+
+
+def track_features(a: Region, n: Region, b: Region, desc) -> np.ndarray:
+    """N_FEATURES numbers for b continuing a track whose last region is a and whose oldest region within MAX_GAP frames
+    of b is n (a itself for a track that young): the pair features of (a, b) and of (n, b), so change that each single
+    step hides shows against n; what b took in from a's frame's other regions; what of a b's frame's other regions hold.
+    `desc` gives a region's descriptor (`of`), its nearest distance to a frame's regions (`near`) and a frame's regions
+    (`regions`): tracking._Descriptors, at training time as in the tracker."""
+    def pair(x: Region) -> np.ndarray:
+        return pair_features(x, desc.of(x), b, desc.of(b), b.frame - x.frame, (desc.near(x, b.frame), desc.near(b, x.frame)))
+    return np.concatenate([pair(a), pair(n), [foreign(b, desc.regions(a.frame), a), foreign(a, desc.regions(b.frame), b)]]).astype(np.float32)
+
+
 class Matcher:
-    """An 18 -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features."""
+    """An N_FEATURES -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features."""
 
     def __init__(self, w: dict):
         self.mean, self.std = w["mean"].astype(np.float32), np.maximum(w["std"].astype(np.float32), 1e-6)

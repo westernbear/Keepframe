@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 
-from keepframe.analyze.assoc import N_FEATURES, Matcher, descriptor, load_matcher, nearest, pair_features
+from keepframe.analyze.assoc import N_FEATURES, Matcher, descriptor, foreign, load_matcher, nearest, pair_features, track_features
 from keepframe.analyze.regions import Region
 from keepframe.analyze.tracking import _merge_adjacent_tracks, track_regions
 
@@ -26,7 +26,7 @@ def test_pair_features_are_finite_and_a_region_matches_itself():
     a, b = _reg(0, m), _reg(1, m)
     fa = pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1, (0.0, 0.0))
     fb = pair_features(a, descriptor(a, frames[0]), b, descriptor(b, frames[1]), 1, (0.0, math.inf))
-    assert fa.shape == (N_FEATURES,) and np.isfinite(fa).all() and np.isfinite(fb).all()
+    assert fa.shape == (18,) and np.isfinite(fa).all() and np.isfinite(fb).all()
     assert fa[2] == 1.0 and fa[5] == 1.0 and abs(fa[13] - 1.0) < 1e-5   # bbox IoU, aligned IoU, grey correlation
     assert np.array_equal(fa, pair_features(a, descriptor(a, frames[0]), a, descriptor(a, frames[0]), 1, (0.0, 0.0)))   # deterministic
 
@@ -81,7 +81,7 @@ def test_tracking_follows_the_matcher(monkeypatch):
     fake = _ByLabel()
 
     def probs(matcher, desc, pairs):
-        fake.pairs.append([(a.label, b.label) for a, b, _ in pairs])
+        fake.pairs.append([(a.label, b.label) for a, _, b in pairs])
         return fake.prob(None)
 
     monkeypatch.setattr(tr, "_probs", probs)
@@ -126,3 +126,19 @@ def test_aligned_iou_matches_the_canvas_reference():
             regs.append(_reg(f, m))
         for scale in (False, True):
             assert _aligned_iou(*regs, scale) == _aligned_iou_canvas(*regs, scale)
+
+
+def test_track_features_see_the_anchor_and_what_a_region_took_in():
+    from keepframe.analyze.tracking import _Descriptors, _anchor, ObjectTrack
+    frames, glow, letter = _frames(10), np.zeros((60, 100), bool), np.zeros((60, 100), bool)
+    glow[40:60, 10:90] = True
+    letter[30:40, 40:50] = True
+    rbf = [[_reg(f, glow, label=1), _reg(f, letter, label=2)] for f in range(9)] + [[_reg(9, glow | letter, label=1)]]
+    desc = _Descriptors(frames, 0, rbf)
+    t = ObjectTrack(id=1, regions={f: rbf[f][0] for f in range(9)})
+    a, n, b = t.regions[8], _anchor(t, 9), rbf[9][0]
+    assert n is t.regions[1]                     # the oldest within MAX_GAP (8) frames of f9
+    x = track_features(a, n, b, desc)
+    assert x.shape == (N_FEATURES,) and np.isfinite(x).all()
+    assert abs(x[-2] - letter.sum() / (glow | letter).sum()) < 1e-6 and x[-1] == 0.0   # b took in the letter; nothing holds a's
+    assert foreign(a, rbf[8], a) == 0.0

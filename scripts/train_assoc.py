@@ -315,10 +315,13 @@ def ecc_measure(a, b, fa: np.ndarray, fb: np.ndarray, size: int = 96):
 
 
 def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, max_pairs: int = 20000, seed: int = 0) -> dict:
-    """Candidate pairs (a at f, b at f+1..f+8 inside the tracking gate): features, truth-label ingredients (nan
-    without owners; see truth_labels) and ECC measures (nan: too small to say)."""
+    """Candidate pairs (a at f, b at f+1..f+8 inside the tracking gate) with a's anchor n: the region of a's owner at
+    the earliest frame within MAX_GAP of b (teacher forcing: the truth track's oldest region in the tracker's window; a
+    itself without owners or for ground). Features (assoc.track_features), truth-label ingredients of (a, b) and of
+    (n, b) (nan without owners; see truth_labels) and ECC measures of (a, b) (nan: too small to say)."""
     import math
-    from keepframe.analyze.assoc import MAX_GAP, N_FEATURES, descriptor, nearest, pair_features
+    from keepframe.analyze.assoc import MAX_GAP, N_FEATURES, track_features
+    from keepframe.analyze.tracking import _Descriptors
     pairs = []
     for f, regs in enumerate(rbf):
         for g in range(f + 1, min(len(rbf), f + MAX_GAP + 1)):
@@ -330,31 +333,36 @@ def clip_pairs(rbf: list, frames: np.ndarray, owners=None, n_owners: int = 0, ma
     rng = np.random.default_rng(seed)
     if len(pairs) > max_pairs:
         pairs = [pairs[i] for i in sorted(rng.choice(len(pairs), max_pairs, replace=False))]
-    desc, comp, nn = {}, {}, {}
+    desc, comp = _Descriptors(frames, 0, rbf), {}
     stats = owner_stats(owners, n_owners) if owners is not None else None
 
-    def d(r):
+    def c(r):
         key = (r.frame, r.bbox, r.area)
-        if key not in desc:
-            desc[key] = descriptor(r, frames[r.frame])
-            if owners is not None:
-                comp[key] = composition(r, owners[r.frame], n_owners)
-        return key
+        if key not in comp:
+            comp[key] = composition(r, owners[r.frame], n_owners)
+        return comp[key]
 
-    def near(r, f):
-        key = (r.frame, r.bbox, r.area, f)
-        if key not in nn:
-            nn[key] = nearest(r, rbf[f])
-        return nn[key]
+    def anchor(a, b):
+        o = int(c(a).argmax()) if owners is not None else 0
+        if o == 0:
+            return a
+        for h in range(max(0, b.frame - MAX_GAP), a.frame):
+            body = [r for r in rbf[h] if int(c(r).argmax()) == o]
+            if body:
+                return max(body, key=lambda r: c(r)[o] * r.area)
+        return a
 
-    X, lab, ecc = [], [], []
+    X, lab, lab_n, ecc = [], [], [], []
+    nan = [np.nan] * len(LAB_COLS)
     for a, b, gap in pairs:
-        ka, kb = d(a), d(b)
-        X.append(pair_features(a, desc[ka], b, desc[kb], gap, (near(a, b.frame), near(b, a.frame))))
-        lab.append(label_ingredients(a, comp[ka], b, comp[kb], stats) if owners is not None else [np.nan] * len(LAB_COLS))
+        n = anchor(a, b)
+        X.append(track_features(a, n, b, desc))
+        lab.append(label_ingredients(a, c(a), b, c(b), stats) if owners is not None else nan)
+        lab_n.append(label_ingredients(n, c(n), b, c(b), stats) if owners is not None else nan)
         m = ecc_measure(a, b, frames[a.frame], frames[b.frame])
         ecc.append(m if m is not None else (np.nan, np.nan, np.nan))
     return {"X": np.array(X, np.float32).reshape(-1, N_FEATURES), "lab": np.array(lab, np.float32).reshape(-1, len(LAB_COLS)),
+            "lab_n": np.array(lab_n, np.float32).reshape(-1, len(LAB_COLS)),
             "ecc": np.array(ecc, np.float32).reshape(-1, 3), "gap": np.array([p[2] for p in pairs], np.int8)}
 
 
@@ -676,8 +684,9 @@ def load_pairs() -> list[dict]:
             continue
         with np.load(p) as d:
             meta = json.loads(str(d["meta"]))
+            ya, yn = truth_labels(d["lab"]), truth_labels(d["lab_n"])   # b continues a, and the track's content at n
             out.append({"name": p.stem, "meta": meta, "held": _held_out(meta), "X": d["X"], "ecc": d["ecc"],
-                        "y_truth": truth_labels(d["lab"])})
+                        "y_truth": np.where((ya < 0) | (yn < 0), -1, ya & yn).astype(np.int8)})
     return out
 
 

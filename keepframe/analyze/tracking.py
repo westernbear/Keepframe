@@ -56,7 +56,7 @@ def _merge_adjacent_tracks(tracks: list[ObjectTrack], max_gap: int = 8, color_th
                            max_dist: float = 80.0, frames: np.ndarray | None = None, matcher=None,
                            regions_by_frame: list[list[Region]] | None = None) -> list[ObjectTrack]:
     """Join nearby same-colour fragments across short, non-overlapping gaps. With a matcher (and the frames), a join
-    needs P(same content) >= 0.5 between the one track's last region and the other's first, the most likely wins
+    needs P >= 0.5 that the other's first region continues the one track (`assoc.track_features`), the most likely wins
     (`regions_by_frame`: its context, the tracks' own regions when None)."""
     if len(tracks) < 2:
         return tracks
@@ -106,9 +106,12 @@ class _Descriptors(dict):
         key = (r.frame, r.bbox, r.area, f)
         if key not in self.nn:
             from .assoc import nearest
-            i = f - self.first_frame
-            self.nn[key] = nearest(r, self.rbf[i] if 0 <= i < len(self.rbf) else [])
+            self.nn[key] = nearest(r, self.regions(f))
         return self.nn[key]
+
+    def regions(self, f: int) -> list[Region]:
+        i = f - self.first_frame
+        return self.rbf[i] if 0 <= i < len(self.rbf) else []
 
     def of(self, r: Region) -> dict:
         key = (r.frame, r.bbox, r.area)
@@ -118,12 +121,19 @@ class _Descriptors(dict):
         return self[key]
 
 
-def _probs(matcher, desc: _Descriptors, pairs: list[tuple[Region, Region, int]]) -> np.ndarray:
-    from .assoc import pair_features
-    if not pairs:
+def _anchor(t: ObjectTrack, f: int) -> Region:
+    """t's oldest region within MAX_GAP frames of f (its last when none is): what a candidate at f is also judged
+    against, so that change each single step hides adds up (a glow taking in a little more of the letters each frame)."""
+    from .assoc import MAX_GAP
+    return t.regions[min((k for k in t.regions if f - k <= MAX_GAP), default=t.last)]
+
+
+def _probs(matcher, desc: _Descriptors, cands: list[tuple[Region, Region, Region]]) -> np.ndarray:
+    """P(b continues the track) for each (track's last region, its anchor, candidate b)."""
+    from .assoc import track_features
+    if not cands:
         return np.zeros(0, np.float32)
-    return matcher.prob(np.stack([pair_features(a, desc.of(a), b, desc.of(b), gap, (desc.near(a, b.frame), desc.near(b, a.frame)))
-                                  for a, b, gap in pairs]))
+    return matcher.prob(np.stack([track_features(a, n, b, desc) for a, n, b in cands]))
 
 
 def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, matcher,
@@ -138,7 +148,7 @@ def _merge_learned(tracks: list[ObjectTrack], max_gap: int, frames: np.ndarray, 
     merged: list[ObjectTrack] = []
     for t in sorted(tracks, key=lambda t: t.first):
         cands = [prev for prev in merged if 1 <= t.first - prev.last <= max_gap]
-        p = _probs(matcher, desc, [(prev.regions[prev.last], t.regions[t.first], t.first - prev.last) for prev in cands])
+        p = _probs(matcher, desc, [(prev.regions[prev.last], _anchor(prev, t.first), t.regions[t.first]) for prev in cands])
         if len(p) and p.max() >= P_SAME:
             cands[int(p.argmax())].regions.update(t.regions)
         else:
@@ -152,7 +162,8 @@ GATE = 3.0   # with the matcher, pairs further apart than GATE x max_dist (or 2 
 def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0,
                   cost_thr: float = 1.2, max_gap: int = 2, frames: np.ndarray | None = None, matcher=None) -> list[ObjectTrack]:
     """One-to-one matching of each frame's regions to the live tracks. The cost is match_cost under cost_thr, or with a
-    matcher (and the frames) 1 - P(same content), matched when P >= 0.5."""
+    matcher (and the frames) 1 - P(the region continues the track's content: `assoc.track_features`), matched when
+    P >= 0.5."""
     if matcher is not None and frames is not None:
         from .assoc import P_SAME
         desc = _Descriptors(frames, first_frame, regions_by_frame)
@@ -165,7 +176,7 @@ def track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, ma
                 for j, r in enumerate(regions):
                     reach = max(GATE * max_dist, 2 * math.sqrt(max(last.area, r.area)))
                     if math.hypot(r.centroid[0] - last.centroid[0], r.centroid[1] - last.centroid[1]) <= reach:
-                        pairs.append((last, r, f - t.last)); where.append((i, j))
+                        pairs.append((last, _anchor(t, f), r)); where.append((i, j))
             for (i, j), p in zip(where, _probs(matcher, desc, pairs)):
                 C[i, j] = 1.0 - p
             return C, 1.0 - P_SAME
