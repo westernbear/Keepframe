@@ -89,3 +89,40 @@ def test_tracking_follows_the_matcher(monkeypatch):
     assert sorted(sorted(t.regions) for t in learned) == [[0, 1, 2], [3, 4, 5]]
     assert [sorted(t.regions) for t in track_regions(rbf, cost_thr=2.0)] == [[0, 1, 2, 3, 4, 5]]   # the rules join them
     assert len(_merge_adjacent_tracks(learned, frames=frames, matcher=fake)) == 2
+
+
+def _aligned_iou_canvas(a, b, scale):
+    """The first implementation (a shared canvas twice the masks' size), kept as the reference."""
+    import cv2, math
+    mb = b.mask.astype(np.uint8)
+    if scale:
+        s = math.sqrt(max(a.area, 1) / max(b.area, 1))
+        mb = cv2.resize(mb, (max(1, round(mb.shape[1] * s)), max(1, round(mb.shape[0] * s))), interpolation=cv2.INTER_NEAREST)
+    ma = a.mask.astype(np.uint8)
+    h, w = max(ma.shape[0], mb.shape[0]) * 2, max(ma.shape[1], mb.shape[1]) * 2
+    canvas_a, canvas_b = np.zeros((h, w), np.uint8), np.zeros((h, w), np.uint8)
+    for canvas, m in ((canvas_a, ma), (canvas_b, mb)):
+        ys, xs = np.nonzero(m)
+        if len(xs) == 0:
+            return 0.0
+        oy, ox = h // 2 - int(round(ys.mean())), w // 2 - int(round(xs.mean()))
+        canvas[oy:oy + m.shape[0], ox:ox + m.shape[1]] |= m
+    union = int((canvas_a | canvas_b).sum())
+    return float((canvas_a & canvas_b).sum() / union) if union else 0.0
+
+
+def test_aligned_iou_matches_the_canvas_reference():
+    from keepframe.analyze.assoc import _aligned_iou
+    rng = np.random.default_rng(1)
+    for _ in range(300):
+        regs = []
+        for f in (0, 1):
+            m = np.zeros((60, 100), bool)
+            h, w = rng.integers(1, 40, 2)
+            y, x = rng.integers(0, 60 - h), rng.integers(0, 100 - w)
+            m[y:y + h, x:x + w] = rng.random((h, w)) < rng.uniform(0.3, 1.0)
+            if not m.any():
+                m[y, x] = True
+            regs.append(_reg(f, m))
+        for scale in (False, True):
+            assert _aligned_iou(*regs, scale) == _aligned_iou_canvas(*regs, scale)

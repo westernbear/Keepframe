@@ -45,25 +45,29 @@ def _ncc(a: np.ndarray, b: np.ndarray) -> float:
     return float((a * b).sum() / d) if d > 1e-6 else 0.0
 
 
+def _centre(m: np.ndarray):
+    """The mask's centroid (row, col) from its row and column counts, as np.nonzero's mean gives it; None if empty."""
+    rows, cols = m.sum(1, dtype=np.int64), m.sum(0, dtype=np.int64)
+    n = rows.sum()
+    return (rows @ np.arange(len(rows)) / n, cols @ np.arange(len(cols)) / n) if n else None
+
+
 def _aligned_iou(a: Region, b: Region, scale: bool) -> float:
-    """IoU of the two masks with their centroids on one point (b resized to a's area when `scale`).
-    shortcut: about 90 % of a pair's 4 ms is the mask centroids found here (mk571, 482 frames at 1080x1920: tracking
-    149 s against 0.5 s for the rules); take them from Region.centroid, then retrain, when tracking time matters."""
+    """IoU of the two masks with their centroids on one point (b resized to a's area when `scale`), counted where
+    they overlap rather than on a shared canvas (the same numbers, at a fraction of the cost on large regions)."""
     mb = b.mask.astype(np.uint8)
     if scale:
         s = math.sqrt(max(a.area, 1) / max(b.area, 1))
         mb = cv2.resize(mb, (max(1, round(mb.shape[1] * s)), max(1, round(mb.shape[0] * s))), interpolation=cv2.INTER_NEAREST)
-    ma = a.mask.astype(np.uint8)
-    h, w = max(ma.shape[0], mb.shape[0]) * 2, max(ma.shape[1], mb.shape[1]) * 2
-    canvas_a, canvas_b = np.zeros((h, w), np.uint8), np.zeros((h, w), np.uint8)
-    for canvas, m in ((canvas_a, ma), (canvas_b, mb)):
-        ys, xs = np.nonzero(m)
-        if len(xs) == 0:
-            return 0.0
-        oy, ox = h // 2 - int(round(ys.mean())), w // 2 - int(round(xs.mean()))
-        canvas[oy:oy + m.shape[0], ox:ox + m.shape[1]] |= m
-    union = int((canvas_a | canvas_b).sum())
-    return float((canvas_a & canvas_b).sum() / union) if union else 0.0
+    ma, mb = a.mask.astype(bool), mb.astype(bool)
+    ca, cb = _centre(ma), _centre(mb)
+    if ca is None or cb is None:
+        return 0.0
+    dy, dx = int(round(ca[0])) - int(round(cb[0])), int(round(ca[1])) - int(round(cb[1]))   # b's offset in a's box
+    y0, y1, x0, x1 = max(0, dy), min(ma.shape[0], dy + mb.shape[0]), max(0, dx), min(ma.shape[1], dx + mb.shape[1])
+    inter = int((ma[y0:y1, x0:x1] & mb[y0 - dy:y1 - dy, x0 - dx:x1 - dx]).sum()) if y1 > y0 and x1 > x0 else 0
+    union = int(ma.sum()) + int(mb.sum()) - inter
+    return inter / union if union else 0.0
 
 
 def _bbox_overlap(a, b) -> tuple[float, float, float]:

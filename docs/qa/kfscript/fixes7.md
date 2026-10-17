@@ -96,9 +96,20 @@ Every flag below was answered with data, features or labels, never a hand rule.
 **Stray area.** Stray area grows on logo_sting and mk571 (0 → 1.00), and a little on hard_cut, wipe, glow_title and glow_letters.
 - On logo_sting and mk571, the opening full-frame layer is now cut where a panel takes over. Its first piece comes before any truth box, so the diff counts a full-frame stray (as with B13 in `fixes6.md`).
 
-**Cost.** The matcher's features take about 4 ms a pair, about 90 % of it in `_aligned_iou`'s mask centroids.
-- Tracking takes about 5 s for a round-trip case (rules: 0.1 s).
-- On mk571 (482 frames at 1080×1920) it takes 149 s (rules: 0.5 s), about +25 % on the whole analysis.
-- A `shortcut:` comment in `assoc.py` records this and the upgrade path.
+**Cost.**
+- The first version's features took about 4 ms a pair, about 90 % of it the centroid-aligned mask IoU drawn on a canvas twice the masks' size.
+- Tracking took about 5 s per round-trip case (rules: 0.1 s) and 149 s on mk571. On the real clips it took 3859 s over all 34 (rules: 35 s), 1237 s of it on envato1 at 2560×1440.
+- The IoU now counts only where the two masks overlap, with centroids from row and column counts. The numbers are identical:
+  - a randomized equality test against the canvas version (`tests/test_assoc.py`);
+  - a logo_sting analysis whose scene and textures match byte for byte.
+- It is 5–9× faster (0.9 vs 4.4 ms on a 300×200 pair, 15 vs 137 ms on a 2000×1000 pair).
+- The round trip and the clips above stand as measured.
+
+**Real clips** (`clips.md` §9, report only):
+- The Mixkit set improves on average (kf L1 0.0284 → 0.0269; 6 better, 2 worse).
+- The held-out SaaS previews are even (0.0415 → 0.0420).
+- ig1 improves (0.0332 → 0.0288).
+- **envato1 gets worse (0.0681 → 0.0767; f20–24 0.06–0.08 → 0.14).** The bottom glow takes in blurred letters a little each frame, every step looks like the same content, and the matcher chains f0–82 into one sprite.
+- A pair-wise judgement cannot see drift that builds up. The upgrade path is a track-level comparison (each new region against the track's earlier regions), trained on the same truth.
 
 **Decision: accepted** on the round trip (no flags, e24 kept), with the target unmet and explained. The real clips are in `clips.md` §9.

@@ -345,3 +345,60 @@ What changed:
 - So the old fill stood in for the word by accident.
 
 Upgrade path: draw blurred text (a blur on the text element), or keep a soft mover that a text cover would hide as a sprite.
+
+## 9. The learned matcher (`fixes7.md`), report only
+
+**Run.**
+- `eval/out/clips-eval7.sh`, one clip at a time: `clips-b12` at `e2909f4` (B12, the rules) and `clips-m` at `8b23086` (the matcher).
+- Then kf fidelity per scene.
+- Torch was not installed in either run (refine skipped, as in every earlier section).
+- The before/after JSON is `fixes7/clips.json`. Nothing was tuned on these clips.
+
+**The four eval clips** (frame-weighted over scenes):
+
+| Clip | Scenes | Elements | mean_l1 | **L1 kf** | worst kf (after) | kf_parity |
+|---|---|---|---|---|---|---|
+| envato1 | s1 f0–139, s2 f140–149 | 48 → 44 | 0.0627 → 0.0662 | **0.0681 → 0.0767** (s1 0.0624 → 0.0716; s2 0.148 both) | s2 f144 0.167 | ≤ 0.000005 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 107 | 0.0288 → 0.0254 | **0.0332 → 0.0288** | s2 f112 0.087 | ≤ 0.000007 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 89 | 0.0364 → 0.0359 | 0.0390 → 0.0384 | s1 f4 0.077 | ≤ 0.000108 |
+| ig3 | s1 f0–149 | 64 → 73 | 0.0169 → 0.0169 | 0.0250 → 0.0246 | f112 0.067 | 0.000002 |
+
+The scene splits are unchanged on every clip.
+
+**envato1 f0–24 (the case that started B13), kf L1 every 4th frame:**
+
+| | f0 | f4 | f8 | f12 | f16 | f20 | f24 |
+|---|---|---|---|---|---|---|---|
+| B12 (rules) | 0.039 | 0.038 | 0.029 | 0.029 | 0.042 | 0.062 | 0.083 |
+| matcher | 0.052 | 0.050 | 0.053 | 0.048 | 0.075 | **0.141** | **0.146** |
+
+**Why envato1 got worse.**
+- B12's opening is four short sprites (f0–12, f5–20, f17–25, f21–67). With the matcher it is one sprite, f0–82 (2251×1158).
+- The bottom glow takes in blurred letters a little each frame, and every single step looks like the same content to the matcher (high overlap, same colours). So the chain never breaks, and the sprite's one texture shows letters before they appear.
+- A pair-wise judgement cannot see drift that builds up over many frames. The truth label would call the region different once letters are more than a quarter of it, but no single step shows that.
+- Upgrade path, in the user's terms (features and training, not a rule): also score each new region against the track's earlier regions, not only its last one, and train that comparison on the same truth.
+
+**Mixkit set (20 previews, 960 px)**:
+- mean kf L1 0.0284 → 0.0269.
+- 6 clips better by more than 0.001:
+  - mk557 0.0549 → 0.0401
+  - mk840 0.0679 → 0.0561
+  - mk749 0.0194 → 0.0101
+  - mk637 0.0291 → 0.0257
+  - mk545 0.0772 → 0.0741
+  - mk569 0.0356 → 0.0331
+- 2 worse:
+  - mk546 s2 0.105 → 0.116: 546 → 549 elements, a particle field
+  - mk605 0.0101 → 0.0146
+- The other 12 are within ±0.001.
+- Elements go up on most clips: mk569 318 → 455, mk568 73 → 122, mk798 24 → 43.
+
+**Held-out SaaS previews (10)**:
+- mean kf L1 0.0415 → 0.0420.
+- 3 better: 51b7e970 0.0261 → 0.0191, c019934b 0.0238 → 0.0201, 24296b2b 0.0172 → 0.0142.
+- 2 worse: e8a5dd64 0.0779 → 0.0968, from its s4 f84–107 0.104 → 0.180; and 0688b3de 0.0465 → 0.0491.
+- 1ea2df6a duplicates an eval clip (excluded from training); 0.0752 → 0.0742.
+
+**Cost.**
+- Tracking took 35 s over all 34 clips with the rules and 3859 s with the matcher. envato1 alone (2560×1440) took 1237 s.
+- Nearly all of it was the centroid-aligned mask IoU on a canvas twice the masks' size. It now counts only where the two masks overlap: the same numbers (randomized equality test, and an identical logo_sting analysis), 5–9× faster.
