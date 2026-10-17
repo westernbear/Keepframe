@@ -110,18 +110,32 @@ def pair_features(a: Region, da: dict, b: Region, db: dict, gap: int, near: tupl
     ], np.float32)
 
 
-def foreign(r: Region, others: list[Region], exclude: Region | None) -> float:
+def coverage(regions: list[Region], shape: tuple[int, int]) -> np.ndarray:
+    """How many of `regions` cover each pixel of a frame of `shape` (H, W)."""
+    cov = np.zeros(shape, np.int32)
+    for o in regions:
+        x0, y0, x1, y1 = o.bbox
+        cov[y0:y1, x0:x1] += o.mask.astype(bool)
+    return cov
+
+
+def _overlap(r: Region, o: Region) -> int:
+    x0, y0, x1, y1 = max(r.bbox[0], o.bbox[0]), max(r.bbox[1], o.bbox[1]), min(r.bbox[2], o.bbox[2]), min(r.bbox[3], o.bbox[3])
+    if x1 <= x0 or y1 <= y0:
+        return 0
+    return int((r.mask[y0 - r.bbox[1]:y1 - r.bbox[1], x0 - r.bbox[0]:x1 - r.bbox[0]].astype(bool)
+                & o.mask[y0 - o.bbox[1]:y1 - o.bbox[1], x0 - o.bbox[0]:x1 - o.bbox[0]].astype(bool)).sum())
+
+
+def foreign(r: Region, others: list[Region], exclude: Region | None, cov: np.ndarray | None = None) -> float:
     """Share of r's pixels that the regions of another frame (but `exclude`) cover where they sit: what r took in from
-    its neighbours, or what of r its neighbours now hold."""
-    x0, y0, x1, y1 = r.bbox
-    m, n = r.mask.astype(bool), 0
-    for o in others:
-        if o is exclude:
-            continue
-        ox0, oy0, ox1, oy1 = o.bbox
-        ix0, iy0, ix1, iy1 = max(x0, ox0), max(y0, oy0), min(x1, ox1), min(y1, oy1)
-        if ix1 > ix0 and iy1 > iy0:
-            n += int((m[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0] & o.mask[iy0 - oy0:iy1 - oy0, ix0 - ox0:ix1 - ox0].astype(bool)).sum())
+    its neighbours, or what of r its neighbours now hold. `cov`: those regions' `coverage`, the same number faster."""
+    m = r.mask.astype(bool)
+    if cov is None:
+        n = sum(_overlap(r, o) for o in others if o is not exclude)
+    else:
+        x0, y0, x1, y1 = r.bbox
+        n = int(cov[y0:y1, x0:x1][m].sum()) - (_overlap(r, exclude) if any(o is exclude for o in others) else 0)
     return min(1.0, n / max(int(m.sum()), 1))
 
 
@@ -129,11 +143,12 @@ def track_features(a: Region, n: Region, b: Region, desc) -> np.ndarray:
     """N_FEATURES numbers for b continuing a track whose last region is a and whose oldest region within MAX_GAP frames
     of b is n (a itself for a track that young): the pair features of (a, b) and of (n, b), so change that each single
     step hides shows against n; what b took in from a's frame's other regions; what of a b's frame's other regions hold.
-    `desc` gives a region's descriptor (`of`), its nearest distance to a frame's regions (`near`) and a frame's regions
-    (`regions`): tracking._Descriptors, at training time as in the tracker."""
+    `desc` gives a region's descriptor (`of`), its nearest distance to a frame's regions (`near`), a frame's regions
+    (`regions`) and their `coverage`: tracking._Descriptors, at training time as in the tracker."""
     def pair(x: Region) -> np.ndarray:
         return pair_features(x, desc.of(x), b, desc.of(b), b.frame - x.frame, (desc.near(x, b.frame), desc.near(b, x.frame)))
-    return np.concatenate([pair(a), pair(n), [foreign(b, desc.regions(a.frame), a), foreign(a, desc.regions(b.frame), b)]]).astype(np.float32)
+    return np.concatenate([pair(a), pair(n), [foreign(b, desc.regions(a.frame), a, desc.coverage(a.frame)),
+                                              foreign(a, desc.regions(b.frame), b, desc.coverage(b.frame))]]).astype(np.float32)
 
 
 class Matcher:

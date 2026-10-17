@@ -100,7 +100,7 @@ class _Descriptors(dict):
 
     def __init__(self, frames: np.ndarray, first_frame: int = 0, regions_by_frame: list[list[Region]] | None = None):
         super().__init__()
-        self.frames, self.first_frame, self.rbf, self.nn = frames, first_frame, regions_by_frame or [], {}
+        self.frames, self.first_frame, self.rbf, self.nn, self.cov = frames, first_frame, regions_by_frame or [], {}, {}
 
     def near(self, r: Region, f: int) -> float:
         key = (r.frame, r.bbox, r.area, f)
@@ -112,6 +112,15 @@ class _Descriptors(dict):
     def regions(self, f: int) -> list[Region]:
         i = f - self.first_frame
         return self.rbf[i] if 0 <= i < len(self.rbf) else []
+
+    def coverage(self, f: int) -> np.ndarray:
+        """assoc.coverage of frame f's regions, for the last few frames asked (candidates are at most MAX_GAP apart)."""
+        if f not in self.cov:
+            from .assoc import coverage
+            if len(self.cov) >= 12:
+                self.cov.pop(next(iter(self.cov)))
+            self.cov[f] = coverage(self.regions(f), self.frames.shape[1:3])
+        return self.cov[f]
 
     def of(self, r: Region) -> dict:
         key = (r.frame, r.bbox, r.area)

@@ -142,3 +142,21 @@ def test_track_features_see_the_anchor_and_what_a_region_took_in():
     assert x.shape == (N_FEATURES,) and np.isfinite(x).all()
     assert abs(x[-2] - letter.sum() / (glow | letter).sum()) < 1e-6 and x[-1] == 0.0   # b took in the letter; nothing holds a's
     assert foreign(a, rbf[8], a) == 0.0
+
+
+def test_foreign_from_the_coverage_map_matches_the_loop():
+    from keepframe.analyze.assoc import coverage
+    rng = np.random.default_rng(2)
+    for _ in range(100):
+        regs = []
+        for k in range(rng.integers(1, 6)):   # overlapping regions too
+            m = np.zeros((60, 100), bool)
+            h, w = rng.integers(2, 30, 2)
+            y, x = rng.integers(0, 60 - h), rng.integers(0, 100 - w)
+            m[y:y + h, x:x + w] = rng.random((h, w)) < 0.8
+            m[y, x] = True
+            regs.append(_reg(0, m))
+        r = regs[0]
+        cov = coverage(regs[1:], (60, 100))
+        for ex in (None, regs[1] if len(regs) > 1 else None):
+            assert foreign(r, regs[1:], ex) == foreign(r, regs[1:], ex, cov)
