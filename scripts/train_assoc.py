@@ -1172,8 +1172,9 @@ SOLID_GRID = [(8, 500), (8, 1500), (16, 500), (16, 1500), (32, 500)]   # (hidden
 
 
 def solids_main(epochs: int, out: Path, hidden: int, select: bool = False) -> None:
-    """Train the solid judgement on the clips with seed % 5 != 0 (with `select`, the SOLID_GRID size whose mean balanced
-    accuracy over 5 folds of them is best), score the rest against truth with the rule beside it."""
+    """Train the solid judgement on the clips with seed % 5 != 0, solids, the clips' other objects and the ir scenes'
+    elements weighing a third each (with `select`, the SOLID_GRID size whose mean of the three recalls over 5 folds of
+    them is best), score the rest against truth with the rule beside it."""
     from keepframe.analyze.assoc import Matcher
     from keepframe.analyze.solids import N_FEATURES
     rows = []
@@ -1183,45 +1184,51 @@ def solids_main(epochs: int, out: Path, hidden: int, select: bool = False) -> No
                 rows.append((json.loads(str(d["meta"])), d["X"].reshape(-1, N_FEATURES), d["share"] >= 0.5, d["rule"]))
 
     def cat(sel):
-        return (np.concatenate([r[1] for r in sel]), np.concatenate([r[2] for r in sel]), np.concatenate([r[3] for r in sel]))
+        return (np.concatenate([r[1] for r in sel]), np.concatenate([r[2] for r in sel]), np.concatenate([r[3] for r in sel]),
+                np.concatenate([np.full(len(r[2]), r[0].get("kind", "clip") != "clip") for r in sel]))
     train, held = [r for r in rows if r[0]["seed"] % 5], [r for r in rows if not r[0]["seed"] % 5]
 
+    def groups(y, scene):   # what the judgement must get right, each a third: solids, the clips' other objects, the ir scenes' 2D elements
+        return [y, ~y & ~scene, ~y & scene]
+
     def fit(sel, h, e):
-        X, y, _ = cat(sel)
-        w = np.where(y, 0.5 / max(y.mean(), 1e-6), 0.5 / max(1 - y.mean(), 1e-6)).astype(np.float32)   # balanced
+        X, y, _, scene = cat(sel)
+        w = np.zeros(len(y), np.float32)
+        for g in groups(y, scene):
+            w[g] = 1.0 / (3 * max(g.sum(), 1)) * len(y)
         return fit_mlp(X, y.astype(np.float32), w, e, hidden=h)
     cv = {}
     if select:   # 5 folds of the training clips by seed: the held-out clips never choose
         for h, e in SOLID_GRID:
             accs = []
             for k in range(5):
-                X, y, _ = cat([r for r in train if r[0]["seed"] // 5 % 5 == k])
+                X, y, _, scene = cat([r for r in train if r[0]["seed"] // 5 % 5 == k])
                 p = Matcher(fit([r for r in train if r[0]["seed"] // 5 % 5 != k], h, e), N_FEATURES).prob(X) >= 0.5
-                accs.append((p[y].mean() + (~p[~y]).mean()) / 2)
+                accs.append(np.mean([(p[g] == y[g]).mean() for g in groups(y, scene) if g.any()]))
             cv[f"h{h} e{e}"] = round(float(np.mean(accs)), 4)
             print("cv", h, e, cv[f"h{h} e{e}"], flush=True)
         hidden, epochs = SOLID_GRID[int(np.argmax(list(cv.values())))]
     weights = fit(train, hidden, epochs)
-    _, y, _ = cat(train)
+    _, y, _, _ = cat(train)
     m = Matcher(weights, N_FEATURES)
 
     def score(sel):
         if not sel:
             return None
-        X, y, rule = cat(sel)
+        X, y, rule, _ = cat(sel)
         p = m.prob(X)
         calls = lambda c: {"accuracy": round(float((c == y).mean()), 4), "solid_recall": round(float(c[y].mean()), 4) if y.any() else None,
                            "other_recall": round(float((~c[~y]).mean()), 4) if (~y).any() else None}
         return {"candidates": int(len(y)), "solids": int(y.sum()), "auc": _auc(p, y.astype(int)), "learned": calls(p >= 0.5), "rule": calls(rule)}
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
     kinds = lambda sel, k: [r for r in sel if r[0].get("kind", "clip") == k]
-    meta = {"commit": commit, "epochs": epochs, "hidden": hidden, "cv_balanced_accuracy": cv, "train_clips": len(train), "held_out_clips": len(held),
+    meta = {"commit": commit, "epochs": epochs, "hidden": hidden, "cv_mean_recall_of_three": cv, "train_clips": len(train), "held_out_clips": len(held),
             "train_candidates": int(len(y)), "train_solids": int(y.sum()),
             "held_out": {"all": score(held), "clips": score(kinds(held, "clip")),
                          "ir_scenes": score(kinds(held, "synthetic") + kinds(held, "reference"))},
             "train": score(train),
             "sources": "solid clips (scripts/train_assoc.py solid_clip, seeds 6000+: spheres, boxes and noise blobs among "
-                       "cards, words and discs) and the keepframe.ir.synth generators (seeds 7000+), regions and tracks from "
+                       "cards, words and discs) and the keepframe.ir.synth generators (seeds 7000-7299), regions and tracks from "
                        "the pipeline with the shipped assoc.npz; held out: seed % 5 == 0"}
     np.savez(out, **weights, meta=np.array(json.dumps(meta)))
     if out == ROOT / "keepframe" / "analyze" / "solids.npz":   # the shipped weights: their record goes with them
@@ -1243,7 +1250,7 @@ def main(argv=None) -> int:
     dsub.add_argument("--kinds", default="")
     dsub.add_argument("--lottie-limit", type=int, default=1000)
     dsub.add_argument("--solid-seeds", default="6000-7599", help="solid clips (solid_clip)")
-    dsub.add_argument("--solid-scene-seeds", default="7000-7099", help="ir scenes for the solid judgement")
+    dsub.add_argument("--solid-scene-seeds", default="7000-7299", help="ir scenes for the solid judgement")
     sj = sub.add_parser("solids", help="train the solid judgement; writes keepframe/analyze/solids.npz")
     sj.add_argument("--epochs", type=int, default=3000)
     sj.add_argument("--hidden", type=int, default=16)
