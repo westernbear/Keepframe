@@ -11,7 +11,7 @@ from ..log import describe, get
 
 log = get("keepframe.analyze")
 WEIGHTS = Path(__file__).with_name("solids.npz")   # the learned candidate judgement (scripts/train_assoc.py solids)
-N_FEATURES = 15
+N_FEATURES = 17
 P_SOLID = 0.5
 SOLID_JUDGE_FAILED = "solid_judge_failed"
 
@@ -50,7 +50,7 @@ def _aligned_change(a, b, mb) -> float:
 
 def _change(frames, solid, out: dict | None = None):
     """(stable box and some interior signal, mean 1 - NCC of adjacent 64 px box crops). `out`: also the judge's
-    box spread, share of flat pairs and change after the best affine warp."""
+    box spread, share of flat pairs, change after the best affine warp and contrast on the candidate's own pixels."""
     crops = {}
     sizes = []
     for f, (box, _) in solid.frames.items():
@@ -60,6 +60,8 @@ def _change(frames, solid, out: dict | None = None):
                              (64, 64)).astype(np.float32)
     sizes = np.array(sizes)
     stable = np.all(np.ptp(sizes, axis=0) / np.maximum(sizes.mean(axis=0), 1) < 0.10)
+    masks = {f: cv2.resize(m.astype(np.uint8), (64, 64), interpolation=cv2.INTER_NEAREST) for f, (_, m) in solid.frames.items()} \
+        if out is not None else {}
     changes, aligned, flat = [], [], 0
     for f, b in crops.items():
         if f - 1 not in crops:
@@ -73,17 +75,19 @@ def _change(frames, solid, out: dict | None = None):
         ncc = float(np.sum(ac * bc) / denom)
         changes.append(1 - ncc)
         if out is not None:
-            aligned.append(_aligned_change(a, b, cv2.resize(solid.frames[f][1].astype(np.uint8), (64, 64), interpolation=cv2.INTER_NEAREST)))
+            aligned.append(_aligned_change(a, b, masks[f]))
     if out is not None:
         out.update(spread=float(np.max(np.ptp(sizes, axis=0) / np.maximum(sizes.mean(axis=0), 1))),
-                   flat=flat / max(1, flat + len(changes)), aligned=float(np.mean(aligned)) if aligned else 0.0)
+                   flat=flat / max(1, flat + len(changes)), aligned=float(np.mean(aligned)) if aligned else 0.0,
+                   contrast=float(np.median([c[masks[f] > 0].std() if masks[f].any() else 0.0 for f, c in crops.items()])) / 64)
     return stable and bool(changes), float(np.mean(changes)) if changes else 0.0
 
 
 def _features(frames, solid: Solid, members, change: float, stats: dict) -> np.ndarray:
-    """N_FEATURES numbers for a candidate, the judge's input: how long it lives, how the region tracker breaks it up,
-    how its look changes in its box with and without the best affine warp, how its outline, box and place change,
-    its size and fill, and whether it touches the frame edge."""
+    """N_FEATURES numbers for a candidate, the judge's input: how long it lives, how the region tracker breaks it up
+    and how much of it tracks that live half its life or more cover (parts that each keep their look), how its look
+    changes in its box with and without the best affine warp and its contrast (on a flat surface codec noise reads as
+    change), how its outline, box and place change, its size and fill, and whether it touches the frame edge."""
     n, H, W = frames.shape[:3]
     life = len(solid.frames)
     boxes = [box for box, _ in solid.frames.values()]
@@ -94,6 +98,8 @@ def _features(frames, solid: Solid, members, change: float, stats: dict) -> np.n
     outline = [1 - np.count_nonzero(p & q) / max(1, np.count_nonzero(p | q)) for p, q in zip(shapes, shapes[1:])]
     centres = np.array([((x0 + x1) / 2, (y0 + y1) / 2) for x0, y0, x1, y1 in boxes])
     area = max(float(np.median(areas)), 1.0)
+    pixels = max(float(np.median([np.count_nonzero(m) for m in masks])), 1.0)
+    held = sum(np.mean([r.area for r in t.regions.values()]) for t in members if len(t.regions) >= life / 2)
     return np.array([
         life / n, math.log(life), math.log1p(len(members)),
         np.median(lengths) / life if len(lengths) else 0.0, lengths.max() / life if len(lengths) else 0.0, lengths.sum() / life,
@@ -101,6 +107,7 @@ def _features(frames, solid: Solid, members, change: float, stats: dict) -> np.n
         math.log(area / (H * W)), np.median([np.count_nonzero(m) / max(1, m.size) for m in masks]),
         np.median(np.hypot(*np.diff(centres, axis=0).T)) / math.sqrt(area) if life > 1 else 0.0,
         np.mean([x0 <= 0 or y0 <= 0 or x1 >= W or y1 >= H for x0, y0, x1, y1 in boxes]),
+        math.log1p(held / pixels), stats["contrast"],
     ], np.float32)
 
 
