@@ -346,3 +346,18 @@ def test_a_candidate_holding_a_read_text_is_the_rest_of_a_title():
     assert find_solids(frames, fg, [], text, text_boxes=inside) == []
     assert len(find_solids(frames, fg, [], text, text_boxes=[[(0, 0, 4, 3)]] * len(frames))) == 1
 
+
+def test_judge_loads_and_falls_back_to_the_rule(monkeypatch):
+    import keepframe.analyze.solids as module
+    from keepframe.analyze.assoc import load_matcher
+
+    assert load_matcher(str(module.WEIGHTS), module.N_FEATURES) is not None
+    frames, fg, text = sphere_inputs()
+    stats = {}
+    _, change = _change(frames, Solid(frames={f: ((0, 0, 240, 180), fg[f]) for f in range(len(frames))}), stats)
+    assert stats["aligned"] <= change and set(stats) == {"aligned", "flat", "spread", "contrast"}
+    monkeypatch.setattr(module, "WEIGHTS", module.WEIGHTS.with_name("missing.npz"))
+    assert module._keep(np.zeros(module.N_FEATURES, np.float32), True) is True
+    monkeypatch.setattr(module, "_features", lambda *a: 1 / 0)   # fail soft: the rule decides
+    assert len(module.find_solids(frames, fg, [], text)) == 1
+
