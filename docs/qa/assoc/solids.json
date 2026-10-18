@@ -1,47 +1,47 @@
 {
- "commit": "f86f87d",
- "epochs": 1500,
- "hidden": 8,
+ "commit": "0d14048",
+ "epochs": 500,
+ "hidden": 32,
  "cv_mean_recall_of_three": {
-  "h8 e500": 0.9103,
-  "h8 e1500": 0.9193,
-  "h16 e500": 0.9129,
-  "h16 e1500": 0.9035,
-  "h32 e500": 0.9183
+  "h8 e500": 0.9163,
+  "h8 e1500": 0.9225,
+  "h16 e500": 0.9189,
+  "h16 e1500": 0.9172,
+  "h32 e500": 0.9238
  },
  "train_clips": 1753,
  "held_out_clips": 439,
- "train_candidates": 6166,
- "train_solids": 502,
+ "train_candidates": 6136,
+ "train_solids": 503,
  "held_out": {
   "all": {
-   "candidates": 1651,
-   "solids": 120,
-   "auc": 0.975598737208796,
+   "candidates": 1656,
+   "solids": 122,
+   "auc": 0.9757999016820912,
    "learned": {
-    "accuracy": 0.9279,
-    "solid_recall": 0.8917,
-    "other_recall": 0.9308
+    "accuracy": 0.9378,
+    "solid_recall": 0.8279,
+    "other_recall": 0.9465
    },
    "rule": {
-    "accuracy": 0.8886,
-    "solid_recall": 0.575,
-    "other_recall": 0.9131
+    "accuracy": 0.8877,
+    "solid_recall": 0.5656,
+    "other_recall": 0.9133
    }
   },
   "clips": {
-   "candidates": 1304,
-   "solids": 120,
-   "auc": 0.9713682432432432,
+   "candidates": 1309,
+   "solids": 122,
+   "auc": 0.9719985636747829,
    "learned": {
-    "accuracy": 0.9149,
-    "solid_recall": 0.8917,
-    "other_recall": 0.9172
+    "accuracy": 0.9244,
+    "solid_recall": 0.8279,
+    "other_recall": 0.9343
    },
    "rule": {
-    "accuracy": 0.8804,
-    "solid_recall": 0.575,
-    "other_recall": 0.9113
+    "accuracy": 0.8793,
+    "solid_recall": 0.5656,
+    "other_recall": 0.9115
    }
   },
   "ir_scenes": {
@@ -49,9 +49,9 @@
    "solids": 0,
    "auc": null,
    "learned": {
-    "accuracy": 0.9769,
+    "accuracy": 0.9885,
     "solid_recall": null,
-    "other_recall": 0.9769
+    "other_recall": 0.9885
    },
    "rule": {
     "accuracy": 0.9193,
@@ -61,18 +61,18 @@
   }
  },
  "train": {
-  "candidates": 6166,
-  "solids": 502,
-  "auc": 0.9827030156211313,
+  "candidates": 6136,
+  "solids": 503,
+  "auc": 0.9933013317220766,
   "learned": {
-   "accuracy": 0.9348,
-   "solid_recall": 0.9402,
-   "other_recall": 0.9343
+   "accuracy": 0.9664,
+   "solid_recall": 0.9781,
+   "other_recall": 0.9654
   },
   "rule": {
-   "accuracy": 0.893,
-   "solid_recall": 0.5159,
-   "other_recall": 0.9264
+   "accuracy": 0.8934,
+   "solid_recall": 0.5229,
+   "other_recall": 0.9265
   }
  },
  "sources": "solid clips (scripts/train_assoc.py solid_clip, seeds 6000+: spheres, boxes and noise blobs among cards, words and discs) and the keepframe.ir.synth generators (seeds 7000-7299), regions and tracks from the pipeline with the shipped assoc.npz; held out: seed % 5 == 0"

@@ -361,3 +361,18 @@ def test_judge_loads_and_falls_back_to_the_rule(monkeypatch):
     monkeypatch.setattr(module, "_features", lambda *a: 1 / 0)   # fail soft: the rule decides
     assert len(module.find_solids(frames, fg, [], text)) == 1
 
+
+def test_analysis_keeps_one_texture_turning_in_the_plane_out(tmp_path):
+    """fixes7 S: a striped disc turning in the plane is one texture turned (a still sprite with rotation shows it), not
+    a 3D candidate; the rule called it one (a stable box whose look changes)."""
+    frames = np.full((30, 180, 240, 3), (16, 20, 24), np.uint8)
+    yy, xx = np.mgrid[:96, :96]
+    t = (0.5 + 0.5 * np.sin(xx * np.pi / 6))[..., None]
+    tex = (np.array([230, 120, 40]) * t + np.array([40, 90, 200]) * (1 - t)).astype(np.uint8)
+    disc = (xx - 47.5) ** 2 + (yy - 47.5) ** 2 <= 46 ** 2
+    for f in range(len(frames)):
+        turned = cv2.warpAffine(tex, cv2.getRotationMatrix2D((47.5, 47.5), 9 * f, 1), (96, 96), borderMode=cv2.BORDER_REFLECT)
+        frames[f, 40:136, 70:166][disc] = turned[disc]
+    analyze_scene_frames(frames, 30, tmp_path, "s1", AnalyzeOptions(
+        bg_override="#101418", ocr=False, refine=False, use_ecc=False, generate_3d=False))
+    assert "3D 후보 0개" in json.loads((tmp_path / "scenes/s1/report.json").read_text())["messages"]
