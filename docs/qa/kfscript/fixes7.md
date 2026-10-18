@@ -218,4 +218,9 @@ M3 put a test sphere exactly on the first boundary. The user (2026-10-17) chose 
 
 **Tests.** The fast suite passes (2894, plus 136 in the solid, mover, title and analysis-golden files). `test_multiscene_analysis_shares_generation_cap` passes, and a new test keeps the in-plane disc out.
 
-**Round trip and real clips:** below (`rt10`, `clips.md` §11).
+**Round trip** (`fixes7/s-judge.json`, `rt9` M3 → `rt10` at `2d80588`; torch not installed):
+- No flags. All 19 cases and mk571 are within 0.0003 kf L1 of M3; e24 keeps its 23 glyphs.
+- None of the round-trip kinds holds a 3D object or a 3D candidate, before or after, so the judge changes nothing there.
+- A first `rt10` timed out rendering glow_merge's reference page. That page loads gsap and fonts from the `wt-g1` worktree, which a disk cleanup had removed. The worktree was restored and the run repeated.
+
+**Real clips:** `clips.md` §11.
