@@ -167,7 +167,7 @@ class Matcher:
             h = h @ W + b
             if i < len(self.layers) - 1:
                 h = np.maximum(h, 0.0)
-        return (1.0 / (1.0 + np.exp(-h)))[:, 0]
+        return (1.0 / (1.0 + np.exp(-np.clip(h, -80.0, 80.0))))[:, 0]   # the same float32 numbers, without exp's overflow
 
 
 @lru_cache(maxsize=4)

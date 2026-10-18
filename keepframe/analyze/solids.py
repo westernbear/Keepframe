@@ -28,14 +28,21 @@ def _centroid(mask):
     return np.array([xs.mean(), ys.mean()])
 
 
-def _aligned_change(a, b, change: float) -> float:
-    """1 - the correlation of b with a after the best affine warp from identity (ECC): the change one texture moved,
-    scaled, turned or sheared cannot explain; `change` (no warp) when none fits better."""
+def _aligned_change(a, b, mb) -> float:
+    """1 - the correlation of b with a on b's own pixels (`mb`, 0/1) after the best affine warp from identity (ECC): the
+    change that one texture moved, scaled, turned or sheared cannot explain (the ground around it in the box does not
+    count); the change at identity when no warp fits better, 0 on flat pixels."""
+    m = mb.astype(bool)
+    ac, bc = a[m] - a[m].mean(), b[m] - b[m].mean()
+    denom = float(np.linalg.norm(ac) * np.linalg.norm(bc))
+    if denom <= 1e-6:
+        return 0.0
+    change = 1.0 - float(ac @ bc) / denom
     if change < 0.02:
         return change   # nothing a warp could take out
     try:
         r, _ = cv2.findTransformECC(a, b, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
-                                    (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 15, 1e-3), None, 1)
+                                    (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 15, 1e-3), mb, 1)
     except cv2.error:
         return change
     return min(change, 1.0 - float(r))
@@ -66,7 +73,7 @@ def _change(frames, solid, out: dict | None = None):
         ncc = float(np.sum(ac * bc) / denom)
         changes.append(1 - ncc)
         if out is not None:
-            aligned.append(_aligned_change(a, b, 1 - ncc))
+            aligned.append(_aligned_change(a, b, cv2.resize(solid.frames[f][1].astype(np.uint8), (64, 64), interpolation=cv2.INTER_NEAREST)))
     if out is not None:
         out.update(spread=float(np.max(np.ptp(sizes, axis=0) / np.maximum(sizes.mean(axis=0), 1))),
                    flat=flat / max(1, flat + len(changes)), aligned=float(np.mean(aligned)) if aligned else 0.0)

@@ -5,7 +5,7 @@
     python scripts/train_assoc.py train           # torch (CPU); writes keepframe/analyze/assoc.npz
     python scripts/train_assoc.py eval            # held-out metrics -> docs/qa/assoc/
     python scripts/train_assoc.py data --sources solids,solid-scenes   # the solid judgement's candidates
-    python scripts/train_assoc.py solids          # torch; writes keepframe/analyze/solids.npz
+    python scripts/train_assoc.py solids --select # torch; writes keepframe/analyze/solids.npz
 
 Everything fetched or rendered lives under eval/ and is never committed (CLAUDE.md §6)."""
 from __future__ import annotations
@@ -1142,8 +1142,12 @@ def eval_main(epochs: int, saas: bool = True, hidden: int = 32) -> None:
     (qa / "leave-one-kind-out.json").write_text(json.dumps({"rho": rho, "epochs": epochs, "hidden": hidden, "trained_on_saas": saas, "kinds": rows}, indent=1))
 
 
-def solids_main(epochs: int, out: Path, hidden: int) -> None:
-    """Train the solid judgement on the clips with seed % 5 != 0, score the rest against truth with the rule beside it."""
+SOLID_GRID = [(8, 500), (8, 1500), (16, 500), (16, 1500), (32, 500)]   # (hidden, epochs) the cross-validation picks from
+
+
+def solids_main(epochs: int, out: Path, hidden: int, select: bool = False) -> None:
+    """Train the solid judgement on the clips with seed % 5 != 0 (with `select`, the SOLID_GRID size whose mean balanced
+    accuracy over 5 folds of them is best), score the rest against truth with the rule beside it."""
     from keepframe.analyze.assoc import Matcher
     from keepframe.analyze.solids import N_FEATURES
     rows = []
@@ -1155,9 +1159,24 @@ def solids_main(epochs: int, out: Path, hidden: int) -> None:
     def cat(sel):
         return (np.concatenate([r[1] for r in sel]), np.concatenate([r[2] for r in sel]), np.concatenate([r[3] for r in sel]))
     train, held = [r for r in rows if r[0]["seed"] % 5], [r for r in rows if not r[0]["seed"] % 5]
-    X, y, _ = cat(train)
-    w = np.where(y, 0.5 / max(y.mean(), 1e-6), 0.5 / max(1 - y.mean(), 1e-6)).astype(np.float32)   # balanced
-    weights = fit_mlp(X, y.astype(np.float32), w, epochs, hidden=hidden)
+
+    def fit(sel, h, e):
+        X, y, _ = cat(sel)
+        w = np.where(y, 0.5 / max(y.mean(), 1e-6), 0.5 / max(1 - y.mean(), 1e-6)).astype(np.float32)   # balanced
+        return fit_mlp(X, y.astype(np.float32), w, e, hidden=h)
+    cv = {}
+    if select:   # 5 folds of the training clips by seed: the held-out clips never choose
+        for h, e in SOLID_GRID:
+            accs = []
+            for k in range(5):
+                X, y, _ = cat([r for r in train if r[0]["seed"] // 5 % 5 == k])
+                p = Matcher(fit([r for r in train if r[0]["seed"] // 5 % 5 != k], h, e), N_FEATURES).prob(X) >= 0.5
+                accs.append((p[y].mean() + (~p[~y]).mean()) / 2)
+            cv[f"h{h} e{e}"] = round(float(np.mean(accs)), 4)
+            print("cv", h, e, cv[f"h{h} e{e}"], flush=True)
+        hidden, epochs = SOLID_GRID[int(np.argmax(list(cv.values())))]
+    weights = fit(train, hidden, epochs)
+    _, y, _ = cat(train)
     m = Matcher(weights, N_FEATURES)
 
     def score(sel):
@@ -1170,7 +1189,7 @@ def solids_main(epochs: int, out: Path, hidden: int) -> None:
         return {"candidates": int(len(y)), "solids": int(y.sum()), "auc": _auc(p, y.astype(int)), "learned": calls(p >= 0.5), "rule": calls(rule)}
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
     kinds = lambda sel, k: [r for r in sel if r[0].get("kind", "clip") == k]
-    meta = {"commit": commit, "epochs": epochs, "hidden": hidden, "train_clips": len(train), "held_out_clips": len(held),
+    meta = {"commit": commit, "epochs": epochs, "hidden": hidden, "cv_balanced_accuracy": cv, "train_clips": len(train), "held_out_clips": len(held),
             "train_candidates": int(len(y)), "train_solids": int(y.sum()),
             "held_out": {"all": score(held), "clips": score(kinds(held, "clip")),
                          "ir_scenes": score(kinds(held, "synthetic") + kinds(held, "reference"))},
@@ -1197,12 +1216,13 @@ def main(argv=None) -> int:
     dsub.add_argument("--scene-seeds", default="5000-5059", help="ir scene seeds (the tests use seeds below 100)")
     dsub.add_argument("--kinds", default="")
     dsub.add_argument("--lottie-limit", type=int, default=1000)
-    dsub.add_argument("--solid-seeds", default="6000-6799", help="solid clips (solid_clip)")
+    dsub.add_argument("--solid-seeds", default="6000-7599", help="solid clips (solid_clip)")
     dsub.add_argument("--solid-scene-seeds", default="7000-7099", help="ir scenes for the solid judgement")
     sj = sub.add_parser("solids", help="train the solid judgement; writes keepframe/analyze/solids.npz")
     sj.add_argument("--epochs", type=int, default=3000)
     sj.add_argument("--hidden", type=int, default=16)
     sj.add_argument("--out", type=Path, default=ROOT / "keepframe" / "analyze" / "solids.npz")
+    sj.add_argument("--select", action="store_true", help="choose hidden and epochs by 5-fold cross-validation (SOLID_GRID)")
     for name in ("train", "eval"):
         sp = sub.add_parser(name)
         sp.add_argument("--epochs", type=int, default=30)
@@ -1215,7 +1235,7 @@ def main(argv=None) -> int:
     if a.cmd == "eval":
         eval_main(a.epochs, not a.no_saas, a.hidden)
     if a.cmd == "solids":
-        solids_main(a.epochs, a.out, a.hidden)
+        solids_main(a.epochs, a.out, a.hidden, a.select)
     if a.cmd == "data":
         ocr_box: list = []
         lo, hi = (int(x) for x in a.seeds.split("-"))
