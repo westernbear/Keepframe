@@ -296,9 +296,17 @@ def _legacy_find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_mem
 
 
 
+# fixes7 S: the analyses judge candidates with the learned judge; the direct calls pass no pipeline tracks, which it is
+# trained on, and test tracking, the area cap and the title veto, judged by the rule.
+LEARNED = {"test_analysis_merges_sphere_and_preserves_fragments_and_spin", "test_merged_solid_keeps_source_mask_in_analysis_overlay",
+           "test_judge_loads_and_falls_back_to_the_rule", "test_analysis_keeps_one_texture_turning_in_the_plane_out"}
+
+
 @pytest.fixture(autouse=True)
 def compare_legacy_tracking(request, monkeypatch):
-    if request.node.originalname in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
+    if request.node.originalname not in LEARNED:
+        monkeypatch.setattr("keepframe.analyze.solids._keep", lambda _x, rule: rule)
+    if request.node.originalname in LEARNED | {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
                                      "test_two_thousand_tiny_components_are_skipped_before_tracking",
                                      "test_changing_blob_uses_median_bbox_area_limit",
                                      "test_a_candidate_holding_a_read_text_is_the_rest_of_a_title"}:   # B11: new semantics
@@ -337,3 +345,4 @@ def test_a_candidate_holding_a_read_text_is_the_rest_of_a_title():
     inside = [[(cx - 4, cy - 3, cx + 4, cy + 3)]] * len(frames)
     assert find_solids(frames, fg, [], text, text_boxes=inside) == []
     assert len(find_solids(frames, fg, [], text, text_boxes=[[(0, 0, 4, 3)]] * len(frames))) == 1
+
