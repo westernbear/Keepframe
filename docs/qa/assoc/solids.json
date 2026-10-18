@@ -1,47 +1,47 @@
 {
- "commit": "2675785",
- "epochs": 500,
- "hidden": 16,
+ "commit": "f86f87d",
+ "epochs": 1500,
+ "hidden": 8,
  "cv_mean_recall_of_three": {
-  "h8 e500": 0.9101,
-  "h8 e1500": 0.912,
-  "h16 e500": 0.9124,
-  "h16 e1500": 0.9046,
-  "h32 e500": 0.9118
+  "h8 e500": 0.9103,
+  "h8 e1500": 0.9193,
+  "h16 e500": 0.9129,
+  "h16 e1500": 0.9035,
+  "h32 e500": 0.9183
  },
  "train_clips": 1753,
  "held_out_clips": 439,
- "train_candidates": 6164,
+ "train_candidates": 6166,
  "train_solids": 502,
  "held_out": {
   "all": {
-   "candidates": 1652,
+   "candidates": 1651,
    "solids": 120,
-   "auc": 0.9686140121845083,
+   "auc": 0.975598737208796,
    "learned": {
-    "accuracy": 0.9225,
-    "solid_recall": 0.875,
-    "other_recall": 0.9262
+    "accuracy": 0.9279,
+    "solid_recall": 0.8917,
+    "other_recall": 0.9308
    },
    "rule": {
     "accuracy": 0.8886,
     "solid_recall": 0.575,
-    "other_recall": 0.9132
+    "other_recall": 0.9131
    }
   },
   "clips": {
-   "candidates": 1305,
+   "candidates": 1304,
    "solids": 120,
-   "auc": 0.9624683544303797,
+   "auc": 0.9713682432432432,
    "learned": {
-    "accuracy": 0.905,
-    "solid_recall": 0.875,
-    "other_recall": 0.908
+    "accuracy": 0.9149,
+    "solid_recall": 0.8917,
+    "other_recall": 0.9172
    },
    "rule": {
-    "accuracy": 0.8805,
+    "accuracy": 0.8804,
     "solid_recall": 0.575,
-    "other_recall": 0.9114
+    "other_recall": 0.9113
    }
   },
   "ir_scenes": {
@@ -49,9 +49,9 @@
    "solids": 0,
    "auc": null,
    "learned": {
-    "accuracy": 0.9885,
+    "accuracy": 0.9769,
     "solid_recall": null,
-    "other_recall": 0.9885
+    "other_recall": 0.9769
    },
    "rule": {
     "accuracy": 0.9193,
@@ -61,17 +61,17 @@
   }
  },
  "train": {
-  "candidates": 6164,
+  "candidates": 6166,
   "solids": 502,
-  "auc": 0.9782399895296947,
+  "auc": 0.9827030156211313,
   "learned": {
-   "accuracy": 0.9276,
-   "solid_recall": 0.9502,
-   "other_recall": 0.9256
+   "accuracy": 0.9348,
+   "solid_recall": 0.9402,
+   "other_recall": 0.9343
   },
   "rule": {
-   "accuracy": 0.8928,
-   "solid_recall": 0.5139,
+   "accuracy": 0.893,
+   "solid_recall": 0.5159,
    "other_recall": 0.9264
   }
  },
