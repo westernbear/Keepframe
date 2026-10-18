@@ -40,12 +40,15 @@ def _aligned_change(a, b, mb) -> float:
     change = 1.0 - float(ac @ bc) / denom
     if change < 0.02:
         return change   # nothing a warp could take out
-    try:
-        r, _ = cv2.findTransformECC(a, b, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
-                                    (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 15, 1e-3), mb, 1)
-    except cv2.error:
-        return change
-    return min(change, 1.0 - float(r))
+    centre = ((a.shape[1] - 1) / 2, (a.shape[0] - 1) / 2)
+    for deg in (0, 12, -12):   # shortcut: ECC converges near its start, turns up to ~20 deg a frame; log-polar phase correlation for a start if faster ones matter
+        try:
+            r, _ = cv2.findTransformECC(a, b, cv2.getRotationMatrix2D(centre, deg, 1.0).astype(np.float32), cv2.MOTION_AFFINE,
+                                        (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 15, 1e-3), mb, 1)
+        except cv2.error:
+            continue
+        change = min(change, 1.0 - float(r))
+    return change
 
 
 def _change(frames, solid, out: dict | None = None):

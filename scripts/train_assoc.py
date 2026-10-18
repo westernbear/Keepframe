@@ -844,9 +844,35 @@ def _card(rng, n: int, scale: float):
     return draw
 
 
+def _spinner(rng, n: int, scale: float):
+    """One patterned texture (stripes, sectors, checker, noise...) turning in the plane, mostly in place: a badge, a
+    logo, a loader. Its pattern's pieces break up in the region tracker as a turning body's surface does."""
+    import cv2
+    d = int(rng.uniform(24, 120) * scale)
+    if rng.random() < 0.3:
+        c1, c2 = _two_colours(rng)
+        yy, xx = np.mgrid[:d, :d] - (d - 1) / 2
+        t = np.sign(np.sin(int(rng.integers(3, 9)) * np.arctan2(yy, xx)))
+        rgb, alpha = (c1 + (c2 - c1) * (0.5 + 0.5 * t)[..., None]).astype(np.float32), np.ones((d, d), np.float32)
+    else:
+        rgb, alpha = _card_texture(rng, d, d)
+    if rng.random() < 0.7:
+        m = np.zeros((d, d), np.uint8)
+        cv2.circle(m, (d // 2, d // 2), d // 2, 1, -1)
+        alpha = alpha * m
+    deg = rng.uniform(2, 20) * rng.choice([-1, 1])
+    src = np.dstack([rgb, alpha])
+
+    def draw(f):
+        out = cv2.warpAffine(src, cv2.getRotationMatrix2D(((d - 1) / 2, (d - 1) / 2), deg * f, 1.0), (d, d), flags=cv2.INTER_LINEAR)
+        return out[..., :3], out[..., 3]
+    return draw
+
+
 def solid_clip(seed: int):
     """A clip with known truth for the solid judgement (seeds the tests never use): on a flat, gradient or textured
-    ground, 0-2 objects one texture cannot show and 0-4 it can (one at least), moving, in random order. Returns (frames, per-frame
+    ground, 0-2 objects one texture cannot show and 0-4 it can (one at least: cards, or patterns spinning in the
+    plane), moving, in random order. Returns (frames, per-frame
     mask of the first kind dilated 2 px, the ground's hex when it is flat else None)."""
     import cv2
     rng = np.random.default_rng(seed)
@@ -864,7 +890,7 @@ def solid_clip(seed: int):
         t = cv2.GaussianBlur(rng.normal(size=(H, W)).astype(np.float32), (0, 0), 6.0)
         base = c1 + (c2 - c1) * np.clip(0.5 + t / max(float(t.std()), 1e-6) / 4, 0, 1)[..., None] * 0.3
     makers = [(rng.choice([_sphere, _cube, _blob], p=[0.45, 0.3, 0.25]), True) for _ in range(rng.choice([0, 1, 1, 2]))]
-    makers += [(_card, False) for _ in range(max(int(rng.integers(0, 5)), not makers))]
+    makers += [(rng.choice([_card, _spinner], p=[0.75, 0.25]), False) for _ in range(max(int(rng.integers(0, 5)), not makers))]
     rng.shuffle(makers)
     objs = []
     for make, positive in makers:
