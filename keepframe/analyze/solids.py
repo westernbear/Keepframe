@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import cv2
 import numpy as np
+
+from ..log import describe, get
+
+log = get("keepframe.analyze")
+WEIGHTS = Path(__file__).with_name("solids.npz")   # the learned candidate judgement (scripts/train_assoc.py solids)
+N_FEATURES = 15
+P_SOLID = 0.5
+SOLID_JUDGE_FAILED = "solid_judge_failed"
 
 
 @dataclass
@@ -18,7 +28,22 @@ def _centroid(mask):
     return np.array([xs.mean(), ys.mean()])
 
 
-def _change(frames, solid):
+def _aligned_change(a, b, change: float) -> float:
+    """1 - the correlation of b with a after the best affine warp from identity (ECC): the change one texture moved,
+    scaled, turned or sheared cannot explain; `change` (no warp) when none fits better."""
+    if change < 0.02:
+        return change   # nothing a warp could take out
+    try:
+        r, _ = cv2.findTransformECC(a, b, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
+                                    (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 15, 1e-3), None, 1)
+    except cv2.error:
+        return change
+    return min(change, 1.0 - float(r))
+
+
+def _change(frames, solid, out: dict | None = None):
+    """(stable box and some interior signal, mean 1 - NCC of adjacent 64 px box crops). `out`: also the judge's
+    box spread, share of flat pairs and change after the best affine warp."""
     crops = {}
     sizes = []
     for f, (box, _) in solid.frames.items():
@@ -28,7 +53,7 @@ def _change(frames, solid):
                              (64, 64)).astype(np.float32)
     sizes = np.array(sizes)
     stable = np.all(np.ptp(sizes, axis=0) / np.maximum(sizes.mean(axis=0), 1) < 0.10)
-    changes = []
+    changes, aligned, flat = [], [], 0
     for f, b in crops.items():
         if f - 1 not in crops:
             continue
@@ -36,10 +61,47 @@ def _change(frames, solid):
         ac, bc = a - a.mean(), b - b.mean()
         denom = np.linalg.norm(ac) * np.linalg.norm(bc)
         if denom <= 1e-6:
+            flat += 1
             continue  # Flat crops have no normalized interior-change signal.
         ncc = float(np.sum(ac * bc) / denom)
         changes.append(1 - ncc)
+        if out is not None:
+            aligned.append(_aligned_change(a, b, 1 - ncc))
+    if out is not None:
+        out.update(spread=float(np.max(np.ptp(sizes, axis=0) / np.maximum(sizes.mean(axis=0), 1))),
+                   flat=flat / max(1, flat + len(changes)), aligned=float(np.mean(aligned)) if aligned else 0.0)
     return stable and bool(changes), float(np.mean(changes)) if changes else 0.0
+
+
+def _features(frames, solid: Solid, members, change: float, stats: dict) -> np.ndarray:
+    """N_FEATURES numbers for a candidate, the judge's input: how long it lives, how the region tracker breaks it up,
+    how its look changes in its box with and without the best affine warp, how its outline, box and place change,
+    its size and fill, and whether it touches the frame edge."""
+    n, H, W = frames.shape[:3]
+    life = len(solid.frames)
+    boxes = [box for box, _ in solid.frames.values()]
+    masks = [mask for _, mask in solid.frames.values()]
+    lengths = np.array([len(t.regions) for t in members], float)
+    areas = np.array([(x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in boxes], float)
+    shapes = [cv2.resize(m.astype(np.uint8), (32, 32), interpolation=cv2.INTER_NEAREST).astype(bool) for m in masks]
+    outline = [1 - np.count_nonzero(p & q) / max(1, np.count_nonzero(p | q)) for p, q in zip(shapes, shapes[1:])]
+    centres = np.array([((x0 + x1) / 2, (y0 + y1) / 2) for x0, y0, x1, y1 in boxes])
+    area = max(float(np.median(areas)), 1.0)
+    return np.array([
+        life / n, math.log(life), math.log1p(len(members)),
+        np.median(lengths) / life if len(lengths) else 0.0, lengths.max() / life if len(lengths) else 0.0, lengths.sum() / life,
+        change, stats["aligned"], stats["flat"], stats["spread"], np.mean(outline) if outline else 0.0,
+        math.log(area / (H * W)), np.median([np.count_nonzero(m) / max(1, m.size) for m in masks]),
+        np.median(np.hypot(*np.diff(centres, axis=0).T)) / math.sqrt(area) if life > 1 else 0.0,
+        np.mean([x0 <= 0 or y0 <= 0 or x1 >= W or y1 >= H for x0, y0, x1, y1 in boxes]),
+    ], np.float32)
+
+
+def _keep(x: np.ndarray, rule: bool) -> bool:
+    """The learned judgement on a candidate's features, or `rule` without (or with unfit) weights."""
+    from .assoc import load_matcher
+    judge = load_matcher(str(WEIGHTS), N_FEATURES)
+    return rule if judge is None else bool(judge.prob(x)[0] >= P_SOLID)
 
 
 TITLE_SHARE = 0.5   # B11: a candidate holding a text box on this share of its frames is the rest of that title
@@ -57,7 +119,9 @@ def _holds_title(solid: Solid, text_boxes) -> bool:
 
 def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, change_thr=0.15, text_boxes=None) -> list[Solid]:
     """Track 5px-dilated components, retaining only cropped foreground support. `text_boxes`: per frame, the read text
-    boxes (x0, y0, x1, y1), for B11."""
+    boxes (x0, y0, x1, y1), for B11. A candidate that lives long enough, is not a background and holds no title is
+    judged by the learned judge (solids.npz) on its `_features`; without weights, by the rule: broken into short
+    tracks, or a stable box whose look changes."""
     kernel = np.ones((11, 11), np.uint8)  # radius 5px
     floor = max(min_life, int(np.ceil(0.30 * len(frames))))
     min_area = max(1, int(np.ceil(0.001 * frames.shape[1] * frames.shape[2])))
@@ -135,9 +199,18 @@ def find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_members=3, 
                                0 <= my < mask.shape[0] and 0 <= mx < mask.shape[1] and bool(mask[my, mx]))
             if inside >= len(track.regions) / 2:
                 members.append(track)
+        if text_boxes and _holds_title(solid, text_boxes):
+            continue
         fragmented = len(members) >= min_members and np.median([len(t.regions) for t in members]) < life * 0.50
-        stable, change = _change(frames, solid)
-        if (fragmented or (stable and change >= change_thr)) and not (text_boxes and _holds_title(solid, text_boxes)):
+        stats = {}
+        stable, change = _change(frames, solid, stats)
+        rule = fragmented or (stable and change >= change_thr)
+        try:
+            keep = _keep(_features(frames, solid, members, change, stats), rule)
+        except Exception as e:   # fail soft: the rule decides
+            log.warning("learned solid judgement skipped (%s): %s", SOLID_JUDGE_FAILED, describe(e, trace=True))
+            keep = rule
+        if keep:
             solid.members = [t.id for t in members]
             result.append(solid)
     return result

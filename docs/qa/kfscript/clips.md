@@ -402,3 +402,40 @@ The scene splits are unchanged on every clip.
 **Cost.**
 - Tracking took 35 s over all 34 clips with the rules and 3859 s with the matcher. envato1 alone (2560×1440) took 1237 s.
 - Nearly all of it was the centroid-aligned mask IoU on a canvas twice the masks' size. It now counts only where the two masks overlap: the same numbers (randomized equality test, and an identical logo_sting analysis), 5–9× faster.
+
+## 10. Matcher M3 (`fixes7.md`), report only
+
+**Run.**
+- `clips-m3` at `ff38350`, through the same `clips-eval7.sh`. Torch was not installed.
+- The record is `fixes7/clips-m3.json`: B12, M1 and M3 side by side, with kf L1 frame-weighted over scenes and the "3D 후보" counts.
+
+| | B12 (rules) | M1 | M3 |
+|---|---|---|---|
+| eval clips, mean kf L1 | 0.0413 | 0.0421 | 0.0420 |
+| Mixkit (20), mean | 0.0284 | 0.0269 | 0.0274 |
+| held-out SaaS (10), mean | 0.0415 | 0.0420 | **0.0392** |
+| envato1 | 0.0681 | 0.0767 | 0.0754 |
+
+**envato1, kf L1 every 4th frame (B12 / M1 / M3):**
+- f0–12 improves on both earlier runs: 0.029 / 0.052 / **0.029**, 0.038 / 0.050 / **0.029**, 0.029 / 0.053 / **0.028**, 0.029 / 0.048 / **0.027**.
+- From f16 the drift is back: f16 0.042 / 0.075 / 0.093, f20 0.062 / 0.141 / 0.148, f24 0.083 / 0.146 / 0.150.
+- The opening glow is split at f15, but the sprite from f15 again chains to f82.
+- The window rule M2 (reverted) had brought envato1 back to 0.0684.
+
+**Other clips:**
+- SaaS improves most:
+  - 0688b3de 0.0465 / 0.0491 / 0.0370
+  - e8a5dd64 0.0779 / 0.0968 / 0.0776
+  - 9327acb8 0.0632 / 0.0623 / 0.0599
+- c019934b gets worse: 0.0238 / 0.0201 / 0.0260.
+- Mixkit:
+  - mk546 is worse again: 0.0923 / 0.1016 / 0.1181, a 553-element particle field.
+  - mk569 is better: 0.0356 / 0.0331 / 0.0320, with 533 elements.
+- Element counts grow a little further on most clips.
+
+**3D candidates:**
+- B12: mk547 1, mk793 1, 51b7e970 1.
+- M1: mk547 2, mk793 2, mk798 1, ig2 1.
+- M3: mk547 1, mk793 3, mk798 1, ig2 1.
+
+**Cost.** Tracking took 3751 s over all 34 clips, before the coverage-map speedup.

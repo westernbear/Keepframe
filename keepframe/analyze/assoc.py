@@ -152,14 +152,14 @@ def track_features(a: Region, n: Region, b: Region, desc) -> np.ndarray:
 
 
 class Matcher:
-    """An N_FEATURES -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features."""
+    """An n -> h1 -> h2 -> 1 MLP with ReLU and a sigmoid, on standardised features (n: N_FEATURES, or solids')."""
 
-    def __init__(self, w: dict):
+    def __init__(self, w: dict, n: int = N_FEATURES):
         self.mean, self.std = w["mean"].astype(np.float32), np.maximum(w["std"].astype(np.float32), 1e-6)
         self.layers = [(w["W1"], w["b1"]), (w["W2"], w["b2"]), (w["W3"], w["b3"])]
         self.meta = json.loads(str(w["meta"])) if "meta" in w else {}
-        if self.mean.shape != (N_FEATURES,) or self.layers[0][0].shape[0] != N_FEATURES or self.layers[-1][0].shape[1] != 1:
-            raise ValueError("assoc weights do not fit the features")
+        if self.mean.shape != (n,) or self.layers[0][0].shape[0] != n or self.layers[-1][0].shape[1] != 1:
+            raise ValueError("weights do not fit the features")
 
     def prob(self, x: np.ndarray) -> np.ndarray:
         h = (np.atleast_2d(x).astype(np.float32) - self.mean) / self.std
@@ -171,11 +171,12 @@ class Matcher:
 
 
 @lru_cache(maxsize=4)
-def load_matcher(path: str | None = None) -> Matcher | None:
-    """The shipped matcher, or None (missing or unfit weights: the tracker keeps its rules)."""
+def load_matcher(path: str | None = None, n: int = N_FEATURES) -> Matcher | None:
+    """The shipped matcher (or the n-feature MLP at `path`), or None (missing or unfit weights: the caller keeps its
+    rules)."""
     p = Path(path) if path else WEIGHTS
     try:
         with np.load(p, allow_pickle=False) as w:
-            return Matcher({k: w[k] for k in w.files})
+            return Matcher({k: w[k] for k in w.files}, n)
     except (OSError, KeyError, ValueError):
         return None

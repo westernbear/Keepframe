@@ -4,6 +4,8 @@
     python scripts/train_assoc.py data            # resumable, one npz per clip under eval/assoc/pairs/
     python scripts/train_assoc.py train           # torch (CPU); writes keepframe/analyze/assoc.npz
     python scripts/train_assoc.py eval            # held-out metrics -> docs/qa/assoc/
+    python scripts/train_assoc.py data --sources solids,solid-scenes   # the solid judgement's candidates
+    python scripts/train_assoc.py solids          # torch; writes keepframe/analyze/solids.npz
 
 Everything fetched or rendered lives under eval/ and is never committed (CLAUDE.md §6)."""
 from __future__ import annotations
@@ -543,13 +545,25 @@ def scene_owners(scene, root: Path) -> np.ndarray:
     return own
 
 
+def ir_scene(gen: str, seed: int, case: Path):
+    """One draw of the ir generators the tests use (keepframe.ir.synth, "synthetic" or "reference"); raises on a draw
+    the generator cannot make (a stagger title in a font without glyph centres)."""
+    import random
+    from keepframe.ir.synth import make_reference_scene, make_synthetic_scene
+    rng = random.Random(seed)
+    if gen == "synthetic":
+        return make_synthetic_scene(case, seed, n_elements=rng.randint(3, 6), frames=rng.choice([24, 60]),
+                                    with_text=rng.random() < 0.5, overlap=rng.random() < 0.5)
+    return make_reference_scene(case, seed, plate=rng.choice(["flat", "gradient", "animated", "image"]),
+                                n_sprites=rng.randint(1, 4), n_titles=rng.randint(1, 2),
+                                mover=rng.choice([False, True, "inplace"]), title=rng.choice([None, "stagger", "plane"]))
+
+
 def data_scenes(seeds, ocr_box) -> None:
     """The ir generators the tests draw from (keepframe.ir.synth), on seeds the tests never use: rotation, scale, fades,
     eased jumps, crossings, titles over plates and movers."""
-    import random
     import shutil
     from keepframe.analyze.video import read_frames, render_scene_video
-    from keepframe.ir.synth import make_reference_scene, make_synthetic_scene
     work = EVAL / "assoc" / "work"
     for seed in seeds:
         for gen in ("synthetic", "reference"):
@@ -557,15 +571,9 @@ def data_scenes(seeds, ocr_box) -> None:
             skip = out.with_suffix(".skip")
             if out.exists() or skip.exists() or not _claim(out):
                 continue
-            rng, case = random.Random(seed), work / f"scene-{gen}-{seed}"
+            case = work / f"scene-{gen}-{seed}"
             try:
-                if gen == "synthetic":
-                    scene = make_synthetic_scene(case, seed, n_elements=rng.randint(3, 6), frames=rng.choice([24, 60]),
-                                                 with_text=rng.random() < 0.5, overlap=rng.random() < 0.5)
-                else:
-                    scene = make_reference_scene(case, seed, plate=rng.choice(["flat", "gradient", "animated", "image"]),
-                                                 n_sprites=rng.randint(1, 4), n_titles=rng.randint(1, 2),
-                                                 mover=rng.choice([False, True, "inplace"]), title=rng.choice([None, "stagger", "plane"]))
+                scene = ir_scene(gen, seed, case)
             except Exception as err:   # fail soft: a draw the generator cannot make (a stagger title in a font without glyph centres)
                 print("scene skip", gen, seed, err, file=sys.stderr)
                 skip.touch(); out.with_suffix(".lock").unlink(missing_ok=True)
@@ -660,6 +668,325 @@ def data_saas(ocr_box) -> None:
             if parts:
                 _save(out, {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}, source="saas", id=mp4.stem, start=w0)
             print("saas", mp4.stem, w0, flush=True)
+
+
+# ---------------------------------------------------------------- data: the solid judgement (fixes7 S)
+# A candidate is a solid when one texture cannot show it: a 3D body turning (sphere, cube) or a look that changes in
+# place (a noise blob). One texture moved, scaled, turned in the plane or faded (a card, a disc, a word) is not.
+
+def _rodrigues(axis: np.ndarray, angle: float) -> np.ndarray:
+    import cv2
+    return cv2.Rodrigues((axis * angle).astype(np.float64))[0]
+
+
+def _axis(rng, max_z: float) -> np.ndarray:
+    """A random unit axis at most `max_z` towards the viewer (a turn about the view axis is a turn in the plane)."""
+    while True:
+        a = rng.normal(size=3)
+        a /= np.linalg.norm(a)
+        if abs(a[2]) <= max_z:
+            return a
+
+
+def _two_colours(rng):
+    while True:
+        c1, c2 = rng.uniform(0, 255, 3), rng.uniform(0, 255, 3)
+        if np.abs(c1 - c2).sum() >= 120:
+            return c1, c2
+
+
+def _sphere(rng, n: int, scale: float):
+    """A textured sphere turning about an axis off the view axis, its texture varying around that axis."""
+    r0, grow = rng.uniform(10, 70) * scale, rng.uniform(0.75, 1.3)
+    speed = np.radians(rng.uniform(2, 15)) * rng.choice([-1, 1])
+    a = _axis(rng, 0.5)
+    u = np.cross(a, [0.0, 0.0, 1.0]); u /= np.linalg.norm(u); w = np.cross(a, u)
+    k, wob, pattern, shade = int(rng.integers(3, 11)), rng.uniform(0, 1), rng.choice(["stripes", "checker"]), rng.random() < 0.5
+    c1, c2 = _two_colours(rng)
+    S = int(2 * r0 * max(grow, 1.0)) + 3
+    yy, xx = np.mgrid[:S, :S] - (S - 1) / 2
+
+    def draw(f):
+        r = r0 * grow ** (f / max(n - 1, 1))
+        inside = xx ** 2 + yy ** 2 <= r * r
+        z = np.sqrt(np.maximum(r * r - xx ** 2 - yy ** 2, 0))
+        p = np.stack([xx, yy, z], -1)
+        lon = np.arctan2(p @ u, p @ w) - speed * f
+        lat = np.arcsin(np.clip((p @ a) / r, -1, 1))
+        t = np.sin(k * lon + wob * np.sin(6 * lat)) if pattern == "stripes" else np.sign(np.sin(k * lon) * np.sin(k * lat))
+        rgb = c1 + (c2 - c1) * (0.5 + 0.5 * t)[..., None]
+        if shade:
+            rgb = rgb * (0.45 + 0.55 * z / max(r, 1))[..., None]
+        return rgb, inside.astype(np.float32)
+    return draw
+
+
+def _face_texture(rng, T: int = 32) -> np.ndarray:
+    c1, c2 = _two_colours(rng)
+    yy, xx = np.mgrid[:T, :T]
+    kind = rng.choice(["flat", "stripes", "checker"])
+    t = np.zeros((T, T)) if kind == "flat" else np.sin(xx * np.pi / rng.integers(3, 9)) if kind == "stripes" else \
+        np.sign(np.sin(xx * np.pi / 8) * np.sin(yy * np.pi / 8))
+    return (c1 + (c2 - c1) * (0.5 + 0.5 * t)[..., None]).astype(np.float32)
+
+
+def _cube(rng, n: int, scale: float):
+    """A box tumbling about an axis off the view axis: flat-shaded faces, plain or patterned."""
+    import cv2
+    s = rng.uniform(16, 80) * scale
+    dims = s * rng.uniform(0.6, 1.0, 3)
+    speed, a = np.radians(rng.uniform(2, 10)) * rng.choice([-1, 1]), _axis(rng, 0.6)
+    R0 = _rodrigues(_axis(rng, 1.0), rng.uniform(0, np.pi))
+    tex = [_face_texture(rng) for _ in range(6)]
+    S = int(np.linalg.norm(dims)) + 3
+    c = (S - 1) / 2
+
+    def draw(f):
+        R = _rodrigues(a, speed * f) @ R0
+        rgb, alpha = np.zeros((S, S, 3), np.float32), np.zeros((S, S), np.float32)
+        for i, (ax, sg) in enumerate((ax, sg) for ax in range(3) for sg in (-1, 1)):
+            nrm = R[:, ax] * sg
+            if nrm[2] <= 0:
+                continue
+            j, k = [d for d in range(3) if d != ax]
+            def corner(sj, sk):
+                p = np.zeros(3); p[ax], p[j], p[k] = sg * dims[ax] / 2, sj * dims[j] / 2, sk * dims[k] / 2
+                q = R @ p
+                return [q[0] + c, q[1] + c]
+            quad = np.float32([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)])
+            M = cv2.getAffineTransform(np.float32([[0, 0], [32, 0], [0, 32]]), quad[[0, 1, 3]])
+            face = cv2.warpAffine(tex[i], M, (S, S), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            m = np.zeros((S, S), np.uint8)
+            cv2.fillConvexPoly(m, np.round(quad).astype(np.int32), 1)
+            rgb[m > 0] = face[m > 0] * (0.4 + 0.6 * nrm[2])
+            alpha[m > 0] = 1
+        return rgb, alpha
+    return draw
+
+
+def _blob(rng, n: int, scale: float):
+    """A shape whose texture changes in place: noise fields turning into one another, or fresh every frame."""
+    import cv2
+    w, h = (int(v) for v in rng.uniform(16, 90, 2) * scale)
+    sigma, rate, fresh = rng.choice([0, 1, 2, 4]), rng.uniform(0.15, 1.6), rng.random() < 0.3
+    mean, amp = rng.uniform(60, 200, 3), rng.uniform(30, 90)
+    def field():
+        x = rng.normal(size=(h, w, 3)).astype(np.float32)
+        x = cv2.GaussianBlur(x, (0, 0), float(sigma)) if sigma else x
+        return x / max(float(x.std()), 1e-6)
+    A, B = field(), field()
+    shape = np.zeros((h, w), np.uint8)
+    if rng.random() < 0.5:
+        cv2.ellipse(shape, (((w - 1) / 2, (h - 1) / 2), (w, h), 0), 1, -1)
+    else:
+        shape[:] = 1
+
+    def draw(f):
+        x = field() if fresh else A * np.cos(rate * f) + B * np.sin(rate * f)
+        return mean + amp * x, shape.astype(np.float32)
+    return draw
+
+
+def _card_texture(rng, w: int, h: int) -> tuple[np.ndarray, np.ndarray]:
+    import cv2
+    c1, c2 = _two_colours(rng)
+    yy, xx = np.mgrid[:h, :w]
+    kind = rng.choice(["flat", "gradient", "stripes", "checker", "noise", "text"])
+    alpha = np.ones((h, w), np.float32)
+    if kind == "flat":
+        t = np.zeros((h, w))
+    elif kind == "gradient":
+        ang = rng.uniform(0, np.pi)
+        t = 2 * ((xx * np.cos(ang) + yy * np.sin(ang)) / max(w, h)) - 1
+    elif kind == "stripes":
+        t = np.sin((xx + yy * rng.uniform(-1, 1)) * np.pi / rng.integers(3, 12))
+    elif kind == "checker":
+        q = int(rng.integers(4, 16))
+        t = np.sign(np.sin(xx * np.pi / q) * np.sin(yy * np.pi / q))
+    elif kind == "noise":
+        t = cv2.GaussianBlur(rng.normal(size=(h, w)).astype(np.float32), (0, 0), float(rng.choice([1, 2, 4])))
+        t = np.clip(t / max(float(t.std()), 1e-6) / 2, -1, 1)
+    else:
+        word = "".join(rng.choice(list("ABCDEFGHKMNPRSTUVWXYZ")) for _ in range(int(rng.integers(2, 7))))
+        m = np.zeros((h, w), np.uint8)
+        fs = h / 30
+        cv2.putText(m, word, (2, int(h * 0.8)), cv2.FONT_HERSHEY_SIMPLEX, fs, 1, max(1, int(fs * 2.5)), cv2.LINE_AA)
+        alpha, t = m.astype(np.float32), np.ones((h, w))
+    shape = rng.choice(["rect", "ellipse"]) if kind != "text" else "rect"
+    if shape == "ellipse":
+        m = np.zeros((h, w), np.uint8)
+        cv2.ellipse(m, (((w - 1) / 2, (h - 1) / 2), (w, h), 0), 1, -1)
+        alpha = alpha * m
+    return (c1 + (c2 - c1) * (0.5 + 0.5 * t)[..., None]).astype(np.float32), alpha
+
+
+def _card(rng, n: int, scale: float):
+    """One texture moved, scaled, turned in the plane (slowly, or all the way round like an in-place mover) and faded."""
+    import cv2
+    w, h = (int(v) for v in rng.uniform(16, 160, 2) * scale)
+    rgb, alpha = _card_texture(rng, w, h)
+    turn = rng.choice(["none", "slow", "spin"], p=[0.5, 0.3, 0.2])
+    deg = 0.0 if turn == "none" else rng.uniform(0.5, 4) if turn == "slow" else 360.0 * rng.integers(1, 3) / n
+    deg *= rng.choice([-1, 1])
+    s0, s1 = (1.0, 1.0) if rng.random() < 0.6 else tuple(rng.uniform(0.6, 1.5, 2))
+    fade = rng.choice(["none", "in", "out", "pulse"], p=[0.55, 0.15, 0.15, 0.15])
+    S = int(np.hypot(w, h) * max(s0, s1)) + 3
+    src = np.dstack([rgb, alpha])
+
+    def draw(f):
+        t = f / max(n - 1, 1)
+        M = cv2.getRotationMatrix2D(((w - 1) / 2, (h - 1) / 2), deg * f, s0 + (s1 - s0) * t)
+        M[:, 2] += [(S - w) / 2, (S - h) / 2]
+        out = cv2.warpAffine(src, M, (S, S), flags=cv2.INTER_LINEAR)
+        op = {"none": 1.0, "in": min(1.0, 0.1 + 1.5 * t), "out": max(0.0, 1.0 - 1.5 * t),
+              "pulse": 0.55 + 0.45 * np.cos(2 * np.pi * t)}[fade]
+        return out[..., :3], out[..., 3] * op
+    return draw
+
+
+def solid_clip(seed: int):
+    """A clip with known truth for the solid judgement (seeds the tests never use): on a flat, gradient or textured
+    ground, 0-2 objects one texture cannot show and 0-4 it can (one at least), moving, in random order. Returns (frames, per-frame
+    mask of the first kind dilated 2 px, the ground's hex when it is flat else None)."""
+    import cv2
+    rng = np.random.default_rng(seed)
+    n = int(rng.choice([12, 16, 24, 30, 36, 48, 60]))
+    W, H = [(240, 180), (320, 180), (480, 270), (640, 360)][int(rng.integers(4))]
+    scale = H / 180
+    c1, c2 = _two_colours(rng)
+    ground = rng.choice(["flat", "gradient", "texture"], p=[0.5, 0.3, 0.2])
+    yy, xx = np.mgrid[:H, :W]
+    if ground == "flat":
+        base = np.broadcast_to(c1, (H, W, 3))
+    elif ground == "gradient":
+        base = c1 + (c2 - c1) * (xx / W if rng.random() < 0.5 else yy / H)[..., None]
+    else:
+        t = cv2.GaussianBlur(rng.normal(size=(H, W)).astype(np.float32), (0, 0), 6.0)
+        base = c1 + (c2 - c1) * np.clip(0.5 + t / max(float(t.std()), 1e-6) / 4, 0, 1)[..., None] * 0.3
+    makers = [(rng.choice([_sphere, _cube, _blob], p=[0.45, 0.3, 0.25]), True) for _ in range(rng.choice([0, 1, 1, 2]))]
+    makers += [(_card, False) for _ in range(max(int(rng.integers(0, 5)), not makers))]
+    rng.shuffle(makers)
+    objs = []
+    for make, positive in makers:
+        c0 = rng.uniform([0.1 * W, 0.1 * H], [0.9 * W, 0.9 * H])
+        v = rng.uniform(-3, 3, 2) * scale * (rng.random() < 0.7)
+        objs.append((make(rng, n, scale), positive, c0, v))
+    frames = np.empty((n, H, W, 3), np.uint8)
+    pos = np.zeros((n, H, W), bool)
+    for f in range(n):
+        img, own = base.astype(np.float32).copy(), np.zeros((H, W), np.int8)   # 1: a solid's pixel, -1: another object's
+        for draw, positive, c0, v in objs:
+            rgb, a = draw(f)
+            h, w = a.shape
+            x, y = (int(round(q)) for q in c0 + v * f - [w / 2, h / 2])
+            x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + w, W), min(y + h, H)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            aa = a[y0 - y:y1 - y, x0 - x:x1 - x]
+            img[y0:y1, x0:x1] = img[y0:y1, x0:x1] * (1 - aa[..., None]) + rgb[y0 - y:y1 - y, x0 - x:x1 - x] * aa[..., None]
+            own[y0:y1, x0:x1][aa > 0.5] = 1 if positive else -1
+        frames[f] = np.clip(np.round(img), 0, 255).astype(np.uint8)
+        pos[f] = cv2.dilate((own == 1).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    bg = "#%02x%02x%02x" % tuple(int(round(v)) for v in c1) if ground == "flat" and rng.random() < 0.5 else None
+    return frames, pos, bg
+
+
+class _Done(BaseException):
+    """Stops an analysis once its solids stage has run: what follows is not the judge's input."""
+
+
+def solid_candidates(frames: np.ndarray, bg: str | None, work: Path) -> list[list]:
+    """The solids stage's candidates on a clip, as the pipeline makes them: [solid, features, rule's call] each."""
+    from keepframe.analyze import pipeline, solids
+    rec: list[list] = []
+    feats, keep, stage = solids._features, solids._keep, pipeline._stage_solids
+
+    def features(*a):
+        x = feats(*a)
+        rec.append([a[1], x, None])
+        return x
+
+    def judged(x, rule):
+        rec[-1][2] = rule
+        return rule
+
+    def stop(*a, **k):
+        stage(*a, **k)
+        raise _Done
+    solids._features, solids._keep, pipeline._stage_solids = features, judged, stop
+    try:   # shortcut: a solids stage re-run without its movers records both runs' candidates; rare, left in
+        pipeline.analyze_scene_frames(frames, 30.0, work, "s1", pipeline.AnalyzeOptions(
+            bg_override=bg, ocr=False, refine=False, use_ecc=False, generate_3d=False))
+    except _Done:
+        pass
+    finally:
+        solids._features, solids._keep, pipeline._stage_solids = feats, keep, stage
+    return rec
+
+
+def solid_share(solid, pos: np.ndarray) -> float:
+    """Share of the candidate's pixels, over its frames, on an object one texture cannot show."""
+    on = tot = 0
+    for f, ((x0, y0, x1, y1), m) in solid.frames.items():
+        on += np.count_nonzero(m & pos[f, y0:y1, x0:x1])
+        tot += np.count_nonzero(m)
+    return on / max(tot, 1)
+
+
+def data_solids(seeds) -> None:
+    """One npz per clip under eval/assoc/solids/: each candidate's features, its truth share and the rule's call. Half
+    the clips go through an mp4v encode, as the tests' videos do."""
+    import shutil
+    import cv2
+    from keepframe.analyze.solids import N_FEATURES
+    from keepframe.analyze.video import read_frames
+    work = EVAL / "assoc" / "work"
+    for seed in seeds:
+        out = EVAL / "assoc" / "solids" / f"clip-{seed}.npz"
+        if out.exists() or not _claim(out):
+            continue
+        frames, pos, bg = solid_clip(seed)
+        case = work / f"solids-{seed}"
+        case.mkdir(parents=True, exist_ok=True)
+        if seed % 2:
+            wr = cv2.VideoWriter(str(case / "clip.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30, frames.shape[2:0:-1])
+            for fr in frames:
+                wr.write(cv2.cvtColor(fr, cv2.COLOR_RGB2BGR))
+            wr.release()
+            frames = read_frames(case / "clip.mp4")[0][:len(pos)]
+        rec = solid_candidates(frames, bg, case)
+        shutil.rmtree(case, ignore_errors=True)
+        share = np.array([solid_share(s, pos) for s, _, _ in rec], np.float32)
+        _save(out, {"X": np.array([x for _, x, _ in rec], np.float32).reshape(-1, N_FEATURES), "share": share,
+                    "rule": np.array([bool(r) for *_, r in rec], bool)}, source="solids", seed=seed)
+        print("solids", seed, len(rec), int((share >= 0.5).sum()), flush=True)
+
+
+def data_solid_scenes(seeds) -> None:
+    """The ir generators' scenes (titles over plates, in-place and crossing movers, fades), where every element is one
+    texture: each candidate is labelled not a solid."""
+    import shutil
+    from keepframe.analyze.solids import N_FEATURES
+    from keepframe.analyze.video import read_frames, render_scene_video
+    work = EVAL / "assoc" / "work"
+    for seed in seeds:
+        for gen in ("synthetic", "reference"):
+            out = EVAL / "assoc" / "solids" / f"scene-{gen}-{seed}.npz"
+            if out.exists() or out.with_suffix(".skip").exists() or not _claim(out):
+                continue
+            case = work / f"solids-scene-{gen}-{seed}"
+            try:
+                scene = ir_scene(gen, seed, case)
+            except Exception as err:   # fail soft: a draw the generator cannot make
+                print("solid scene skip", gen, seed, err, file=sys.stderr)
+                out.with_suffix(".skip").touch(); out.with_suffix(".lock").unlink(missing_ok=True)
+                continue
+            frames, _ = read_frames(render_scene_video(scene, case, case / "clip.mp4"))
+            rec = solid_candidates(frames, None, case / "analysis")
+            shutil.rmtree(case, ignore_errors=True)
+            _save(out, {"X": np.array([x for _, x, _ in rec], np.float32).reshape(-1, N_FEATURES), "share": np.zeros(len(rec), np.float32),
+                        "rule": np.array([bool(r) for *_, r in rec], bool)}, source="solids", kind=gen, seed=seed)
+            print("solid scene", gen, seed, len(rec), flush=True)
 
 
 # ---------------------------------------------------------------- train / eval
@@ -815,6 +1142,48 @@ def eval_main(epochs: int, saas: bool = True, hidden: int = 32) -> None:
     (qa / "leave-one-kind-out.json").write_text(json.dumps({"rho": rho, "epochs": epochs, "hidden": hidden, "trained_on_saas": saas, "kinds": rows}, indent=1))
 
 
+def solids_main(epochs: int, out: Path, hidden: int) -> None:
+    """Train the solid judgement on the clips with seed % 5 != 0, score the rest against truth with the rule beside it."""
+    from keepframe.analyze.assoc import Matcher
+    from keepframe.analyze.solids import N_FEATURES
+    rows = []
+    for p in sorted((EVAL / "assoc" / "solids").glob("*.npz")):
+        if not p.with_suffix(".lock").exists():
+            with np.load(p) as d:
+                rows.append((json.loads(str(d["meta"])), d["X"].reshape(-1, N_FEATURES), d["share"] >= 0.5, d["rule"]))
+
+    def cat(sel):
+        return (np.concatenate([r[1] for r in sel]), np.concatenate([r[2] for r in sel]), np.concatenate([r[3] for r in sel]))
+    train, held = [r for r in rows if r[0]["seed"] % 5], [r for r in rows if not r[0]["seed"] % 5]
+    X, y, _ = cat(train)
+    w = np.where(y, 0.5 / max(y.mean(), 1e-6), 0.5 / max(1 - y.mean(), 1e-6)).astype(np.float32)   # balanced
+    weights = fit_mlp(X, y.astype(np.float32), w, epochs, hidden=hidden)
+    m = Matcher(weights, N_FEATURES)
+
+    def score(sel):
+        if not sel:
+            return None
+        X, y, rule = cat(sel)
+        p = m.prob(X)
+        calls = lambda c: {"accuracy": round(float((c == y).mean()), 4), "solid_recall": round(float(c[y].mean()), 4) if y.any() else None,
+                           "other_recall": round(float((~c[~y]).mean()), 4) if (~y).any() else None}
+        return {"candidates": int(len(y)), "solids": int(y.sum()), "auc": _auc(p, y.astype(int)), "learned": calls(p >= 0.5), "rule": calls(rule)}
+    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+    kinds = lambda sel, k: [r for r in sel if r[0].get("kind", "clip") == k]
+    meta = {"commit": commit, "epochs": epochs, "hidden": hidden, "train_clips": len(train), "held_out_clips": len(held),
+            "train_candidates": int(len(y)), "train_solids": int(y.sum()),
+            "held_out": {"all": score(held), "clips": score(kinds(held, "clip")),
+                         "ir_scenes": score(kinds(held, "synthetic") + kinds(held, "reference"))},
+            "train": score(train),
+            "sources": "solid clips (scripts/train_assoc.py solid_clip, seeds 6000+: spheres, boxes and noise blobs among "
+                       "cards, words and discs) and the keepframe.ir.synth generators (seeds 7000+), regions and tracks from "
+                       "the pipeline with the shipped assoc.npz; held out: seed % 5 == 0"}
+    np.savez(out, **weights, meta=np.array(json.dumps(meta)))
+    if out == ROOT / "keepframe" / "analyze" / "solids.npz":   # the shipped weights: their record goes with them
+        (ROOT / "docs" / "qa" / "assoc" / "solids.json").write_text(json.dumps(meta, indent=1))
+    print(json.dumps(meta, indent=1))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -828,6 +1197,12 @@ def main(argv=None) -> int:
     dsub.add_argument("--scene-seeds", default="5000-5059", help="ir scene seeds (the tests use seeds below 100)")
     dsub.add_argument("--kinds", default="")
     dsub.add_argument("--lottie-limit", type=int, default=1000)
+    dsub.add_argument("--solid-seeds", default="6000-6799", help="solid clips (solid_clip)")
+    dsub.add_argument("--solid-scene-seeds", default="7000-7099", help="ir scenes for the solid judgement")
+    sj = sub.add_parser("solids", help="train the solid judgement; writes keepframe/analyze/solids.npz")
+    sj.add_argument("--epochs", type=int, default=3000)
+    sj.add_argument("--hidden", type=int, default=16)
+    sj.add_argument("--out", type=Path, default=ROOT / "keepframe" / "analyze" / "solids.npz")
     for name in ("train", "eval"):
         sp = sub.add_parser(name)
         sp.add_argument("--epochs", type=int, default=30)
@@ -839,6 +1214,8 @@ def main(argv=None) -> int:
         train_main(a.epochs, a.out, not a.no_saas, a.hidden)
     if a.cmd == "eval":
         eval_main(a.epochs, not a.no_saas, a.hidden)
+    if a.cmd == "solids":
+        solids_main(a.epochs, a.out, a.hidden)
     if a.cmd == "data":
         ocr_box: list = []
         lo, hi = (int(x) for x in a.seeds.split("-"))
@@ -854,6 +1231,12 @@ def main(argv=None) -> int:
                 data_lottie(ocr_box, a.lottie_limit)
             elif src == "saas":
                 data_saas(ocr_box)
+            elif src == "solids":
+                s0, s1 = (int(x) for x in a.solid_seeds.split("-"))
+                data_solids(range(s0, s1 + 1))
+            elif src == "solid-scenes":
+                s0, s1 = (int(x) for x in a.solid_scene_seeds.split("-"))
+                data_solid_scenes(range(s0, s1 + 1))
     if a.cmd == "fetch":
         fetch_lottie(a.lottie)
         fetch_saas(a.saas)

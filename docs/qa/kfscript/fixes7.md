@@ -113,3 +113,35 @@ Every flag below was answered with data, features or labels, never a hand rule.
 - A pair-wise judgement cannot see drift that builds up. The upgrade path is a track-level comparison (each new region against the track's earlier regions), trained on the same truth.
 
 **Decision: accepted** on the round trip (no flags, e24 kept), with the target unmet and explained. The real clips are in `clips.md` §9.
+
+## Drift: M2 (a window rule, reverted) and M3 (track-level features, shipped)
+
+**The problem.** M1 judges each step on its own. envato1's bottom glow takes in blurred letters a little each frame, so every step looks like the same content and the track chains f0–82. The user's direction (2026-10-17) was the upgrade path above: compare each new region with the track's earlier regions, trained on the same truth.
+
+**M2 (`7f70a4f`, reverted in `f7ef77c`).** A candidate continued a track only if the pair matcher called it the same content as both:
+- the track's last region;
+- the track's oldest region within 8 frames.
+
+Results (`fixes7/m2-window.json`, round trip against M1):
+- No flags. envato1 went back to 0.0684 (B12 0.0681; M1 0.0767).
+- But the fast suite failed seed 62 end-to-end, which ends with 6 elements instead of 4. A green fading in from opacity 0 changes colour over 8 frames more than a matcher trained on single pairs forgives.
+- Taking the minimum of two pair scores is a rule, not something learned, so it was reverted.
+
+**M3 (`a315863`, weights `ff38350`).** The track-level comparison is learned.
+- **Features: 38.**
+  - The 18 pair features of (last region, candidate).
+  - The 18 pair features of (anchor, candidate). The anchor is the track's oldest region within 8 frames of the candidate.
+  - What the candidate took in from the last region's frame's other regions.
+  - What of the last region the candidate's frame's other regions now hold.
+- **Label.** The candidate continues the last region, **and** it holds the track's content at the anchor. That is the truth label of both pairs; in training, the anchor is the truth owner's region.
+- **Network.** 64 wide; trained on synthetic, ir scenes, Lottie and gold, as M1 was (`docs/qa/assoc/train.json`).
+- **Held-out accuracy** (on its own, anchored label): synthetic 0.982, ir scenes 0.970, Lottie 0.981. AUC 0.998, 0.991 and 0.997.
+- **Leave one kind out:** block_transition 0.86 and whip_pan 0.95 are the weak kinds.
+- **Round trip** (`fixes7/m3.json`, M1 → M3): no flags, and e24 keeps its 23 glyphs.
+  - Improved: logo_sting 0.0101 → 0.0081, block_transition 0.0217 → 0.0191, wipe 0.0062 → 0.0039, mk571 0.0094 → 0.0075.
+  - glow_merge stays at 0.0273 (the plate's call, above).
+  - Stray area grows on block_transition (2.0 → 3.04) and wipe (0.74 → 1.24).
+- **Real clips:** `clips.md` §10.
+- **Speed.** The share a candidate took in from its neighbours is read from a per-frame coverage map with the same numbers: a randomized equality test, and an identical analysis. That is about 5× faster on busy frames.
+- **Fast suite.** `test_multiscene_analysis_shares_generation_cap` fails. Its scale-0.5 sphere stays one 3D candidate only while its pieces' median track is shorter than half its life, and M3 lands exactly on that boundary (6 of 12 frames).
+  - The user chose to learn that decision too, not to move the boundary (below).
