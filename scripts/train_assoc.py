@@ -895,7 +895,7 @@ def solid_clip(seed: int):
     objs = []
     for make, positive in makers:
         c0 = rng.uniform([0.1 * W, 0.1 * H], [0.9 * W, 0.9 * H])
-        v = rng.uniform(-3, 3, 2) * scale * (rng.random() < 0.7)
+        v = rng.uniform(-3, 3, 2) * scale * (rng.random() < (0.3 if make is _spinner else 0.7))   # spinners mostly in place
         objs.append((make(rng, n, scale), positive, c0, v))
     frames = np.empty((n, H, W, 3), np.uint8)
     pos = np.zeros((n, H, W), bool)
