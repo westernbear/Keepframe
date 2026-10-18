@@ -145,3 +145,77 @@ Results (`fixes7/m2-window.json`, round trip against M1):
 - **Speed.** The share a candidate took in from its neighbours is read from a per-frame coverage map with the same numbers: a randomized equality test, and an identical analysis. That is about 5× faster on busy frames.
 - **Fast suite.** `test_multiscene_analysis_shares_generation_cap` fails. Its scale-0.5 sphere stays one 3D candidate only while its pieces' median track is shorter than half its life, and M3 lands exactly on that boundary (6 of 12 frames).
   - The user chose to learn that decision too, not to move the boundary (below).
+
+## The 3D candidate decision, learned (fixes7 S)
+
+**Why.** `find_solids` kept a candidate when it was:
+- broken into tracks whose median length is under half its life; or
+- a stable box whose look changes (1 − NCC ≥ 0.15).
+
+M3 put a test sphere exactly on the first boundary. The user (2026-10-17) chose to learn the decision, not to move the boundary. Their goal is that an AI can understand a scene and recreate it, so:
+- a turning 3D object read as twenty fragments is a miss;
+- a 2D card marked `pending_asset="3d"` misleads.
+
+**The judge.**
+- **Hard filters (unchanged).** A candidate must still pass the life floor, the area cap and the title veto.
+- **Features (18 per candidate,** `solids._features`):
+  - how long it lives;
+  - how the region tracker breaks it up, and how much of it long tracks cover;
+  - how its look changes in its box:
+    - per step, raw;
+    - after the best affine warp on the candidate's own pixels (ECC from 0°/±12°);
+    - chained over 8 frames (drift);
+  - its contrast;
+  - how its outline, box and place change;
+  - its size and fill;
+  - whether it touches the frame edge.
+- **Model.** A numpy MLP (`solids.npz`, the matcher's `Matcher` class) decides at P ≥ 0.5.
+- **Fallback.** Without weights, with unfit weights, or on any error (`solid_judge_failed`), the rule decides as before.
+- **Tests.** Direct `find_solids` unit tests pass no pipeline tracks, so they keep testing tracking, the area cap and the title veto under the rule. The analyses use the judge.
+
+**Data.** Truth is by construction (`scripts/train_assoc.py solid_clip`; never committed). A candidate is a solid when one texture cannot show it.
+- **Positives:**
+  - textured spheres turning about an axis off the view axis;
+  - tumbling boxes;
+  - noise blobs whose look changes in place.
+- **Negatives** (one texture moved, scaled, turned in the plane or faded):
+  - cards, words and discs;
+  - patterns spinning in place.
+- **Clips:**
+  - 1600 clips (seeds 6000–7599), half through an mp4v encode;
+  - 600 `keepframe.ir.synth` scenes (seeds 7000–7299, the tests' generators with titles, plates and movers), every element 2D.
+- **Labels.** The candidates come from the pipeline itself, stopped after its solids stage, so the regions and tracks are M3's. A candidate is labelled solid when half its pixels or more lie on a positive.
+- **Hold-out.** Clips with seed % 5 == 0 are held out (439).
+- **Weighting.** Training weights and the 5-fold cross-validation that picks the size give a third each to:
+  - solids;
+  - the clips' other objects;
+  - the ir scenes' 2D elements.
+
+**Held out, against truth** (`docs/qa/assoc/solids.json`, h32 e500):
+
+| | Learned | Rule |
+|---|---|---|
+| AUC | 0.976 | — |
+| accuracy | **0.938** | 0.888 |
+| solids found (122) | **0.828** | 0.566 |
+| the clips' other objects kept out (1187) | **0.934** | 0.912 |
+| the ir scenes' 2D elements kept out (347) | **0.989** | 0.919 |
+
+**How it got here** (each step answered with a feature or data, never a threshold):
+
+| Step | What failed (held out, or a read of the sheets) | Answer |
+|---|---|---|
+| 15 features | False positives were rigid cards: the warp was scored on the box crop, ground included | Score the affine residual on the candidate's pixels |
+| Masked residual | Flat objects (codec noise reads as change); overlapping 2D sprites merged into one candidate | Contrast; coverage by long tracks (17 features) |
+| 17 features | A striped disc turning in the plane is a 3D candidate: its stripes shatter like a turning surface, ECC from identity fails past ~10° a frame, and spinning patterns were rare | Multi-start ECC; spinners as a quarter of the 2D objects |
+| Balanced on solids vs everything else | 12% false positives on the ir scenes (rule 6.5%), static candidates among them | A third each to solids, clip objects and ir elements; 400 more ir scenes |
+| Same | 13 of 20 isolated spinners called solid: over one frame a slow 3D turn is as affine as a turn in the plane | Drift of the chained step warps over 8 frames (spheres 0.77–1.53, boxes 0.30–0.97, spinners 0.02–0.22) |
+| 18 features | Spinners moved like every other object, so an in-place spinner with a still outline was almost never a negative | Spinners in place 70% of the time, as their docstring says (653 clips regenerated) |
+
+**Open.** Isolated patterns spinning in place, alone in the middle of the frame, are still called solid in 10 of 20 draws. The rule calls nearly all of them solid.
+- The test disc passes.
+- Picking a model by this diagnostic would fit it, so the choice stays with the cross-validation.
+
+**Tests.** The fast suite passes (2894, plus 136 in the solid, mover, title and analysis-golden files). `test_multiscene_analysis_shares_generation_cap` passes, and a new test keeps the in-plane disc out.
+
+**Round trip and real clips:** below (`rt10`, `clips.md` §11).
