@@ -439,3 +439,41 @@ The scene splits are unchanged on every clip.
 - M3: mk547 1, mk793 3, mk798 1, ig2 1.
 
 **Cost.** Tracking took 3751 s over all 34 clips, before the coverage-map speedup.
+
+## 11. The learned 3D candidate decision (`fixes7.md`), report only
+
+**Run.**
+- `clips-s` at `2d80588` against `clips-m3` (M3, where the rule decides). Same clips, same `clips-eval7.sh`, torch not installed.
+- The record is `fixes7/clips-s.json`.
+
+**3D candidates.**
+- M3 had 6: ig2 1, mk547 1, mk793 3, mk798 1.
+- The judge keeps none of them and adds none anywhere.
+
+**Read of M3's candidates.** Source frames, with the elements' boxes, read before the numbers were compared:
+
+| Clip | Candidate | What it is | Judge |
+|---|---|---|---|
+| mk793 | e3, e11, f0–149 | patches of the black-and-white live-action footage (dress and hands; a reflection) | removed |
+| mk793 | e76, f27–38 | the "i" of the writing-on script title "Victoria and David" | removed |
+| mk547 | e7, f17–118 | a patch of the cloudy teal video background behind the typing text | removed |
+| ig2 | e74, f14–34 | part of a stroke of the big red "A Weekend Away" title (the title veto missed it) | removed |
+| mk798 | e33, f84–93 | the glow under "M/x" as the neon Mixkit logo lights up | removed |
+
+None was a 3D object, so the read agrees with the judge on all six. No disagreement to report.
+
+**Numbers:**
+
+| Clip | Elements | kf L1 |
+|---|---|---|
+| mk547 | 63 → 72 (the fragments come back) | 0.0292 → **0.0285** |
+| mk793 | 75 → 79 | 0.0246 → 0.0253 |
+| mk798 | 47 → 47 | 0.0140 → 0.0139 |
+| ig2 | 99 → 99 | 0.0389 → 0.0389 |
+
+- The other 30 clips are identical: kf, elements and candidates.
+- The means are unchanged: eval clips 0.0420, Mixkit 0.0274, SaaS 0.0392.
+
+**Not covered.** These clips hold no clear 3D object, so they test only the false-positive side on real footage.
+- The solid side rests on the synthetic held-out set (`docs/qa/assoc/solids.json`).
+- It also rests on the tests' spinning spheres.

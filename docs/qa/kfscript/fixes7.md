@@ -223,4 +223,16 @@ M3 put a test sphere exactly on the first boundary. The user (2026-10-17) chose 
 - None of the round-trip kinds holds a 3D object or a 3D candidate, before or after, so the judge changes nothing there.
 - A first `rt10` timed out rendering glow_merge's reference page. That page loads gsap and fonts from the `wt-g1` worktree, which a disk cleanup had removed. The worktree was restored and the run repeated.
 
-**Real clips:** `clips.md` §11.
+**Real clips** (`clips.md` §11, report only):
+- M3's 6 candidates are all removed, and no new one is added:
+  - footage patches and a title letter on mk793;
+  - a video-background patch on mk547;
+  - a title stroke on ig2;
+  - a logo glow on mk798.
+- My read of the frames calls none of them a 3D object.
+- kf L1: mk547 0.0292 → 0.0285, mk793 0.0246 → 0.0253, mk798 0.0140 → 0.0139. The other 31 clips are identical.
+
+**Decision: accepted.**
+- Held out, it beats the rule on every truth-labelled group.
+- The round trip has no flags, and e24 keeps its glyphs.
+- On real footage, all six of the rule's candidates were false and all six are gone.
