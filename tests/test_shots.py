@@ -63,6 +63,20 @@ def test_gradual_transitions_split_when_the_picture_is_replaced():
     assert [x.transition for x in detect_boundaries(np.stack([dark] * 6 + circle + [light] * 6))] == ["transition"]
 
 
+def test_cut_under_a_soft_glow():
+    yy, xx = np.mgrid[:120, :200]
+    blob = np.exp(-(((xx - 130) / 55.0) ** 2 + ((yy - 90) / 25.0) ** 2))[..., None]
+
+    def frame(text, k, scale=0.8, at=(14, 34)):   # a glow pulsing on a dark ground with a title clear of it
+        im = (np.array((12, 12, 30)) + blob * (0.8 + 0.04 * (k % 5)) * np.array((40, 160, 120))).astype(np.uint8)
+        cv2.putText(im, text, at, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2, cv2.LINE_AA)
+        return im
+
+    small, big = [frame("Ship faster", k) for k in range(8)], [frame("Go", k, 1.8, (60, 48)) for k in range(8, 16)]
+    assert [x.frame for x in detect_boundaries(np.stack(small + big))] == [8]   # the glow goes on, the title is replaced
+    assert detect_boundaries(np.stack(small + [frame("Ship faster", k) for k in range(8, 16)])) == []
+
+
 def test_auto_scenes_split_at_cuts_and_merge_short_ones():
     a, b = _card((20, 20, 60), "Ship faster"), _card((240, 240, 245), "Plan today")
     scenes, transitions = auto_scenes(np.stack([a] * 8 + [b] * 10), start=10)

@@ -131,14 +131,22 @@ def _kept(a: np.ndarray, b: np.ndarray) -> float:
 
 def _kept_pixels(a: np.ndarray, b: np.ndarray) -> float | None:
     """The share of a's content pixels (off its ground) that b leaves as they were, in colour and in structure: a reveal
-    over an empty ground changes only where a had nothing. None when a has no content."""
+    over an empty ground changes only where a had nothing. None when a has no content. A soft glow or gradient (no edge
+    anywhere in it) is light on the ground, not content: it goes on through a cut.
+    shortcut: a glow touching a title is one region with the title's edges and still counts; split regions by structure
+    when such a cut is missed."""
     sa, sb = _small(a).astype(np.int16), _small(b).astype(np.int16)
     content = np.abs(sa - _ground(a).astype(np.int16)).max(axis=2) > CONTENT_DE
+    ha = _structure(a)
+    n, regions = cv2.connectedComponents(content.astype(np.uint8))
+    peak = np.zeros(n, np.float32)
+    np.maximum.at(peak, regions.ravel(), ha.ravel())
+    content &= peak[regions] > 4.0   # the structure tolerance below and _kept's floor
     if content.sum() < 16:
         return None
     k = np.ones((5, 5), np.uint8)   # inside a wide flat region (a revealed bar) moving edges do not matter; on strokes they do
     inside = cv2.erode(cv2.morphologyEx(content.astype(np.uint8), cv2.MORPH_OPEN, k), np.ones((3, 3), np.uint8)).astype(bool)
-    same = (np.abs(sa - sb).max(axis=2) <= 2 * CONTENT_DE) & ((np.abs(_structure(a) - _structure(b)) <= 4.0) | inside)
+    same = (np.abs(sa - sb).max(axis=2) <= 2 * CONTENT_DE) & ((np.abs(ha - _structure(b)) <= 4.0) | inside)
     return float((same & content).sum() / content.sum())
 
 

@@ -50,8 +50,10 @@ def test_guard_keeps_a_good_merge(split, caplog, tmp_path):
     guard_titles(again, seen["frames"], seen["plate"], notes)
     still, fragments = map(float, re.search(r"titles guard title_t1 still=([\d.]+) fragments=([\d.]+)", caplog.text).groups())
     assert still <= fragments and "title_t1" in again and notes == []
+    from keepframe.analyze.solid_assets import solid_errors
     with pytest.MonkeyPatch.context() as mp:   # fail soft: a guard that cannot measure keeps the merge, one coded note
-        mp.setattr("keepframe.analyze.solid_assets.solid_errors", lambda *a: 1 / 0)
+        # only the guard's measure fails: the scene's mover is a solid, which finish_solid_assets measures (with fps)
+        mp.setattr("keepframe.analyze.solid_assets.solid_errors", lambda f, pl, p, *a: solid_errors(f, pl, p, *a) if "fps" in p else 1 / 0)
         guard_titles(again, seen["frames"], seen["plate"], notes)
         assert "title_t1" in again and notes == ["title guard failed (guard_failed)"]
         root, _ = _split(tmp_path)   # in the analysis: the phase message, so every text is less sure

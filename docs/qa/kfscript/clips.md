@@ -235,3 +235,245 @@ The shot splits are unchanged from §4.
 - ig2 s1's doubled title (L1 kf +0.0066) is unexplained.
 
 The real-clip A/B on these projects is `ab-real2.md`.
+
+## 6. After B8c/B8d/B8d2/B11 (`fixes4.md`), report only
+
+**Run.** `eval/out/clips-after4.sh`: the gate one clip at a time at `0fcb341` (code as `de74495`), kf fidelity per scene. Measurements: `eval/out/clips7.json` (not committed). Nothing was tuned on these clips.
+
+| Clip | Elements §5 → §6 | mean_l1 | render_l1 §5 → §6 | **L1 kf** §5 → §6 | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|
+| envato1 | 50 → 54 | 0.0696 | 0.0698 → 0.0694 | 0.0710 → **0.0742** | f144 0.155 → 0.149 | 0.000001 | 794 |
+| ig1 | 98 → 98 | 0.0288 | 0.0310 → 0.0312 | 0.0330 → 0.0332 (s1 0.0261, s2 0.0347) | s2 f112 0.110 → 0.111 | ≤ 0.000001 | 439 |
+| ig2 | 60 → 72 | 0.0364 | 0.0385 → 0.0357 | 0.0412 → **0.0390** (s1 0.0626 → **0.0572**, s2 0.0273) | s1 f12 0.084 → 0.072 | ≤ 0.000044 | 382 |
+| ig3 | 64 → 64 | 0.0169 | 0.0235 → 0.0235 | 0.0250 → 0.0250 | f112 0.068 | 0.000001 | 204 |
+
+**The two defects of §5:**
+
+| # | Item | IR after `fixes4` | Status |
+|---|---|---|---|
+| B8 | envato1's "Build" letters moved into the background video while they blur in | Only one envato1 region still goes into the video (track 11, 5 before). Ghost residue in the title read boxes: "Build" 13.60 → **9.93**, "Build SaaS Promo" 13.51 → **9.51**, second-shot title 18.01 → **12.82**. The first two are now below §4's values (10.25, 8.32, 13.24) except "Build SaaS Promo". | **fixed** |
+| ig2 | doubled scrolling title (s1 L1 kf +0.0066) | No 3D candidate in ig2 s1 (B11). s1 has 55 elements again (§4: 58) and L1 kf 0.0572 (before fixes3: 0.0560) | **fixed** |
+
+**New disagreement, recorded, not resolved: envato1 L1 kf +0.003.**
+- Per frame (every 4th) against §5, f0–56 improve (−0.001 to −0.014) and f140 improves −0.042.
+- But f76–96 (+0.005 to +0.019) and f112–136 (+0.018 to +0.030) get worse.
+- **f112–136:** sprite `o34` spans f111–149, across envato1's cut at f140, which is not detected (§4 item 1). Its single texture now holds the second shot's letters (alpha coverage 0.10 → 0.34), because those letters are no longer in the background video for matting to remove. So the letters show from f111.
+- **f76–96:** the words of "Build SaaS Promo" that are still blurred before their reads are kept out of the video (B8d, as intended), and the text element does not draw them yet.
+- The cause of the f112–136 part is the missing shot split, not B8. Upgrade path: split envato1 at f140 (the content test in `_content` takes the border colour for the ground), or cut sprites at a detected cut.
+
+## 7. After the f140 cut fix (`fixes5.md`), report only
+
+**Run.**
+- `eval/out/clips-after5.sh`: the gate one clip at a time at `4b9e548` (code as `b288490`), then kf fidelity per scene.
+- Per-frame kf L1 of envato1, every 4th frame: `perframe.py` (scratch), against §6's projects.
+- Nothing was tuned on these clips.
+
+| Clip | Scenes | Elements §6 → §7 | mean_l1 | render_l1 §6 → §7 | **L1 kf** §6 → §7 (frame-weighted) | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | **s1 f0–139, s2 f140–149** (§6: one scene) | 54 → 39 + 8 | 0.0696 → 0.0562 | 0.0694 → 0.0593 | 0.0742 → **0.0639** (s1 0.0615, s2 0.0975) | f144 0.149 → s1 f36 0.142, s2 f144 0.116 | ≤ 0.000004 | 546 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 98 | 0.0288 | 0.0312 → 0.0312 | 0.0332 → 0.0332 | s2 f112 0.111 | ≤ 0.000001 | 300 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 72 | 0.0364 | 0.0357 → 0.0357 | 0.0390 → 0.0390 | s1 f12 0.072 | ≤ 0.000044 | 269 |
+| ig3 | s1 f0–149 | 64 → 64 | 0.0169 | 0.0235 → 0.0235 | 0.0250 → 0.0250 | f112 0.068 | 0.000001 | 134 |
+
+**Shots against the read (§1):**
+
+| Clip | Read | §6 | §7 |
+|---|---|---|---|
+| envato1 | cut f140 | one scene (missed) | **cut f140** |
+| ig1 | wipe f18–26 | f26 | f26 |
+| ig2 | cut f59 | f59 | f59 |
+| ig3 | cut f57 | one scene (spike 0.048 < FLOOR) | one scene: unchanged, not this fix's case |
+
+**envato1 per frame (kf L1, §6 → §7):**
+- **f112–136: 0.04–0.07 → 0.01–0.03.** §6's sprite o34 (f111–149, `e38` there) is gone; no element crosses f140. This was §6's recorded disagreement, and it is resolved.
+- f140–148: 0.104 / 0.149 / 0.141 → 0.067 / 0.116 / 0.110.
+- f28–68: mostly better (f48 −0.016, f52 −0.018, f64 −0.031); f36 +0.011, f40 +0.005.
+
+**New disagreement, recorded, not resolved: envato1 f0–24 and f72 got worse.**
+- f4 rose 0.009 → 0.035, f12 0.043 → 0.058, f24 0.080 → 0.095, and f72 0.043 → 0.090. f0–8 is an empty dark frame with the glow (read).
+- At f0 the page shows pieces of "Build" (`eval/out/clips-after5-kf/sheets/envato1.s1.png`). Sprite `e1` now spans f0–25 (§6: f0–15), and its one texture holds letters that appear only later.
+- Cause:
+  - The shorter scene has a different background video (background tracks 7 and 26, §6: 11), so the residual regions are tracked differently.
+  - It is the same class as o34: one texture across a content change.
+- Upgrade path: as in §6, cut a sprite where its content changes, not only at a detected cut.
+
+**The glow_cut exception** (`fixes5.md`): a title that stays for its whole scene has no visible ground behind it. envato1's s2 title drifts, so it is not this case.
+
+## 8. After B12 and B13c (`fixes6.md`), report only
+
+**B13c was reverted afterwards (`57b54d5`, the user's decision): §8 describes B12 with B13c. B12 alone is in the tree.**
+
+**Run.**
+- `eval/out/rt6-g4.sh`: the gate one clip at a time at `a91105a` (B13c, with B12), then kf fidelity per scene.
+- On the way, B13 (`clips-after6`) and B13b (`clips-after7`) were run the same way; they are reported below where they explain a change.
+- Per-frame kf L1 of envato1: `perframe.py` (scratch).
+- Nothing was tuned on these clips.
+
+| Clip | Scenes | Elements §7 → §8 | mean_l1 §7 → §8 | render_l1 §7 → §8 | **L1 kf** §7 → §8 (frame-weighted) | worst kf frame | kf_parity | s |
+|---|---|---|---|---|---|---|---|---|
+| envato1 | s1 f0–139, s2 f140–149 | 47 → 51 | 0.0562 → 0.0576 | 0.0593 → 0.0603 | 0.0639 → 0.0643 (s1 0.0615 → **0.0583**, s2 0.0975 → 0.148) | s1 f36 0.142, s2 f144 0.167 | ≤ 0.000003 | 613 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 99 | 0.0288 → 0.0265 | 0.0312 → 0.0297 | 0.0332 → **0.0308** (s1 0.0261 → 0.0263, s2 0.0347 → 0.0317) | s2 f112 0.087 (§7: 0.111) | ≤ 0.000001 | 337 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 91 | 0.0364 → 0.0355 | 0.0357 → 0.0351 | 0.0390 → **0.0383** (s1 0.0572 → 0.0553, s2 0.0273) | s1 f4 0.077 | ≤ 0.000044 | 293 |
+| ig3 | s1 f0–149 | 64 → 75 | 0.0169 → 0.0164 | 0.0235 → 0.0226 | 0.0250 → **0.0246** | f112 0.068 | 0.000002 | 154 |
+
+The shot splits are unchanged from §7.
+
+**envato1 f0–24 (the request), kf L1 every 4th frame:**
+
+| | f0 | f4 | f8 | f12 | f16 | f20 | f24 |
+|---|---|---|---|---|---|---|---|
+| §6 | 0.030 | 0.009 | 0.026 | 0.043 | 0.064 | 0.075 | 0.080 |
+| §7 | 0.037 | 0.035 | 0.034 | 0.058 | 0.066 | 0.084 | 0.095 |
+| §8 | **0.006** | **0.008** | **0.012** | 0.038 | 0.057 | 0.081 | 0.086 |
+
+- The glow's sprite is cut at f15 and f23, where letter tracks join it.
+- Its first piece (f0–14) takes a glow-only texture, so no letters show before they appear.
+- The rest of the f12–24 error is the letters' blur-in.
+
+**On the way:**
+- **B13** (`clips-after6`): ig2 s1 went from 55 to 122 elements (blurred letters breaking up and rejoining read as merges every frame), and ig1 s1 doubled (0.026 → 0.054).
+- **B13b**: ig2 s1 at 71 elements; ig1 s1 still 0.054.
+- **B13c**: ig1 s1 back to 0.026, because its gap rule allows for a track's growth.
+
+**Disagreement, recorded, not resolved: envato1 s2 0.0975 → 0.148. It comes from B12, not B13.** On f140–149 analysed alone:
+- before B12 (`210aa83`): 0.106;
+- after B12 (`e2909f4`): 0.159.
+
+What changed:
+- The huge blurred word covers that hole in every frame. B12 fills it with the dark ground of its rows; the old Telea fill had smeared the word's bright halo into the plate.
+- Nothing else draws the blurred word. It is represented by three small sharp texts ("ere", "e", "f"), and its soft mover goes into the background video, where the texts' cover hides it.
+- So the old fill stood in for the word by accident.
+
+Upgrade path: draw blurred text (a blur on the text element), or keep a soft mover that a text cover would hide as a sprite.
+
+## 9. The learned matcher (`fixes7.md`), report only
+
+**Run.**
+- `eval/out/clips-eval7.sh`, one clip at a time: `clips-b12` at `e2909f4` (B12, the rules) and `clips-m` at `8b23086` (the matcher).
+- Then kf fidelity per scene.
+- Torch was not installed in either run (refine skipped, as in every earlier section).
+- The before/after JSON is `fixes7/clips.json`. Nothing was tuned on these clips.
+
+**The four eval clips** (frame-weighted over scenes):
+
+| Clip | Scenes | Elements | mean_l1 | **L1 kf** | worst kf (after) | kf_parity |
+|---|---|---|---|---|---|---|
+| envato1 | s1 f0–139, s2 f140–149 | 48 → 44 | 0.0627 → 0.0662 | **0.0681 → 0.0767** (s1 0.0624 → 0.0716; s2 0.148 both) | s2 f144 0.167 | ≤ 0.000005 |
+| ig1 | s1 f0–25, s2 f26–149 | 98 → 107 | 0.0288 → 0.0254 | **0.0332 → 0.0288** | s2 f112 0.087 | ≤ 0.000007 |
+| ig2 | s1 f0–58, s2 f59–149 | 72 → 89 | 0.0364 → 0.0359 | 0.0390 → 0.0384 | s1 f4 0.077 | ≤ 0.000108 |
+| ig3 | s1 f0–149 | 64 → 73 | 0.0169 → 0.0169 | 0.0250 → 0.0246 | f112 0.067 | 0.000002 |
+
+The scene splits are unchanged on every clip.
+
+**envato1 f0–24 (the case that started B13), kf L1 every 4th frame:**
+
+| | f0 | f4 | f8 | f12 | f16 | f20 | f24 |
+|---|---|---|---|---|---|---|---|
+| B12 (rules) | 0.039 | 0.038 | 0.029 | 0.029 | 0.042 | 0.062 | 0.083 |
+| matcher | 0.052 | 0.050 | 0.053 | 0.048 | 0.075 | **0.141** | **0.146** |
+
+**Why envato1 got worse.**
+- B12's opening is four short sprites (f0–12, f5–20, f17–25, f21–67). With the matcher it is one sprite, f0–82 (2251×1158).
+- The bottom glow takes in blurred letters a little each frame, and every single step looks like the same content to the matcher (high overlap, same colours). So the chain never breaks, and the sprite's one texture shows letters before they appear.
+- A pair-wise judgement cannot see drift that builds up over many frames. The truth label would call the region different once letters are more than a quarter of it, but no single step shows that.
+- Upgrade path, in the user's terms (features and training, not a rule): also score each new region against the track's earlier regions, not only its last one, and train that comparison on the same truth.
+
+**Mixkit set (20 previews, 960 px)**:
+- mean kf L1 0.0284 → 0.0269.
+- 6 clips better by more than 0.001:
+  - mk557 0.0549 → 0.0401
+  - mk840 0.0679 → 0.0561
+  - mk749 0.0194 → 0.0101
+  - mk637 0.0291 → 0.0257
+  - mk545 0.0772 → 0.0741
+  - mk569 0.0356 → 0.0331
+- 2 worse:
+  - mk546 s2 0.105 → 0.116: 546 → 549 elements, a particle field
+  - mk605 0.0101 → 0.0146
+- The other 12 are within ±0.001.
+- Elements go up on most clips: mk569 318 → 455, mk568 73 → 122, mk798 24 → 43.
+
+**Held-out SaaS previews (10)**:
+- mean kf L1 0.0415 → 0.0420.
+- 3 better: 51b7e970 0.0261 → 0.0191, c019934b 0.0238 → 0.0201, 24296b2b 0.0172 → 0.0142.
+- 2 worse: e8a5dd64 0.0779 → 0.0968, from its s4 f84–107 0.104 → 0.180; and 0688b3de 0.0465 → 0.0491.
+- 1ea2df6a duplicates an eval clip (excluded from training); 0.0752 → 0.0742.
+
+**Cost.**
+- Tracking took 35 s over all 34 clips with the rules and 3859 s with the matcher. envato1 alone (2560×1440) took 1237 s.
+- Nearly all of it was the centroid-aligned mask IoU on a canvas twice the masks' size. It now counts only where the two masks overlap: the same numbers (randomized equality test, and an identical logo_sting analysis), 5–9× faster.
+
+## 10. Matcher M3 (`fixes7.md`), report only
+
+**Run.**
+- `clips-m3` at `ff38350`, through the same `clips-eval7.sh`. Torch was not installed.
+- The record is `fixes7/clips-m3.json`: B12, M1 and M3 side by side, with kf L1 frame-weighted over scenes and the "3D 후보" counts.
+
+| | B12 (rules) | M1 | M3 |
+|---|---|---|---|
+| eval clips, mean kf L1 | 0.0413 | 0.0421 | 0.0420 |
+| Mixkit (20), mean | 0.0284 | 0.0269 | 0.0274 |
+| held-out SaaS (10), mean | 0.0415 | 0.0420 | **0.0392** |
+| envato1 | 0.0681 | 0.0767 | 0.0754 |
+
+**envato1, kf L1 every 4th frame (B12 / M1 / M3):**
+- f0–12 improves on both earlier runs: 0.029 / 0.052 / **0.029**, 0.038 / 0.050 / **0.029**, 0.029 / 0.053 / **0.028**, 0.029 / 0.048 / **0.027**.
+- From f16 the drift is back: f16 0.042 / 0.075 / 0.093, f20 0.062 / 0.141 / 0.148, f24 0.083 / 0.146 / 0.150.
+- The opening glow is split at f15, but the sprite from f15 again chains to f82.
+- The window rule M2 (reverted) had brought envato1 back to 0.0684.
+
+**Other clips:**
+- SaaS improves most:
+  - 0688b3de 0.0465 / 0.0491 / 0.0370
+  - e8a5dd64 0.0779 / 0.0968 / 0.0776
+  - 9327acb8 0.0632 / 0.0623 / 0.0599
+- c019934b gets worse: 0.0238 / 0.0201 / 0.0260.
+- Mixkit:
+  - mk546 is worse again: 0.0923 / 0.1016 / 0.1181, a 553-element particle field.
+  - mk569 is better: 0.0356 / 0.0331 / 0.0320, with 533 elements.
+- Element counts grow a little further on most clips.
+
+**3D candidates:**
+- B12: mk547 1, mk793 1, 51b7e970 1.
+- M1: mk547 2, mk793 2, mk798 1, ig2 1.
+- M3: mk547 1, mk793 3, mk798 1, ig2 1.
+
+**Cost.** Tracking took 3751 s over all 34 clips, before the coverage-map speedup.
+
+## 11. The learned 3D candidate decision (`fixes7.md`), report only
+
+**Run.**
+- `clips-s` at `2d80588` against `clips-m3` (M3, where the rule decides). Same clips, same `clips-eval7.sh`, torch not installed.
+- The record is `fixes7/clips-s.json`.
+
+**3D candidates.**
+- M3 had 6: ig2 1, mk547 1, mk793 3, mk798 1.
+- The judge keeps none of them and adds none anywhere.
+
+**Read of M3's candidates.** Source frames, with the elements' boxes, read before the numbers were compared:
+
+| Clip | Candidate | What it is | Judge |
+|---|---|---|---|
+| mk793 | e3, e11, f0–149 | patches of the black-and-white live-action footage (dress and hands; a reflection) | removed |
+| mk793 | e76, f27–38 | the "i" of the writing-on script title "Victoria and David" | removed |
+| mk547 | e7, f17–118 | a patch of the cloudy teal video background behind the typing text | removed |
+| ig2 | e74, f14–34 | part of a stroke of the big red "A Weekend Away" title (the title veto missed it) | removed |
+| mk798 | e33, f84–93 | the glow under "M/x" as the neon Mixkit logo lights up | removed |
+
+None was a 3D object, so the read agrees with the judge on all six. No disagreement to report.
+
+**Numbers:**
+
+| Clip | Elements | kf L1 |
+|---|---|---|
+| mk547 | 63 → 72 (the fragments come back) | 0.0292 → **0.0285** |
+| mk793 | 75 → 79 | 0.0246 → 0.0253 |
+| mk798 | 47 → 47 | 0.0140 → 0.0139 |
+| ig2 | 99 → 99 | 0.0389 → 0.0389 |
+
+- The other 30 clips are identical: kf, elements and candidates.
+- The means are unchanged: eval clips 0.0420, Mixkit 0.0274, SaaS 0.0392.
+
+**Not covered.** These clips hold no clear 3D object, so they test only the false-positive side on real footage.
+- The solid side rests on the synthetic held-out set (`docs/qa/assoc/solids.json`).
+- It also rests on the tests' spinning spheres.

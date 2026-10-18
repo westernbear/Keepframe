@@ -1,0 +1,3531 @@
+{
+ "gates": {
+  "kf_parity": 0.001
+ },
+ "passed": true,
+ "cases": [
+  {
+   "name": "kinetic_title-1",
+   "kind": "kinetic_title",
+   "seed": 1,
+   "frames": 96,
+   "scenes": 1,
+   "l1_page": 0.00012962490165819413,
+   "l1_recon": 0.00535,
+   "l1_kf": 0.01729,
+   "l1_compose": 0.0173,
+   "kf_parity": 9e-07,
+   "worst_kf": {
+    "s1": [
+     0.0488,
+     16
+    ]
+   },
+   "analyse_seconds": 42.5,
+   "ghost_de": null,
+   "measure_seconds": 10.6,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 30,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 15.0,
+    "font_rate": 0.5,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.235,
+    "centre_px": 2.0,
+    "visible_err": 3.5,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "split",
+      "stagger",
+      "mask",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 6.3333,
+    "dl_ratio": 8.921,
+    "rows": [
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e7",
+      "iou": 0.91,
+      "fragments": 1,
+      "fragment_ids": [
+       "e7"
+      ],
+      "units": 1,
+      "pieces": 29,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10",
+       "e11",
+       "e12",
+       "e14",
+       "e15",
+       "e16",
+       "e17",
+       "e18",
+       "e19",
+       "e20",
+       "e21",
+       "e22",
+       "e23",
+       "e24",
+       "e25",
+       "e26",
+       "e27",
+       "e28",
+       "e29",
+       "e30"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 4,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Lexend"
+     },
+     {
+      "id": "sub",
+      "kind": "text",
+      "match": "e13",
+      "iou": 0.908,
+      "fragments": 1,
+      "fragment_ids": [
+       "e13"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e13"
+      ],
+      "centre_px": 1.5,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Montserrat"
+     }
+    ]
+   }
+  },
+  {
+   "name": "logo_sting-1",
+   "kind": "logo_sting",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0011707430075127302,
+   "l1_recon": 0.02541,
+   "l1_kf": 0.02818,
+   "l1_compose": 0.02818,
+   "kf_parity": 0.0,
+   "worst_kf": {
+    "s1": [
+     0.4321,
+     16
+    ]
+   },
+   "analyse_seconds": 66.1,
+   "ghost_de": null,
+   "measure_seconds": 14.2,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 13,
+    "matched": 4,
+    "matched_rate": 0.8,
+    "fragments_mean": 1.6,
+    "over_split": 2,
+    "units_mean": 1.6,
+    "pieces_mean": 4.2,
+    "font_rate": 0.0,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.95,
+    "centre_px": 1.05,
+    "visible_err": 22.75,
+    "structure": {
+     "found": [
+      "drift"
+     ],
+     "missed": [
+      "pop"
+     ],
+     "unsupported": [
+      "mask",
+      "shape-size",
+      "split",
+      "stagger",
+      "mask"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 10.8462,
+    "dl_ratio": 4.381,
+    "rows": [
+     {
+      "id": "bg",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.16,
+      "fragments": 2,
+      "fragment_ids": [
+       "e8",
+       "e9"
+      ],
+      "units": 2,
+      "pieces": 11,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e8",
+       "e9",
+       "e11",
+       "e12",
+       "e13"
+      ]
+     },
+     {
+      "id": "frame",
+      "kind": "shape",
+      "match": "e9",
+      "iou": 0.944,
+      "fragments": 3,
+      "fragment_ids": [
+       "e9",
+       "e11",
+       "e12"
+      ],
+      "units": 3,
+      "pieces": 6,
+      "piece_ids": [
+       "e5",
+       "e6",
+       "e8",
+       "e9",
+       "e11",
+       "e12"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 45
+     },
+     {
+      "id": "mark",
+      "kind": "shape",
+      "match": "e12",
+      "iou": 0.513,
+      "fragments": 1,
+      "fragment_ids": [
+       "e12"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e8",
+       "e12"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 42
+     },
+     {
+      "id": "name",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.732,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e11"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.55,
+      "font": "Inter"
+     },
+     {
+      "id": "url",
+      "kind": "text",
+      "match": "e13",
+      "iou": 0.652,
+      "fragments": 1,
+      "fragment_ids": [
+       "e13"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e13"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.35,
+      "font": "Noto Serif KR"
+     }
+    ]
+   }
+  },
+  {
+   "name": "chat_ui-1",
+   "kind": "chat_ui",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0012062169937825681,
+   "l1_recon": 0.00493,
+   "l1_kf": 0.01427,
+   "l1_compose": 0.01443,
+   "kf_parity": 0.0001662,
+   "worst_kf": {
+    "s1": [
+     0.025,
+     108
+    ]
+   },
+   "analyse_seconds": 74.5,
+   "ghost_de": null,
+   "measure_seconds": 14.7,
+   "diff": {
+    "truth_elements": 12,
+    "ir_elements": 14,
+    "matched": 11,
+    "matched_rate": 0.9167,
+    "fragments_mean": 1.5,
+    "over_split": 6,
+    "units_mean": 1.4167,
+    "pieces_mean": 1.9167,
+    "font_rate": 0.6667,
+    "stray_area": 0.0136,
+    "text_ratio": 1.0,
+    "colour_de": 2.7983,
+    "centre_px": 1.9727,
+    "visible_err": 2.0909,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "repeat",
+      "container",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 25.2857,
+    "dl_ratio": 6.28,
+    "rows": [
+     {
+      "id": "head",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.07,
+      "fragments": 2,
+      "fragment_ids": [
+       "e1",
+       "e3"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e3"
+      ]
+     },
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.78,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 3.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.51,
+      "font": "Manrope"
+     },
+     {
+      "id": "b0",
+      "kind": "shape",
+      "match": "e5",
+      "iou": 0.89,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e5"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e4",
+       "e5"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 2
+     },
+     {
+      "id": "t0",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.812,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 6.71,
+      "font": "Open Sans"
+     },
+     {
+      "id": "b1",
+      "kind": "shape",
+      "match": "e6",
+      "iou": 0.897,
+      "fragments": 2,
+      "fragment_ids": [
+       "e6",
+       "e8"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e6",
+       "e8"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 2
+     },
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e8",
+      "iou": 0.798,
+      "fragments": 1,
+      "fragment_ids": [
+       "e8"
+      ],
+      "units": 1,
+      "pieces": 3,
+      "piece_ids": [
+       "e6",
+       "e7",
+       "e8"
+      ],
+      "centre_px": 3.9,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 5.83,
+      "font": "Manrope"
+     },
+     {
+      "id": "b2",
+      "kind": "shape",
+      "match": "e9",
+      "iou": 0.9,
+      "fragments": 2,
+      "fragment_ids": [
+       "e9",
+       "e10"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e9",
+       "e10"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 2
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.836,
+      "fragments": 1,
+      "fragment_ids": [
+       "e10"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e9",
+       "e10"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 2.54,
+      "font": "Manrope"
+     },
+     {
+      "id": "b3",
+      "kind": "shape",
+      "match": "e11",
+      "iou": 0.889,
+      "fragments": 2,
+      "fragment_ids": [
+       "e11",
+       "e12"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e11",
+       "e12"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 2
+     },
+     {
+      "id": "t3",
+      "kind": "text",
+      "match": "e12",
+      "iou": 0.819,
+      "fragments": 1,
+      "fragment_ids": [
+       "e12"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e11",
+       "e12"
+      ],
+      "centre_px": 3.2,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.6,
+      "font": "Manrope"
+     },
+     {
+      "id": "b4",
+      "kind": "shape",
+      "match": "e13",
+      "iou": 0.892,
+      "fragments": 2,
+      "fragment_ids": [
+       "e13",
+       "e14"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e13",
+       "e14"
+      ],
+      "centre_px": 0.1,
+      "visible_err": 2
+     },
+     {
+      "id": "t4",
+      "kind": "text",
+      "match": "e14",
+      "iou": 0.796,
+      "fragments": 1,
+      "fragment_ids": [
+       "e14"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e13",
+       "e14"
+      ],
+      "centre_px": 3.5,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.6,
+      "font": "DM Sans"
+     }
+    ]
+   }
+  },
+  {
+   "name": "scroller-1",
+   "kind": "scroller",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.00048547271162893506,
+   "l1_recon": 0.05746,
+   "l1_kf": 0.06213,
+   "l1_compose": 0.06212,
+   "kf_parity": 1.43e-05,
+   "worst_kf": {
+    "s1": [
+     0.2673,
+     48
+    ]
+   },
+   "analyse_seconds": 108.7,
+   "ghost_de": null,
+   "measure_seconds": 11.3,
+   "diff": {
+    "truth_elements": 8,
+    "ir_elements": 50,
+    "matched": 4,
+    "matched_rate": 0.5,
+    "fragments_mean": 1.5,
+    "over_split": 4,
+    "units_mean": 1.125,
+    "pieces_mean": 5.75,
+    "font_rate": 0.75,
+    "stray_area": 3.8239,
+    "text_ratio": 0.494,
+    "colour_de": 0.47,
+    "centre_px": 11.425,
+    "visible_err": 10.5,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "container",
+      "transition",
+      "repeat"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 19.42,
+    "dl_ratio": 22.191,
+    "rows": [
+     {
+      "id": "l0",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.7,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e5",
+       "e12"
+      ],
+      "centre_px": 7.9,
+      "visible_err": 15,
+      "text_ratio": 0.952,
+      "colour_de": 0.47,
+      "font": "Jost"
+     },
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.913,
+      "fragments": 2,
+      "fragment_ids": [
+       "e8",
+       "e10"
+      ],
+      "units": 2,
+      "pieces": 4,
+      "piece_ids": [
+       "e1",
+       "e8",
+       "e10",
+       "e35"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 14,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Montserrat"
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": null,
+      "iou": 0.373,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e14"
+      ],
+      "units": 1,
+      "pieces": 4,
+      "piece_ids": [
+       "e4",
+       "e8",
+       "e14",
+       "e22"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l3",
+      "kind": "text",
+      "match": "e9",
+      "iou": 0.913,
+      "fragments": 1,
+      "fragment_ids": [
+       "e9"
+      ],
+      "units": 1,
+      "pieces": 5,
+      "piece_ids": [
+       "e9",
+       "e11",
+       "e33",
+       "e35",
+       "e50"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Montserrat"
+     },
+     {
+      "id": "l4",
+      "kind": "text",
+      "match": null,
+      "iou": 0.378,
+      "fragments": 2,
+      "fragment_ids": [
+       "e15",
+       "e18"
+      ],
+      "units": 1,
+      "pieces": 6,
+      "piece_ids": [
+       "e2",
+       "e3",
+       "e7",
+       "e15",
+       "e18",
+       "e33"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l5",
+      "kind": "text",
+      "match": "e20",
+      "iou": 0.883,
+      "fragments": 1,
+      "fragment_ids": [
+       "e20"
+      ],
+      "units": 1,
+      "pieces": 8,
+      "piece_ids": [
+       "e20",
+       "e21",
+       "e23",
+       "e24",
+       "e30",
+       "e34",
+       "e39",
+       "e47"
+      ],
+      "centre_px": 12.6,
+      "visible_err": 13,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Montserrat"
+     },
+     {
+      "id": "l6",
+      "kind": "text",
+      "match": null,
+      "iou": 0.376,
+      "fragments": 2,
+      "fragment_ids": [
+       "e27",
+       "e28"
+      ],
+      "units": 1,
+      "pieces": 10,
+      "piece_ids": [
+       "e26",
+       "e27",
+       "e28",
+       "e36",
+       "e38",
+       "e39",
+       "e40",
+       "e41",
+       "e42",
+       "e46"
+      ],
+      "text_ratio": 0.0
+     },
+     {
+      "id": "l7",
+      "kind": "text",
+      "match": null,
+      "iou": 0.45,
+      "fragments": 1,
+      "fragment_ids": [
+       "e43"
+      ],
+      "units": 1,
+      "pieces": 7,
+      "piece_ids": [
+       "e38",
+       "e39",
+       "e43",
+       "e44",
+       "e45",
+       "e48",
+       "e49"
+      ],
+      "text_ratio": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "block_transition-1",
+   "kind": "block_transition",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 2,
+   "l1_page": null,
+   "l1_recon": 0.0238,
+   "l1_kf": 0.02171,
+   "l1_compose": 0.02171,
+   "kf_parity": 5.9e-06,
+   "worst_kf": {
+    "s1": [
+     0.1556,
+     40
+    ],
+    "s2": [
+     0.2064,
+     12
+    ]
+   },
+   "analyse_seconds": 43.6,
+   "ghost_de": null,
+   "measure_seconds": 8.3,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 6,
+    "matched": 2,
+    "matched_rate": 0.3333,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 1.0,
+    "font_rate": 1.0,
+    "stray_area": 2.0049,
+    "text_ratio": 1.0,
+    "colour_de": 0.55,
+    "centre_px": 1.8,
+    "visible_err": 8.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition",
+      "stagger",
+      "repeat"
+     ]
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 2,
+     "boundaries": [
+      45
+     ],
+     "f1": 1.0
+    },
+    "keys_mean": 6.3333,
+    "dl_ratio": 2.603,
+    "rows": [
+     {
+      "id": "ta",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.97,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 5,
+      "text_ratio": 1.0,
+      "colour_de": 0.55,
+      "font": "Urbanist"
+     },
+     {
+      "id": "tb",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.824,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 11,
+      "text_ratio": 1.0,
+      "colour_de": 0.55,
+      "font": "Urbanist"
+     },
+     {
+      "id": "k0",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "units": 0,
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "k1",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "units": 0,
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "k2",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.251,
+      "fragments": 0,
+      "fragment_ids": [],
+      "units": 0,
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ]
+     },
+     {
+      "id": "k3",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.25,
+      "fragments": 0,
+      "fragment_ids": [],
+      "units": 0,
+      "pieces": 0,
+      "piece_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "prompt_typing-1",
+   "kind": "prompt_typing",
+   "seed": 1,
+   "frames": 150,
+   "scenes": 1,
+   "l1_page": 0.0014050689693247884,
+   "l1_recon": 0.0051,
+   "l1_kf": 0.01131,
+   "l1_compose": 0.01131,
+   "kf_parity": 2e-07,
+   "worst_kf": {
+    "s1": [
+     0.014,
+     128
+    ]
+   },
+   "analyse_seconds": 57.0,
+   "ghost_de": null,
+   "measure_seconds": 14.1,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 11,
+    "matched": 5,
+    "matched_rate": 0.8333,
+    "fragments_mean": 2.0,
+    "over_split": 2,
+    "units_mean": 2.0,
+    "pieces_mean": 2.0,
+    "font_rate": 0.6667,
+    "stray_area": 0.0005,
+    "text_ratio": 1.0,
+    "colour_de": 0.8167,
+    "centre_px": 0.76,
+    "visible_err": 1.8,
+    "structure": {
+     "found": [],
+     "missed": [
+      "typing"
+     ],
+     "unsupported": [
+      "blink",
+      "cursor",
+      "press"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 17.0,
+    "dl_ratio": 2.626,
+    "rows": [
+     {
+      "id": "head",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.668,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e5"
+      ],
+      "centre_px": 0.1,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 1.73,
+      "font": "Inter"
+     },
+     {
+      "id": "bar",
+      "kind": "shape",
+      "match": "e9",
+      "iou": 0.97,
+      "fragments": 5,
+      "fragment_ids": [
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10"
+      ],
+      "units": 5,
+      "pieces": 5,
+      "piece_ids": [
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 5
+     },
+     {
+      "id": "typed",
+      "kind": "text",
+      "match": "e10",
+      "iou": 0.913,
+      "fragments": 1,
+      "fragment_ids": [
+       "e10"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e10"
+      ],
+      "centre_px": 1.6,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.36,
+      "font": "Source Serif 4"
+     },
+     {
+      "id": "btn",
+      "kind": "shape",
+      "match": "e7",
+      "iou": 0.82,
+      "fragments": 2,
+      "fragment_ids": [
+       "e7",
+       "e8"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e7",
+       "e8"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 1
+     },
+     {
+      "id": "cursor",
+      "kind": "image",
+      "match": null,
+      "iou": 0.331,
+      "fragments": 0,
+      "fragment_ids": [],
+      "units": 0,
+      "pieces": 0,
+      "piece_ids": []
+     },
+     {
+      "id": "chip",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.541,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e11"
+      ],
+      "centre_px": 2.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.36,
+      "font": "Inter"
+     }
+    ]
+   }
+  },
+  {
+   "name": "counter-1",
+   "kind": "counter",
+   "seed": 1,
+   "frames": 120,
+   "scenes": 1,
+   "l1_page": 0.001409625225261572,
+   "l1_recon": 0.00981,
+   "l1_kf": 0.02547,
+   "l1_compose": 0.02547,
+   "kf_parity": 4e-07,
+   "worst_kf": {
+    "s1": [
+     0.0354,
+     32
+    ]
+   },
+   "analyse_seconds": 56.5,
+   "ghost_de": null,
+   "measure_seconds": 12.1,
+   "diff": {
+    "truth_elements": 6,
+    "ir_elements": 27,
+    "matched": 6,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.6667,
+    "over_split": 2,
+    "units_mean": 1.5,
+    "pieces_mean": 6.6667,
+    "font_rate": 0.75,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 2.055,
+    "centre_px": 1.4,
+    "visible_err": 17.1667,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "counter",
+      "counter",
+      "stagger"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 8.3333,
+    "dl_ratio": 10.371,
+    "rows": [
+     {
+      "id": "c1",
+      "kind": "shape",
+      "match": "e3",
+      "iou": 0.896,
+      "fragments": 3,
+      "fragment_ids": [
+       "e2",
+       "e3",
+       "e26"
+      ],
+      "units": 2,
+      "pieces": 9,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e8",
+       "e11",
+       "e16",
+       "e18",
+       "e23",
+       "e26"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1
+     },
+     {
+      "id": "c2",
+      "kind": "shape",
+      "match": "e6",
+      "iou": 0.845,
+      "fragments": 3,
+      "fragment_ids": [
+       "e5",
+       "e6",
+       "e27"
+      ],
+      "units": 3,
+      "pieces": 12,
+      "piece_ids": [
+       "e5",
+       "e6",
+       "e7",
+       "e9",
+       "e10",
+       "e13",
+       "e15",
+       "e19",
+       "e21",
+       "e24",
+       "e25",
+       "e27"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1
+     },
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.793,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 1.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.6,
+      "font": "Red Hat Display"
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.772,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e5"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.62,
+      "font": "Montserrat"
+     },
+     {
+      "id": "n1",
+      "kind": "text",
+      "match": "e26",
+      "iou": 0.673,
+      "fragments": 1,
+      "fragment_ids": [
+       "e26"
+      ],
+      "units": 1,
+      "pieces": 7,
+      "piece_ids": [
+       "e1",
+       "e8",
+       "e11",
+       "e16",
+       "e18",
+       "e23",
+       "e26"
+      ],
+      "centre_px": 2.7,
+      "visible_err": 50,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Montserrat"
+     },
+     {
+      "id": "n2",
+      "kind": "text",
+      "match": "e27",
+      "iou": 0.734,
+      "fragments": 1,
+      "fragment_ids": [
+       "e27"
+      ],
+      "units": 1,
+      "pieces": 10,
+      "piece_ids": [
+       "e7",
+       "e9",
+       "e10",
+       "e13",
+       "e15",
+       "e19",
+       "e21",
+       "e24",
+       "e25",
+       "e27"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 49,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Montserrat"
+     }
+    ]
+   }
+  },
+  {
+   "name": "stepped_zoom-1",
+   "kind": "stepped_zoom",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0025179450224355267,
+   "l1_recon": 0.0128,
+   "l1_kf": 0.01994,
+   "l1_compose": 0.01994,
+   "kf_parity": 0.0,
+   "worst_kf": {
+    "s1": [
+     0.0529,
+     0
+    ]
+   },
+   "analyse_seconds": 25.6,
+   "ghost_de": null,
+   "measure_seconds": 9.1,
+   "diff": {
+    "truth_elements": 3,
+    "ir_elements": 4,
+    "matched": 3,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 1.3333,
+    "font_rate": 0.6667,
+    "stray_area": 0.0,
+    "text_ratio": 0.9733,
+    "colour_de": 0.4533,
+    "centre_px": 1.7333,
+    "visible_err": 0.6667,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "steps"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 7.25,
+    "dl_ratio": 2.197,
+    "rows": [
+     {
+      "id": "word",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.746,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e2"
+      ],
+      "centre_px": 3.1,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Fredoka"
+     },
+     {
+      "id": "lab1",
+      "kind": "text",
+      "match": "e3",
+      "iou": 0.819,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e3"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 0.96,
+      "colour_de": 0.68,
+      "font": "Montserrat"
+     },
+     {
+      "id": "lab2",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.79,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 0.96,
+      "colour_de": 0.68,
+      "font": "Montserrat"
+     }
+    ]
+   }
+  },
+  {
+   "name": "hard_cut-1",
+   "kind": "hard_cut",
+   "seed": 1,
+   "frames": 120,
+   "scenes": 2,
+   "l1_page": null,
+   "l1_recon": 0.00356,
+   "l1_kf": 0.00558,
+   "l1_compose": 0.00558,
+   "kf_parity": 4.7e-06,
+   "worst_kf": {
+    "s1": [
+     0.0057,
+     16
+    ],
+    "s2": [
+     0.0068,
+     48
+    ]
+   },
+   "analyse_seconds": 57.3,
+   "ghost_de": 0.602,
+   "measure_seconds": 12.3,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 14,
+    "matched": 5,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.2,
+    "over_split": 1,
+    "units_mean": 1.0,
+    "pieces_mean": 2.2,
+    "font_rate": 1.0,
+    "stray_area": 0.0314,
+    "text_ratio": 1.0,
+    "colour_de": 0.7825,
+    "centre_px": 6.02,
+    "visible_err": 0.4,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 2,
+     "boundaries": [
+      40
+     ],
+     "f1": 1.0
+    },
+    "keys_mean": 12.2143,
+    "dl_ratio": 4.911,
+    "rows": [
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e3",
+      "iou": 0.782,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "units": 1,
+      "pieces": 6,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6"
+      ],
+      "centre_px": 11.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Outfit"
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e3",
+      "iou": 0.818,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e3"
+      ],
+      "centre_px": 6.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Outfit"
+     },
+     {
+      "id": "sub2",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.827,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 2.19,
+      "font": "Outfit"
+     },
+     {
+      "id": "t3",
+      "kind": "text",
+      "match": "e5",
+      "iou": 0.802,
+      "fragments": 1,
+      "fragment_ids": [
+       "e5"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e5"
+      ],
+      "centre_px": 9.0,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "Outfit"
+     },
+     {
+      "id": "foot",
+      "kind": "shape",
+      "match": "e2",
+      "iou": 0.908,
+      "fragments": 2,
+      "fragment_ids": [
+       "e1",
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e2"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "wipe-1",
+   "kind": "wipe",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 2,
+   "l1_page": null,
+   "l1_recon": 0.00608,
+   "l1_kf": 0.0066,
+   "l1_compose": 0.0066,
+   "kf_parity": 4.2e-06,
+   "worst_kf": {
+    "s1": [
+     0.0808,
+     44
+    ],
+    "s2": [
+     0.0047,
+     12
+    ]
+   },
+   "analyse_seconds": 36.9,
+   "ghost_de": null,
+   "measure_seconds": 9.5,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 8,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 2.0,
+    "font_rate": 1.0,
+    "stray_area": 0.3,
+    "text_ratio": 1.0,
+    "colour_de": 2.375,
+    "centre_px": 5.3,
+    "visible_err": 1.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "transition"
+     ]
+    },
+    "shots": {
+     "truth": 2,
+     "ir_scenes": 2,
+     "boundaries": [
+      48
+     ],
+     "f1": 1.0
+    },
+    "keys_mean": 15.75,
+    "dl_ratio": 4.504,
+    "rows": [
+     {
+      "id": "t1",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.865,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 3,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e4"
+      ],
+      "centre_px": 6.7,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 2.42,
+      "font": "Sora"
+     },
+     {
+      "id": "t2",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.837,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 3.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 2.33,
+      "font": "Sora"
+     }
+    ]
+   }
+  },
+  {
+   "name": "word_build-1",
+   "kind": "word_build",
+   "seed": 1,
+   "frames": 111,
+   "scenes": 1,
+   "l1_page": 0.00015235469187675071,
+   "l1_recon": 0.00228,
+   "l1_kf": 0.00458,
+   "l1_compose": 0.00458,
+   "kf_parity": 8e-07,
+   "worst_kf": {
+    "s1": [
+     0.0077,
+     52
+    ]
+   },
+   "analyse_seconds": 29.2,
+   "ghost_de": null,
+   "measure_seconds": 11.0,
+   "diff": {
+    "truth_elements": 2,
+    "ir_elements": 2,
+    "matched": 2,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 1.0,
+    "font_rate": 1.0,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.0,
+    "centre_px": 1.8,
+    "visible_err": 0.0,
+    "structure": {
+     "found": [
+      "build",
+      "build",
+      "shrink"
+     ],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 26.0,
+    "dl_ratio": 1.688,
+    "rows": [
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.86,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 2.5,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Roboto"
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.663,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Roboto"
+     }
+    ]
+   }
+  },
+  {
+   "name": "whip_pan-1",
+   "kind": "whip_pan",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0006053786718659553,
+   "l1_recon": 0.00264,
+   "l1_kf": 0.00906,
+   "l1_compose": 0.00906,
+   "kf_parity": 4e-07,
+   "worst_kf": {
+    "s1": [
+     0.0161,
+     44
+    ]
+   },
+   "analyse_seconds": 37.2,
+   "ghost_de": null,
+   "measure_seconds": 9.4,
+   "diff": {
+    "truth_elements": 4,
+    "ir_elements": 4,
+    "matched": 4,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.5,
+    "over_split": 2,
+    "units_mean": 1.0,
+    "pieces_mean": 1.5,
+    "font_rate": 0.0,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 111.32,
+    "centre_px": 1.375,
+    "visible_err": 1.75,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": [
+      "pan"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 16.5,
+    "dl_ratio": 2.478,
+    "rows": [
+     {
+      "id": "ca",
+      "kind": "shape",
+      "match": "e2",
+      "iou": 0.964,
+      "fragments": 2,
+      "fragment_ids": [
+       "e1",
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e2"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 2
+     },
+     {
+      "id": "ta",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.733,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 1.8,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 111.32,
+      "font": "Bebas Neue"
+     },
+     {
+      "id": "cb",
+      "kind": "shape",
+      "match": "e3",
+      "iou": 0.964,
+      "fragments": 2,
+      "fragment_ids": [
+       "e3",
+       "e4"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e3",
+       "e4"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 2
+     },
+     {
+      "id": "tb",
+      "kind": "text",
+      "match": "e4",
+      "iou": 0.901,
+      "fragments": 1,
+      "fragment_ids": [
+       "e4"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e4"
+      ],
+      "centre_px": 3.0,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 111.32,
+      "font": "Work Sans"
+     }
+    ]
+   }
+  },
+  {
+   "name": "word_swap-1",
+   "kind": "word_swap",
+   "seed": 1,
+   "frames": 99,
+   "scenes": 1,
+   "l1_page": 6.405531348341805e-05,
+   "l1_recon": 0.00084,
+   "l1_kf": 0.00181,
+   "l1_compose": 0.00181,
+   "kf_parity": 0.0,
+   "worst_kf": {
+    "s1": [
+     0.0048,
+     12
+    ]
+   },
+   "analyse_seconds": 16.1,
+   "ghost_de": null,
+   "measure_seconds": 9.2,
+   "diff": {
+    "truth_elements": 3,
+    "ir_elements": 3,
+    "matched": 3,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 1.0,
+    "font_rate": 1.0,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 0.47,
+    "centre_px": 2.8667,
+    "visible_err": 0.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 6.0,
+    "dl_ratio": 1.324,
+    "rows": [
+     {
+      "id": "full",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.672,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e1"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "DM Sans"
+     },
+     {
+      "id": "short",
+      "kind": "text",
+      "match": "e2",
+      "iou": 0.622,
+      "fragments": 1,
+      "fragment_ids": [
+       "e2"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e2"
+      ],
+      "centre_px": 7.4,
+      "visible_err": 0,
+      "text_ratio": 1.0,
+      "colour_de": 0.47,
+      "font": "DM Sans"
+     },
+     {
+      "id": "icon",
+      "kind": "shape",
+      "match": "e3",
+      "iou": 0.836,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e3"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "big_scroll-1",
+   "kind": "big_scroll",
+   "seed": 1,
+   "frames": 93,
+   "scenes": 1,
+   "l1_page": 0.0007353593636528684,
+   "l1_recon": 0.06633,
+   "l1_kf": 0.07452,
+   "l1_compose": 0.0745,
+   "kf_parity": 1.38e-05,
+   "worst_kf": {
+    "s1": [
+     0.1593,
+     80
+    ]
+   },
+   "analyse_seconds": 48.9,
+   "ghost_de": null,
+   "measure_seconds": 11.7,
+   "diff": {
+    "truth_elements": 1,
+    "ir_elements": 43,
+    "matched": 0,
+    "matched_rate": 0.0,
+    "fragments_mean": 2.0,
+    "over_split": 1,
+    "units_mean": 1.0,
+    "pieces_mean": 35.0,
+    "font_rate": null,
+    "stray_area": 0.1351,
+    "text_ratio": 0.0,
+    "colour_de": null,
+    "centre_px": null,
+    "visible_err": null,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 10.1395,
+    "dl_ratio": 15.528,
+    "rows": [
+     {
+      "id": "big",
+      "kind": "text",
+      "match": null,
+      "iou": 0.444,
+      "fragments": 2,
+      "fragment_ids": [
+       "e19",
+       "e25"
+      ],
+      "units": 1,
+      "pieces": 35,
+      "piece_ids": [
+       "e4",
+       "e5",
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e10",
+       "e11",
+       "e12",
+       "e13",
+       "e14",
+       "e15",
+       "e16",
+       "e17",
+       "e18",
+       "e19",
+       "e20",
+       "e21",
+       "e22",
+       "e23",
+       "e24",
+       "e25",
+       "e26",
+       "e27",
+       "e28",
+       "e29",
+       "e30",
+       "e31",
+       "e32",
+       "e33",
+       "e34",
+       "e35",
+       "e36",
+       "e37",
+       "e38"
+      ],
+      "text_ratio": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "name": "glow_title-1",
+   "kind": "glow_title",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.0013066130862794214,
+   "l1_recon": 0.00636,
+   "l1_kf": 0.00585,
+   "l1_compose": 0.00585,
+   "kf_parity": 0.0,
+   "worst_kf": {
+    "s1": [
+     0.0095,
+     16
+    ]
+   },
+   "analyse_seconds": 47.5,
+   "ghost_de": 0.685,
+   "measure_seconds": 18.2,
+   "diff": {
+    "truth_elements": 1,
+    "ir_elements": 6,
+    "matched": 1,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 2.0,
+    "font_rate": 1.0,
+    "stray_area": 0.0531,
+    "text_ratio": 1.0,
+    "colour_de": 0.0,
+    "centre_px": 14.2,
+    "visible_err": 3.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 19.8333,
+    "dl_ratio": 3.506,
+    "rows": [
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e3",
+      "iou": 0.779,
+      "fragments": 1,
+      "fragment_ids": [
+       "e3"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e3"
+      ],
+      "centre_px": 14.2,
+      "visible_err": 3,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Plus Jakarta Sans"
+     }
+    ]
+   }
+  },
+  {
+   "name": "label_grid-1",
+   "kind": "label_grid",
+   "seed": 1,
+   "frames": 90,
+   "scenes": 1,
+   "l1_page": 0.00035224971407421437,
+   "l1_recon": 0.00721,
+   "l1_kf": 0.01945,
+   "l1_compose": 0.01945,
+   "kf_parity": 5e-07,
+   "worst_kf": {
+    "s1": [
+     0.0276,
+     40
+    ]
+   },
+   "analyse_seconds": 133.9,
+   "ghost_de": null,
+   "measure_seconds": 22.6,
+   "diff": {
+    "truth_elements": 48,
+    "ir_elements": 73,
+    "matched": 48,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0417,
+    "over_split": 2,
+    "units_mean": 1.0417,
+    "pieces_mean": 1.125,
+    "font_rate": 0.6042,
+    "stray_area": 0.5111,
+    "text_ratio": 0.9933,
+    "colour_de": 5.3004,
+    "centre_px": 0.9062,
+    "visible_err": 1.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 14.7808,
+    "dl_ratio": 6.285,
+    "rows": [
+     {
+      "id": "h0",
+      "kind": "text",
+      "match": "e21",
+      "iou": 0.873,
+      "fragments": 1,
+      "fragment_ids": [
+       "e21"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e21"
+      ],
+      "centre_px": 1.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l0",
+      "kind": "text",
+      "match": "e20",
+      "iou": 0.782,
+      "fragments": 1,
+      "fragment_ids": [
+       "e20"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e20"
+      ],
+      "centre_px": 2.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 3.95,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h1",
+      "kind": "text",
+      "match": "e23",
+      "iou": 0.851,
+      "fragments": 1,
+      "fragment_ids": [
+       "e23"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e9",
+       "e23"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.86,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l1",
+      "kind": "text",
+      "match": "e22",
+      "iou": 0.888,
+      "fragments": 1,
+      "fragment_ids": [
+       "e22"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e22"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 3.49,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h2",
+      "kind": "text",
+      "match": "e25",
+      "iou": 0.842,
+      "fragments": 1,
+      "fragment_ids": [
+       "e25"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e11",
+       "e25"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l2",
+      "kind": "text",
+      "match": "e24",
+      "iou": 0.929,
+      "fragments": 1,
+      "fragment_ids": [
+       "e24"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e24"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 0.963,
+      "colour_de": 14.85,
+      "font": "Geist"
+     },
+     {
+      "id": "h3",
+      "kind": "text",
+      "match": "e27",
+      "iou": 0.85,
+      "fragments": 1,
+      "fragment_ids": [
+       "e27"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e17",
+       "e27"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.86,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l3",
+      "kind": "text",
+      "match": "e26",
+      "iou": 0.828,
+      "fragments": 1,
+      "fragment_ids": [
+       "e26"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e26"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 4.76,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h4",
+      "kind": "text",
+      "match": "e29",
+      "iou": 0.802,
+      "fragments": 1,
+      "fragment_ids": [
+       "e29"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e29"
+      ],
+      "centre_px": 0.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l4",
+      "kind": "text",
+      "match": "e28",
+      "iou": 0.903,
+      "fragments": 1,
+      "fragment_ids": [
+       "e28"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e28"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 19.71,
+      "font": "Poppins"
+     },
+     {
+      "id": "h5",
+      "kind": "text",
+      "match": "e31",
+      "iou": 0.71,
+      "fragments": 1,
+      "fragment_ids": [
+       "e31"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e31"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 0.957,
+      "colour_de": 1.84,
+      "font": "Public Sans"
+     },
+     {
+      "id": "l5",
+      "kind": "text",
+      "match": "e30",
+      "iou": 0.675,
+      "fragments": 1,
+      "fragment_ids": [
+       "e30"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e30"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 12.55,
+      "font": "Geist"
+     },
+     {
+      "id": "h6",
+      "kind": "text",
+      "match": "e33",
+      "iou": 0.772,
+      "fragments": 1,
+      "fragment_ids": [
+       "e33"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e33"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.75,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l6",
+      "kind": "text",
+      "match": "e32",
+      "iou": 0.694,
+      "fragments": 1,
+      "fragment_ids": [
+       "e32"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e32"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.68,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h7",
+      "kind": "text",
+      "match": "e35",
+      "iou": 0.779,
+      "fragments": 2,
+      "fragment_ids": [
+       "e35",
+       "e72"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e35",
+       "e72"
+      ],
+      "centre_px": 0.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l7",
+      "kind": "text",
+      "match": "e34",
+      "iou": 0.777,
+      "fragments": 1,
+      "fragment_ids": [
+       "e34"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e34"
+      ],
+      "centre_px": 1.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 38.15,
+      "font": "Lexend"
+     },
+     {
+      "id": "h8",
+      "kind": "text",
+      "match": "e37",
+      "iou": 0.84,
+      "fragments": 1,
+      "fragment_ids": [
+       "e37"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e37"
+      ],
+      "centre_px": 1.8,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l8",
+      "kind": "text",
+      "match": "e36",
+      "iou": 0.743,
+      "fragments": 1,
+      "fragment_ids": [
+       "e36"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e36"
+      ],
+      "centre_px": 0.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.01,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h9",
+      "kind": "text",
+      "match": "e39",
+      "iou": 0.879,
+      "fragments": 1,
+      "fragment_ids": [
+       "e39"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e39"
+      ],
+      "centre_px": 1.5,
+      "visible_err": 1,
+      "text_ratio": 0.957,
+      "colour_de": 1.18,
+      "font": "Open Sans"
+     },
+     {
+      "id": "l9",
+      "kind": "text",
+      "match": "e38",
+      "iou": 0.748,
+      "fragments": 1,
+      "fragment_ids": [
+       "e38"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e38"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.24,
+      "font": "Poppins"
+     },
+     {
+      "id": "h10",
+      "kind": "text",
+      "match": "e41",
+      "iou": 0.948,
+      "fragments": 1,
+      "fragment_ids": [
+       "e41"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e41"
+      ],
+      "centre_px": 0.0,
+      "visible_err": 1,
+      "text_ratio": 0.947,
+      "colour_de": 1.02,
+      "font": "Urbanist"
+     },
+     {
+      "id": "l10",
+      "kind": "text",
+      "match": "e40",
+      "iou": 0.787,
+      "fragments": 1,
+      "fragment_ids": [
+       "e40"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e40"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 12.5,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h11",
+      "kind": "text",
+      "match": "e43",
+      "iou": 0.778,
+      "fragments": 1,
+      "fragment_ids": [
+       "e43"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e43"
+      ],
+      "centre_px": 0.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.36,
+      "font": "IBM Plex Sans"
+     },
+     {
+      "id": "l11",
+      "kind": "text",
+      "match": "e42",
+      "iou": 0.73,
+      "fragments": 1,
+      "fragment_ids": [
+       "e42"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e42"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.84,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h12",
+      "kind": "text",
+      "match": "e45",
+      "iou": 0.909,
+      "fragments": 1,
+      "fragment_ids": [
+       "e45"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e45"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.75,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l12",
+      "kind": "text",
+      "match": "e44",
+      "iou": 0.766,
+      "fragments": 1,
+      "fragment_ids": [
+       "e44"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e44"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 5.96,
+      "font": "Lexend"
+     },
+     {
+      "id": "h13",
+      "kind": "text",
+      "match": "e47",
+      "iou": 0.917,
+      "fragments": 1,
+      "fragment_ids": [
+       "e47"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e47"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.75,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l13",
+      "kind": "text",
+      "match": "e46",
+      "iou": 0.845,
+      "fragments": 1,
+      "fragment_ids": [
+       "e46"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e46"
+      ],
+      "centre_px": 1.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 7.68,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h14",
+      "kind": "text",
+      "match": "e49",
+      "iou": 0.703,
+      "fragments": 1,
+      "fragment_ids": [
+       "e49"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e49"
+      ],
+      "centre_px": 0.4,
+      "visible_err": 1,
+      "text_ratio": 0.957,
+      "colour_de": 1.84,
+      "font": "Archivo"
+     },
+     {
+      "id": "l14",
+      "kind": "text",
+      "match": "e48",
+      "iou": 0.828,
+      "fragments": 1,
+      "fragment_ids": [
+       "e48"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e48"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 11.73,
+      "font": "Geist"
+     },
+     {
+      "id": "h15",
+      "kind": "text",
+      "match": "e51",
+      "iou": 0.851,
+      "fragments": 1,
+      "fragment_ids": [
+       "e51"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e51"
+      ],
+      "centre_px": 2.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.63,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l15",
+      "kind": "text",
+      "match": "e50",
+      "iou": 0.731,
+      "fragments": 1,
+      "fragment_ids": [
+       "e50"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e50"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 5.54,
+      "font": "Montserrat"
+     },
+     {
+      "id": "h16",
+      "kind": "text",
+      "match": "e52",
+      "iou": 0.878,
+      "fragments": 1,
+      "fragment_ids": [
+       "e52"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e52"
+      ],
+      "centre_px": 1.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.23,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l16",
+      "kind": "text",
+      "match": "e53",
+      "iou": 0.837,
+      "fragments": 1,
+      "fragment_ids": [
+       "e53"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e53"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 5.41,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h17",
+      "kind": "text",
+      "match": "e55",
+      "iou": 0.778,
+      "fragments": 1,
+      "fragment_ids": [
+       "e55"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e55"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l17",
+      "kind": "text",
+      "match": "e54",
+      "iou": 0.804,
+      "fragments": 1,
+      "fragment_ids": [
+       "e54"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e54"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 15.21,
+      "font": "DM Sans"
+     },
+     {
+      "id": "h18",
+      "kind": "text",
+      "match": "e58",
+      "iou": 0.897,
+      "fragments": 1,
+      "fragment_ids": [
+       "e58"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e58"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 0.96,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l18",
+      "kind": "text",
+      "match": "e57",
+      "iou": 0.913,
+      "fragments": 1,
+      "fragment_ids": [
+       "e57"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e57"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 15.74,
+      "font": "Geist"
+     },
+     {
+      "id": "h19",
+      "kind": "text",
+      "match": "e61",
+      "iou": 0.783,
+      "fragments": 2,
+      "fragment_ids": [
+       "e61",
+       "e71"
+      ],
+      "units": 2,
+      "pieces": 2,
+      "piece_ids": [
+       "e61",
+       "e71"
+      ],
+      "centre_px": 1.1,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.18,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l19",
+      "kind": "text",
+      "match": "e59",
+      "iou": 0.907,
+      "fragments": 1,
+      "fragment_ids": [
+       "e59"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e59"
+      ],
+      "centre_px": 0.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 5.14,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h20",
+      "kind": "text",
+      "match": "e64",
+      "iou": 0.942,
+      "fragments": 1,
+      "fragment_ids": [
+       "e64"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e64"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 1,
+      "text_ratio": 0.952,
+      "colour_de": 1.18,
+      "font": "Nunito"
+     },
+     {
+      "id": "l20",
+      "kind": "text",
+      "match": "e63",
+      "iou": 0.892,
+      "fragments": 1,
+      "fragment_ids": [
+       "e63"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e63"
+      ],
+      "centre_px": 0.9,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 5.14,
+      "font": "Poppins"
+     },
+     {
+      "id": "h21",
+      "kind": "text",
+      "match": "e66",
+      "iou": 0.837,
+      "fragments": 1,
+      "fragment_ids": [
+       "e66"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e66"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1,
+      "text_ratio": 0.947,
+      "colour_de": 1.75,
+      "font": "Public Sans"
+     },
+     {
+      "id": "l21",
+      "kind": "text",
+      "match": "e65",
+      "iou": 0.762,
+      "fragments": 1,
+      "fragment_ids": [
+       "e65"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e65"
+      ],
+      "centre_px": 1.0,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.84,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h22",
+      "kind": "text",
+      "match": "e68",
+      "iou": 0.769,
+      "fragments": 1,
+      "fragment_ids": [
+       "e68"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e68"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.75,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l22",
+      "kind": "text",
+      "match": "e67",
+      "iou": 0.83,
+      "fragments": 1,
+      "fragment_ids": [
+       "e67"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e67"
+      ],
+      "centre_px": 0.6,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 3.29,
+      "font": "Urbanist"
+     },
+     {
+      "id": "h23",
+      "kind": "text",
+      "match": "e70",
+      "iou": 0.911,
+      "fragments": 1,
+      "fragment_ids": [
+       "e70"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e70"
+      ],
+      "centre_px": 0.2,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 1.75,
+      "font": "DM Sans"
+     },
+     {
+      "id": "l23",
+      "kind": "text",
+      "match": "e69",
+      "iou": 0.904,
+      "fragments": 1,
+      "fragment_ids": [
+       "e69"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e69"
+      ],
+      "centre_px": 0.5,
+      "visible_err": 1,
+      "text_ratio": 1.0,
+      "colour_de": 3.29,
+      "font": "Unbounded"
+     }
+    ]
+   }
+  },
+  {
+   "name": "glow_letters-1",
+   "kind": "glow_letters",
+   "seed": 1,
+   "frames": 102,
+   "scenes": 1,
+   "l1_page": 0.001246076511088766,
+   "l1_recon": 0.00981,
+   "l1_kf": 0.00797,
+   "l1_compose": 0.00797,
+   "kf_parity": 2.5e-06,
+   "worst_kf": {
+    "s1": [
+     0.034,
+     40
+    ]
+   },
+   "analyse_seconds": 61.0,
+   "ghost_de": 1.688,
+   "measure_seconds": 20.4,
+   "diff": {
+    "truth_elements": 1,
+    "ir_elements": 4,
+    "matched": 1,
+    "matched_rate": 1.0,
+    "fragments_mean": 1.0,
+    "over_split": 0,
+    "units_mean": 1.0,
+    "pieces_mean": 2.0,
+    "font_rate": 1.0,
+    "stray_area": 0.0012,
+    "text_ratio": 1.0,
+    "colour_de": 0.0,
+    "centre_px": 7.5,
+    "visible_err": 5.0,
+    "structure": {
+     "found": [],
+     "missed": [],
+     "unsupported": []
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 23.75,
+    "dl_ratio": 2.821,
+    "rows": [
+     {
+      "id": "title",
+      "kind": "text",
+      "match": "e1",
+      "iou": 0.855,
+      "fragments": 1,
+      "fragment_ids": [
+       "e1"
+      ],
+      "units": 1,
+      "pieces": 2,
+      "piece_ids": [
+       "e1",
+       "e4"
+      ],
+      "centre_px": 7.5,
+      "visible_err": 5,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Montserrat"
+     }
+    ]
+   }
+  },
+  {
+   "name": "mk571",
+   "kind": "gold",
+   "seed": null,
+   "frames": 482,
+   "scenes": 1,
+   "l1_page": 0.00656186612881472,
+   "l1_recon": 0.01675,
+   "l1_kf": 0.01803,
+   "l1_compose": 0.01803,
+   "kf_parity": 1e-07,
+   "worst_kf": {
+    "s1": [
+     0.2529,
+     44
+    ]
+   },
+   "analyse_seconds": null,
+   "ghost_de": null,
+   "measure_seconds": 128.6,
+   "diff": {
+    "truth_elements": 5,
+    "ir_elements": 15,
+    "matched": 4,
+    "matched_rate": 0.8,
+    "fragments_mean": 1.6,
+    "over_split": 2,
+    "units_mean": 1.6,
+    "pieces_mean": 6.2,
+    "font_rate": 0.0,
+    "stray_area": 0.0,
+    "text_ratio": 1.0,
+    "colour_de": 1.84,
+    "centre_px": 7.625,
+    "visible_err": 79.25,
+    "structure": {
+     "found": [
+      "pop",
+      "drift"
+     ],
+     "missed": [],
+     "unsupported": [
+      "mask",
+      "shape-size",
+      "split",
+      "stagger",
+      "mask"
+     ]
+    },
+    "shots": {
+     "truth": 1,
+     "ir_scenes": 1,
+     "boundaries": [],
+     "f1": 1.0
+    },
+    "keys_mean": 21.6,
+    "dl_ratio": 4.804,
+    "rows": [
+     {
+      "id": "bg",
+      "kind": "shape",
+      "match": null,
+      "iou": 0.167,
+      "fragments": 3,
+      "fragment_ids": [
+       "e4",
+       "e6",
+       "e11"
+      ],
+      "units": 3,
+      "pieces": 11,
+      "piece_ids": [
+       "e1",
+       "e2",
+       "e3",
+       "e4",
+       "e5",
+       "e6",
+       "e7",
+       "e8",
+       "e9",
+       "e11",
+       "e13"
+      ]
+     },
+     {
+      "id": "frame",
+      "kind": "shape",
+      "match": "e4",
+      "iou": 0.975,
+      "fragments": 2,
+      "fragment_ids": [
+       "e4",
+       "e11"
+      ],
+      "units": 2,
+      "pieces": 10,
+      "piece_ids": [
+       "e3",
+       "e4",
+       "e5",
+       "e7",
+       "e8",
+       "e9",
+       "e11",
+       "e12",
+       "e13",
+       "e15"
+      ],
+      "centre_px": 0.7,
+      "visible_err": 115
+     },
+     {
+      "id": "mark",
+      "kind": "image",
+      "match": "e15",
+      "iou": 0.566,
+      "fragments": 1,
+      "fragment_ids": [
+       "e15"
+      ],
+      "units": 1,
+      "pieces": 6,
+      "piece_ids": [
+       "e5",
+       "e7",
+       "e8",
+       "e9",
+       "e14",
+       "e15"
+      ],
+      "centre_px": 19.6,
+      "visible_err": 198
+     },
+     {
+      "id": "url",
+      "kind": "text",
+      "match": "e6",
+      "iou": 0.846,
+      "fragments": 1,
+      "fragment_ids": [
+       "e6"
+      ],
+      "units": 1,
+      "pieces": 1,
+      "piece_ids": [
+       "e6"
+      ],
+      "centre_px": 1.2,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 3.68,
+      "font": "Roboto Condensed"
+     },
+     {
+      "id": "name",
+      "kind": "text",
+      "match": "e11",
+      "iou": 0.911,
+      "fragments": 1,
+      "fragment_ids": [
+       "e11"
+      ],
+      "units": 1,
+      "pieces": 3,
+      "piece_ids": [
+       "e11",
+       "e12",
+       "e13"
+      ],
+      "centre_px": 9.0,
+      "visible_err": 2,
+      "text_ratio": 1.0,
+      "colour_de": 0.0,
+      "font": "Onest"
+     }
+    ]
+   }
+  }
+ ]
+}

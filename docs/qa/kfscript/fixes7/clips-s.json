@@ -1,0 +1,508 @@
+{
+ "id": "clips-s",
+ "runs": {
+  "clips-m3": "ff38350 (M3, the rule decides 3D candidates)",
+  "clips-s": "2d80588 (the learned solid judgement)"
+ },
+ "machine": "cloud container, 4 CPU, no GPU, torch not installed (refine skipped in both)",
+ "command": "eval/out/clips-eval7.sh <run> <worktree>, then kf fidelity per scene (scratch kf_clips.py); l1_kf frame-weighted over scenes; solids: the '3D \ud6c4\ubcf4 N\uac1c' counts",
+ "read_of_m3_candidates": {
+  "mk793 e3, e11": "patches of the black-and-white live-action footage (dress and hands; a reflection), f0-149: background video, not a 3D object",
+  "mk793 e76": "the 'i' of the writing-on script title 'Victoria and David', f27-38: a title letter",
+  "mk547 e7": "a patch of the cloudy teal video background behind the typing text, f17-118: background video",
+  "ig2 e74": "part of a stroke of the big red 'A Weekend Away' title, f14-34: a title letter the title veto missed",
+  "mk798 e33": "the glow under 'M/x' as the neon Mixkit logo lights up, f84-93: logo glow"
+ },
+ "means": {
+  "eval": {
+   "clips-m3": 0.042,
+   "clips-s": 0.042
+  },
+  "mixkit": {
+   "clips-m3": 0.0274,
+   "clips-s": 0.0274
+  },
+  "saas": {
+   "clips-m3": 0.0392,
+   "clips-s": 0.0392
+  }
+ },
+ "clips": {
+  "0688b3de-6e28-450c-bced-0e894120e17b": {
+   "clips-m3": {
+    "l1_kf": 0.037,
+    "elements": 28,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.037,
+    "elements": 28,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "1ea2df6a-6a7c-45c2-8d28-7de9139578be": {
+   "clips-m3": {
+    "l1_kf": 0.074,
+    "elements": 47,
+    "scenes": 3,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.074,
+    "elements": 47,
+    "scenes": 3,
+    "solids": 0
+   }
+  },
+  "24296b2b-54d0-4d28-bf48-98d0a5cd05ac": {
+   "clips-m3": {
+    "l1_kf": 0.0138,
+    "elements": 5,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0138,
+    "elements": 5,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "51b7e970-6c56-47b5-94b8-b8b5df803af2": {
+   "clips-m3": {
+    "l1_kf": 0.0203,
+    "elements": 62,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0203,
+    "elements": 62,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "9327acb8-42ba-42ac-ab7b-a7c285a42bb8": {
+   "clips-m3": {
+    "l1_kf": 0.0599,
+    "elements": 31,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0599,
+    "elements": 31,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "967ee247-192d-47c4-9070-50cfef5349c2": {
+   "clips-m3": {
+    "l1_kf": 0.0402,
+    "elements": 80,
+    "scenes": 4,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0402,
+    "elements": 80,
+    "scenes": 4,
+    "solids": 0
+   }
+  },
+  "b2979187-2bba-4df9-8274-8e28eba5d1b5": {
+   "clips-m3": {
+    "l1_kf": 0.0156,
+    "elements": 54,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0156,
+    "elements": 54,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "c019934b-9598-4627-9750-9bd0b5c96f4f": {
+   "clips-m3": {
+    "l1_kf": 0.026,
+    "elements": 56,
+    "scenes": 3,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.026,
+    "elements": 56,
+    "scenes": 3,
+    "solids": 0
+   }
+  },
+  "c123655d-8026-4471-85f3-c730ff028849": {
+   "clips-m3": {
+    "l1_kf": 0.0279,
+    "elements": 53,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0279,
+    "elements": 53,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "e8a5dd64-ff20-41eb-9989-5330c71d1509": {
+   "clips-m3": {
+    "l1_kf": 0.0776,
+    "elements": 132,
+    "scenes": 5,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0776,
+    "elements": 132,
+    "scenes": 5,
+    "solids": 0
+   }
+  },
+  "envato1": {
+   "clips-m3": {
+    "l1_kf": 0.0754,
+    "elements": 42,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0754,
+    "elements": 42,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "ig1": {
+   "clips-m3": {
+    "l1_kf": 0.0297,
+    "elements": 107,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0297,
+    "elements": 107,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "ig2": {
+   "clips-m3": {
+    "l1_kf": 0.0389,
+    "elements": 99,
+    "scenes": 2,
+    "solids": 1
+   },
+   "clips-s": {
+    "l1_kf": 0.0389,
+    "elements": 99,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "ig3": {
+   "clips-m3": {
+    "l1_kf": 0.0241,
+    "elements": 78,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0241,
+    "elements": 78,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk545": {
+   "clips-m3": {
+    "l1_kf": 0.0727,
+    "elements": 124,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0727,
+    "elements": 124,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "mk546": {
+   "clips-m3": {
+    "l1_kf": 0.1181,
+    "elements": 553,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.1181,
+    "elements": 553,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "mk547": {
+   "clips-m3": {
+    "l1_kf": 0.0292,
+    "elements": 63,
+    "scenes": 2,
+    "solids": 1
+   },
+   "clips-s": {
+    "l1_kf": 0.0285,
+    "elements": 72,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "mk557": {
+   "clips-m3": {
+    "l1_kf": 0.038,
+    "elements": 43,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.038,
+    "elements": 43,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk567": {
+   "clips-m3": {
+    "l1_kf": 0.0068,
+    "elements": 22,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0068,
+    "elements": 22,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk568": {
+   "clips-m3": {
+    "l1_kf": 0.0263,
+    "elements": 137,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0263,
+    "elements": 137,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "mk569": {
+   "clips-m3": {
+    "l1_kf": 0.032,
+    "elements": 533,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.032,
+    "elements": 533,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk570": {
+   "clips-m3": {
+    "l1_kf": 0.0134,
+    "elements": 69,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0134,
+    "elements": 69,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk602": {
+   "clips-m3": {
+    "l1_kf": 0.0286,
+    "elements": 34,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0286,
+    "elements": 34,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk605": {
+   "clips-m3": {
+    "l1_kf": 0.0146,
+    "elements": 13,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0146,
+    "elements": 13,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk625": {
+   "clips-m3": {
+    "l1_kf": 0.01,
+    "elements": 10,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.01,
+    "elements": 10,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk626": {
+   "clips-m3": {
+    "l1_kf": 0.0026,
+    "elements": 45,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0026,
+    "elements": 45,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk637": {
+   "clips-m3": {
+    "l1_kf": 0.0251,
+    "elements": 48,
+    "scenes": 2,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0251,
+    "elements": 48,
+    "scenes": 2,
+    "solids": 0
+   }
+  },
+  "mk748": {
+   "clips-m3": {
+    "l1_kf": 0.0116,
+    "elements": 46,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0116,
+    "elements": 46,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk749": {
+   "clips-m3": {
+    "l1_kf": 0.0103,
+    "elements": 20,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0103,
+    "elements": 20,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk750": {
+   "clips-m3": {
+    "l1_kf": 0.0096,
+    "elements": 70,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0096,
+    "elements": 70,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk793": {
+   "clips-m3": {
+    "l1_kf": 0.0246,
+    "elements": 75,
+    "scenes": 1,
+    "solids": 3
+   },
+   "clips-s": {
+    "l1_kf": 0.0253,
+    "elements": 79,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk798": {
+   "clips-m3": {
+    "l1_kf": 0.014,
+    "elements": 47,
+    "scenes": 1,
+    "solids": 1
+   },
+   "clips-s": {
+    "l1_kf": 0.0139,
+    "elements": 47,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk801": {
+   "clips-m3": {
+    "l1_kf": 0.0051,
+    "elements": 4,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0051,
+    "elements": 4,
+    "scenes": 1,
+    "solids": 0
+   }
+  },
+  "mk840": {
+   "clips-m3": {
+    "l1_kf": 0.0563,
+    "elements": 51,
+    "scenes": 1,
+    "solids": 0
+   },
+   "clips-s": {
+    "l1_kf": 0.0563,
+    "elements": 51,
+    "scenes": 1,
+    "solids": 0
+   }
+  }
+ }
+}

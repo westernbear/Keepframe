@@ -1,0 +1,206 @@
+{
+ "machine": "cloud container, 4 CPU, no GPU; torch CPU, 2 threads",
+ "command": "scripts/train_assoc.py train --no-saas --hidden 64 --epochs 30 --out <scratchpad>, copied to keepframe/analyze/assoc.npz",
+ "model": "M3: 38 track features (assoc.track_features), label: b continues the last region and the track's content at its anchor",
+ "choice": "Of three widths/lengths, the one with the best held-out accuracy at P 0.5 (the tracker's decision): h32 e30: mean AUC 0.9942, mean accuracy 0.9733; h64 e30: mean AUC 0.9952, mean accuracy 0.9777; h64 e60: mean AUC 0.9957, mean accuracy 0.976. A 128-wide run was stopped by the time limit and not used. No SaaS pairs (as M1).",
+ "shipped": {
+  "commit": "a315863",
+  "trained_on_saas": false,
+  "hidden": 64,
+  "rho": 0.95,
+  "rho_agreement_with_truth": 0.889,
+  "epochs": 30,
+  "train_pairs": {
+   "gold": 60000,
+   "lottie": 1561392,
+   "scene": 1449880,
+   "synth": 1215320
+  },
+  "train_clips": 300,
+  "held_out_clips": 89,
+  "held_out": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 20714,
+    "auc": 0.9970220491995996,
+    "accuracy": 0.9814864261605664
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 22055,
+    "auc": 0.9908603012077987,
+    "accuracy": 0.9700506284626785
+   },
+   "synth": {
+    "pairs": 415894,
+    "same": 55051,
+    "auc": 0.9977871169693253,
+    "accuracy": 0.9816251256329738
+   }
+  },
+  "train": {
+   "gold": {
+    "pairs": 60000,
+    "same": 3275,
+    "auc": 0.9990135776260854,
+    "accuracy": 0.9859833333333333
+   },
+   "lottie": {
+    "pairs": 1561392,
+    "same": 78233,
+    "auc": 0.9986245028768246,
+    "accuracy": 0.9865120354145531
+   },
+   "scene": {
+    "pairs": 1449880,
+    "same": 101228,
+    "auc": 0.9975517200343857,
+    "accuracy": 0.9790051590476453
+   },
+   "synth": {
+    "pairs": 1215320,
+    "same": 154512,
+    "auc": 0.998927858971892,
+    "accuracy": 0.9854622650824474
+   }
+  },
+  "sources": "synthetic kinds (seeds 2-7 train, 8-9 held), LottieFiles free animations (Lottie Simple License), gold mk571 (Mixkit free)"
+ },
+ "variants": {
+  "h32 e30": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 20714,
+    "auc": 0.9963904720257835,
+    "accuracy": 0.9774603757368924
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 22055,
+    "auc": 0.9888543718129951,
+    "accuracy": 0.9645932316343345
+   },
+   "synth": {
+    "pairs": 415894,
+    "same": 55051,
+    "auc": 0.9974609728128829,
+    "accuracy": 0.977946303625443
+   }
+  },
+  "h64 e30": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 20714,
+    "auc": 0.9970220491995996,
+    "accuracy": 0.9814864261605664
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 22055,
+    "auc": 0.9908603012077987,
+    "accuracy": 0.9700506284626785
+   },
+   "synth": {
+    "pairs": 415894,
+    "same": 55051,
+    "auc": 0.9977871169693253,
+    "accuracy": 0.9816251256329738
+   }
+  },
+  "h64 e60": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 20714,
+    "auc": 0.9969526611109615,
+    "accuracy": 0.9769534688700775
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 22055,
+    "auc": 0.9919741502555646,
+    "accuracy": 0.9692648428926193
+   },
+   "synth": {
+    "pairs": 415894,
+    "same": 55051,
+    "auc": 0.99804346413642,
+    "accuracy": 0.9816443613036014
+   }
+  }
+ },
+ "superseded": {
+  "M1 8b23086 (18 pair features)": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30760,
+    "auc": 0.9941977877547136,
+    "accuracy": 0.9654614938524505
+   },
+   "saas": {
+    "pairs": 348102,
+    "same": 8496,
+    "auc": 0.9004367320009352,
+    "accuracy": 0.9384892933680358
+   },
+   "scene": {
+    "pairs": 301609,
+    "same": 31837,
+    "auc": 0.9822662949751632,
+    "accuracy": 0.9328335692900411
+   },
+   "synth": {
+    "pairs": 416222,
+    "same": 66913,
+    "auc": 0.9961325357450393,
+    "accuracy": 0.972781352259131
+   }
+  },
+  "b67b155": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30595,
+    "auc": 0.9940619604039007,
+    "accuracy": 0.9639199128871162
+   },
+   "saas": {
+    "pairs": 108430,
+    "same": 2250,
+    "auc": 0.9474600531592056,
+    "accuracy": 0.9282209720557041
+   },
+   "synth": {
+    "pairs": 416222,
+    "same": 66911,
+    "auc": 0.9964567617867347,
+    "accuracy": 0.977175641844977
+   }
+  },
+  "e41cf3e": {
+   "lottie": {
+    "pairs": 479378,
+    "same": 30611,
+    "auc": 0.9915659632950456,
+    "accuracy": 0.9548477401966715
+   },
+   "saas": {
+    "pairs": 596740,
+    "same": 13893,
+    "auc": 0.9087634115705656,
+    "accuracy": 0.9379595803867681
+   },
+   "synth": {
+    "pairs": 416807,
+    "same": 67222,
+    "auc": 0.9952249293059708,
+    "accuracy": 0.9726276190179147
+   }
+  }
+ },
+ "history": [
+  "16 features (e41cf3e): split a lone fast mover (seed-61 end-to-end test, P 0.088). Answer: context features.",
+  "18 features (b67b155): three fast-suite failures on keepframe.ir.synth test scenes (rotation, fades from 0, occlusion). Answer: the ir scene generators as training data (75784e4) and an occluded owner's main body labelled the same content (d4403d1).",
+  "This version: those tests pass; test_titles_guard's solid_errors patch now fails only the guard's measure (the scene's mover is found as one solid, which finish_solid_assets measures).",
+  "M3 (this): track-level features and the anchored label, after the window rule 7f70a4f (reverted) split a fade-in."
+ ],
+ "rho_curve": "ECC-label agreement with truth is flat from rho 0.05 to 0.65 (0.9035; 0.8551 at 0): the mask-coverage condition decides, not the correlation, which is either high or 0 (ECC non-convergence)."
+}

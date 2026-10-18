@@ -195,6 +195,22 @@ def test_hole_check_uses_all_frames_not_only_samples():
     assert np.array_equal(model.image, plate)
 
 
+def test_hole_over_a_glow_takes_the_ground_of_its_rows():
+    """A title that never leaves (a hole from the top edge down to a glow): the rows whose ground agrees beside the
+    hole take that ground instead of Telea dragging the glow up into it."""
+    yy, xx = np.mgrid[0:120, 0:200]
+    plate = np.stack([np.full_like(yy, 12), 10 + yy // 4, 30 + yy // 3], -1).astype(np.float64)   # a vertical gradient
+    plate += np.exp(-(((xx - 100) / 60.0) ** 2 + ((yy - 95) / 18.0) ** 2))[..., None] * (200, 60, 160)   # a glow below
+    plate = plate.clip(0, 255).astype(np.uint8)
+    holes = np.zeros((120, 200), bool)
+    holes[:70, 20:180] = True
+    uncovered = np.full((120, 200, 3), 256, np.uint16)
+    filled, synthetic, info = fill_holes(plate, holes, uncovered)
+    assert synthetic[holes].all() and info[0]["method"].startswith("rows")
+    err = delta_e(srgb_to_lab(filled[:40].astype(float)), srgb_to_lab(plate[:40].astype(float)))
+    assert float(err[holes[:40]].max()) < 2.0   # the rows away from the glow are the gradient
+
+
 def test_flat_plate_with_covered_logo_is_color_and_override_skips_work(monkeypatch):
     frames = np.full((10, 60, 80, 3), (90, 70, 140), np.uint8)
     logo = np.zeros((60, 80), bool)
@@ -269,6 +285,8 @@ def test_a_soft_glow_in_place_is_background_and_a_card_is_not():
     on_it = TextTrack(1, {f: TextBox(f, "Hi", (80, 50, 120, 70), 0.9) for f in range(n)}, "Hi")
     assert background_tracks(frames, tracks, [on_it]) == [] and background_tracks(frames, tracks, [TextTrack(2, {
         f: TextBox(f, "Hi", (80, 50, 120, 70), 0.9) for f in range(n, n + 3)}, "Hi")]) == [7]   # after the glow: no matter
+    later = [TextTrack(3, {f: TextBox(f, "Hi", (80, 50, 120, 70), 0.9) for f in range(n + 1, n + 4)}, "Hi")]
+    assert background_tracks(frames, tracks, later, near=2) == [] and background_tracks(frames, tracks, later, near=1) == [7]   # B8c
     tracks = scene(glow(lambda f: 100))[1]
     video = SimpleNamespace(kind="video", stats={"background_tracks": [7]})
     assert _foreground(tracks, video) == [] and _foreground(tracks, SimpleNamespace(kind="image", stats=video.stats)) == tracks

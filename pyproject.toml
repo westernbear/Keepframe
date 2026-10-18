@@ -36,6 +36,8 @@ keepframe = [
   "fonts/manifest.json",
   "fonts/files/*",
   "fonts/LICENSES/*",
+  "analyze/assoc.npz",
+  "analyze/solids.npz",
 ]
 [tool.pytest.ini_options]
 markers = [

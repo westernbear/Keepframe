@@ -296,11 +296,20 @@ def _legacy_find_solids(frames, fg, obj_tracks, text_masks, min_life=12, min_mem
 
 
 
+# fixes7 S: the analyses judge candidates with the learned judge; the direct calls pass no pipeline tracks, which it is
+# trained on, and test tracking, the area cap and the title veto, judged by the rule.
+LEARNED = {"test_analysis_merges_sphere_and_preserves_fragments_and_spin", "test_merged_solid_keeps_source_mask_in_analysis_overlay",
+           "test_judge_loads_and_falls_back_to_the_rule", "test_analysis_keeps_one_texture_turning_in_the_plane_out"}
+
+
 @pytest.fixture(autouse=True)
 def compare_legacy_tracking(request, monkeypatch):
-    if request.node.originalname in {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
+    if request.node.originalname not in LEARNED:
+        monkeypatch.setattr("keepframe.analyze.solids._keep", lambda _x, rule: rule)
+    if request.node.originalname in LEARNED | {"test_thirty_moving_blobs_at_720p_finish_under_ten_seconds",
                                      "test_two_thousand_tiny_components_are_skipped_before_tracking",
-                                     "test_changing_blob_uses_median_bbox_area_limit"}:
+                                     "test_changing_blob_uses_median_bbox_area_limit",
+                                     "test_a_candidate_holding_a_read_text_is_the_rest_of_a_title"}:   # B11: new semantics
         return
     from keepframe.analyze.solids import solid_props
     optimized = find_solids
@@ -325,3 +334,45 @@ def compare_legacy_tracking(request, monkeypatch):
         return actual
 
     monkeypatch.setattr(__import__(__name__, fromlist=["find_solids"]), "find_solids", compared)
+
+
+def test_a_candidate_holding_a_read_text_is_the_rest_of_a_title():
+    """B11: the same spinning candidate with a read text box inside it on most frames is a title's unread letters, not
+    an object; a text box elsewhere changes nothing."""
+    frames, fg, text = sphere_inputs()
+    box = find_solids(frames, fg, [], text)[0].frames[0][0]
+    cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+    inside = [[(cx - 4, cy - 3, cx + 4, cy + 3)]] * len(frames)
+    assert find_solids(frames, fg, [], text, text_boxes=inside) == []
+    assert len(find_solids(frames, fg, [], text, text_boxes=[[(0, 0, 4, 3)]] * len(frames))) == 1
+
+
+def test_judge_loads_and_falls_back_to_the_rule(monkeypatch):
+    import keepframe.analyze.solids as module
+    from keepframe.analyze.assoc import load_matcher
+
+    assert load_matcher(str(module.WEIGHTS), module.N_FEATURES) is not None
+    frames, fg, text = sphere_inputs()
+    stats = {}
+    _, change = _change(frames, Solid(frames={f: ((0, 0, 240, 180), fg[f]) for f in range(len(frames))}), stats)
+    assert stats["aligned"] <= change and set(stats) == {"aligned", "flat", "spread", "contrast", "drift"}
+    monkeypatch.setattr(module, "WEIGHTS", module.WEIGHTS.with_name("missing.npz"))
+    assert module._keep(np.zeros(module.N_FEATURES, np.float32), True) is True
+    monkeypatch.setattr(module, "_features", lambda *a: 1 / 0)   # fail soft: the rule decides
+    assert len(module.find_solids(frames, fg, [], text)) == 1
+
+
+def test_analysis_keeps_one_texture_turning_in_the_plane_out(tmp_path):
+    """fixes7 S: a striped disc turning in the plane is one texture turned (a still sprite with rotation shows it), not
+    a 3D candidate; the rule called it one (a stable box whose look changes)."""
+    frames = np.full((30, 180, 240, 3), (16, 20, 24), np.uint8)
+    yy, xx = np.mgrid[:96, :96]
+    t = (0.5 + 0.5 * np.sin(xx * np.pi / 6))[..., None]
+    tex = (np.array([230, 120, 40]) * t + np.array([40, 90, 200]) * (1 - t)).astype(np.uint8)
+    disc = (xx - 47.5) ** 2 + (yy - 47.5) ** 2 <= 46 ** 2
+    for f in range(len(frames)):
+        turned = cv2.warpAffine(tex, cv2.getRotationMatrix2D((47.5, 47.5), 9 * f, 1), (96, 96), borderMode=cv2.BORDER_REFLECT)
+        frames[f, 40:136, 70:166][disc] = turned[disc]
+    analyze_scene_frames(frames, 30, tmp_path, "s1", AnalyzeOptions(
+        bg_override="#101418", ocr=False, refine=False, use_ecc=False, generate_3d=False))
+    assert "3D 후보 0개" in json.loads((tmp_path / "scenes/s1/report.json").read_text())["messages"]
