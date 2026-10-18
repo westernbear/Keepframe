@@ -355,7 +355,7 @@ def test_judge_loads_and_falls_back_to_the_rule(monkeypatch):
     frames, fg, text = sphere_inputs()
     stats = {}
     _, change = _change(frames, Solid(frames={f: ((0, 0, 240, 180), fg[f]) for f in range(len(frames))}), stats)
-    assert stats["aligned"] <= change and set(stats) == {"aligned", "flat", "spread", "contrast"}
+    assert stats["aligned"] <= change and set(stats) == {"aligned", "flat", "spread", "contrast", "drift"}
     monkeypatch.setattr(module, "WEIGHTS", module.WEIGHTS.with_name("missing.npz"))
     assert module._keep(np.zeros(module.N_FEATURES, np.float32), True) is True
     monkeypatch.setattr(module, "_features", lambda *a: 1 / 0)   # fail soft: the rule decides
