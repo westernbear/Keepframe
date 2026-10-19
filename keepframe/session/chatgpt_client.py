@@ -42,6 +42,7 @@ class ChatGPTClient:
     """ChatGPT account Responses transport; completed SSE items become agent replies."""
 
     supports_vision = True
+    streams_reasoning = True
 
     def __init__(
         self, config: ProviderConfig, base_url: str | None = None, timeout: float = 120.0,
@@ -150,12 +151,12 @@ class ChatGPTClient:
             body["tool_choice"] = "auto"
         return body
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
+    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], on_reasoning=None) -> AssistantReply:
         self._refresh()
         for attempt in range(2):
             access = self.config.api_key
             try:
-                return self._request(messages, tools, access)
+                return self._request(messages, tools, access, on_reasoning)
             except urllib.error.HTTPError as e:
                 try:
                     if e.code == 401 and attempt == 0:
@@ -168,7 +169,7 @@ class ChatGPTClient:
                     e.close()
                 raise self._error(f"ChatGPT 요청 실패({e.code})", detail) from None
 
-    def _request(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], access: str) -> AssistantReply:
+    def _request(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], access: str, on_reasoning=None) -> AssistantReply:
         req = urllib.request.Request(
             f"{self.base_url}/responses", data=json.dumps(self._body(messages, tools), ensure_ascii=False).encode("utf-8"),
             headers={
@@ -180,13 +181,13 @@ class ChatGPTClient:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                return self._read_stream(response)
+                return self._read_stream(response, on_reasoning)
         except urllib.error.HTTPError:
             raise
         except (urllib.error.URLError, OSError, http.client.IncompleteRead) as e:
             raise self._error("ChatGPT 연결 실패", str(e)) from None
 
-    def _read_stream(self, response) -> AssistantReply:
+    def _read_stream(self, response, on_reasoning=None) -> AssistantReply:
         reply = AssistantReply()
         for line in response:
             line = line.decode("utf-8", errors="replace").strip()
@@ -213,6 +214,8 @@ class ChatGPTClient:
                     raise self._error("ChatGPT 응답 실패", result.get("error") or result) from None
                 reply.content, reply.reasoning = reply.content.strip(), reply.reasoning.strip()
                 return reply
+            if kind == "response.reasoning_summary_text.delta" and on_reasoning is not None and event.get("delta"):
+                on_reasoning(str(event["delta"]))
             if kind != "response.output_item.done":
                 continue
             item = event.get("item") or {}

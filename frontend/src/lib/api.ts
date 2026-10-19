@@ -97,6 +97,8 @@ export const postKeep = (project: string, scene: string, changes: unknown, note:
   post('/api/keep', { project, scene, changes, note, preset })
 export const postEdit = (body: unknown) => post('/api/edit', body)
 export const postAgent = (body: unknown) => post('/api/agent', body)
+/** The thinking trace of a running turn (by the turn_id its POST carried), one string per LLM step. */
+export const fetchAgentThinking = (turn: string) => api(withQuery('/api/agent/thinking', { turn }))
 export const fetchAgentHistory = (project: string, scene: string, before?: unknown, limit = 50) =>
   api(withQuery('/api/agent', { project, scene, before, limit }))
 export const fetchRenderPlans = (project: string, scene: string, version?: string | null) =>

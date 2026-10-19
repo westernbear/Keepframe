@@ -61,6 +61,26 @@ def test_turn_keeps_each_steps_thinking_trace(tmp_path):
     assert agent.turn(ctx, "다시", []).reasoning == ["짧게 답한다"]
 
 
+def test_turn_hands_live_thinking_to_on_reasoning_per_step(tmp_path):
+    class Streaming(StubLLM):
+        streams_reasoning = True
+
+        def complete(self, messages, tools, on_reasoning=None):
+            reply = super().complete(messages, tools)
+            for word in reply.reasoning.split():
+                on_reasoning(word)
+            return reply
+
+    replies = [AssistantReply(tool_calls=[{"id": "c1", "name": "report", "arguments": {}}], reasoning="리포트 먼저"),
+               AssistantReply(content="끝", reasoning="답한다")]
+    live = []
+    SessionAgent(Streaming(replies)).turn(_ctx(_project(tmp_path)), "리포트 줘", [], on_reasoning=lambda s, d: live.append((s, d)))
+    assert live == [(0, "리포트"), (0, "먼저"), (1, "답한다")]
+    # a client that cannot stream is called as before
+    assert SessionAgent(StubLLM([AssistantReply(content="끝")])).turn(_ctx(_project(tmp_path / "b")), "x", [],
+                                                                      on_reasoning=lambda s, d: 1 / 0).reply == "끝"
+
+
 @pytest.mark.parametrize("confirm", [False, True])
 def test_turn_stops_on_pending(tmp_path, confirm):
     root = tmp_path / "proj"

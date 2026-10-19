@@ -94,6 +94,14 @@ def test_streamed_reasoning_summary(config, backend):
     assert reply == AssistantReply(content="pong", reasoning="인사에 답한다")
 
 
+def test_reasoning_summary_deltas_arrive_live(config, backend):
+    backend["events"] = [{"type": "response.reasoning_summary_text.delta", "delta": "인사에 "},
+                         {"type": "response.reasoning_summary_text.delta", "delta": "답한다"}, message("pong"), COMPLETED]
+    deltas = []
+    ChatGPTClient(config, base_url=backend["url"]).complete([{"role": "user", "content": "ping"}], [], on_reasoning=deltas.append)
+    assert deltas == ["인사에 ", "답한다"]
+
+
 def test_streamed_function_calls(config, backend):
     backend["events"] = [{"type": "response.output_item.done", "item": {
         "type": "function_call", "call_id": "call_edit", "name": "edit", "arguments": '{"prompt":"문구 변경"}',

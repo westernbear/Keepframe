@@ -2,7 +2,7 @@ import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, Shiel
 import { motion, useReducedMotion } from 'motion/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Reasoning } from '@/components/ai-elements/reasoning'
-import { BlurText } from '@/components/reactbits/blur-text'
+import { Markdown } from '@/components/app/markdown'
 import AILoader from '@/components/smoothui/ai-loader'
 import { ShimmeringText } from '@/components/unlumen-ui/shimmering-text'
 import { Button } from '@/components/app/button'
@@ -22,9 +22,12 @@ export type Entry = { fresh?: boolean } & (
 const EASE_OUT = [0.23, 1, 0.32, 1] as const
 
 /** The assistant's slot while a turn runs: what it is doing, a breathing loader and the elapsed time. */
-function Thinking({ label }: { label: string }) {
+function Thinking({ label, steps }: { label: string; steps: string[] }) {
   const { T } = useI18n()
   const reduced = useReducedMotion()
+  const trace = steps.filter((s) => s.trim()).join('\n\n')
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { if (box.current) box.current.scrollTop = box.current.scrollHeight }, [trace])
   return (
     <motion.div className="msg msg--thinking flex flex-col items-start gap-1" data-thinking
       initial={reduced ? { opacity: 0 } : { opacity: 0, y: 4, filter: 'blur(4px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -37,6 +40,11 @@ function Thinking({ label }: { label: string }) {
                 <ShimmeringText text={label} duration={1.6} repeatDelay={0.2} startOnView={false} className="text-body-sm" />
               </motion.span>} />
       </div>
+      {trace && (
+        <div ref={box} className="thinking__live max-h-40 max-w-[92%] overflow-y-auto border-l border-hairline py-0.5 pl-3 text-caption leading-relaxed text-ink-muted" aria-live="off">
+          <Markdown text={trace} />
+        </div>
+      )}
     </motion.div>
   )
 }
@@ -98,12 +106,12 @@ function ToolCall({ e }: { e: Extract<Entry, { kind: 'tool' }> }) {
   )
 }
 
-export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entries: Entry[]; empty: string | null; choices: Record<string, string>;
-  onChoose: () => void; thinking: string | null }) {
+export function ChatLog({ entries, empty, choices, onChoose, thinking, liveSteps = [] }: { entries: Entry[]; empty: string | null; choices: Record<string, string>;
+  onChoose: () => void; thinking: string | null; liveSteps?: string[] }) {
   const { T, Tf } = useI18n()
   const reduced = useReducedMotion()
   const log = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight }, [entries.length, thinking])
+  useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight }, [entries.length, thinking, liveSteps.length])
   // Only entries painted by a live turn arrive; replayed history is simply there.
   const arrive = (e: Entry, node: React.ReactNode) => !e.fresh ? node : (
     <motion.div key={e.id} className="flex flex-col"
@@ -117,8 +125,8 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entri
         if (e.kind === 'user' || e.kind === 'agent') return (
           <div key={e.id} className={cn('msg flex flex-col gap-1', e.kind === 'user' ? 'msg--user items-end' : 'msg--agent items-start')}>
             <div className="msg__label text-micro text-ink-muted">{T(e.kind === 'user' ? 'agent.you' : 'agent.assistant')}</div>
-            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm whitespace-pre-line break-words', e.kind === 'user' ? 'bg-ink text-black' : 'bg-surface-2 text-ink')}>
-              {e.kind === 'agent' && e.fresh ? <BlurText text={e.text} /> : e.text}
+            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm break-words', e.kind === 'user' ? 'bg-ink text-black whitespace-pre-line' : 'bg-surface-2 text-ink')}>
+              {e.kind === 'agent' ? <Markdown text={e.text} /> : e.text}
             </div>
           </div>
         )
@@ -138,7 +146,7 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entri
         const c = e as Extract<Entry, { kind: 'confirm' }>
         return <ConfirmButton key={c.id} onConfirm={c.onConfirm} label={T('agent.confirm')} />
       })()))}
-      {thinking && <Thinking label={thinking} />}
+      {thinking && <Thinking label={thinking} steps={liveSteps} />}
     </div>
   )
 }

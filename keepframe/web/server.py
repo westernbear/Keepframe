@@ -578,6 +578,25 @@ def _authority(value: str) -> tuple[str, int | None] | None:
     return parsed.hostname.lower(), port
 
 
+# Thinking traces of running agent turns, keyed by a turn id the browser makes up; it polls
+# GET /api/agent/thinking while its POST /api/agent waits, and the entry goes when the turn ends.
+_THINKING: dict[str, list[str]] = {}
+_THINKING_LOCK = threading.Lock()
+_THINKING_TURNS, _THINKING_CHARS = 32, 64 * 1024
+_TURN_ID_RE = re.compile(r"[A-Za-z0-9-]{16,64}")
+
+
+def _thinking_sink(turn_id: str):
+    def sink(step: int, delta: str) -> None:
+        with _THINKING_LOCK:
+            steps = _THINKING.get(turn_id)
+            if steps is None or sum(map(len, steps)) > _THINKING_CHARS:
+                return
+            steps.extend([""] * (step + 1 - len(steps)))
+            steps[step] += delta
+    return sink
+
+
 def _llm_failure_code(e: BaseException) -> str:
     """Network failures get their own code: the fix is the network or the address, not a retry. litellm only says
     "Connection error"; a TLS cause sits further down the exception chain."""
@@ -894,6 +913,9 @@ def make_server(
             pid = q.get("project", [None])[0]
             sid = q.get("scene", ["s1"])[0]
             ver = q.get("v", [None])[0]
+            if u.path == "/api/agent/thinking":
+                with _THINKING_LOCK:
+                    return self._json(200, {"steps": list(_THINKING.get(q.get("turn", [""])[0], []))})
             if u.path == "/api/agent":
                 if not isinstance(pid, str) or not _PROJECT_ID_RE.fullmatch(pid):
                     return self._json(400, {"error": "project is required"})
@@ -1825,20 +1847,26 @@ def make_server(
                     prepare_render=prepare_agent_render,
                     has_attachment=isinstance(raw_summary, dict) and bool(raw_summary.get("attachments") or raw_summary.get("attachment")),
                 )
+                turn_kwargs: dict = {"ui_context": ui_context} if ui_context is not None else {}
+                turn_id = data.get("turn_id")
+                with _THINKING_LOCK:
+                    if isinstance(turn_id, str) and _TURN_ID_RE.fullmatch(turn_id) and len(_THINKING) < _THINKING_TURNS:
+                        _THINKING[turn_id] = []
+                        turn_kwargs["on_reasoning"] = _thinking_sink(turn_id)
                 try:
                     with agent_scene_lock(root, resolved_scene_id):
                         history = llm_history(root, resolved_scene_id)
                         agent = SessionAgent(client)
-                        turn = (
-                            agent.turn(ctx, message, history, ui_context=ui_context)
-                            if ui_context is not None
-                            else agent.turn(ctx, message, history)
-                        )
+                        turn = agent.turn(ctx, message, history, **turn_kwargs)
                         append_turn(root, resolved_scene_id, message, turn)
                 except ValueError as e:
                     return self._fail(400, e, "invalid_request")
                 except Exception as e:   # LLM auth / rate limit / network
                     return self._fail(502, e, _llm_failure_code(e))
+                finally:
+                    if "on_reasoning" in turn_kwargs:
+                        with _THINKING_LOCK:
+                            _THINKING.pop(turn_id, None)
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):

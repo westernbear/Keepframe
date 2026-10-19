@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -61,14 +62,75 @@ def _analyze(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     return _ok("분석 작업을 큐에 넣었습니다.", job=job)
 
 
+# (allowed, required) per op; mirrors ALLOWED/REQUIRED in frontend/src/lib/agent-corrections.ts
+_CORRECT_ARGS = {
+    "text": (("element_id", "text", "font"), ("element_id",)),
+    "reassign": (("from_id", "to_id", "frames"), ("from_id", "to_id", "frames")),
+    "mask": (("object_id", "frame", "mask_png_base64"), ("object_id", "frame", "mask_png_base64")),
+    "bbox": (("object_id", "frame", "bbox"), ("object_id", "frame", "bbox")),
+}
+_FONT_FAMILY = re.compile(r"[A-Za-z0-9 \-가-힣]{1,64}")
+
+
+def _correction_problem(scene, op: str, a: Any) -> str | None:
+    """Why the browser preview would refuse these args (the same checks as validateShownCorrection), or None.
+    Said here, the model can fix its call in the same turn instead of the user seeing a bare refusal."""
+    allowed, required = _CORRECT_ARGS[op]
+    if not isinstance(a, dict):
+        return "args는 객체여야 합니다."
+    extra, missing = sorted(set(a) - set(allowed)), [k for k in required if k not in a]
+    if extra or missing:
+        return f"{op} args는 {', '.join(allowed)}만 받습니다(필수: {', '.join(required)}). 잘못된 키: {extra or '없음'}, 빠진 키: {missing or '없음'}"
+    ids = {e.id for e in scene.elements}
+    for k in ("element_id", "object_id", "from_id", "to_id"):
+        if k in a and a[k] not in ids:
+            return f"{k} {a[k]!r}는 장면에 없는 요소입니다. 장면 브리프의 요소 id(e1, e2 …)를 쓰세요."
+    last = scene.frames - 1
+    frame_ok = lambda f: type(f) is int and 0 <= f <= last  # noqa: E731
+    if op == "text":
+        font = a.get("font")
+        if "text" not in a and font is None:
+            return "text 보정에는 text나 font가 필요합니다."
+        if "text" in a and not isinstance(a["text"], str):
+            return "text는 문자열이어야 합니다."
+        if font is not None and (not isinstance(font, dict) or not font or set(font) - {"family_guess", "weight", "size_px"}
+                                 or ("family_guess" in font and not (isinstance(font["family_guess"], str) and _FONT_FAMILY.fullmatch(font["family_guess"].strip())))
+                                 or ("weight" in font and type(font["weight"]) is not int)
+                                 or ("size_px" in font and not (isinstance(font["size_px"], (int, float)) and font["size_px"] > 0))):
+            return "font는 family_guess(영문·숫자·한글·공백·-, 64자 이하), weight(정수), size_px(양수) 중 일부만 담은 객체여야 합니다."
+    elif op == "reassign":
+        f = a["frames"]
+        if not (isinstance(f, list) and len(f) == 2 and all(map(frame_ok, f)) and f[0] <= f[1]):
+            return f"frames는 [시작, 끝] 정수 프레임이어야 합니다(0–{last})."
+    else:
+        if not frame_ok(a["frame"]):
+            return f"frame은 0–{last} 사이 정수여야 합니다."
+        if op == "mask" and not (isinstance(a["mask_png_base64"], str) and a["mask_png_base64"].startswith("iVBORw0KGgo")):
+            return "mask_png_base64는 장면 크기의 흑백 PNG를 base64로 담아야 합니다."
+        b, (w, h) = a.get("bbox"), scene.size
+        if op == "bbox" and not (isinstance(b, list) and len(b) == 4 and all(type(v) is int for v in b)
+                                 and 0 <= b[0] < b[2] <= w and 0 <= b[1] < b[3] <= h):
+            return f"bbox는 장면 안의 정수 [x0, y0, x1, y1]이어야 합니다(크기 {w}x{h}, x0<x1, y0<y1)."
+    return None
+
+
 def _correct(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     op = args.get("op")
-    if op not in ("reassign", "mask", "bbox", "text"):
+    if op not in _CORRECT_ARGS:
         return _fail(f"지원하지 않는 보정 연산 {op!r}입니다. reassign/mask/bbox/text 중 하나를 쓰세요.")
+    correction_args = args.get("args", {})
+    try:
+        scene, _ = _current(ctx)
+    except Exception:  # noqa: BLE001 - no scene to check against; the browser preview still validates
+        log.exception("correct: scene unavailable scene=%s", ctx.scene_id)
+    else:
+        problem = _correction_problem(scene, op, correction_args)
+        if problem:
+            return _fail(f"보정({op}) 인수가 잘못됐습니다: {problem}")
     return _pending(
         f"보정({op}) 미리보기를 준비했습니다. 브라우저에서 확인하면 실행됩니다.",
         confirm=True,
-        correction={"op": op, "args": args.get("args", {})},
+        correction={"op": op, "args": correction_args},
     )
 
 
@@ -303,7 +365,22 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     _fn(
         "correct",
         "검수 보정 4연산(reassign/mask/bbox/text) 중 하나의 미리보기만 준비한다. 실행은 사용자가 브라우저에서 확인한 뒤에 일어난다.",
-        {"op": {"type": "string", "enum": ["reassign", "mask", "bbox", "text"]}, "args": {"type": "object"}},
+        {"op": {"type": "string", "enum": ["reassign", "mask", "bbox", "text"]}, "args": {
+            "type": "object",
+            "description": "op별 키만 넣는다. text: element_id(필수), text 또는 font. reassign: from_id, to_id, frames. "
+                           "mask: object_id, frame, mask_png_base64. bbox: object_id, frame, bbox. 다른 키를 넣으면 거부된다.",
+            "properties": {
+                "element_id": {"type": "string", "description": "text: 고칠 텍스트 요소 id(예: e3)"},
+                "text": {"type": "string"},
+                "font": {"type": "object", "properties": {"family_guess": {"type": "string"}, "weight": {"type": "integer"}, "size_px": {"type": "number"}}},
+                "from_id": {"type": "string"}, "to_id": {"type": "string"},
+                "frames": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2, "description": "[시작, 끝] 프레임"},
+                "object_id": {"type": "string"},
+                "frame": {"type": "integer"},
+                "bbox": {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4, "description": "[x0, y0, x1, y1] 픽셀"},
+                "mask_png_base64": {"type": "string"},
+            },
+        }},
         ["op"],
     ),
     _fn(

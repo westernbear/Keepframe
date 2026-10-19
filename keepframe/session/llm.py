@@ -57,6 +57,7 @@ class NullClient:
 
 class OpenAICompatibleClient:
     """Minimal OpenAI-compatible chat completions client (stdlib urllib, tool calling)."""
+    # shortcut: no streaming, so no live thinking (the trace still comes with the reply); parse SSE if this fallback is used for real.
 
     def __init__(
         self,
@@ -124,7 +125,10 @@ class LiteLLMClient:
         self.config = config
         self.supports_vision = _vision(config.model, config.extra.get("vision") if config.extra else None)
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
+    streams_reasoning = True
+
+    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], on_reasoning=None) -> AssistantReply:
+        """`on_reasoning(delta)` streams the call and hands over the thinking trace as it arrives."""
         kwargs: dict[str, Any] = {
             "model": self.config.litellm_model,
             "messages": messages,
@@ -144,7 +148,16 @@ class LiteLLMClient:
                 kwargs["api_key"] = token
         kwargs.update(self.config.litellm_extra())
         kwargs.setdefault("timeout", 120)
-        resp = self._litellm.completion(**kwargs)
+        if on_reasoning is None:
+            resp = self._litellm.completion(**kwargs)
+        else:
+            chunks = []
+            for chunk in self._litellm.completion(**kwargs, stream=True):
+                chunks.append(chunk)
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if text := getattr(delta, "reasoning_content", None):
+                    on_reasoning(str(text))
+            resp = self._litellm.stream_chunk_builder(chunks, messages=messages)   # content, reasoning and tool calls
         msg = (resp.choices[0].message) if resp and resp.choices else None
         reply = AssistantReply()
         if msg is not None:

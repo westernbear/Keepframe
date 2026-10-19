@@ -800,6 +800,11 @@ def _styled(**style):
                    font=FontGuess(family_guess="Inter", weight=700, size_px=40, postscript="Inter-Bold"))
 
 
+def test_text_tracking_is_an_integer(tmp_path):
+    # AE rejects a fractional TextDocument.tracking ("-63.3 is not an integer")
+    assert layer(describe(scene(_styled(tracking_em=-0.0633)), tmp_path), "t")["source"]["tracking"] == -63
+
+
 def test_text_stroke_tracking_shadow_glow_fill_spec(tmp_path):
     from keepframe.ir.schema import AlphaStop, Fade, TextEffect
     fill = _gradient("linear", (0, "#ff3d00"), (1, "#ffd600"), angle=180)

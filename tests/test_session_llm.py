@@ -247,3 +247,26 @@ def test_make_llm_stays_null_for_anthropic_without_litellm(monkeypatch):
     monkeypatch.setattr("keepframe.session.llm.LiteLLMClient", Boom)
     client = make_llm(ProviderConfig(provider="anthropic", model="claude-sonnet-4-5", api_key="sk-ant"))
     assert isinstance(client, NullClient)
+
+
+def test_litellm_client_streams_the_thinking_trace(monkeypatch):
+    from litellm.types.utils import ChatCompletionDeltaToolCall, Delta, Function, ModelResponseStream, StreamingChoices
+
+    def chunk(**delta):
+        return ModelResponseStream(id="x", created=1, model="gpt-4o-mini", choices=[StreamingChoices(index=0, delta=Delta(**delta))])
+
+    seen = {}
+
+    def _fake(**kwargs):
+        seen.update(kwargs)
+        return iter([chunk(reasoning_content="문구 "), chunk(reasoning_content="편집이다"), chunk(content="네"),
+                     chunk(tool_calls=[ChatCompletionDeltaToolCall(id="c1", index=0, type="function",
+                                                                   function=Function(name="edit", arguments='{"prompt": "Hi"}'))])])
+
+    monkeypatch.setattr("litellm.completion", _fake)
+    deltas = []
+    reply = LiteLLMClient(ProviderConfig(provider="openai", model="gpt-4o-mini", api_key="k")).complete(
+        [{"role": "user", "content": "hi"}], [{"type": "function"}], on_reasoning=deltas.append)
+    assert seen["stream"] is True and deltas == ["문구 ", "편집이다"]
+    assert (reply.content, reply.reasoning) == ("네", "문구 편집이다")
+    assert reply.tool_calls == [{"id": "c1", "name": "edit", "arguments": {"prompt": "Hi"}}]

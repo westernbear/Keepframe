@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from ..log import get
 from .brief import scene_brief
@@ -103,7 +103,9 @@ class SessionAgent:
         user_message: str,
         history: list[dict[str, Any]],
         ui_context: UIContext | None = None,
+        on_reasoning: Callable[[int, str], None] | None = None,
     ) -> SessionTurn:
+        """`on_reasoning(step, delta)` gets each LLM step's thinking trace live, when the client can stream it."""
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM},
             {"role": "system", "content": _scene_summary(ctx)},
@@ -121,8 +123,10 @@ class SessionAgent:
         })
 
         turn = SessionTurn()
-        for _ in range(MAX_STEPS):
-            reply: AssistantReply = self.llm.complete(messages, TOOL_SCHEMAS)
+        live = on_reasoning if getattr(self.llm, "streams_reasoning", False) else None
+        for step in range(MAX_STEPS):
+            reply: AssistantReply = (self.llm.complete(messages, TOOL_SCHEMAS, on_reasoning=lambda d, s=step: live(s, d))
+                                     if live else self.llm.complete(messages, TOOL_SCHEMAS))
             if reply.reasoning:
                 turn.reasoning.append(reply.reasoning)
             if not reply.tool_calls:

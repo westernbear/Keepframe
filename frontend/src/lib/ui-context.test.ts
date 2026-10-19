@@ -66,3 +66,20 @@ it('builds the keepframe.ui-context/1 payload with the legacy fields in order', 
   })
   expect(empty.summary).toMatchObject({ attachments: [], workflow: null, render: null })
 })
+
+it('trims a Korean page so the summary fits the server byte cap', async () => {
+  document.body.innerHTML = `<p>${'가'.repeat(12000)}</p><input id="q" value="${'나'.repeat(1000)}">
+    <img id="orig" src="/frame/orig/0"><img id="recon" src="/frame/recon/0">`
+  Object.defineProperty(HTMLElement.prototype, 'offsetParent', { configurable: true, get: () => document.body })
+  vi.stubGlobal('fetch', async () => ({ ok: true, blob: async () => new Blob(['img']) }))
+  vi.stubGlobal('createImageBitmap', async () => ({ width: 8, height: 8, close: () => {} }))
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({ drawImage: () => {} })) as any)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((cb) => cb(new Blob(['jpg'], { type: 'image/jpeg' })))
+  const context = await buildUIContext({
+    project: 'p1', scene: 's1', version: 'v1', frame: 0, selectedElement: null, attachmentFiles: [], reviewState: null,
+    renderPayload: null, orig: document.getElementById('orig') as HTMLImageElement, recon: document.getElementById('recon') as HTMLImageElement,
+  })
+  expect(new TextEncoder().encode(JSON.stringify(context.summary)).length).toBeLessThanOrEqual(16 * 1024)
+  expect(context.summary.visible_text).toMatch(/^가{1000,}$/)
+  expect(context.summary.inputs).toEqual([{ id: 'q', value: '나'.repeat(1000) }])
+})
