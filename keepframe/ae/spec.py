@@ -462,7 +462,7 @@ def _text_style(el, source, effects, warnings):
     canonical = el.canonical
     style = bounded_style(canonical.style, (canonical.width, canonical.height))
     strokes = [e for e in style.effects if e.kind == "stroke" and e.width > 0]
-    source["tracking"] = style.tracking_em * 1000
+    source["tracking"] = round(style.tracking_em * 1000)   # TextDocument.tracking only takes integers
     source["stroke"] = None
     if strokes:
         source["stroke"] = {"color": "#{:02x}{:02x}{:02x}".format(*hex_rgb(strokes[0].color)),
