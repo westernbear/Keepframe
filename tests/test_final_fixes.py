@@ -15,7 +15,8 @@ from keepframe.analyze.pipeline import AnalyzeOptions, analyze_scene_frames, rer
 from keepframe.compose.composer import compose
 from keepframe.edit.agent import EditResult
 from keepframe.edit.apply import apply_edit
-from keepframe.edit.intent import Target
+from keepframe.assets import AssetAPIError
+from keepframe.edit.intent import Target, attachment_index
 from keepframe.ir.schema import Background, Canonical, Constraint, Element, Scene, load_scene_json
 from keepframe.ir.store import current_scene, init_project, load_project, scene_dir
 from keepframe.render.lottie import preflight_lottie, write_lottie
@@ -86,6 +87,18 @@ def test_alternating_texture_swaps_fit_analysis_crop(tmp_path):
         assert (canonical.width, canonical.height) == pytest.approx((w * scale, h * scale))
         assert canonical.width <= 70 and canonical.height <= 115
     assert (assets / "e1.png").read_bytes() == original_bytes
+
+
+def test_texture_picks_the_named_attachment_of_several(tmp_path):
+    (tmp_path / "assets").mkdir()
+    cv2.imwrite(str(tmp_path / "assets/e1.png"), np.full((115, 70, 4), 255, np.uint8))
+    wide, tall = (cv2.imencode(".png", np.full((h, w, 4), 255, np.uint8))[1].tobytes() for w, h in [(200, 100), (100, 200)])
+    for value, height in (("attachment", 35), ("attachment:2", 115)):
+        canonical = apply_edit(_scene(), tmp_path, [Target(element="e1", property="texture", value=value)], {}, [wide, tall]).element("e1").canonical
+        assert canonical.height == pytest.approx(height)
+    with pytest.raises(AssetAPIError, match="attachment_required"):
+        apply_edit(_scene(), tmp_path, [Target(element="e1", property="texture", value="attachment:3")], {}, [wide, tall])
+    assert attachment_index("attachment:4") == 3 and attachment_index("attachments") is None
 
 
 def test_lottie_plate_is_embedded_bottom_image_layer(tmp_path):

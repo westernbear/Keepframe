@@ -20,6 +20,7 @@ from ..fonts.registry import FontRegistry
 from ..fonts.upload import pin_face
 from ..log import get, scrub_paths
 from ..verify.predicates import parse_pred
+from .intent import attachment_index
 from .retime import apply_timing
 from .svgraster import rasterize_svg
 from .tint import tint_background
@@ -251,6 +252,16 @@ def _named(pred: str) -> set[str]:
     return {m[1] if (m := re.fullmatch(r"m_(.+)_\d+", a)) else a for a in args if isinstance(a, str)}
 
 
+def _pick(attachment, value: str | None):
+    """The attachment a target names: 'attachment:N' is the Nth of a list; anything else (or one file) the first."""
+    if not isinstance(attachment, (list, tuple)):
+        return attachment
+    index = attachment_index(value) or 0
+    if index >= len(attachment):
+        raise AssetAPIError("attachment_required")
+    return attachment[index]
+
+
 def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, str] | None, attachment: str | Path | bytes | None,
                *, fonts: FontRegistry | None = None) -> Scene:
     """`fonts`: the project's registry (uploads); bundled fonts only when None."""
@@ -266,8 +277,8 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
                 out.element(t.element).provenance = "manual"
             continue
         if t.property == "background":
-            if t.value == "attachment":   # a picture (e.g. one the agent made) becomes the background
-                out.background = Background(kind="image", value=_background_image(scene_dir, attachment), confidence=1.0)
+            if attachment_index(t.value) is not None:   # a picture (e.g. one the agent made) becomes the background
+                out.background = Background(kind="image", value=_background_image(scene_dir, _pick(attachment, t.value)), confidence=1.0)
             elif t.mode == "tint" and out.background.kind != "color":   # chosen by the agent, never by Keepframe
                 out.background = tint_background(out.background, scene_dir, t.value, size=out.size)
             else:
@@ -314,7 +325,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             original = scene_dir / "assets" / f"{el.id}.png"
             crop = cv2.imread(str(original), cv2.IMREAD_UNCHANGED) if original.is_file() else None
             box_w, box_h = (crop.shape[1], crop.shape[0]) if crop is not None else (el.canonical.width, el.canonical.height)
-            data = _attachment_data(attachment)
+            data = _attachment_data(_pick(attachment, t.value))
             if _is_svg(data):
                 data = rasterize_svg(data, math.ceil(box_w), math.ceil(box_h))
             dest = _next_asset(scene_dir, el.id, "tex")
@@ -331,7 +342,7 @@ def apply_edit(scene: Scene, scene_dir: Path, items: list, choices: dict[str, st
             if attachment is None:
                 raise ValueError("3D edit needs a GLB attachment")
             try:
-                data = validate_glb(_attachment_data(attachment))
+                data = validate_glb(_attachment_data(_pick(attachment, t.value)))
             except UnicodeDecodeError as exc:
                 raise AssetAPIError("invalid_glb") from exc
             dest = _next_model(scene_dir, el.id)

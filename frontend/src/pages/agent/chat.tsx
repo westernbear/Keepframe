@@ -1,4 +1,4 @@
-import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, ShieldCheck, Wrench, Workflow } from 'lucide-react'
+import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, ShieldCheck, Wrench, Workflow, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@/components/app/button'
 import { useI18n } from '@/i18n'
@@ -102,8 +102,9 @@ export function ChatLog({ entries, empty, choices, onChoose }: { entries: Entry[
 }
 
 /** Message box, tools menu (fills a prompt) and the attachment picker. */
-export function Composer({ onSend, sending, attachmentName, onAttach }: { onSend: (text: string) => void; sending: boolean; attachmentName: string; onAttach: (file: File | null) => void }) {
-  const { T } = useI18n()
+export function Composer({ onSend, sending, attachments, onAttach, onRemoveAttachment }: { onSend: (text: string) => void; sending: boolean;
+  attachments: string[]; onAttach: (files: File[]) => void; onRemoveAttachment: (index: number) => void }) {
+  const { T, Tf } = useI18n()
   const input = useRef<HTMLTextAreaElement>(null)
   const toggle = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
@@ -174,19 +175,27 @@ export function Composer({ onSend, sending, attachmentName, onAttach }: { onSend
             ))}
           </div>
         </div>
-        <input type="file" id="agent-attach" ref={attach} accept="image/png,image/jpeg,image/svg+xml,.svg,model/gltf-binary,.glb" hidden
-          onChange={(e) => onAttach(e.target.files?.[0] || null)} />
+        <input type="file" id="agent-attach" ref={attach} accept="image/png,image/jpeg,image/svg+xml,.svg,model/gltf-binary,.glb" multiple hidden
+          onChange={(e) => { onAttach([...(e.target.files || [])]); e.target.value = '' }} />
         <Button tone="secondary" size="sm" id="agent-attach-btn" className="btn--inline" aria-label={T('agent.attachmentFormats')} onClick={() => attach.current?.click()}>
           <Paperclip className="size-4" aria-hidden />{T('agent.attach')}
         </Button>
-        <span id="agent-attach-name" className="min-w-0 truncate font-mono text-micro text-ink-muted">{attachmentName}</span>
+        <ul id="agent-attach-name" className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0" aria-label={T('agent.attachmentList')}>
+          {attachments.map((name, i) => (
+            <li key={`${i}-${name}`} className="flex min-w-0 max-w-40 items-center gap-0.5 rounded-md bg-white/5 py-0.5 pl-2 pr-0.5 font-mono text-micro text-ink-muted">
+              <span className="truncate" title={name}>{i + 1}. {name}</span>
+              <button type="button" className="grid size-6 shrink-0 place-items-center rounded hover:bg-white/10 focus-visible:outline focus-visible:outline-brand"
+                aria-label={Tf('agent.removeAttachment', { name })} onClick={() => onRemoveAttachment(i)}><X className="size-3.5" aria-hidden /></button>
+            </li>
+          ))}
+        </ul>
         <Button tone="primary" size="sm" id="agent-send" className="ml-auto" title="Ctrl+Enter" aria-keyshortcuts="Control+Enter" disabled={sending} onClick={send}>{T('agent.send')}</Button>
       </div>
     </div>
   )
 }
 
-/** Clears the hidden file input after an applied attachment. */
+/** Clears the hidden file input after applied attachments. */
 export function clearAttachInput() {
   const input = document.getElementById('agent-attach') as HTMLInputElement | null
   if (input) input.value = ''

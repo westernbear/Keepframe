@@ -9,7 +9,7 @@ Keepframe measures a flat 2D motion-graphics clip or UI screen recording into an
 ## Requirements
 
 - Python 3.11+ (3.12 for `[ocr]`; RapidOCR stops at 3.12)
-- [ffmpeg and ffprobe](https://ffmpeg.org/) on `PATH` (both are required by final render verification)
+- [ffmpeg and ffprobe](https://ffmpeg.org/) on `PATH` (final render verification uses both)
 - Chromium via Playwright, for compose and render
 
 ## Install

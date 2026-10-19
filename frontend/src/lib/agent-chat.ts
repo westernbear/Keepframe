@@ -112,9 +112,12 @@ export function defaultEditChoices(plan): Record<string, string> {
   return Object.fromEntries(((plan && plan.conflicts) || []).filter((c) => (c.choices || []).length).map((c) => [c.id, c.choices[0]]))
 }
 
-export function confirmEditBody(f: { project; scene; v; prompt; attachment; element; intent }, choices: Record<string, string> = {}) {
+export const MAX_ATTACHMENTS = 4 // keepframe/edit/intent.py MAX_ATTACHMENTS
+
+/** The confirmed edit: `attachments` in the order shown; a target's 'attachment:N' picks the Nth. */
+export function confirmEditBody(f: { project; scene; v; prompt; attachments: string[]; element; intent }, choices: Record<string, string> = {}) {
   return {
-    project: f.project, scene: f.scene, v: f.v, prompt: f.prompt, attachment: f.attachment, element: f.element,
+    project: f.project, scene: f.scene, v: f.v, prompt: f.prompt, attachments: f.attachments, element: f.element,
     intent: f.intent, confirm: true, choices,
   }
 }

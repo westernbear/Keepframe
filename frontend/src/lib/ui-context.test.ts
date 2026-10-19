@@ -37,8 +37,9 @@ it('builds the keepframe.ui-context/1 payload with the legacy fields in order', 
     cb(new Blob(['jpg'], { type: 'image/jpeg' }))
   })
   const file = new File(['abc'], 'logo.svg', { type: 'image/svg+xml' })
+  const model = new File(['glTF'], 'cup.glb')
   const context = await buildUIContext({
-    project: 'p1', scene: 's1', version: 'v2', frame: 7, selectedElement: 'e1', attachmentFile: file,
+    project: 'p1', scene: 's1', version: 'v2', frame: 7, selectedElement: 'e1', attachmentFiles: [file, model],
     reviewState: { status: 'review' }, renderPayload: { plan: { id: 'r1' }, state: { status: 'queued' }, extra: 1 },
     orig: document.getElementById('orig') as HTMLImageElement, recon: document.getElementById('recon') as HTMLImageElement,
   })
@@ -47,20 +48,21 @@ it('builds the keepframe.ui-context/1 payload with the legacy fields in order', 
     schema: 'keepframe.ui-context/1',
     summary: {
       path: location.pathname, language: 'ko', project: 'p1', scene: 's1', version: 'v2', frame: 7, selected_element: 'e1',
-      attachment: { name: 'logo.svg', type: 'image/svg+xml', size: 3 }, workflow: 'review',
+      attachments: [{ index: 1, name: 'logo.svg', type: 'image/svg+xml', size: 3 }, { index: 2, name: 'cup.glb', type: '', size: 4 }],
+      workflow: 'review',
       inputs: [{ id: 'q', value: 'hello' }, { id: null, value: 'y'.repeat(1000) }],
       render: { plan: { id: 'r1' }, status: 'queued' },
       visible_text: `Agent ${'y'.repeat(1200)}`,
     },
-    images: [image('original'), image('reconstruction')],
+    images: [image('original'), image('reconstruction'), image('attachment-1')],
   }))
   expect(fetched.map((u) => new URL(u).pathname)).toEqual(['/frame/orig/0', '/frame/recon/0'])
-  expect(sizes).toEqual([[768, 384], [768, 384]])
+  expect(sizes).toEqual([[768, 384], [768, 384], [768, 384]])
 
   const empty = await buildUIContext({
-    project: null, scene: 's1', version: null, frame: 0, selectedElement: null, attachmentFile: null,
+    project: null, scene: 's1', version: null, frame: 0, selectedElement: null, attachmentFiles: [],
     reviewState: null, renderPayload: null, orig: document.getElementById('orig') as HTMLImageElement,
     recon: document.getElementById('recon') as HTMLImageElement,
   })
-  expect(empty.summary).toMatchObject({ attachment: null, workflow: null, render: null })
+  expect(empty.summary).toMatchObject({ attachments: [], workflow: null, render: null })
 })

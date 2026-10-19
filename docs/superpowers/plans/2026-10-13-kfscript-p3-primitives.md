@@ -1,4 +1,4 @@
-# kf-script P3 · IR primitives — Implementation Plan (task level)
+# kf-script P3 · IR primitives: Implementation Plan (task level)
 
 > **For agentic workers:** this plan is task level. Before starting, refine each task into Deliverable / Files / Interfaces / Gates / Tests against the code at that commit, in the P1 plan's format. One commit per task.
 

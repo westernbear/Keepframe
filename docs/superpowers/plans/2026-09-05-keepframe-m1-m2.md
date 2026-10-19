@@ -17,12 +17,12 @@
 - L0 raw measurements are never deleted (spec §4 invariant 1). Tracks use cubic-bezier easing; fit error bound is 2 px or 1 frame (invariant 2).
 - Versions are append-only (invariant 4). Corrections are exactly four ops (spec §6).
 - Renderer must be deterministic: same IR → same per-frame hashes (spec §8).
-- Keep-predicates are mandatory verifier checks (invariant 3). Verifier repair loop cap is 4, asset generation cap is 2 (spec §9) — not implemented here, but do not hard-code anything that prevents it.
+- Keep-predicates are mandatory verifier checks (invariant 3). Verifier repair loop cap is 4, asset generation cap is 2 (spec §9). Neither cap is implemented here; do not hard-code anything that prevents them.
 - VLM/LLM is used only for semantics (captions, roles, groups) and is OFF by default in M2 (`NullCaptioner`). Timing and position are always measured.
 - Coordinate convention (used everywhere): scene pixel coordinates, origin top-left, y down. Element transform `M = T(x,y) · R(rot°) · SkewX(skx°) · S(sx,sy)` applied about the element anchor; `(x,y)` is where the anchor lands. Rotation positive = clockwise on screen (CSS convention).
 - Commit after every task with the messages given. Never commit `.venv`, frames, or MP4s (add to `.gitignore` in Task 1).
 
----
+***
 
 ## File Structure
 
@@ -64,9 +64,9 @@ scripts/m1_gate.py, scripts/m2_gate.py
 tests/...                            one test file per module
 ```
 
----
+***
 
-## M1 — IR, Composer, Renderer, Verifier
+## M1: IR, Composer, Renderer, Verifier
 
 ### Task 1: Project scaffold and vendored GSAP
 
@@ -187,7 +187,7 @@ git add pyproject.toml .gitignore keepframe tests/conftest.py tests/test_scaffol
 git commit -m "chore: scaffold keepframe package, pytest markers, vendored GSAP"
 ```
 
----
+***
 
 ### Task 2: IR schema
 
@@ -199,7 +199,7 @@ git commit -m "chore: scaffold keepframe package, pytest markers, vendored GSAP"
 - Produces (exact names, used by every later task):
   - `Ease = tuple[float, float, float, float]`
   - `Keyframe(t: int, v: float, ease: Ease | None = None)`
-  - `Track(keys: list[Keyframe])` — keys sorted by `t`, unique `t`.
+  - `Track(keys: list[Keyframe])`: keys sorted by `t`, unique `t`.
   - `PROPS = ("x","y","sx","sy","rot","skx","sky","opacity")`, `DEFAULTS: dict[str, float]`
   - `FontGuess(family_guess: str, weight: int, size_px: float)`
   - `Canonical(width: float, height: float, anchor: tuple[float,float] = (0.5,0.5), texture: str|None, text: str|None, font: FontGuess|None, color: str|None)`
@@ -431,7 +431,7 @@ git add keepframe/ir/schema.py tests/test_schema.py
 git commit -m "feat(ir): pydantic IR schema for scene/project with validators"
 ```
 
----
+***
 
 ### Task 3: Track evaluation and affine math
 
@@ -441,13 +441,13 @@ git commit -m "feat(ir): pydantic IR schema for scene/project with validators"
 
 **Interfaces:**
 - Produces:
-  - `bezier_y(x: float, ease: Ease) -> float` — cubic-bezier easing value at progress x ∈ [0,1].
-  - `eval_track(track: Track, f: float) -> float` — clamps before/after ends.
-  - `eval_props(el: Element, f: float) -> dict[str, float]` — all `PROPS` filled with `DEFAULTS` when the track is absent.
-  - `eval_z(el: Element, f: float) -> int` — stepwise (value of last key with `t <= f`).
-  - `affine_matrix(p: dict[str, float]) -> np.ndarray` — 3×3, `T(x,y)·R(rot)·SkewX(skx)·S(sx,sy)`; `sky` is accepted but must be 0 (raise if not).
-  - `decompose_affine(M: np.ndarray) -> dict[str, float]` — inverse of the above, returns keys x,y,sx,sy,rot,skx,sky(=0).
-  - `local_corners(c: Canonical) -> np.ndarray` — (4,2) corners of the canonical box in local coords with the anchor at origin.
+  - `bezier_y(x: float, ease: Ease) -> float`: cubic-bezier easing value at progress x ∈ [0,1].
+  - `eval_track(track: Track, f: float) -> float`: clamps before/after ends.
+  - `eval_props(el: Element, f: float) -> dict[str, float]`: all `PROPS` filled with `DEFAULTS` when the track is absent.
+  - `eval_z(el: Element, f: float) -> int`: stepwise (value of last key with `t <= f`).
+  - `affine_matrix(p: dict[str, float]) -> np.ndarray`: 3×3, `T(x,y)·R(rot)·SkewX(skx)·S(sx,sy)`; `sky` is accepted but must be 0 (raise if not).
+  - `decompose_affine(M: np.ndarray) -> dict[str, float]`: inverse of the above, returns keys x,y,sx,sy,rot,skx,sky(=0).
+  - `local_corners(c: Canonical) -> np.ndarray`: (4,2) corners of the canonical box in local coords with the anchor at origin.
   - `element_corners(el: Element, f: float) -> np.ndarray` (4,2) scene coords; `element_bbox(el, f) -> tuple[float,float,float,float]` (x0,y0,x1,y1).
   - `PRESET_EASES: dict[str, Ease]` (linear, in_quad, out_quad, in_out_quad, in_cubic, out_cubic, in_out_cubic, out_back).
 
@@ -625,7 +625,7 @@ git add keepframe/ir/tracks.py tests/test_tracks.py
 git commit -m "feat(ir): track evaluation, cubic-bezier easing, affine compose/decompose"
 ```
 
----
+***
 
 ### Task 4: Project store with append-only versions
 
@@ -636,11 +636,11 @@ git commit -m "feat(ir): track evaluation, cubic-bezier easing, affine compose/d
 **Interfaces:**
 - Produces:
   - `save_scene(scene: Scene, path: Path) -> None`, `load_scene(path: Path) -> Scene`
-  - `init_project(root: Path, source: dict, scene: Scene, note: str = "initial analysis") -> Project` — writes `root/project.json` and `root/scenes/<scene.id>/scene.v1.json`; returns the Project. Assets are expected under `root/scenes/<id>/assets/`.
+  - `init_project(root: Path, source: dict, scene: Scene, note: str = "initial analysis") -> Project`: writes `root/project.json` and `root/scenes/<scene.id>/scene.v1.json`; returns the Project. Assets are expected under `root/scenes/<id>/assets/`.
   - `load_project(root: Path) -> Project`
   - `scene_dir(root: Path, scene_id: str) -> Path`
-  - `current_scene(root: Path, scene_id: str) -> tuple[Scene, Version]` — latest version for that scene.
-  - `new_version(root: Path, scene_id: str, scene: Scene, note: str, auto: bool = True) -> Version` — appends `vN` with parent = previous latest; never overwrites existing files.
+  - `current_scene(root: Path, scene_id: str) -> tuple[Scene, Version]`: latest version for that scene.
+  - `new_version(root: Path, scene_id: str, scene: Scene, note: str, auto: bool = True) -> Version`: appends `vN` with parent = previous latest; never overwrites existing files.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -755,7 +755,7 @@ git add keepframe/ir/store.py tests/test_store.py
 git commit -m "feat(ir): project store with append-only scene versions"
 ```
 
----
+***
 
 ### Task 5: Synthetic scene generator (fixtures and golden IR)
 
@@ -765,9 +765,9 @@ git commit -m "feat(ir): project store with append-only scene versions"
 
 **Interfaces:**
 - Produces:
-  - `make_texture(path: Path, shape: str, w: int, h: int, color: tuple[int,int,int]) -> None` — writes an RGBA PNG (`rect` or `ellipse`, alpha 255 inside, 0 outside).
-  - `make_text_texture(path: Path, text: str, size_px: int, color: tuple[int,int,int]) -> tuple[int,int]` — rasterizes text with `cv2.putText` (Hershey font), returns (w,h).
-  - `make_synthetic_scene(scene_root: Path, seed: int, n_elements: int = 4, frames: int = 60, size: tuple[int,int] = (640, 360), fps: float = 30.0, with_text: bool = True, overlap: bool = True) -> Scene` — writes textures under `scene_root/assets/`, returns a validated Scene (not saved). Elements are sprites (plus one text element when `with_text`); each has x,y tracks with 2–4 keyframes and preset eases, optionally sx/sy/rot/opacity tracks; z distinct per element. Deterministic for a given seed. Element ids `e1..eN`. Text element canonical carries both `text` and a `texture`.
+  - `make_texture(path: Path, shape: str, w: int, h: int, color: tuple[int,int,int]) -> None`: writes an RGBA PNG (`rect` or `ellipse`, alpha 255 inside, 0 outside).
+  - `make_text_texture(path: Path, text: str, size_px: int, color: tuple[int,int,int]) -> tuple[int,int]`: rasterizes text with `cv2.putText` (Hershey font), returns (w,h).
+  - `make_synthetic_scene(scene_root: Path, seed: int, n_elements: int = 4, frames: int = 60, size: tuple[int,int] = (640, 360), fps: float = 30.0, with_text: bool = True, overlap: bool = True) -> Scene`: writes textures under `scene_root/assets/`, returns a validated Scene (not saved). Elements are sprites (plus one text element when `with_text`); each has x,y tracks with 2 to 4 keyframes and preset eases, optionally sx/sy/rot/opacity tracks; z distinct per element. Deterministic for a given seed. Element ids `e1..eN`. Text element canonical carries both `text` and a `texture`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -904,7 +904,7 @@ git add keepframe/ir/synth.py tests/test_synth.py
 git commit -m "feat(ir): synthetic scene generator with textures for fixtures and golden IR"
 ```
 
----
+***
 
 ### Task 6: Composer (Scene → self-contained HTML with GSAP timeline)
 
@@ -913,7 +913,7 @@ git commit -m "feat(ir): synthetic scene generator with textures for fixtures an
 - Test: `tests/test_composer.py`
 
 **Interfaces:**
-- Produces: `compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path` — writes one self-contained HTML file (vendor JS inlined, textures inlined as data URIs). The page exposes `window.__ready` (true after timeline build), `window.__seek(frameIndex)` (renders that frame) and `window.__bbox(elementId) -> [left, top, right, bottom]` in stage pixels. Element nodes have ids `el-<element.id>` and HyperFrames-style attributes `data-start` (seconds), `data-duration` (seconds), `data-track-index` (z at frame 0). The stage node is `#stage` with `data-composition-id`, `data-width`, `data-height`.
+- Produces: `compose(scene: Scene, scene_dir: Path, out_html: Path) -> Path`: writes one self-contained HTML file (vendor JS inlined, textures inlined as data URIs). The page exposes `window.__ready` (true after timeline build), `window.__seek(frameIndex)` (renders that frame) and `window.__bbox(elementId) -> [left, top, right, bottom]` in stage pixels. Element nodes have ids `el-<element.id>` and HyperFrames-style attributes `data-start` (seconds), `data-duration` (seconds), `data-track-index` (z at frame 0). The stage node is `#stage` with `data-composition-id`, `data-width`, `data-height`.
 - Transform model in the page: `translate(x,y) rotate(rot) skewX(skx) scale(sx,sy)` about `transform-origin` = anchor, i.e. exactly `affine_matrix` from Task 3. GSAP tweens proxy objects and the page writes the transform string itself, so GSAP's own transform ordering is never relied on.
 
 - [ ] **Step 1: Write the failing test**
@@ -1070,7 +1070,7 @@ git add keepframe/compose/template.html keepframe/compose/composer.py tests/test
 git commit -m "feat(compose): self-contained HTML composition with GSAP timeline and seek/bbox hooks"
 ```
 
----
+***
 
 ### Task 7: Renderer (frame seeking, hashes, bbox probe, MP4)
 
@@ -1081,10 +1081,10 @@ git commit -m "feat(compose): self-contained HTML composition with GSAP timeline
 **Interfaces:**
 - Produces:
   - `@dataclass RenderResult: frames_dir: Path; frames: list[int]; hashes: list[str]; bboxes: dict[str, list[list[float]]]; mp4: Path | None`
-  - `render(html: Path, scene: Scene, out_dir: Path, frames: list[int] | None = None, mp4: bool = False, probe: bool = True) -> RenderResult` — `frames=None` means all `range(scene.frames)`. Writes `out_dir/frames/f_00000.png` (index = position in `frames`, not frame number) and `out_dir/render.json` (the result as JSON). `bboxes[element_id][i]` is the probe for `frames[i]`.
-  - `frame_hash(png_bytes: bytes) -> str` — sha256 of the decoded RGB pixel buffer.
-  - `write_mp4(frames_dir: Path, fps: float, out: Path) -> Path` — ffmpeg libx264 yuv420p crf 18.
-  - `load_frame(path: Path) -> np.ndarray` — RGB float32 [0,1].
+  - `render(html: Path, scene: Scene, out_dir: Path, frames: list[int] | None = None, mp4: bool = False, probe: bool = True) -> RenderResult`: `frames=None` means all `range(scene.frames)`. Writes `out_dir/frames/f_00000.png` (index = position in `frames`, not frame number) and `out_dir/render.json` (the result as JSON). `bboxes[element_id][i]` is the probe for `frames[i]`.
+  - `frame_hash(png_bytes: bytes) -> str`: sha256 of the decoded RGB pixel buffer.
+  - `write_mp4(frames_dir: Path, fps: float, out: Path) -> Path`: ffmpeg libx264 yuv420p crf 18.
+  - `load_frame(path: Path) -> np.ndarray`: RGB float32 [0,1].
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1228,7 +1228,7 @@ git add keepframe/render/renderer.py tests/test_renderer.py
 git commit -m "feat(render): deterministic frame-seek renderer with hashes, bbox probe and mp4"
 ```
 
----
+***
 
 ### Task 8: Numpy compositor (reference render model)
 
@@ -1238,10 +1238,10 @@ git commit -m "feat(render): deterministic frame-seek renderer with hashes, bbox
 
 **Interfaces:**
 - Produces:
-  - `load_texture(path: Path) -> np.ndarray` — RGBA float32 [0,1], shape (h,w,4); a 3-channel PNG gets alpha 1.
-  - `texture_to_scene_affine(el: Element, props: dict[str,float], tex_shape: tuple[int,int]) -> np.ndarray` — 2×3 matrix mapping texture pixel coords to scene coords (handles anchor and canonical-vs-texture size).
-  - `composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacity: float) -> None` — in-place premultiplied "source-over".
-  - `composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray` — RGB float32 (H,W,3) for frame `f`, elements drawn in ascending `eval_z`, only when `visible[0] <= f <= visible[1]`.
+  - `load_texture(path: Path) -> np.ndarray`: RGBA float32 [0,1], shape (h,w,4); a 3-channel PNG gets alpha 1.
+  - `texture_to_scene_affine(el: Element, props: dict[str,float], tex_shape: tuple[int,int]) -> np.ndarray`: 2×3 matrix mapping texture pixel coords to scene coords (handles anchor and canonical-vs-texture size).
+  - `composite_element(canvas: np.ndarray, tex: np.ndarray, A: np.ndarray, opacity: float) -> None`: in-place premultiplied "source-over".
+  - `composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = None) -> np.ndarray`: RGB float32 (H,W,3) for frame `f`, elements drawn in ascending `eval_z`, only when `visible[0] <= f <= visible[1]`.
   - `hex_to_rgb(s: str) -> tuple[float,float,float]` in [0,1].
 
 - [ ] **Step 1: Write the failing test**
@@ -1354,7 +1354,7 @@ def composite_scene(scene: Scene, scene_dir: Path, f: int, cache: dict | None = 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_composite.py -v` then `pytest tests/test_composite.py -v -m browser`
-Expected: PASS. If `test_compositor_matches_browser` fails, the culprit is almost always sub-pixel interpolation; the threshold 0.02 mean L1 is generous, so investigate `texture_to_scene_affine` before touching the threshold.
+Expected: PASS. If `test_compositor_matches_browser` fails, the usual cause is sub-pixel interpolation; the 0.02 mean L1 threshold is already loose, so investigate `texture_to_scene_affine` before touching the threshold.
 
 - [ ] **Step 5: Commit**
 
@@ -1363,7 +1363,7 @@ git add keepframe/analyze/composite.py tests/test_composite.py
 git commit -m "feat(analyze): numpy compositor matching the browser render model"
 ```
 
----
+***
 
 ### Task 9: Animation matrix and motion intervals
 
@@ -1374,11 +1374,11 @@ git commit -m "feat(analyze): numpy compositor matching the browser render model
 **Interfaces:**
 - Produces:
   - `COLS = ("x","y","sx","sy","rot","opacity")`
-  - `animation_matrix(scene: Scene) -> dict[str, np.ndarray]` — per element, array `(scene.frames, 6)` in `COLS` order; rows outside `visible` are NaN.
-  - `bbox_matrix(scene: Scene) -> dict[str, np.ndarray]` — per element `(frames, 4)` = x0,y0,x1,y1; NaN when not visible.
+  - `animation_matrix(scene: Scene) -> dict[str, np.ndarray]`: per element, array `(scene.frames, 6)` in `COLS` order; rows outside `visible` are NaN.
+  - `bbox_matrix(scene: Scene) -> dict[str, np.ndarray]`: per element `(frames, 4)` = x0,y0,x1,y1; NaN when not visible.
   - `@dataclass Motion: id: str; element: str; type: str; start: int; end: int; dir: tuple[float,float] | None; mag: float; dur: int` where `type ∈ {"translation","rotation","scale","opacity"}`, `end` is the frame where the value stops changing (inclusive), `dur = end - start`.
   - `EPS = {"translation": 0.5, "rotation": 0.25, "scale": 0.002, "opacity": 0.005}` (per-frame change thresholds)
-  - `extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]` — ids `m_<element>_<n>` numbered per element by start frame (ties by type order translation, rotation, scale, opacity). Runs shorter than 2 frames are ignored; gaps of 1 frame are bridged.
+  - `extract_motions(scene: Scene, eps: dict[str, float] | None = None) -> list[Motion]`: ids `m_<element>_<n>` numbered per element by start frame (ties by type order translation, rotation, scale, opacity). Runs shorter than 2 frames are ignored; gaps of 1 frame are bridged.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1538,7 +1538,7 @@ git add keepframe/verify/matrix.py tests/test_matrix.py
 git commit -m "feat(verify): animation matrix, bbox matrix and motion interval extraction"
 ```
 
----
+***
 
 ### Task 10: Predicate parser and evaluator (MoVer subset)
 
@@ -1550,7 +1550,7 @@ git commit -m "feat(verify): animation matrix, bbox matrix and motion interval e
 - Grammar (strings stored in `Constraint.pred`): `name(arg, arg, ...)` optionally followed by `@<frame>`. Args are identifiers (`e1`, `m_e1_1`), single-quoted strings (`'translation'`), numbers, or 2-vectors (`[1,0]`).
 - Supported predicates: `type(m,'translation'|'rotation'|'scale'|'opacity')`, `dir(m,[dx,dy])` (cosine ≥ 0.9, translation only), `mag(m,v)` (within max(10 %, 2 units)), `dur(m,frames)` (±2 frames), `before(m1,m2)`, `after(m1,m2)`, `while(m1,m2)`, `left(o1,o2)`, `right(o1,o2)`, `top(o1,o2)`, `bottom(o1,o2)`, `intersect(o1,o2)`. Spatial predicates default to the last frame; `@f` selects a frame. Unknown motion or element ids evaluate to `False`; unknown predicate names raise `ValueError`.
 - Produces:
-  - `parse_pred(s: str) -> tuple[str, list, int | None]` — (name, args, frame)
+  - `parse_pred(s: str) -> tuple[str, list, int | None]`: (name, args, frame)
   - `@dataclass PredContext: scene: Scene; motions: dict[str, Motion]; bboxes: dict[str, np.ndarray]`
   - `build_context(scene: Scene) -> PredContext`
   - `eval_pred(s: str, ctx: PredContext) -> bool`
@@ -1724,7 +1724,7 @@ git add keepframe/verify/predicates.py tests/test_predicates.py
 git commit -m "feat(verify): MoVer-subset predicate parser and evaluator"
 ```
 
----
+***
 
 ### Task 11: Constraint extraction from tracks
 
@@ -1733,7 +1733,7 @@ git commit -m "feat(verify): MoVer-subset predicate parser and evaluator"
 - Test: `tests/test_constraints.py`
 
 **Interfaces:**
-- Produces: `extract_constraints(scene: Scene) -> list[Constraint]` — for every motion: `type`, `dir` (translation only, rounded to 2 decimals), `mag` (rounded to 1 decimal), `dur`; for every pair of motions of different elements exactly one temporal relation (`before`/`after`/`while`, whichever holds; skipped if none does, which happens only when intervals touch without overlapping—`before` covers `end <= start`); for every pair of elements visible at the last frame all of `left/right/top/bottom` that hold plus `intersect` when it holds. All `keep=False`. Output order is deterministic (motion id order, then pair order).
+- Produces: `extract_constraints(scene: Scene) -> list[Constraint]`: for every motion: `type`, `dir` (translation only, rounded to 2 decimals), `mag` (rounded to 1 decimal), `dur`; for every pair of motions of different elements exactly one temporal relation (`before`/`after`/`while`, whichever holds; skipped if none does, which happens only when intervals touch without overlapping, since `before` covers `end <= start`); for every pair of elements visible at the last frame all of `left/right/top/bottom` that hold plus `intersect` when it holds. All `keep=False`. Output order is deterministic (motion id order, then pair order).
 - Invariant tested: every extracted constraint evaluates `True` on the scene it came from.
 
 - [ ] **Step 1: Write the failing test**
@@ -1814,7 +1814,7 @@ def extract_constraints(scene: Scene) -> list[Constraint]:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_constraints.py -v`
-Expected: 2 PASS. If `test_extracted_constraints_hold_on_source_scene` fails on `mag`/`dur`, the rounding in the string differs from the motion value by more than the tolerance only when `mag < 2`; `TOL["mag_abs"]=2.0` covers it, so a failure means `extract_motions` is nondeterministic—fix that, not the tolerance.
+Expected: 2 PASS. If `test_extracted_constraints_hold_on_source_scene` fails on `mag`/`dur`, the rounding in the string differs from the motion value by more than the tolerance only when `mag < 2`; `TOL["mag_abs"]=2.0` covers it, so a failure means `extract_motions` is nondeterministic. Fix `extract_motions` and leave the tolerance alone.
 
 - [ ] **Step 5: Commit**
 
@@ -1823,7 +1823,7 @@ git add keepframe/analyze/constraints.py tests/test_constraints.py
 git commit -m "feat(analyze): extract MoVer-style constraints from tracks"
 ```
 
----
+***
 
 ### Task 12: Similarity metrics (temporal, appearance)
 
@@ -1833,10 +1833,10 @@ git commit -m "feat(analyze): extract MoVer-style constraints from tracks"
 
 **Interfaces:**
 - Produces:
-  - `centroid_tracks(scene: Scene) -> dict[str, np.ndarray]` — `(frames, 2)` anchor positions, NaN when invisible.
-  - `tracklet_correlation(a: np.ndarray, b: np.ndarray, static_eps: float = 0.25) -> float` — Animation2Code-style displacement agreement: per frame `cos(da,db) * min(|da|,|db|)/max(|da|,|db|)`; frames where both are static count 1.0, where exactly one is static count 0.0; averaged over frames where both are defined; 0.0 if none.
-  - `temporal_similarity(ref: dict[str,np.ndarray], out: dict[str,np.ndarray]) -> float` — symmetric Chamfer aggregation (mean over ref of best out, and vice versa, averaged), clamped to [0,1]; 0.0 if either side is empty.
-  - `appearance_similarity(tex_a: np.ndarray, tex_b: np.ndarray) -> float` — `1 - mean L1` of premultiplied RGBA after resizing `b` to `a`'s size.
+  - `centroid_tracks(scene: Scene) -> dict[str, np.ndarray]`: `(frames, 2)` anchor positions, NaN when invisible.
+  - `tracklet_correlation(a: np.ndarray, b: np.ndarray, static_eps: float = 0.25) -> float`: Animation2Code-style displacement agreement: per frame `cos(da,db) * min(|da|,|db|)/max(|da|,|db|)`; frames where both are static count 1.0, where exactly one is static count 0.0; averaged over frames where both are defined; 0.0 if none.
+  - `temporal_similarity(ref: dict[str,np.ndarray], out: dict[str,np.ndarray]) -> float`: symmetric Chamfer aggregation (mean over ref of best out, and vice versa, averaged), clamped to [0,1]; 0.0 if either side is empty.
+  - `appearance_similarity(tex_a: np.ndarray, tex_b: np.ndarray) -> float`: `1 - mean L1` of premultiplied RGBA after resizing `b` to `a`'s size.
   - `frame_l1(a: np.ndarray, b: np.ndarray) -> float`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1946,7 +1946,7 @@ git add keepframe/verify/similarity.py tests/test_similarity.py
 git commit -m "feat(verify): temporal displacement-correlation and appearance similarity"
 ```
 
----
+***
 
 ### Task 13: Verifier report
 
@@ -2098,7 +2098,7 @@ git add keepframe/verify/verifier.py tests/test_verifier.py
 git commit -m "feat(verify): verifier report with keep predicates, layer bbox check and similarity"
 ```
 
----
+***
 
 ### Task 14: CLI and M1 gate
 
@@ -2113,7 +2113,7 @@ git commit -m "feat(verify): verifier report with keep predicates, layer bbox ch
   - `render --scene SCENE.json --html HTML --out DIR [--frames 0,10,20] [--mp4]`
   - `verify --scene SCENE.json [--render-json DIR/render.json] [--reference REF.json]` → prints report JSON, exit 1 when `passed` is false
   - `gate-m1 --out DIR [--n 20]` → runs `gates.m1_gate`, prints table, exit 1 on failure
-- `gates.m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict` — for seeds `1..n`: synth → extract constraints → all predicates hold; compose → render the frame set twice → hashes equal; layer bbox error ≤ 2 px. Returns `{"n": n, "constraints_ok": int, "hash_ok": int, "layer_ok": int, "passed": bool, "rows": [...]}`; `passed` requires all three counts == n (spec §11 M1).
+- `gates.m1_gate(out_root: Path, n: int = 20, frames_per_scene: int = 3) -> dict`: for seeds `1..n`: synth → extract constraints → all predicates hold; compose → render the frame set twice → hashes equal; layer bbox error ≤ 2 px. Returns `{"n": n, "constraints_ok": int, "hash_ok": int, "layer_ok": int, "passed": bool, "rows": [...]}`; `passed` requires all three counts == n (spec §11 M1).
 - `render_result_from_json(path: Path) -> RenderResult` (in `keepframe/render/renderer.py`, add in this task).
 
 - [ ] **Step 1: Write the failing test**
@@ -2267,9 +2267,9 @@ git add keepframe/cli.py keepframe/gates.py keepframe/render/renderer.py scripts
 git commit -m "feat: CLI (synth/compose/render/verify) and M1 gate over 20 synthetic scenes"
 ```
 
----
+***
 
-## M2 — Analyzer (flat 2D motion graphics, range mode) and review corrections
+## M2: Analyzer (flat 2D motion graphics, range mode) and review corrections
 
 Fixture strategy for M2: synthetic scenes from Task 5 are rendered to video with the numpy compositor (no browser needed), then analyzed; the synthetic scene is the golden IR. Real clips (spec §10) plug into the same gate through `gate-m2-real` (Task 25).
 
@@ -2281,12 +2281,12 @@ Fixture strategy for M2: synthetic scenes from Task 5 are rendered to video with
 
 **Interfaces:**
 - Produces:
-  - `read_frames(path: Path, start: int = 0, end: int | None = None) -> tuple[np.ndarray, float]` — frames `(N,H,W,3)` uint8 RGB for frame indices `start..end` inclusive, and fps. `path` may be a video file or a directory of `*.png`.
-  - `write_video(frames: np.ndarray, fps: float, out: Path) -> Path` — ffmpeg libx264, `-pix_fmt yuv444p -crf 8` (near-lossless; the analyzer must tolerate this compression).
-  - `render_scene_video(scene: Scene, scene_dir: Path, out: Path) -> Path` — compositor over all frames → `write_video`.
+  - `read_frames(path: Path, start: int = 0, end: int | None = None) -> tuple[np.ndarray, float]`: frames `(N,H,W,3)` uint8 RGB for frame indices `start..end` inclusive, and fps. `path` may be a video file or a directory of `*.png`.
+  - `write_video(frames: np.ndarray, fps: float, out: Path) -> Path`: ffmpeg libx264, `-pix_fmt yuv444p -crf 8` (near-lossless; the analyzer must tolerate this compression).
+  - `render_scene_video(scene: Scene, scene_dir: Path, out: Path) -> Path`: compositor over all frames → `write_video`.
   - `rgb_to_lab(img_rgb_uint8: np.ndarray) -> np.ndarray` float32 LAB (OpenCV scaling L∈[0,255]).
-  - `estimate_background(frames: np.ndarray, k: int = 6) -> tuple[tuple[int,int,int], float]` — mode LAB cluster over subsampled pixels; returns RGB and the cluster's pixel fraction as confidence.
-  - `foreground_mask(frame: np.ndarray, bg_rgb: tuple[int,int,int], thr: float = 12.0) -> np.ndarray` — bool mask where ΔE76 (OpenCV LAB units) > thr.
+  - `estimate_background(frames: np.ndarray, k: int = 6) -> tuple[tuple[int,int,int], float]`: mode LAB cluster over subsampled pixels; returns RGB and the cluster's pixel fraction as confidence.
+  - `foreground_mask(frame: np.ndarray, bg_rgb: tuple[int,int,int], thr: float = 12.0) -> np.ndarray`: bool mask where ΔE76 (OpenCV LAB units) > thr.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2425,7 +2425,7 @@ git add keepframe/analyze/video.py keepframe/analyze/background.py tests/test_vi
 git commit -m "feat(analyze): video io, synthetic video rendering, LAB background estimation"
 ```
 
----
+***
 
 ### Task 16: Region extraction (colour clusters + connected components)
 
@@ -2436,9 +2436,9 @@ git commit -m "feat(analyze): video io, synthetic video rendering, LAB backgroun
 **Interfaces:**
 - Produces:
   - `@dataclass Region: frame: int; label: int; color: tuple[float,float,float]  # RGB 0-255; bbox: tuple[int,int,int,int]  # x0,y0,x1,y1 exclusive; area: int; centroid: tuple[float,float]; mask: np.ndarray  # bool crop of bbox size`
-  - `build_palette(frames: np.ndarray, fg_masks: np.ndarray, k: int = 8) -> np.ndarray` — `(k',3)` LAB centres of foreground pixels (k' ≤ k; duplicates merged when closer than ΔE 8).
-  - `label_frame(frame: np.ndarray, fg_mask: np.ndarray, palette_lab: np.ndarray) -> np.ndarray` — int32 label map, `-1` for background.
-  - `extract_regions(frame_idx: int, frame: np.ndarray, fg_mask: np.ndarray, palette_lab: np.ndarray, min_area: int = 30, exclude_mask: np.ndarray | None = None, overrides: list[tuple[np.ndarray, int]] | None = None) -> list[Region]` — connected components (8-connectivity) per palette label; `exclude_mask` pixels (text) are removed from the foreground first; `overrides` are `(mask, label)` pairs that force one region each (used by corrections, Task 24).
+  - `build_palette(frames: np.ndarray, fg_masks: np.ndarray, k: int = 8) -> np.ndarray`: `(k',3)` LAB centres of foreground pixels (k' ≤ k; duplicates merged when closer than ΔE 8).
+  - `label_frame(frame: np.ndarray, fg_mask: np.ndarray, palette_lab: np.ndarray) -> np.ndarray`: int32 label map, `-1` for background.
+  - `extract_regions(frame_idx: int, frame: np.ndarray, fg_mask: np.ndarray, palette_lab: np.ndarray, min_area: int = 30, exclude_mask: np.ndarray | None = None, overrides: list[tuple[np.ndarray, int]] | None = None) -> list[Region]`: connected components (8-connectivity) per palette label; `exclude_mask` pixels (text) are removed from the foreground first; `overrides` are `(mask, label)` pairs that force one region each (used by corrections, Task 24).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2571,7 +2571,7 @@ git add keepframe/analyze/regions.py tests/test_regions.py
 git commit -m "feat(analyze): palette labelling and connected-component region extraction with overrides"
 ```
 
----
+***
 
 ### Task 17: Region tracking across frames
 
@@ -2582,9 +2582,9 @@ git commit -m "feat(analyze): palette labelling and connected-component region e
 **Interfaces:**
 - Produces:
   - `@dataclass ObjectTrack: id: int; regions: dict[int, Region]` with properties `first -> int`, `last -> int`.
-  - `match_cost(prev: Region, pred_centroid: tuple[float,float], cand: Region, max_dist: float) -> float` — `dist/max_dist + |log(area ratio)| + ΔRGB/60`.
-  - `track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0, cost_thr: float = 1.2, max_gap: int = 2) -> list[ObjectTrack]` — Hungarian assignment per frame (scipy `linear_sum_assignment`), constant-velocity prediction, unmatched regions start new tracks, tracks unmatched for more than `max_gap` frames are closed. `# ponytail: no split/merge; upgrade path: Motico's 8 mapping types.`
-  - `assignments(tracks: list[ObjectTrack]) -> dict[int, dict[int, int]]` — `frame -> {region_index_in_frame -> track_id}` is NOT needed; instead `track_regions` keeps `Region` objects, and `ObjectTrack.regions[f]` is the region for frame `f`.
+  - `match_cost(prev: Region, pred_centroid: tuple[float,float], cand: Region, max_dist: float) -> float`: `dist/max_dist + |log(area ratio)| + ΔRGB/60`.
+  - `track_regions(regions_by_frame: list[list[Region]], first_frame: int = 0, max_dist: float = 80.0, cost_thr: float = 1.2, max_gap: int = 2) -> list[ObjectTrack]`: Hungarian assignment per frame (scipy `linear_sum_assignment`), constant-velocity prediction, unmatched regions start new tracks, tracks unmatched for more than `max_gap` frames are closed. `# ponytail: no split/merge; upgrade path: Motico's 8 mapping types.`
+  - `assignments(tracks: list[ObjectTrack]) -> dict[int, dict[int, int]]`: `frame -> {region_index_in_frame -> track_id}` is NOT needed, because `track_regions` keeps `Region` objects and `ObjectTrack.regions[f]` is the region for frame `f`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2718,9 +2718,9 @@ git add keepframe/analyze/tracking.py tests/test_tracking.py
 git commit -m "feat(analyze): Hungarian region tracking with velocity prediction"
 ```
 
----
+***
 
-### Task 18: Sprites — canonical texture, per-frame affine, opacity, z-order
+### Task 18: Sprites, canonical texture, per-frame affine, opacity, z-order
 
 **Files:**
 - Create: `keepframe/analyze/sprites.py`
@@ -2729,12 +2729,12 @@ git commit -m "feat(analyze): Hungarian region tracking with velocity prediction
 **Interfaces:**
 - Produces:
   - `RAW_COLS = ("x","y","sx","sy","rot","skx","sky","opacity")` (same order as `PROPS`).
-  - `canonical_texture(track: ObjectTrack, frames: np.ndarray) -> tuple[np.ndarray, int]` — RGBA uint8 crop from the frame where the region area is largest (alpha = mask·255), and that frame index.
-  - `props_from_moments(region: Region, canon: np.ndarray) -> dict[str, float]` — x,y = centroid; sx = sy = sqrt(area / canon_area); rot from second central moments when the canonical shape is elongated (aspect ≥ 1.25) else 0; skx = sky = 0.
-  - `refine_ecc(frame: np.ndarray, region: Region, canon: np.ndarray, anchor: tuple[float,float], init: dict[str,float]) -> dict[str,float]` — refines x,y,sx,sy,rot,skx with `cv2.findTransformECC(MOTION_AFFINE)` on grayscale; returns `init` unchanged when ECC fails or moves the centroid more than 8 px.
-  - `estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple) -> float` — projection of (pixel−bg) onto (canon−bg), clipped to [0,1].
-  - `z_order(tracks: list[ObjectTrack], frames: np.ndarray, bg_rgb: tuple) -> dict[int, int]` — votes from overlap pixels; falls back to first-appearance order. `# ponytail: one z per object`.
-  - `sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, use_ecc: bool = True) -> tuple[np.ndarray, np.ndarray, int]` — returns `(raw (n_frames, 8) with NaN when absent, canonical RGBA, canonical frame)`.
+  - `canonical_texture(track: ObjectTrack, frames: np.ndarray) -> tuple[np.ndarray, int]`: RGBA uint8 crop from the frame where the region area is largest (alpha = mask·255), and that frame index.
+  - `props_from_moments(region: Region, canon: np.ndarray) -> dict[str, float]`: x,y = centroid; sx = sy = sqrt(area / canon_area); rot from second central moments when the canonical shape is elongated (aspect ≥ 1.25) else 0; skx = sky = 0.
+  - `refine_ecc(frame: np.ndarray, region: Region, canon: np.ndarray, anchor: tuple[float,float], init: dict[str,float]) -> dict[str,float]`: refines x,y,sx,sy,rot,skx with `cv2.findTransformECC(MOTION_AFFINE)` on grayscale; returns `init` unchanged when ECC fails or moves the centroid more than 8 px.
+  - `estimate_opacity(frame: np.ndarray, region: Region, canon_color: tuple, bg_rgb: tuple) -> float`: projection of (pixel−bg) onto (canon−bg), clipped to [0,1].
+  - `z_order(tracks: list[ObjectTrack], frames: np.ndarray, bg_rgb: tuple) -> dict[int, int]`: votes from overlap pixels; falls back to first-appearance order. `# ponytail: one z per object`.
+  - `sprite_props(track: ObjectTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int, use_ecc: bool = True) -> tuple[np.ndarray, np.ndarray, int]`: returns `(raw (n_frames, 8) with NaN when absent, canonical RGBA, canonical frame)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2929,7 +2929,7 @@ git add keepframe/analyze/sprites.py tests/test_sprites.py
 git commit -m "feat(analyze): canonical textures, moment+ECC affine per frame, opacity and z-order"
 ```
 
----
+***
 
 ### Task 19: Keyframe reduction and easing fit
 
@@ -2940,10 +2940,10 @@ git commit -m "feat(analyze): canonical textures, moment+ECC affine per frame, o
 **Interfaces:**
 - Produces:
   - `ERR = {"x": 2.0, "y": 2.0, "sx": 0.01, "sy": 0.01, "rot": 1.0, "skx": 1.0, "sky": 1.0, "opacity": 0.02}`
-  - `fit_ease(values: np.ndarray) -> tuple[Ease | None, float]` — values over one segment (first and last are the endpoints); returns the preset ease (or `None` for linear) with the smallest max abs error, and that error in value units.
-  - `reduce_curve(values: np.ndarray, t0: int, max_err: float) -> tuple[list[Keyframe], float]` — recursive split at the point of maximum error until every segment fits within `max_err`; returns keys (with `ease`) and the achieved max error.
-  - `tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitError]` — `raw` is `(n_visible, 8)` for frames `first..first+n-1` (no NaN rows); properties that never deviate from `DEFAULTS` by more than `ERR` get no track.
-  - `fill_gaps(raw_full: np.ndarray) -> np.ndarray` — linear interpolation of interior NaN rows (occlusion gaps ≤ 2 frames), leaving leading/trailing NaN.
+  - `fit_ease(values: np.ndarray) -> tuple[Ease | None, float]`: values over one segment (first and last are the endpoints); returns the preset ease (or `None` for linear) with the smallest max abs error, and that error in value units.
+  - `reduce_curve(values: np.ndarray, t0: int, max_err: float) -> tuple[list[Keyframe], float]`: recursive split at the point of maximum error until every segment fits within `max_err`; returns keys (with `ease`) and the achieved max error.
+  - `tracks_from_raw(raw: np.ndarray, first: int) -> tuple[dict[str, Track], FitError]`: `raw` is `(n_visible, 8)` for frames `first..first+n-1` (no NaN rows); properties that never deviate from `DEFAULTS` by more than `ERR` get no track.
+  - `fill_gaps(raw_full: np.ndarray) -> np.ndarray`: linear interpolation of interior NaN rows (occlusion gaps ≤ 2 frames), leaving leading/trailing NaN.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3084,7 +3084,7 @@ git add keepframe/analyze/keyframes.py tests/test_keyframes.py
 git commit -m "feat(analyze): keyframe reduction with preset cubic-bezier ease fitting"
 ```
 
----
+***
 
 ### Task 20: Text spotting and tracking
 
@@ -3096,14 +3096,14 @@ git commit -m "feat(analyze): keyframe reduction with preset cubic-bezier ease f
 - Produces:
   - `@dataclass TextBox: frame: int; text: str; bbox: tuple[int,int,int,int]; conf: float`
   - `class Ocr(Protocol): def __call__(self, frame_rgb: np.ndarray) -> list[tuple[str, tuple[int,int,int,int], float]]`
-  - `class RapidOcr` — lazy-imports `rapidocr_onnxruntime`; implements `Ocr`.
-  - `ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1) -> list[list[TextBox]]` — per frame (frames skipped by `step` get an empty list).
+  - `class RapidOcr`: lazy-imports `rapidocr_onnxruntime`; implements `Ocr`.
+  - `ocr_frames(frames: np.ndarray, ocr: Ocr, step: int = 1) -> list[list[TextBox]]`: per frame (frames skipped by `step` get an empty list).
   - `@dataclass TextTrack: id: int; boxes: dict[int, TextBox]; text: str` with `first`, `last`.
-  - `track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_thr: float = 0.3, max_dist: float = 60.0, max_gap: int = 3) -> list[TextTrack]` — greedy per-frame matching by IoU or centre distance plus text similarity (`difflib.SequenceMatcher.ratio() >= 0.5`); `text` is the majority vote over the track.
-  - `apply_copy(tracks: list[TextTrack], copy: list[str]) -> None` — monotone assignment of user-provided copy words to tracks in order of first frame; replaces `text` when similarity ≥ 0.6. `# ponytail: greedy monotone; upgrade: DTW (Haraguchi et al. 2022)`.
-  - `text_exclusion_mask(boxes: list[TextBox], shape: tuple[int,int], pad: int = 2) -> np.ndarray` — bool mask.
-  - `stroke_mask(frame: np.ndarray, bbox, bg_rgb, thr: float = 12.0) -> np.ndarray` — bool crop mask of text pixels. `# ponytail: colour threshold; upgrade: Hi-SAM`.
-  - `text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int) -> tuple[np.ndarray, np.ndarray, int, FontGuess, str]` — `(raw (n_frames,8), canonical RGBA, canonical frame, font guess, hex colour)`; x,y = box centre; sx,sy = box size / canonical box size; opacity from stroke pixels (Task 18 `estimate_opacity` logic re-implemented locally on stroke pixels).
+  - `track_text(boxes_by_frame: list[list[TextBox]], first_frame: int = 0, iou_thr: float = 0.3, max_dist: float = 60.0, max_gap: int = 3) -> list[TextTrack]`: greedy per-frame matching by IoU or centre distance plus text similarity (`difflib.SequenceMatcher.ratio() >= 0.5`); `text` is the majority vote over the track.
+  - `apply_copy(tracks: list[TextTrack], copy: list[str]) -> None`: monotone assignment of user-provided copy words to tracks in order of first frame; replaces `text` when similarity ≥ 0.6. `# ponytail: greedy monotone; upgrade: DTW (Haraguchi et al. 2022)`.
+  - `text_exclusion_mask(boxes: list[TextBox], shape: tuple[int,int], pad: int = 2) -> np.ndarray`: bool mask.
+  - `stroke_mask(frame: np.ndarray, bbox, bg_rgb, thr: float = 12.0) -> np.ndarray`: bool crop mask of text pixels. `# ponytail: colour threshold; upgrade: Hi-SAM`.
+  - `text_props(track: TextTrack, frames: np.ndarray, bg_rgb: tuple, n_frames: int, first_frame: int) -> tuple[np.ndarray, np.ndarray, int, FontGuess, str]`: `(raw (n_frames,8), canonical RGBA, canonical frame, font guess, hex colour)`; x,y = box centre; sx,sy = box size / canonical box size; opacity from stroke pixels (Task 18 `estimate_opacity` logic re-implemented locally on stroke pixels).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3329,7 +3329,7 @@ git add keepframe/analyze/text.py tests/test_text.py
 git commit -m "feat(analyze): OCR adapter, text tracking, copy alignment and text sprite props"
 ```
 
----
+***
 
 ### Task 21: Torch affine refinement (optional GPU)
 
@@ -3340,7 +3340,7 @@ git commit -m "feat(analyze): OCR adapter, text tracking, copy alignment and tex
 **Interfaces:**
 - Produces:
   - `torch_available() -> bool`
-  - `refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray], anchors: dict[str, tuple[float,float]], z: dict[str, int], iters: int = 200, lr: float = 0.02, scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]` — jointly optimises x,y,sx,sy,rot (skx fixed) and opacity per element per frame to minimise L1 between the composited scene and the video frames (downscaled by `scale`); NaN rows are left untouched; returns refined raws. Raises `RuntimeError` when torch is missing. `# ponytail: full-frame loss on downscaled frames; upgrade path: per-element crops, texture prior (Suzuki et al. 2024).`
+  - `refine_affine(frames: np.ndarray, bg_rgb: tuple, raws: dict[str, np.ndarray], textures: dict[str, np.ndarray], anchors: dict[str, tuple[float,float]], z: dict[str, int], iters: int = 200, lr: float = 0.02, scale: float = 0.5, device: str | None = None) -> dict[str, np.ndarray]`: jointly optimises x,y,sx,sy,rot (skx fixed) and opacity per element per frame to minimise L1 between the composited scene and the video frames (downscaled by `scale`); NaN rows are left untouched; returns refined raws. Raises `RuntimeError` when torch is missing. `# ponytail: full-frame loss on downscaled frames; upgrade path: per-element crops, texture prior (Suzuki et al. 2024).`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3476,9 +3476,9 @@ git add keepframe/analyze/refine.py tests/test_refine.py
 git commit -m "feat(analyze): optional torch refinement of per-frame affine and opacity"
 ```
 
----
+***
 
-### Task 22: Semantics — roles, groups, captioner protocol
+### Task 22: Semantics, roles, groups, captioner protocol
 
 **Files:**
 - Create: `keepframe/analyze/semantics.py`
@@ -3487,9 +3487,9 @@ git commit -m "feat(analyze): optional torch refinement of per-frame affine and 
 **Interfaces:**
 - Produces:
   - `class Captioner(Protocol): def caption(self, texture: np.ndarray, text: str | None) -> str`
-  - `class NullCaptioner` — returns `""` (default; VLM captions are opt-in and never affect timing).
-  - `assign_roles(elements: list[Element]) -> None` — text elements → `"text"`; among the rest the one with the largest `canonical.width*height*(visible span)` → `"primary"`; others `"secondary"`.
-  - `group_by_motion(elements: list[Element], raws: dict[str, np.ndarray], corr_thr: float = 0.98, start_tol: int = 1) -> list[Group]` — union-find over pairs whose x/y displacement sequences over common frames correlate ≥ `corr_thr` and whose first frames differ ≤ `start_tol`; groups of size ≥ 2 only, ids `g1..`, reason `"moves together"`.
+  - `class NullCaptioner`: returns `""` (default; VLM captions are opt-in and never affect timing).
+  - `assign_roles(elements: list[Element]) -> None`: text elements → `"text"`; among the rest the one with the largest `canonical.width*height*(visible span)` → `"primary"`; others `"secondary"`.
+  - `group_by_motion(elements: list[Element], raws: dict[str, np.ndarray], corr_thr: float = 0.98, start_tol: int = 1) -> list[Group]`: union-find over pairs whose x/y displacement sequences over common frames correlate ≥ `corr_thr` and whose first frames differ ≤ `start_tol`; groups of size ≥ 2 only, ids `g1..`, reason `"moves together"`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3598,7 +3598,7 @@ git add keepframe/analyze/semantics.py tests/test_semantics.py
 git commit -m "feat(analyze): heuristic roles, motion groups, captioner protocol"
 ```
 
----
+***
 
 ### Task 23: Report and analysis pipeline with stage cache
 
@@ -3608,14 +3608,14 @@ git commit -m "feat(analyze): heuristic roles, motion groups, captioner protocol
 
 **Interfaces:**
 - `report.py`:
-  - `reconstruction_error(scene: Scene, scene_dir: Path, frames: np.ndarray, first_frame: int, sample: int = 1) -> dict` — `{"mean_l1": float, "per_frame": {frame: l1}}` comparing `composite_scene` against the source frames.
-  - `element_confidence(scene: Scene, scene_dir: Path, frames: np.ndarray, first_frame: int) -> dict[str, float]` — per element `1 - min(1, l1_in_bbox / 0.10)` averaged over sampled visible frames (`# ponytail: bbox-local L1 as confidence`).
+  - `reconstruction_error(scene: Scene, scene_dir: Path, frames: np.ndarray, first_frame: int, sample: int = 1) -> dict`: `{"mean_l1": float, "per_frame": {frame: l1}}` comparing `composite_scene` against the source frames.
+  - `element_confidence(scene: Scene, scene_dir: Path, frames: np.ndarray, first_frame: int) -> dict[str, float]`: per element `1 - min(1, l1_in_bbox / 0.10)` averaged over sampled visible frames (`# ponytail: bbox-local L1 as confidence`).
   - `write_report(scene_dir: Path, data: dict) -> Path` → `scene_dir/report.json`.
 - `pipeline.py`:
   - `@dataclass AnalyzeOptions: bg_override: str | None = None; copy: list[str] | None = None; ocr: bool = True; refine: bool = True; refine_iters: int = 200; min_area: int = 30; use_ecc: bool = True`
   - `STAGES = ("frames", "background", "text", "regions", "tracking", "sprites", "keyframes", "semantics", "constraints", "report")`
-  - `analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeOptions | None = None, ocr: Ocr | None = None) -> Project` — runs all stages, writes `scenes/s1/assets/*.png`, `assets/*_raw.npz` (keys `raw`, `first`), `scenes/s1/stages/{background.json,text.pkl,regions.pkl,tracks.pkl,props.pkl,ids.json,overrides.json}`, and the project.
-  - `rerun(root: Path, scene_id: str, from_stage: str, note: str, options: AnalyzeOptions | None = None) -> Version` — reloads cached inputs of `from_stage`, applies `overrides.json` (`{"regions": [{"frame": int, "mask": "stages/ov_<n>.png", "label": int}], "ids": {"<object_key>": "e3"}, "merge": [["e2","e5"]]}`), reruns the remaining stages and appends a version (`auto=False`).
+  - `analyze(video: Path, start: int, end: int, out_root: Path, options: AnalyzeOptions | None = None, ocr: Ocr | None = None) -> Project`: runs all stages, writes `scenes/s1/assets/*.png`, `assets/*_raw.npz` (keys `raw`, `first`), `scenes/s1/stages/{background.json,text.pkl,regions.pkl,tracks.pkl,props.pkl,ids.json,overrides.json}`, and the project.
+  - `rerun(root: Path, scene_id: str, from_stage: str, note: str, options: AnalyzeOptions | None = None) -> Version`: reloads cached inputs of `from_stage`, applies `overrides.json` (`{"regions": [{"frame": int, "mask": "stages/ov_<n>.png", "label": int}], "ids": {"<object_key>": "e3"}, "merge": [["e2","e5"]]}`), reruns the remaining stages and appends a version (`auto=False`).
   - Element ids: text tracks and object tracks are ordered by `(first_frame, x)` and named `e1..eN`; the mapping `object_key -> element_id` (object keys `"t<id>"` for text, `"o<id>"` for sprites) is stored in `stages/ids.json` so corrections (Task 24) can address elements.
   - When `options.ocr` is true and `ocr is None`, `RapidOcr()` is used if importable, otherwise text stage is skipped with a message in the report.
 
@@ -3944,7 +3944,7 @@ git add keepframe/analyze/report.py keepframe/analyze/pipeline.py tests/test_pip
 git commit -m "feat(analyze): end-to-end analysis pipeline with stage cache, overrides and report"
 ```
 
----
+***
 
 ### Task 24: Review corrections (four operations)
 
@@ -3954,10 +3954,10 @@ git commit -m "feat(analyze): end-to-end analysis pipeline with stage cache, ove
 
 **Interfaces:**
 - Produces (each returns the new `Version`, `auto=False`, and never edits an existing version file):
-  - `reassign_id(root: Path, scene_id: str, frames: tuple[int,int], from_id: str, to_id: str, note: str = "reassign id") -> Version` — object-key lookup through `stages/ids.json`; for the frame range, regions of `from_id`'s object are pinned to `to_id`'s object via a region override label `1000 + object_id`; reruns from `regions`. When `frames` covers the whole scene the two elements are merged instead (`overrides.merge`).
-  - `set_region_mask(root, scene_id, frame: int, mask_png: Path, object_id: str, note="set region mask") -> Version` — copies the mask to `stages/ov_<n>.png`, appends `{"frame", "mask", "label": 1000 + obj}` to overrides, reruns from `regions`.
-  - `add_bbox_prompt(root, scene_id, frame: int, bbox: tuple[int,int,int,int], object_id: str, note="bbox prompt") -> Version` — builds a mask from the foreground inside `bbox` and calls `set_region_mask`.
-  - `edit_text(root, scene_id, element_id: str, text: str | None = None, font: FontGuess | None = None, note="edit text") -> Version` — edits the current scene JSON only; sets `provenance="manual"`; no rerun.
+  - `reassign_id(root: Path, scene_id: str, frames: tuple[int,int], from_id: str, to_id: str, note: str = "reassign id") -> Version`: object-key lookup through `stages/ids.json`; for the frame range, regions of `from_id`'s object are pinned to `to_id`'s object via a region override label `1000 + object_id`; reruns from `regions`. When `frames` covers the whole scene the two elements are merged instead (`overrides.merge`).
+  - `set_region_mask(root, scene_id, frame: int, mask_png: Path, object_id: str, note="set region mask") -> Version`: copies the mask to `stages/ov_<n>.png`, appends `{"frame", "mask", "label": 1000 + obj}` to overrides, reruns from `regions`.
+  - `add_bbox_prompt(root, scene_id, frame: int, bbox: tuple[int,int,int,int], object_id: str, note="bbox prompt") -> Version`: builds a mask from the foreground inside `bbox` and calls `set_region_mask`.
+  - `edit_text(root, scene_id, element_id: str, text: str | None = None, font: FontGuess | None = None, note="edit text") -> Version`: edits the current scene JSON only; sets `provenance="manual"`; no rerun.
   - `_object_of(sd: Path, element_id: str) -> str` (object key) and `_object_num(key) -> int`.
 - Known ceiling (`# ponytail:`): object ids are re-derived by tracking on every rerun. They are stable for tracks that start before the corrected frame because tracking is deterministic and overrides only change regions at that frame; tracks that start at or after it may shift. Upgrade path: persist track seeds (first region per object) in `stages/` and re-seed `track_regions` from them.
 
@@ -4136,7 +4136,7 @@ git add keepframe/review/corrections.py tests/test_corrections.py
 git commit -m "feat(review): four correction ops (reassign id, region mask, bbox prompt, edit text) with reruns"
 ```
 
----
+***
 
 ### Task 25: Golden comparison, analyze/correct CLI, M2 gate
 
@@ -4146,9 +4146,9 @@ git commit -m "feat(review): four correction ops (reassign id, region mask, bbox
 - Test: `tests/test_golden_gate.py`
 
 **Interfaces:**
-- `golden.compare(golden: Scene, golden_dir: Path, analyzed: Scene, analyzed_dir: Path, source_frames: np.ndarray) -> dict` — Hungarian match of elements by mean centroid distance over common visible frames; returns `{"matched": int, "tracking_errors": int (unmatched golden + extra analyzed + matched with mean distance > 5 px), "pos_err_px": float, "scale_err": float, "sprite_rgb_l1": float, "sprite_alpha_l1": float, "temporal": float, "frame_l1": float}`.
-- `gates.m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict` — synthetic sprite-only scenes (seeds 1..n, `overlap=True`), thresholds from spec §10 M2: `frame_l1 <= 0.02` on ≥ 80 % of clips, `tracking_errors <= 5` on every clip, mean `temporal >= 0.7`; `passed` when all hold. `refine=None` means "use torch if installed".
-- `gates.m2_gate_real(clips_dir: Path, out_root: Path) -> dict` — for every `*.mp4` in `clips_dir`: analyze the whole file; if `<name>.gt.json` exists with `{"elements": [{"id": str, "frames": {"<frame>": [cx, cy], ...}}]}` compute `pos_err_px` by matching each annotated element to the nearest analyzed centroid at its first annotated frame; always report `reconstruction mean_l1`, element count, and messages. No pass/fail (real clips are judged by the §10 table by hand).
+- `golden.compare(golden: Scene, golden_dir: Path, analyzed: Scene, analyzed_dir: Path, source_frames: np.ndarray) -> dict`: Hungarian match of elements by mean centroid distance over common visible frames; returns `{"matched": int, "tracking_errors": int (unmatched golden + extra analyzed + matched with mean distance > 5 px), "pos_err_px": float, "scale_err": float, "sprite_rgb_l1": float, "sprite_alpha_l1": float, "temporal": float, "frame_l1": float}`.
+- `gates.m2_gate(out_root: Path, n: int = 20, refine: bool | None = None) -> dict`: synthetic sprite-only scenes (seeds 1..n, `overlap=True`), thresholds from spec §10 M2: `frame_l1 <= 0.02` on ≥ 80 % of clips, `tracking_errors <= 5` on every clip, mean `temporal >= 0.7`; `passed` when all hold. `refine=None` means "use torch if installed".
+- `gates.m2_gate_real(clips_dir: Path, out_root: Path) -> dict`: for every `*.mp4` in `clips_dir`: analyze the whole file; if `<name>.gt.json` exists with `{"elements": [{"id": str, "frames": {"<frame>": [cx, cy], ...}}]}` compute `pos_err_px` by matching each annotated element to the nearest analyzed centroid at its first annotated frame; always report `reconstruction mean_l1`, element count, and messages. No pass/fail (real clips are judged by the §10 table by hand).
 - CLI additions:
   - `analyze --video V --start S --end E --out ROOT [--copy "A,B"] [--no-ocr] [--no-refine] [--bg #rrggbb]`
   - `correct --root ROOT --scene s1 --op reassign|mask|bbox|text --args '<json>'` where args are the keyword arguments of the Task 24 functions (`frames` as `[a,b]`, `bbox` as `[x0,y0,x1,y1]`, `font` as `{"size_px":..}`)
@@ -4358,7 +4358,7 @@ sys.exit(main(["gate-m2", "--out", "out/m2", "--n", "20"]))
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_golden_gate.py -v` then `python scripts/m2_gate.py`
-Expected: tests PASS; the gate prints 20 rows and `'passed': True`. If `frame_l1_ok` is below 16/20 with `refine=False`, install the `gpu` extra and rerun — the spec's M2 gate assumes the optimisation step (§5.5) is available. Then run the real-clip hook on the licensed 30-clip set once it exists: `keepframe gate-m2-real --clips data/clips --out out/m2real`.
+Expected: tests PASS; the gate prints 20 rows and `'passed': True`. If `frame_l1_ok` is below 16/20 with `refine=False`, install the `gpu` extra and rerun, because the spec's M2 gate assumes the optimisation step (§5.5) is available. Then run the real-clip hook on the licensed 30-clip set once it exists: `keepframe gate-m2-real --clips data/clips --out out/m2real`.
 
 - [ ] **Step 5: Commit**
 
@@ -4367,15 +4367,15 @@ git add keepframe/analyze/golden.py keepframe/gates.py keepframe/cli.py scripts/
 git commit -m "feat: golden comparison, analyze/correct CLI, M2 synthetic gate and real-clip hook"
 ```
 
----
+***
 
 ## Self-review notes (done while writing)
 
-- **Spec coverage.** §4 IR → Tasks 2–4 (invariants: raw kept in `*_raw.npz` and `Element.raw`, cubic-bezier tracks with `fit_error`, keep flags, append-only versions, `kind=ui` reserved but unused in M2). §5.2–5.6, 5.8–5.10 → Tasks 15–23 (5.1 shot splitting and 5.7 UI parsing are M4 by spec §11 and are not in this plan). §6 → Task 24. §7 edit agent is M3 (not in this plan); the verifier it needs is Task 13. §8 → Tasks 6–7 (HyperFrames attributes, deterministic hashes, MP4). §10 metrics → Tasks 12, 13, 25. §11 M1/M2 completion criteria → Tasks 14 and 25.
+- **Spec coverage.** §4 IR → Tasks 2 to 4 (invariants: raw kept in `*_raw.npz` and `Element.raw`, cubic-bezier tracks with `fit_error`, keep flags, append-only versions, `kind=ui` reserved but unused in M2). §5.2 to 5.6 and 5.8 to 5.10 → Tasks 15 to 23 (5.1 shot splitting and 5.7 UI parsing are M4 by spec §11 and are not in this plan). §6 → Task 24. §7 edit agent is M3 (not in this plan); the verifier it needs is Task 13. §8 → Tasks 6 and 7 (HyperFrames attributes, deterministic hashes, MP4). §10 metrics → Tasks 12, 13, 25. §11 M1/M2 completion criteria → Tasks 14 and 25.
 - **Deliberate simplifications** are marked `# ponytail:` with the upgrade path in code comments (regions, tracking, z-order, text masks, refinement loss, confidence).
 - **Type consistency.** `RAW_COLS` order equals `PROPS` order (x,y,sx,sy,rot,skx,sky,opacity) everywhere raw arrays are indexed; `RenderResult.bboxes[id][i]` pairs with `frames[i]`; `Motion.id` strings are produced by `extract_motions` and consumed by `extract_constraints`/`eval_pred`; `Version`/`new_version` signatures match between store, pipeline and corrections.
 
-## M2 (added 2026-09-05) — Review screen
+## M2 (added 2026-09-05): Review screen
 
 Design authority: `PRODUCT.md` and `DESIGN.md` at the repo root (tokens, type, layout, principles). The implementer of Task 27 reads DESIGN.md before writing markup and follows it verbatim; the reviewer checks against it.
 
@@ -4387,8 +4387,8 @@ Design authority: `PRODUCT.md` and `DESIGN.md` at the repo root (tokens, type, l
 - Test: `tests/test_review_server.py`
 
 **Interfaces:**
-- `class ReviewState(root: Path, scene_id: str = "s1")` — holds `job = {"status": "idle"|"running"|"done"|"error", "op": str|None, "error": str|None, "version": str|None}`, a lock, lazy `frames()` (mmap of `stages/frames.npy`), a PNG cache keyed `(version_id, frame)`.
-- `make_server(root: Path, scene_id: str = "s1", port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer` — returns an unstarted server (tests call `serve_forever` in a thread).
+- `class ReviewState(root: Path, scene_id: str = "s1")`: holds `job = {"status": "idle"|"running"|"done"|"error", "op": str|None, "error": str|None, "version": str|None}`, a lock, lazy `frames()` (mmap of `stages/frames.npy`), a PNG cache keyed `(version_id, frame)`.
+- `make_server(root: Path, scene_id: str = "s1", port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer`: returns an unstarted server (tests call `serve_forever` in a thread).
 - HTTP API (all JSON responses `application/json; charset=utf-8`, errors `{"error": str}` with 4xx/5xx):
   - `GET /` → `keepframe/review/ui.html` (Task 27; until then a 404 with `{"error": "ui.html missing"}`)
   - `GET /api/state[?v=vN]` → `{"project": <project.json>, "version": <Version>, "scene": <scene json>, "report": <report.json or null>, "job": <job>}`
@@ -4671,7 +4671,7 @@ git add keepframe/review/server.py keepframe/cli.py tests/test_review_server.py
 git commit -m "feat(review): stdlib http server with state, frames, keep toggles and correction jobs"
 ```
 
----
+***
 
 ### Task 27: Review screen (single HTML file)
 
@@ -4685,7 +4685,7 @@ git commit -m "feat(review): stdlib http server with state, frames, keep toggles
 **Interfaces / behavior:**
 - Loads `/api/state` on start; `?v=vN` in the page URL selects a version; header select lists all versions (`id` + `note`) and switches by reloading with `?v=`.
 - Viewer: two `<img>` panes (`#orig`, `#recon`) sized to the scene aspect, updated on scrub with `/frame/orig/{f}` and `/frame/recon/{f}?v=`. Prefetch the next 4 frames. A selected element's bbox is drawn as an SVG overlay on both panes from its tracks (JS mirror of `eval_track` / corners; skew via `skx` only).
-- Transport: play/pause button and `Space`; `←`/`→` one frame, `Shift` = 10 frames; `Home`/`End`; `[`/`]` jump to previous/next error peak (per-frame L1 above the 80th percentile). Frame counter `f / N` and time `mm:ss.ff`, tabular numerals. Playback steps frames at the scene fps with `requestAnimationFrame`; `prefers-reduced-motion` disables only the 150 ms UI transitions (playback is content, not decoration).
+- Transport: play/pause button and `Space`; `←`/`→` one frame, `Shift` = 10 frames; `Home`/`End`; `[`/`]` jump to previous/next error peak (per-frame L1 above the 80th percentile). Frame counter `f / N` and time `mm:ss.ff`, tabular numerals. Playback steps frames at the scene fps with `requestAnimationFrame`; `prefers-reduced-motion` disables only the 150 ms UI transitions; playback keeps running because it is the content under review.
 - Timeline (SVG, full width of the viewer column, 8 px per row min): one row per element (visible span bar in the role hue at 60 %, keyframe ticks in `--text-2`), the error strip (one `rect` per frame, height ∝ L1, `--error` above the peak threshold, `--text-2` otherwise) and a playhead. Click/drag scrubs. Row click selects the element.
 - Side panel: element list (swatch by role, id, kind, text or texture thumbnail from `/assets/`, confidence as a 5-segment bar with the number, provenance badge 자동/수동; confidence < 0.7 shows the number in `--caution`); selected element section with its constraints (checkbox per predicate, `keep` state) and the four corrections as `<details>` disclosures with forms: 재할당 (from id prefilled, to id select, frame range), 마스크 (file input PNG → base64), 박스 프롬프트 (frame prefilled; drag a rectangle on the original pane fills x0,y0,x1,y1), 텍스트 (text + size). Buttons: "재할당 실행", "마스크 적용", "박스 적용", "텍스트 저장", and "유지 조건 저장" for pending keep changes (disabled until something changed).
 - Jobs: after a correction POST, poll `/api/job` every 700 ms; while running, the whole side panel form group is `disabled` and a banner shows "보정 실행 중: <op>"; on `done` reload with `?v=<new version>`; on `error` show the message in the banner in `--error` with the recovery hint "값을 확인하고 다시 실행하세요".
@@ -4756,7 +4756,7 @@ Expected: FAIL with `FileNotFoundError: keepframe/review/ui.html`
 
 - [ ] **Step 3: Build the page**
 
-Write `keepframe/review/ui.html` following DESIGN.md. The skeleton below is the required structure; complete the CSS and JS so every behavior in the Interfaces section works.
+Write `keepframe/review/ui.html` following DESIGN.md, using this skeleton as the required structure. Complete the CSS and JS so every behavior in the Interfaces section works.
 
 ```html
 <!doctype html>
@@ -4861,4 +4861,4 @@ git add keepframe/review/ui.html pyproject.toml tests/test_review_ui.py
 git commit -m "feat(review): bilingual review screen with side-by-side viewer, error strip timeline and corrections"
 ```
 
----
+***

@@ -1,11 +1,11 @@
-# kf-script P1 · the view — Implementation Plan
+# kf-script P1 · the view: Implementation Plan
 
 > **For agentic workers:** steps use `- [ ]`. One commit per task on `claude/quirky-fermat-uyx2k0`, pushed after each task. Tests and measurements run in the cloud container (CLAUDE.md §5).
 
 ## Context
 
 - Spec: `docs/superpowers/specs/2026-10-13-kf-script-design.md` (§Format, §LLM view).
-- Research: `docs/research/2026-10-13-ai-legible-format/` — the brief hides IR facts (e24's typed line has glyph reveals; the brief shows none), and an executable page is checkable against the source (mk571 gold 0.0066).
+- Research: `docs/research/2026-10-13-ai-legible-format/`. The brief hides IR facts (e24's typed line has glyph reveals; the brief shows none), and an executable page can be checked against the source (mk571 gold 0.0066).
 - P1 gives every analysed scene an executable, readable kf-script that renders like `compose()`, lets the agent read it, and measures both: fidelity against the source and an A/B against the brief.
 - Inputs: seven analysed reference projects in `eval/kf/` (mk543, mk544, mk571, mk800, e07, e11, e24; sources in `eval/refs/`), the gold page `docs/research/2026-10-13-ai-legible-format/gold/mk571.html`.
 
@@ -66,7 +66,7 @@
 - [x] `CLAUDE.md`, the spec and the five plans committed and pushed.
 - [x] Analysed projects copied to `eval/kf/` without `stages/*.pkl`, `frames.npy`, `plate_frames.npy`, `analysis/`; `project.json` sources point at `eval/refs/`.
 - [x] Fast-suite baseline recorded in `docs/qa/kfscript/p1.md`.
-- [ ] Eval clips: the user uploads ig1–ig3, envato1 to `eval/clips/`; clip gates are "not run" until then.
+- [ ] Eval clips: the user uploads ig1 to ig3 and envato1 to `eval/clips/`; clip gates are "not run" until then.
 
 ## Task 1: template hook
 
@@ -83,7 +83,7 @@ def compose(scene, scene_dir, out_html, *, fonts=None, font_wait=None, warnings=
 ```
 Template: `const S = {};` before the loop; `S[el.id] = st;` in it; the track loop is guarded by `if (!EXPLICIT)`; `{{TIMELINE}}` after the loop; `{{HEADER}}` at the top. `EXPLICIT` is `true` only when a timeline is given.
 
-**Gates**: fast tests; `test_compose_without_timeline_is_unchanged` (browser) — PNG hashes of a synthetic scene before and after equal.
+**Gates**: fast tests; `test_compose_without_timeline_is_unchanged` (browser): PNG hashes of a synthetic scene are equal before and after.
 
 ## Task 2: emitter
 
@@ -106,7 +106,7 @@ def emit_page(scene, scene_dir, out, *, fonts=None) -> Path
 
 **Files**: `tests/test_kfscript.py`, `tests/test_kfscript_browser.py`.
 
-**Gates**: per sampled frame L1 ≤ 0.002 and mean ≤ 0.0005 on `make_synthetic_scene` seeds 1–3; `make_reference_scene` flat/gradient/animated/image plates with mover and logo; stagger (9) and plane (10) titles; a video-sprite scene. A shuffled frame order gives the same hashes as the forward order.
+**Gates**: per sampled frame L1 ≤ 0.002 and mean ≤ 0.0005 on `make_synthetic_scene` seeds 1 to 3; `make_reference_scene` flat/gradient/animated/image plates with mover and logo; stagger (9) and plane (10) titles; a video-sprite scene. A shuffled frame order gives the same hashes as the forward order.
 
 **Tests**: `test_parity_synthetic`, `test_parity_reference_plates`, `test_parity_glyph_and_plane`, `test_parity_video`, `test_seek_order_independent`.
 

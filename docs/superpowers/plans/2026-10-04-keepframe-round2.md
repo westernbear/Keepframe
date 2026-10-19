@@ -1,4 +1,4 @@
-# Keepframe Round 2 — 남은 gap 수리 + 속도·술어·글자 리빌·3D + After Effects 해제 Implementation Plan
+# Keepframe Round 2: 남은 gap 수리 + 속도·술어·글자 리빌·3D + After Effects 해제 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. **Implementer = Codex** (`run-codex.sh` = `codex exec -m gpt-6.1-sol -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true -C <worktree>`; 샌드박스가 .git을 읽기 전용으로 두므로 컨트롤러가 전체 스위트를 샌드박스 밖에서 돌리고 커밋). 리뷰 = Claude 서브에이전트(과제 sonnet, 재리뷰 haiku, 최종 opus). Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§5.3 텍스트, §5.4 영역, §5.5 sprite, §5.9 술어, §6 보정, §7.2 편집, §9 실패 정책, §11 M5 3D·M6 AE). 지난 라운드: `docs/superpowers/plans/2026-10-03-keepframe-core-flow.md`, 결과 `docs/qa/core-flow/README.md`.
 
----
+***
 
 ## Context
 
@@ -25,22 +25,22 @@
 | G5 | gap | 그라데이션 장면에서 텍스트 획·불투명도가 판(plate) 평균색 기준 | final fix 한계 |
 | G6 | gap | 판 장면에서 GPU refine을 건너뜀 | final fix 한계 |
 | G7 | gap | 채팅 첨부가 PNG/JPEG만(SVG·GLB 보류) | Task 6 ruling |
-| L1 | 한계 | 150프레임당 9–31분(CPU). envato1: OCR 13.5분(검출이 90%+), 영역 8분, sprite ECC 6.6분 | 실측 |
+| L1 | 한계 | 150프레임당 9~31분(CPU). envato1: OCR 13.5분(검출이 90%+), 영역 8분, sprite ECC 6.6분 | 실측 |
 | L2 | 한계 | 술어 폭발(ig1 55k): 모든 모션 쌍·요소 쌍 조합 | `analyze/constraints.py` |
 | L3 | 한계 | 글자별 리빌이 제목을 조각냄("You just","ust","st") → ig3 프롬프트 3/8 | 실측 |
 | L4 | 한계 | 입체로 보이는 객체(ig2 지구본)가 평면 조각들로 재구성 | 실측 |
 | L5 | 한계 | AE가 이미지 배경(실제 클립 3/4)과 3D 요소를 거부 | `after_effects/compatibility.py:287,457` |
 
-실측 근거(2026-10-04, 이 머신 4코어 CPU): `extract_regions` 20프레임 25.7초 중 `_region`의 전체 프레임 마스크 `np.nonzero`가 19.4초. RapidOCR 1080p 프레임당 2–3초 중 검출 1.9–3.0초, 절반 해상도 검출 0.77초.
+실측 근거(2026-10-04, 이 머신 4코어 CPU): `extract_regions` 20프레임 25.7초 중 `_region`의 전체 프레임 마스크 `np.nonzero`가 19.4초. RapidOCR 1080p 프레임당 2~3초 중 검출 1.9~3.0초, 절반 해상도 검출 0.77초.
 
 ### 사용자 결정(2026-10-04)
 - 입체 객체 → **3D 에셋 경로**(이미지→3D). 백엔드 = **Hugging Face Space 어댑터**. 생성기에 닿지 못하면 **정적 sprite 하나 + "3D 후보" 표시**.
-- 3D 충실도 가드 → **오차가 가장 낮은 표현을 채택**: 고체마다 원본 대비 국소 오차를 조각(현행)·정지 이미지·생성 3D 셋 다 재고, 3D는 최선 대안 + 0.005 이하일 때만, 아니면 정지 이미지, 정지 이미지가 조각보다 나쁘면 조각 유지. 항상 "3D 후보" 표시 + 세 값 기록. (생성기는 단일 크롭으로 뒷면·질감을 추측하므로 원본과 다를 수 있다는 점을 반영)
+- 3D 충실도 가드 → **오차가 가장 낮은 표현을 채택**: 고체마다 원본 대비 국소 오차를 조각(현행)·정지 이미지·생성 3D 셋 다 재고, 3D는 최선 대안 + 0.005 이하일 때만, 아니면 정지 이미지, 정지 이미지가 조각보다 나쁘면 조각 유지. 항상 "3D 후보" 표시 + 세 값 기록. (생성기는 단일 크롭으로 뒷면·질감을 추측하므로 원본과 다를 수 있어서 둔 규칙)
 - 글자 리빌 → **텍스트 요소 하나 + 리빌 트랙**.
 - 속도 → **2배 이상, 충실도 손실 없음**.
-- After Effects → **동결 해제**. 사용자가 AE를 보유 — 브리지(패널) 설치 후 실기 점검 가능.
+- After Effects → **동결 해제**. 사용자가 AE를 보유하고 있어 브리지(패널)를 설치하면 실기 점검 가능.
 
----
+***
 
 ## Global Constraints
 
@@ -51,12 +51,12 @@
 - 실패를 숨기지 않는다: 선택 기능(캡션·3D 생성·refine) 실패는 `report.json` `messages`에 남기고 분석은 계속.
 - 재시도 상한(edit 검증 4회, 에셋 생성 2회) 유지. 충돌은 `needs_choice`.
 - UI 문구 ko+en(`i18n.js`). 정적 자산 캐시버스터는 모든 페이지가 같은 값 하나.
-- 평가 데이터는 메인 체크아웃 `/home/singlerr/ref_stdio/eval`(gitignore; 워크트리에는 없음 — 절대경로로 지정). `eval/`, `.superpowers/`, `.impeccable/` 커밋 금지.
+- 평가 데이터는 메인 체크아웃 `/home/singlerr/ref_stdio/eval`(gitignore; 워크트리에는 없으니 절대경로로 지정). `eval/`, `.superpowers/`, `.impeccable/` 커밋 금지.
 - 테스트: `.venv/bin/python -m pytest -p no:cacheprovider -q -m 'not browser and not gpu and not ocr'` (browser 표시 테스트는 해당 Task의 집중 실행에서 따로 돌린다)
 - 커밋 메시지 끝: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
 - 머지 후 메인 체크아웃에서 `graphify update .`
 
-### 분석 변경 채택 기준(Task 6–10, 13, 15)
+### 분석 변경 채택 기준(Task 6~10, 13, 15)
 분리된 detached 체크아웃(`PYTHONPATH=<checkout>`)에서 `gate-m2-real --render-check` + 합성 `gate-m2 --n 20`. 채택 = 합성 게이트 `passed` 유지 **그리고** 실제 클립 4개 중 3개 이상에서 `mean_l1` 악화 ≤ +0.005 **그리고** 해당 Task의 목표 지표 개선. 속도 Task는 추가로 클립별 텍스트 트랙 문구 95% 이상 기준선과 일치. 미달이면 `git revert` 후 README에 기록. 측정 후 `<out>/<clip>/scenes/*/stages`는 지워 디스크를 지킨다.
 
 ## Review Focus
@@ -67,7 +67,7 @@
 4. LLM이 `set_keep(targets=["e1"])`처럼 수천 개 술어에 걸리는 요청을 하면, 미리보기에 개수가 보이고 확인 시 정확히 그것만 바뀌어야 한다 → Task 2 `test_set_keep_preview_counts_and_confirm_applies_exactly`.
 5. 영역 추출 최적화가 수동 마스크(override, label ≥ 1000)와 텍스트 제외 마스크가 있을 때도 결과를 바꾸면 안 된다 → Task 6 `test_crop_extraction_matches_reference_with_overrides`.
 
----
+***
 
 ## Task 0: 작업 공간
 
@@ -75,7 +75,7 @@
 - [ ] 계획 사본: `docs/superpowers/plans/2026-10-04-keepframe-round2.md`, SDD 워크스페이스·원장 생성, `run-codex.sh` 재작성(위 명령)
 - [ ] 기준 테스트 1546 passed 확인 → Commit `docs: add round-2 plan`
 
-## Phase A — 측정 기준
+## Phase A: 측정 기준
 
 ### Task 1: 끝단 충실도 지표(render_l1) + 프롬프트 정답 대조 + 기준선
 
@@ -89,7 +89,7 @@
 - [ ] 기준선(master 코드): `gate-m2-real --clips $EVAL/clips --out $EVAL/out/r2-baseline --max-frames 150 --render-check`, `gate-m1/m2/m3`, 프롬프트 평가(+gold) → `docs/qa/round2/README.md` 표(요소, kinds, mean_l1, render_l1, low_conf, 술어 수, 단계별 초, 프롬프트 ok/correct).
 - [ ] Commit `feat(gates): end-to-end render fidelity and gold-checked prompt eval`
 
-## Phase B — gap 수리
+## Phase B: gap 수리
 
 ### Task 2: `correct`·`set_keep`도 브라우저 확인 후 실행 (G1)
 
@@ -142,7 +142,7 @@ def temporal_by_id_detail(ref, out, min_share=0.10):
 - [ ] 실패 테스트: SVG data URL 첨부 → 텍스처 PNG(알파 있음), 원래 상자 안에 맞음. `<script>`/외부 `href` 포함 SVG → 제거된 뒤 렌더(네트워크 요청 0). `data:model/gltf-binary;base64,…` 첨부 + model target → `canonical.model` 설정, kind "3d". 잘못된 GLB → 실패 메시지.
 - [ ] Commit `feat(agent): accept SVG and GLB attachments in chat`
 
-## Phase C — 속도 (2배 이상, 무손실)
+## Phase C: 속도 (2배 이상, 무손실)
 
 ### Task 6: 영역 추출을 성분 bbox 안에서 계산(정확히 같은 결과)
 
@@ -171,7 +171,7 @@ def _region_crop(frame_idx, frame, sub, x0, y0, label) -> Region:
 
 **Files:** Modify `keepframe/analyze/text.py`(`RapidOcr`), `keepframe/analyze/pipeline.py`(`AnalyzeOptions.ocr_max_side: int = 1280`), `keepframe/cli.py`(`--ocr-max-side`) · Test `tests/test_ocr_cap.py`
 
-**Interfaces:** `RapidOcr(max_side: int | None = 1280)` — 검출만 `max_side`로 줄이고(설치된 rapidocr_onnxruntime가 지원하는 `det_limit_side_len`/`det_limit_type="max"` 경로; 없으면 프레임을 축소해 검출 후 박스를 원래 좌표로 되돌리고 인식은 원본 크롭), 인식은 원본 해상도 크롭.
+**Interfaces:** `RapidOcr(max_side: int | None = 1280)`: 검출만 `max_side`로 줄이고(설치된 rapidocr_onnxruntime가 지원하는 `det_limit_side_len`/`det_limit_type="max"` 경로; 없으면 프레임을 축소해 검출 후 박스를 원래 좌표로 되돌리고 인식은 원본 크롭), 인식은 원본 해상도 크롭.
 - [ ] 테스트: 가짜 엔진으로 상자 좌표가 원래 해상도로 복원되는지, `max_side=None`이면 기존 동작.
 - [ ] 측정(Task 8과 함께 한 번): OCR 단계 ≥2배, 텍스트 트랙 문구 95% 이상 일치. Commit `perf(text): cap OCR detection resolution`
 
@@ -181,9 +181,9 @@ def _region_crop(frame_idx, frame, sub, x0, y0, label) -> Region:
 
 - [ ] ECC 입력 크롭·템플릿을 최대 변 384px로 축소(배율 s), 결과 affine의 이동 성분을 1/s로 되돌림. 384 이하면 그대로.
 - [ ] 실패 테스트: 알려진 affine(이동 7.3px, 회전 4°, 배율 1.1)로 그린 640px sprite → 위치 오차 ≤ 0.5px, 회전 ≤ 0.5°.
-- [ ] 측정(Task 6–8 합산, 채택 기준 + 전체 분석 시간 4개 중 3개 이상에서 ≥2배): `r2-speed`. Commit `perf(sprites): fit ECC on downscaled crops`
+- [ ] 측정(Task 6~8 합산, 채택 기준 + 전체 분석 시간 4개 중 3개 이상에서 ≥2배): `r2-speed`. Commit `perf(sprites): fit ECC on downscaled crops`
 
-## Phase D — 남은 분석 gap
+## Phase D: 남은 분석 gap
 
 ### Task 9: 판 장면의 획·불투명도를 국소 판 색으로 (G5)
 
@@ -205,7 +205,7 @@ def _region_crop(frame_idx, frame, sub, x0, y0, label) -> Region:
 
 **Files:** Create `keepframe/ir/importance.py` · Modify `keepframe/analyze/constraints.py`, `keepframe/session/brief.py`(같은 순위 함수 사용) · Test `tests/test_constraints_scale.py`
 
-**Interfaces:** `rank_elements(scene) -> list[Element]`(텍스트 먼저, 그다음 canonical 넓이 × 보이는 길이 — 브리프의 기존 기준을 옮김), `MAX_SALIENT = 24`, `extract_constraints(scene, max_salient=MAX_SALIENT)`.
+**Interfaces:** `rank_elements(scene) -> list[Element]`(텍스트 먼저, 그다음 canonical 넓이 × 보이는 길이. 브리프의 기존 기준을 옮김), `MAX_SALIENT = 24`, `extract_constraints(scene, max_salient=MAX_SALIENT)`.
 
 ```python
     salient = {e.id for e in rank_elements(scene)[:max_salient]}
@@ -224,11 +224,11 @@ def _region_crop(frame_idx, frame, sub, x0, y0, label) -> Region:
 - [ ] 실패 테스트: 조각 sprite 100개 + 텍스트 3개 합성 장면 → 술어 수가 단항 + O(24²) 이하. 중요 요소 둘의 순서를 바꾸면 keep 검증 실패(검출력 유지). `gate-m1` 통과(IR→렌더→재추출 일치). keep 프리셋 의미 불변.
 - [ ] 실제: ig1 55k → ≤ 5k(README). Commit `perf(constraints): relate salient elements and reduce order chains`
 
-## Phase E — 글자 리빌 (L3)
+## Phase E: 글자 리빌 (L3)
 
 ### Task 12: IR `reveal` 트랙과 모든 출력의 표현
 
-**Files:** Modify `keepframe/ir/schema.py`(`PROPS`+`"reveal"`, `DEFAULTS["reveal"]=1.0`), `keepframe/ir/tracks.py`, `keepframe/analyze/keyframes.py`(`PROPS[:raw.shape[1]]`만 순회 — 8열 raw 하위호환), `keepframe/compose/template.html`(`apply()`에 `clip-path: inset(0 ${(1-st.reveal)*100}% 0 0)`, 1이면 비움; `DEFAULTS`에 reveal), `keepframe/analyze/composite.py`(텍스처 오른쪽 `(1−v)` 알파 0), `keepframe/verify/matrix.py`(모션 종류 `reveal`: mag=Δreveal, dur), `keepframe/render/lottie.py`(사각 마스크 정점 키프레임), `keepframe/after_effects/compatibility.py`(Task 19 전까지 `reveal` 이슈), `keepframe/session/brief.py`("reveals left→right 0.20s–0.90s") · Test `tests/test_reveal_track.py`(렌더 테스트 `browser`)
+**Files:** Modify `keepframe/ir/schema.py`(`PROPS`+`"reveal"`, `DEFAULTS["reveal"]=1.0`), `keepframe/ir/tracks.py`, `keepframe/analyze/keyframes.py`(`PROPS[:raw.shape[1]]`만 순회해 8열 raw 하위호환), `keepframe/compose/template.html`(`apply()`에 `clip-path: inset(0 ${(1-st.reveal)*100}% 0 0)`, 1이면 비움; `DEFAULTS`에 reveal), `keepframe/analyze/composite.py`(텍스처 오른쪽 `(1−v)` 알파 0), `keepframe/verify/matrix.py`(모션 종류 `reveal`: mag=Δreveal, dur), `keepframe/render/lottie.py`(사각 마스크 정점 키프레임), `keepframe/after_effects/compatibility.py`(Task 19 전까지 `reveal` 이슈), `keepframe/session/brief.py`("reveals left→right 0.20s–0.90s") · Test `tests/test_reveal_track.py`(렌더 테스트 `browser`)
 
 **Interfaces:** reveal = 왼쪽부터 보이는 폭 비율 0..1(클리핑, 레이아웃·bbox 불변 → 레이어 프로브 그대로). raw 9번째 열(index 8) = reveal.
 - [ ] 실패 테스트: 0→1(10프레임) 리빌 텍스트 렌더의 5번째 프레임은 왼쪽 절반만 보임(Chromium·composite 둘 다), 마지막 프레임 전체. `test_reveal_survives_longer_copy`(Review Focus 1): 문구를 3배 길게 바꿔도 마지막 프레임 전체 보임. Lottie JSON에 마스크. AE 호환성에 reveal 이슈. 8열 raw 장면 로드·키프레임 정상. content_only 프리셋이 `type(m,'reveal')`·`dur` 유지.
@@ -246,13 +246,13 @@ def _region_crop(frame_idx, frame, sub, x0, y0, label) -> Region:
 - [ ] 실패 테스트: 가짜 OCR이 "Y"→"You"→"You ju"→"You just"(왼쪽 고정, 넓어지는 상자)를 돌려주는 합성 영상 → text 요소 1개, reveal 키 0.1 근처→1.0, 상자 안 sprite 0개. 서로 다른 두 줄 제목은 합쳐지지 않음.
 - [ ] 측정 `r2-reveal`: 채택 기준 + ig3 텍스트 요소·조각 감소, ig3 프롬프트 correct ≥ 6/8 목표. Commit `feat(text): fold letter-by-letter reveals into one text element`
 
-## Phase F — 입체 객체 → 3D (L4)
+## Phase F: 입체 객체 → 3D (L4)
 
 ### Task 14: IR `rx`/`ry` + `pending_asset` + Three.js 회전
 
 **Files:** Modify `keepframe/ir/schema.py`(`PROPS`+`"rx","ry"`(도, 기본 0), `Element.pending_asset: Optional[Literal["3d"]] = None`), `keepframe/compose/template.html`(model 캔버스별 객체 보관, `apply()`에서 kind 3d면 `object.rotation.set(rx·π/180, ry·π/180, 0)`), `keepframe/compose/composer.py`, `keepframe/analyze/composite.py`(3d 요소는 `canonical.texture` 정적 그림), `keepframe/verify/matrix.py`(모션 `spin`: mag=Δ도), `keepframe/render/lottie.py`(3d → 정적 텍스처 이미지 레이어 + 경고), `keepframe/session/brief.py`("spins 360° …", "(3D 후보)"), 검수 인스펙터 배지(`review/inspector.js`, i18n `review.pending3d` "3D 후보"/"3D candidate") · Test `tests/test_ir_spin.py`(렌더 `browser`, 기존 GLB 픽스처 사용)
 
-**Interfaces:** rx/ry는 kind "3d"에만 적용(sprite에는 무시 — 브리프·문서에 명시). Three.js 규약: ry 증가 = 앞면이 +x로, rx 증가 = 앞면이 화면 아래로.
+**Interfaces:** rx/ry는 kind "3d"에만 적용(sprite에는 무시하며 브리프·문서에 명시). Three.js 규약: ry 증가 = 앞면이 +x로, rx 증가 = 앞면이 화면 아래로.
 - [ ] 실패 테스트: ry 0→90 GLB 장면 렌더 프레임 차이 발생, ry 없음과 다름. sprite에 ry가 있어도 렌더 불변. 8·9열 raw 하위호환. AE 호환성: 3d 이슈 유지(Task 20 전).
 - [ ] Commit `feat(ir): 3D rotation tracks and pending 3D asset flag`
 
@@ -289,7 +289,7 @@ def estimate_spin(frames, masks, boxes):
 ```
 - 통합 요소: 구성원 트랙 제거, 하나의 sprite(`pending_asset="3d"`), canonical = 마스크 넓이 최대 프레임의 RGBA 크롭, x/y/sx/sy = 덩어리 bbox, raw 열 9·10 = rx/ry. 보고서 `messages`에 "3D 후보 N개". 구성원 트랙의 props는 버리지 않고 고체 props의 `fragments`에 보관(Task 16의 오차 비교·되돌림용).
 - [ ] 실패 테스트: `make_spinning_sphere_video`(정사영 줄무늬 구, 6°/프레임 + 평행이동) → 고체 1개, ry 기울기 6±1.5°/프레임, rx ≈ 0. `test_rigid_gradient_card_is_not_solid`(Review Focus 3). 움직이는 단색 사각형 → 고체 아님. 텍스트 블록 → 고체 아님.
-- [ ] 측정 `r2-solids`: 클립별 고체 수와 크롭을 README에 붙여 컨트롤러가 오탐 확인(ig1·ig3에 오탐 0 목표), ig2 요소 수 감소. 생성기 없는 정적 대체라 ig2 mean_l1 악화는 허용(사용자 결정) — 대신 Task 17 뒤 render_l1로 평가. Commit `feat(analyze): merge fragmented solids and measure their spin`
+- [ ] 측정 `r2-solids`: 클립별 고체 수와 크롭을 README에 붙여 컨트롤러가 오탐 확인(ig1·ig3에 오탐 0 목표), ig2 요소 수 감소. 생성기 없는 정적 대체라 ig2 mean_l1 악화는 허용(사용자 결정)하고, 대신 Task 17 뒤 render_l1로 평가. Commit `feat(analyze): merge fragmented solids and measure their spin`
 
 ### Task 16: 참조 크롭 → 3D 생성(분석·편집), 실패 시 정적 대체
 
@@ -319,7 +319,7 @@ def choose_solid(e):
 - 공개 Space는 대기열·속도 제한이 있고 같은 입력에도 결과가 달라질 수 있다: 어댑터 타임아웃 300초, Space가 seed 입력을 받으면 고정값(0) 전달, 실패는 `asset_api_unavailable`로 돌려줘 분석은 대체 경로로 간다.
 - [ ] 실측: 어댑터를 띄우고 `KEEPFRAME_ASSET_API_URL=http://127.0.0.1:8790` 로 ig2 재분석 → 가드가 고른 표현과 세 오차 값, 지구본 GLB 렌더 스크린샷, render_l1을 기준선과 비교(README). 3D가 뽑히지 않아도 결과 그대로 기록(실패가 아님). Commit `feat(scripts): Hugging Face Space adapter for image-to-3D`
 
-## Phase G — After Effects (동결 해제)
+## Phase G: After Effects (동결 해제)
 
 ### Task 18: 이미지 배경 → 맨 아래 푸티지 레이어
 
@@ -334,7 +334,7 @@ def choose_solid(e):
 ### Task 20: 3D → AE 3D 모델 레이어(가능할 때), 아니면 대체안
 
 **Files:** Modify `operations.py`(`AddLayerOperation` layer_type `"model"`, 3D 변환 속성 `ADBE Rotate X/Y`), `models.py`(capability `model_layers`), `assets/keepframe_panel.jsx`(AE 버전 ≥ 24.1이면 `model_layers` 보고, GLB `importFile`, comp 렌더러 Advanced 3D), `mapping.py`(kind 3d → model 레이어 + rx/ry 키프레임; capability 없으면 정적 텍스처 푸티지 대체안 제안), `compatibility.py`(3d 이슈를 capability 기준으로) · Test `tests/test_ae_model_layer.py`
-- [ ] 단위: capability 있으면 model 레이어 + 회전 키프레임, 없으면 이슈 + 대체안(사용자 승인 필요 — 기존 대체안 흐름). Commit `feat(ae): place 3D elements as AE model layers`
+- [ ] 단위: capability 있으면 model 레이어 + 회전 키프레임, 없으면 이슈 + 대체안(사용자 승인 필요, 기존 대체안 흐름). Commit `feat(ae): place 3D elements as AE model layers`
 
 ### Task 21: AE 실기 점검(사용자 AE 머신)
 
@@ -343,7 +343,7 @@ def choose_solid(e):
 - [ ] 문서: 서버 접근(같은 LAN이면 `--host 0.0.0.0` + 관리자 로그인, 아니면 `ssh -L 8765:127.0.0.1:8765` 권장), Windows에서 `pip install 'keepframe[ae]'` → `keepframe ae-install` → AE 환경설정(스크립트 파일·네트워크 허용) → `Window > Keepframe Panel` → `keepframe ae-connect`.
 - [ ] 컨트롤러가 이 단계에서 사용자와 진행(AskUserQuestion으로 준비 확인). 기존 AE 검증(키프레임 일치·프레임 비교) 결과와 스크린샷을 README에 기록. 문제는 수정 Task로 되돌림.
 
-## Phase H — 마무리
+## Phase H: 마무리
 
 ### Task 22: 최종 측정 + 브라우저 E2E + 문서
 
@@ -352,7 +352,7 @@ def choose_solid(e):
 - [ ] README(새 트랙·3D 어댑터·AE 지원 범위), 스펙 상태 주석(§5.3, §5.9, §11 M5·M6), `docs/qa/round2/README.md` 알려진 한계.
 - [ ] `graphify update .`(머지 후 메인) · 브랜치 전체 리뷰 → finishing-a-development-branch.
 
----
+***
 
 ## Verification (전체)
 

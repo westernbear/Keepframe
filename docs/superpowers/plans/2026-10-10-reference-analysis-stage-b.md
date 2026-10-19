@@ -1,4 +1,4 @@
-# Reference Analysis · Stage B (big and kinetic text as text) — Implementation Plan
+# Reference Analysis · Stage B (big and kinetic text as text): Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Implementers are Claude subagents. Each task gets its own review, and the whole branch gets one review at the end. Task 0 copied this plan here. Steps use `- [ ]`.
 
@@ -69,7 +69,7 @@ D13 in detail:
   - Scenes without rx/ry or `glyphs` render pixel-identically in HTML and numpy.
   - `test_spec_unchanged_for_legacy_scene` stays byte-identical.
   - The schema stays `keepframe.scene/1`; new fields use `exclude_if` defaults.
-  - Seeds 1–8 stay identical to Task 1's run.
+  - Seeds 1 to 8 stay identical to Task 1's run.
 - **No new Python dependency.** Use difflib, `scipy.signal.savgol_filter`, `scipy.optimize.least_squares`, `scipy.stats.theilslopes` and `cv2.findTransformECC` (MOTION_HOMOGRAPHY).
 - **ExtendScript stays ES3.** When the AE spec gains a field, bump the extension version and `SPEC_LEVEL`.
 - **Each new phase logs its duration**, e.g. `log.info("titles merge %.2fs", …)`.
@@ -104,7 +104,7 @@ D13 in detail:
    - Task 12: `test_retext_on_a_group_member_replaces_the_group`, `test_colour_edit_on_a_group_member_recolours_all`.
 
 Also pinned:
-- Legacy unchanged: Task 3 `test_composite_untilted_is_bitwise_unchanged`, the Task 4 golden spec, and Task 6's seeds 1–8 identity.
+- Legacy unchanged: Task 3 `test_composite_untilted_is_bitwise_unchanged`, the Task 4 golden spec, and Task 6's seeds 1 to 8 identity.
 - Time budget: Task 8 `test_track_plane_speed`, Task 12 `test_guard_cost`, and the Task 13 seconds gate.
 
 ## Facts checked in code
@@ -280,13 +280,13 @@ Matting, style and fonts then treat it as any other text prop.
 | 12 | Guard, `text_fragments` groups, edits treat a group as one | 10 | | |
 | 13 | Final eval, sheets, review, fix wave, merge (controller) | all | live (user) | yes |
 
----
+***
 
 ## Task 0: workspace, ledger, home runner, references (controller)
 
 - [ ] Run `git worktree add .worktrees/reference-b -b feature/reference-b` from master 9cb93d9, which is already pushed.
 - [ ] Copy this plan without the Korean summary to `docs/superpowers/plans/2026-10-10-reference-analysis-stage-b.md`.
-- [ ] Start the ledger at the `sdd-workspace` path with D1–D19 as rulings.
+- [ ] Start the ledger at the `sdd-workspace` path with D1 to D19 as rulings.
 - [ ] Home runner: copy the session's `sync-home.sh`/`run-home.sh` pattern into the workspace as `home.sh` (not committed), targeting `home:~/kf-b`.
   - It syncs `git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- --rsync-path='wsl -d Ubuntu -- rsync'`.
   - The preamble is `cd ~/kf-b && export PYTHONPATH=$PWD PATH=/home/ubuntu/kf/.venv/bin:$PATH && unset DISPLAY WAYLAND_DISPLAY; mkdir -p eval; [ -e eval/clips ] || ln -s ~/kf/eval/clips eval/clips`.
@@ -337,7 +337,7 @@ def ocr_models(cache: Path | None = None, *, fetch=urllib.request.urlopen) -> di
 - `test_ocr_models_downloads_once_and_checks_sha256`: with a fake fetch, a wrong hash returns `None` and leaves no file; a second call does not fetch.
 - `test_rapidocr_gets_v5_paths_and_fork_keeps_them`: a monkeypatched `rapidocr_onnxruntime.RapidOCR` records its kwargs.
 - `test_v4_when_models_unavailable`: when the fetch raises, there are no model kwargs and one warning.
-- `[ocr] test_v5_reads_rendered_titles`: 6 `TITLES` in bundled fonts at 44–56 px on flat and gradient plates; v5's exact casefolded reads ≥ v4's.
+- `[ocr] test_v5_reads_rendered_titles`: 6 `TITLES` in bundled fonts at 44 to 56 px on flat and gradient plates; v5's exact casefolded reads ≥ v4's.
 
 ## Task 2: sans prior gains condensed_sans and rounded_sans
 
@@ -505,10 +505,10 @@ def glyph_edges(g: GlyphReveal, width: float) -> list[int]       # 0, round(midp
 ## Task 6: synthetic seeds 9 and 10, title gates, pre-merge numbers
 
 **Deliverable**
-- **Seed 9:** a left-to-right glyph stagger — step 2–3 frames, ramp 4–6 frames, opacity track constant at 1.
+- **Seed 9:** a left-to-right glyph stagger: step 2 to 3 frames, ramp 4 to 6 frames, opacity track constant at 1.
 - **Seed 10:** a yawed title.
   - ry goes from −35° to −18°, with a small rot.
-  - Size 60–72 px.
+  - Size 60 to 72 px.
   - Two-stop gradient fill and a `Fade(angle=90, stops=[1 → 0.3])`.
 - New gates, plus one home run: `--synthetic 10 --renderer numpy --out eval/out/rb-t6`.
 
@@ -527,7 +527,7 @@ def glyph_edges(g: GlyphReveal, width: float) -> list[int]       # 0, round(midp
 - `tests/test_synth_titles.py`.
 
 **Gates**
-- Seeds 1–8 rows are identical to Task 1's `metrics.json`, seconds excluded.
+- Seeds 1 to 8 rows are identical to Task 1's `metrics.json`, seconds excluded.
 - The seed 9 and 10 numbers are recorded in `stage-b.md` as "before merge".
 
 **Tests**
@@ -619,7 +619,7 @@ def plane_raw(Hs, wh, size, n, opacity) -> np.ndarray                           
 **Gates:** all tests pass on home.
 
 **Tests**
-- `test_fit_props_inverts_projective_matrix`: 200 random poses (|rx|,|ry| ≤ 40, rot ±30, skx ±10, sx/sy 0.5–2); residual ≤ 0.05 px, angles ≤ 0.2°.
+- `test_fit_props_inverts_projective_matrix`: 200 random poses (|rx|,|ry| ≤ 40, rot ±30, skx ±10, sx/sy 0.5 to 2); residual ≤ 0.05 px, angles ≤ 0.2°.
 - `test_text_quad_on_upright_lowercase_title_is_untilted`: rot and converge < 0.5°.
 - `test_text_quad_on_yawed_title`: corners ≤ 2 px.
 - `test_rectify_round_trip`: ≤ 4 levels.
@@ -735,7 +735,7 @@ def glyph_reveal(p: dict, frames, plate, size, text: str) -> dict | None   # Gly
 
 **Gates**
 - On a seed-9-like title, the delays are within ±1 frame for ≥ 80 % of glyphs, and the ramp is within ±2 frames.
-- No title on seeds 1–8 enters glyph mode.
+- No title on seeds 1 to 8 enters glyph mode.
 
 **Tests**
 - `test_stagger_delays_recovered`.
@@ -785,9 +785,9 @@ def _group_items(scene, items) -> tuple[list, set[str]]        # expanded items,
 - [ ] Synthetic: `python -m keepframe.cli eval-edits --out eval/out/rb-final-syn --renderer numpy --synthetic 10`.
 - [ ] Clips: `python -m keepframe.cli eval-edits --clips eval/clips --gold docs/qa/reference-analysis/gold --out eval/out/rb-final-clips --synthetic 0 --renderer browser --baseline docs/qa/reference-analysis/baseline.json --strict`.
 - [ ] Compare with three references:
-  - `stage-a-follow-ups-*.json` for the clips and for seeds 1–8 under v4;
-  - Task 1 for seeds 1–8 under v5;
-  - Task 6 for seeds 9–10 before merging.
+  - `stage-a-follow-ups-*.json` for the clips and for seeds 1 to 8 under v4;
+  - Task 1 for seeds 1 to 8 under v5;
+  - Task 6 for seeds 9 and 10 before merging.
 - [ ] Commit `stage-b-{clips,synthetic}.json` and the sheets `stage-b-<clip>.jpg`, and add a results section to `stage-b.md`.
 - [ ] Targets:
   - clips `title_whole` ≥ 0.75;
@@ -796,7 +796,7 @@ def _group_items(scene, items) -> tuple[list, set[str]]        # expanded items,
   - `render_l1` 4/4 and seconds 4/4;
   - `vlm_calls` 0, gate passing;
   - synthetic `title_whole` ≥ 0.9, with seeds 4 and 6 whole.
-- [ ] Show the user the sheets (source | rebuilt | title edited | element hidden | background replaced) for the four clips and seeds 9–10.
+- [ ] Show the user the sheets (source | rebuilt | title edited | element hidden | background replaced) for the four clips and seeds 9 and 10.
 - [ ] Whole-branch review (opus), then one fix wave, then merge (the user's choice), push and `graphify update .`; update the `analysis-quality-round` memory.
 - [ ] User step: the live AE check (the Task 4 list).
 
@@ -852,7 +852,7 @@ Never cut:
 - merging without a VLM;
 - rx/ry in the fake AE;
 - the guard;
-- seeds 9–10;
+- seeds 9 and 10;
 - the final eval.
 
 ## Verification (end to end)
@@ -861,7 +861,7 @@ Never cut:
 2. `stage-b.md` holds before/after tables:
    - OCR v4 vs v5;
    - font prior;
-   - seeds 1–10: title whole, colour ΔE, font top-3, `render_l1`;
+   - seeds 1 to 10: title whole, colour ΔE, font top-3, `render_l1`;
    - clips: titles whole and fragments, colour ΔE, `render_l1`, seconds, `vlm_calls`.
 3. Titles and tilt:
    - ig3 "You just speak" is one text element, and retexting it to "Fall Drop Sale" leaves no smear.

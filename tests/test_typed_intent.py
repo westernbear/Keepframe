@@ -80,7 +80,7 @@ def test_edit_schema_describes_fields_and_confirmation_authority():
     assert "배율" in fields["speed"]["description"]
     assert "초" in fields["delay"]["description"]
     if "confirm" in properties:
-        assert "권한이 아니며 무시된다" in properties["confirm"]["description"]
+        assert "무시되는 값이다" in properties["confirm"]["description"]
         assert "브라우저의 확인 버튼" in properties["confirm"]["description"]
 
 
@@ -108,7 +108,7 @@ def test_session_agent_forwards_llm_targets(tmp_path):
 
     turn = SessionAgent(Scripted()).turn(SessionContext(root=root, scene_id="s1"), "제목 바꿔", [])
     assert turn.needs_confirm is True
-    assert "- edit는 targets(요소 id, property, value)를 채워 호출한다. 색은 #rrggbb, 첨부 이미지(UI 요약의 attachment)를 쓰면 texture value를 'attachment'로 둔다. 도구가 형식 오류를 돌려주면 고쳐 다시 호출한다.\n" in SYSTEM
+    assert "- edit는 targets(요소 id, property, value)를 채워 호출한다. 색은 #rrggbb, 첨부(UI 요약의 attachments, 순서대로 1번부터)를 쓰면 value를 'attachment'(첫 번째) 또는 'attachment:N'(N번째)으로 둔다. 첨부 이미지는 user 메시지에 '첨부 N' 라벨과 함께 붙는다. 도구가 형식 오류를 돌려주면 고쳐 다시 호출한다.\n" in SYSTEM
 
 
 @pytest.mark.parametrize("value, expected", [("#AbC", "#aabbcc"), ("#A0b1C2", "#a0b1c2")])

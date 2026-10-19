@@ -18,12 +18,20 @@ COLOR_NAMES: dict[str, str] = {"흰색": "#ffffff", "하얀": "#ffffff", "white"
                               "녹색": "#2e7d32", "그린": "#2e7d32", "블루": "#1e66f5", "레드": "#e53935", "화이트": "#ffffff", "블랙": "#000000",
                               "옐로": "#fdd835", "퍼플": "#8e24aa", "오렌지": "#fb8c00", "그레이": "#9e9e9e"}
 _HEX_FULL = re.compile(r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})")
+_ATTACHMENT = re.compile(r"attachment(?::([1-9]))?")
+MAX_ATTACHMENTS = 4
+
+
+def attachment_index(value: str | None) -> int | None:
+    """0-based index of an 'attachment' / 'attachment:N' value (N is 1-based), else None."""
+    m = _ATTACHMENT.fullmatch(value or "")
+    return int(m[1] or 1) - 1 if m else None
 
 
 class Target(BaseModel):
     element: str | None = Field(default=None, description="장면 브리프의 요소 id(예: e12). background와 장면 전체 timing에는 비워 둔다(장면 id 's1'을 넣지 않는다)")
     property: Prop = Field(description="허용된 편집: text(문구), color(요소 색), texture(이미지), model(3D 모델), background(배경색), font(폰트), timing(속도·지연).")
-    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color: #rrggbb, background: #rrggbb 또는 첨부한 PNG를 새 배경 이미지로 쓰려면 'attachment', font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 참조 크롭으로 생성하려면 'reference', 새 생성 설명 또는 'attachment'.")
+    value: str | None = Field(default=None, max_length=500, description="text: 새 문구, color: #rrggbb, background: #rrggbb 또는 첨부한 PNG를 새 배경 이미지로 쓰려면 'attachment', font: 폰트 패밀리, texture: 생성 설명 또는 'attachment', model: 참조 크롭으로 생성하려면 'reference', 새 생성 설명 또는 'attachment'. 첨부가 여러 개면 'attachment:2'처럼 N번째 첨부를 고른다('attachment'는 첫 번째).")
     mode: Literal["replace", "tint"] | None = Field(default=None, exclude_if=lambda v: v is None, description="background 색 편집 전용: replace(기본, 배경 전체를 단색으로 교체) 또는 tint(그림·그라데이션 배경의 밝고 어두운 결을 유지한 채 그 색을 입힌 새 이미지로 교체).")
     weight: int | None = Field(default=None, ge=100, le=900, description="폰트 굵기(100~900, 400=보통, 700=굵게).")
     speed: float | None = Field(default=None, gt=0.1, le=10, description="timing 속도 배율(1=원래 속도, 2=2배 빠르게).")
@@ -42,9 +50,9 @@ class Target(BaseModel):
                 raise ValueError("timing needs speed or delay")
             if self.element is None and self.delay is not None:
                 raise ValueError("delay needs an element")
-        if self.mode is not None and (self.property != "background" or self.value == "attachment"):
+        if self.mode is not None and (self.property != "background" or attachment_index(self.value) is not None):
             raise ValueError("mode applies to a background colour only")
-        if self.property == "background" and self.value == "attachment":
+        if self.property == "background" and attachment_index(self.value) is not None:
             pass
         elif self.property in ("color", "background"):
             if not self.value or not _HEX_FULL.fullmatch(self.value):
@@ -147,7 +155,7 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
             bits.append(f"{who} 문구를 {t.value or ''}(으)로")
         elif t.property == "color":
             bits.append(f"{who} 색을 {t.value or ''}로")
-        elif t.property == "background" and t.value == "attachment":
+        elif t.property == "background" and attachment_index(t.value) is not None:
             bits.append("배경 이미지를 첨부로")
         elif t.property == "background":
             bits.append(f"배경색을 {t.value or ''}로")
@@ -156,9 +164,9 @@ def describe(targets: list[Target], has_attachment: bool = False) -> str:
         elif t.property == "timing":
             bits.append(f"{t.element or '장면 전체'} 속도 ×{t.speed or 1:g} 지연 {t.delay or 0:g}s로")
         elif t.property == "model":
-            bits.append(f"{who} 3D 모델을 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
+            bits.append(f"{who} 3D 모델을 {'첨부로' if has_attachment or attachment_index(t.value) is not None else '생성해'}")
         else:
-            bits.append(f"{who} 이미지를 {'첨부로' if has_attachment or t.value == 'attachment' else '생성해'}")
+            bits.append(f"{who} 이미지를 {'첨부로' if has_attachment or attachment_index(t.value) is not None else '생성해'}")
     return " ".join(bits) + " 바꿉니다. 트랙은 유지합니다."
 
 

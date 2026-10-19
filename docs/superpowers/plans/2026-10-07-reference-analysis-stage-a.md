@@ -1,12 +1,12 @@
-# Reference Analysis — Stage A (clean layers) Implementation Plan
+# Reference Analysis: Stage A (clean layers) Implementation Plan
 
 > For agentic workers: REQUIRED SUB-SKILL superpowers:subagent-driven-development. **Implementers = Claude subagents** (user decision 2026-10-07, not Codex); a task review per task, a whole-branch review at the end. At Task 0 this plan is copied to `docs/superpowers/plans/2026-10-07-reference-analysis-stage-a.md`. Steps use `- [ ]`.
 
 ## Context
 
-The ig2demo SaaS-launch demo looked wrong after two ordinary edits, and every cause traced back to analysis: element textures are binary-masked crops carrying background pixels (the title carried the pink globe and an emoji); text colour was estimated against the global background (`#fb9d9d` instead of dark red); the median plate absorbed a smear of the moving title and baked in the rotating globe; "make the background navy" replaced that image with a flat colour. `render_l1` could not see any of it.
+The ig2demo SaaS-launch demo looked wrong after two ordinary edits, and every cause traced back to analysis: element textures are binary-masked crops carrying background pixels (the title carried the pink globe and an emoji); text colour was estimated against the global background (`#fb9d9d` for a dark-red title); the median plate absorbed a smear of the moving title and baked in the rotating globe; "make the background navy" replaced that image with a flat colour. `render_l1` could not see any of it.
 
-Spec (approved): `docs/superpowers/specs/2026-10-07-reference-analysis-design.md` (e9f491e); research `docs/research/2026-10-07-reference-analysis/`. This plan is **Stage A — clean layers**: plate v2, movers as own layers, matted textures, text style (colour, gradient, effects, weight, tracking, font render-and-compare, Hangul fallback), per-project font uploads, edit safeguards, and `keepframe eval-edits` with synthetic ground truth. Stages B (text as text) and C (AI-legible description) follow in their own plans.
+Spec (approved): `docs/superpowers/specs/2026-10-07-reference-analysis-design.md` (e9f491e); research `docs/research/2026-10-07-reference-analysis/`. This plan is **Stage A (clean layers)**: plate v2, movers as own layers, matted textures, text style (colour, gradient, effects, weight, tracking, font render-and-compare, Hangul fallback), per-project font uploads, edit safeguards, and `keepframe eval-edits` with synthetic ground truth. Stages B (text as text) and C (AI-legible description) follow in their own plans.
 
 ## Decisions (user 2026-10-07 + rulings)
 
@@ -24,11 +24,11 @@ Spec (approved): `docs/superpowers/specs/2026-10-07-reference-analysis-design.md
 
 ## Global constraints
 
-- Every new analysis feature fails soft: on error, fall back to today's behaviour, add a report message, lower confidence — analysis never fails because of it.
+- Every new analysis feature fails soft: on error, fall back to today's behaviour, add a report message, lower confidence. Analysis never fails because of it.
 - No VLM in Stage A (eval reports `vlm_calls: 0`).
 - Browser routes keep existing checks (GET `_host_allowed`, POST `_same_origin`, ids via `_safe_render_project`). Do not copy the uncapped `/api/projects` multipart handler.
 - Assets stay **flat files** under `scenes/<sid>/assets/` (edit candidates promote top-level files only; `edit/agent.py` 120-128, 224-227). `GET /assets/<name>` stays PNG-only; font bytes are never served by a route.
-- Colour thresholds use calibrated CIELAB ΔE76 (new `keepframe/ir/colour.py`), not `background.rgb_to_lab` (8-bit OpenCV Lab).
+- Colour thresholds use calibrated CIELAB ΔE76 (new `keepframe/ir/colour.py`); `background.rgb_to_lab` (8-bit OpenCV Lab) is not used for them.
 - ExtendScript stays ES3; bump the extension version when the AE spec gains kinds/fields.
 - UI copy ko + en (`i18n.js`); bump cache-buster on changed pages.
 - Each new phase logs its duration (`log.info("plate pass2 %.2fs", …)`).
@@ -75,13 +75,13 @@ Also: HTML vs numpy vs AE parity for styled text (Task 8 browser tests); compres
 | 14 | AE export: gradient bg, footage, text styles, PostScript | 1, 8, 11, 13 | **extension + spec** | Node fake AE |
 | 15 | Final eval-edits, time gate, sheets, live AE check (controller) | all | live | yes |
 
----
+***
 
 ## Task 0: workspace, baseline, gold titles, fonts (controller)
 
-- [ ] `git worktree add .worktrees/reference-a -b feature/reference-a` from master; venv `pip install -e '.[ocr,gpu,llm,dev]'` + Playwright Chromium. Copy this plan into `docs/superpowers/plans/2026-10-07-reference-analysis-stage-a.md`; SDD ledger with D1–D9 as rulings.
+- [ ] `git worktree add .worktrees/reference-a -b feature/reference-a` from master; venv `pip install -e '.[ocr,gpu,llm,dev]'` + Playwright Chromium. Copy this plan into `docs/superpowers/plans/2026-10-07-reference-analysis-stage-a.md`; SDD ledger with D1 to D9 as rulings.
 - [ ] Baseline (D7) on master, idle machine: `keepframe gate-m2-real --clips eval/clips --out eval/out/ra-baseline --max-frames 150 --render-check` → `docs/qa/reference-analysis/baseline.json` `{clip: {seconds, mean_l1, render_l1, elements, kinds}}` + `{torch, cores}`; also `gate-m2 --n 20`, `gate-m1`.
-- [ ] Gold titles `docs/qa/reference-analysis/gold/<clip>.json`: `{"titles":[{"text","color","role","frame","box":[x0,y0,x1,y1]}]}` — envato1 "Build SaaS Promo"/"Build"; ig1 "Every day, ideas are born"/"inside your walls."; ig2 "Weekend"/"A Weekend Away"; ig3 "You just speak"/"Your idea". Colour = median of ≥ 30 hand-picked glyph pixels on the settled frame (coordinates in `gold/README.md`); contact sheet confirmed by the user before Task 2.
+- [ ] Gold titles `docs/qa/reference-analysis/gold/<clip>.json`: `{"titles":[{"text","color","role","frame","box":[x0,y0,x1,y1]}]}`. Titles: envato1 "Build SaaS Promo"/"Build"; ig1 "Every day, ideas are born"/"inside your walls."; ig2 "Weekend"/"A Weekend Away"; ig3 "You just speak"/"Your idea". Colour = median of ≥ 30 hand-picked glyph pixels on the settled frame (coordinates in `gold/README.md`); contact sheet confirmed by the user before Task 2.
 - [ ] Download the D1 font set (pinned google/fonts commit + Pretendard/Noto KR releases, sha256 recorded) for Task 7; the implementer commits them.
 
 ## Task 1: calibrated colour, IR additions, background readers
@@ -150,7 +150,7 @@ def eval_edits(clips_dir, gold_dir, out, *, max_frames=150, baseline=None, synth
 # qa/sheets.py
 def comparison_sheet(rows, labels, out, cell_w=480) -> Path
 ```
-Checks on a temp copy: title → "Fall Drop Sale" (overflow `expand_box`); hide gold title or largest sprite; background `replace` #1a2a6c (+ `tint` once Task 12 lands). Three frames per clip (settled title, mid, last). Gates in `metrics.json`: synthetic — title `outside_glyph_delta` ≤ 1.0, `smear_score` ≤ 3, glyph ΔE < 5; hide plate-vs-ring ΔE ≤ 2, hf_ratio ∈ [0.5, 2], residue ≤ 0.02; recolour `halo_ring` < 2; alpha SAD (edge band) ≤ 0.03, F ΔE < 3 interior / < 6 edge; font top-3 ≥ 0.90. Clips — title integrity (reported), colour vs gold ΔE < 10, `render_l1` ≤ baseline + 0.005, seconds ≤ 1.5 × baseline, leak metrics reported, `vlm_calls: 0`.
+Checks on a temp copy: title → "Fall Drop Sale" (overflow `expand_box`); hide gold title or largest sprite; background `replace` #1a2a6c (+ `tint` once Task 12 lands). Three frames per clip (settled title, mid, last). Gates in `metrics.json`. Synthetic: title `outside_glyph_delta` ≤ 1.0, `smear_score` ≤ 3, glyph ΔE < 5; hide plate-vs-ring ΔE ≤ 2, hf_ratio ∈ [0.5, 2], residue ≤ 0.02; recolour `halo_ring` < 2; alpha SAD (edge band) ≤ 0.03, F ΔE < 3 interior / < 6 edge; font top-3 ≥ 0.90. Clips: title integrity (reported), colour vs gold ΔE < 10, `render_l1` ≤ baseline + 0.005, seconds ≤ 1.5 × baseline, leak metrics reported, `vlm_calls: 0`.
 CLI: `keepframe eval-edits --clips DIR --gold DIR --out DIR [--max-frames 150] [--baseline FILE] [--synthetic N] [--reuse] [--clip NAME…] [--renderer browser|numpy] [--strict]`.
 **Tests:** `test_double_render_recovers_exact_alpha_and_foreground` (α ≤ 1/255, F ΔE ≤ 0.5 where α > 0.1); `test_reference_scene_holds_title_60pct_and_static_logo`; `test_plate_residue_clean_vs_smear` (< 0.5 vs > 8); `test_bg_leak_fraction_flags_binary_crop` (> 0.2 vs < 0.01); `test_halo_ring_flags_white_cutouts` (> 10 vs < 1); `test_title_integrity_whole_vs_fragments`; `test_eval_edits_cli_writes_metrics_and_sheet` (numpy renderer, fake OCR).
 
@@ -177,7 +177,7 @@ Algorithm: S = min(N, 48) samples; occupancy = region masks + OCR boxes (+2 px) 
 
 **Files:** create `analyze/gradient_fit.py`; modify `plate.py` (`classify`), `pipeline.py` (messages); update `test_dominant_gradient_uses_plate_on_analysis_and_rerun` (D4).
 **Interfaces:** `fit_linear(plate_small, valid, max_stops=4)`, `fit_radial(..., max_stops=3)`, `fit_gradient(plate, valid, *, work=160) -> (Gradient|None, p95)`, `temporal_stats(frames, sample, occ, median) -> dict` (p95_dE, rank2_ratio, instability map u for Task 5), `classify(model, stats, frames, sample, occ) -> PlateModel`.
-Algorithm: fit at ≤ 160 px; linear θ 0..355° step 5 (64 t-bins, median Lab, Douglas–Peucker ΔE 1.0 → ≤ 4 stops, score p95), refine ±2.5° step 0.5; radial centre 5×5 grid. Static (temporal V p95 < 1.5, V = RMS ΔE vs masked median at 1/4 res after 3×3 blur, pixels with ≥ 3 uncovered samples): `color` if flat; `gradient` if fit p95 ≤ 1.5 and stop range ΔE ≥ 3; else `image`. Animated: per-sample low-res plates → SVD of mean-subtracted Lab; rank2_ratio ≥ 0.95 and per-sample fit p95 ≤ 3 for ≥ 90 % → `gradient` with keys (drop keys whose removal keeps error ≤ 1 ΔE); else video candidate → until Task 13 kind `image` + `stats.video_candidate` + message "background animates (p95 ΔE x.x); kept as a still image". Poster = rendered gradient or median.
+Algorithm: fit at ≤ 160 px; linear θ 0..355° step 5 (64 t-bins, median Lab, Douglas-Peucker ΔE 1.0 → ≤ 4 stops, score p95), refine ±2.5° step 0.5; radial centre 5×5 grid. Static (temporal V p95 < 1.5, V = RMS ΔE vs masked median at 1/4 res after 3×3 blur, pixels with ≥ 3 uncovered samples): `color` if flat; `gradient` if fit p95 ≤ 1.5 and stop range ΔE ≥ 3; else `image`. Animated: per-sample low-res plates → SVD of mean-subtracted Lab; rank2_ratio ≥ 0.95 and per-sample fit p95 ≤ 3 for ≥ 90 % → `gradient` with keys (drop keys whose removal keeps error ≤ 1 ΔE); else video candidate → until Task 13 kind `image` + `stats.video_candidate` + message "background animates (p95 ΔE x.x); kept as a still image". Poster = rendered gradient or median.
 **Tests:** `test_flat_is_color`; `test_linear_two_stop_is_gradient` (angle ±1°, stops ΔE < 1.5); `test_dominant_gradient_is_three_stop_gradient`; `test_radial_gradient` (centre ±0.03); `test_photo_texture_is_image`; `test_compression_noise_still_static` (σ 1.5 + H.264 crf 23 round trip); `test_drifting_gradient_is_animated_gradient` (≥ 2 keys, per-frame p95 < 3); `test_textured_motion_is_video_candidate_kept_as_image_with_message`; `test_gradient_reaches_scene_and_composites` (bg L1 < 0.01).
 
 ## Task 5: movers
@@ -196,11 +196,11 @@ Algorithm: warp `I_f` and `plate.at(f)` into texture space (`warpAffine` + `WARP
 
 ## Task 7: font registry + all bundled OFL fonts
 
-**Files:** create `keepframe/fonts/{__init__,registry}.py`, `fonts/manifest.json`, `fonts/files/*.woff2` (all 60–80 families, D1), `fonts/LICENSES/*.txt`; modify `pyproject.toml` (package-data `fonts/**`; `fonttools[woff]>=4.50`), `Dockerfile` (no fetch needed), `cli.py` (`keepframe fonts list`).
+**Files:** create `keepframe/fonts/{__init__,registry}.py`, `fonts/manifest.json`, `fonts/files/*.woff2` (all 60 to 80 families, D1), `fonts/LICENSES/*.txt`; modify `pyproject.toml` (package-data `fonts/**`; `fonttools[woff]>=4.50`), `Dockerfile` (no fetch needed), `cli.py` (`keepframe fonts list`).
 Manifest entry: `{"family","category","files":[{"file","sha256","axes":{"wght":[100,900]},"italic"}],"scripts":["latin"|"hangul"],"license":"OFL-1.1","license_file","source"}`; categories `geometric_sans, neo_grotesque, humanist_sans, rounded_sans, condensed_sans, display, serif, slab, script, handwriting, mono`.
 **Interfaces:** `@dataclass(frozen) FontFace(family, source, path, index=0, weight_range=(400,400), italic=False, category="neo_grotesque", postscript=None, sha256="", latin=True, hangul=False)`; `class FontRegistry: for_project(root) (uploaded > bundled > system), families(*, script=None), face(family, weight), covers(family, text) (fontTools cmap), hangul_fallback(family, weight) -> (family, weight)`; `safe_alias(name) -> str`.
 Hangul map: geometric/neo-grotesque/condensed/display/script → Pretendard; humanist/rounded → Noto Sans KR; serif/slab → Noto Serif KR; handwriting → Nanum Pen Script; mono → Pretendard; weight rounded to 100.
-**Tests:** `test_manifest_files_exist_hash_and_licence`; `test_bundled_set_coverage` (≥ 60 families, every category present, Pretendard/Noto KR cover U+AC00); `test_woff2_variable_weight_in_pillow` (Inter wght 800 vs 300 coverage ratio ≥ 1.4 — run first as a spike); `test_registry_precedence_uploaded_bundled_system`; `test_hangul_fallback_map`; `test_safe_alias`.
+**Tests:** `test_manifest_files_exist_hash_and_licence`; `test_bundled_set_coverage` (≥ 60 families, every category present, Pretendard/Noto KR cover U+AC00); `test_woff2_variable_weight_in_pillow` (Inter wght 800 vs 300 coverage ratio ≥ 1.4; run first as a spike); `test_registry_precedence_uploaded_bundled_system`; `test_hangul_fallback_map`; `test_safe_alias`.
 
 ## Task 8: styled text rasteriser + composer CSS (browser)
 
@@ -221,7 +221,7 @@ Algorithm: fill = median Lab of F over α > 0.5 eroded by 0.35·stroke (matted t
 **Files:** create `keepframe/fonts/match.py`; modify `analyze/fonts.py` (`font_candidates`/`font_family_guess` become thin wrappers), pipeline style phase (sets `FontGuess`, `style.tracking_em/shear_deg/dx/dy`), `ir/synth.py` (`make_font_sample(seed)` over bundled fonts), `web/server.py` `_slim_scene` (scores); update `tests/test_font_candidates.py`.
 **Interfaces:** `@dataclass FontFit(family, weight, size_px, tracking_em, shear_deg, score, dx, dy)`; `prefilter(alpha, text, registry, k=8)`; `fit_family(alpha, text, family, registry, *, stroke_ratio=None, centres=None) -> FontFit`; `match_font(alpha, text, registry, *, k=3, stroke_ratio=None, centres=None) -> (list[FontFit], confidence)`; `fit_hangul_fallback(best, alpha, text, registry) -> (family, weight, scale)`.
 Algorithm: soft IoU of observed α vs rendered coverage, tight bbox, 64 px high, strings > 24 chars capped (longest words); prefilter by |log width ratio at matched cap height| + |stroke-ratio difference| to k = 8; size from cap height ("H"); weight golden-section on wght (variable) seeded by stroke-ratio calibration, static families try each weight; tracking by least squares on glyph centres else 1-D search [−0.06, 0.12] em step 0.01; shear {−12,…,12}° then ±2°, stored only if |shear| ≥ 4°; two rounds of coordinate descent; render cache per (family, weight, text, size bucket). Confidence 1.0 if top ≥ 0.80 and margin ≥ 0.02 else 0.5. Hangul text with a Latin best face lacking coverage → `registry.hangul_fallback`, refit size/weight on Hangul run columns (default scale 0.92).
-**Tests:** `test_font_top3_on_synthetic_set` (≥ 0.90 over 30 samples; eval runs ≥ 60); `test_weight_size_tracking_accuracy` (weight ±100, size 3 %, tracking 0.02 em, each ≥ 80 %); `test_uploaded_font_joins_and_wins`; `test_low_confidence_on_tie`; `test_hangul_fallback_inter_bold_to_pretendard_700` (scale 0.88–0.96); `test_serif_maps_to_noto_serif_kr`; `test_match_runtime` (≤ 1.0 s median per 12-char text).
+**Tests:** `test_font_top3_on_synthetic_set` (≥ 0.90 over 30 samples; eval runs ≥ 60); `test_weight_size_tracking_accuracy` (weight ±100, size 3 %, tracking 0.02 em, each ≥ 80 %); `test_uploaded_font_joins_and_wins`; `test_low_confidence_on_tie`; `test_hangul_fallback_inter_bold_to_pretendard_700` (scale 0.88 to 0.96); `test_serif_maps_to_noto_serif_kr`; `test_match_runtime` (≤ 1.0 s median per 12-char text).
 
 ## Task 11: per-project font uploads (browser)
 
@@ -233,9 +233,9 @@ Route: `_same_origin` → `_safe_render_project` → `name` matches `^[^/\\]{1,1
 ## Task 12: edit safeguards (browser)
 
 **Files:** create `edit/tint.py`; modify `edit/intent.py` `plan()` (`Conflict(id="background_kind", element="background", choices=["tint","replace","cancel"], reason=…)` when kind ≠ color; `font_missing` checks the registry before fontconfig), `edit/apply.py` (background branch 134-136; `_apply_text`/`_apply_color` via `render_styled` + registry + fallback), `edit/agent.py` (`cancel` → `EditResult(status="cancelled")`, nothing applied), `web/static/js/agent.js` + `js/review/edit-form.js` (cancelled status), `i18n.js` (`review.editChoice.tint/replace/cancel`, `agent.cancelled`, ko/en).
-**Interfaces:** `tint_lab(lab, target_lab, stats) -> lab` implementing D5 (`L' = L_T + k(L − L̄)`, `a' = a_T + (a − ā)`, `b' = b_T + (b − b̄)`, k as in D5, gamut-clipped); `tint_background(bg, scene_dir, target_hex) -> Background` — image → new `assets/background.tint<n>.png` (+ poster); gradient → every stop/key mapped through the same formula; video → per-frame re-encode (Task 13); never overwrites an existing asset; keeps `synthetic`.
+**Interfaces:** `tint_lab(lab, target_lab, stats) -> lab` implementing D5 (`L' = L_T + k(L − L̄)`, `a' = a_T + (a − ā)`, `b' = b_T + (b − b̄)`, k as in D5, gamut-clipped); `tint_background(bg, scene_dir, target_hex) -> Background`: image → new `assets/background.tint<n>.png` (+ poster); gradient → every stop/key mapped through the same formula; video → per-frame re-encode (Task 13); never overwrites an existing asset; keeps `synthetic`.
 Text edits: font order uploaded > bundled > Hangul fallback > system > Hershey; keep analysed `style`; never touch tracks (incl. rx, ry, reveal); colour edit on a gradient fill sets `style.fill = None`, keeps effects.
-**Tests:** `test_background_edit_on_picture_needs_choice` (image/gradient/video conflict; color none); `test_cancel_creates_no_version_or_assets`; `test_replace_sets_color`; `test_tint_writes_new_asset_and_keeps_original` (original bytes unchanged; mean L within ±3 of L_T; mean (a,b) within ΔE 3 of target; per-pixel L ordering preserved — Spearman ρ ≥ 0.98 vs original L); `test_tint_white_plate_navy_target_is_dark` (mean L ≤ L_T + 3 for #1a2a6c); `test_tint_gradient_maps_stops`; `test_title_edit_keeps_analysed_colour_effects_and_tracks` (glyph ΔE < 5, shadow at expected offset, tracks equal); `test_font_edit_to_uploaded_family`; `test_hangul_text_on_latin_font_uses_fallback`; `test_synthetic_title_edit_has_no_smear` (`outside_glyph_delta` ≤ 1.0, `smear_score` ≤ 3); [browser] `test_agent_shows_three_choices_and_cancel_does_not_apply`.
+**Tests:** `test_background_edit_on_picture_needs_choice` (image/gradient/video conflict; color none); `test_cancel_creates_no_version_or_assets`; `test_replace_sets_color`; `test_tint_writes_new_asset_and_keeps_original` (original bytes unchanged; mean L within ±3 of L_T; mean (a,b) within ΔE 3 of target; per-pixel L ordering preserved, Spearman ρ ≥ 0.98 vs original L); `test_tint_white_plate_navy_target_is_dark` (mean L ≤ L_T + 3 for #1a2a6c); `test_tint_gradient_maps_stops`; `test_title_edit_keeps_analysed_colour_effects_and_tracks` (glyph ΔE < 5, shadow at expected offset, tracks equal); `test_font_edit_to_uploaded_family`; `test_hangul_text_on_latin_font_uses_fallback`; `test_synthetic_title_edit_has_no_smear` (`outside_glyph_delta` ≤ 1.0, `smear_score` ≤ 3); [browser] `test_agent_shows_three_choices_and_cancel_does_not_apply`.
 
 ## Task 13: video plates + video sprites (cuttable; browser)
 

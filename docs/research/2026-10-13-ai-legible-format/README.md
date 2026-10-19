@@ -2,7 +2,7 @@
 
 Question (user, 2026-10-13): the core analysis pipeline is being redesigned. A reference will be a motion-graphics video, and the key decision is the **format** that turns it into text an AI understands and edits. Check every intermediate representation against what the agent itself reads from the reference.
 
-Answer: **kf-script** — a constrained, executable HTML/CSS + GSAP-timeline document with a semantic header, generated from the canonical scene JSON (which stays the store for the AE spec, Lottie export and versions). Evidence below: literature, five Mixkit references found with a headless browser, the agent's own frame-by-frame reads, CV measurements, a hand-written kf-script of one reference rendered back against the source, and the current pipeline's output on the same clips.
+Answer: **kf-script**, a constrained, executable HTML/CSS + GSAP-timeline document with a semantic header, generated from the canonical scene JSON (which stays the store for the AE spec, Lottie export and versions). Evidence below: literature, five Mixkit references found with a headless browser, the agent's own frame-by-frame reads, CV measurements, a hand-written kf-script of one reference rendered back against the source, and the current pipeline's output on the same clips.
 
 ## 1. Where the project stands
 
@@ -19,14 +19,14 @@ What the agent sees today is `scene_brief` (`keepframe/session/brief.py:76`): on
 
 | Format as the LLM's view | Evidence |
 | --- | --- |
-| Raw Lottie JSON | Frontier models rarely produce valid files: video→Lottie GPT-5 9.2 % / 7.4 %, Gemini 3.1 Pro 0 % / 0 % on the two subsets vs a fine-tuned tokenizer model 88.1 % / 80.7 %, at 37–41 k tokens and ~110 s per output, PSNR ≈ 16 (OmniLottie, arXiv 2603.02138, Table 1 ✓). Text→Lottie 3-shot valid GPT-5 10.9 %, Claude Sonnet 4.5 45.2 %, Gemini 2.5 Pro 30.0 %; zero-shot "cannot generate any valid" file (LottieGPT, 2604.11792, Table 2 and §10 ✓). Good export target, poor reading/editing view. |
-| HTML/CSS/GSAP code | Frontier models write runnable animation code 99–100 % of the time (summary), appearance 0.80–0.84, but temporal similarity ≤ 0.31 when they must infer timing from pixels (Animation2Code, 2606.28593; appearance/temporal ✓). GPT-4o writing GSAP: 58.8 % correct first pass → 93.6 % with predicate-level verifier feedback (MoVer, 2502.13372 ✓). LogoMotion (2405.07065): HTML + anime.js, 68 % → 96 % after 4 visually grounded repairs. Keyframer (2402.06071): CSS keyframes on SVG ids, 6.7 % syntax errors. |
+| Raw Lottie JSON | Frontier models rarely produce valid files: video→Lottie GPT-5 9.2 % / 7.4 %, Gemini 3.1 Pro 0 % / 0 % on the two subsets vs a fine-tuned tokenizer model 88.1 % / 80.7 %, at 37-41 k tokens and ~110 s per output, PSNR ≈ 16 (OmniLottie, arXiv 2603.02138, Table 1 ✓). Text→Lottie 3-shot valid GPT-5 10.9 %, Claude Sonnet 4.5 45.2 %, Gemini 2.5 Pro 30.0 %; zero-shot "cannot generate any valid" file (LottieGPT, 2604.11792, Table 2 and §10 ✓). Good export target, poor reading/editing view. |
+| HTML/CSS/GSAP code | Frontier models write runnable animation code 99-100 % of the time (summary), appearance 0.80-0.84, but temporal similarity ≤ 0.31 when they must infer timing from pixels (Animation2Code, 2606.28593; appearance/temporal ✓). GPT-4o writing GSAP: 58.8 % correct first pass → 93.6 % with predicate-level verifier feedback (MoVer, 2502.13372 ✓). LogoMotion (2405.07065): HTML + anime.js, 68 % → 96 % after 4 visually grounded repairs. Keyframer (2402.06071): CSS keyframes on SVG ids, 6.7 % syntax errors. |
 | SVG motion program | Motion Vectorization (2309.14642, TOG 2023): video → SVG with per-frame transforms + z-order, imports to AE; dense per frame, no text-as-text, not tested with LLMs. |
-| Predicate DSL | MoVer's logic DSL (Allen intervals, directions, magnitudes) — GPT-4o writes it 95.1 % correctly; a *checking* language, not a description. |
-| Compact custom notations | TOON/TRON-style notations save 18–27 % tokens at 9–14 points of accuracy ("Notation Matters", 2605.29676, abstract only). Unfamiliar syntax costs accuracy. |
+| Predicate DSL | MoVer's logic DSL (Allen intervals, directions, magnitudes). GPT-4o writes it 95.1 % correctly; it is a *checking* language and describes nothing. |
+| Compact custom notations | TOON/TRON-style notations save 18-27 % tokens at 9-14 points of accuracy ("Notation Matters", 2605.29676, abstract only). Unfamiliar syntax costs accuracy. |
 | Manim / Remotion / ExtendScript | No evidence as an LLM reading/editing view for motion graphics; Manim is under-represented in pre-training (2604.18364). |
 
-VLM limits that shape the pipeline (2025–2026): timing and direction still fail (Animation2Code temporal ≤ 0.31; fine-tuning made it worse, 0.24 → 0.08 ✓); per-timestamp boxes near zero on VideoZeroBench (1.0 %, unverified). VLMs name and critique; CV supplies numbers. Proposal generators worth a test: SAM 3/3.1 text-prompted video masks (hosted, unverified price ~$0.20 / 1k frames), LayerD / Qwen-Image-Layered for RGBA layers on keyframes. PP-OCRv5 is *not* a drop-in here: Stage B measured it and reverted (word-gap box splits, `docs/qa/reference-analysis/stage-b.md`).
+VLM limits that shape the pipeline (2025-2026): timing and direction still fail (Animation2Code temporal ≤ 0.31; fine-tuning made it worse, 0.24 → 0.08 ✓); per-timestamp boxes near zero on VideoZeroBench (1.0 %, unverified). VLMs name and critique; CV supplies numbers. Proposal generators worth a test: SAM 3/3.1 text-prompted video masks (hosted, unverified price ~$0.20 / 1k frames), LayerD / Qwen-Image-Layered for RGBA layers on keyframes. PP-OCRv5 is *not* a drop-in here: Stage B measured it and reverted (word-gap box splits, `docs/qa/reference-analysis/stage-b.md`).
 
 No paper measures "keep X, change Y" editing accuracy for any format; the choice below rests on generation/verification evidence plus our own round-trip test (§4).
 
@@ -42,7 +42,7 @@ Headless Chromium (Playwright; gstack install was blocked in this container) lis
 | mk800 Kinetic Opener | "WELCOME" glyph stagger, zoom-blur into live action at f100 | live action after f100 is out of scope |
 | mk713 Shape Motion Intro (15 s) | ~8 shots of shapes + type | shot list only |
 
-Lesson: the agent's read is right about **structure and meaning** (shots, which texts, roles, what kind of choreography) and unreliable about **directions, magnitudes and timing** — the same split the literature reports for VLMs. Measurement is right about numbers and blind to meaning.
+Lesson: the agent's read is right about **structure and meaning** (shots, which texts, roles, what kind of choreography) and unreliable about **directions, magnitudes and timing**. The literature reports the same split for VLMs. Measurement is right about numbers and blind to meaning.
 
 ## 4. The format can carry a reference: mk571 written as kf-script and rendered back
 
@@ -69,30 +69,30 @@ Agreement with the read, item by item:
 
 | What the read says | IR | Verdict |
 | --- | --- | --- |
-| mk571 teal opens from the centre | two full-frame black sprites drifting 26–70 px apart | structure plausible (curtains), magnitudes wrong |
-| mk571 frame stretches 241 → 1076 px about its centre, stroke constant | a 858×256 sprite "scales ×1.17" after three other elements | ✗ — a texture cannot stretch without stretching its stroke, so the element breaks up; needs a shape primitive |
+| mk571 teal opens from the centre | two full-frame black sprites drifting 26-70 px apart | structure plausible (curtains), magnitudes wrong |
+| mk571 frame stretches 241 → 1076 px about its centre, stroke constant | a 858×256 sprite "scales ×1.17" after three other elements | ✗: a texture cannot stretch without stretching its stroke, so the element breaks up; needs a shape primitive |
 | mk571 url drifts down 24 px | "moves down 13px … out_back" | direction ✓ (the read said fade; CV was right) |
-| mk571 name rises word by word through a mask | one text "moves right 147px" | ✗ — mask + stagger not representable |
-| mk544 scroller, inverse flash, glyph flicker, block transition, stepped zoom | per-fragment "moves up-left 850px", "scales ×2.53", "rotates −28°/+84°" | ✗ — glyph-level choreography and transitions turn into fragments with invented transforms |
-| mk543 list scrolls ≈166 px every ≈0.78 s | every line repeats "moves up 166px" 5–6 times | numbers ✓ (the read said every 42 f; measured 47 f), structure ✗ (no container, no bubble group, no repetition) |
-| mk800 glyphs grow in left→right | "WELCOME" "scales ×17.63, moves right 367px" | ✗ — a stagger read as one transform |
+| mk571 name rises word by word through a mask | one text "moves right 147px" | ✗: mask + stagger not representable |
+| mk544 scroller, inverse flash, glyph flicker, block transition, stepped zoom | per-fragment "moves up-left 850px", "scales ×2.53", "rotates −28°/+84°" | ✗: glyph-level choreography and transitions turn into fragments with invented transforms |
+| mk543 list scrolls ≈166 px every ≈0.78 s | every line repeats "moves up 166px" 5-6 times | numbers ✓ (the read said every 42 f; measured 47 f), structure ✗ (no container, no bubble group, no repetition) |
+| mk800 glyphs grow in left→right | "WELCOME" "scales ×17.63, moves right 367px" | ✗: a stagger read as one transform |
 | keep predicates | 208/211 … 6189/6260 locked | locked on fragments, so "keep" would preserve artefacts |
 
-Pattern: CV numbers are often right (directions, scroll distance, cadence, colours, strings); what is missing is **structure** — shots/phases, shape primitives, per-word/glyph splits with stagger, masks, containers, repetition — so the IR spends dozens of elements and invented transforms to approximate what the read describes in a few lines. That is a representation gap first, a measurement gap second.
+Pattern: CV numbers are often right (directions, scroll distance, cadence, colours, strings); what is missing is **structure** (shots/phases, shape primitives, per-word/glyph splits with stagger, masks, containers, repetition), so the IR spends dozens of elements and invented transforms to approximate what the read describes in a few lines. The gap is mostly in representation and only secondarily in measurement.
 
 ## 5b. SaaS promo references (search "saas promo video")
 
-Web search for "saas promo video" templates pointed to Uppbeat, Envato, Dribbble and VideoHive. In headless Chromium, Uppbeat (429), VideoHive (403) and Dribbble (no media) gave nothing; **Envato Elements' "saas promo" search** listed 48 template previews (960×540, 30 fps, 14–75 s; 43 unique, list in `sources.md`). Patterns seen by eye on 5 frames per unique clip: a prompt or search bar with typing and a cursor in ~20 of 43; perspective dashboards or UI screenshots ~16; stat counters ~8; photo or live-action inserts ~9; blurred gradient glow backgrounds, word-by-word gradient headlines and a logo end card in most.
+Web search for "saas promo video" templates pointed to Uppbeat, Envato, Dribbble and VideoHive. In headless Chromium, Uppbeat (429), VideoHive (403) and Dribbble (no media) gave nothing; **Envato Elements' "saas promo" search** listed 48 template previews (960×540, 30 fps, 14-75 s; 43 unique, list in `sources.md`). Patterns seen by eye on 5 frames per unique clip: a prompt or search bar with typing and a cursor in ~20 of 43; perspective dashboards or UI screenshots ~16; stat counters ~8; photo or live-action inserts ~9; blurred gradient glow backgrounds, word-by-word gradient headlines and a logo end card in most.
 
 Three 150-frame segments were read from 3-frame contact sheets, checked with CV (word ink, typed width, cursor blob, card boxes, OCR per frame) and analysed (`briefs/saas_*.txt`):
 
 | Segment | Read, after measurement | What measurement corrected | Pipeline IR |
 | --- | --- | --- | --- |
-| e24 f120–269 "Ask. And move forward." | eyebrow crossfades; heading's 4 words blur in 2 f apart (f127–134); prompt bar with "Ask AI" fades in (f122–128); 27 chars typed f133–f174 (≈20 cps, with pauses); cursor enters bottom-right f142, reaches the button f162, rests to f192; hint chip f193; heading leaves right-to-left f230–f238; blue glow drifts across the background | word gap (2 f), exit order (reversed), the drifting glow and the crossfade with the previous section's chips were missed; the "click" I read has no visible effect | 70 elements. Strings right but spaces dropped ("Makemynextlaunchhappen.", "AskAl"). The typed line **has** per-glyph reveals in the IR, but the brief does not show them. Heading "moves right 225px, scales ×3.12" (word stagger read as growth). The incoming dashboard becomes small text fragments ("roject+", "orketion", "4.2%w"). Recon 0.0158 |
-| e07 f360–509 stat cards | two lime cards (f363, f366); "Tickets Resolved" 1K→125K f363–405 and "Integrations" 0→150 f366–411, slow–fast–slow; cards slide right, accelerating, f426–446; cut to fanned app cards + "One inbox. / Every channel." | nothing on the counters: per-frame OCR matched the read value by value | 79 elements: every counter value is its own ~3-frame text element ("12K", "20K", "31K", "50K" (really 54K), …); the dark label and numbers are mostly coloured like the card (#defe05, #d6f700; only "150" gets #000004); recon 0.1215 |
-| e11 f240–389 search → button | "How can I get the best results?" typed while the view pans with the caret; cut to "best results" (gradient fading to dark, slight zoom out); cut to a "start here" pill settling from ~1.6×; cursor glides to it f351–f375, presses, text turns blue | consistent with the measurement (cursor path, zoom-outs, press) | 9 elements: typing read as one text "nI get the best results?" that "moves right 104px, scales ×1.94"; magnifier icon read as text "Q"; the pill's scale-down ✓; cursor and press state absent; recon 0.0213 |
+| e24 f120-269 "Ask. And move forward." | eyebrow crossfades; heading's 4 words blur in 2 f apart (f127-134); prompt bar with "Ask AI" fades in (f122-128); 27 chars typed f133-f174 (≈20 cps, with pauses); cursor enters bottom-right f142, reaches the button f162, rests to f192; hint chip f193; heading leaves right-to-left f230-f238; blue glow drifts across the background | word gap (2 f), exit order (reversed), the drifting glow and the crossfade with the previous section's chips were missed; the "click" I read has no visible effect | 70 elements. Strings right but spaces dropped ("Makemynextlaunchhappen.", "AskAl"). The typed line **has** per-glyph reveals in the IR, but the brief does not show them. Heading "moves right 225px, scales ×3.12" (word stagger read as growth). The incoming dashboard becomes small text fragments ("roject+", "orketion", "4.2%w"). Recon 0.0158 |
+| e07 f360-509 stat cards | two lime cards (f363, f366); "Tickets Resolved" 1K→125K f363-405 and "Integrations" 0→150 f366-411, slow-fast-slow; cards slide right, accelerating, f426-446; cut to fanned app cards + "One inbox. / Every channel." | nothing on the counters: per-frame OCR matched the read value by value | 79 elements: every counter value is its own ~3-frame text element ("12K", "20K", "31K", "50K" (really 54K), …); the dark label and numbers are mostly coloured like the card (#defe05, #d6f700; only "150" gets #000004); recon 0.1215 |
+| e11 f240-389 search → button | "How can I get the best results?" typed while the view pans with the caret; cut to "best results" (gradient fading to dark, slight zoom out); cut to a "start here" pill settling from ~1.6×; cursor glides to it f351-f375, presses, text turns blue | consistent with the measurement (cursor path, zoom-outs, press) | 9 elements: typing read as one text "nI get the best results?" that "moves right 104px, scales ×1.94"; magnifier icon read as text "Q"; the pill's scale-down ✓; cursor and press state absent; recon 0.0213 |
 
-The SaaS clips repeat the §5 pattern and add four primitives the IR has no word for: **typing** (per-glyph reveal + caret; the IR holds it for e24 but hides it), **cursor** (path, rest, press), **counter** (one value tweened with snap and a format, not a stack of texts), and **section crossfades / drifting glow backgrounds**. Each is plain GSAP/CSS, so kf-script only needs conventions for them:
+The SaaS clips repeat the §5 pattern and add four primitives the IR has no word for: **typing** (per-glyph reveal + caret; the IR holds it for e24 but hides it), **cursor** (path, rest, press), **counter** (one value tweened with snap and a format, where the IR has a stack of texts), and **section crossfades / drifting glow backgrounds**. Each is plain GSAP/CSS, so kf-script only needs conventions for them:
 
 ```js
 // counter: one element, value tweened with snap; "K" is a sibling span
@@ -125,38 +125,38 @@ tl.addLabel("sh1", 0)
 </script>
 ```
 
-Why this and not the alternatives:
+Why kf-script over the alternatives:
 
-1. **Familiar**: the syntax frontier models write most reliably (≈ 99–100 % runnable); Lottie is 0–45 % valid without fine-tuning. Keepframe already composes HTML + GSAP.
+1. **Familiar**: the syntax frontier models write most reliably (≈ 99-100 % runnable); Lottie is 0-45 % valid without fine-tuning. Keepframe already composes HTML + GSAP.
 2. **Executable, so it can be checked**: rendering the text and diffing it against the source measures how faithful the description is (§4). A description that cannot be rendered cannot be verified.
 3. **Expressive for what the references contain**: typing, cursors and counters (§5b), per-word/glyph splits with `stagger {each, from: "start"|"random"}`, masks (`overflow` / `clip-path`), shape primitives (border boxes, SVG paths), multi-phase `keyframes`, holds and `steps(n)`, labels for shots and beats, nested timelines for repeated patterns (the chat's 9 bubbles = one template × 9).
-4. **Compact**: keyframes with named eases, not frames (mk571: 57 lines for 482 frames).
+4. **Compact**: keyframes with named eases and no per-frame values (mk571: 57 lines for 482 frames).
 5. **Editable without drift**: the agent edits by id (text, colour, timing, ease); edits are applied as patches to `scene.json`, never by regenerating the document. AE export keeps using the JSON.
 
 Rules for the subset (so it parses back and exports to AE): absolute layout in px; animatable props limited to x, y, scale(X/Y), rotation(X/Y), opacity, width/height, borderWidth, clip-path inset, colour, blur; eases from GSAP presets (`none`, `power1–4`, `expo`, `sine`, `circ`, `back(n)`, `steps(n)`) and `CustomEase` only when the fit needs it; numbers come from CV and carry `data-src`/`data-conf`; meaning (roles, shot names, intent) comes from the read and is marked as such.
 
 ## 7. Core redesign this implies: fit a kf-script to the video
 
-The pipeline's job becomes "find the shortest kf-script whose render matches the reference", one objective instead of per-case thresholds:
+The pipeline's job becomes "find the shortest kf-script whose render matches the reference", one objective that replaces per-case thresholds:
 
 1. **Shots and transitions** as first-class objects (cuts exist in `analyze/shots.py`; add transition types).
 2. **Proposals** per shot: OCR lines → words → glyphs, colour layers vs the plate, optionally hosted SAM 3 masks.
-3. **Typing**: text (string, font fit), shape primitive (rect/ellipse/polygon, fill/stroke), or textured sprite — a primitive wins when its residual is as low (fewer parameters).
+3. **Typing**: text (string, font fit), shape primitive (rect/ellipse/polygon, fill/stroke), or textured sprite. A primitive wins when its residual is as low, since it has fewer parameters.
 4. **Tracks → tweens**: per-layer transforms (ECC), segmented into tweens with preset eases, holds and steps (extends `keyframes.py` `reduce_curve`/`fit_ease`).
 5. **Structure**: stagger (the same tween shifted across siblings), repetition (template + instances), containers (shared transform → parent), masks.
-6. **Render–compare refit**: emit → render (existing Chromium renderer) → per-element residual → merge/split/retype; keep a change only if residual + description length drops.
+6. **Render-compare refit**: emit → render (existing Chromium renderer) → per-element residual → merge/split/retype; keep a change only if residual + description length drops.
 7. **Read**: VLM/agent names roles, shots and intent from keyframe sheets with burned-in frame numbers, inside the CV structure.
 
-Evaluation that cannot overfit 4 clips: a **synthetic round trip in the same format** (random kf-scripts from templates — kinetic title, logo sting, chat UI, scroller, block transition — rendered, analysed, and diffed structurally and in pixels), plus a few hand-made gold scripts of real references like `gold/mk571.html`.
+Evaluation that cannot overfit 4 clips: a **synthetic round trip in the same format** (random kf-scripts from templates such as kinetic title, logo sting, chat UI, scroller and block transition, rendered, analysed, and diffed structurally and in pixels), plus a few hand-made gold scripts of real references like `gold/mk571.html`.
 
 ## 8. How an intermediate representation is checked (user rule)
 
-Every IR check compares three things and reports disagreements instead of resolving them silently:
+Every IR check compares three things and reports every disagreement and never resolves one silently:
 
 | Check | Owner of truth | Example |
 | --- | --- | --- |
 | Agent's own read of the reference (contact sheets, burned-in frames) | structure, strings, roles, shot boundaries, choreography type | "9 chat bubbles alternating", "name rises word by word" |
-| CV measurement | directions, magnitudes, timing, colours, sizes | "frame widens symmetrically 241 → 1076 px, f118–f214" |
+| CV measurement | directions, magnitudes, timing, colours, sizes | "frame widens symmetrically 241 → 1076 px, f118-f214" |
 | Render of the IR vs source | whether the IR as a whole reproduces the clip | mean L1, worst frame, residual sheet |
 
 ## 9. Next steps (smallest first)
@@ -164,7 +164,7 @@ Every IR check compares three things and reports disagreements instead of resolv
 1. `kfscript.emit(scene)` from today's IR as the agent's view, with render-compare; A/B it against `scene_brief` on a small edit set (no paper measures edit accuracy per format, so this is the check the decision still owes).
 2. Synthetic kf-script generator + round-trip harness.
 3. IR additions: shots/transitions, shape primitives, text splits + stagger, masks, holds/steps, patterns.
-4. Render–compare refit loop and the read pass with a disagreement report.
+4. Render-compare refit loop and the read pass with a disagreement report.
 5. Edits as kf-script patches; AE export of the new primitives.
 
 Files: `gold-reads.md` (reads + measured corrections), `briefs/` (what the agent sees today, per clip; `saas_*` for §5b), `gold/mk571.html` (+ `icon.png`), `gold/mk571_sheet.jpg`, `sheets/` (contact sheets), `tools/gold_compare.py` (render a kf-script page and diff it against a video), `sources.md` (clip URLs).

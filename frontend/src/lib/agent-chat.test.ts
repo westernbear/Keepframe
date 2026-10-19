@@ -76,7 +76,7 @@ describe('agent chat', () => {
         const response: Record<string, unknown> = { status: 'needs_choice', plan }
         if (intentMode !== 'missing') response.intent = intentMode === 'updated' ? updatedIntent : null
         const expectedIntent = intentMode === 'updated' ? updatedIntent : initialIntent
-        const fields = { project: 'p1', scene: 's1', v: 'v1', prompt: 'change color', attachment: 'attachment-data', element: 'e1' }
+        const fields = { project: 'p1', scene: 's1', v: 'v1', prompt: 'change color', attachments: ['first', 'second'], element: 'e1' }
         const first = confirmEditBody({ ...fields, intent: initialIntent })
         expect(first.confirm).toBe(true)
         expect(Object.keys(first.choices)).toHaveLength(0)
@@ -88,7 +88,7 @@ describe('agent chat', () => {
         expect(second.intent).toBe(expectedIntent)
         expect(second.choices[conflict]).toBe('release_keep')
         expect(second.prompt).toBe('change color')
-        expect(second.attachment).toBe('attachment-data') // legacy test_agent_sends_attachment_on_confirm
+        expect(second.attachments).toEqual(['first', 'second']) // legacy test_agent_sends_attachment_on_confirm
         const done = confirmedEditOutcome({ status: 'done', version: { id: 'v2' } }, outcome.intent)
         expect(done).toMatchObject({ kind: 'done', intent: null, version: 'v2' })
       }

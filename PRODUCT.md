@@ -26,8 +26,8 @@ motion and the user's change is exactly what they asked for.
 
 ## Positioning
 
-The geometry, timing and colours are measured from the reference, not guessed by a model. VLMs only name, group and
-critique. Edits go through an agent that previews a change and waits for the user's confirmation.
+Geometry, timing and colours come from measurements of the reference. Models do not guess them; VLMs only name, group
+and critique. Edits go through an agent that previews a change and waits for the user's confirmation.
 
 ## Operating Context
 
@@ -41,14 +41,14 @@ queue, quarantine, audit, LLM settings) is for the operator. Runs as a local or 
 
 - Server is stdlib Python; the web UI is a React SPA built into `keepframe/web/static/app/` (bundle committed).
 - No CDN at runtime; pages must work offline.
-- Frame playback is JPEG frame stepping, not `<video>`.
-- Edits must be confirmed by the user before they apply; agent output is data, not instructions.
+- Frame playback steps through JPEG frames and does not use `<video>`.
+- Edits must be confirmed by the user before they apply; agent output is treated as data and never followed as instructions.
 
 ## Brand Commitments
 
 - Name **Keepframe**, logo at `keepframe/web/static/logo.png` and `docs/assets/logo.png`.
-- Visual system: `DESIGN.md` (dark canvas, white pill CTAs, single blue accent, gradient spotlight tiles). Kept and
-  refined, not replaced (user decision 2026-10-19).
+- Visual system: `DESIGN.md` (dark canvas, white pill CTAs, single blue accent, gradient spotlight tiles). The user
+  decided on 2026-10-19 to keep and refine it.
 - Copy is plain and literal: say what the product measures and what it refuses (live-action).
 
 ## Evidence on Hand
@@ -58,10 +58,10 @@ queue, quarantine, audit, LLM settings) is for the operator. Runs as a local or 
 
 ## Product Principles
 
-1. Measured over guessed: show numbers with where they came from.
+1. Numbers come from measurement and are shown with their source.
 2. Nothing changes without a visible preview and an explicit confirm.
-3. One flow, always oriented: the user always knows which step they are on and what comes next.
-4. Refuse clearly: what Keepframe will not accept is stated up front, not discovered by failure.
+3. There is one flow, and the user can always see the current step and the next one.
+4. State up front what Keepframe will not accept, so users do not find out from a failed run.
 
 ## Accessibility & Inclusion
 

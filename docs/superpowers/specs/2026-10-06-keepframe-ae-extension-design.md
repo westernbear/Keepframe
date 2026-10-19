@@ -1,4 +1,4 @@
-# Keepframe After Effects Extension — Design
+# Keepframe After Effects Extension: Design
 
 Date: 2026-10-06 · Status: approved in conversation, awaiting written-spec review
 
@@ -10,7 +10,7 @@ live run. In one evening it failed on: the user site hidden from the MCP child, 
 errors, a stale-heartbeat deadlock, an icacls step that left files with an empty DACL, an ES3 engine
 without `JSON`, session cookies that locked projects, `SimpleCookie` dropping cookies, and a ctypes struct
 that corrupted the heap. Each layer was tested only against fakes of the layer below. The rebuild removes
-the layers instead of patching them.
+those layers outright.
 
 ## Decisions (user, 2026-10-05/06)
 
@@ -21,7 +21,7 @@ the layers instead of patching them.
 | Ownership | Keepframe owns the comp: the scene is the master; a push overwrites Keepframe-made layers, after warning about hand edits |
 | Install | Signed `.zxp` downloaded from the Keepframe web page |
 | AE versions | 24.1 and newer (3D model layers, H.264 from the render queue) |
-| Architecture | A — declarative sync over HTTP long-poll on the existing server |
+| Architecture | A: declarative sync over HTTP long-poll on the existing server |
 | Delivery | Four slices, in order: (1) foundation + comp build, (2) verify, (3) final render + package, (4) live agent control |
 
 ## Goals and non-goals
@@ -59,7 +59,7 @@ fixed ExtendScript entry point; it never evaluates code it receives.
 
 ## Server components (`keepframe/ae/`)
 
-### `spec.py` — `comp_spec(scene, *, fonts=None) -> dict`
+### `spec.py`: `comp_spec(scene, *, fonts=None) -> dict`
 
 Pure function; no I/O. `fonts` is the connected device's font list (`[{family, style, postscript}]`).
 
@@ -96,7 +96,7 @@ Layer kinds and sources
 | `3d` with `canonical.model` | `model` | `{asset}` (GLB) |
 | `3d` without a model | `image` | `{asset}` + layer warning `3D candidate` |
 | `group` with a texture | `image` | `{asset}` |
-| `group` without a texture | `null` | — |
+| `group` without a texture | `null` | none |
 | background `color` | `solid` (bottom, full comp, `id: "kf:background"`) | `{color}` |
 | background `image` | `image` (bottom, `id: "kf:background"`) | `{asset}` |
 
@@ -123,15 +123,15 @@ Property mapping (keys are `[frame, value, ease]`; `ease` is the scene's cubic-b
   order) with the nearest weight; otherwise Arial (`ArialMT`) with `substituted: true` and a layer warning.
   Without a font list, `postscript` is `null` and the extension picks the family by name.
 - Easing conversion to AE: outgoing influence `x1·100`, incoming influence `(1−x2)·100`; speeds from the
-  bezier slopes `y1/x1` and `(1−y2)/(1−x2)` times the segment's average speed. Clamped to AE's 0.1–100 %.
-- Groups: members of a scene group share one AE label colour (`label`, 1–16, by group order).
+  bezier slopes `y1/x1` and `(1−y2)/(1−x2)` times the segment's average speed. Clamped to AE's 0.1-100 %.
+- Groups: members of a scene group share one AE label colour (`label`, 1-16, by group order).
 - `CompSpec` must be deterministic: same scene → byte-identical JSON (sorted keys, rounded to 1e-4).
 
 ### `devices.py`
 
-- `create_code(now) -> str` — `KF-XXXX-XXXX` (Crockford base32, 40 bits), stored hashed with a 10-minute expiry;
+- `create_code(now) -> str`: `KF-XXXX-XXXX` (Crockford base32, 40 bits), stored hashed with a 10-minute expiry;
   single use; at most 5 live codes.
-- `pair(code, info) -> (device_id, token)` — `token` is 32 random bytes (urlsafe); only `sha256(token)` is stored.
+- `pair(code, info) -> (device_id, token)`: `token` is 32 random bytes (urlsafe); only `sha256(token)` is stored.
   `info` = `{ae_version, extension_version, os, fonts}` (fonts capped at 5,000 entries, 256 chars each).
 - `authenticate(token) -> Device | None`, `revoke(device_id)`, `touch(device_id, status)` (last seen, open AE
   project name), `list()`.
@@ -143,7 +143,7 @@ Property mapping (keys are `[frame, value, ease]`; `ease` is the scene's cubic-b
 - Kinds: `sync`, `render_frames`, `render_final`, `package`. Fields: `id, device, kind, project, scene, version,
   params, state (queued|running|done|failed), error, result, created, started, finished`.
 - One `running` job per device. `next(device, wait)` returns the oldest queued job or waits on a condition
-  variable up to `wait` seconds (25 by default) — enqueueing wakes it immediately.
+  variable up to `wait` seconds (25 by default); enqueueing wakes it immediately.
 - A running job whose device has not been seen for 60 s becomes `failed: "AE disconnected"`. No automatic retry.
 - `render_frames`, `render_final` and `package` enqueue a `sync` first when the device's last synced version of
   that scene differs from the requested version.
@@ -186,8 +186,8 @@ Extension routes (`Authorization: Bearer <device token>`, `X-Keepframe-Extension
 
 ### `verify.py`
 
-- `sample_frames(frames, n=16)` — evenly spaced, first and last included.
-- `verify(scene, ae_frames: dict[int, Path]) -> Report` — renders the same frames with Keepframe's renderer,
+- `sample_frames(frames, n=16)`: evenly spaced, first and last included.
+- `verify(scene, ae_frames: dict[int, Path]) -> Report`: renders the same frames with Keepframe's renderer,
   resizes AE frames to the scene size, computes per-frame mean |a−b|/255 (the `render_l1` metric).
 - Pass: mean ≤ `VERIFY_MEAN_MAX = 0.02` and every frame ≤ `VERIFY_FRAME_MAX = 0.05` (calibrated in slice 2 on
   the live-check clips; the constants move, the rule does not).
@@ -209,9 +209,9 @@ Extension routes (`Authorization: Bearer <device token>`, `X-Keepframe-Extension
 - `host/keepframe.jsx` (ExtendScript, ES3, with its own JSON fallback). Every entry point takes and returns a
   JSON string and never throws (returns `{ok:false, error, line}`):
   - `kfInfo()` → `{ae_version, project_name, project_saved, fonts:[{family, style, postscript}]}`.
-  - `kfSync(specJson, assetDirJson, force)` — see below.
+  - `kfSync(specJson, assetDirJson, force)`: see below.
   - `kfRender(requestJson)` → render queue; `frames` (PNG sequence, half resolution, into a temp folder) or
-    `final` (H.264 chosen by output-module format, not by the localized template name).
+    `final` (H.264 chosen by output-module format; the localized template name is ignored).
   - `kfPackage(requestJson)` → `{aep: path, footage: [paths]}` for the saved project; fails with
     "Save the AE project first" when unsaved.
 
@@ -239,9 +239,9 @@ Wrapped in `app.beginUndoGroup("Keepframe sync")`.
 - A `sync` result with `hand_edited` pauses Live for that scene; the web page offers **Overwrite them**
   (re-send with `force`) or **Keep my AE edits** (Live off).
 - Agent tools (`keepframe/session/tools.py`):
-  - `ae_status` — connected devices, last synced version, Live flag, hand-edited layers. Read-only.
-  - `send_to_ae` — one `sync`; browser confirmation like `correct`/`set_keep`, except when Live is already on.
-  - `ae_verify` — enqueue verify and, when it finishes, return the report summary (pass/fail, worst frames,
+  - `ae_status`: connected devices, last synced version, Live flag, hand-edited layers. Read-only.
+  - `send_to_ae`: one `sync`; browser confirmation like `correct`/`set_keep`, except when Live is already on.
+  - `ae_verify`: enqueue verify and, when it finishes, return the report summary (pass/fail, worst frames,
     font notes).
 - Edits still go through scene versions and the existing edit verification; AE only shows accepted versions.
 
@@ -259,9 +259,9 @@ Wrapped in `app.beginUndoGroup("Keepframe sync")`.
   and fallback, determinism); devices (expiry, single use, hashing, revoke); jobs (states, wake-up, disconnect
   timeout, coalescing, sync-before-render); api (auth, allowlist, caps, partial-upload cleanup, 426); verify
   (synthetic frames, thresholds, font notes).
-- Fake AE in Node (`tests/ae_fake/`): grows from `tests/ae_panel_host.js` into an object model — Project,
+- Fake AE in Node (`tests/ae_fake/`): grows from `tests/ae_panel_host.js` into an object model (Project,
   FolderItem, FootageItem, CompItem, AVLayer/TextLayer/ShapeLayer, Property with keys and temporal ease,
-  effects (`ADBE Linear Wipe`, `ADBE Geometry2`), RenderQueue writing placeholder PNG/MP4 files — with no
+  effects (`ADBE Linear Wipe`, `ADBE Geometry2`), RenderQueue writing placeholder PNG/MP4 files) with no
   built-in `JSON`. `kfSync` tests: create, update, delete, idempotence (second run changes nothing), hand-edit
   detection, untagged layers untouched.
 - End-to-end in CI: the real server + `panel.js` run headless in Node against the fake AE: pair → sync →
@@ -287,21 +287,21 @@ Wrapped in `app.beginUndoGroup("Keepframe sync")`.
   environment variables (`KEEPFRAME_AE_RELAY_*`), the old `/api/ae/pairings` and AE render-plan routes, and the
   AE backend in render plans (native and Lottie plans stay).
 - Replace the agent page's AE card; remove `docs/qa/round2/ae-live-check.md` and the README's old AE section.
-- Existing `ae-auth.json` files and AE session folders in workspaces are ignored, not migrated.
-- Until slices 2–3 land there is no verify/MP4/zip from AE.
+- Existing `ae-auth.json` files and AE session folders in workspaces are ignored and never migrated.
+- Until slices 2-3 land there is no verify/MP4/zip from AE.
 
 ## Slices and done criteria
 
-1. Foundation + comp build — extension builds and installs from the web page; pairing; connection status on both
+1. Foundation + comp build: extension builds and installs from the web page; pairing; connection status on both
    sides; `sync` of the live-check scenes (reveal text, image background, spinning GLB) creates an editable comp;
    re-sync is a no-op; hand-edit warning. Old AE code removed. Live checklist passes in the user's AE.
-2. Verify — `render_frames` + `verify.py`; thresholds calibrated on the live-check clips; web report.
-3. Final render + package — MP4 and project zip downloadable from the web page; Korean-AE H.264 selection checked.
-4. Live agent control — Live toggle, coalescing, hand-edit pause, agent tools; an agent edit appears in AE
+2. Verify: `render_frames` + `verify.py`; thresholds calibrated on the live-check clips; web report.
+3. Final render + package: MP4 and project zip downloadable from the web page; Korean-AE H.264 selection checked.
+4. Live agent control: Live toggle, coalescing, hand-edit pause, agent tools; an agent edit appears in AE
    within ~1 s of the new version.
 
 ## Open items
 
-- `ZXPSignCmd` on Linux (Wine) vs a Windows runner — settled in slice 1, task 1.
-- Linear Wipe angle sign and model-layer rotation axes — confirmed in the slice-1 live check.
-- `VERIFY_*` thresholds — calibrated in slice 2.
+- `ZXPSignCmd` on Linux (Wine) vs a Windows runner: settled in slice 1, task 1.
+- Linear Wipe angle sign and model-layer rotation axes: confirmed in the slice-1 live check.
+- `VERIFY_*` thresholds: calibrated in slice 2.

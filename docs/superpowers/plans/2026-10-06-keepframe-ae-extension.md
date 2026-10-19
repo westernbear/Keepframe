@@ -1,4 +1,4 @@
-# Keepframe After Effects Extension — Implementation Plan
+# Keepframe After Effects Extension: Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. **Implementer = Codex** (`run-codex.sh` = `codex exec -m gpt-6.1-sol -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true -C <worktree>`; the sandbox keeps `.git` read-only, so the controller runs the full suite outside the sandbox and commits). Reviews = Claude subagents (task: sonnet, re-review: haiku, final: opus). Steps use `- [ ]`.
 
@@ -8,7 +8,7 @@
 
 **Architecture:** New `keepframe/ae/` (spec, devices, jobs, api, verify) on the existing server and port; `extension/` (CSXS manifest, `index.html` + `panel.js` + a Node-testable `core.js`, `host/keepframe.jsx`). The server sends a declarative `CompSpec`; one ExtendScript routine (`kfSync`) makes AE match it by stable layer tags. HTTP long-poll. The old `keepframe/after_effects/` (~26k lines) is deleted in slice 1.
 
-**Tech stack:** Python 3.12 stdlib server (`ThreadingHTTPServer`), pydantic 2, existing compose/render (Playwright Chromium) for verify; CEP 11 extension in vanilla JS + Node built-ins (no npm deps; `window.__adobe_cep__.evalScript` instead of vendoring CSInterface); ExtendScript ES3; Node 25 for the fake AE and the headless extension tests; Adobe `ZXPSignCmd` under Wine in Docker for signing.
+**Tech stack:** Python 3.12 stdlib server (`ThreadingHTTPServer`), pydantic 2, existing compose/render (Playwright Chromium) for verify; CEP 11 extension in vanilla JS + Node built-ins (no npm deps; `window.__adobe_cep__.evalScript`, with no vendored CSInterface); ExtendScript ES3; Node 25 for the fake AE and the headless extension tests; Adobe `ZXPSignCmd` under Wine in Docker for signing.
 
 ## Context
 
@@ -35,7 +35,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 4. Two agent edits in quick succession with Live on: AE ends on the newest version; the older queued sync never runs → Task 19 `test_live_coalesces_to_newest_version`.
 5. A job asks for an asset name that is not in its spec, or contains `..`/absolute paths: the server refuses, and the extension never writes outside its asset folder → Task 6 `test_asset_outside_spec_is_refused`, Task 9 `test_asset_cache_paths_stay_inside_folder`.
 
----
+***
 
 ## Task 0: Workspace
 
@@ -43,7 +43,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 - [ ] Plan copy at `docs/superpowers/plans/2026-10-06-keepframe-ae-extension.md`; SDD workspace + ledger; `run-codex.sh` (command above).
 - [ ] Record the baseline test count. Commit `docs: add AE extension plan`.
 
-## Slice 1 — Foundation + comp build
+## Slice 1: Foundation + comp build
 
 ### Task 1: Signing spike (decides the build route)
 **Files:** Create `scripts/build_zxp.sh`, `extension/CSXS/manifest.xml` (minimal), `extension/index.html` (hello).
@@ -85,7 +85,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 - [ ] Model: `app.project` (items, `FolderItem`, `FootageItem` with `mainSource.file`, `CompItem` with `layers`, `comment`, `width/height/frameRate/duration`), `importFile(ImportOptions)`, layers `add/addText/addSolid/addNull`, `AVLayer` (`comment`, `inPoint/outPoint`, `moveBefore/moveAfter`, `remove`, `property("ADBE Transform Group")`, `Effects.addProperty(matchName)`), `Property` (`setValue`, `setValueAtTime`, `numKeys`, `removeKey`, `keyValue`, `setTemporalEaseAtKey`, `separationDimensions`), `TextDocument`, `app.beginUndoGroup/endUndoGroup` (counted), `app.fonts.allFonts`, `app.version`, `$.getenv`, `File/Folder` (from tonight's host), `app.project.renderQueue` (slice 2), **no global `JSON`**. Unknown API calls throw `"fake AE: unsupported <name>"` so gaps are loud.
 - [ ] Commit `test(ae): fake After Effects object model for ExtendScript tests`.
 
-### Task 8: `host/keepframe.jsx` — `kfInfo` and `kfSync`
+### Task 8: `host/keepframe.jsx`, `kfInfo` and `kfSync`
 **Files:** Create `extension/host/keepframe.jsx` (JSON fallback moved from the old panel), Test `tests/test_ae_host_sync.py` (via `run_jsx`)
 - [ ] Implement the spec's 7-step algorithm. Layer comment `keepframe:<id>;fp=<fingerprint>`; comp comment = `comp.tag`; footage comment = sha256; easing via `KeyframeEase`; Linear Wipe (`ADBE Linear Wipe`, completion/angle/feather) and Transform effect (`ADBE Geometry2`, skew/axis); model layers via `importFile` of the GLB; text anchor from `sourceRectAtTime(0)` × `anchor_fraction`.
 - [ ] Tests: create from empty; `test_sync_twice_is_a_no_op` (no property writes, one undo group per call); update changes only changed layers; kind change recreates; deleted element removes its layer; `test_untagged_layers_are_never_touched`; hand edit → `applied: false, hand_edited: [...]`, then `force` applies; reveal/skew/model/ease/order mapping; any thrown error → `{ok:false, error, line}`.
@@ -97,7 +97,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 - [ ] Tests: URL policy (https anywhere; http only loopback, `100.64.0.0/10`, `*.ts.net`); backoff 1→30 s; 426 shows the update link; `test_asset_cache_paths_stay_inside_folder`; sync job: download only missing hashes → `kfSync` → post result; hand-edit result surfaces in status.
 - [ ] Commit `feat(ae): CEP panel that pairs, long-polls and runs sync jobs`.
 
-### Task 10: Web UI — After Effects card
+### Task 10: Web UI (After Effects card)
 **Files:** Modify `keepframe/web/static/agent.html`, `js/agent.js` (or a new `js/ae.js`), `css/app.css`, `js/i18n.js`, cache-buster stamp · Test `tests/test_web_static.py`
 - [ ] Card: **Download extension** + install hint (UPIA one-liner), **Connect AE** → code with copy button and expiry, devices list (connected/AE version/open project/**Disconnect**), **Send to AE** for the current version, last synced version, job state/error, hand-edit prompt (**Overwrite them** → `send` with `force`).
 - [ ] Commit `feat(web): After Effects card for pairing and sync`.
@@ -113,7 +113,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 - [ ] Controller runs it with the user. Checks: comp and layers appear and are editable; reveal wipes left→right (angle sign); background at the bottom; GLB model rotates on the right axes; fonts/substitution notes; resend is a no-op; hand edit warning. Findings → fake AE + tests → fixes. Record in README.
 - [ ] Slice-1 review (opus) on `master..HEAD`; merge locally after the user approves (finishing-a-development-branch).
 
-## Slice 2 — Verify
+## Slice 2: Verify
 
 ### Task 13: Frame rendering
 **Files:** `extension/host/keepframe.jsx` (`kfRender({mode:"frames", frames, folder})`: render-queue item for the tagged comp, PNG-sequence output module chosen by format, half resolution, wait for completion, return paths), `extension/js/core.js` (`render_frames` job: render → upload `frame_<NNNN>.png` for the sampled frames), fake AE render queue (writes PNGs from a test fixture), tests.
@@ -126,10 +126,10 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 ### Task 15: Live check 2 + calibration
 - [ ] Run Verify on the three live-check scenes and one real clip (ig2); set `VERIFY_MEAN_MAX`/`VERIFY_FRAME_MAX` from the observed numbers (rule unchanged); `test_partial_upload_is_discarded` re-run against a real AE upload interruption if the user can (pull the network). Record in README. Slice review + merge.
 
-## Slice 3 — Final render + package
+## Slice 3: Final render + package
 
 ### Task 16: Final MP4
-**Files:** `kfRender({mode:"final"})` choosing the H.264 output module by its format setting, not its (localized) template name; `render_final` job uploads `final.mp4` streamed; web **Download MP4** per version; tests (fake AE output modules with Korean template names).
+**Files:** `kfRender({mode:"final"})` choosing the H.264 output module by its format setting, since template names are localized; `render_final` job uploads `final.mp4` streamed; web **Download MP4** per version; tests (fake AE output modules with Korean template names).
 - [ ] Commit `feat(ae): final H.264 render from AE`.
 
 ### Task 17: Project package
@@ -139,7 +139,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 ### Task 18: Live check 3
 - [ ] Korean AE: H.264 selection works; MP4 plays and matches; zip opens on another path with footage relinked. Record; slice review + merge.
 
-## Slice 4 — Live agent control
+## Slice 4: Live agent control
 
 ### Task 19: Version listener + Live flag
 **Files:** Modify `keepframe/ir/store.py` (`on_new_version(callback)` registry, called after `new_version` saves; listener errors logged, never raised), `keepframe/ae/jobs.py` (Live flags in `<workspace>/.ae/live.json`; enqueue coalescing `sync` per connected device; hand-edit result pauses Live), `keepframe/ae/api.py` (`POST /api/ae/live`), web card (**Live** toggle, "Live paused: N layers edited by hand" with **Overwrite them** / **Keep my AE edits**) · Tests.
@@ -154,11 +154,11 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 - [ ] With Live on, an agent edit appears in AE within ~1 s of the new version; two quick edits end on the newest; hand edit pauses Live and the agent reports it through `ae_status`.
 - [ ] Final whole-branch review (opus) → fixes → finishing-a-development-branch (user chooses merge/push). `graphify update .`. Update memory (`keepframe-round2.md` → new AE status).
 
----
+***
 
 ## Verification
 
 1. Python suite + `node --test extension/test tests/ae_fake` green; `tests/test_ae_e2e.py` green.
 2. `grep` shows no references to the old AE path outside docs.
 3. `scripts/build_zxp.sh` produces a `.zxp` that `ZXPSignCmd -verify` accepts; `/ae/keepframe.zxp` serves it.
-4. Live checks 1–4 in the user's AE pass and are recorded in `docs/qa/ae-extension/README.md` with screenshots: pairing, sync of the three scenes, no-op resend, hand-edit warning, Verify pass with calibrated thresholds, MP4 + zip downloads, Live edits within ~1 s.
+4. Live checks 1 to 4 in the user's AE pass and are recorded in `docs/qa/ae-extension/README.md` with screenshots: pairing, sync of the three scenes, no-op resend, hand-edit warning, Verify pass with calibrated thresholds, MP4 + zip downloads, Live edits within ~1 s.
