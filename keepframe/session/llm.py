@@ -127,8 +127,8 @@ class LiteLLMClient:
             "model": self.config.litellm_model,
             "messages": messages,
         }
-        if tools:
-            kwargs.update(tools=tools, tool_choice="auto")
+        if tools:   # our function tools never use litellm's MCP gateway, whose import needs the optional `mcp` package
+            kwargs.update(tools=tools, tool_choice="auto", _skip_mcp_handler=True)
         if self.config.api_key and self.config.provider != "chatgpt":
             kwargs["api_key"] = self.config.api_key
         if self.config.base_url:

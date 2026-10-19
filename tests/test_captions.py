@@ -316,6 +316,19 @@ def test_litellm_tools_only_when_nonempty(monkeypatch, tools):
     assert ("tools" in seen) is bool(tools) and ("tool_choice" in seen) is bool(tools)
     if tools:
         assert seen["tools"] == tools and seen["tool_choice"] == "auto"
+    assert seen.get("_skip_mcp_handler") is (True if tools else None)
+
+
+def test_litellm_tool_call_does_not_need_mcp(monkeypatch):
+    """litellm >= 1.106 imports the optional `mcp` package on its MCP gateway path whenever tools are passed."""
+    import sys
+    litellm = pytest.importorskip("litellm")
+    real = litellm.completion
+    monkeypatch.setitem(sys.modules, "litellm.responses.mcp.chat_completions_handler", None)   # as without `mcp`
+    monkeypatch.setattr("litellm.completion", lambda **kw: real(**kw, mock_response="ok"))
+    tool = {"type": "function", "function": {"name": "noop", "parameters": {"type": "object", "properties": {}}}}
+    reply = LiteLLMClient(ProviderConfig(api_key="k", model="gpt-4o-mini")).complete([{"role": "user", "content": "hi"}], [tool])
+    assert reply.content == "ok"
 
 
 @pytest.mark.parametrize("client", [NullClient(), SimpleNamespace(supports_vision=False), SimpleNamespace(), FakeVision()])
