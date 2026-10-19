@@ -99,6 +99,12 @@ def test_provider_config_model_and_credentials(monkeypatch):
     assert ProviderConfig(provider="openai_compatible", model="llama3", base_url="http://127.0.0.1:8000/v1").credentials_present() is True
 
 
+def test_provider_config_base_url_is_trimmed_and_gets_a_scheme():
+    assert ProviderConfig(base_url=" api.orcarouter.ai/v1 ").base_url == "https://api.orcarouter.ai/v1"
+    assert ProviderConfig(base_url="http://host.docker.internal:1234/v1").base_url == "http://host.docker.internal:1234/v1"
+    assert ProviderConfig(base_url="  ").base_url == ""
+
+
 def test_litellm_client_oauth_azure_uses_ad_token(monkeypatch):
     class _Msg:
         content = "ok"
