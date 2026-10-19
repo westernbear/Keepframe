@@ -2,6 +2,7 @@ import { motion } from 'motion/react'
 import { Link, useLocation } from 'react-router'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { CommandTrigger } from './command-menu'
 import { LangToggle } from './lang-toggle'
 
 const PRIMARY = [
@@ -36,6 +37,7 @@ export function MakerNav({ extra = [], actions }: { extra?: NavExtra[]; actions?
         ))}
       </div>
       <a href="/admin" className={cn(link, 'text-ink-muted hover:text-ink')}>{T('admin.manage')}</a>
+      <CommandTrigger />
       <LangToggle />
     </nav>
   )
