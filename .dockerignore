@@ -18,5 +18,6 @@ data
 docs
 tests
 scripts
+!scripts/zxp/stamp.py
 DESIGN.md
 *.md

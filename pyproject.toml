@@ -29,6 +29,7 @@ keepframe = [
   "compose/vendor/*.js",
   "compose/template.html",
   "web/static/*.png",
+  "ae/static/*.zxp",
   "web/static/app/*.html",
   "web/static/app/assets/*",
   "fonts/manifest.json",
