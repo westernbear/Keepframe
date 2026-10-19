@@ -136,11 +136,19 @@ def test_set_keep_rejects_unknown_preset_without_mutation(tmp_path):
     assert load_project(root).model_dump() == before
 
 
-@pytest.mark.parametrize("op", ["reassign", "mask", "bbox", "text"])
-def test_correct_only_previews_and_never_submits_job(tmp_path, op):
+_PNG = "iVBORw0KGgoAAAANSUhEUg"
+
+
+@pytest.mark.parametrize("op,args", [
+    ("reassign", {"from_id": "e1", "to_id": "e2", "frames": [0, 5]}),
+    ("mask", {"object_id": "e1", "frame": 3, "mask_png_base64": _PNG}),
+    ("bbox", {"object_id": "e1", "frame": 3, "bbox": [10, 10, 50, 40]}),
+    ("text", {"element_id": "e1", "text": "Hello"}),
+])
+def test_correct_only_previews_and_never_submits_job(tmp_path, op, args):
+    root, _ = _keep_project(tmp_path)
     submit = Mock(return_value={"id": "job1"})
-    args = {"element_id": "e1", "text": "Hello"}
-    ctx = SessionContext(root=tmp_path, scene_id="s1", submit_job=submit)
+    ctx = SessionContext(root=root, scene_id="s1", submit_job=submit)
 
     res = run_tool("correct", ctx, {"op": op, "args": args, "confirm": True})
 
@@ -151,10 +159,27 @@ def test_correct_only_previews_and_never_submits_job(tmp_path, op):
 
 
 def test_correct_preview_does_not_need_job_queue(tmp_path):
-    res = run_tool("correct", _ctx(tmp_path), {"op": "text"})
+    root, _ = _keep_project(tmp_path)
+    res = run_tool("correct", _ctx(root), {"op": "text", "args": {"element_id": "e1", "font": {"weight": 700}}})
     assert res["ok"] is True
     assert res["needs_confirm"] is True
-    assert res["payload"] == {"correction": {"op": "text", "args": {}}}
+
+
+@pytest.mark.parametrize("op,args,says", [
+    ("text", {"element_id": "e1", "new_text": "Hi"}, "잘못된 키: ['new_text']"),
+    ("text", {"element_id": "e1"}, "text나 font"),
+    ("text", {"element_id": "e99", "text": "Hi"}, "'e99'는 장면에 없는"),
+    ("text", {"element_id": "e1", "font": {"family_guess": "Inter, sans-serif"}}, "family_guess"),
+    ("reassign", {"from_id": "e1", "to_id": "e2", "frames": [5, 40]}, "0–11"),
+    ("mask", {"object_id": "e1", "frame": 3}, "빠진 키: ['mask_png_base64']"),
+    ("bbox", {"object_id": "e1", "frame": 3, "bbox": [10.5, 10, 50, 40]}, "정수 [x0, y0, x1, y1]"),
+    ("bbox", {"object_id": "e1", "frame": 3, "bbox": [10, 10, 5000, 40]}, "정수 [x0, y0, x1, y1]"),
+])
+def test_correct_says_what_the_browser_preview_would_refuse(tmp_path, op, args, says):
+    root, _ = _keep_project(tmp_path)
+    res = run_tool("correct", _ctx(root), {"op": op, "args": args})
+    assert res["ok"] is False and res["needs_confirm"] is False
+    assert says in res["message"]
 
 
 @pytest.mark.parametrize("op", [None, "invalid"])
