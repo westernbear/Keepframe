@@ -362,6 +362,8 @@
   "agent.tool.verify": "Verify",
   "agent.tool.export": "Export",
   "agent.tool.report": "Report",
+  "agent.tool.web_search": "Web search",
+  "agent.tool.web_fetch": "Web fetch",
   "agent.placeholder": "Edit, verify, or export the scene.",
   "agent.send": "Send",
   "agent.attach": "Attach",

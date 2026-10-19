@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ..analyze.constraints import KEEP_PRESETS
 from ..ir.store import current_scene, scene_dir
 from ..log import describe as describe_exc, get
+from . import web
 
 log = get("keepframe.session")
 
@@ -230,6 +231,22 @@ def _report(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
     return _ok(f"요소 {summary['elements']}개, 최대 오차 {summary['fit_error_max_px']}px.", report=summary)
 
 
+def _web_search(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
+    try:
+        results = web.search(args.get("query", ""), args.get("max_results") or 5)
+    except web.WebError as e:
+        return _fail(str(e))
+    return _ok(f"검색 결과 {len(results)}개.", results=results)
+
+
+def _web_fetch(ctx: SessionContext, args: dict[str, Any]) -> dict[str, Any]:
+    try:
+        page = web.fetch(args.get("url", ""), args.get("max_length") or 5000, args.get("start_index") or 0)
+    except web.WebError as e:
+        return _fail(str(e))
+    return _ok(f"{page['url']} 본문 {len(page['content'])}자.", **page)
+
+
 TOOLS: dict[str, Callable[[SessionContext, dict[str, Any]], dict[str, Any]]] = {
     "analyze": _analyze,
     "correct": _correct,
@@ -239,6 +256,8 @@ TOOLS: dict[str, Callable[[SessionContext, dict[str, Any]], dict[str, Any]]] = {
     "verify": _verify,
     "export": _export,
     "report": _report,
+    "web_search": _web_search,
+    "web_fetch": _web_fetch,
 }
 
 
@@ -325,6 +344,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         ["backend"],
     ),
     _fn("report", "재구성 오차·요소 신뢰도 리포트를 요약한다.", {}, []),
+    _fn(
+        "web_search",
+        "웹을 검색해 제목·URL·요약을 돌려준다. 폰트 이름, 효과 기법, AE 사용법처럼 장면 밖의 사실이 필요할 때만 쓴다.",
+        {"query": {"type": "string", "description": "검색어"},
+         "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "description": "결과 수(기본 5)"}},
+        ["query"],
+    ),
+    _fn(
+        "web_fetch",
+        "공개 http(s) URL의 본문을 텍스트로 가져온다. 길면 next_start를 start_index로 넘겨 이어 읽는다.",
+        {"url": {"type": "string", "description": "가져올 URL"},
+         "max_length": {"type": "integer", "minimum": 1, "maximum": web.MAX_LENGTH, "description": "돌려받을 최대 글자 수(기본 5000)"},
+         "start_index": {"type": "integer", "minimum": 0, "description": "이어 읽을 시작 위치(기본 0)"}},
+        ["url"],
+    ),
 ]
 
 

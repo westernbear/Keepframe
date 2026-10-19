@@ -362,6 +362,8 @@
   "agent.tool.verify": "검증",
   "agent.tool.export": "내보내기",
   "agent.tool.report": "보고서",
+  "agent.tool.web_search": "웹 검색",
+  "agent.tool.web_fetch": "웹 페이지 읽기",
   "agent.placeholder": "수정이나 검증, 내보내기를 적어 보내세요.",
   "agent.send": "전송",
   "agent.attach": "첨부",
