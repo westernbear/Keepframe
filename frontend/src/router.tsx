@@ -5,6 +5,7 @@ import Landing from './pages/landing'
 import Analyze from './pages/analyze'
 import Ingest from './pages/ingest'
 import Library from './pages/library'
+import Review from './pages/review'
 
 // shortcut: routes not yet ported fall through to a full page load (the server still serves their legacy HTML);
 // remove once every page lives here.
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: '/library', element: <Library /> },
       { path: '/new', element: <Ingest /> },
       { path: '/analyze', element: <Analyze /> },
+      { path: '/review', element: <Review /> },
       { path: '*', element: <LegacyPage /> },
     ],
   },

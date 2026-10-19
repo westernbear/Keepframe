@@ -38,7 +38,7 @@ export function WorkflowStepper({ stage, projectName, projectStatus = '' }: { st
                     </motion.span>
                   ) : i + 1}
                 </span>
-                <span className={state === 'upcoming' ? 'text-ink-muted' : 'text-ink'}>{T(`workflow.${step}`)}</span>
+                <span className={state === 'upcoming' ? 'text-ink-muted' : 'text-ink'} data-i18n={`workflow.${step}`}>{T(`workflow.${step}`)}</span>
               </li>
             )
           })}

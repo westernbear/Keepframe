@@ -214,7 +214,7 @@ PAGES = {  # pages ported to the React SPA serve its index; the rest still serve
     "/library": "app/index.html",
     "/new": "app/index.html",
     "/analyze": "app/index.html",
-    "/review": "review.html",
+    "/review": "app/index.html",
     "/agent": "agent.html",
 }
 STATIC_TYPES = {

@@ -25,7 +25,7 @@ export function AppHeader({ context, actions, extra, className, children }: {
     <header className={cn('header sticky top-0 z-40 border-b border-hairline-soft bg-canvas/85 backdrop-blur-md', className)}>
       <div className="mx-auto flex min-h-14 max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 md:px-6">
         <Brand />
-        {context && <div className="flex min-w-0 flex-1 items-center gap-3">{context}</div>}
+        {context && <div className="flex min-w-0 flex-1 items-center gap-3 max-sm:order-[10000] max-sm:w-full max-sm:flex-none">{context}</div>}
         <div className={cn('flex min-w-0 items-center max-sm:contents', !context && 'ml-auto')}>
           <MakerNav extra={extra} actions={actions} />
         </div>
