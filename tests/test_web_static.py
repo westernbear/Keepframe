@@ -22,6 +22,30 @@ def static_src(*names):
     return "\n".join((STATIC / name).read_text(encoding="utf-8") for name in names)
 
 
+I18N = ROOT / "frontend" / "src" / "i18n"
+
+
+def strings(lang):
+    """The SPA's dictionary (frontend/src/i18n/<lang>.json)."""
+    return json.loads((I18N / f"{lang}.json").read_text(encoding="utf-8"))
+
+
+def legacy_strings():
+    """ko and en of the legacy keepframe/web/static/js/i18n.js, as dicts (the unported pages still load it)."""
+    ko, en = static_src("js/i18n.js").split("en: {", 1)
+    pat = re.compile(r'^\s*"([^"]+)":\s*("(?:[^"\\]|\\.)*")', re.M)
+    return ({k: json.loads(v) for k, v in pat.findall(ko)}, {k: json.loads(v) for k, v in pat.findall(en)})
+
+
+def test_spa_dictionaries_hold_every_legacy_string():
+    # until the legacy pages go (plan phase 6), the JSON is a superset of i18n.js with the same wording
+    for lang, legacy in zip(("ko", "en"), legacy_strings()):
+        assert len(legacy) > 400
+        spa = strings(lang)
+        assert {k: spa.get(k) for k in legacy} == legacy, lang
+    assert set(strings("ko")) == set(strings("en"))
+
+
 def test_analyze_stitch_source_exists():
     html = (DESIGNS / "analyze.html").read_text(encoding="utf-8")
     assert "<html" in html.lower()
@@ -93,19 +117,16 @@ def test_ingest_gpu_status_is_not_hardcoded():
 
 
 def test_i18n_has_ko_and_en_keys():
-    src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
-    assert "keepframe.lang" in src
+    assert "keepframe.lang" in (ROOT / "frontend/src/i18n/index.ts").read_text(encoding="utf-8")
+    ko, en = strings("ko"), strings("en")
     for key in ("ingest.start", "review.keepSave", "review.approve", "review.openAgent", "review.editRun", "error.liveaction", "library.empty", "landing.headline"):
-        assert src.count(f'"{key}"') >= 2
+        assert ko[key] and en[key]
 
 
 def test_font_candidate_copy_is_bilingual():
-    src = static_src("js/i18n.js")
-    ko, en = src.split("en: {", 1)
-    assert '"review.fontCandidates": "폰트 후보"' in ko
-    assert '"review.fontCandidates": "Font candidates"' in en
-    assert '"review.applyFont": "폰트 적용"' in ko
-    assert '"review.applyFont": "Apply font"' in en
+    ko, en = strings("ko"), strings("en")
+    assert ko["review.fontCandidates"] == "폰트 후보" and en["review.fontCandidates"] == "Font candidates"
+    assert ko["review.applyFont"] == "폰트 적용" and en["review.applyFont"] == "Apply font"
 
 
 def test_review_font_picker_preserves_font_and_corrects_selected_text(tmp_path):
@@ -177,6 +198,7 @@ assert.equal(find('select'), undefined);
 
 
 def test_i18n_markup_keys_exist_in_both_langs():
+    # the legacy pages' data-i18n keys, against the i18n.js they load (goes with them in plan phase 6)
     import re
     src = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
     ko = src.split("en: {", 1)[0]
@@ -237,7 +259,7 @@ def test_library_filters_are_wired():
 def test_review_empty_copy_uses_the_exact_korean_guidance():
     source = static_src("review.html", "js/i18n.js")
     assert 'data-i18n="review.empty">인식된 객체가 없습니다. 다른 프레임이나 분석 버전을 확인하세요.' in source
-    assert '"review.empty": "인식된 객체가 없습니다. 다른 프레임이나 분석 버전을 확인하세요."' in source
+    assert strings("ko")["review.empty"] == "인식된 객체가 없습니다. 다른 프레임이나 분석 버전을 확인하세요."
 
 def test_all_linked_runtime_assets_exist_locally():
     import re
@@ -271,7 +293,7 @@ def test_agent_keep_preview_guards_target_array_before_matching():
 
 
 def test_agent_keep_and_correction_copy_is_bilingual():
-    ko, en = static_src("js/i18n.js").split("en: {", 1)
+    ko, en = strings("ko"), strings("en")
     for key in ("agent.keepPresetPreview", "agent.keepOnPreview", "agent.keepOffPreview",
                 "agent.keepExamplesPreview", "agent.keepChangeNote", "agent.keepPreviewChanged",
                 "agent.correctionPreview", "agent.correctionInvalid", "agent.correctionElement",
@@ -279,10 +301,10 @@ def test_agent_keep_and_correction_copy_is_bilingual():
                 "agent.correctionFontWeight", "agent.correctionFontSize", "agent.correctionFrames",
                 "agent.correctionFrame", "agent.correctionBbox", "agent.correctionMask",
                 "agent.correctionMaskHidden", "agent.applied"):
-        assert f'"{key}":' in ko
-        assert f'"{key}":' in en
-    assert '"agent.keepChangeNote": "에이전트 keep 변경"' in ko
-    assert '"agent.keepChangeNote": "Agent keep change"' in en
+        assert key in ko
+        assert key in en
+    assert ko["agent.keepChangeNote"] == "에이전트 keep 변경"
+    assert en["agent.keepChangeNote"] == "Agent keep change"
 
 
 @pytest.mark.parametrize("scenario", [
@@ -610,7 +632,7 @@ def test_ae_card_static_contract():
     }
     assert "visibilitychange" in ae
     assert "console." not in ae and "innerHTML" not in ae and "window.confirm" not in ae
-    ko, en = static_src("js/i18n.js").split("en: {", 1)
+    ko, en = strings("ko"), strings("en")
     used = set(re.findall(r"ae\.[A-Za-z0-9_.]+", html + ae)) - {"ae.js", "ae.count."}
     # Dynamic job keys must also have both translations.
     used |= {f"ae.{value}" for value in (
@@ -623,13 +645,13 @@ def test_ae_card_static_contract():
     )}
     assert used
     for key in used:
-        assert f'"{key}":' in ko and f'"{key}":' in en, key
+        assert key in ko and key in en, key
 
 
 def test_agent_and_ae_removed_copy_stays_unused():
     source = static_src("js/i18n.js")
     for key in ("ae.warnings", "ae.connected", "agent.toolCall", "agent.job"):
-        assert f'"{key}":' not in source
+        assert f'"{key}":' not in source and key not in strings("ko") and key not in strings("en")
 
 
 def test_pending_solid_button_uses_edit_preview_and_confirmation(tmp_path):
@@ -685,11 +707,9 @@ assert.equal(dom.objectDetail.children.some(el=>el.tagName==='button'),false);
 
 
 def test_solid_generation_copy_is_bilingual():
-    ko, en = static_src("js/i18n.js").split("en: {", 1)
-    assert '"review.generate3d": "3D 생성"' in ko
-    assert '"review.generate3d": "Generate 3D"' in en
-    for key in ("review.generate3d", "review.generate3dPrompt"):
-        assert f'"{key}":' in ko and f'"{key}":' in en
+    ko, en = strings("ko"), strings("en")
+    assert ko["review.generate3d"] == "3D 생성" and en["review.generate3d"] == "Generate 3D"
+    assert ko["review.generate3dPrompt"] and en["review.generate3dPrompt"]
 
 
 def test_agent_confirm_needs_choice_keeps_intent_and_can_resubmit(tmp_path):
