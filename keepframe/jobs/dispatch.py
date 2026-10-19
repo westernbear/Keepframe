@@ -56,9 +56,13 @@ def _run_analyze(args: dict[str, Any]) -> dict[str, Any]:
         log.info("analyze done project=%s", project_id)
         return {"project_id": project_id}
     except Exception as e:
-        log.error("analyze failed project=%s: %s", project_id, describe(e))
+        cancelled = isinstance(e, JobFailed) and e.code == "cancelled"
+        (log.info if cancelled else log.error)("analyze failed project=%s: %s", project_id, describe(e))
         if workspace is not None and project_id:
-            write_meta(workspace, project_id, status="error", error=str(e) if isinstance(e, JobFailed) else "job_failed")
+            if cancelled:   # back to the range picker, video kept
+                write_meta(workspace, project_id, status="uploaded", job_id=None, error=None)
+            else:
+                write_meta(workspace, project_id, status="error", error=str(e) if isinstance(e, JobFailed) else "job_failed")
         raise
 
 

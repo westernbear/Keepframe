@@ -12,7 +12,7 @@ from keepframe.progress import STAGES
 from keepframe.review.corrections import add_bbox_prompt
 
 OPTS = AnalyzeOptions(ocr=False, refine=False, use_ecc=False)
-STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _plate(h=320, w=640, picture=False):
@@ -43,7 +43,7 @@ def logo_project(tmp_path):
 
 def test_stage_order_has_plate_between_tracking_and_solids():
     assert STAGES.index("tracking") + 1 == STAGES.index("plate") == STAGES.index("solids") - 1
-    js = (STATIC / "js" / "analyze.js").read_text()
+    js = (ROOT / "frontend/src/lib/analyze.ts").read_text()   # the SPA's analyze steps
     pipeline_js = json.loads(re.search(r"const PIPELINE = (\[.*?\]);", js).group(1))
     assert pipeline_js == list(STAGES)
     steps = json.loads(re.sub(r"(\w+):", r'"\1":', re.search(r"const STEP_STAGES = (\{.*?\});", js, re.S).group(1)).replace(",\n}", "\n}"))

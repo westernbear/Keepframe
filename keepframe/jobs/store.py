@@ -30,6 +30,15 @@ class JobStore:
                     found = j
             return found
 
+    def cancel(self, jid: str) -> Job | None:
+        """Flags a queued or running job; ThreadRunner stops it at its next stage report. None if it already ended."""
+        with self._lock:
+            j = self._jobs.get(jid)
+            if j is None or j.status not in ("queued", "running"):
+                return None
+            j.cancel_requested = True
+            return j
+
     def list(self) -> list[Job]:
         with self._lock:
             return list(self._jobs.values())

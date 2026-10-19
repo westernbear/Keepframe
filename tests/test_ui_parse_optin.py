@@ -1,7 +1,4 @@
 import json
-import shutil
-import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -161,42 +158,3 @@ def test_cli_analyze_ui_flag(tmp_path, monkeypatch, ui):
     assert main(args + (["--ui"] if ui else [])) == 0
     assert called[0].ui is ui
 
-
-def test_ingest_selection_reaches_post_analyze_body(tmp_path):
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node unavailable")
-    static = Path("keepframe/web/static/js")
-    ingest = (static / "ingest.js").read_text()
-    analyze_js = (static / "analyze.js").read_text()
-    start_analysis = ingest[ingest.index("function startAnalysis()"):ingest.index("\nbindIngest();")]
-    analyze_payload = analyze_js[analyze_js.index("function analyzePayload()"):analyze_js.index("\nasync function loadProjectChrome()")]
-    script = tmp_path / "reference.mjs"
-    script.write_text('''import assert from 'node:assert/strict';
-import vm from 'node:vm';
-for (const checked of [false, true]) {
-  const saved = new Map();
-  const context = vm.createContext({
-    URLSearchParams, location: {},
-    sessionStorage: {setItem: (key, value) => saved.set(key, value)},
-    qs: selector => {assert.equal(selector, '[data-reference-ui]'); return {checked};},
-    selectedWindow: () => ({mode:'range', start:0, end:11}),
-    state: {project:{id:'p1'}, mode:'range', estimateSnapshot:{
-      mode:'range', start:0, end:11, confirm_token:'token', boundary_digest:'digest'
-    }}
-  });
-  vm.runInContext(''' + json.dumps(start_analysis + "\nstartAnalysis();") + ''', context);
-  const query = new URL(context.location.href, 'http://localhost').search;
-  assert.equal(saved.get('keepframe.analyze-start'), query);
-  context.params = new URLSearchParams(query);
-  context.estimateSnapshot = JSON.parse(saved.get('keepframe.analyze-estimate'));
-  vm.runInContext(`const projectId = params.get('job'), token = params.get('token');
-    const analyzeMode = params.get('mode'), analyzeStart = params.get('start'), analyzeEnd = params.get('end');`
-    + ''' + json.dumps(analyze_payload + "\nglobalThis.payload = analyzePayload();") + ''', context);
-  assert.equal(context.payload.reference, checked ? 'ui' : 'mg');
-  assert.equal(context.payload.project_id, 'p1');
-  assert.equal(context.payload.boundary_digest, 'digest');
-}
-''')
-    result = subprocess.run([node, str(script)], text=True, capture_output=True)
-    assert result.returncode == 0, result.stdout + result.stderr

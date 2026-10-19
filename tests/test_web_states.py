@@ -1,16 +1,16 @@
+import json
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
+SRC = Path(__file__).resolve().parents[1] / "frontend" / "src"
 
 
 def test_library_has_empty_copy():
-    html = (STATIC / "library.html").read_text(encoding="utf-8")
-    assert "프로젝트가 없습니다" in html
-    assert 'data-i18n="library.empty"' in html or "library.empty" in html
+    ko = json.loads((SRC / "i18n" / "ko.json").read_text(encoding="utf-8"))
+    assert "프로젝트가 없습니다" in ko["library.empty"]
+    assert "T('library.empty')" in (SRC / "pages" / "library" / "index.tsx").read_text(encoding="utf-8")
 
 
 def test_no_retry_override_control():
-    for name in ("analyze.html", "review.html"):
-        text = (STATIC / name).read_text(encoding="utf-8")
-        assert "재시도 상한" not in text or "올릴 수 없음" in text or "한도는 코드" in text
-        assert 'name="retry_cap"' not in text
+    for path in [SRC / "pages" / "analyze" / "index.tsx", *(SRC / "pages" / "review").glob("*.ts*")]:
+        # the cap is code policy (admin.policy copy says so); no page offers a field to raise it
+        assert "retry_cap" not in path.read_text(encoding="utf-8"), path.name

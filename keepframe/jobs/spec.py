@@ -16,6 +16,7 @@ class Job:
     error: str | None = None
     eta_s: int | None = None
     result: dict | None = None
+    cancel_requested: bool = False
 
     def to_json(self) -> dict:
         return asdict(self)

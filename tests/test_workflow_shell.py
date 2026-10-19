@@ -7,25 +7,19 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-STATIC = ROOT / "keepframe" / "web" / "static"
+SRC = ROOT / "frontend" / "src"
 
 
-def test_workflow_shell_is_mounted_offline_on_each_workflow_page():
-    for page in ("ingest.html", "analyze.html", "review.html"):
-        html = (STATIC / page).read_text(encoding="utf-8")
-        assert '<div data-workflow-shell></div>' in html
-        assert '/static/js/workflow.js' in html
-        assert html.index("</header>") < html.index("data-workflow-shell")
-    for asset in ("workflow.html", "js/workflow.js"):
-        assert (STATIC / asset).is_file()
-    fragment = (STATIC / "workflow.html").read_text(encoding="utf-8")
-    assert fragment.count('data-workflow-step="') == 3
-    assert 'aria-current="step"' not in fragment
-    source = (STATIC / "js" / "i18n.js").read_text(encoding="utf-8")
-    korean, english = source.split("en: {", 1)
+def test_workflow_stepper_is_mounted_on_each_workflow_page():
+    # step state and placement are checked by the browser tests below and frontend/src/lib/workflow.test.ts
+    for page in ("ingest", "analyze", "review"):
+        tsx = (SRC / "pages" / page / "index.tsx").read_text(encoding="utf-8")
+        assert "import { WorkflowStepper } from '@/components/app/workflow-stepper'" in tsx
+        assert tsx.count("<WorkflowStepper ") == 1
+    korean, english = (json.loads((SRC / "i18n" / f"{lang}.json").read_text(encoding="utf-8")) for lang in ("ko", "en"))
     for key in ("workflow.ingest", "workflow.analyze", "workflow.review", "workflow.status.ingest", "workflow.status.analyze", "workflow.status.review", "workflow.title"):
-        assert f'"{key}"' in korean
-        assert f'"{key}"' in english
+        assert korean[key]
+        assert english[key]
 
 
 @pytest.mark.browser

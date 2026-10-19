@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -209,13 +210,28 @@ def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
     return JOBS.find(jid) if jid else None
 
 STATIC = Path(__file__).parent / "static"
-PAGES = {
-    "/": "landing.html",
-    "/library": "library.html",
-    "/new": "ingest.html",
-    "/analyze": "analyze.html",
-    "/review": "review.html",
-    "/agent": "agent.html",
+PAGES = {  # pages ported to the React SPA serve its index; the rest still serve their legacy HTML
+    "/": "app/index.html",
+    "/library": "app/index.html",
+    "/new": "app/index.html",
+    "/analyze": "app/index.html",
+    "/review": "app/index.html",
+    "/agent": "app/index.html",
+}
+STATIC_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
 }
 ADMIN_OFF = {"error": "로컬판에는 이 화면이 없습니다."}
 
@@ -775,7 +791,7 @@ def make_server(
                 p = STATIC / PAGES[u.path]
                 if not p.exists():
                     return self._json(404, {"error": f"{PAGES[u.path]} missing"})
-                return self._send(200, p.read_bytes(), "text/html; charset=utf-8")
+                return self._send(200, p.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             if u.path.startswith("/static/"):
                 rel = u.path[len("/static/") :]
                 if ".." in rel:
@@ -784,21 +800,13 @@ def make_server(
                 if not p.is_file():
                     return self._json(404, {"error": "not found"})
                 suffix = p.suffix.lower()
-                ctype = {
-                    ".css": "text/css; charset=utf-8",
-                    ".js": "application/javascript; charset=utf-8",
-                    ".png": "image/png",
-                    ".jpg": "image/jpeg",
-                    ".jpeg": "image/jpeg",
-                    ".svg": "image/svg+xml",
-                    ".ico": "image/x-icon",
-                    ".webp": "image/webp",
-                }.get(suffix, "application/octet-stream")
-                cache = (
-                    "no-cache, must-revalidate"
-                    if suffix in {".css", ".js"}
-                    else "public, max-age=604800"
-                )
+                ctype = STATIC_TYPES.get(suffix, "application/octet-stream")
+                if rel.startswith("app/assets/"):
+                    cache = "public, max-age=31536000, immutable"  # vite content-hashed names
+                elif suffix in {".css", ".js", ".html"}:
+                    cache = "no-cache, must-revalidate"
+                else:
+                    cache = "public, max-age=604800"
                 return self._send(200, p.read_bytes(), ctype, cache=cache)
             if u.path == "/api/status":
                 return self._json(200, gpu_status())
@@ -1176,6 +1184,9 @@ def make_server(
                     return self._json(404, {"error": "no such asset"})
                 return self._send(200, asset.read_bytes(), "image/png")
 
+            shell = STATIC / "app/index.html"
+            if not u.path.startswith(("/api/", "/static/")) and shell.is_file():   # a page URL: the SPA shows its not-found page
+                return self._send(404, shell.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             return self._json(404, {"error": "not found"})
 
         def _upload_font(self, project_id: str, query: str) -> None:
@@ -1232,6 +1243,18 @@ def make_server(
                 return
             if admin_routes and admin_routes.handle_post(self, u):
                 return
+
+            m = re.fullmatch(r"/api/jobs/([^/]+)/cancel", u.path)
+            if m:   # takes effect at the job's next stage report: frame decode or an LLM call can delay it
+                if not self._same_origin():
+                    return
+                if JOBS.find(m.group(1)) is None:
+                    return self._json(404, {"error": "not found"})
+                job = JOBS.cancel(m.group(1))
+                if job is None:
+                    return self._json(409, {"error": "not_running"})
+                log.info("job %s cancel requested project=%s", job.id, job.project_id)
+                return self._json(202, {"job": job.to_json()})
 
             m = re.fullmatch(r"/api/projects/([^/]+)/fonts", u.path)
             if m:
@@ -1860,6 +1883,29 @@ def make_server(
                 return
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
+            m = re.fullmatch(r"/api/projects/([^/]+)", u.path)
+            if m:
+                if not self._same_origin():
+                    return
+                pid = m.group(1)
+                try:
+                    root = _safe_render_project(workspace, pid)
+                except ValueError:
+                    return self._json(400, {"error": "invalid_request"})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                job = existing_analyze_job(pid, load_meta(workspace, pid) or {})
+                if job is not None and job.status in ("queued", "running"):
+                    return self._json(409, {"error": "job_running"})
+                for key in [k for k in review_states if k[0] == pid]:
+                    review_states.pop(key, None)
+                try:
+                    shutil.rmtree(root)
+                except OSError as e:
+                    log.error("delete project=%s failed: %s", pid, describe(e))
+                    return self._json(500, {"error": "delete_failed"})
+                log.info("project %s deleted", pid)
+                return self._json(200, {"deleted": pid})
             return self._json(404, {"error": "not found"})
         def do_PUT(self):
             u = urlparse(self.path)

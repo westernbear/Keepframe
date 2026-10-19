@@ -437,7 +437,7 @@ def test_verify_active_polling_then_idle_and_hidden(ae_page, state):
 
     page, _, errors = ae_page
     page.clock.install()
-    page.clock.pause_at(page.evaluate("Date.now() / 1000"))
+    page.clock.pause_at(page.evaluate("Date.now() / 1000") + 1)  # ahead of the page clock: a time read in between must not land the pause in the past
     report = {"job": "verify-v4", "version": "v4", "state": state}
     data = {"devices": [], "jobs": [], "last_synced": {}, "progress": {}, "verify": report}
     page.route("**/api/ae/state?*", lambda route: route.fulfill(json=data))
@@ -836,7 +836,7 @@ def test_ae_poll_error_backoff_and_recovery(ae_page, route_name, active):
 
     page, _, errors = ae_page
     page.clock.install()
-    page.clock.pause_at(page.evaluate("Date.now() / 1000"))
+    page.clock.pause_at(page.evaluate("Date.now() / 1000") + 1)  # ahead of the page clock: a time read in between must not land the pause in the past
     mode = {"fail": False}
     requests = []
     pattern = "**/api/ae/state?*" if route_name == "state" else "**/api/ae/devices"
@@ -899,7 +899,7 @@ def test_ae_polling_pauses_when_hidden_and_resumes(ae_page):
 
     page.on("request", count_request)
     page.clock.install()
-    page.clock.pause_at(page.evaluate("Date.now() / 1000"))
+    page.clock.pause_at(page.evaluate("Date.now() / 1000") + 1)  # ahead of the page clock: a time read in between must not land the pause in the past
     page.reload()
     expect(page.locator("#agent-total")).to_have_text("2")
     expect(page.locator("#ae-send")).to_be_disabled()

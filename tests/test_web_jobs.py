@@ -34,3 +34,27 @@ def test_job_surfaces_error():
             break
         time.sleep(0.02)
     assert store.get(j.id).error == "job_failed"
+
+
+def _wait(store, jid, status):
+    for _ in range(100):
+        if store.get(jid).status == status:
+            return store.get(jid)
+        time.sleep(0.02)
+    return store.get(jid)
+
+
+def test_cancel_stops_a_running_job_at_its_next_stage_report():
+    from keepframe.progress import report_stage
+    store = JobStore()
+    def work():
+        for _ in range(500):          # a long job that reports progress
+            report_stage("regions")
+            time.sleep(0.01)
+        return {"ok": True}
+    j = store.submit("analyze", work, project_id="p1")
+    _wait(store, j.id, "running")
+    assert store.cancel(j.id) is j and j.to_json()["cancel_requested"] is True
+    got = _wait(store, j.id, "error")
+    assert (got.status, got.error) == ("error", "cancelled")
+    assert store.cancel(j.id) is None and store.cancel("missing") is None   # nothing left to stop

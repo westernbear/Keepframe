@@ -1,6 +1,4 @@
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
 import cv2
@@ -153,39 +151,3 @@ def test_both_rotation_axes_keep_their_degree_changes_and_timing(tmp_path):
     assert [(m.type, m.mag, m.start, m.end) for m in spins] == [
         ("spin", 90, 0, 10), ("spin", -360, 2, 8)]
 
-
-def test_inspector_pending_3d_badge_is_bilingual_and_only_for_candidates(tmp_path):
-    static = Path(__file__).parents[1] / "keepframe/web/static/js"
-    ko, en = (static / "i18n.js").read_text().split("en: {", 1)
-    assert '"review.pending3d": "3D 후보"' in ko
-    assert '"review.pending3d": "3D candidate"' in en
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node unavailable")
-    source = (static / "review/inspector.js").read_text()
-    source = source[source.index("export function attachInspector"):].replace("export function", "function", 1)
-    script = tmp_path / "pending-badge.mjs"
-    script.write_text('''import assert from 'node:assert/strict';
-import vm from 'node:vm';
-class Node {
-  constructor(tag) { this.tagName=tag; this.children=[]; this.dataset={}; this.events={}; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children=[...children]; }
-  addEventListener(name, fn) { this.events[name]=fn; }
-}
-const item={id:'candidate',kind:'sprite',pending_asset:'3d',canonical:{},visible:[0,10]};
-const root=new Node('section');
-const ws={dom:{objectDetail:root},selectedId:item.id,versionId:'v1',
-  state:{scene:{elements:[item]},project:{versions:[{id:'v1'}]}}};
-const context=vm.createContext({document:{createElement:tag=>new Node(tag)},T:key=>key,ws});
-vm.runInContext(''' + json.dumps(source) + '''+'\\nattachInspector(ws);',context);
-const badges=()=>root.children.filter(child=>child.className?.includes('badge'));
-ws.renderObjectDetail();
-assert.equal(badges().length,1);
-assert.equal(badges()[0].textContent,'review.pending3d');
-item.pending_asset=null;
-ws.renderObjectDetail();
-assert.equal(badges().length,0);
-''')
-    result = subprocess.run([node, str(script)], text=True, capture_output=True)
-    assert result.returncode == 0, result.stdout + result.stderr

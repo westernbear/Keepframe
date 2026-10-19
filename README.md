@@ -131,6 +131,25 @@ python scripts/eval_prompts.py --project eval/out/final/ig2 --scene s1 --workspa
 
 Results: [core-flow evaluation](docs/qa/core-flow/README.md), [round-2 evaluation](docs/qa/round2/README.md).
 
+## Web UI
+
+The web UI is a React single-page app in `frontend/` (Vite, React 19, TypeScript, Tailwind CSS 4). The server serves its
+build from `keepframe/web/static/app/`, which is committed, so `keepframe serve` needs no Node toolchain. After changing
+anything under `frontend/`, including the strings in `frontend/src/i18n/ko.json` and `en.json`, rebuild:
+
+```bash
+cd frontend
+npm ci
+npm run typecheck && npm test && npm run lint   # types, Vitest unit tests, oxlint
+npm run build                                   # writes ../keepframe/web/static/app
+```
+
+Pages are in `frontend/src/pages/`, their logic in `frontend/src/lib/` (unit-tested with Vitest), the shared header,
+navigation, workflow stepper, command menu (Ctrl/⌘+K) and dialogs in `frontend/src/components/app/`, and the Smooth UI
+and Unlumen UI components in `frontend/src/components/smoothui/` and `frontend/src/components/unlumen-ui/`. Korean is the
+default language. `npm run dev` serves the app at http://127.0.0.1:5173/static/app/ and proxies the API to a running
+`keepframe serve`. The browser tests (`pytest -m browser`) run against the committed build.
+
 ## After Effects
 
 Install the signed CEP extension once and pair once per server. **Send to AE**

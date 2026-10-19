@@ -23,14 +23,14 @@ log = get("keepframe.admin")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 ADMIN_PAGES = {
-    "/admin": "admin-login.html",
-    "/admin/": "admin-login.html",
-    "/admin/login": "admin-login.html",
-    "/admin/tenants": "admin-tenants.html",
-    "/admin/queue": "admin-queue.html",
-    "/admin/quarantine": "admin-quarantine.html",
-    "/admin/audit": "admin-audit.html",
-    "/admin/llm": "admin-llm.html",
+    "/admin": "app/index.html",
+    "/admin/": "app/index.html",
+    "/admin/login": "app/index.html",
+    "/admin/tenants": "app/index.html",
+    "/admin/queue": "app/index.html",
+    "/admin/quarantine": "app/index.html",
+    "/admin/audit": "app/index.html",
+    "/admin/llm": "app/index.html",
 }
 
 _LOGIN_PATHS = {"/admin/api/login"}
@@ -97,9 +97,14 @@ class AdminRoutes:
             if not p.is_file():
                 handler._json(404, {"error": f"{ADMIN_PAGES[path]} missing"})
                 return True
-            if path not in _PUBLIC_HTML and self._require(handler) is None:
+            sid = _session_id(handler)
+            if path not in _PUBLIC_HTML and not (sid and self.admin_auth.get(sid)):
+                handler.send_response(302)
+                handler.send_header("location", "/admin/login")
+                handler.send_header("content-length", "0")
+                handler.end_headers()
                 return True
-            handler._send(200, p.read_bytes(), "text/html; charset=utf-8")
+            handler._send(200, p.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             return True
 
         if path == "/admin/api/policy":

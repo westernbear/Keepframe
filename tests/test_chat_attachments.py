@@ -1,7 +1,6 @@
 import base64
+import json
 import re
-import shutil
-import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from keepframe.ir.store import current_scene, init_project, load_project
 from keepframe.session.tools import SessionContext, run_tool
 from tests.test_three import _triangle_glb
 
-STATIC = Path(__file__).resolve().parents[1] / "keepframe/web/static"
+SRC = Path(__file__).resolve().parents[1] / "frontend/src"
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="red"/></svg>'
 
 
@@ -201,34 +200,13 @@ def test_confirm_invalid_attachment_returns_failure_without_version(tmp_path, in
 
 
 def test_chat_accepts_svg_and_glb_and_localizes_attachment_errors():
-    html = (STATIC / "agent.html").read_text()
-    accept = re.search(r'id="agent-attach" accept="([^"]+)"', html).group(1).split(",")
+    """The MIME normalisation of picked files and the error mapping are Vitest (frontend/src/lib/agent-chat.test.ts)."""
+    chat = (SRC / "pages/agent/chat.tsx").read_text()
+    accept = re.search(r'id="agent-attach"[^>]*accept="([^"]+)"', chat).group(1).split(",")
     assert {"image/png", "image/jpeg", "image/svg+xml", ".svg", "model/gltf-binary", ".glb"} <= set(accept)
-    js = (STATIC / "js/agent.js").read_text()
-    assert 'T("agent.invalidGlb")' in js
-    i18n = (STATIC / "js/i18n.js").read_text()
-    assert i18n.count('"agent.invalidGlb":') == 2
-
-
-def test_chat_file_reader_normalizes_unknown_svg_and_glb_mime(tmp_path):
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node unavailable")
-    source = (STATIC / "js/agent.js").read_text()
-    assert "async function readChatAttachment(" in source
-    helper = source[source.index("async function readChatAttachment("):source.index("\nfunction attachmentMeta(")]
-    script = tmp_path / "attachments.mjs"
-    script.write_text("import assert from 'node:assert/strict';\n" +
-                      "const readFileAsDataUrl = async file => file.url;\n" + helper + "\n" + """
-for (const [name, type, mime] of [['MODEL.GLB', '', 'model/gltf-binary'],
-    ['model.glb', 'application/octet-stream', 'model/gltf-binary'],
-    ['VECTOR.SVG', '', 'image/svg+xml'], ['photo.png', 'image/png', 'image/png']]) {
-  const file = {name, type, url:`data:${type || 'application/octet-stream'};base64,Zm9v`};
-  assert.equal(await readChatAttachment(file), `data:${mime};base64,Zm9v`);
-}
-""")
-    result = subprocess.run([node, str(script)], text=True, capture_output=True)
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert "T('agent.invalidGlb')" in (SRC / "lib/agent-chat.ts").read_text()
+    for lang in ("ko", "en"):
+        assert json.loads((SRC / f"i18n/{lang}.json").read_text())["agent.invalidGlb"], lang
 
 
 @pytest.mark.browser

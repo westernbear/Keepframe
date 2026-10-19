@@ -1,7 +1,5 @@
 import base64
 import json
-import shutil
-import subprocess
 import time
 from pathlib import Path
 from urllib.error import HTTPError
@@ -70,47 +68,6 @@ def test_edit_result_bounds_failures_in_all_serializers(tmp_path, failed):
         assert (compact["keep_total"], compact["keep_failed"]) == (1000, failed)
         assert compact["keep_results"] == [r for r in report.keep_results if not r["passed"]][:50]
     assert len(report.keep_results) == 1000
-
-
-def test_verify_chip_uses_counts_and_legacy_fallback(tmp_path):
-    node = shutil.which("node")
-    assert node, "node is needed to verify the chip behavior"
-    src = (ROOT / "keepframe/web/static/js/agent.js").read_text()
-    src = src[src.index("function isKeepPassed("):src.index("function appendAgent(")]
-    script = tmp_path / "verify-chip.cjs"
-    script.write_text(r"""const assert = require('node:assert/strict');
-const KEEP_PASS_RATE = 1, CONFIDENCE_PERCENT = 100;
-const document = {createElement: () => ({dataset:{}, setAttribute(name, value) {this[name] = value;}})};
-const chips = [], logEl = {appendChild: c => chips.push(c)};
-const copy = {
-  'agent.verifyPassed': 'Checks passed · keep {rate}%',
-  'agent.verifyFailed': 'Checks failed · keep {rate}%',
-  'agent.verifyNoKeep': 'No keep rules to check',
-  'agent.verifyDetails': '{summary}. {n} keep rules. Maximum error {error}px',
-};
-const T = key => copy[key] || key;
-const Tf = (key, values) => T(key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
-""" + src + r"""
-appendVerify({keep_total:1000, keep_failed:0, keep_pass_rate:1, keep_results:[]});
-assert.equal(chips.at(-1).textContent, 'Checks passed · keep 100%');
-assert.equal(chips.at(-1).title, 'Checks passed · keep 100%. 1000 keep rules. Maximum error 0.00px');
-assert.equal(chips.at(-1)['aria-label'], chips.at(-1).title);
-assert.match(chips.at(-1).className, /--pass/);
-appendVerify({keep_total:1000, keep_failed:75, keep_pass_rate:1, keep_results:[]});
-assert.equal(chips.at(-1).textContent, 'Checks failed · keep 93%');
-assert.match(chips.at(-1).title, /1000 keep rules/);
-assert.match(chips.at(-1).className, /--fail/);
-appendVerify({keep_total:0, keep_failed:0, keep_results:[]});
-assert.equal(chips.at(-1).textContent, 'No keep rules to check');
-assert.match(chips.at(-1).className, /--warn/);
-appendVerify({keep_pass_rate:1, keep_results:[{passed:true}, {passed:true}]});
-assert.equal(chips.at(-1).textContent, 'Checks passed · keep 100%');
-assert.match(chips.at(-1).title, /2 keep rules/);
-appendVerify({keep_pass_rate:0.5, keep_results:[{passed:true}, {passed:false}]});
-assert.equal(chips.at(-1).textContent, 'Checks failed · keep 50%');
-assert.match(chips.at(-1).title, /2 keep rules/);
-""")
-    subprocess.run([node, str(script)], check=True, capture_output=True, text=True)
 
 
 def test_alternating_texture_swaps_fit_analysis_crop(tmp_path):
