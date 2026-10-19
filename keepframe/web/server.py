@@ -578,6 +578,19 @@ def _authority(value: str) -> tuple[str, int | None] | None:
     return parsed.hostname.lower(), port
 
 
+def _llm_failure_code(e: BaseException) -> str:
+    """Network failures get their own code: the fix is the network or the address, not a retry. litellm only says
+    "Connection error"; a TLS cause sits further down the exception chain."""
+    link: BaseException | None = e
+    for _ in range(8):
+        if link is None:
+            break
+        if "[SSL" in str(link):
+            return "llm_tls_failed"
+        link = link.__cause__ or link.__context__
+    return "llm_unreachable" if "Connection error" in str(e) else "agent_failed"
+
+
 def make_server(
     workspace: Path,
     port: int = 8765,
@@ -1825,8 +1838,7 @@ def make_server(
                 except ValueError as e:
                     return self._fail(400, e, "invalid_request")
                 except Exception as e:   # LLM auth / rate limit / network
-                    # an unreachable Base URL gets its own code: the fix is the address, not a retry
-                    return self._fail(502, e, "llm_unreachable" if "Connection error" in str(e) else "agent_failed")
+                    return self._fail(502, e, _llm_failure_code(e))
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):
