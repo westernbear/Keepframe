@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .oauth import OAuthParams, OAUTH_KEYS
 
@@ -104,6 +104,13 @@ class ProviderConfig(BaseModel):
     account_id: str = ""
     oauth_expires_at: float = 0.0
     extra: dict = Field(default_factory=dict)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url(cls, v: str) -> str:
+        """A pasted ` api.example.com/v1` fails as a bare "Connection error"; trim it and default the scheme to https."""
+        v = v.strip()
+        return v if not v or "://" in v else f"https://{v}"
 
     @property
     def litellm_model(self) -> str:
