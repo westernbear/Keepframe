@@ -140,7 +140,9 @@ export default function Ingest() {
     const query = analyzeStartQuery({ project, mode, estimateSnapshot: snapshot, fullConfirmed, shortAcknowledged: shortAck }, win, referenceUi)
     if (!query) return
     saveAnalyzeStart(query, snapshot)
-    location.assign(`/analyze${query}`) // shortcut: full load while /analyze is a legacy page; navigate() once it lives here
+    // A full load, not navigate(): the router commits after the URL moves, and callers that wait for the URL then read
+    // the analyze page's nodes at once.
+    location.assign(`/analyze${query}`)
   }
 
   const text = est && project ? estimateText(est, win, { totalFrames, fps }) : null

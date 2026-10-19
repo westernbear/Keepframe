@@ -213,7 +213,7 @@ PAGES = {  # pages ported to the React SPA serve its index; the rest still serve
     "/": "app/index.html",
     "/library": "app/index.html",
     "/new": "app/index.html",
-    "/analyze": "analyze.html",
+    "/analyze": "app/index.html",
     "/review": "review.html",
     "/agent": "agent.html",
 }
