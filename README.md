@@ -185,9 +185,9 @@ restart AE. The `KEEPFRAME_AE_RELAY_*` environment variables are no longer used.
 
 Docker images build and sign the ZXP themselves (a Wine stage in `Dockerfile`), so
 **AE 확장 다운로드** works out of the box. Each image build makes a new self-signed
-certificate; to keep one publisher identity across upgrades, sign with
+certificate; to keep one publisher identity across upgrades, sign from a source checkout with
 `scripts/build_zxp.sh` (it keeps its certificate in `~/.config/keepframe`) and mount
-that `keepframe.zxp` over the one inside the container.
+that `keepframe.zxp` over `keepframe/ae/static/keepframe.zxp` inside the container.
 
 ## CLI
 
