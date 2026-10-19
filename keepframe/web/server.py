@@ -212,7 +212,7 @@ STATIC = Path(__file__).parent / "static"
 PAGES = {  # pages ported to the React SPA serve its index; the rest still serve their legacy HTML
     "/": "app/index.html",
     "/library": "app/index.html",
-    "/new": "ingest.html",
+    "/new": "app/index.html",
     "/analyze": "analyze.html",
     "/review": "review.html",
     "/agent": "agent.html",

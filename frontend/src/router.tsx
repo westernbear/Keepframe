@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createBrowserRouter, useLocation } from 'react-router'
 import { AppShell } from './components/app/shell'
 import Landing from './pages/landing'
+import Ingest from './pages/ingest'
 import Library from './pages/library'
 
 // shortcut: routes not yet ported fall through to a full page load (the server still serves their legacy HTML);
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Landing /> },
       { path: '/library', element: <Library /> },
+      { path: '/new', element: <Ingest /> },
       { path: '*', element: <LegacyPage /> },
     ],
   },

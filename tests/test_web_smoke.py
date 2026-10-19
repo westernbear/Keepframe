@@ -125,6 +125,7 @@ def test_library_routes_all_project_statuses(tmp_path):
                 page.wait_for_load_state("domcontentloaded")
                 assert page.url.endswith(path), (title, page.url)
             page.goto(base + "/library")
+            page.wait_for_selector("#project-list .row")
             assert page.get_by_text("Live-action", exact=True).count() == 1
             browser.close()
     finally:
