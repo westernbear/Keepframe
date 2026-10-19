@@ -83,22 +83,26 @@ def test_demo_redirects_to_review_and_serves_state(tmp_path):
     assert code3 == 404
 
 
-def test_css_and_js_are_not_week_cached(tmp_path):
+def test_spa_entry_revalidates_and_hashed_assets_are_immutable(tmp_path):
+    import re
+    from keepframe.web.server import STATIC
+
+    html = (STATIC / "app" / "index.html").read_text(encoding="utf-8")
+    js = re.search(r'src="(/static/app/assets/[^"]+\.js)"', html).group(1)
+    css = re.search(r'href="(/static/app/assets/[^"]+\.css)"', html).group(1)
     srv = start(tmp_path)
-    css_url = f"http://127.0.0.1:{srv.server_address[1]}/static/css/app.css"
-    js_url = f"http://127.0.0.1:{srv.server_address[1]}/static/js/i18n.js"
-    png_url = f"http://127.0.0.1:{srv.server_address[1]}/static/logo.png"
-    with urlopen(css_url) as r:
-        css_cache = r.headers.get("cache-control")
-        assert r.status == 200
-    with urlopen(js_url) as r:
-        js_cache = r.headers.get("cache-control")
-    with urlopen(png_url) as r:
-        png_cache = r.headers.get("cache-control")
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    heads = {}
+    for path in ("/static/app/index.html", js, css, "/static/logo.png"):
+        with urlopen(base + path) as r:
+            assert r.status == 200
+            heads[path] = (r.headers.get("cache-control"), r.headers.get("content-type"))
     srv.shutdown()
-    assert css_cache and "no-cache" in css_cache
-    assert js_cache and "no-cache" in js_cache
-    assert png_cache and "max-age" in png_cache
+    assert "no-cache" in heads["/static/app/index.html"][0]
+    assert heads[js] == ("public, max-age=31536000, immutable", "application/javascript; charset=utf-8")
+    assert heads[css] == ("public, max-age=31536000, immutable", "text/css; charset=utf-8")
+    png_cache = heads["/static/logo.png"][0]
+    assert png_cache and "max-age" in png_cache and "immutable" not in png_cache
 
 
 def test_logo_is_served(tmp_path):
