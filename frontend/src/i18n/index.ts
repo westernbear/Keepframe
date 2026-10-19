@@ -15,6 +15,8 @@ export function currentLang(): Lang {
   }
 }
 
+if (typeof document !== 'undefined') document.documentElement.lang = currentLang() // the saved language, from the first paint
+
 export function T(key: string): string {
   return STRINGS[currentLang()][key] || STRINGS.ko[key] || key
 }

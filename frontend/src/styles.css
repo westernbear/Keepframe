@@ -248,3 +248,7 @@
 @utility state-transition {
     @apply transition-[background-color,border-color,color,box-shadow] duration-150 ease-out motion-reduce:transition-none;
 }
+
+/* Status classes the agent page's tests read by exact class name: no utilities on these nodes. */
+.agent-fonts__status { margin: 0; font-size: var(--text-caption); color: var(--ink-muted); }
+.agent-fonts__status--error, .ae-card__error { color: var(--danger); }

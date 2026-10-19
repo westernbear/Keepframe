@@ -53,12 +53,9 @@ def test_agent_page_serves(tmp_path):
     assert code == 200
     html = body.decode("utf-8")
     js = js_body.decode("utf-8")
-    src = html + "\n" + js
-    assert "agent-chat" in html
-    assert "세션 에이전트" not in html
-    assert "에이전트" in html
-    assert "createPreviewCache" in src
-    assert "previews.wait" in src
+    assert '<div id="root">' in html and "/static/app/assets/" in html   # the SPA renders the agent page (browser tests)
+    assert "createPreviewCache" in js
+    assert "previews.wait" in js
     assert js_code == 200
 
 

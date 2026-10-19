@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createBrowserRouter, useLocation } from 'react-router'
 import { AppShell } from './components/app/shell'
 import Landing from './pages/landing'
+import Agent from './pages/agent'
 import Analyze from './pages/analyze'
 import Ingest from './pages/ingest'
 import Library from './pages/library'
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
       { path: '/new', element: <Ingest /> },
       { path: '/analyze', element: <Analyze /> },
       { path: '/review', element: <Review /> },
+      { path: '/agent', element: <Agent /> },
       { path: '*', element: <LegacyPage /> },
     ],
   },
