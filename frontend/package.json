@@ -1,13 +1,14 @@
 {
-  "name": "frontend",
+  "name": "keepframe-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

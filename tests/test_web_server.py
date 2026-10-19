@@ -51,8 +51,7 @@ def test_root_is_landing_and_library_moved(tmp_path):
     lib_code, _, lib = get(srv, "/library")
     srv.shutdown()
     assert root_code == 200
-    assert b"land-hero" in root
-    assert "유지할 것과 바꿀 것을 지정하세요".encode("utf-8") in root
+    assert b'<div id="root">' in root and b"/static/app/assets/" in root   # the SPA renders the landing (browser test)
     assert lib_code == 200
     assert b"project-list" in lib
 
