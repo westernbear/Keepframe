@@ -1,4 +1,4 @@
-import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, ShieldCheck, Wrench, Workflow, X } from 'lucide-react'
+import { BarChart3, ChevronDown, Download, FileText, Lock, Paperclip, PencilLine, Play, ShieldCheck, Wrench, Workflow, X } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Reasoning } from '@/components/ai-elements/reasoning'
@@ -33,7 +33,7 @@ function Thinking({ label, steps }: { label: string; steps: string[] }) {
       initial={reduced ? { opacity: 0 } : { opacity: 0, y: 4, filter: 'blur(4px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
       transition={{ duration: 0.24, ease: EASE_OUT }}>
       <div className="msg__label text-micro text-ink-muted">{T('agent.assistant')}</div>
-      <div className="flex items-center gap-2.5 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-body-sm">
+      <div className="flex min-h-8 items-center text-body-sm">
         <AILoader variant="dots" showElapsed srLabel={label} className="gap-2.5 text-caption text-ink-muted"
           label={reduced ? <span className="text-ink">{label}</span>
             : <motion.span key={label} initial={{ opacity: 0, filter: 'blur(3px)' }} animate={{ opacity: 1, filter: 'blur(0px)' }} transition={{ duration: 0.2 }}>
@@ -41,7 +41,7 @@ function Thinking({ label, steps }: { label: string; steps: string[] }) {
               </motion.span>} />
       </div>
       {trace && (
-        <div ref={box} className="thinking__live max-h-40 max-w-[92%] overflow-y-auto border-l border-hairline py-0.5 pl-3 text-caption leading-relaxed text-ink-muted" aria-live="off">
+        <div ref={box} className="thinking__live max-h-40 w-full overflow-y-auto border-l border-hairline py-0.5 pl-3 text-caption leading-relaxed text-ink-muted" aria-live="off">
           <Markdown text={trace} />
         </div>
       )}
@@ -68,7 +68,7 @@ function Choices({ plan, choices, onChoose }: { plan: any; choices: Record<strin
   const { T } = useI18n()
   const [, setTick] = useState(0)
   return (
-    <div className="agent-choice flex flex-col gap-2 rounded-xl bg-surface-2 p-3">
+    <div className="agent-choice flex flex-col gap-2 rounded-lg border border-hairline bg-surface-1 p-3">
       {(plan?.conflicts || []).map((c: any) => (
         <fieldset key={c.id} className="m-0 flex flex-col gap-1 border-0 p-0">
           <legend className="agent-choice__reason mb-1 font-mono text-caption text-ink-muted">{c.reason || c.element}</legend>
@@ -90,19 +90,21 @@ function ToolCall({ e }: { e: Extract<Entry, { kind: 'tool' }> }) {
   const { T } = useI18n()
   const ok = Boolean(e.result.ok)
   return (
-    <div className="toolcall rounded-xl bg-surface-2/60 px-3 py-2 ring-1 ring-inset ring-hairline" data-tool={e.name} data-ok={String(ok)}>
-      <div className="toolcall__head flex items-center gap-2 text-caption">
-        <span className={cn('toolcall__status inline-flex items-center gap-1.5 font-medium', ok ? 'toolcall__status--ok text-success' : 'toolcall__status--fail text-danger')}>
-          <span aria-hidden className="size-1.5 rounded-full bg-current" />{toolStatus(e.name, ok)}
+    <details className="toolcall group/tc text-caption" data-tool={e.name} data-ok={String(ok)}>
+      <summary className="flex min-h-7 cursor-pointer list-none items-center gap-2 text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+        <span className="toolcall__head inline-flex items-center gap-2">
+          <span aria-hidden className={cn('size-1.5 rounded-full', ok ? 'bg-success' : 'bg-danger')} />
+          <span className={cn('toolcall__status', ok ? 'toolcall__status--ok text-ink' : 'toolcall__status--fail text-danger')}>{toolStatus(e.name, ok)}</span>
         </span>
+        <span data-i18n="agent.details" className="text-micro">{T('agent.details')}</span>
+        <ChevronDown aria-hidden className="size-3 transition-transform duration-150 group-open/tc:rotate-180" />
+      </summary>
+      <div className="mt-1 ml-[3px] flex flex-col gap-1 border-l border-hairline pl-3.5 pb-1">
+        <span className="toolcall__name block font-mono text-micro text-ink-muted">{e.name}</span>
+        <div className="toolcall__args font-mono text-micro break-all text-ink-muted">{JSON.stringify(toolCallLogArgs(e.name, e.args) || {}, null, 0)}</div>
+        {toolCallAddsInformation(e.result.message, e.reply) && <div className="toolcall__msg whitespace-pre-line text-caption text-ink">{e.result.message}</div>}
       </div>
-      <details className="group/tc">
-        <summary data-i18n="agent.details" className="mt-1 cursor-pointer text-micro text-ink-muted hover:text-ink">{T('agent.details')}</summary>
-        <span className="toolcall__name mt-1 block font-mono text-micro text-ink-muted">{e.name}</span>
-        <div className="toolcall__args mt-1 font-mono text-micro break-all text-ink-muted">{JSON.stringify(toolCallLogArgs(e.name, e.args) || {}, null, 0)}</div>
-        {toolCallAddsInformation(e.result.message, e.reply) && <div className="toolcall__msg mt-1 whitespace-pre-line text-caption">{e.result.message}</div>}
-      </details>
-    </div>
+    </details>
   )
 }
 
@@ -119,13 +121,14 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking, liveSteps
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} transition={{ duration: 0.22, ease: EASE_OUT }}>{node}</motion.div>
   )
   return (
-    <div className="agent-chat__log flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" id="agent-log" ref={log}>
+    <div className="agent-chat__log flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-2" id="agent-log" ref={log}>
       <p className="agent-empty m-0 text-body-sm text-ink-muted" id="agent-empty" hidden={!empty}>{empty}</p>
       {entries.map((e) => arrive(e, ((): React.ReactNode => {
         if (e.kind === 'user' || e.kind === 'agent') return (
-          <div key={e.id} className={cn('msg flex flex-col gap-1', e.kind === 'user' ? 'msg--user items-end' : 'msg--agent items-start')}>
-            <div className="msg__label text-micro text-ink-muted">{T(e.kind === 'user' ? 'agent.you' : 'agent.assistant')}</div>
-            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm break-words', e.kind === 'user' ? 'bg-ink text-black whitespace-pre-line' : 'bg-surface-2 text-ink')}>
+          <div key={e.id} className={cn('msg flex flex-col gap-1', e.kind === 'user' ? 'msg--user mt-4 items-end first:mt-2' : 'msg--agent items-stretch')}>
+            <div className={cn('msg__label text-micro text-ink-muted', e.kind === 'user' && 'sr-only')}>{T(e.kind === 'user' ? 'agent.you' : 'agent.assistant')}</div>
+            <div className={cn('msg__body text-body-sm leading-relaxed break-words', e.kind === 'user'
+              ? 'max-w-[88%] rounded-md border border-hairline bg-surface-2 px-3 py-2 whitespace-pre-line text-ink' : 'text-ink')}>
               {e.kind === 'agent' ? <Markdown text={e.text} /> : e.text}
             </div>
           </div>
@@ -138,8 +141,9 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking, liveSteps
           const { text, title } = verifyChipText(e.chip)
           return (
             <span key={e.id} title={title} aria-label={title}
-              className={cn('verify-chip self-start rounded-md px-3 py-1 text-caption font-medium', `verify-chip--${e.chip.tone}`,
-                e.chip.tone === 'pass' ? 'bg-success/15 text-success' : e.chip.tone === 'warn' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger')}>{text}</span>
+              className={cn('verify-chip inline-flex min-h-7 items-center gap-2 self-start text-caption', `verify-chip--${e.chip.tone}`,
+                e.chip.tone === 'pass' ? 'text-ink-muted' : e.chip.tone === 'warn' ? 'text-warning' : 'text-danger')}>
+              <ShieldCheck aria-hidden className={cn('size-3.5', e.chip.tone === 'pass' ? 'text-success' : 'text-current')} />{text}</span>
           )
         }
         if (e.kind === 'choices') return <Choices key={e.id} plan={e.plan} choices={choices} onChoose={onChoose} />
@@ -190,10 +194,10 @@ export function Composer({ onSend, sending, attachments, onAttach, onRemoveAttac
   }
 
   return (
-    <div className="agent-compose flex flex-col gap-2 border-t border-hairline-soft p-3">
+    <div className="agent-compose flex flex-col gap-2 border-t border-hairline p-3">
       <label className="sr-only" htmlFor="agent-input">{T('agent.inputLabel')}</label>
       <textarea id="agent-input" ref={input} rows={2} placeholder={T('agent.placeholder')}
-        className="min-h-16 w-full resize-none rounded-xl border border-hairline bg-canvas px-3.5 py-2.5 text-body-sm outline-none focus-visible:border-brand"
+        className="min-h-16 w-full resize-none rounded-md border border-hairline bg-surface-1 px-3 py-2.5 text-body-sm outline-none placeholder:text-ink-muted focus-visible:border-brand"
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send() }} />
       <p className="agent-compose__context m-0 text-micro text-ink-muted">{T('agent.composeContext')}</p>
       <div className="agent-compose__row flex items-center gap-2">
@@ -204,7 +208,7 @@ export function Composer({ onSend, sending, attachments, onAttach, onRemoveAttac
             <Workflow className="size-4" aria-hidden />{T('agent.tools')}
           </Button>
           <div ref={menu} id="agent-tools" role="menu" aria-labelledby="agent-tools-toggle" popover="manual" hidden={!open}
-            className="agent-tools fixed inset-auto m-0 flex max-h-[calc(100vh-16px)] min-w-44 flex-col gap-0.5 overflow-y-auto rounded-xl border border-hairline bg-surface-2 p-1.5 shadow-[0_16px_40px_-12px_rgb(0_0_0/0.7)]"
+            className="agent-tools fixed inset-auto m-0 flex max-h-[calc(100vh-16px)] min-w-44 flex-col gap-0.5 overflow-y-auto rounded-lg border border-hairline bg-surface-2 p-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.7)]"
             style={open ? { left: open.left, bottom: open.bottom } : undefined}
             onKeyDown={(e) => {
               const list = items()
@@ -218,7 +222,7 @@ export function Composer({ onSend, sending, attachments, onAttach, onRemoveAttac
             }}>
             {TOOLS.map(([tool, key, Icon]) => (
               <button key={tool} type="button" role="menuitem" tabIndex={-1} data-tool={tool}
-                className="tool flex min-h-10 items-center gap-2.5 rounded-lg px-3 text-left text-body-sm text-ink hover:bg-white/5 focus:bg-white/[0.07] focus:outline-none"
+                className="tool flex min-h-10 items-center gap-2.5 rounded-sm px-2.5 text-left text-body-sm text-ink hover:bg-surface-3 focus:bg-surface-3 focus:outline-none"
                 onClick={() => { closeTools(); input.current!.value = T(`agent.toolPrompt.${tool}`); input.current!.focus() }}>
                 <Icon className="size-4 text-ink-muted" aria-hidden /><span>{T(key)}</span>
               </button>
@@ -232,9 +236,9 @@ export function Composer({ onSend, sending, attachments, onAttach, onRemoveAttac
         </Button>
         <ul id="agent-attach-name" className="m-0 flex min-w-0 list-none flex-wrap gap-1 p-0" aria-label={T('agent.attachmentList')}>
           {attachments.map((name, i) => (
-            <li key={`${i}-${name}`} className="flex min-w-0 max-w-40 items-center gap-0.5 rounded-md bg-white/5 py-0.5 pl-2 pr-0.5 font-mono text-micro text-ink-muted">
+            <li key={`${i}-${name}`} className="flex min-w-0 max-w-40 items-center gap-0.5 rounded-sm border border-hairline bg-surface-2 py-0.5 pl-2 pr-0.5 text-micro text-ink-muted">
               <span className="truncate" title={name}>{i + 1}. {name}</span>
-              <button type="button" className="grid size-6 shrink-0 place-items-center rounded hover:bg-white/10 focus-visible:outline focus-visible:outline-brand"
+              <button type="button" className="grid size-6 shrink-0 place-items-center rounded-sm hover:bg-surface-3 focus-visible:outline focus-visible:outline-brand"
                 aria-label={Tf('agent.removeAttachment', { name })} onClick={() => onRemoveAttachment(i)}><X className="size-3.5" aria-hidden /></button>
             </li>
           ))}
