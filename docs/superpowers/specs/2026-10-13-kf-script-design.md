@@ -1,4 +1,4 @@
-# kf-script — AI-legible scene format and analysis redesign — Design
+# kf-script design: AI-legible scene format and analysis redesign
 
 Date: 2026-10-13 · Status: approved in conversation (plan approval 2026-10-13)
 Research: `docs/research/2026-10-13-ai-legible-format/` (literature, Mixkit and Envato SaaS references, reads, measurements, pipeline comparison)
@@ -6,11 +6,11 @@ Research: `docs/research/2026-10-13-ai-legible-format/` (literature, Mixkit and 
 ## Why
 
 - A motion-graphics reference has to become text an AI understands and edits. Research compared formats:
-  - Raw Lottie: frontier models produce valid files 0–45 % of the time (OmniLottie Table 1, LottieGPT Table 2).
-  - HTML/CSS/GSAP: runnable ≈ 99–100 %; models cannot infer timing from pixels (Animation2Code temporal ≤ 0.31), so numbers must be measured; predicate feedback lifts correctness 58.8 % → 93.6 % (MoVer).
+  - Raw Lottie: frontier models produce valid files 0-45 % of the time (OmniLottie Table 1, LottieGPT Table 2).
+  - HTML/CSS/GSAP: runnable ≈ 99-100 %; models cannot infer timing from pixels (Animation2Code temporal ≤ 0.31), so numbers must be measured; predicate feedback lifts correctness 58.8 % → 93.6 % (MoVer).
   - A hand-written GSAP page of mk571 rendered back at mean L1 0.0066 (AE verify passes at 0.025).
 - The current pipeline gets many numbers right but has no **structure**: shots, shape primitives, text splits with stagger, masks, containers, repetition, counters, typing, cursors. All seven references show it (research §5, §5b). The agent's brief also hides what the IR already holds (glyph reveals).
-- Stage B's visual fix wave fixed one clip and broke another three rounds in a row: rules fitted to four clips. The redesign needs a measuring stick that cannot be overfitted.
+- Stage B's visual fix wave fixed one clip and broke another three rounds in a row, because its rules were fitted to four clips. The redesign needs a measuring stick that cannot be overfitted.
 
 ## Decisions (user, 2026-10-13)
 
@@ -20,7 +20,7 @@ Research: `docs/research/2026-10-13-ai-legible-format/` (literature, Mixkit and 
 | Canonical store | `scene.json` (AE spec, Lottie, versions); kf-script is a view, edits are patches |
 | IR checks | three-way: the agent's own read of the reference, CV measurement, render vs source (CLAUDE.md §1) |
 | Rules | `CLAUDE.md` + this spec |
-| Execution now | P1 (view) and P2 (round trip); P3–P5 planned |
+| Execution now | P1 (view) and P2 (round trip); P3-P5 planned |
 | Environment | all tests and measurements in the cloud container |
 
 ## Format (v0, P1)
@@ -49,9 +49,9 @@ Rules:
 2. **Markup**: the composer's markup, one `.el` per element, `id="el-<IR id>"`, plus `data-role` (label, else role), `data-src` (provenance), `data-conf`, escaped `data-caption`. Text is real text (`fonts.css.text_html`).
 3. **Timeline**: `tl.fromTo(S["<id>"], from, to, start)` on per-element state objects with IR prop names (`x y sx sy rot skx rx ry opacity reveal`). The shared runtime (`compose/template.html`) applies them in Keepframe's transform order, so rx/ry need no special case. Segments sharing `(t0, t1, ease)` are merged into one tween. Times are seconds to 4 dp with a `// fA–fB` comment.
 4. **Eases**: `PRESET_EASES` names registered with `CustomEase` only when used; fitted beziers `ease1…`; linear `"none"`.
-5. **Runtime contract**: `window.__seek(f)`, `window.__ready`, `window.__bbox(id)` — the renderer's contract (`render/renderer.py`).
+5. **Runtime contract**: `window.__seek(f)`, `window.__ready`, `window.__bbox(id)`, the renderer's contract (`render/renderer.py`).
 6. **Injection safety**: the script holds only numbers and ids serialised with `json.dumps`; observed text lives only in escaped markup.
-7. **Not kf-script**: hand-authored reference pages (`gold/mk571.html`, P2 templates) are free GSAP pages with the same runtime contract. They are truth, not views.
+7. **Not kf-script**: hand-authored reference pages (`gold/mk571.html`, P2 templates) are free GSAP pages with the same runtime contract. They serve as truth; the emitter never produces them.
 
 P3 extends the vocabulary: props `w`, `h`, `stroke_w`, mask edges, counter value; `hold` keys; helpers `typeOn`, `counter`, `cursor`; shot labels; nested timelines for patterns.
 
@@ -61,7 +61,7 @@ P3 extends the vocabulary: props `w`, `h`, `stroke_w`, mask edges, counter value
 - Budget `VIEW_CHARS` (initially 24 000, set from P1 measurements). Elements ranked by `ir.importance.rank_elements`; the lowest are dropped until under budget, then `<!-- omitted N: ids… -->`.
 - `KEEPFRAME_AGENT_VIEW=brief|kfscript` picks the agent's second system message (`session/agent._scene_summary`). The default was `kfscript` after the pre-registered A/B on 32 fresh round-trip clips (`docs/qa/kfscript/ab-test.md`) and the first real-clip A/B (`ab-real.md`). It is `brief` again since the second real-clip A/B (`ab-real2.md`) missed its pre-registered edit margin (lower bound −10.34 against −10). `kfscript` opts in, and any view error falls back to the brief.
 
-## Redesigned analysis (P3–P4)
+## Redesigned analysis (P3-P4)
 
 The pipeline's job becomes: **find the shortest kf-script whose render matches the reference.**
 
@@ -70,7 +70,7 @@ The pipeline's job becomes: **find the shortest kf-script whose render matches t
 3. Typing: text, shape primitive (rect/ellipse, fill/stroke), or textured sprite; a primitive wins when its residual is as low.
 4. Tracks → tweens: transforms (ECC), segmented into tweens with preset eases, holds and steps.
 5. Structure: stagger, repetition, containers, masks, counters, typing, cursors.
-6. Render–compare refit: emit → render → per-element residual → merge/split/retype; keep a change only if residual + description length drops.
+6. Render-compare refit: emit → render → per-element residual → merge/split/retype; keep a change only if residual + description length drops.
 7. Read pass: VLM/agent names roles, shot intents and choreography from keyframe sheets, inside the CV structure; disagreements are reported.
 
 ## Evaluation

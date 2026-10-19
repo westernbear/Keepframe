@@ -1,4 +1,4 @@
-# Reference Analysis Quality — Design
+# Reference Analysis Quality: Design
 
 Date: 2026-10-07 · Status: sections approved in conversation, awaiting written-spec review
 Research: `docs/research/2026-10-07-reference-analysis/` (six notes + README with numbers checked against the full text)
@@ -7,11 +7,11 @@ Research: `docs/research/2026-10-07-reference-analysis/` (six notes + README wit
 
 The demo project (ig2demo, an Airbnb-style SaaS launch reel) looked wrong after two ordinary edits, and the causes were all in the analysis:
 
-- A text element's texture was a binary-masked crop that carried the pink globe and an emoji behind the title. Its estimated colour came out pale pink (`#fb9d9d`) instead of the title's dark red, and when the text changed, the new clean glyphs revealed a red smear that the median background plate had absorbed.
+- A text element's texture was a binary-masked crop that carried the pink globe and an emoji behind the title. Its estimated colour came out pale pink (`#fb9d9d`) although the title is dark red, and when the text changed, the new clean glyphs revealed a red smear that the median background plate had absorbed.
 - The rotating globe and the white/pink gradient were baked into one background image. "Make the background navy" replaced that image with a flat colour, so the globe vanished and the background pixels baked into element textures showed as white cut-outs.
 - The intro's huge perspective, gradient-faded 3D title was reconstructed as fragments and letter pieces.
 
-`render_l1` (pixel L1 to the source) did not flag any of this: contaminated textures match the source pixels by construction. The user asked for analysis an AI can truly understand — especially SaaS / product-launch references (`eval/clips` ig1–ig3, envato1) — so that rebuilding and editing keep the original look.
+`render_l1` (pixel L1 to the source) did not flag any of this: contaminated textures match the source pixels by construction. The user asked for analysis an AI can understand, above all for SaaS / product-launch references (`eval/clips` ig1-ig3, envato1), so that rebuilding and editing keep the original look.
 
 ## Decisions (user, 2026-10-07)
 
@@ -30,7 +30,7 @@ The demo project (ig2demo, an Airbnb-style SaaS launch reel) looked wrong after 
 Goals
 - Every element texture is clean: alpha plus true foreground colour, no background pixels.
 - The background plate has no smears; an animated background stays animated; big moving objects are their own layers.
-- Titles — including huge, perspective, gradient-faded or staggered ones — are one text element with the right string, colour, weight, font candidate and motion.
+- Titles, including huge, perspective, gradient-faded or staggered ones, are one text element with the right string, colour, weight, font candidate and motion.
 - The scene carries a semantic layer an agent can read: roles, motions in a closed vocabulary, beats, style tokens.
 - Edits keep the original look; a verify-and-repair loop checks them.
 
@@ -55,9 +55,9 @@ frames ──► plate v2 (occupancy-masked median, two passes; static | gradien
       └──► semantics v2: roles (VLM), motions (CV), beats, style tokens, brief ◄───────┘
 ```
 
-Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM only reads strings and names roles/style classes from a few keyframes with closed-vocabulary JSON answers (research: VLM text spotting ≈ 0 on OCRBench v2; VLM temporal similarity 0.21–0.30 on Animation2Code). VLM failure or absence never fails analysis — it falls back to today's behaviour and flags low confidence.
+Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM only reads strings and names roles/style classes from a few keyframes with closed-vocabulary JSON answers (research: VLM text spotting ≈ 0 on OCRBench v2; VLM temporal similarity 0.21-0.30 on Animation2Code). VLM failure or absence never fails analysis; it falls back to today's behaviour and flags low confidence.
 
-## Stage A — clean layers
+## Stage A: clean layers
 
 ### Plate v2 (`keepframe/analyze/background.py`)
 - Pass 1: today's median plate → element masks (regions, OCR boxes, tracks) dilated 8 px. Pass 2: per-pixel median over only the frames where the pixel is not covered; pixels covered in every frame are holes.
@@ -66,7 +66,7 @@ Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM onl
 - `Background.kind` gains `gradient` (stops + angle or centre, editable colours) and `video` (asset path). Composer: CSS gradient / `<video>`; AE spec: solid with a gradient effect (Gradient Ramp for linear, otherwise an image) / footage layer.
 
 ### Movers
-- A large region (≥ 4 % of the frame) whose pixels stay unstable for ≥ 40 % of the shot becomes its own element rather than plate. If its appearance is stable after warping into its own coordinates (sprite-space median residual ΔE < 3), it is a normal sprite; otherwise it is a **video sprite** (`canonical.video`: cropped RGBA frame sequence, AE footage with alpha).
+- A large region (≥ 4 % of the frame) whose pixels stay unstable for ≥ 40 % of the shot becomes its own element and leaves the plate. If its appearance is stable after warping into its own coordinates (sprite-space median residual ΔE < 3), it is a normal sprite; otherwise it is a **video sprite** (`canonical.video`: cropped RGBA frame sequence, AE footage with alpha).
 
 ### Textures v2 (`sprites.py`, `refine.py`)
 - Solve I = αF + (1−α)B per element against the per-frame plate:
@@ -79,7 +79,7 @@ Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM onl
 - Fill colour: median Lab of the glyph interior (eroded by 0.35 × stroke width) using the **local** plate, never the global background; a two-stop linear gradient only when it cuts the residual by > 40 %; fades become an alpha gradient or the opacity track.
 - Effects: stroke / shadow / glow fitted from the residual after fill + plate; stored as `effects` (CSS `text-shadow` / `-webkit-text-stroke`; AE layer styles).
 - Weight from stroke width / cap height (distance transform), tracking from glyph centres.
-- Font: render-and-compare over a bundled OFL set (≈ 40–80 families, licences shipped) plus fonts uploaded to the project; optimise size, weight, tracking, shear on the sharpest fully revealed frame; keep the top 3 with scores and a confidence flag; the VLM may only pick among rendered candidates.
+- Font: render-and-compare over a bundled OFL set (≈ 40-80 families, licences shipped) plus fonts uploaded to the project; optimise size, weight, tracking, shear on the sharpest fully revealed frame; keep the top 3 with scores and a confidence flag; the VLM may only pick among rendered candidates.
 - Hangul/CJK fallback: map the chosen Latin font's category and weight bucket to Pretendard / Noto Sans KR / Noto Serif KR (a handwriting face only for handwriting looks), then re-fit size and weight.
 
 ### Font uploads
@@ -89,16 +89,16 @@ Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM onl
 - `background` edit on an `image`/`gradient`/`video` background requires a choice: `tint` (Lab: keep L, move a/b toward the target colour; gradients recolour their stops; video plates are tinted per frame), `replace` (today's behaviour) or cancel. The agent asks before applying, with the warning text.
 - `text`/`font` edits render with the analysed colour/gradient, weight, effects, tracking and the resolved font (uploaded > bundled > Hangul fallback), keep the element's rx/ry and reveal tracks, and write the new texture over the clean plate (no smear underneath any more).
 
-## Stage B — big and kinetic text as text
+## Stage B: big and kinetic text as text
 
-1. **Reading (VLM):** per shot, 3–5 keyframes (settled, fully revealed; chosen by CV motion events) with burned-in frame numbers; ask for closed-vocabulary JSON per visible text: string (or `unreadable`), line breaks, case, font class, weight bucket, fill kind, effects, extrusion/perspective yes/no. The prompt says text may be cut off; strings are cached per scene.
+1. **Reading (VLM):** per shot, 3-5 keyframes (settled, fully revealed; chosen by CV motion events) with burned-in frame numbers; ask for closed-vocabulary JSON per visible text: string (or `unreadable`), line breaks, case, font class, weight bucket, fill kind, effects, extrusion/perspective yes/no. The prompt says text may be cut off; strings are cached per scene.
 2. **Merging:** OCR boxes and sprite fragments become one text element when colour/gradient, plane (co-planar quads, similar angle and cap height), onset and motion agree **and** each fragment's text fuzzy-matches a substring of a VLM string. Merged fragments leave the sprite list. Staggered letters become per-glyph delays inside the element (`reveal_mode: "glyphs"`).
 3. **Geometry:** the title mask's minimum-area quad gives a homography; the rectified patch is re-read by PP-OCR to confirm the string; ECC (homography mode) tracks the whole plane; H decomposes into x, y, sx, sy, rot, skx, rx, ry, smoothed and simplified into keyframes.
-4. **Appearance:** Keepframe renders the text (string, font, fill, weight, effects) instead of a cropped texture; motion blur is not reproduced.
+4. **Appearance:** Keepframe renders the text (string, font, fill, weight, effects) and drops the cropped texture; motion blur is not reproduced.
 5. **Rendering:** `rx`/`ry` become valid for 2D elements. Composer applies CSS `perspective` equal to AE's default comp camera zoom for the scene width, so HTML and AE agree; AE export enables 3D on such layers and writes X/Y rotation.
 6. **Guard:** keep the text element only when its local L1 over visible frames ≤ the fragments' L1 + 0.005; otherwise keep fragments but put them in one group so edits treat them as one.
 
-## Stage C — AI-legible scene description
+## Stage C: AI-legible scene description
 
 - **Motions (CV, read-only):** per element, from tracks: entrance `fade_in`, `slide_in(dir)`, `scale_pop`, `mask_reveal(dir)`, `typewriter`/`stagger`, `tilt3d`, `blur_in`; hold `float`, `rotate`, `pulse`, `parallax`; exits mirrored; a group scaling together → `camera_push`. Each has frame range, distance/direction, an ease name fitted from the curve (linear, ease-in/out cubic, overshoot/spring) and confidence. Stored as `Element.motions` (derived; recomputed after edits).
 - **Roles (VLM):** `headline, subheadline, body, ui_card, button, input, toggle, cursor, logo, icon, photo, shape, glow, background` plus today's values for compatibility; UI children grouped by VLM + geometry with the existing UI model.
@@ -120,7 +120,7 @@ Rules: CV measures (geometry, tracks, timing, easing, colour, cuts); the VLM onl
 
 ## Delivery
 
-Three plans in order — A (plate v2, movers, textures v2, text style, font uploads, edit safeguards, eval-edits harness), B (VLM reading, merging, plane tracking, perspective rendering, guard), C (motions, roles, beats, style, brief, verify-and-repair). Each plan is implemented by Claude subagents with per-task review, ends with `keepframe eval-edits` on the four clips and a visual sheet the user approves, and is merged before the next starts.
+Three plans in order: A (plate v2, movers, textures v2, text style, font uploads, edit safeguards, eval-edits harness), B (VLM reading, merging, plane tracking, perspective rendering, guard), C (motions, roles, beats, style, brief, verify-and-repair). Each plan is implemented by Claude subagents with per-task review, ends with `keepframe eval-edits` on the four clips and a visual sheet the user approves, and is merged before the next starts.
 
 ## Risks and open items
 

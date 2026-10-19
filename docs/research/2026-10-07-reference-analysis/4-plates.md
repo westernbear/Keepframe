@@ -8,7 +8,7 @@ Verified = read from paper/README this session. "Unverified" = my estimate or re
 
 1. **Masked temporal estimation (CPU, ~0 cost), the default.** Per pixel, take the median (or the mode of quantised Lab) over only the frames where the pixel is NOT in a foreground mask. Foreground mask = element boxes/segments (from the existing diff and OCR stage, dilated 6-10 px to cover glows, shadows and motion blur) plus the current "differs from plate" mask. Iterate twice: plate, then masks, then plate. Vectorised numpy on 24 to 120 downsampled frames costs about 0.2-1 s per 1080p plate (unverified). This replaces the plain median, which bakes in anything occupying more than 50 % of the samples.
 2. **Static or video plate decision (see section 3).** Compute a per-pixel temporal variance on the unmasked samples. Low variance, so a single image. High variance, so a parametric or per-frame plate.
-3. **Fill never-visible holes with classical or small-network inpainting, not video diffusion.** First choice is a flat or gradient fit (below). Fall back to LaMa on CPU for textured or photographic holes. Escalate to remote ProPainter only for animated plates with real occlusion.
+3. **Fill never-visible holes with classical or small-network inpainting; keep video diffusion out of this step.** First choice is a flat or gradient fit (below). Fall back to LaMa on CPU for textured or photographic holes. Escalate to remote ProPainter only for animated plates with real occlusion.
 4. **Measure cleanliness with residue metrics (section 4)** and use them as the gate for escalating.
 5. **Avoid diffusion video inpainting (DiffuEraser, VideoPainter) for the default path.** It needs GPU, is slow, changes the pixels outside the hole through VAE round-trips, and invents texture on flat colour (see section 5).
 
@@ -39,8 +39,8 @@ Verified = read from paper/README this session. "Unverified" = my estimate or re
 
 Decide per shot (after cut detection), from the unmasked variance map V (per pixel std over visible samples, Lab ΔE):
 - **Image plate** if the 95th percentile of V over the frame is under ~1.5 ΔE (sensor-free synthetic video: a pure static background has V near 0; compression noise is about 1). Most cases: flat colour or a static gradient.
-- **Parametric / low-rank plate video** if V is high but the variation is spatially smooth and low rank (a drifting gradient, a pulsing glow, a colour shift): RPCA or a small PCA basis with 2-4 coefficients per frame, stored as keyframed coefficients. Rebuildable in HTML as a gradient animation. That also matches the scene model better (the background becomes a keyframed gradient layer, not a video).
-- **Per-frame plate video** only when content in the plate is really moving and texture-rich (rotating globe, video-like background). Better: pull the globe out as its own layer (goal 2) and make the remainder a static plate. Treat any region whose temporal std is high AND which has coherent motion as an element, not background.
+- **Parametric / low-rank plate video** if V is high but the variation is spatially smooth and low rank (a drifting gradient, a pulsing glow, a colour shift): RPCA or a small PCA basis with 2-4 coefficients per frame, stored as keyframed coefficients. Rebuildable in HTML as a gradient animation. That also matches the scene model better (the background becomes a keyframed gradient layer with no video).
+- **Per-frame plate video** only when content in the plate is really moving and texture-rich (rotating globe, video-like background). Better: pull the globe out as its own layer (goal 2) and make the remainder a static plate. Treat any region whose temporal std is high AND which has coherent motion as an element.
 - Always keep the plate separate from the element-bake: an element layer's texture must come from the source frame at alpha, never from the plate.
 
 **Always-occluded areas** (no visible sample in any frame): (1) if surrounded by smooth colour, fit a 2D polynomial or coarse-grid fit to ring pixels (exact for gradients); (2) otherwise LaMa on a crop with 128 px context, mask dilated; (3) flag the hole in the plate metadata as "synthetic" so edit-time checks and the UI know that area is invented. If the occluder is an element that the user can hide, that is the common case. For text over a gradient, a gradient fit is better than any network.
@@ -48,7 +48,7 @@ Decide per shot (after cut detection), from the unmasked variance map V (per pix
 ## 4. Measuring plate cleanliness
 
 - **Residue under removed elements (no ground truth needed):** for each element mask M (dilated by 4 px) compute plate vs. a smooth model: (a) mean ΔE between plate in M and the ring plate pixels (ring 6-16 px outside M) after removing the low-order gradient; (b) high-frequency energy ratio inside vs. outside the ring (Laplacian variance ratio, should be about 1 on flat backgrounds); (c) OCR the plate: run RapidOCR on the plate, expect zero detections (catches text ghosts); (d) re-diff: element masks recomputed against the plate should contain the element and nothing else; any region where "plate minus frame" is non-zero outside every element is baked content.
-- **Synthetic test (best gate):** composite known sprites and text onto a plate in the test set (from Envato templates with the foreground layer off if available), run the pipeline, and report mean ΔE, 95th percentile ΔE and SSIM over the former element masks, plus the fraction of mask area ΔE > 3. Cheap to build and exactly the edit-after check (hide an element, compare).
+- **Synthetic test (best gate):** composite known sprites and text onto a plate in the test set (from Envato templates with the foreground layer off if available), run the pipeline, and report mean ΔE, 95th percentile ΔE and SSIM over the former element masks, plus the fraction of mask area ΔE > 3. It is cheap to build and doubles as the edit-after check (hide an element, compare).
 - **Edit-after check:** remove each element, re-render, and compare with a source frame where the element is absent (when it appears/disappears in the clip, frames before and after give real ground truth for that region).
 - **Temporal check** for video plates: flicker = mean |P_t - P_{t-1}| in unmasked regions vs. source flicker.
 
@@ -59,7 +59,7 @@ Decide per shot (after cut detection), from the unmasked variance map V (per pix
 - Median with no exclusion: ghosts of anything present in over half the samples.
 - RPCA without masks: slow-moving big elements absorbed into the background.
 - Gradients: 8-bit banding appears after repeated resampling; keep plate in float or add 1-LSB dither at export.
-- Transparency / blur layers (frosted-glass UI, depth-of-field): the plate under a translucent panel is changed pixels, not a hole; treat as an element with its own backdrop filter, and don't remove it from the plate unless it is truly a layer.
+- Transparency / blur layers (frosted-glass UI, depth-of-field): the plate under a translucent panel holds changed pixels with no hole; treat as an element with its own backdrop filter, and don't remove it from the plate unless it is truly a layer.
 
 ## 6. What to avoid
 - E2FGVI/ProPainter/DiffuEraser in a shipped product (licences non-commercial; GPU only).
