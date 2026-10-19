@@ -12,20 +12,15 @@ from keepframe.web.workspace import load_meta
 from tests.test_web_server import start, get
 from tests.test_corrections import ocr_shape_project
 
-REVIEW_HTML = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "review.html"
-REVIEW_JS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "review.js"
-REVIEW_PLAYBACK = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "playback.js"
-REVIEW_CSS = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "css" / "app.css"
+FRONTEND = Path(__file__).resolve().parents[1] / "frontend" / "src"
+REVIEW_PAGE = FRONTEND / "pages" / "review"
+REVIEW_LIBS = ("playback", "review-geom", "inspector", "corrections", "api")
 
 
-REVIEW_DIR = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js" / "review"
-
-
-def review_src():
-    review_modules = sorted(REVIEW_DIR.glob("*.js"))
-    parts = [REVIEW_HTML, REVIEW_JS, REVIEW_PLAYBACK, *review_modules]
+def review_page_src():
+    """The SPA review page: its components/core plus the lib helpers they drive."""
+    parts = [*sorted(REVIEW_PAGE.glob("*.ts*")), *(FRONTEND / "lib" / f"{name}.ts" for name in REVIEW_LIBS)]
     return "\n".join(p.read_text(encoding="utf-8") for p in parts)
-
 
 
 def _post(srv, path, payload):
@@ -325,21 +320,19 @@ def test_review_bboxes_for_frame(tmp_path):
 
 
 def test_review_page_has_edit_form():
-    html = review_src()
+    html = review_page_src()
     assert 'id="edit-prompt"' in html
     assert "postEdit" in html
     assert 'data-i18n="review.editRun"' in html
 
 
 def test_review_page_has_approve_button():
-    html = review_src()
-    assert 'id="review-approve"' in html
+    # approveLabelKey / agentUrl decisions: frontend/src/lib/inspector.test.ts
+    html = review_page_src()
+    assert re.search(r'id="review-approve"[^>]*hidden=\{!st\}', html)   # hidden until a review is loaded
     assert "postApprove" in html
-    assert "paintApprove" in html
     assert "goAgent" in html
     assert "review.openAgent" in html
-    css = REVIEW_CSS.read_text(encoding="utf-8")
-    assert ".review-empty #review-approve" in css
 
 
 def test_approve_marks_project(tmp_path):
@@ -397,62 +390,58 @@ def test_multiscene_project_is_approved_only_after_every_scene(tmp_path):
 
 
 def test_review_page_has_progress_bar():
-    html = review_src()
+    html = review_page_src()
     assert 'id="review-progress"' in html
     assert 'role="progressbar"' in html
-    assert "setProgress" in html
+    assert "aria-valuenow=" in html
 
 
 def test_review_page_refreshes_in_place():
-    html = review_src()
+    html = review_page_src()
     assert "refreshState" in html
-    assert "location.href = `/review" not in html
+    assert "history.replaceState" in html
+    assert "location.href" not in html
 
 
 def test_review_play_button_toggles_pause_icon():
-    html = review_src()
+    # the live toggle while playing: test_review_playback_updates_icon_frame_and_playhead
+    html = review_page_src()
     assert "function setPlaying" in html
-    assert 'id="pause-icon"' in html
-    assert 'id="play-icon"' in html
+    assert 'id="pause-icon"' in html and "hidden: !view.playing" in html
+    assert 'id="play-icon"' in html and "hidden: view.playing" in html
     assert "is-playing" in html
-    css = REVIEW_CSS.read_text(encoding="utf-8")
-    assert "#play-btn.is-playing #pause-icon" in css
 
 
 def test_review_playing_does_not_reset_image_timer():
-    html = review_src()
-    assert "isSeekQueuedWhilePlaying" in html
+    # stale waits after a restart: frontend/src/lib/playback.test.ts
+    html = review_page_src()
+    assert re.search(r"function setPlaying\([^)]*\) \{\s*if \(on\) \{ clearTimeout\(live\.imgTimer\)", html)
     assert "createPreviewCache" in html
     assert "previews.wait" in html
     assert "waiting" in html
 
 
 def test_review_timeline_playhead_spans_tracks_without_overflowing_ruler():
-    html = review_src()
-    css = REVIEW_CSS.read_text(encoding="utf-8")
+    # measured overlap: test_review_playback_updates_icon_frame_and_playhead
+    html = review_page_src()
     assert 'id="track-playhead"' in html
     assert "timeline__body" in html
-    assert ".timeline__ruler" in css
-    assert re.search(r"\.timeline__ruler\s*\{[^}]*height:\s*72px", css, re.S)
-    assert re.search(r"\.timeline__ruler\s*\{[^}]*overflow:\s*hidden", css, re.S)
+    assert re.search(r'className="timeline__ruler [^"]*h-\[72px\][^"]*overflow-hidden', html)
 
 
 def test_review_analysis_layer_controls():
-    html = review_src()
-    css = REVIEW_CSS.read_text(encoding="utf-8")
-    assert "drawOverlays" in html
+    # overlay placement: review-geom.test.ts; drawn regions: test_review_playback_updates_icon_frame_and_playhead
+    html = review_page_src()
     assert "fetchAnalysisOverlay" in html
-    assert "fetchBboxes" not in html
+    assert not any("fetchBboxes" in p.read_text(encoding="utf-8") for p in REVIEW_PAGE.glob("*.ts*"))
     assert 'id="recon"' not in html
     assert 'id="peak-back"' not in html
     assert 'id="overlay-opacity"' in html
     assert 'id="region-mode"' in html
     assert 'id="element-filter"' in html
     assert 'id="transport-keys"' in html
-    assert "positionOverlay" in html
-    assert "#play-btn" in css
-    assert re.search(r"#play-btn\s*\{[^}]*width:\s*44px", css, re.S)
-    assert "keepSave.hidden" in html or "keep-save" in html and "hidden" in html
+    assert re.search(r'id="play-btn".*\n\s*className=\{`[^`]*\bsize-11\b', html)   # 44px touch target
+    assert re.search(r'id="keep-save" hidden=\{!keepDirty\}', html)
 
 
 def test_review_frames_are_png_previews(tmp_path):

@@ -12,7 +12,7 @@ from keepframe.progress import STAGES
 from keepframe.review.corrections import add_bbox_prompt
 
 OPTS = AnalyzeOptions(ocr=False, refine=False, use_ecc=False)
-STATIC = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _plate(h=320, w=640, picture=False):
@@ -43,15 +43,13 @@ def logo_project(tmp_path):
 
 def test_stage_order_has_plate_between_tracking_and_solids():
     assert STAGES.index("tracking") + 1 == STAGES.index("plate") == STAGES.index("solids") - 1
-    # the SPA's lib/analyze.ts, and the legacy analyze.js until it goes (plan phase 6)
-    for src in (STATIC.parents[2] / "frontend/src/lib/analyze.ts", STATIC / "js" / "analyze.js"):
-        js = src.read_text()
-        pipeline_js = json.loads(re.search(r"const PIPELINE = (\[.*?\]);", js).group(1))
-        assert pipeline_js == list(STAGES), src
-        steps = json.loads(re.sub(r"(\w+):", r'"\1":', re.search(r"const STEP_STAGES = (\{.*?\});", js, re.S).group(1)).replace(",\n}", "\n}"))
-        assert [s for group in steps.values() for s in group] == list(STAGES)   # contiguous groups, one step active at a time
-        assert steps["bg"] == ["background"] and steps["regions"] == ["regions", "tracking", "plate", "solids"]
-        assert 'plate: "analyze.step.regions"' in js
+    js = (ROOT / "frontend/src/lib/analyze.ts").read_text()   # the SPA's analyze steps
+    pipeline_js = json.loads(re.search(r"const PIPELINE = (\[.*?\]);", js).group(1))
+    assert pipeline_js == list(STAGES)
+    steps = json.loads(re.sub(r"(\w+):", r'"\1":', re.search(r"const STEP_STAGES = (\{.*?\});", js, re.S).group(1)).replace(",\n}", "\n}"))
+    assert [s for group in steps.values() for s in group] == list(STAGES)   # contiguous groups, one step active at a time
+    assert steps["bg"] == ["background"] and steps["regions"] == ["regions", "tracking", "plate", "solids"]
+    assert 'plate: "analyze.step.regions"' in js
 
 
 def test_analysis_writes_pass1_and_v2_plate(tmp_path):

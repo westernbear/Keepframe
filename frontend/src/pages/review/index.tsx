@@ -3,7 +3,7 @@ import { AppHeader } from '@/components/app/app-header'
 import { Button } from '@/components/app/button'
 import { WorkflowStepper } from '@/components/app/workflow-stepper'
 import { useI18n } from '@/i18n'
-import { approveLabelKey, sceneBadge, sceneMeta, sceneOptionLabel, versionLabel } from '@/lib/inspector'
+import { approveLabelKey, clampProgress, sceneBadge, sceneMeta, sceneOptionLabel, versionLabel } from '@/lib/inspector'
 import { cn } from '@/lib/utils'
 import { createReviewCore, initialView, type ReviewView } from './core'
 import { Inspector } from './inspector'
@@ -18,6 +18,7 @@ export default function Review() {
   const [core] = useState(() => createReviewCore(view, (p) => setView((v) => ({ ...v, ...(typeof p === 'function' ? p(v) : p) }))))
   const st = view.st
   const scenes = st?.project.scenes || []
+  const pct = clampProgress(view.loading?.pct ?? 100)
 
   useEffect(() => { document.title = `${T('nav.review')} · Keepframe` }, [T])
   useEffect(() => {
@@ -65,10 +66,10 @@ export default function Review() {
           <div id="review-loading" className="review-loading flex items-center gap-3 text-caption text-ink-muted" aria-live="polite" hidden={!view.loading}>
             <span id="review-loading-msg">{view.loading?.msg}</span>
             <div id="review-progress" className="review-loading__bar h-1 max-w-xs flex-1 overflow-hidden rounded-full bg-surface-2" role="progressbar"
-              aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(view.loading?.pct ?? 100)} aria-labelledby="review-loading-msg">
-              <div id="review-progress-fill" className="review-loading__fill h-full origin-left bg-brand transition-transform duration-300" style={{ transform: `scaleX(${(view.loading?.pct ?? 100) / 100})` }} />
+              aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-labelledby="review-loading-msg">
+              <div id="review-progress-fill" className="review-loading__fill h-full origin-left bg-brand transition-transform duration-300" style={{ transform: `scaleX(${pct / 100})` }} />
             </div>
-            <span id="review-progress-pct" className="tabular-nums">{Math.round(view.loading?.pct ?? 100)}%</span>
+            <span id="review-progress-pct" className="tabular-nums">{pct}%</span>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
