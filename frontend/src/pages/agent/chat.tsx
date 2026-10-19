@@ -2,7 +2,7 @@ import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, Shiel
 import { motion, useReducedMotion } from 'motion/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Reasoning } from '@/components/ai-elements/reasoning'
-import { BlurText } from '@/components/reactbits/blur-text'
+import { Markdown } from '@/components/app/markdown'
 import AILoader from '@/components/smoothui/ai-loader'
 import { ShimmeringText } from '@/components/unlumen-ui/shimmering-text'
 import { Button } from '@/components/app/button'
@@ -117,8 +117,8 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entri
         if (e.kind === 'user' || e.kind === 'agent') return (
           <div key={e.id} className={cn('msg flex flex-col gap-1', e.kind === 'user' ? 'msg--user items-end' : 'msg--agent items-start')}>
             <div className="msg__label text-micro text-ink-muted">{T(e.kind === 'user' ? 'agent.you' : 'agent.assistant')}</div>
-            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm whitespace-pre-line break-words', e.kind === 'user' ? 'bg-ink text-black' : 'bg-surface-2 text-ink')}>
-              {e.kind === 'agent' && e.fresh ? <BlurText text={e.text} /> : e.text}
+            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm break-words', e.kind === 'user' ? 'bg-ink text-black whitespace-pre-line' : 'bg-surface-2 text-ink')}>
+              {e.kind === 'agent' ? <Markdown text={e.text} /> : e.text}
             </div>
           </div>
         )

@@ -249,3 +249,24 @@
 /* Status classes the agent page's tests read by exact class name: no utilities on these nodes. */
 .agent-fonts__status { margin: 0; font-size: var(--text-caption); color: var(--ink-muted); }
 .agent-fonts__status--error, .ae-card__error { color: var(--danger); }
+
+/* Markdown in agent replies and thinking traces (components/app/markdown.tsx). */
+.md { display: flex; flex-direction: column; gap: 0.5em; min-width: 0; }
+.md > * { margin: 0; }
+.md p, .md li { white-space: pre-line; }   /* a model's single newlines stay line breaks */
+.md h1, .md h2, .md h3, .md h4 { font-weight: 600; line-height: 1.3; margin-top: 0.25em; }
+.md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3, .md h4 { font-size: 1em; }
+.md ul, .md ol { padding-left: 1.25em; display: flex; flex-direction: column; gap: 0.2em; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md li > ul, .md li > ol { margin-top: 0.2em; }
+.md li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.25em; }
+.md a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.md strong { font-weight: 600; color: var(--ink); }
+.md code { font-family: var(--font-mono); font-size: 0.9em; background: var(--surface-3); border-radius: 3px; padding: 0.1em 0.35em; }
+.md pre { background: var(--canvas); border: 1px solid var(--hairline); border-radius: 4px; padding: 0.6em 0.75em; overflow-x: auto; white-space: pre; }
+.md pre code { background: none; padding: 0; font-size: 0.85em; }
+.md blockquote { border-left: 2px solid var(--hairline); padding-left: 0.75em; color: var(--ink-muted); }
+.md hr { border: 0; border-top: 1px solid var(--hairline); }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; font-size: 0.95em; }
+.md th, .md td { border: 1px solid var(--hairline); padding: 0.3em 0.6em; text-align: left; }
+.md th { background: var(--surface-3); font-weight: 600; }

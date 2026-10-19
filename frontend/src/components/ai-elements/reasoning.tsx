@@ -1,6 +1,7 @@
 // Adapted from Vercel AI Elements "Reasoning" (Apache-2.0, ai-sdk.dev/elements), on Base UI's Collapsible instead of Radix.
 import { Collapsible } from '@base-ui/react/collapsible'
 import { Brain, ChevronDown } from 'lucide-react'
+import { Markdown } from '@/components/app/markdown'
 import { cn } from '@/lib/utils'
 
 /** A folded "Thought for N s" line whose panel holds the model's thinking trace. */
@@ -13,8 +14,8 @@ export function Reasoning({ label, steps, className }: { label: string; steps: s
         <ChevronDown className="size-3.5 transition-transform duration-200 group-data-[open]/rs:rotate-180" aria-hidden />
       </Collapsible.Trigger>
       <Collapsible.Panel className="reasoning__panel h-[var(--collapsible-panel-height)] overflow-hidden transition-[height,opacity] duration-200 ease-out data-[ending-style]:h-0 data-[ending-style]:opacity-0 data-[starting-style]:h-0 data-[starting-style]:opacity-0">
-        <div className="flex flex-col gap-2 border-l border-hairline py-0.5 pl-3 text-caption leading-relaxed whitespace-pre-line text-ink-muted">
-          {steps.map((s, i) => <p key={i} className="m-0">{s}</p>)}
+        <div className="flex flex-col gap-2 border-l border-hairline py-0.5 pl-3 text-caption leading-relaxed text-ink-muted">
+          {steps.map((s, i) => <Markdown key={i} text={s} />)}
         </div>
       </Collapsible.Panel>
     </Collapsible.Root>
