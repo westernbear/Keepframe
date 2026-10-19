@@ -387,3 +387,24 @@ def test_cards_persist_and_collapsed_ae_keeps_hand_edits(agent_page):
     for prefix in ["render", "ae"]:
         expect(page.locator(f"#{prefix}-card-toggle")).to_have_attribute("aria-expanded", "false")
     expect(page.locator("#ae-overwrite")).to_be_visible()
+
+
+def test_thinking_slot_then_folded_reasoning_trace(agent_page):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    held = []
+    page.route("**/api/agent", lambda route: held.append(route) if route.request.method == "POST" else route.continue_())
+    page.locator("#agent-input").fill("왜 바꿨어?")
+    page.locator("#agent-send").click()
+    expect(page.locator("[data-thinking]")).to_contain_text("생각하는 중")
+    while not held:
+        page.wait_for_timeout(20)
+    held[0].fulfill(json={"status": "done", "reply": "제목 색을 바꿨습니다", "tool_calls": [], "results": [],
+                          "reasoning": ["먼저 제목을 찾는다", "대비가 낮으니 색을 바꾼다"]})
+    expect(page.locator("[data-thinking]")).to_have_count(0)
+    expect(page.locator(".msg--agent .msg__body").last).to_have_text("제목 색을 바꿨습니다")
+    trigger = page.locator(".reasoning__trigger").last
+    expect(trigger).to_contain_text("초 동안 생각함")
+    expect(page.locator(".reasoning__panel").last).to_be_hidden()
+    trigger.click()
+    expect(page.locator(".reasoning__panel").last).to_contain_text("대비가 낮으니 색을 바꾼다")

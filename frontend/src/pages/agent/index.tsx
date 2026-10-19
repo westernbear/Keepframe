@@ -32,6 +32,7 @@ export default function Agent() {
   const [banner, setBannerState] = useState<{ msg: string; error: boolean; retry?: () => void } | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [sending, setSending] = useState(false)
+  const [thinking, setThinking] = useState<string | null>(null)
   const [attachmentNames, setAttachmentNames] = useState<string[]>([])
   const [fonts, setFonts] = useState<any[]>([])
   const [fontStatus, setFontStatus] = useState<{ key: string; vars?: any; error?: boolean } | null>(null)
@@ -39,7 +40,7 @@ export default function Agent() {
   const [elementsOpen, toggleElements] = useStoredOpen('kf.agent.elementsOpen', false)
   const [fontsOpen, toggleFonts] = useStoredOpen('kf.agent.fontsOpen', false)
   const live = useRef({ st: null as any, versionId: params.get('v') || null as string | null, frame: 0, selectedId: null as string | null,
-    pendingIntent: null as any, pendingPrompt: '', attachments: [] as { file: File; data: string }[], nextId: 0 })
+    pendingIntent: null as any, pendingPrompt: '', attachments: [] as { file: File; data: string }[], nextId: 0, fresh: false })
   const choices = useRef<Record<string, string>>({})
   const aeRefresh = useRef<() => Promise<void>>(async () => {})
   const origImg = useRef<HTMLImageElement>(null)
@@ -71,7 +72,7 @@ export default function Agent() {
     return { previews, transport, setFrame }
   })
 
-  const append = (e: any) => setEntries((list) => [...list, { ...e, id: live.current.nextId++ }])
+  const append = (e: any) => setEntries((list) => [...list, { ...e, id: live.current.nextId++, fresh: live.current.fresh }])
   const appendAgent = (text: string) => append({ kind: 'agent', text })
   const appendConfirm = (onConfirm: () => Promise<boolean | undefined>) => append({ kind: 'confirm', onConfirm })
   const appendChoices = (plan: any) => {
@@ -149,8 +150,10 @@ export default function Agent() {
     if (p.needsConfirm) appendConfirm(() => runConfirm(false))
   }
 
-  function paintTurn(turn: any, actionable = true) {
+  function paintTurn(turn: any, actionable = true, seconds: number | null = null) {
     const view = turnView(turn, actionable)
+    const steps = (turn.reasoning || []).filter((s: unknown) => typeof s === 'string' && s.trim())
+    if (steps.length) append({ kind: 'reasoning', steps, seconds })
     view.toolCalls.forEach((tc) => append({ kind: 'tool', ...tc, reply: view.reply }))
     if (view.reply) appendAgent(view.reply)
     if (view.verify) append({ kind: 'verify', chip: view.verify })
@@ -160,21 +163,23 @@ export default function Agent() {
 
   async function send(text: string, again = false) {
     if (!text || !projectId) return
+    live.current.fresh = true
     live.current.pendingPrompt = text
     if (!again) append({ kind: 'user', text })
-    setBanner(T('agent.readingScreen'))
+    setBanner('')
+    setThinking(T('agent.readingScreen'))
     setSending(true)
     try {
       const l = live.current
       const uiContext = await buildUIContext({ project: projectId, scene: sceneId, version: l.versionId, frame: l.frame, selectedElement: l.selectedId,
         attachmentFiles: l.attachments.map((a) => a.file), reviewState: l.st, renderPayload: rcRef.current.payload, orig: origImg.current!, recon: reconImg.current! })
-      setBanner(T('agent.thinking'))
+      setThinking(T('agent.thinking'))
+      const started = performance.now()
       const turn = await postAgent({ project: projectId, scene: sceneId, v: l.versionId, message: text, ui_context: uiContext })
-      setBanner('')
-      paintTurn(turn)
+      paintTurn(turn, true, Math.max(1, Math.round((performance.now() - started) / 1000)))
     } catch (err: any) {
       setBannerState({ msg: err.message || T('agent.failed'), error: true, retry: () => send(text, true) })
-    } finally { setSending(false) }
+    } finally { setSending(false); setThinking(null) }
   }
 
   async function attach(files: File[]) {
@@ -227,6 +232,7 @@ export default function Agent() {
           if (record.actionable) live.current.pendingPrompt = record.user || ''
           paintTurn(record.turn || {}, record.actionable !== false)
         }
+        live.current.fresh = true
       })
       .then(() => rcRef.current.load())
       .catch((err) => setBanner(err.message || T('agent.failed'), true))
@@ -261,7 +267,7 @@ export default function Agent() {
             <h2 className="m-0 text-body-sm font-semibold">{T('agent.title')}</h2>
             <span className="agent-chat__meta font-mono text-micro text-ink-muted" id="agent-model">{st ? T('agent.modelLabel') : '—'}</span>
           </div>
-          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} />
+          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} thinking={thinking} />
           <Composer onSend={send} sending={sending} attachments={attachmentNames} onAttach={attach} onRemoveAttachment={removeAttachment} />
           <div id="agent-banner" role="status" hidden={!banner}
             className={cn('agent-banner flex items-center justify-between gap-3 border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>

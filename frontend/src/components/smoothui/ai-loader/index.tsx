@@ -27,7 +27,9 @@ export type AILoaderVariant = "dots" | "bar" | "grid";
 export type AILoaderProps = {
   className?: string;
   /** Optional text before the indicator, e.g. "Thinking". */
-  label?: string;
+  label?: React.ReactNode;
+  /** Screen-reader text when `label` is not plain text. */
+  srLabel?: string;
   /** Appends a live elapsed counter. Long waits need a sign of progress. */
   showElapsed?: boolean;
   variant?: AILoaderVariant;
@@ -133,6 +135,7 @@ const Elapsed = () => {
 const AILoader = ({
   className,
   label,
+  srLabel,
   showElapsed = false,
   variant = "dots",
 }: AILoaderProps) => {
@@ -147,12 +150,12 @@ const AILoader = ({
       )}
       role="status"
     >
-      {label ? <span>{label}</span> : null}
+      {label ? <span aria-hidden={srLabel ? true : undefined}>{label}</span> : null}
       {variant === "dots" && <Dots reduced={reduced} />}
       {variant === "bar" && <Bar reduced={reduced} />}
       {variant === "grid" && <Grid reduced={reduced} />}
       {showElapsed ? <Elapsed /> : null}
-      <span className="sr-only">{label ?? "Loading"}</span>
+      <span className="sr-only">{srLabel ?? (typeof label === "string" ? label : "Loading")}</span>
     </span>
   );
 };

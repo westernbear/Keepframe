@@ -37,6 +37,7 @@ def _vision(model: str, override: Any = None) -> bool:
 class AssistantReply:
     content: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    reasoning: str = ""   # the model's thinking trace, when the provider returns one
 
 
 class LLMClient(Protocol):
@@ -100,7 +101,8 @@ class OpenAICompatibleClient:
             raise RuntimeError(f"LLM 요청 실패({e.code})") from e
 
         msg = (payload.get("choices") or [{}])[0].get("message") or {}
-        reply = AssistantReply(content=(msg.get("content") or "").strip())
+        reply = AssistantReply(content=(msg.get("content") or "").strip(),
+                               reasoning=str(msg.get("reasoning_content") or msg.get("reasoning") or "").strip())
         for tc in msg.get("tool_calls") or []:
             fn = tc.get("function") or {}
             args = {}
@@ -147,6 +149,7 @@ class LiteLLMClient:
         reply = AssistantReply()
         if msg is not None:
             reply.content = (getattr(msg, "content", None) or "").strip() or ""
+            reply.reasoning = str(getattr(msg, "reasoning_content", None) or "").strip()
             for tc in getattr(msg, "tool_calls", None) or []:
                 fn = getattr(tc, "function", None) or (tc.get("function") if isinstance(tc, dict) else None)
                 if fn is None:
