@@ -88,6 +88,20 @@ def test_agent_turn_failure_is_a_502_code(tmp_path, monkeypatch):
     assert "secret" not in json.dumps(body) and "/home/x" not in json.dumps(body)
 
 
+def test_agent_unreachable_llm_is_its_own_code(tmp_path, monkeypatch):
+    from keepframe.session.llm import NullClient
+    ws, scene = _project(tmp_path)
+    monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
+    monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("litellm.InternalServerError: OpenAIException - Connection error.")))
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/agent", {"project": "p1", "scene": scene.id, "message": "hi"}, "same")
+    finally:
+        srv.shutdown()
+    assert code == 502 and body == {"error": "llm_unreachable"}
+
+
 def test_ae_validation_error_is_a_code(tmp_path, monkeypatch):
     from pydantic import BaseModel
 

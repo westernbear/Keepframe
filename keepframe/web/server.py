@@ -1825,7 +1825,8 @@ def make_server(
                 except ValueError as e:
                     return self._fail(400, e, "invalid_request")
                 except Exception as e:   # LLM auth / rate limit / network
-                    return self._fail(502, e, "agent_failed")
+                    # an unreachable Base URL gets its own code: the fix is the address, not a retry
+                    return self._fail(502, e, "llm_unreachable" if "Connection error" in str(e) else "agent_failed")
                 for res in turn.results:
                     ver = (res.get("payload") or {}).get("version")
                     if ver and ver.get("id"):
