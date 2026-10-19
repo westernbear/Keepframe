@@ -217,6 +217,21 @@ PAGES = {
     "/review": "review.html",
     "/agent": "agent.html",
 }
+STATIC_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+}
 ADMIN_OFF = {"error": "로컬판에는 이 화면이 없습니다."}
 
 
@@ -775,7 +790,7 @@ def make_server(
                 p = STATIC / PAGES[u.path]
                 if not p.exists():
                     return self._json(404, {"error": f"{PAGES[u.path]} missing"})
-                return self._send(200, p.read_bytes(), "text/html; charset=utf-8")
+                return self._send(200, p.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             if u.path.startswith("/static/"):
                 rel = u.path[len("/static/") :]
                 if ".." in rel:
@@ -784,21 +799,13 @@ def make_server(
                 if not p.is_file():
                     return self._json(404, {"error": "not found"})
                 suffix = p.suffix.lower()
-                ctype = {
-                    ".css": "text/css; charset=utf-8",
-                    ".js": "application/javascript; charset=utf-8",
-                    ".png": "image/png",
-                    ".jpg": "image/jpeg",
-                    ".jpeg": "image/jpeg",
-                    ".svg": "image/svg+xml",
-                    ".ico": "image/x-icon",
-                    ".webp": "image/webp",
-                }.get(suffix, "application/octet-stream")
-                cache = (
-                    "no-cache, must-revalidate"
-                    if suffix in {".css", ".js"}
-                    else "public, max-age=604800"
-                )
+                ctype = STATIC_TYPES.get(suffix, "application/octet-stream")
+                if rel.startswith("app/assets/"):
+                    cache = "public, max-age=31536000, immutable"  # vite content-hashed names
+                elif suffix in {".css", ".js", ".html"}:
+                    cache = "no-cache, must-revalidate"
+                else:
+                    cache = "public, max-age=604800"
                 return self._send(200, p.read_bytes(), ctype, cache=cache)
             if u.path == "/api/status":
                 return self._json(200, gpu_status())

@@ -97,9 +97,14 @@ class AdminRoutes:
             if not p.is_file():
                 handler._json(404, {"error": f"{ADMIN_PAGES[path]} missing"})
                 return True
-            if path not in _PUBLIC_HTML and self._require(handler) is None:
+            sid = _session_id(handler)
+            if path not in _PUBLIC_HTML and not (sid and self.admin_auth.get(sid)):
+                handler.send_response(302)
+                handler.send_header("location", "/admin/login")
+                handler.send_header("content-length", "0")
+                handler.end_headers()
                 return True
-            handler._send(200, p.read_bytes(), "text/html; charset=utf-8")
+            handler._send(200, p.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             return True
 
         if path == "/admin/api/policy":

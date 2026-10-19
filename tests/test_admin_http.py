@@ -172,3 +172,18 @@ def test_login_page_links_back_to_landing_without_seed_password(tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_protected_admin_page_redirects_to_login(tmp_path):
+    from http.client import HTTPConnection
+    srv = start_admin(tmp_path)
+    try:
+        conn = HTTPConnection("127.0.0.1", srv.server_address[1])
+        conn.request("GET", "/admin/tenants")
+        r = conn.getresponse()
+        assert (r.status, r.getheader("location")) == (302, "/admin/login")
+        conn.request("GET", "/admin/login")
+        assert conn.getresponse().status == 200
+    finally:
+        srv.shutdown()
+        srv.server_close()

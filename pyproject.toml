@@ -33,6 +33,8 @@ keepframe = [
   "web/static/css/*",
   "web/static/js/*",
   "web/static/js/review/*",
+  "web/static/app/*.html",
+  "web/static/app/assets/*",
   "fonts/manifest.json",
   "fonts/files/*",
   "fonts/LICENSES/*",
