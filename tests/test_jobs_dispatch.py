@@ -74,3 +74,24 @@ def test_load_runner_default_is_thread():
 def test_jobspec_roundtrip():
     spec = JobSpec(kind="render", args={"scene": "s.json", "html": "c.html", "out": "r"})
     assert JobSpec.from_json(spec.to_json()) == spec
+
+
+def test_cancelled_analyze_returns_the_project_to_the_range_picker(tmp_path, monkeypatch):
+    from keepframe.jobs import JobFailed
+    from keepframe.web.workspace import load_meta, write_meta
+    (tmp_path / "p1").mkdir()
+    (tmp_path / "p1" / "meta.json").write_text('{"id": "p1", "status": "uploaded"}')
+    write_meta(tmp_path, "p1", status="analyzing", job_id="j1")
+
+    def cancelled(*args, **kwargs):
+        raise JobFailed("cancelled")
+
+    monkeypatch.setattr("keepframe.session.llm.vision_llm", lambda workspace=None: None)
+    monkeypatch.setattr("keepframe.analyze.pipeline.analyze", cancelled)
+    spec = JobSpec(kind="analyze", args={"video": "/tmp/a.mp4", "start": 0, "end": 11, "out_root": str(tmp_path / "p1"),
+                                         "workspace": str(tmp_path), "project_id": "p1"})
+    import pytest
+    with pytest.raises(JobFailed, match="cancelled"):
+        run_job(spec)
+    meta = load_meta(tmp_path, "p1")
+    assert (meta["status"], meta.get("job_id"), meta.get("error")) == ("uploaded", None, None)

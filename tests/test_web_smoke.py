@@ -298,3 +298,38 @@ def test_full_video_confirmation_is_invalidated_by_mode_and_range_changes(tmp_pa
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+@pytest.mark.browser
+def test_library_delete_asks_first_and_removes_the_row(tmp_path):
+    import threading
+    from playwright.sync_api import sync_playwright
+    from keepframe.web.server import make_server
+    from keepframe.web.workspace import create_project
+    from tests.test_web_ingest import _mp4
+
+    video = tmp_path / "upload.mp4"
+    _mp4(video)
+    keep = create_project(tmp_path, "Keep me", video, "range", (0, 9))
+    gone = create_project(tmp_path, "Delete me", video, "range", (0, 9))
+    srv = make_server(tmp_path, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.goto(base + "/library")
+            page.wait_for_selector("#project-list .row")
+            page.locator(f'[data-delete="{gone["id"]}"]').click()
+            page.get_by_role("button", name="취소").click()                    # dismissing keeps it
+            assert (tmp_path / gone["id"]).is_dir()
+            page.locator(f'[data-delete="{gone["id"]}"]').click()
+            page.locator("[data-confirm-ok]").click()
+            page.get_by_text("Delete me", exact=True).wait_for(state="detached")
+            assert not (tmp_path / gone["id"]).exists() and (tmp_path / keep["id"]).is_dir()
+            assert page.get_by_text("Keep me", exact=True).count() == 1
+            browser.close()
+    finally:
+        srv.shutdown()
+        srv.server_close()

@@ -54,7 +54,9 @@ const enc = encodeURIComponent
 export const fetchProjects = () => api('/api/projects')
 export const fetchProject = (projectId: string) => api(`/api/projects/${enc(projectId)}`)
 export const fetchStatus = () => api('/api/status')
-export const fetchJob = (jobId: string) => api(`/api/jobs/${jobId}`)
+export const fetchJob = (jobId: string) => api(`/api/jobs/${enc(jobId)}`)
+export const cancelJob = (jobId: string) => api(`/api/jobs/${enc(jobId)}/cancel`, { method: 'POST' })
+export const deleteProject = (projectId: string) => api(`/api/projects/${enc(projectId)}`, { method: 'DELETE' })
 export const postAnalyze = (body: unknown) => post('/api/analyze', body)
 export const postAdminLogin = ({ email, password }: { email: string; password: string }) =>
   post('/admin/api/login', { email, password })

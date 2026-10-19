@@ -49,6 +49,9 @@ class ThreadRunner:
             orig_eta = job.eta_s
 
             def on_stage(name: str, detail: str | None = None) -> None:
+                # shortcut: only this runner honours cancel, at the next stage report; a queue runner needs its own flag
+                if job.cancel_requested:
+                    raise JobFailed("cancelled")
                 job.stage = name
                 job.detail = detail
                 job.eta_s = remaining_eta(name, orig_eta)
@@ -63,7 +66,7 @@ class ThreadRunner:
                 log.info("job %s %s done project=%s", job.id, job.kind, job.project_id)
             except JobFailed as e:   # a code for clients; the detail is already in the log, paths cut
                 job.error = e.code
-                log.error("job %s %s failed project=%s: %s", job.id, job.kind, job.project_id, e.code)
+                (log.info if e.code == "cancelled" else log.error)("job %s %s failed project=%s: %s", job.id, job.kind, job.project_id, e.code)
                 job.status = "error"
             except Exception as e:
                 job.error = "job_failed"

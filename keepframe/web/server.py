@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -1243,6 +1244,18 @@ def make_server(
             if admin_routes and admin_routes.handle_post(self, u):
                 return
 
+            m = re.fullmatch(r"/api/jobs/([^/]+)/cancel", u.path)
+            if m:   # takes effect at the job's next stage report: frame decode or an LLM call can delay it
+                if not self._same_origin():
+                    return
+                if JOBS.find(m.group(1)) is None:
+                    return self._json(404, {"error": "not found"})
+                job = JOBS.cancel(m.group(1))
+                if job is None:
+                    return self._json(409, {"error": "not_running"})
+                log.info("job %s cancel requested project=%s", job.id, job.project_id)
+                return self._json(202, {"job": job.to_json()})
+
             m = re.fullmatch(r"/api/projects/([^/]+)/fonts", u.path)
             if m:
                 if not self._same_origin():
@@ -1870,6 +1883,29 @@ def make_server(
                 return
             if admin_routes and admin_routes.handle_delete(self, u):
                 return
+            m = re.fullmatch(r"/api/projects/([^/]+)", u.path)
+            if m:
+                if not self._same_origin():
+                    return
+                pid = m.group(1)
+                try:
+                    root = _safe_render_project(workspace, pid)
+                except ValueError:
+                    return self._json(400, {"error": "invalid_request"})
+                except FileNotFoundError:
+                    return self._json(404, {"error": "not found"})
+                job = existing_analyze_job(pid, load_meta(workspace, pid) or {})
+                if job is not None and job.status in ("queued", "running"):
+                    return self._json(409, {"error": "job_running"})
+                for key in [k for k in review_states if k[0] == pid]:
+                    review_states.pop(key, None)
+                try:
+                    shutil.rmtree(root)
+                except OSError as e:
+                    log.error("delete project=%s failed: %s", pid, describe(e))
+                    return self._json(500, {"error": "delete_failed"})
+                log.info("project %s deleted", pid)
+                return self._json(200, {"deleted": pid})
             return self._json(404, {"error": "not found"})
         def do_PUT(self):
             u = urlparse(self.path)

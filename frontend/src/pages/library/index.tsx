@@ -1,12 +1,14 @@
-import { ChevronRight, Film, Search } from 'lucide-react'
+import { ChevronRight, Film, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AppHeader } from '@/components/app/app-header'
 import { Button } from '@/components/app/button'
+import { confirmAction } from '@/components/app/confirm'
 import Empty from '@/components/smoothui/empty'
 import Input from '@/components/smoothui/input'
 import Skeleton from '@/components/smoothui/skeleton'
 import { TabsIndicator, TabsList, TabsRoot, TabsTab } from '@/components/smoothui/tabs'
-import { fetchProjects } from '@/lib/api'
+import { toast } from '@/components/smoothui/toast'
+import { deleteProject, fetchProjects } from '@/lib/api'
 import { useI18n } from '@/i18n'
 import { badgeText, badgeTitle, formatConfidence, formatVersion, hrefForProject, thumbUrl, visibleProjects } from '@/lib/library'
 import { cn } from '@/lib/utils'
@@ -91,6 +93,17 @@ export default function Library() {
   }, [attempt, T])
 
   const all = load.state === 'ready' ? load.projects : []
+
+  async function remove(p: Project) {
+    const title = p.title || p.id
+    const ok = await confirmAction({ title: Tf('library.deleteConfirm', { title }), description: T('library.deleteBody'), confirmLabel: T('library.delete'), danger: true })
+    if (!ok) return
+    try {
+      await deleteProject(p.id)
+      setLoad((l) => l.state === 'ready' ? { ...l, projects: l.projects.filter((x) => x.id !== p.id) } : l)
+      toast.success(Tf('library.deleted', { title }))
+    } catch (err: any) { toast.error(err.message || T('err.deleteFailed')) }
+  }
   const shown: Project[] = visibleProjects(all, filter, query)
   const reviewCount = all.filter((p) => p.status === 'review').length
 
@@ -164,7 +177,15 @@ export default function Library() {
           )}
 
           <ul id="project-list" className="m-0 flex list-none flex-col gap-1 p-0" hidden={!shown.length}>
-            {shown.map((p) => <li key={p.id}><Row p={p} /></li>)}
+            {shown.map((p) => (
+              <li key={p.id} className="group/item flex items-center gap-1">
+                <div className="min-w-0 flex-1"><Row p={p} /></div>
+                <Button tone="ghost" size="icon-sm" shape="pill" aria-label={Tf('library.deleteLabel', { title: p.title || p.id })} data-delete={p.id}
+                  className="shrink-0 hover:text-danger pointer-fine:opacity-0 pointer-fine:group-hover/item:opacity-100 focus-visible:opacity-100" onClick={() => remove(p)}>
+                  <Trash2 aria-hidden />
+                </Button>
+              </li>
+            ))}
           </ul>
         </section>
 

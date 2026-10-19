@@ -36,6 +36,10 @@ const ERROR_CODES: Record<string, string> = { // errors that arrive as codes (th
   agent_failed: 'err.agentFailed',
   model_list_failed: 'err.modelListFailed',
   invalid_settings: 'err.invalidSettings',
+  job_running: 'err.jobRunning',
+  not_running: 'err.notRunning',
+  delete_failed: 'err.deleteFailed',
+  cancelled: 'err.cancelled',
 }
 
 export function errorText(code: string | null | undefined): string {

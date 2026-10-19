@@ -151,3 +151,47 @@ def test_mask_correction_decodes_payload_before_dispatch(tmp_path, monkeypatch):
 
     assert dispatched.wait(1)
     assert captured["mask"] == b"mask-bytes"
+
+
+def _send(srv, method, path, origin=True):
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    req = Request(base + path, method=method, data=b"" if method == "POST" else None, headers={"Origin": base} if origin else {})
+    try:
+        with urlopen(req) as r:
+            return r.status, json.loads(r.read())
+    except HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+class _IdleRunner:   # jobs stay queued: a stand-in for a running analyze
+    def enqueue(self, job, *, spec=None, fn=None):
+        pass
+
+
+def test_delete_project_checks_origin_id_and_running_jobs(tmp_path, monkeypatch):
+    from keepframe.jobs import JobStore
+    from keepframe.web.workspace import write_meta
+    store = JobStore(runner=_IdleRunner())
+    monkeypatch.setattr("keepframe.web.server.JOBS", store)
+    for pid in ("p1", "p2"):
+        (tmp_path / pid).mkdir()
+        (tmp_path / pid / "meta.json").write_text(json.dumps({"id": pid, "title": pid, "status": "uploaded"}))
+    job = store.submit("analyze", lambda: {}, project_id="p2")
+    write_meta(tmp_path, "p2", status="analyzing", job_id=job.id)
+    srv = start(tmp_path)
+    try:
+        assert _send(srv, "DELETE", "/api/projects/p1", origin=False)[0] == 403
+        assert _send(srv, "DELETE", "/api/projects/..%2Fx")[0] == 400
+        assert _send(srv, "DELETE", "/api/projects/nope")[0] == 404
+        assert _send(srv, "DELETE", "/api/projects/p2") == (409, {"error": "job_running"})
+        assert _send(srv, "DELETE", "/api/projects/p1") == (200, {"deleted": "p1"})
+        assert not (tmp_path / "p1").exists()
+        assert [p["id"] for p in json.loads(get(srv, "/api/projects")[2])["projects"]] == ["p2"]
+        assert _send(srv, "POST", f"/api/jobs/{job.id}/cancel", origin=False)[0] == 403
+        code, body = _send(srv, "POST", f"/api/jobs/{job.id}/cancel")
+        assert code == 202 and body["job"]["cancel_requested"] is True
+        assert _send(srv, "POST", "/api/jobs/missing/cancel")[0] == 404
+        job.status = "done"
+        assert _send(srv, "POST", f"/api/jobs/{job.id}/cancel") == (409, {"error": "not_running"})
+    finally:
+        srv.shutdown()

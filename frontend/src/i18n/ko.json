@@ -594,5 +594,18 @@
   "landing.demo.violet": "바이올렛",
   "landing.demo.magenta": "마젠타",
   "landing.demo.orange": "오렌지",
-  "landing.demo.note": "합성 예시입니다. 실제 분석은 샘플 결과에서 볼 수 있습니다."
+  "landing.demo.note": "합성 예시입니다. 실제 분석은 샘플 결과에서 볼 수 있습니다.",
+  "library.delete": "삭제",
+  "library.deleteLabel": "'{title}' 삭제",
+  "library.deleteConfirm": "'{title}'을(를) 삭제할까요?",
+  "library.deleteBody": "영상, 분석 결과, 모든 버전이 지워지고 되돌릴 수 없습니다.",
+  "library.deleted": "'{title}'을(를) 삭제했습니다.",
+  "err.jobRunning": "분석 중에는 지울 수 없습니다. 분석 화면에서 먼저 분석을 취소하세요.",
+  "err.notRunning": "이미 끝난 분석이라 취소할 수 없습니다.",
+  "err.deleteFailed": "삭제하지 못했습니다. 잠시 뒤 다시 시도하세요.",
+  "err.cancelled": "분석을 취소했습니다.",
+  "analyze.cancel": "분석 취소",
+  "analyze.cancelling": "취소하는 중… 지금 단계가 끝나면 멈춥니다.",
+  "analyze.cancelConfirm": "분석을 취소할까요?",
+  "analyze.cancelBody": "지금까지 진행한 분석은 버려집니다. 영상은 남아 있어 구간을 다시 골라 분석할 수 있습니다."
 }

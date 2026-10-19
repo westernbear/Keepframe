@@ -594,5 +594,18 @@
   "landing.demo.violet": "Violet",
   "landing.demo.magenta": "Magenta",
   "landing.demo.orange": "Orange",
-  "landing.demo.note": "A synthetic example. A real analysis is in Sample result."
+  "landing.demo.note": "A synthetic example. A real analysis is in Sample result.",
+  "library.delete": "Delete",
+  "library.deleteLabel": "Delete '{title}'",
+  "library.deleteConfirm": "Delete '{title}'?",
+  "library.deleteBody": "The video, the analysis and every version are removed. This cannot be undone.",
+  "library.deleted": "Deleted '{title}'.",
+  "err.jobRunning": "It cannot be deleted while it is being analysed. Cancel the analysis first.",
+  "err.notRunning": "The analysis already ended, so there is nothing to cancel.",
+  "err.deleteFailed": "Could not delete it. Try again in a moment.",
+  "err.cancelled": "Analysis cancelled.",
+  "analyze.cancel": "Cancel analysis",
+  "analyze.cancelling": "Cancelling… it stops when the current step ends.",
+  "analyze.cancelConfirm": "Cancel the analysis?",
+  "analyze.cancelBody": "The progress so far is discarded. The video stays, so you can pick a range and analyse again."
 }

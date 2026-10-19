@@ -3,9 +3,10 @@ import { motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { AppHeader } from '@/components/app/app-header'
 import { Button } from '@/components/app/button'
+import { confirmAction } from '@/components/app/confirm'
 import { WorkflowStepper } from '@/components/app/workflow-stepper'
 import Progress from '@/components/smoothui/progress'
-import { DEFAULT_FILMSTRIP_COUNT, fetchFilmstrip, fetchJob, fetchProject, fetchProjects, postAnalyze } from '@/lib/api'
+import { DEFAULT_FILMSTRIP_COUNT, cancelJob, fetchFilmstrip, fetchJob, fetchProject, fetchProjects, postAnalyze } from '@/lib/api'
 import { useI18n } from '@/i18n'
 import {
   ANALYZE_POLL_INTERVAL_MS, PIPELINE, STEP_STAGES, analyzePayload, formatEta, rangeLabel, readAnalyzeStart, reviewHref,
@@ -15,7 +16,7 @@ import { cn } from '@/lib/utils'
 
 const projectIdOf = (params: URLSearchParams) => params.get('job') || params.get('project')
 const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5'
-type Job = { id: string; project_id: string; status: string; stage?: string; detail?: string; eta_s?: number; error?: string }
+type Job = { id: string; project_id: string; status: string; stage?: string; detail?: string; eta_s?: number; error?: string; cancel_requested?: boolean }
 
 function goToReview(projectId: string) {
   location.assign(reviewHref(projectId)) // full page load: the router commits after the URL moves, and callers that wait for the URL read the next page at once
@@ -75,9 +76,18 @@ export default function Analyze() {
 
   useEffect(() => {
     if (job?.status === 'done') goToReview(job.project_id)
-  }, [job?.status, job?.project_id])
+    if (job?.status === 'error' && job.error === 'cancelled') location.assign('/library') // the project is back to "uploaded"
+  }, [job?.status, job?.error, job?.project_id])
 
-  const failed = job?.status === 'error'
+  async function cancel() {
+    if (!job) return
+    const ok = await confirmAction({ title: T('analyze.cancelConfirm'), description: T('analyze.cancelBody'), confirmLabel: T('analyze.cancel'), danger: true })
+    if (!ok) return
+    try { setJob((await cancelJob(job.id)).job) } catch (err: any) { setError(err.message || T('err.notRunning')) }
+  }
+
+  const failed = job?.status === 'error' && job.error !== 'cancelled'
+  const cancelling = Boolean(job?.cancel_requested) && !finished
   const message = failed ? errorText(job?.error) || T('analyze.failed') : error
   const stage = job?.status === 'done' ? 'report' : job?.stage || ''
   const at = PIPELINE.indexOf(stage)
@@ -149,8 +159,12 @@ export default function Analyze() {
               {failed && job?.error && <p className="m-0 text-micro text-ink-muted">{T('analyze.errorCode')} <code className="font-mono">{job.error}</code></p>}
             </div>
             {failed && <Button tone="primary" className="w-full" asChild><a href={`/new?project=${encodeURIComponent(job.project_id)}`} data-retry>{T('analyze.retry')}</a></Button>}
-            {/* shortcut: there is no cancel endpoint, so leaving says the job keeps running; add POST /api/jobs/<id>/cancel when the runner can stop a job */}
-            <Button tone={idle ? 'primary' : 'secondary'} className="w-full" asChild><a href="/library">{T(idle || finished ? 'nav.library' : 'analyze.leave')}</a></Button>
+            {job && !finished && (
+              <Button tone="ghost" className="w-full text-danger hover:text-danger" disabled={cancelling} onClick={cancel} data-cancel>
+                {T(cancelling ? 'analyze.cancelling' : 'analyze.cancel')}
+              </Button>
+            )}
+            <Button tone={idle ? 'primary' : 'secondary'} className="w-full" asChild><a href="/library">{T(idle || finished || cancelling ? 'nav.library' : 'analyze.leave')}</a></Button>
           </div>
         </aside>
       </main>
