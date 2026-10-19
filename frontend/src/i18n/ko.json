@@ -613,5 +613,6 @@
   "analyze.cancelling": "취소하는 중… 지금 단계가 끝나면 멈춥니다.",
   "analyze.cancelConfirm": "분석을 취소할까요?",
   "analyze.cancelBody": "지금까지 진행한 분석은 버려집니다. 영상은 남아 있어 구간을 다시 골라 분석할 수 있습니다.",
-  "err.llmUnreachable": "LLM 서버에 연결하지 못했습니다. 관리 > LLM에서 Base URL을 확인하세요. Docker에서 이 컴퓨터의 로컬 LLM은 127.0.0.1 대신 host.docker.internal 주소를 쓰고, http/https가 서버와 맞아야 합니다."
+  "err.llmUnreachable": "LLM 서버에 연결하지 못했습니다. 관리 > LLM에서 Base URL을 확인하세요. Docker에서 이 컴퓨터의 로컬 LLM은 127.0.0.1 대신 host.docker.internal 주소를 쓰고, http/https가 서버와 맞아야 합니다.",
+  "err.llmTlsFailed": "LLM 서버와 보안 연결(TLS)을 맺지 못했습니다. VPN·프록시·보안 프로그램이 Docker의 HTTPS 연결을 끊고 있거나, Base URL이 https인데 서버는 http만 받습니다."
 }

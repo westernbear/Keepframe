@@ -102,6 +102,25 @@ def test_agent_unreachable_llm_is_its_own_code(tmp_path, monkeypatch):
     assert code == 502 and body == {"error": "llm_unreachable"}
 
 
+def test_agent_tls_failure_is_its_own_code(tmp_path, monkeypatch):
+    from keepframe.session.llm import NullClient
+    ws, scene = _project(tmp_path)
+
+    def turn(*a, **k):
+        try:
+            raise ConnectionError("[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+        except ConnectionError as cause:
+            raise RuntimeError("litellm.InternalServerError: OpenAIException - Connection error.") from cause
+    monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
+    monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", turn)
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/agent", {"project": "p1", "scene": scene.id, "message": "hi"}, "same")
+    finally:
+        srv.shutdown()
+    assert code == 502 and body == {"error": "llm_tls_failed"}
+
+
 def test_ae_validation_error_is_a_code(tmp_path, monkeypatch):
     from pydantic import BaseModel
 

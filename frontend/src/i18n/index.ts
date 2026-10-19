@@ -35,6 +35,7 @@ const ERROR_CODES: Record<string, string> = { // errors that arrive as codes (th
   invalid_length: 'err.invalidRequest',
   agent_failed: 'err.agentFailed',
   llm_unreachable: 'err.llmUnreachable',
+  llm_tls_failed: 'err.llmTlsFailed',
   model_list_failed: 'err.modelListFailed',
   invalid_settings: 'err.invalidSettings',
   job_running: 'err.jobRunning',

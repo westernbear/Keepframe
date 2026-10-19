@@ -613,5 +613,6 @@
   "analyze.cancelling": "Cancelling… it stops when the current step ends.",
   "analyze.cancelConfirm": "Cancel the analysis?",
   "analyze.cancelBody": "The progress so far is discarded. The video stays, so you can pick a range and analyse again.",
-  "err.llmUnreachable": "Could not reach the LLM server. Check the Base URL in Admin > LLM. In Docker, a local LLM on this machine is host.docker.internal, not 127.0.0.1, and http/https must match the server."
+  "err.llmUnreachable": "Could not reach the LLM server. Check the Base URL in Admin > LLM. In Docker, a local LLM on this machine is host.docker.internal, not 127.0.0.1, and http/https must match the server.",
+  "err.llmTlsFailed": "Could not open a secure (TLS) connection to the LLM server. A VPN, proxy or security program is cutting Docker's HTTPS traffic, or the Base URL says https where the server only speaks http."
 }
