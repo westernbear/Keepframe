@@ -17,7 +17,8 @@ const field = 'h-10 min-w-0 flex-1 rounded-lg border border-hairline bg-canvas p
 const reason = 'ae-card__reason text-caption text-ink-muted'
 
 /** The After Effects card. `onReady` hands the parent a refresh it awaits after each edit. */
-export function AeCard({ projectId, sceneId, versionId, onReady }: { projectId: string | null; sceneId: string; versionId: string | null; onReady: (refresh: () => Promise<void>) => void }) {
+export function AeCard({ projectId, sceneId, versionId, onReady, onSendState }: { projectId: string | null; sceneId: string; versionId: string | null;
+  onReady: (refresh: () => Promise<void>) => void; onSendState?: (s: { send: () => void; disabled: boolean }) => void }) {
   const { T, Tf } = useI18n()
   const [, setTick] = useState(0)
   const ids = useRef({ sceneId, versionId })
@@ -45,6 +46,8 @@ export function AeCard({ projectId, sceneId, versionId, onReady }: { projectId: 
   const connected = devices.find((d) => d.connected)
   const isConnected = Boolean(connected)
   const sendDisabled = c.busy || !isConnected || !projectId || !sceneId || !versionId
+  // the render card's "After Effects" renderer sends through this card
+  useEffect(() => { onSendState?.({ send: core.send, disabled: sendDisabled }) }, [onSendState, core, sendDisabled])
   const comparing = verifyActive(c.snapshot)
   const summary = syncSummary(c.snapshot, devices)
   const report = c.snapshot.verify

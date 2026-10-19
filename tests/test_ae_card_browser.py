@@ -1002,3 +1002,24 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
     expect(page.locator("#ae-jobs")).to_contain_text("이전 동기화가 중단되었습니다. 덮어써서 완료하세요: kf:title")
     expect(page.locator("#ae-hand-message")).to_have_text("AE에서 1개 레이어를 직접 수정했습니다: kf:logo")
     assert not errors
+
+
+def test_render_card_after_effects_choice_sends_to_ae(ae_page):
+    from playwright.sync_api import expect
+
+    page, server, errors = ae_page
+    page.locator("#render-backend").select_option("ae")
+    expect(page.locator("#render-create")).to_have_count(0)
+    expect(page.locator("#render-mode")).to_be_hidden()
+    expect(page.locator("#render-ae-send")).to_be_disabled()
+    expect(page.locator("#render-ae-hint")).to_contain_text("AE가 연결되지 않았습니다")
+    _, headers = connect(page, server)
+    expect(page.locator("#render-ae-send")).to_be_enabled()
+    expect(page.locator("#render-ae-hint")).not_to_contain_text("AE가 연결되지 않았습니다")
+    page.locator("#render-ae-send").click()
+    expect(page.locator("#ae-synced")).to_contain_text("대기 중")
+    status, claimed = poll(server, headers)
+    assert status == 200 and claimed["job"]["kind"] == "sync"
+    page.locator("#render-backend").select_option("native")
+    expect(page.locator("#render-create")).to_be_visible()
+    assert errors == []

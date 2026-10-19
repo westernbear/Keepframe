@@ -111,6 +111,7 @@
   "agent.renderBackend": "렌더러",
   "agent.renderNative": "Keepframe 기본",
   "agent.renderPlan": "계획",
+  "agent.renderAeHint": "연결된 After Effects에 편집 가능한 컴포지션을 만듭니다. 진행과 결과는 아래 After Effects 카드에 나옵니다.",
   "agent.renderCreate": "계획 만들기",
   "agent.renderOutputs": "출력",
   "agent.renderReason": "실패 이유",
