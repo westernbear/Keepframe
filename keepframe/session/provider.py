@@ -134,7 +134,8 @@ class ProviderConfig(BaseModel):
         )
 
     def litellm_extra(self) -> dict:
-        return {k: v for k, v in (self.extra or {}).items() if k not in OAUTH_KEYS}
+        # "vision" is Keepframe's own flag; forwarding it makes providers reject the request
+        return {k: v for k, v in (self.extra or {}).items() if k not in OAUTH_KEYS and k != "vision"}
 
     def credentials_present(self) -> bool:
         if self.chatgpt_connected():

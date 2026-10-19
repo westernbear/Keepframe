@@ -270,6 +270,24 @@ def test_gpt6_vision_markers():
     assert LiteLLMClient(ProviderConfig(api_key="test-key", model="gpt-6-sol")).supports_vision
 
 
+@pytest.mark.parametrize("model,expected", [
+    ("claude-opus-4-1", True), ("anthropic/claude-sonnet-4-5", True), ("claude-opus-5-5", True), ("o4-mini", True),
+    ("openai/o3", True), ("qwen2.5-vl-72b-instruct", True), ("gpt-3.5-turbo", False), ("deepseek-chat", False),
+])
+def test_vision_detection_covers_current_models(monkeypatch, model, expected):
+    monkeypatch.delenv("KEEPFRAME_LLM_VISION", raising=False)
+    assert OpenAICompatibleClient(api_key="test-key", model=model).supports_vision is expected
+    assert LiteLLMClient(ProviderConfig(api_key="test-key", model=model)).supports_vision is expected
+
+
+def test_vision_override_wins_and_stays_out_of_litellm_kwargs(monkeypatch):
+    on = ProviderConfig(api_key="test-key", model="deepseek-chat", extra={"vision": True, "top_p": 1})
+    assert LiteLLMClient(on).supports_vision and on.litellm_extra() == {"top_p": 1}
+    assert not LiteLLMClient(ProviderConfig(api_key="test-key", model="claude-opus-4-1", extra={"vision": False})).supports_vision
+    monkeypatch.setenv("KEEPFRAME_LLM_VISION", "0")
+    assert not OpenAICompatibleClient(api_key="test-key", model="claude-opus-4-1").supports_vision
+
+
 @pytest.mark.parametrize("factory", ["make", "vision"])
 def test_workspace_refresh_persists_and_new_clients_reuse(config, backend, monkeypatch, tmp_path, factory):
     config.oauth_expires_at = time.time() - 1

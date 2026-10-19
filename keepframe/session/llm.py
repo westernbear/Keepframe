@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -13,6 +14,23 @@ from .oauth import fetch_access_token
 from .provider import OPENAI_COMPATIBLE_FALLBACK, ProviderConfig, default_base_url
 
 log = get("keepframe.session")
+_VISION_MARKERS = ("claude", "gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-5", "gpt-6", "gemini", "gemma-3", "vision", "-vl",
+                   "llava", "pixtral", "llama-4", "grok")
+_O_SERIES = re.compile(r"(^|/)o[134](\b|-)")
+
+
+def _vision(model: str, override: Any = None) -> bool:
+    """Explicit override, else LiteLLM's model table, else name markers (Claude 3+ and every listed family see images)."""
+    if override is not None:
+        return override not in (False, 0, "0", "false", "False", "")
+    name = model.lower()
+    try:
+        import litellm
+        if litellm.supports_vision(model=model):
+            return True
+    except Exception:  # noqa: BLE001 - litellm missing or model unknown to it
+        pass
+    return any(marker in name for marker in _VISION_MARKERS) or bool(_O_SERIES.search(name))
 
 
 @dataclass
@@ -45,6 +63,7 @@ class OpenAICompatibleClient:
         api_key: str | None = None,
         model: str | None = None,
         timeout: float = 120.0,
+        vision: Any = None,
     ) -> None:
         self.base_url = (
             base_url
@@ -54,9 +73,7 @@ class OpenAICompatibleClient:
         self.api_key = api_key or os.environ.get("KEEPFRAME_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
         self.model = model or os.environ.get("KEEPFRAME_LLM_MODEL") or "gpt-4o-mini"
         self.timeout = timeout
-        override = os.environ.get("KEEPFRAME_LLM_VISION")
-        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "vision", "llava", "gemini", "claude-3", "claude-4")
-        self.supports_vision = override == "1" or (override != "0" and any(marker in self.model.lower() for marker in markers))
+        self.supports_vision = _vision(self.model, vision if vision is not None else os.environ.get("KEEPFRAME_LLM_VISION"))
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         body = {
@@ -103,9 +120,7 @@ class LiteLLMClient:
 
         self._litellm = litellm
         self.config = config
-        override = config.extra.get("vision") if config.extra else None
-        markers = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "vision", "llava", "gemini", "claude-3", "claude-4")
-        self.supports_vision = bool(override) if override is not None else any(marker in config.model.lower() for marker in markers)
+        self.supports_vision = _vision(config.model, config.extra.get("vision") if config.extra else None)
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AssistantReply:
         kwargs: dict[str, Any] = {
@@ -154,6 +169,7 @@ def _openai_compatible_fallback(cfg: ProviderConfig) -> OpenAICompatibleClient |
             base_url=base or None,
             api_key=cfg.api_key or None,
             model=cfg.model or None,
+            vision=cfg.extra.get("vision") if cfg.extra else None,
         )
     return None
 

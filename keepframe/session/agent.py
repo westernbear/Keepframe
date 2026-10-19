@@ -86,6 +86,10 @@ def _scene_summary(ctx: SessionContext) -> str:
         return ""
 
 
+def _model_name(llm: Any) -> str:
+    return getattr(llm, "model", None) or getattr(getattr(llm, "config", None), "model", None) or "설정된"
+
+
 class SessionAgent:
     def __init__(self, llm: LLMClient | None = None) -> None:
         self.llm = llm if llm is not None else make_llm()
@@ -104,7 +108,7 @@ class SessionAgent:
         messages.extend(history)
         if ui_context is not None and ui_context.images and not getattr(self.llm, "supports_vision", True):
             return SessionTurn(
-                reply="현재 설정된 모델은 화면 이미지를 지원하지 않습니다. vision 지원 모델을 설정하세요.",
+                reply=f"{_model_name(self.llm)} 모델이 화면 이미지를 읽을 수 있는지 확인하지 못했습니다. 이미지를 읽는 모델이라면 관리자 LLM 페이지의 추가 설정(JSON)에 {{\"vision\": true}}를 넣거나 KEEPFRAME_LLM_VISION=1을 설정하세요.",
                 status="error",
                 error="vision_unsupported",
             )
