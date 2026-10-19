@@ -197,3 +197,28 @@ def test_admin_invalid_settings_does_not_echo_the_api_key(tmp_path, caplog):
         srv.shutdown()
     assert (status, body) == (400, {"error": "invalid_settings"})
     assert "sk-SECRET-123" not in json.dumps(body) and "sk-SECRET-123" not in caplog.text
+
+
+def test_agent_thinking_is_readable_while_the_turn_runs(tmp_path, monkeypatch):
+    from keepframe.session.agent import SessionTurn
+    from keepframe.session.llm import NullClient
+    ws, scene = _project(tmp_path)
+    seen = {}
+
+    def turn(self, ctx, message, history, on_reasoning=None, **_):
+        on_reasoning(0, "먼저 ")
+        on_reasoning(0, "본다")
+        on_reasoning(1, "답한다")
+        seen["mid"] = get(srv, "/api/agent/thinking?turn=t-0123456789abcdef")
+        return SessionTurn(reply="끝")
+    monkeypatch.setattr("keepframe.web.server.make_llm", lambda *_: NullClient())
+    monkeypatch.setattr("keepframe.web.server.SessionAgent.turn", turn)
+    srv = start(ws)
+    try:
+        code, body = _post(srv, "/api/agent", {"project": "p1", "scene": scene.id, "message": "hi", "turn_id": "t-0123456789abcdef"}, "same")
+        after = get(srv, "/api/agent/thinking?turn=t-0123456789abcdef")
+    finally:
+        srv.shutdown()
+    assert code == 200 and body["reply"] == "끝"
+    assert json.loads(seen["mid"][2]) == {"steps": ["먼저 본다", "답한다"]}
+    assert json.loads(after[2]) == {"steps": []}

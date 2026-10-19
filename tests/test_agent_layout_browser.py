@@ -394,11 +394,16 @@ def test_thinking_slot_then_folded_reasoning_trace(agent_page):
     page, _, _ = agent_page
     held = []
     page.route("**/api/agent", lambda route: held.append(route) if route.request.method == "POST" else route.continue_())
+    polled = []
+    page.route("**/api/agent/thinking?**", lambda route: (polled.append(route.request.url), route.fulfill(json={"steps": ["먼저 **제목**을 찾는다"]})))
     page.locator("#agent-input").fill("왜 바꿨어?")
     page.locator("#agent-send").click()
     expect(page.locator("[data-thinking]")).to_contain_text("생각하는 중")
     while not held:
         page.wait_for_timeout(20)
+    # the trace streams into the thinking slot while the turn runs, polled by the id the POST carries
+    expect(page.locator("[data-thinking] .thinking__live strong")).to_have_text("제목")
+    assert polled[0].endswith("turn=" + held[0].request.post_data_json["turn_id"])
     held[0].fulfill(json={"status": "done", "reply": "제목 색을 바꿨습니다", "tool_calls": [], "results": [],
                           "reasoning": ["먼저 제목을 찾는다", "대비가 낮으니 색을 바꾼다"]})
     expect(page.locator("[data-thinking]")).to_have_count(0)

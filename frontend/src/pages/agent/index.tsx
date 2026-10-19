@@ -6,7 +6,7 @@ import { useI18n } from '@/i18n'
 import { MAX_ATTACHMENTS, confirmEditBody, confirmedEditOutcome, defaultEditChoices, readChatAttachment, turnView } from '@/lib/agent-chat'
 import { confirmCorrection, confirmKeepChange, keepChangePreview, prepareCorrection } from '@/lib/agent-corrections'
 import { confidenceLabel, fontFileError, fontMeta, fontUploadErrorKey, sceneOptionLabel } from '@/lib/agent-view'
-import { fetchAgentHistory, fetchFonts, fetchReviewState, postAgent, postEdit, reviewAssetUrl, uploadFont } from '@/lib/api'
+import { fetchAgentHistory, fetchAgentThinking, fetchFonts, fetchReviewState, postAgent, postEdit, reviewAssetUrl, uploadFont } from '@/lib/api'
 import { createFrameTransport, createPreviewCache } from '@/lib/playback'
 import { buildUIContext } from '@/lib/ui-context'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,7 @@ import { toggleCls, useStoredOpen } from './ui'
 
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 const DEFAULT_SCENE_ID = 's1'
+const THINKING_POLL_MS = 400
 
 export default function Agent() {
   const { T, Tf } = useI18n()
@@ -33,6 +34,7 @@ export default function Agent() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [sending, setSending] = useState(false)
   const [thinking, setThinking] = useState<string | null>(null)
+  const [liveSteps, setLiveSteps] = useState<string[]>([])
   const [attachmentNames, setAttachmentNames] = useState<string[]>([])
   const [fonts, setFonts] = useState<any[]>([])
   const [fontStatus, setFontStatus] = useState<{ key: string; vars?: any; error?: boolean } | null>(null)
@@ -175,7 +177,16 @@ export default function Agent() {
         attachmentFiles: l.attachments.map((a) => a.file), reviewState: l.st, renderPayload: rcRef.current.payload, orig: origImg.current!, recon: reconImg.current! })
       setThinking(T('agent.thinking'))
       const started = performance.now()
-      const turn = await postAgent({ project: projectId, scene: sceneId, v: l.versionId, message: text, ui_context: uiContext })
+      // getRandomValues (unlike randomUUID) also works on a plain-http LAN address
+      const turnId = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('')
+      let waiting = true
+      const poll = setInterval(() => {
+        fetchAgentThinking(turnId).then((r) => { if (waiting) setLiveSteps(Array.isArray(r.steps) ? r.steps : []) }).catch(() => {})
+      }, THINKING_POLL_MS)
+      let turn
+      try {
+        turn = await postAgent({ project: projectId, scene: sceneId, v: l.versionId, message: text, ui_context: uiContext, turn_id: turnId })
+      } finally { waiting = false; clearInterval(poll); setLiveSteps([]) }
       paintTurn(turn, true, Math.max(1, Math.round((performance.now() - started) / 1000)))
     } catch (err: any) {
       setBannerState({ msg: err.message || T('agent.failed'), error: true, retry: () => send(text, true) })
@@ -267,7 +278,7 @@ export default function Agent() {
             <h2 className="m-0 text-body-sm font-semibold">{T('agent.title')}</h2>
             <span className="agent-chat__meta font-mono text-micro text-ink-muted" id="agent-model">{st ? T('agent.modelLabel') : '—'}</span>
           </div>
-          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} thinking={thinking} />
+          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} thinking={thinking} liveSteps={liveSteps} />
           <Composer onSend={send} sending={sending} attachments={attachmentNames} onAttach={attach} onRemoveAttachment={removeAttachment} />
           <div id="agent-banner" role="status" hidden={!banner}
             className={cn('agent-banner flex items-center justify-between gap-3 border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>
