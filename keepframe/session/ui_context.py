@@ -9,7 +9,8 @@ from typing import Any
 
 MAX_SUMMARY_BYTES = 16 * 1024
 MAX_IMAGE_BYTES = 512 * 1024
-MAX_IMAGES = 2
+MAX_IMAGES = 2 + 4   # the original and reconstruction previews plus up to four attachments (edit.intent.MAX_ATTACHMENTS)
+_KIND = re.compile(r"[a-z][a-z0-9-]{0,31}")
 _PRIVATE_KEY = re.compile(r"cookie|password|file.?path|pairing.?code|relay.?url|command", re.I)
 
 
@@ -52,7 +53,8 @@ def _image(raw: Any) -> dict[str, str]:
     signature_ok = decoded.startswith(b"\xff\xd8\xff") if mime == "image/jpeg" else decoded.startswith(b"\x89PNG\r\n\x1a\n")
     if not signature_ok:
         raise UIContextError("ui_context image signature does not match MIME")
-    return {"mime": mime, "data": encoded}
+    kind = raw.get("kind")
+    return {"mime": mime, "data": encoded, **({"kind": kind} if isinstance(kind, str) and _KIND.fullmatch(kind) else {})}
 
 
 def validate_ui_context(raw: Any) -> UIContext | None:
@@ -66,7 +68,7 @@ def validate_ui_context(raw: Any) -> UIContext | None:
         raise UIContextError("ui_context summary is too large")
     raw_images = raw.get("images", raw.get("previews", []))
     if not isinstance(raw_images, list) or len(raw_images) > MAX_IMAGES:
-        raise UIContextError("ui_context supports at most two images")
+        raise UIContextError(f"ui_context supports at most {MAX_IMAGES} images")
     return UIContext(summary=summary, images=tuple(_image(item) for item in raw_images))
 
 
@@ -74,11 +76,9 @@ def multimodal_content(message: str, context: UIContext) -> list[dict[str, Any]]
     content: list[dict[str, Any]] = [
         {"type": "text", "text": f"{message}\n\n현재 Keepframe UI 관찰 요약:\n{context.summary}"}
     ]
-    content.extend(
-        {
-            "type": "image_url",
-            "image_url": {"url": f"data:{image['mime']};base64,{image['data']}", "detail": "low"},
-        }
-        for image in context.images
-    )
+    for image in context.images:
+        kind = image.get("kind")
+        if kind:   # which picture is which: "attachment-2" is the second chat attachment
+            content.append({"type": "text", "text": f"첨부 {kind.removeprefix('attachment-')}" if kind.startswith("attachment-") else kind})
+        content.append({"type": "image_url", "image_url": {"url": f"data:{image['mime']};base64,{image['data']}", "detail": "low"}})
     return content

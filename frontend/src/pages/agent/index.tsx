@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppHeader } from '@/components/app/app-header'
 import { Button } from '@/components/app/button'
 import { useI18n } from '@/i18n'
-import { confirmEditBody, confirmedEditOutcome, defaultEditChoices, readChatAttachment, turnView } from '@/lib/agent-chat'
+import { MAX_ATTACHMENTS, confirmEditBody, confirmedEditOutcome, defaultEditChoices, readChatAttachment, turnView } from '@/lib/agent-chat'
 import { confirmCorrection, confirmKeepChange, keepChangePreview, prepareCorrection } from '@/lib/agent-corrections'
 import { confidenceLabel, fontFileError, fontMeta, fontUploadErrorKey, sceneOptionLabel } from '@/lib/agent-view'
 import { fetchAgentHistory, fetchFonts, fetchReviewState, postAgent, postEdit, reviewAssetUrl, uploadFont } from '@/lib/api'
@@ -32,14 +32,14 @@ export default function Agent() {
   const [banner, setBannerState] = useState<{ msg: string; error: boolean; retry?: () => void } | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [sending, setSending] = useState(false)
-  const [attachmentName, setAttachmentName] = useState('')
+  const [attachmentNames, setAttachmentNames] = useState<string[]>([])
   const [fonts, setFonts] = useState<any[]>([])
   const [fontStatus, setFontStatus] = useState<{ key: string; vars?: any; error?: boolean } | null>(null)
   const [fontBusy, setFontBusy] = useState(false)
   const [elementsOpen, toggleElements] = useStoredOpen('kf.agent.elementsOpen', false)
   const [fontsOpen, toggleFonts] = useStoredOpen('kf.agent.fontsOpen', false)
   const live = useRef({ st: null as any, versionId: params.get('v') || null as string | null, frame: 0, selectedId: null as string | null,
-    pendingIntent: null as any, pendingPrompt: '', attachment: null as string | null, attachmentFile: null as File | null, nextId: 0 })
+    pendingIntent: null as any, pendingPrompt: '', attachments: [] as { file: File; data: string }[], nextId: 0 })
   const choices = useRef<Record<string, string>>({})
   const aeRefresh = useRef<() => Promise<void>>(async () => {})
   const origImg = useRef<HTMLImageElement>(null)
@@ -102,9 +102,9 @@ export default function Agent() {
     live.current.pendingIntent = out.intent
     if (out.kind === 'choice') { appendChoices(out.plan); return false }
     if (out.kind === 'done') {
-      live.current.attachment = live.current.attachmentFile = null
+      live.current.attachments = []
       clearAttachInput()
-      setAttachmentName('')
+      setAttachmentNames([])
       if (out.verify) append({ kind: 'verify', chip: out.verify })
       appendAgent(out.line)
       await refreshAfterEdit(out.version)
@@ -118,7 +118,7 @@ export default function Agent() {
     setBanner('')
     try {
       const l = live.current
-      const res = await postEdit(confirmEditBody({ project: projectId, scene: sceneId, v: l.versionId, prompt: l.pendingPrompt, attachment: l.attachment,
+      const res = await postEdit(confirmEditBody({ project: projectId, scene: sceneId, v: l.versionId, prompt: l.pendingPrompt, attachments: l.attachments.map((a) => a.data),
         element: l.selectedId, intent: l.pendingIntent }, withChoices ? { ...choices.current } : {}))
       return await applyConfirmedEdit(res)
     } catch (err: any) {
@@ -167,7 +167,7 @@ export default function Agent() {
     try {
       const l = live.current
       const uiContext = await buildUIContext({ project: projectId, scene: sceneId, version: l.versionId, frame: l.frame, selectedElement: l.selectedId,
-        attachmentFile: l.attachmentFile, reviewState: l.st, renderPayload: rcRef.current.payload, orig: origImg.current!, recon: reconImg.current! })
+        attachmentFiles: l.attachments.map((a) => a.file), reviewState: l.st, renderPayload: rcRef.current.payload, orig: origImg.current!, recon: reconImg.current! })
       setBanner(T('agent.thinking'))
       const turn = await postAgent({ project: projectId, scene: sceneId, v: l.versionId, message: text, ui_context: uiContext })
       setBanner('')
@@ -177,15 +177,20 @@ export default function Agent() {
     } finally { setSending(false) }
   }
 
-  async function attach(file: File | null) {
+  async function attach(files: File[]) {
+    const room = MAX_ATTACHMENTS - live.current.attachments.length
+    if (files.length > room) setBanner(Tf('agent.attachmentLimit', { n: MAX_ATTACHMENTS }), true)
     try {
-      live.current.attachment = file ? await readChatAttachment(file) : null
-      live.current.attachmentFile = file
+      for (const file of files.slice(0, Math.max(0, room))) live.current.attachments.push({ file, data: await readChatAttachment(file) })
     } catch {
-      live.current.attachment = live.current.attachmentFile = null
       setBanner(T('agent.failed'), true)
     }
-    setAttachmentName(live.current.attachmentFile?.name || '')
+    setAttachmentNames(live.current.attachments.map((a) => a.file.name))
+  }
+
+  function removeAttachment(index: number) {
+    live.current.attachments.splice(index, 1)
+    setAttachmentNames(live.current.attachments.map((a) => a.file.name))
   }
 
   async function sendFont(file: File) {
@@ -257,7 +262,7 @@ export default function Agent() {
             <span className="agent-chat__meta font-mono text-micro text-ink-muted" id="agent-model">{st ? T('agent.modelLabel') : '—'}</span>
           </div>
           <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} />
-          <Composer onSend={send} sending={sending} attachmentName={attachmentName} onAttach={attach} />
+          <Composer onSend={send} sending={sending} attachments={attachmentNames} onAttach={attach} onRemoveAttachment={removeAttachment} />
           <div id="agent-banner" role="status" hidden={!banner}
             className={cn('agent-banner flex items-center justify-between gap-3 border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>
             <span className="min-w-0">{banner?.msg}</span>

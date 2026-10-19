@@ -151,12 +151,15 @@ def test_llm_history_obeys_turn_and_byte_caps(tmp_path):
     assert llm_history(oversized_root, "s1") == []
 
 
-def test_ui_context_enforces_two_images_signature_and_decoded_size():
+def test_ui_context_enforces_six_labelled_images_signature_and_decoded_size():
     image = {"mime": "image/jpeg", "data": base64.b64encode(b"\xff\xd8\xff\xd9").decode()}
     base = {"schema": "keepframe.ui-context/1", "summary": {}}
 
-    with pytest.raises(UIContextError, match="at most two images"):
-        validate_ui_context({**base, "images": [image, image, image]})
+    with pytest.raises(UIContextError, match="at most 6 images"):
+        validate_ui_context({**base, "images": [image] * 7})
+    labelled = validate_ui_context({**base, "images": [{**image, "kind": "attachment-2"}, {**image, "kind": "Bad Kind!"}]})
+    parts = multimodal_content("hi", labelled)
+    assert [p["type"] for p in parts] == ["text", "text", "image_url", "image_url"] and parts[1]["text"] == "첨부 2"
     with pytest.raises(UIContextError, match="signature"):
         validate_ui_context({**base, "images": [{"mime": "image/png", "data": image["data"]}]})
     with pytest.raises(UIContextError, match="too large"):

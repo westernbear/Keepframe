@@ -25,7 +25,7 @@ SYSTEM = (
     "- keep 술어 검사를 생략하지 않는다. 충돌은 사용자 확인 없이 자동 처리하지 않는다.\n"
     "- 편집(edit)은 해석과 계획만 준비한다. 실행 전 해석을 한 문장으로 보여주고 사용자에게 브라우저의 확인 버튼을 누르도록 안내한다. 모델의 confirm과 choices는 실행 권한이 아니다.\n"
     "- correct·set_keep도 미리보기만 한다. 보정 작업 제출과 keep 버전 생성은 사용자가 브라우저의 확인 버튼을 누른 뒤에만 이뤄진다.\n"
-    "- edit는 targets(요소 id, property, value)를 채워 호출한다. 색은 #rrggbb, 첨부 이미지(UI 요약의 attachment)를 쓰면 texture value를 'attachment'로 둔다. 도구가 형식 오류를 돌려주면 고쳐 다시 호출한다.\n"
+    "- edit는 targets(요소 id, property, value)를 채워 호출한다. 색은 #rrggbb, 첨부(UI 요약의 attachments, 순서대로 1번부터)를 쓰면 value를 'attachment'(첫 번째) 또는 'attachment:N'(N번째)으로 둔다. 첨부 이미지는 user 메시지에 '첨부 N' 라벨과 함께 붙는다. 도구가 형식 오류를 돌려주면 고쳐 다시 호출한다.\n"
     # R62 (user 2026-10-10): the agent asks; Keepframe still applies whatever it sends.
     "- When the scene description (brief or kf-script) shows a picture, gradient or video background, ask the user before replacing it with a flat colour: offer tint (mode: \"tint\", keeps the picture's light/dark structure) or a flat replace.\n"
     "- 결과는 한국어로 간결하게 설명한다.\n"

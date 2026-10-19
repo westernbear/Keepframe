@@ -20,7 +20,7 @@ from ..ir.store import current_scene, load_project, load_scene, new_version, sce
 from ..verify.predicates import build_context, eval_pred
 from ..verify.verifier import LAYER_TOLERANCE_PX, VerifyReport, verify
 from .apply import _group_items, apply_edit
-from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, describe, interpret, plan
+from .intent import SCENE_LEVEL, Conflict, Intent, Plan, Target, MAX_ATTACHMENTS, attachment_index, describe, interpret, plan
 from .retime import MAX_SCENE_SECONDS, apply_timing
 from .tint import TintError
 from ..assets import ASSET_GEN_CAP, AssetAPIError, AssetClient
@@ -109,7 +109,7 @@ def _failure_feedback(report: VerifyReport | None) -> str:
 
 def _asset_prompt(scene: Scene, target: Target, prompt: str, reference_size=None) -> str:
     el = scene.element(target.element)
-    what = target.value if target.value and target.value != "attachment" else prompt
+    what = target.value if target.value and attachment_index(target.value) is None else prompt
     if target.property == "model" and target.value == "reference":
         what = "Reconstruct the supplied reference crop as a 3D model. Preserve its shape, colours and texture."
     caption = " ".join((el.caption or "").split())[:120]
@@ -163,7 +163,7 @@ def edit(
     scene_id: str,
     prompt: str,
     *,
-    attachment: str | Path | bytes | None = None,
+    attachment: str | Path | bytes | list | None = None,
     has_attachment: bool = False,
     element: str | None = None,
     confirm: bool = False,
@@ -171,15 +171,17 @@ def edit(
     choices: dict[str, str] | None = None,
     version: str | None = None,
 ) -> EditResult:
-    """Plans (and with `confirm`, applies) an edit. A background edit's result carries its facts for the agent:
+    """`attachment`: one file, or a list that targets pick from with 'attachment:N'. Plans (and with `confirm`, applies) an edit. A background edit's result carries its facts for the agent:
     the mode, the colour, the background before and, once applied, after (`background_facts`)."""
     root = Path(root)
+    if isinstance(attachment, (list, tuple)):
+        attachment = [a for a in attachment if a][:MAX_ATTACHMENTS] or None
     before = _load(root, scene_id, version)[0].background
     res = _edit(root, scene_id, prompt, attachment=attachment, has_attachment=has_attachment, element=element,
                 confirm=confirm, intent=intent, choices=choices, version=version)
     target = next((t for t in (res.intent.targets if res.intent else []) if t.property == "background"), None)
     if target is not None:
-        image = target.value == "attachment"
+        image = attachment_index(target.value) is not None
         res.background = {"mode": "image" if image else target.mode or "replace", "color": None if image else target.value,
                           "before": background_facts(before),
                           "after": background_facts(load_scene(root / res.version.scene_file).background) if res.version else None}
@@ -224,9 +226,9 @@ def _edit(
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="tint_unavailable")
     if not confirm:
         return EditResult(status="needs_confirm", summary=parsed.summary, intent=parsed, plan=built)
-    gen_target = next((t for t in built.items if t.property in {"texture", "model"} and t.value != "attachment"), None)
-    # ponytail: edits share one asset payload; retain mixed generation batches until per-target attachments exist.
-    if attachment is None and any(t.value == "attachment" and
+    gen_target = next((t for t in built.items if t.property in {"texture", "model"} and attachment_index(t.value) is None), None)
+    # ponytail: a generated asset is used only when nothing is attached; mixing generation with attachments is not split
+    if attachment is None and any(attachment_index(t.value) is not None and
             (t.property in ("texture", "background") or (t.property == "model" and gen_target is None)) for t in built.items):
         return EditResult(status="failed", summary=parsed.summary, intent=parsed, plan=built, error="attachment_required")
     missing = [c for c in built.conflicts if not (choices or {}).get(c.id) and not (choices or {}).get(c.element)]

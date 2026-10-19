@@ -292,6 +292,23 @@ def test_composer_tools_keyboard_and_prompt(agent_page):
     expect(page.locator("#agent-tools")).to_be_hidden()
 
 
+def test_composer_takes_several_attachments_and_removes_one(agent_page):
+    from playwright.sync_api import expect
+    page, _, _ = agent_page
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>'
+    page.locator("#agent-attach").set_input_files([{"name": n, "mimeType": "image/svg+xml", "buffer": svg} for n in ("a.svg", "b.svg")])
+    page.locator("#agent-attach").set_input_files([{"name": "c.svg", "mimeType": "image/svg+xml", "buffer": svg}])
+    expect(page.locator("#agent-attach-name li")).to_have_text(["1. a.svg", "2. b.svg", "3. c.svg"])
+    page.get_by_role("button", name="b.svg 첨부 빼기").click()
+    expect(page.locator("#agent-attach-name li")).to_have_text(["1. a.svg", "2. c.svg"])
+    with page.expect_request("**/api/agent") as sent:
+        page.locator("#agent-input").fill("첨부 확인")
+        page.locator("#agent-send").click()
+    context = sent.value.post_data_json["ui_context"]
+    assert [a["name"] for a in context["summary"]["attachments"]] == ["a.svg", "c.svg"]
+    assert [i["kind"] for i in context["images"]] == ["original", "reconstruction", "attachment-1", "attachment-2"]
+
+
 @pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
 def test_tools_menu_items_inside_viewport_and_escape_focus(agent_page, width, height):
     from playwright.sync_api import expect

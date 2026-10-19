@@ -1693,7 +1693,7 @@ def make_server(
                         state.root,
                         scene_id,
                         prompt,
-                        attachment=data.get("attachment"),
+                        attachment=data.get("attachments") or data.get("attachment"),
                         element=data.get("element"),
                         confirm=bool(data.get("confirm")),
                         intent=data.get("intent"),
@@ -1810,7 +1810,7 @@ def make_server(
                     jobs=JOBS,
                     submit_job=submit_agent_job,
                     prepare_render=prepare_agent_render,
-                    has_attachment=isinstance(raw_summary, dict) and bool(raw_summary.get("attachment")),
+                    has_attachment=isinstance(raw_summary, dict) and bool(raw_summary.get("attachments") or raw_summary.get("attachment")),
                 )
                 try:
                     with agent_scene_lock(root, resolved_scene_id):
