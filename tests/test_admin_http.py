@@ -166,7 +166,7 @@ def test_login_page_links_back_to_landing_without_seed_password(tmp_path):
         req = Request(f"http://127.0.0.1:{srv.server_address[1]}/admin/login")
         with urlopen(req) as response:
             html = response.read().decode()
-        assert 'href="/"' in html
+        assert '<div id="root">' in html   # the SPA renders the form and its back link (test_admin_static browser test)
         assert "dev-admin" not in html
         assert "mina@keepframe.app" not in html
     finally:

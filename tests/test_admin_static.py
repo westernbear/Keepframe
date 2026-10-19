@@ -69,6 +69,8 @@ def test_admin_navigation_is_reachable_and_dense_data_scrolls_on_mobile(tmp_path
             assert page.get_by_label("비밀번호").is_visible()
             assert page.locator("#email").evaluate("el => el.getBoundingClientRect().height >= 44")
             assert page.locator("#password").evaluate("el => el.getBoundingClientRect().height >= 44")
+            assert page.locator('a[href="/"]').first.is_visible()
+            assert "dev-admin" not in page.content() and "mina@keepframe.app" not in page.content()
             for route in ("/admin/tenants", "/admin/queue", "/admin/quarantine", "/admin/audit", "/admin/llm"):
                 page.goto(base + route)
                 page.wait_for_load_state("networkidle")

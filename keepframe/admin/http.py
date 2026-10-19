@@ -23,14 +23,14 @@ log = get("keepframe.admin")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 ADMIN_PAGES = {
-    "/admin": "admin-login.html",
-    "/admin/": "admin-login.html",
-    "/admin/login": "admin-login.html",
-    "/admin/tenants": "admin-tenants.html",
-    "/admin/queue": "admin-queue.html",
-    "/admin/quarantine": "admin-quarantine.html",
-    "/admin/audit": "admin-audit.html",
-    "/admin/llm": "admin-llm.html",
+    "/admin": "app/index.html",
+    "/admin/": "app/index.html",
+    "/admin/login": "app/index.html",
+    "/admin/tenants": "app/index.html",
+    "/admin/queue": "app/index.html",
+    "/admin/quarantine": "app/index.html",
+    "/admin/audit": "app/index.html",
+    "/admin/llm": "app/index.html",
 }
 
 _LOGIN_PATHS = {"/admin/api/login"}
