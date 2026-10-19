@@ -29,7 +29,7 @@ export default function Agent() {
   const [shown, setShown] = useState(-1)
   const [playing, setPlaying] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [banner, setBannerState] = useState<{ msg: string; error: boolean } | null>(null)
+  const [banner, setBannerState] = useState<{ msg: string; error: boolean; retry?: () => void } | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [sending, setSending] = useState(false)
   const [attachmentName, setAttachmentName] = useState('')
@@ -122,7 +122,7 @@ export default function Agent() {
         element: l.selectedId, intent: l.pendingIntent }, withChoices ? { ...choices.current } : {}))
       return await applyConfirmedEdit(res)
     } catch (err: any) {
-      setBanner(err.message || T('agent.failed'), true)
+      setBannerState({ msg: err.message || T('agent.failed'), error: true, retry: () => runConfirm(withChoices) })
     }
   }
 
@@ -158,10 +158,10 @@ export default function Agent() {
     if (view.error) setBanner(view.error, true)
   }
 
-  async function send(text: string) {
+  async function send(text: string, again = false) {
     if (!text || !projectId) return
     live.current.pendingPrompt = text
-    append({ kind: 'user', text })
+    if (!again) append({ kind: 'user', text })
     setBanner(T('agent.readingScreen'))
     setSending(true)
     try {
@@ -173,7 +173,7 @@ export default function Agent() {
       setBanner('')
       paintTurn(turn)
     } catch (err: any) {
-      setBanner(err.message || T('agent.failed'), true)
+      setBannerState({ msg: err.message || T('agent.failed'), error: true, retry: () => send(text, true) })
     } finally { setSending(false) }
   }
 
@@ -259,8 +259,9 @@ export default function Agent() {
           <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} />
           <Composer onSend={send} sending={sending} attachmentName={attachmentName} onAttach={attach} />
           <div id="agent-banner" role="status" hidden={!banner}
-            className={cn('agent-banner border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>
-            {banner?.msg}
+            className={cn('agent-banner flex items-center justify-between gap-3 border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>
+            <span className="min-w-0">{banner?.msg}</span>
+            {banner?.retry && <Button tone="secondary" size="sm" className="shrink-0" disabled={sending} onClick={banner.retry} data-retry>{T('common.retry')}</Button>}
           </div>
         </aside>
 

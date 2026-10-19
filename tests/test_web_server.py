@@ -25,12 +25,13 @@ def test_admin_is_404_without_flag(tmp_path):
     assert code == 404
     assert json.loads(body)["error"] == "로컬판에는 이 화면이 없습니다."
 
-def test_missing_page_is_404_json(tmp_path):
+def test_missing_page_is_404_spa_and_missing_api_is_404_json(tmp_path):
     srv = start(tmp_path)
-    code, _, body = get(srv, "/nope")
+    code, ctype, body = get(srv, "/nope")
+    api = get(srv, "/api/nope")
     srv.shutdown()
-    assert code == 404
-    assert json.loads(body)["error"] == "not found"
+    assert (code, ctype) == (404, "text/html") and b'<div id="root">' in body   # the SPA's not-found page
+    assert api[0] == 404 and json.loads(api[2])["error"] == "not found"
 
 
 def test_status_reports_cuda_flag(tmp_path):

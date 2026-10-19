@@ -53,7 +53,7 @@ export default function Ingest() {
     const existing = params.get('project')
     if (!existing) return
     fetchProject(existing).then(({ project: p }) => {
-      if (!p || p.status !== 'uploaded' || !p.video) throw new Error(T('ingest.uploadFailed'))
+      if (!p || !['uploaded', 'error'].includes(p.status) || !p.video) throw new Error(T('ingest.uploadFailed'))
       show(p)
     }).catch((err) => setError(err.message || T('ingest.uploadFailed')))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per page load, like the legacy boot
@@ -302,7 +302,7 @@ export default function Ingest() {
             <dl className={cn('m-0 flex flex-col text-body-sm transition-opacity', stale && est && 'opacity-60')}>
               {[
                 ['ingest.eta', text?.seconds, 'data-est-seconds'],
-                ['ingest.gpu', gpu, 'data-gpu'],
+                ['ingest.gpu', gpu === 'OFF' ? T('ingest.gpuOff') : gpu, 'data-gpu'],
                 ['ingest.scenes', text?.scenes, 'data-est-scenes'],
               ].map(([k, v, hook]) => (
                 <div key={k} className="flex items-baseline justify-between gap-4 border-b border-hairline-soft py-2.5 last:border-0">

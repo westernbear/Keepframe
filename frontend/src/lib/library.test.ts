@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { T, errorText } from '@/i18n'
-import { badgeClass, badgeText, formatConfidence, formatVersion, hrefForProject, statusLabel, thumbUrl, visibleProjects } from './library'
+import { badgeClass, badgeText, badgeTitle, formatConfidence, formatVersion, hrefForProject, statusLabel, thumbUrl, visibleProjects } from './library'
 
 describe('library', () => {
   // Ported from tests/test_web_static.py::test_landing_and_library_link_to_demo (the library href rules)
@@ -11,7 +11,7 @@ describe('library', () => {
     expect(hrefForProject({ id: 'p', status: 'review', scene: 's2' })).toBe('/review?project=p&scene=s2')
     expect(hrefForProject({ id: 'p', status: 'approved', scene: 's2', version: 'v3' })).toBe('/agent?project=p&scene=s2&v=v3')
     expect(hrefForProject({ id: 'p', status: 'approved' })).toBe('/agent?project=p&scene=s1')
-    expect(hrefForProject({ id: 'p', status: 'error' })).toBeNull()
+    expect(hrefForProject({ id: 'p', status: 'error' })).toBe('/new?project=p')   // re-analyze from the range picker
     expect(hrefForProject({ id: 'p', status: 'rejected' })).toBeNull()
   })
 
@@ -30,8 +30,9 @@ describe('library', () => {
     expect(statusLabel('mystery')).toBe('mystery')
     expect(badgeText({ status: 'rejected', reason: 'live action' })).toBe('live action')
     expect(badgeText({ status: 'rejected' })).toBe(T('status.rejected'))
-    expect(badgeText({ status: 'error', error: 'job_failed' })).toBe(errorText('job_failed'))
-    expect(badgeText({ status: 'error' })).toBe(T('status.error'))
+    expect(badgeText({ status: 'error', error: 'job_failed' })).toBe(T('library.failedRetry'))
+    expect(badgeTitle({ status: 'error', error: 'job_failed' })).toBe(`${errorText('job_failed')} (job_failed)`)
+    expect(badgeTitle({ status: 'review' })).toBeUndefined()
     expect(badgeClass('analyzing')).toBe('badge--active')
     expect(badgeClass('rejected')).toBe('badge--error')
     expect(badgeClass('mystery')).toBe('badge--done')

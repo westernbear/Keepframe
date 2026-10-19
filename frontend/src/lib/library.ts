@@ -20,7 +20,7 @@ function statusLabel(status) {
 }
 
 function projectHref(p) {
-  if (p.status === "uploaded") return `/new?project=${encodeURIComponent(p.id)}`;
+  if (p.status === "uploaded" || p.status === "error") return `/new?project=${encodeURIComponent(p.id)}`;
   if (p.status === "analyzing") return p.job_id
     ? `/analyze?job=${encodeURIComponent(p.id)}`
     : reviewHref(p.id, p.scene || DEFAULT_SCENE_ID);
@@ -67,8 +67,13 @@ function formatConfidence(c) {
 
 function badgeText(p) {
   if (p.status === "rejected") return p.reason || p.error || statusLabel("rejected");
-  if (p.status === "error" && p.error) return errorText(p.error);
+  if (p.status === "error") return T("library.failedRetry"); // the row opens the range picker; the cause is in its title
   return statusLabel(p.status);
+}
+
+/** The failure cause and its code, shown on hover. */
+function badgeTitle(p) {
+  return p.status === "error" && p.error ? `${errorText(p.error)} (${p.error})` : undefined;
 }
 
 function badgeClass(status) {
@@ -105,6 +110,7 @@ export {
   formatVersion,
   formatConfidence,
   badgeText,
+  badgeTitle,
   badgeClass,
   thumbUrl,
   visibleProjects,

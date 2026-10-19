@@ -8,7 +8,7 @@ import Skeleton from '@/components/smoothui/skeleton'
 import { TabsIndicator, TabsList, TabsRoot, TabsTab } from '@/components/smoothui/tabs'
 import { fetchProjects } from '@/lib/api'
 import { useI18n } from '@/i18n'
-import { badgeText, formatConfidence, formatVersion, hrefForProject, thumbUrl, visibleProjects } from '@/lib/library'
+import { badgeText, badgeTitle, formatConfidence, formatVersion, hrefForProject, thumbUrl, visibleProjects } from '@/lib/library'
 import { cn } from '@/lib/utils'
 
 type Project = { id: string; title?: string; status: string; version?: string; confidence?: number | string; [k: string]: unknown }
@@ -46,7 +46,7 @@ function Row({ p }: { p: Project }) {
         <div className="row__meta flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-muted">
           <span className={cn('badge inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ring-1 ring-inset', TONE[p.status] || 'bg-surface-2 text-ink ring-hairline')}>
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
-            <span className="truncate">{badgeText(p)}</span>
+            <span className="truncate" title={badgeTitle(p)}>{badgeText(p)}</span>
           </span>
           {version && <span className="font-mono">{version}</span>}
           {conf && <span className="tabular-nums">{Tf('library.confidence', { c: conf })}</span>}

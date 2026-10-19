@@ -1,6 +1,8 @@
 // The review workspace's imperative core (legacy review/*.js): frame transport, overlay requests, state reloads,
 // correction jobs. It owns the live values async work reads; React renders from the view it patches.
 import { T, Tf, errorText } from '@/i18n'
+import { confirmAction } from '@/components/app/confirm'
+import { toast } from '@/components/smoothui/toast'
 import {
   fetchAnalysisOverlay, fetchProjects, fetchReviewJob, fetchReviewState, postApprove, postCorrect, postEdit, postKeep,
 } from '@/lib/api'
@@ -261,13 +263,29 @@ export function createReviewCore(start: ReviewView, patch: (p: Patch) => void) {
   async function approve() {
     if (!live.projectId || !live.st) return
     if (isApproved(live.st.status)) { goAgent(); return }
+    const scenes = live.st.project.scenes || []
+    const at = scenes.findIndex((s: any) => s.id === live.sceneId)
+    const unsaved = live.keepPending.size
+    const ok = await confirmAction({
+      title: T('review.approveConfirm.title'),
+      description: [
+        Tf('review.approveConfirm.summary', { scene: `${at + 1}/${scenes.length || 1}`, elements: live.st.scene.elements.length, version: live.versionId || '—' }),
+        unsaved ? Tf('review.approveConfirm.keep', { n: unsaved }) : '',
+        T(scenes.length > 1 ? 'review.approveConfirm.nextScene' : 'review.approveConfirm.nextAgent'),
+      ].filter(Boolean).join('\n'),
+      confirmLabel: T('review.approve'),
+    })
+    if (!ok) return
     patch({ approveBusy: true })
     try {
+      if (unsaved && !(await saveKeep())) { patch({ approveBusy: false }); return }   // approve what the maker sees, keep changes included
       const result = await postApprove(live.projectId, live.sceneId, live.versionId)
       const next = nextUnapprovedScene(live.st.project.scenes, result.project?.approved_scenes || {})
       patch({ approveBusy: false })
-      if (next) await switchScene(next.id)
-      else goAgent()
+      if (next) {
+        toast.success(Tf('review.approvedNext', { scene: next.id }))
+        await switchScene(next.id)
+      } else goAgent()
     } catch (err: any) {
       patch({ approveBusy: false, banner: { msg: err.message || T('review.approveFailed'), error: true } })
     }
@@ -283,8 +301,9 @@ export function createReviewCore(start: ReviewView, patch: (p: Patch) => void) {
       const res = await postKeep(live.projectId!, live.sceneId, preset ? [] : keepChanges(live.keepPending), KEEP_NOTE, preset)
       live.keepPending.clear()
       patch({ keepPending: new Map() })
-      refreshState(res.version.id)
-    } catch (err: any) { banner(err.message, true) }
+      await refreshState(res.version.id)
+      return true
+    } catch (err: any) { banner(err.message, true); return false }
   }
 
   function setEdit(p: Partial<EditView>) { patch((v) => ({ edit: { ...v.edit, ...p } })) }

@@ -141,11 +141,16 @@ export default function Analyze() {
               </ul>
               <div className="flex items-center justify-between gap-3 border-t border-hairline-soft pt-4 text-body-sm text-ink-muted">
                 <span className="tabular-nums" data-eta>{job ? formatEta(job.eta_s) : '—'}</span>
-                <span className="max-w-[60%] truncate rounded-md bg-surface-2 px-2 py-0.5 font-mono text-micro text-ink" data-stage>{job ? stageLabel(job) : '—'}</span>
+                <span className="max-w-[60%] truncate rounded-md bg-surface-2 px-2 py-0.5 text-micro text-ink" data-stage>{job ? stageLabel(job) : '—'}</span>
               </div>
             </div>
-            <p className="m-0 rounded-xl bg-danger/10 px-4 py-3 text-body-sm text-danger" data-status role="status" hidden={!message}>{message}</p>
-            <Button tone={idle ? 'primary' : 'secondary'} className="w-full" asChild><a href="/library">{T(idle ? 'nav.library' : 'common.cancel')}</a></Button>
+            <div className="flex flex-col gap-1.5 rounded-xl bg-danger/10 px-4 py-3 text-body-sm text-danger" data-status role="status" hidden={!message}>
+              <p className="m-0">{message}</p>
+              {failed && job?.error && <p className="m-0 text-micro text-ink-muted">{T('analyze.errorCode')} <code className="font-mono">{job.error}</code></p>}
+            </div>
+            {failed && <Button tone="primary" className="w-full" asChild><a href={`/new?project=${encodeURIComponent(job.project_id)}`} data-retry>{T('analyze.retry')}</a></Button>}
+            {/* shortcut: there is no cancel endpoint, so leaving says the job keeps running; add POST /api/jobs/<id>/cancel when the runner can stop a job */}
+            <Button tone={idle ? 'primary' : 'secondary'} className="w-full" asChild><a href="/library">{T(idle || finished ? 'nav.library' : 'analyze.leave')}</a></Button>
           </div>
         </aside>
       </main>

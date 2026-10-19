@@ -79,6 +79,39 @@ function formatVerifyPair(res) {
   return { k, t };
 }
 
+// shortcut: mirrors KEEP_PRESETS in keepframe/analyze/constraints.py; serve them with the review state if they start to drift
+const PRESET_PREDS = {
+  content_only: ["type", "dir", "mag", "dur", "before", "after", "while"],
+  motion_shape: ["type", "dir", "before", "after"],
+  none: [],
+};
+
+/** How many constraints a preset turns on and off, given what is kept now (pending edits included). */
+function presetDiff(preset, constraints, pending) {
+  const names = PRESET_PREDS[preset] || [];
+  let on = 0, off = 0;
+  for (const c of constraints) {
+    const want = names.includes(c.pred.split("(", 1)[0].trim());
+    const now = constraintChecked(c, pending);
+    if (want && !now) on++;
+    if (!want && now) off++;
+  }
+  return { on, off };
+}
+
+/** A predicate such as `before(m_t1_1,m_t2_1)` as an i18n key and its values; unknown shapes return null. */
+function keepLabel(pred) {
+  const m = /^(\w+)\((.*)\)$/.exec(pred.trim());
+  if (!m) return null;
+  const motion = (id) => id.replace(/^m_(.+)_(\d+)$/, "$1 #$2");
+  const [name, rest] = [m[1], m[2]];
+  const arg = rest.match(/\[[^\]]*\]|[^,]+/g)?.map((s) => s.trim().replace(/^'|'$/g, "")) || [];
+  if (["left", "right", "top", "bottom", "intersect"].includes(name)) return { key: `review.keepRel.${name}`, vars: { a: arg[0], b: arg[1] } };
+  if (["before", "after", "while"].includes(name)) return { key: `review.keepRel.${name}`, vars: { a: motion(arg[0]), b: motion(arg[1]) } };
+  if (["type", "dir", "mag", "dur"].includes(name)) return { key: `review.keepRel.${name}`, vars: { a: motion(arg[0]), v: arg[1] } };
+  return null;
+}
+
 /** The intent behind "Generate 3D": previewed first, submitted only on confirm. */
 function reference3dIntent(id) {
   return { targets: [{ element: id, property: "model", value: "reference" }] };
@@ -86,6 +119,8 @@ function reference3dIntent(id) {
 
 export {
   KEEP_PRESETS,
+  presetDiff,
+  keepLabel,
   parseIntList,
   reassignFrames,
   constraintChecked,

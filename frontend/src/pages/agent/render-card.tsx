@@ -115,7 +115,7 @@ export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState;
           </label>
           <label className="flex flex-col gap-1 text-caption text-ink-muted">{T('agent.renderBackend')}
             <select id="render-backend" className={select} value={r.backend} onChange={(e) => r.setBackend(e.target.value)}>
-              <option value="native">Native</option>
+              <option value="native">{T('agent.renderNative')}</option>
               <option value="lottie">Lottie</option>
             </select>
           </label>

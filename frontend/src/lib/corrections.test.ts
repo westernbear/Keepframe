@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import source from './corrections.ts?raw'
 import {
-  bboxArgs, constraintChecked, editBody, editChoices, editResultView, formatVerifyPair, keepChanges, maskArgs, reassignArgs,
+  bboxArgs, constraintChecked, keepLabel, presetDiff, editBody, editChoices, editResultView, formatVerifyPair, keepChanges, maskArgs, reassignArgs,
   reference3dIntent, textArgs,
 } from './corrections'
 
@@ -57,5 +57,17 @@ describe('corrections', () => {
     for (const gone of ['cancelled', 'background_kind', 'editChoice.tint', 'toolPending', 'bgTinted', 'editBgChoose']) {
       expect(source).not.toContain(gone)
     }
+  })
+
+  it('labels keep predicates for people and counts what a preset changes', () => {
+    expect(keepLabel("type(m_t1_1,'translation')")).toEqual({ key: 'review.keepRel.type', vars: { a: 't1 #1', v: 'translation' } })
+    expect(keepLabel('dir(m_logo_2,[1.00,0.00])')).toEqual({ key: 'review.keepRel.dir', vars: { a: 'logo #2', v: '[1.00,0.00]' } })
+    expect(keepLabel('before(m_t1_1,m_t2_1)')).toEqual({ key: 'review.keepRel.before', vars: { a: 't1 #1', b: 't2 #1' } })
+    expect(keepLabel('left(t1,t2)')).toEqual({ key: 'review.keepRel.left', vars: { a: 't1', b: 't2' } })
+    expect(keepLabel('odd')).toBeNull()
+    expect(keepLabel('zap(a)')).toBeNull()
+    const cs = [{ pred: 'type(m_a_1,"x")', keep: false }, { pred: 'left(a,b)', keep: true }, { pred: 'dur(m_a_1,4)', keep: true }]
+    expect(presetDiff('content_only', cs, new Map())).toEqual({ on: 1, off: 1 })
+    expect(presetDiff('none', cs, new Map([['dur(m_a_1,4)', false]]))).toEqual({ on: 0, off: 1 })
   })
 })

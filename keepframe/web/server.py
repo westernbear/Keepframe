@@ -1183,6 +1183,9 @@ def make_server(
                     return self._json(404, {"error": "no such asset"})
                 return self._send(200, asset.read_bytes(), "image/png")
 
+            shell = STATIC / "app/index.html"
+            if not u.path.startswith(("/api/", "/static/")) and shell.is_file():   # a page URL: the SPA shows its not-found page
+                return self._send(404, shell.read_bytes(), "text/html; charset=utf-8", cache="no-cache, must-revalidate")
             return self._json(404, {"error": "not found"})
 
         def _upload_font(self, project_id: str, query: str) -> None:

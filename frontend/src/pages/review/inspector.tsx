@@ -4,7 +4,8 @@ import Badge from '@/components/smoothui/badge'
 import Checkbox from '@/components/smoothui/checkbox'
 import { TabsIndicator, TabsList, TabsPanel, TabsRoot, TabsTab } from '@/components/smoothui/tabs'
 import { useI18n } from '@/i18n'
-import { KEEP_PRESETS, bboxArgs, constraintChecked, maskArgs, reassignArgs, textArgs } from '@/lib/corrections'
+import { confirmAction } from '@/components/app/confirm'
+import { KEEP_PRESETS, bboxArgs, constraintChecked, keepLabel, maskArgs, presetDiff, reassignArgs, textArgs } from '@/lib/corrections'
 import { readFileAsBase64 } from '@/lib/files'
 import { elementLabel, fontCorrection, fontPicker, isLatestVersion, matchesElementFilter, objectDetail } from '@/lib/inspector'
 import { CONSTRAINT_STEP } from '@/lib/review-geom'
@@ -133,7 +134,7 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
   const keepDirty = view.keepPending.size > 0
 
   return (
-    <aside className="inspector flex min-w-0 flex-col gap-4 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:pr-1">
+    <aside className="inspector flex min-w-0 flex-col gap-4 [&>*]:shrink-0 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto lg:pr-1">
       <div className="inspector__head flex items-center justify-between">
         <span id="element-count" className="text-body-sm font-semibold">{Tf('review.elements', { n: elements.length })}</span>
       </div>
@@ -148,21 +149,37 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
       <ObjectDetail view={view} core={core} />
 
       {st && (
-        <details className="review-constraints group rounded-xl bg-surface-1 ring-1 ring-inset ring-white/5">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3.5 text-body-sm font-medium">
-            {T('review.keep')}<span className="text-ink-muted transition-transform group-open:rotate-90" aria-hidden>›</span>
-          </summary>
-          <div id="constraints-panel" className="flex flex-col gap-3 px-3.5 pb-3.5">
+        <section className="review-constraints flex flex-col gap-3 rounded-xl bg-surface-1 p-3.5 ring-1 ring-inset ring-white/5" aria-labelledby="keep-title">
+          <div className="flex flex-col gap-0.5">
+            <h3 id="keep-title" className="m-0 text-body-sm font-medium">{T('review.keep')}</h3>
+            <p className="m-0 text-caption text-ink-muted">{!constraints.length ? T('review.keepNone') : Tf('review.keepHint', { n: constraints.filter((c: any) => constraintChecked(c, view.keepPending)).length, total: constraints.length })}</p>
+          </div>
+          <div id="constraints-panel" className="flex flex-col gap-3" hidden={!constraints.length}>
             <div className="keep-presets flex flex-wrap gap-1.5">
-              {KEEP_PRESETS.map((p) => <Button key={p} tone="secondary" size="xs" onClick={() => core.saveKeep(p)}>{T(`review.keepPreset.${p}`)}</Button>)}
+              {KEEP_PRESETS.map((p) => (
+                <Button key={p} tone="secondary" size="xs" disabled={view.jobRunning} onClick={async () => {
+                  const { on, off } = presetDiff(p, constraints, view.keepPending)
+                  const ok = await confirmAction({
+                    title: Tf('review.keepPresetConfirm', { preset: T(`review.keepPreset.${p}`) }),
+                    description: on || off ? Tf('review.keepPresetDiff', { on, off }) : T('review.keepPresetSame'),
+                    confirmLabel: T('review.keepPresetApply'),
+                  })
+                  if (ok) core.saveKeep(p)
+                }}>{T(`review.keepPreset.${p}`)}</Button>
+              ))}
             </div>
             <div className="flex flex-col">
-              {constraints.slice(0, constraintLimit).map((c: any) => (
-                <label key={c.pred} className="constraint-row flex min-h-9 items-center gap-2.5 text-caption">
-                  <Checkbox checked={constraintChecked(c, view.keepPending)} onCheckedChange={(on) => core.setKeep(c.pred, on)} />
-                  <span className="min-w-0 break-all font-mono">{c.pred}</span>
-                </label>
-              ))}
+              {constraints.slice(0, constraintLimit).map((c: any) => {
+                const label = keepLabel(c.pred)
+                return (
+                  <label key={c.pred} className="constraint-row flex min-h-10 items-center gap-2.5 text-caption" title={c.pred}>
+                    <Checkbox checked={constraintChecked(c, view.keepPending)} onCheckedChange={(on) => core.setKeep(c.pred, on)} />
+                    <span className="min-w-0 break-words">
+                      {label ? Tf(label.key, label.vars) : <span className="break-all font-mono">{c.pred}</span>}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
             {constraints.length > constraintLimit && (
               <Button tone="ghost" size="sm" className="btn--more-constraints self-start" onClick={() => setConstraintLimit((n) => n + CONSTRAINT_STEP)}>
@@ -170,7 +187,7 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
               </Button>
             )}
           </div>
-        </details>
+        </section>
       )}
       <Button tone="primary" id="keep-save" hidden={!keepDirty} disabled={!keepDirty || view.jobRunning} onClick={() => core.saveKeep()}>{T('review.keepSave')}</Button>
 

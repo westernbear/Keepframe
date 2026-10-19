@@ -173,7 +173,7 @@ export const AlertDialogDescription = ({
   ...props
 }: ComponentProps<typeof AlertDialogPrimitive.Description>) => (
   <AlertDialogPrimitive.Description
-    className={cn("text-muted-foreground text-sm", className)}
+    className={cn("text-muted-foreground text-sm whitespace-pre-line", className)}
     data-slot="alert-dialog-description"
     {...props}
   />
