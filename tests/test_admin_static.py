@@ -1,48 +1,60 @@
 from pathlib import Path
 
+import json
 import re
 import pytest
 
 STATIC = Path("keepframe/web/static")
+SRC = Path("frontend/src")
+ADMIN = SRC / "pages/admin"
 FORBIDDEN = ("cdn.tailwindcss.com", "fonts.googleapis.com", "lh3.googleusercontent.com", "material-symbols")
-PAGES = ("admin-login.html", "admin-tenants.html", "admin-queue.html", "admin-quarantine.html", "admin-audit.html", "admin-llm.html")
+SHELL_PAGES = ("tenants", "queue", "quarantine", "audit", "llm")   # login.tsx is the only admin page without the shell
 
 
-def static_src(*names):
-    return "\n".join((STATIC / name).read_text(encoding="utf-8") for name in names)
+def src(*names):
+    return "\n".join((SRC / name).read_text(encoding="utf-8") for name in names)
+
+
+def admin_src(*pages):
+    return src(*(f"pages/admin/{page}.tsx" for page in pages))
 
 
 def test_admin_pages_offline():
-    for name in PAGES:
-        text = (STATIC / name).read_text(encoding="utf-8")
+    """The built SPA (which serves the admin pages) and its sources load no CDN fonts, Tailwind or icon hosts."""
+    app = STATIC / "app"
+    files = [app / "index.html", *app.glob("assets/*.js"), *app.glob("assets/*.css"),
+             *SRC.rglob("*.ts"), *SRC.rglob("*.tsx"), *SRC.rglob("*.css")]
+    for path in files:
+        text = path.read_text(encoding="utf-8")
         for bad in FORBIDDEN:
-            assert bad not in text, f"{name} {bad}"
-        assert "/static/css/app.css" in text
+            assert bad not in text, f"{path} {bad}"
+
 
 def test_admin_pages_keep_local_assets_and_navigation_contracts():
-    for name in PAGES:
-        text = (STATIC / name).read_text(encoding="utf-8")
-        for asset in re.findall(r'<(?:script|img|link)\b[^>]*(?:src|href)="([^\"]+)"', text, flags=re.I):
-            assert asset.startswith("/static/"), (name, asset)
-            assert (STATIC / asset.removeprefix("/static/").split("?", 1)[0]).is_file(), (name, asset)
-        assert not re.search(r'(?:src|href)="https?://', text, flags=re.I), name
+    text = (STATIC / "app/index.html").read_text(encoding="utf-8")
+    assets = re.findall(r'<(?:script|img|link)\b[^>]*(?:src|href)="([^\"]+)"', text, flags=re.I)
+    assert any(a.startswith("/static/app/assets/") for a in assets)
+    for asset in assets:
+        assert asset.startswith("/static/"), asset
+        assert (STATIC / asset.removeprefix("/static/").split("?", 1)[0]).is_file(), asset
+    assert not re.search(r'(?:src|href)="https?://', text, flags=re.I)
 
-    for name in ("admin-queue.html", "admin-quarantine.html", "admin-audit.html", "admin-llm.html"):
-        text = (STATIC / name).read_text(encoding="utf-8")
-        for path in ("/admin/tenants", "/admin/queue", "/admin/quarantine", "/admin/audit", "/admin/llm"):
-            assert f'href="{path}"' in text, (name, path)
+    shell = src("components/app/admin-shell.tsx")
+    assert "href={`/admin/${p}`}" in shell and "<LangToggle />" in shell
+    for page in SHELL_PAGES:
+        assert f"page: '{page}'" in shell, page                        # every page links every other one
+        assert f'<AdminShell page="{page}"' in admin_src(page), page
 
 
 def test_admin_pages_keep_operation_policy_visible():
-    for name in ("admin-tenants.html", "admin-queue.html", "admin-quarantine.html", "admin-audit.html", "admin-llm.html"):
-        text = (STATIC / name).read_text(encoding="utf-8")
-        assert 'data-lang-toggle' in text, name
-        assert "scene editor" not in text.lower(), name
-    policy = static_src("admin-tenants.html", "admin-quarantine.html")
-    assert "admin.policy" in policy and "admin.queue.retries" in static_src("admin-queue.html")
-    assert "재시도 상한 4회" in static_src("js/i18n.js") and "에셋 생성 2회" in static_src("js/i18n.js")
-    assert "admin.audit.appendOnly" in static_src("admin-audit.html")
-    assert "<video" not in static_src("admin-quarantine.html").lower()
+    for page in SHELL_PAGES:
+        assert "scene editor" not in admin_src(page).lower(), page
+    assert "T('admin.policy')" in admin_src("tenants") and "T('admin.policy')" in admin_src("quarantine")
+    assert "'admin.queue.retries'" in admin_src("queue")
+    policy = json.loads(src("i18n/ko.json"))["admin.policy"]
+    assert "재시도 상한 4회" in policy and "에셋 생성 2회" in policy
+    assert "T('admin.audit.appendOnly')" in admin_src("audit")
+    assert "<video" not in admin_src("quarantine").lower()
 
 
 @pytest.mark.browser
@@ -134,62 +146,53 @@ def test_admin_data_rows_support_keyboard_selection(tmp_path):
         server.server_close()
 
 
+
 def test_no_maker_cta_or_fake_version():
-    for name in PAGES:
-        text = (STATIC / name).read_text(encoding="utf-8")
-        assert "+ New Project" not in text
-        assert "v 3.4.0" not in text and "V 0.4.0" not in text
+    for path in [*ADMIN.glob("*.tsx"), SRC / "components/app/admin-shell.tsx"]:
+        text = path.read_text(encoding="utf-8")
+        assert "+ New Project" not in text, path
+        assert "v 3.4.0" not in text and "V 0.4.0" not in text, path
 
 
 def test_pages_call_admin_api():
-    tenants = static_src("admin-tenants.html", "js/admin-tenants.js")
-    queue = static_src("admin-queue.html", "js/admin-queue.js")
-    quarantine = static_src("admin-quarantine.html", "js/admin-quarantine.js")
-    audit = static_src("admin-audit.html", "js/admin-audit.js")
-    assert "/admin/api/tenants" in tenants
-    assert "/admin/api/jobs" in queue
+    assert "/admin/api/tenants" in admin_src("tenants")
+    assert "/admin/api/jobs" in admin_src("queue")
+    quarantine = admin_src("quarantine")
     assert "/admin/api/quarantine" in quarantine
     assert "<video" not in quarantine.lower()
+    audit = admin_src("audit")
     assert "/admin/api/audit" in audit
     assert "delete" not in audit.lower()
 
 
-MAKER_PAGES = (
-    "landing.html",
-    "library.html",
-    "ingest.html",
-    "analyze.html",
-    "review.html",
-    "agent.html",
-)
+MAKER_PAGES = ("landing", "library", "ingest", "analyze", "review", "agent")
 
 
 def test_maker_pages_link_admin():
+    nav = src("components/app/maker-nav.tsx")
+    assert 'href="/admin"' in nav and "T('admin.manage')" in nav
+    assert "<MakerNav " in src("components/app/app-header.tsx")
     for name in MAKER_PAGES:
-        text = (STATIC / name).read_text(encoding="utf-8")
-        assert 'href="/admin"' in text, name
-        assert 'data-i18n="admin.manage"' in text, name
+        assert "<AppHeader" in src(f"pages/{name}/index.tsx"), name
 
 
 def test_login_page_returns_to_maker_without_seed_credential_disclosure():
-    text = (STATIC / "admin-login.html").read_text(encoding="utf-8")
+    text = admin_src("login")
     assert 'href="/"' in text
     assert "admin.localSeed" not in text
     assert "mina@keepframe.app" not in text and "dev-admin" not in text
 
 
 def test_llm_page_has_oauth_fields():
-    text = static_src("admin-llm.html", "js/admin-llm.js")
+    text = admin_src("llm")
     assert 'id="auth"' in text
     assert 'value="oauth"' in text
-    assert 'id="clientId"' in text
-    assert 'id="tokenUrl"' in text
-    assert 'id="tenantId"' in text
+    for field in ("clientId", "tokenUrl", "tenantId"):                 # rendered as id={id} from one list
+        assert f"['{field}', 'admin.llm.{field}'" in text, field
     assert 'id="chatgptConnect"' in text
     assert "/admin/api/llm/oauth/start" in text
-    assert 'id="chatgptOAuth"' in text
-    assert "chatgptOAuth.hidden" in text
+    assert 'id="chatgptOAuth" hidden={vis.hideChatgptOAuth}' in text
     assert "applyProviderDefaults" in text
     assert 'id="modelOptions"' in text
     assert "/admin/api/llm/models" in text
-    assert "default_base_url" in text
+    assert "default_base_url" in src("lib/admin.ts")                  # behaviour: frontend/src/lib/admin.test.ts

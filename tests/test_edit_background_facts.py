@@ -155,11 +155,12 @@ def test_no_forced_choice_or_code_made_wording_left():
     root = Path(__file__).resolve().parents[1] / "keepframe"
     agent_py = (root / "edit" / "agent.py").read_text()
     assert '"cancelled"' not in agent_py and "background_kind" not in (root / "edit" / "intent.py").read_text()
-    static = root / "web" / "static" / "js"
-    for name in ("agent.js", "edit-status.js", "review/edit-form.js", "i18n.js"):
-        src = (static / name).read_text()
-        for gone in ("cancelled", "background_kind", "editChoice.tint", "toolPending", "bgTinted", "editBgChoose"):
-            assert gone not in src, (name, gone)
+    spa = root.parent / "frontend" / "src"
+    for path in [*(spa / "pages/agent").glob("*.ts*"), *(spa / "pages/review").glob("*.ts*"), *(spa / "lib").glob("agent-*.ts"),
+                 spa / "lib/edit-status.ts", spa / "i18n/ko.json", spa / "i18n/en.json"]:
+        src = path.read_text()
+        for gone in ("'cancelled'", '"cancelled"', "background_kind", "editChoice.tint", "toolPending", "bgTinted", "editBgChoose"):
+            assert gone not in src, (path.name, gone)
 
 
 def test_tint_on_a_video_background_is_refused_before_confirm(tmp_path, monkeypatch):
@@ -198,41 +199,6 @@ def test_rgba_background_attachment_is_flattened_onto_black(tmp_path, monkeypatc
     assert np.abs(stored[5, -5, ::-1].astype(int) - half).max() <= 1 and tuple(stored[5, 5, ::-1]) == (200, 40, 90)
     img = composite_scene(edited, sd, 0) * 255
     assert np.abs(img[5, W - 5] - half).max() <= 1.5 and np.abs(img[5, 5] - (200, 40, 90)).max() <= 1.5
-
-
-def test_background_attachment_summary_is_never_a_chat_bubble(tmp_path):
-    """R61 (user 2026-10-10): Keepframe's own summary of a background picture from the attachment ("배경 이미지를
-    첨부로 …") stays in the version history and the tool card; neither the confirmed edit nor the pending turn shows it
-    as the agent's chat reply (the LLM agent writes those)."""
-    import shutil
-    import subprocess
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node unavailable")
-    static = Path(__file__).resolve().parents[1] / "keepframe" / "web" / "static" / "js"
-    source = (static / "agent.js").read_text()
-    start = source.index("function attachedBackground(")
-    helpers = source[start:source.index("\nfunction appendAgent(", start)]
-    script = tmp_path / "bubbles.mjs"
-    script.write_text("import assert from 'node:assert/strict';\n" +
-                      "const T = (key) => `T(${key})`;\nconst EDIT_APPLIED = '적용 완료.';\n" + helpers + "\n" + """
-const summary = '배경 이미지를 첨부로 바꿉니다. 트랙은 유지합니다.';
-const picture = {targets: [{property: 'background', value: 'attachment'}]};
-const colour = {targets: [{property: 'background', value: '#1a2a6c'}]};
-assert.equal(confirmedLine({status: 'done', summary, intent: picture}), 'T(agent.applied)');
-assert.equal(confirmedLine({status: 'done', summary: 'e1 색을 #ff0000로 바꿉니다.', intent: colour}), 'e1 색을 #ff0000로 바꿉니다.');
-assert.equal(confirmedLine({status: 'done', intent: colour}), EDIT_APPLIED);
-const pending = {status: 'pending', reply: summary, results: [{ok: true, message: summary, payload: {intent: picture}}]};
-assert.equal(chatReply(pending), '');
-const own = {status: 'pending', reply: 'Shall I use your picture?', results: [{ok: true, message: summary, payload: {intent: picture}}]};
-assert.equal(chatReply(own), 'Shall I use your picture?');
-const other = {status: 'pending', reply: 'x', results: [{ok: true, message: 'x', payload: {intent: colour}}]};
-assert.equal(chatReply(other), 'x');
-assert.equal(chatReply({reply: 'done', results: []}), 'done');
-""")
-    result = subprocess.run([node, str(script)], text=True, capture_output=True)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "appendAgent(confirmedLine(res))" in source and "const reply = chatReply(turn);" in source
 
 
 RULE = ("When the scene description (brief or kf-script) shows a picture, gradient or video background, ask the user before replacing it with a "

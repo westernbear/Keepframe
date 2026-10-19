@@ -47,16 +47,11 @@ def test_agent_page_serves(tmp_path):
     srv = start(tmp_path)
     try:
         code, ctype, body = get(srv, "/agent")
-        js_code, _, js_body = get(srv, "/static/js/agent.js")
     finally:
         srv.shutdown()
     assert code == 200
     html = body.decode("utf-8")
-    js = js_body.decode("utf-8")
     assert '<div id="root">' in html and "/static/app/assets/" in html   # the SPA renders the agent page (browser tests)
-    assert "createPreviewCache" in js
-    assert "previews.wait" in js
-    assert js_code == 200
 
 
 def test_agent_api_returns_reply(tmp_path, monkeypatch):

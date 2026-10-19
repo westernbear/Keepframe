@@ -1,3 +1,4 @@
+import json
 import math
 from pathlib import Path
 
@@ -374,9 +375,9 @@ def test_describe_timing(element, speed, delay, phrase):
 
 
 def test_extend_scene_choice_has_exact_korean_and_english_copy():
-    src = Path("keepframe/web/static/js/i18n.js").read_text()
-    assert '"review.editChoice.extend_scene": "장면 길이 늘리기"' in src.split("en: {", 1)[0]
-    assert '"review.editChoice.extend_scene": "Extend the scene"' in src.split("en: {", 1)[1]
+    copy = {lang: json.loads(Path(f"frontend/src/i18n/{lang}.json").read_text()) for lang in ("ko", "en")}
+    assert copy["ko"]["review.editChoice.extend_scene"] == "장면 길이 늘리기"
+    assert copy["en"]["review.editChoice.extend_scene"] == "Extend the scene"
 
 
 def test_session_scene_speed_requests_keep_choice_before_render(tmp_path, monkeypatch):

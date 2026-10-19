@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,6 @@ def test_font_missing_waits_for_explicit_fallback_then_creates_version(tmp_path,
 
 
 def test_fallback_choice_has_exact_korean_and_english_copy():
-    src = Path("keepframe/web/static/js/i18n.js").read_text()
-    assert '"review.editChoice.use_fallback": "대체 폰트로 진행"' in src.split("en: {", 1)[0]
-    assert '"review.editChoice.use_fallback": "Use the fallback font"' in src.split("en: {", 1)[1]
+    copy = {lang: json.loads(Path(f"frontend/src/i18n/{lang}.json").read_text()) for lang in ("ko", "en")}
+    assert copy["ko"]["review.editChoice.use_fallback"] == "대체 폰트로 진행"
+    assert copy["en"]["review.editChoice.use_fallback"] == "Use the fallback font"
