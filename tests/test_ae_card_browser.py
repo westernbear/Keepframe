@@ -221,7 +221,7 @@ def test_verify_action_and_report_on_real_server(ae_page, monkeypatch):
     ("rendering", "AE가 프레임을 렌더링하고 있습니다…", "AE is rendering frames…"),
     ("verifying", "Keepframe이 프레임을 비교하고 있습니다…", "Keepframe is comparing frames…"),
     ("failed", "Font missing", "Font missing"),
-    ("interrupted", "비교가 중단되었습니다 — 다시 비교하세요", "Verification was interrupted — verify again"),
+    ("interrupted", "비교가 중단되었습니다. 다시 비교하세요", "Verification was interrupted. Verify again"),
     ("done", "Keepframe과 일치합니다 (v4): 평균 0.3%, 최대 차이 42번 프레임 1.1%",
      "Matches Keepframe (v4): mean 0.3%, worst frame 42 at 1.1%"),
 ])
@@ -262,7 +262,7 @@ def test_unreadable_saved_report_is_a_localized_card_error(ae_page):
     expect(page.locator("#ae-synced")).to_have_text("저장된 비교 결과를 읽을 수 없습니다. 다시 비교하세요")
     expect(page.locator("#ae-synced")).to_have_class(re.compile(r"\bae-card__error\b"))
     page.locator("[data-lang-toggle]").click()
-    expect(page.locator("#ae-synced")).to_have_text(report["error"])
+    expect(page.locator("#ae-synced")).to_have_text("The saved report could not be read. Verify again")
     expect(page.locator("#ae-verify-report")).to_be_hidden()
     assert not errors
 
@@ -461,7 +461,7 @@ def test_verify_active_polling_then_idle_and_hidden(ae_page, state):
     assert len(requests) == before
     report["state"] = "interrupted"
     page.evaluate("Object.defineProperty(document, 'hidden', {configurable: true, value: false}); document.dispatchEvent(new Event('visibilitychange'))")
-    expect(page.locator("#ae-synced")).to_have_text("비교가 중단되었습니다 — 다시 비교하세요")
+    expect(page.locator("#ae-synced")).to_have_text("비교가 중단되었습니다. 다시 비교하세요")
     page.wait_for_timeout(100)
     before = len(requests)
     page.clock.fast_forward(14999)
@@ -721,12 +721,12 @@ def test_ae_expiry_copy_errors_and_disconnect(ae_page):
         content_type="application/json", body=json.dumps({"code": "KF-TEST-TEST", "expires_at": time.time() + 1})))
     page.locator("#ae-connect").click()
     expect(page.locator("#ae-code")).to_have_value("KF-TEST-TEST")
-    expect(page.locator("#ae-pair-message")).to_have_text("코드 만료 — AE 연결을 다시 누르세요")
+    expect(page.locator("#ae-pair-message")).to_have_text("코드가 만료됐습니다. AE 연결을 다시 누르세요")
     expect(page.locator("#ae-code")).to_have_value("")
     expect(page.locator("#ae-code")).to_be_hidden()
     page.locator("[data-lang-toggle]").click()
     expect(page.locator("#ae-status")).to_have_text("Not connected")
-    expect(page.locator("#ae-pair-message")).to_have_text("Code expired — press Connect AE again")
+    expect(page.locator("#ae-pair-message")).to_have_text("Code expired. Press Connect AE again")
     expect(page.get_by_role("link", name="Download extension")).to_be_visible()
     expect(page.locator("#ae-install-path-hint")).to_have_text("PowerShell. If you saved the file elsewhere, change the last path.")
     assert not errors
@@ -771,8 +771,8 @@ def test_ae_copy_fallback(ae_page, secure, clipboard_available, copy_result):
     page.locator("#ae-connect").click()
     expect(page.locator("#ae-code-field")).to_be_visible()
     copied = copy_result is True
-    ko = "복사됨" if copied else "복사 실패 — 텍스트가 선택되었습니다. Ctrl+C를 누르세요"
-    en = "Copied" if copied else "Copy failed — the text is selected; press Ctrl+C"
+    ko = "복사됨" if copied else "복사하지 못했습니다. 텍스트를 선택해 두었으니 Ctrl+C를 누르세요"
+    en = "Copied" if copied else "Could not copy. The text is selected, so press Ctrl+C"
     for count, (button_id, field_id) in enumerate([
         ("ae-install-copy", "ae-install-command"), ("ae-code-copy", "ae-code"),
     ], start=1):
@@ -803,7 +803,7 @@ def test_ae_disabled_actions_explain_connection(ae_page):
     from playwright.sync_api import expect
 
     page, server, errors = ae_page
-    reason = "AE가 연결되지 않았습니다 — After Effects에서 Keepframe 패널을 여세요"
+    reason = "AE가 연결되지 않았습니다. After Effects에서 Keepframe 패널을 여세요"
     expect(page.locator("#ae-send-reason")).to_have_text(reason)
     device, _ = connect(page, server)
     jobs = server.ae_routes.jobs
@@ -826,7 +826,7 @@ def test_ae_disabled_actions_explain_connection(ae_page):
     page.locator("[data-lang-toggle]").click()
     for action in ["send", "overwrite"]:
         expect(page.locator(f"#ae-{action}-reason")).to_have_text(
-            "AE is not connected — open the Keepframe panel in After Effects")
+            "AE is not connected. Open the Keepframe panel in After Effects")
     assert not errors
 
 
@@ -983,7 +983,7 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
                         {"ok": True, "result": actual}, headers=headers)[0] == 200
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     expect(page.locator("#ae-hand-message")).to_contain_text(
-        "a previous sync was interrupted — overwrite to finish it: kf:title")
+        "A previous sync was interrupted. Overwrite to finish it: kf:title")
     expect(page.locator("#ae-hand-message")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
     expect(page.locator("#ae-hand-message")).not_to_contain_text("hand in AE: kf:title")
     # Keep a distinct hand-edit prompt while the interrupted sync moves into history.
@@ -995,10 +995,10 @@ def test_final_web_distinguishes_actual_interrupted_and_hand_edited_ids(ae_page,
     expect(page.locator("#ae-hand-message")).to_have_text("1 layers were edited by hand in AE: kf:logo")
     page.locator("#ae-details > summary").click()
     expect(page.locator("#ae-jobs")).to_contain_text(
-        "a previous sync was interrupted — overwrite to finish it: kf:title")
+        "A previous sync was interrupted. Overwrite to finish it: kf:title")
     expect(page.locator("#ae-jobs")).to_contain_text("1 layers were edited by hand in AE: kf:logo")
     expect(page.locator("#ae-jobs")).not_to_contain_text("hand in AE: kf:title")
     page.locator("[data-lang-toggle]").click()
-    expect(page.locator("#ae-jobs")).to_contain_text("이전 동기화가 중단되었습니다 — 덮어써서 완료하세요: kf:title")
+    expect(page.locator("#ae-jobs")).to_contain_text("이전 동기화가 중단되었습니다. 덮어써서 완료하세요: kf:title")
     expect(page.locator("#ae-hand-message")).to_have_text("AE에서 1개 레이어를 직접 수정했습니다: kf:logo")
     assert not errors

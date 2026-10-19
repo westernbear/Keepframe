@@ -58,7 +58,7 @@ describe('ae', () => {
     expect(jobLine({ id: 'j', kind: 'sync', state: 'done', result: { applied: true }, finished: 995 }, 1000))
       .toBe('Sync: No changes. just now')
     expect(editMessage({ interrupted: ['kf:title'], hand_edited: ['kf:title', 'kf:logo'] }))
-      .toBe('a previous sync was interrupted — overwrite to finish it: kf:title\n1 layers were edited by hand in AE: kf:logo')
+      .toBe('A previous sync was interrupted. Overwrite to finish it: kf:title\n1 layers were edited by hand in AE: kf:logo')
     const sync = { id: 's', kind: 'sync', state: 'done', result: { applied: false, hand_edited: ['kf:logo'] } }
     expect(handEditJob(snap({ jobs: [{ id: 'r', kind: 'render_frames', state: 'done' }, sync] }))).toBe(sync)
     expect(handEditJob(snap({ jobs: [{ ...sync, result: { applied: true } }] }))).toBeNull()
@@ -72,7 +72,7 @@ describe('ae', () => {
     expect(verifyOutcome(meanOnly)).toContain(', mean 3.0% is over the 2.5% limit')
     expect(verifyOutcome({ ...meanOnly, frames: [{ frame: 1, l1: 0.05 }] })).toContain(', 1 frame over 4%')
     expect(verifyOutcome({ state: 'failed', error: 'Font missing' })).toBe('Font missing')
-    expect(verifyOutcome({ state: 'interrupted' })).toBe('Verification was interrupted — verify again')
+    expect(verifyOutcome({ state: 'interrupted' })).toBe('Verification was interrupted. Verify again')
     expect(verifyLimits({ thresholds: { mean: 0.025, frame: 0.07 } })).toBe('Limits: mean 2.5%, frame 7%')
     expect(verifyNotes(verifyReport())).toEqual(['e6 · title: shown in Arial, text area differs by 5.3%'])
     expect(verifyNotes({ notes: ['n'] })).toEqual(['n'])

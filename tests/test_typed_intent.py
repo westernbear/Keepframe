@@ -80,7 +80,7 @@ def test_edit_schema_describes_fields_and_confirmation_authority():
     assert "배율" in fields["speed"]["description"]
     assert "초" in fields["delay"]["description"]
     if "confirm" in properties:
-        assert "권한이 아니며 무시된다" in properties["confirm"]["description"]
+        assert "무시되는 값이다" in properties["confirm"]["description"]
         assert "브라우저의 확인 버튼" in properties["confirm"]["description"]
 
 
