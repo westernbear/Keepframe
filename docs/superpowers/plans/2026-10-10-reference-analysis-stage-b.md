@@ -1,4 +1,4 @@
-# Reference Analysis · Stage B (big and kinetic text as text) — Implementation Plan
+# Reference Analysis · Stage B (big and kinetic text as text): Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Implementers are Claude subagents. Each task gets its own review, and the whole branch gets one review at the end. Task 0 copied this plan here. Steps use `- [ ]`.
 
@@ -280,7 +280,7 @@ Matting, style and fonts then treat it as any other text prop.
 | 12 | Guard, `text_fragments` groups, edits treat a group as one | 10 | | |
 | 13 | Final eval, sheets, review, fix wave, merge (controller) | all | live (user) | yes |
 
----
+***
 
 ## Task 0: workspace, ledger, home runner, references (controller)
 

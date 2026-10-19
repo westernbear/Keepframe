@@ -4,18 +4,18 @@
 
 **Goal:** Put the Stitch maker screens on the existing M1+M2 core so a local process can list projects, upload a clip (range or full, with a cost gate), watch analysis, and review keep/corrections.
 
-**Architecture:** One Python package `keepframe`. Core IR/analyze/verify stays in `keepframe/{ir,compose,render,verify,analyze,review}` as built by `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` Tasks 1–25. This plan adds `keepframe/web`: stdlib `http.server`, static HTML copied from `.stitch/designs/` and taken offline, plus JSON APIs. No React, no Next, no CDN at runtime.
+**Architecture:** One Python package `keepframe`. Core IR/analyze/verify stays in `keepframe/{ir,compose,render,verify,analyze,review}` as built by `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` Tasks 1 to 25. This plan adds `keepframe/web`: stdlib `http.server`, static HTML copied from `.stitch/designs/` and taken offline, plus JSON APIs. No React, no Next, no CDN at runtime.
 
 **Tech Stack:** Python 3.11+, pydantic v2, numpy, opencv-python-headless, playwright (Chromium for renderer and browser smoke), pytest, stdlib `http.server`. Stitch HTML is the visual source; DESIGN.md is the token authority.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§4 IR, §5 analyzer, §6 review, §9 cost gate, §10–§11 M2). Visual: `DESIGN.md`. Screen source: `.stitch/designs/` and Stitch project `17345649857730883248`.
+**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§4 IR, §5 analyzer, §6 review, §9 cost gate, §10 and §11 M2). Visual: `DESIGN.md`. Screen source: `.stitch/designs/` and Stitch project `17345649857730883248`.
 
 ## Global Constraints
 
 - Do not edit `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md`.
 - Python ≥ 3.11. Package name `keepframe`. Tests with `pytest`; browser tests `@pytest.mark.browser`.
 - IR schema ids are exactly `keepframe.project/1` and `keepframe.scene/1`.
-- Corrections are exactly four ops: reassign, mask, bbox, edit_text. Keep predicates are mandatory verifier checks. Retry cap 4, asset-generation cap 2 — display only; no UI control changes them.
+- Corrections are exactly four ops: reassign, mask, bbox, edit_text. Keep predicates are mandatory verifier checks. Retry cap 4 and asset-generation cap 2 are display only; no UI control changes them.
 - Local edition is one process (CLI + local web). Admin routes are Plan B; this plan must 404 `/admin` unless `--admin` is later wired.
 - Korean default, English toggle via `localStorage("keepframe.lang")`. Every visible string goes through `T` / `data-i18n`.
 - Primary CTA is a white pill with a black label. Accent `#0099ff` is focus/selection only. No emoji. Dark only.
@@ -29,9 +29,9 @@
 
 ## Prerequisite (existing plan, not copied)
 
-Execute Tasks 1–25 of `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` first, using that file as the brief. Those tasks produce the names below. This file starts at Task 1 of the web layer.
+Execute Tasks 1 to 25 of `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` first, using that file as the brief. Those tasks produce the names below. This file starts at Task 1 of the web layer.
 
-**Consumed from Tasks 1–25 (exact names):**
+**Consumed from Tasks 1 to 25 (exact names):**
 
 - `keepframe.ir.schema`: `FontGuess`, `Constraint`, `Scene`, `Project`, `Version`, `dump`, `load_scene_json`, `load_project_json`
 - `keepframe.ir.store`: `save_scene(scene, path)`, `load_scene(path) -> Scene`, `scene_dir(root, scene_id) -> Path`, `load_project(root) -> Project`, `init_project(root, source, scene, note="initial analysis") -> Project`, `current_scene(root, scene_id) -> tuple[Scene, Version]`, `new_version(root, scene_id, scene, note, auto=True) -> Version`
@@ -41,7 +41,7 @@ Execute Tasks 1–25 of `docs/superpowers/plans/2026-09-05-keepframe-m1-m2.md` f
 - `keepframe.review.corrections`: `reassign_id`, `set_region_mask`, `add_bbox_prompt`, `edit_text` (each `-> Version`)
 - CLI already has `synth`, `compose`, `render`, `verify`, `analyze`, `correct`, `gate-m1`, `gate-m2`
 
----
+***
 
 ## File Structure
 
@@ -72,7 +72,7 @@ tests/test_web_smoke.py
 .stitch/designs/analyze.html     fetched in Task 1
 ```
 
----
+***
 
 ### Task 1: Pin the analyze Stitch screen locally
 
@@ -120,7 +120,7 @@ git add tests/test_web_static.py .stitch/designs/analyze.html .stitch/designs/an
 git commit -m "chore(stitch): pin analyze progress screen locally"
 ```
 
----
+***
 
 ### Task 2: `serve` CLI and static routes
 
@@ -258,7 +258,7 @@ git add keepframe/web/__init__.py keepframe/web/server.py keepframe/cli.py pypro
 git commit -m "feat(web): stdlib serve with maker routes and admin 404"
 ```
 
----
+***
 
 ### Task 3: Offline-port the four Stitch pages
 
@@ -345,7 +345,7 @@ git add keepframe/web/static tests/test_web_static.py
 git commit -m "feat(web): offline-port Stitch library ingest analyze review"
 ```
 
----
+***
 
 ### Task 4: Workspace project list and create
 
@@ -440,7 +440,7 @@ git add keepframe/web/workspace.py keepframe/web/server.py tests/test_web_worksp
 git commit -m "feat(web): workspace project list under serve --workspace"
 ```
 
----
+***
 
 ### Task 5: Upload, filmstrip, estimate, confirm
 
@@ -457,7 +457,7 @@ git commit -m "feat(web): workspace project list under serve --workspace"
   `seconds = scene_count * SECONDS_PER_SCENE`.  
   `confirm_token` = 16 hex chars stored in memory on the server for 30 minutes.  
   Returns `{scene_count, seconds, seconds_per_scene: 180, note: "추정. SLA 아님.", confirm_token}`.
-- `looks_live_action(path: Path) -> str | None` — if the first frame's Laplacian variance is `> 120` **and** a skin-tone pixel fraction is `> 0.08`, return `"실사 푸티지. 평면 2D MG·UI 녹화만 받음."` else `None`. This is a coarse gate, not a claim of accuracy.
+- `looks_live_action(path: Path) -> str | None`: if the first frame's Laplacian variance is `> 120` **and** a skin-tone pixel fraction is `> 0.08`, return `"실사 푸티지. 평면 2D MG·UI 녹화만 받음."` else `None`. This is a coarse gate and makes no accuracy claim.
 - `POST /api/projects` `multipart/form-data` fields: `title`, `video`, `mode`, `start`, `end`. On live-action: 422 `{error, code:"live_action"}` and do not keep the file. Else `create_project` and 201 `{project}`.
 - `GET /api/projects/{id}/filmstrip?n=8` → PNG sprite or JSON list of `/api/projects/{id}/frame/{i}` (JSON list of URLs is enough).
 - `GET /api/projects/{id}/frame/{i}` → JPEG of source frame `i`.
@@ -555,7 +555,7 @@ git add keepframe/web/estimate.py keepframe/web/liveaction.py keepframe/web/serv
 git commit -m "feat(web): upload filmstrip estimate and live-action reject"
 ```
 
----
+***
 
 ### Task 6: Analyze job and progress page
 
@@ -676,7 +676,7 @@ git add keepframe/web/jobs.py keepframe/web/server.py keepframe/web/static/analy
 git commit -m "feat(web): analyze job store and progress page"
 ```
 
----
+***
 
 ### Task 7: Review APIs bound to Stitch review.html
 
@@ -750,7 +750,7 @@ git add keepframe/web/server.py keepframe/web/static/review.html keepframe/web/s
 git commit -m "feat(web): bind Stitch review desk to keep and four corrections"
 ```
 
----
+***
 
 ### Task 8: Library binding and empty / reject / error states
 
@@ -806,13 +806,13 @@ git add keepframe/web/static tests/test_web_states.py
 git commit -m "feat(web): library rows and reject empty error states"
 ```
 
----
+***
 
 ### Task 9: Browser smoke for the maker loop
 
 **Files:**
 - Create: `tests/test_web_smoke.py`
-- Modify: `scripts/m2_gate.py` only if it already exists from the prerequisite plan — add a note in stdout that web smoke is `pytest tests/test_web_smoke.py`. Do not change M2 numeric gates.
+- Modify: `scripts/m2_gate.py` only if it already exists from the prerequisite plan: add a note in stdout that web smoke is `pytest tests/test_web_smoke.py`. Do not change M2 numeric gates.
 
 **Interfaces:**
 - `@pytest.mark.browser` test using playwright: start `make_server` on a workspace with one uploaded synthetic mp4 (from `render_scene_video` if analyze pipeline is present; otherwise skip with `pytest.importorskip`).
@@ -876,10 +876,10 @@ git add tests/test_web_smoke.py keepframe/web/static/review.html
 git commit -m "test(web): browser smoke for library and review at 1280"
 ```
 
----
+***
 
 ## Self-review
 
-- Spec §6 four pages: Tasks 2–8. Cost gate §9: Task 5–6. Four corrections §6: Task 7. Live-action reject: Task 5, 8. Admin absent locally: Task 2. M3 screens not included.
+- Spec §6 four pages: Tasks 2 to 8. Cost gate §9: Tasks 5 and 6. Four corrections §6: Task 7. Live-action reject: Task 5, 8. Admin absent locally: Task 2. M3 screens not included.
 - No TBD/TODO placeholders. Types used in later tasks are defined in Prerequisite or earlier tasks.
-- `JobStore.submit` / `estimate` / `create_project` names are stable across Tasks 4–7.
+- `JobStore.submit` / `estimate` / `create_project` names are stable across Tasks 4 to 7.

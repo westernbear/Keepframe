@@ -1,4 +1,4 @@
-# kf-script P1 · the view — Implementation Plan
+# kf-script P1 · the view: Implementation Plan
 
 > **For agentic workers:** steps use `- [ ]`. One commit per task on `claude/quirky-fermat-uyx2k0`, pushed after each task. Tests and measurements run in the cloud container (CLAUDE.md §5).
 

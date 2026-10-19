@@ -1,4 +1,4 @@
-# Keepframe AE Extension, Slice 2 (Verify) — Implementation Plan
+# Keepframe AE Extension, Slice 2 (Verify): Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. **Implementer = Codex** (`run-codex.sh` = `codex exec -m gpt-6.1-sol -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true -C <worktree>`; the sandbox keeps `.git` read-only, so the controller runs the suites outside the sandbox and commits). Reviews = Claude subagents (task: sonnet, re-review: sonnet, final: opus). Steps use `- [ ]`.
 
@@ -46,7 +46,7 @@ Live check 2 finding 9: syncing ~120k keys took more than 10 minutes because eve
 4. A frame upload breaks halfway or a frame is missing from the result → the job fails naming the missing frames, and no verification starts → Task 3 `test_result_with_missing_frames_fails_without_verifying`.
 5. A scene of 10,000+ frames or an AE frame at a different size (comp resolution half/quarter) → frames still upload and compare after resizing → Task 2 `test_ae_frames_are_resized_to_scene_size`, Task 3 `test_upload_names_allow_six_digits`.
 
----
+***
 
 ## Task 0: Workspace (controller)
 
@@ -114,7 +114,7 @@ Guard (Step 3b): AE's default temporal interpolation for script-made keys is exp
 - [ ] **Step 4: Timeout text.** `core.js` host timeout message becomes `After Effects did not finish within <n> min. It may still be working on a large scene or waiting for a dialog — wait until AE responds, then send again.` (EN) and the panel's ko translation `After Effects가 <n>분 안에 끝내지 못했습니다. 큰 장면을 아직 처리 중이거나 대화상자를 기다리는 중일 수 있습니다. AE가 응답하면 다시 보내세요.`; update the matching `core.test.js` / `panel.js` translate tests.
 - [ ] **Step 5:** Run host-sync, fake and core tests, then the full suite. Commit `perf(ae): write keys per property in one call; timeout says AE may be busy`.
 
-## Task 1b: Agent page — preview first, and nothing the user does not need (user request, 2026-10-07)
+## Task 1b: Agent page shows the preview first and nothing the user does not need (user request, 2026-10-07)
 
 Found while reviewing the agent page: at 1440×900 the right column (`.agent-viewer`, 852 px) holds the render-plan card (293 px), the After Effects card (338 px), the transport (56 px) and the element list (168 px), all `flex: 0 0 auto`, so `.compare-panes` (`flex: 1 1 0%; min-height: 0`) shrinks to its 32 px padding and both preview images (`#agent-orig`, `#agent-recon`, 960×540 frames that load fine) are 0 px tall; at 1920×1080 they are 130×73. The user also asked for a cleaner page with no unnecessary information, applying /impeccable (distill), /ui-ux-pro-max, /toss-frontend-fundamentals and /frontend-design, and chose the bolder option (fold the element list and the tool chips too). This refines the current page: keep `DESIGN.md` (dark canvas, white pill CTAs, one blue accent, existing tokens and fonts); no new colors, fonts or decoration. No feature is removed; each one is only hidden behind a disclosure or shown when it applies.
 
@@ -253,7 +253,7 @@ def test_render_without_the_comp_says_send_first(tmp_path):
 - [ ] **Step 5: Implement in `core.js`.** Extend `request()` with an `upload` option `{path, size}` that pipes `deps.fs.createReadStream(path)` into the request with `Content-Type: image/png` and `Content-Length: size` (keep redaction and the 32 MiB response cap). Runner: replace the `job.kind !== 'sync'` guard with a dispatch `{sync, render_frames}`; statuses `Rendering <n> frames of <project> / <scene> <version>…`, `Uploading frame <i>/<n>…`, final `Rendered <n> frames — Keepframe is comparing them` (panel ko: `<project> / <scene> <version> 프레임 <n>개 렌더링 중…`, `프레임 업로드 중 <i>/<n>…`, `프레임 <n>개 렌더링 완료 — Keepframe에서 비교 중`).
 - [ ] **Step 6:** Run host, fake and core tests, then the full suite. Commit `feat(ae): render sampled frames in AE and upload them`.
 
-## Task 5: Web card — Verify button and report
+## Task 5: Web card with Verify button and report
 
 **Files:** Modify `keepframe/web/static/js/ae.js`, `keepframe/web/static/js/i18n.js`, `keepframe/web/static/css/app.css` (only `ae-card__verify*` rules), every page's cache stamp · Test `tests/test_web_static.py`, `tests/test_ae_card_browser.py`.
 
@@ -264,7 +264,7 @@ def test_render_without_the_comp_says_send_first(tmp_path):
 - [ ] **Step 2: Implement** (percent with one decimal; the threshold numbers come from `report.thresholds` and are never hard-coded). Polling stays as in slice 1 (2 s while any job is queued/running **or** `verify.state` is `rendering`/`verifying`).
 - [ ] **Step 3:** Run static + browser card tests, full suite. Commit `feat(web): verify against AE from the After Effects card`.
 
-## Task 6: End to end — pair, sync, render, verify
+## Task 6: End to end (pair, sync, render, verify)
 
 **Files:** Modify `tests/ae_fake/extension_runner.js` (render jobs use the fake's `saveFrameToPng`), `tests/test_ae_e2e.py`.
 
@@ -282,7 +282,7 @@ def test_render_without_the_comp_says_send_first(tmp_path):
 - [ ] Findings → fake-AE behaviour + tests → fixes (one Codex dispatch per finding batch).
 - [ ] Final whole-branch review (opus) on `master..HEAD`, one fix wave, scoped re-review; then finishing-a-development-branch with the user's choice.
 
----
+***
 
 ## Self-review notes
 

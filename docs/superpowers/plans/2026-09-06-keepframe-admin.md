@@ -25,13 +25,13 @@
 
 ## Prerequisite
 
-Plan A (`2026-09-06-keepframe-m1-m2-stitch.md`) Tasks 1–9 done. This plan consumes:
+Plan A (`2026-09-06-keepframe-m1-m2-stitch.md`) Tasks 1 to 9 done. This plan consumes:
 
 - `keepframe.web.server.make_server(workspace, port=8765, host="127.0.0.1", admin=False)`
 - `keepframe.web.jobs.Job`, `JobStore` (queue screen lists these when `--admin`)
 - `keepframe/web/static/css/app.css`, `js/i18n.js`, `js/api.js`
 
----
+***
 
 ## File Structure
 
@@ -56,7 +56,7 @@ tests/test_admin_http.py
 tests/test_admin_local_off.py
 ```
 
----
+***
 
 ### Task 1: Policy constants (display only)
 
@@ -127,7 +127,7 @@ git add keepframe/admin/__init__.py keepframe/admin/policy.py tests/test_admin_p
 git commit -m "feat(admin): fixed retry and asset-generation caps"
 ```
 
----
+***
 
 ### Task 2: Models and MemoryAdmin
 
@@ -138,7 +138,7 @@ git commit -m "feat(admin): fixed retry and asset-generation caps"
 **Interfaces:**
 - `Tenant(id, name, status: Literal["ok","quota","suspended"], members: int, analyze_min: int, analyze_quota_min: int, render_min: int, created: str)`
 - `Member(email, role: Literal["admin","billing","review_lead","maker"], tenant_id)`
-- `QuarantineItem(id, filename, tenant_id, rejected_at, reason)` — no `video` field
+- `QuarantineItem(id, filename, tenant_id, rejected_at, reason)`, with no `video` field
 - `AuditEvent(ts, actor, action, target, detail: str | None = None)`
 - `AdminService` protocol methods:
   - `list_tenants() -> list[Tenant]`
@@ -206,7 +206,7 @@ git add keepframe/admin/models.py keepframe/admin/service.py keepframe/admin/mem
 git commit -m "feat(admin): in-memory tenants jobs quarantine and audit"
 ```
 
----
+***
 
 ### Task 3: Offline-port five admin Stitch pages
 
@@ -266,7 +266,7 @@ git add keepframe/web/static/admin-*.html tests/test_admin_static.py
 git commit -m "feat(admin): offline-port Stitch admin screens"
 ```
 
----
+***
 
 ### Task 4: Admin auth, separate cookie
 
@@ -317,9 +317,9 @@ git add keepframe/admin/auth.py tests/test_admin_auth.py
 git commit -m "feat(admin): session cookie separate from maker"
 ```
 
----
+***
 
-### Task 5: Mount /admin when --admin
+### Task 5: Mount `/admin` when `--admin`
 
 **Files:**
 - Create: `keepframe/admin/http.py`
@@ -334,7 +334,7 @@ git commit -m "feat(admin): session cookie separate from maker"
   - `GET /admin/api/tenants` (401 without cookie)
   - `GET /admin/api/tenants/{id}`
   - `GET /admin/api/jobs`
-  - `GET /admin/api/quarantine` — each item keys only `id,filename,tenant_id,rejected_at,reason`
+  - `GET /admin/api/quarantine`: each item keys only `id,filename,tenant_id,rejected_at,reason`
   - `GET /admin/api/audit`
   - `GET /admin/api/audit.csv` `text/csv`
   - `GET /admin/api/policy` `{retry_cap: 4, asset_gen_cap: 2, note: policy_note()}`
@@ -421,7 +421,7 @@ git add keepframe/admin/http.py keepframe/web/server.py keepframe/cli.py tests/t
 git commit -m "feat(admin): mount admin routes only with --admin"
 ```
 
----
+***
 
 ### Task 6: Bind tenant, queue, quarantine, audit pages
 
@@ -431,7 +431,7 @@ git commit -m "feat(admin): mount admin routes only with --admin"
 
 **Interfaces:**
 - login form POST `/admin/api/login` then `location=/admin/tenants`
-- tenants: render `/admin/api/tenants`; detail pane shows `policy_note()`; buttons 멤버 보기 / 정지 (`POST /admin/api/tenants/{id}/suspend` — add this POST in this task if missing; it only sets status and audit)
+- tenants: render `/admin/api/tenants`; detail pane shows `policy_note()`; buttons 멤버 보기 / 정지 (`POST /admin/api/tenants/{id}/suspend`; add this POST in this task if missing; it only sets status and audit)
 - queue: table from `/admin/api/jobs`; selected failure shows retries `n/4` and the policy sentence; no input to change cap
 - quarantine: table from `/admin/api/quarantine`; no `<video>`, no `<img>` of footage
 - audit: table from `/admin/api/audit`; link 내보내기 → `/admin/api/audit.csv`; no delete button
@@ -471,7 +471,7 @@ git add keepframe/web/static/admin-*.html keepframe/web/static/js/i18n.js keepfr
 git commit -m "feat(admin): bind Stitch admin pages to AdminService APIs"
 ```
 
----
+***
 
 ### Task 7: Quarantine and audit API contracts
 
@@ -534,9 +534,9 @@ git add keepframe/admin/http.py tests/test_admin_http.py
 git commit -m "feat(admin): quarantine metadata only and immutable audit"
 ```
 
----
+***
 
 ## Self-review
 
-- Spec §13 screens: Tasks 3–6. Roles that cannot raise caps or enable live-action: Tasks 1, 5, 7. Local off: Task 5 + Plan A. No prices, no model swap, no IR editor.
+- Spec §13 screens: Tasks 3 to 6. Roles that cannot raise caps or enable live-action: Tasks 1, 5, 7. Local off: Task 5 + Plan A. No prices, no model swap, no IR editor.
 - Cookie name distinct. Audit append-only. Types match across tasks (`Tenant.id`, `retry_cap`).

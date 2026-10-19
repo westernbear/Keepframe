@@ -8,11 +8,11 @@
 
 **Tech Stack:** Python 3.12, pydantic 2, numpy/OpenCV, Pillow(신규 코어 의존성), Playwright Chromium, GSAP 컴포지션, LiteLLM/OpenAI 호환 클라이언트, vanilla JS 웹 UI, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§5 분석, §5.8 VLM, §6 keep 프리셋, §7.1–7.2 에이전트, §9 실패 정책, §10 평가)
+**Spec:** `docs/superpowers/specs/2026-09-05-keepframe-design.md` (§5 분석, §5.8 VLM, §6 keep 프리셋, §7.1~7.2 에이전트, §9 실패 정책, §10 평가)
 
----
+***
 
-## Context — 비판적 리뷰 결과 (2026-10-03)
+## Context: 비판적 리뷰 결과 (2026-10-03)
 
 현재 상태: 테스트 738 통과(브라우저/GPU/OCR 제외). 그러나 사용자가 말한 전체 흐름 기준으로 보면 핵심 가치가 증명되지 않았다.
 
@@ -36,7 +36,7 @@
 
 사용자 결정(2026-10-03): 범위 = 핵심 흐름 수리 + VLM 캡션 + 재창작 연산 확장 + 분석 품질 업그레이드 전부. 평가셋 = 사용자 제공 클립 4개(아래 Task 1). After Effects = **핵심 검증까지 동결**. 하위 작업은 Codex에 위임.
 
----
+***
 
 ## Global Constraints
 
@@ -61,7 +61,7 @@
 4. 속도 10배 재타이밍으로 키프레임 t가 겹침 → 중복 제거 후 스키마 유효해야 함. Task 13 테스트 `test_retime_dedupes_collapsed_keys`.
 5. 비전 LLM이 없어 캡션이 없는 장면 → 브리프·에이전트가 그대로 동작해야 함. Task 7 테스트 `test_brief_without_labels`.
 
----
+***
 
 ### Task 0: 작업 공간 준비
 
@@ -79,9 +79,9 @@ python3.12 -m venv .venv && .venv/bin/pip install -e '.[ocr,llm,dev]' pillow && 
 - [ ] **Step 4:** 기준 테스트: Global Constraints의 테스트 명령 → 738 passed 확인
 - [ ] **Step 5:** Commit `docs: add core-flow improvement plan`
 
----
+***
 
-## Phase A — 평가 기준선과 결함 수리
+## Phase A: 평가 기준선과 결함 수리
 
 ### Task 1: 실제 클립 기준선 (yt-dlp 다운로드 + `gate-m2-real` 확장)
 
@@ -91,7 +91,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e '.[ocr,llm,dev]' pillow && 
 - Test: `tests/test_gate_real.py`
 
 **Interfaces:**
-- Produces: `m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options: AnalyzeOptions | None = None) -> dict` — 행 키: `clip, frames, size, live_action, elements, kinds, mean_l1, low_conf, keep_on, constraints, seconds, messages` (+GT 있으면 `pos_err_px`).
+- Produces: `m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options: AnalyzeOptions | None = None) -> dict`. 행 키: `clip, frames, size, live_action, elements, kinds, mean_l1, low_conf, keep_on, constraints, seconds, messages` (+GT 있으면 `pos_err_px`).
 
 - [ ] **Step 1: 클립 다운로드** (추적 토큰 `stkn` 제거, 로그인 요구 시 `--cookies-from-browser chrome` 추가)
 ```bash
@@ -125,7 +125,7 @@ def test_gate_real_caps_frames(tmp_path):
     assert {"elements", "kinds", "mean_l1", "low_conf", "keep_on", "constraints", "seconds"} <= set(row)
 ```
 - [ ] **Step 3:** `.venv/bin/python -m pytest -p no:cacheprovider tests/test_gate_real.py -q` → FAIL (`unexpected keyword 'max_frames'`)
-- [ ] **Step 4: 구현** — `m2_gate_real`에서 `frames, _ = read_frames(clip)`(전 프레임 적재)를 제거하고:
+- [ ] **Step 4: 구현**. `m2_gate_real`에서 `frames, _ = read_frames(clip)`(전 프레임 적재)를 제거하고:
 ```python
 def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options=None) -> dict:
     import json, time, cv2
@@ -163,7 +163,7 @@ def m2_gate_real(clips_dir: Path, out_root: Path, max_frames: int = 150, options
 ```bash
 mkdir -p eval/out && .venv/bin/keepframe gate-m2-real --clips eval/clips --out eval/out/baseline --max-frames 150 > eval/out/baseline.json
 ```
-`docs/qa/core-flow/README.md`에 표 기록: `clip | size | frames | live_action | elements | kinds | mean_l1 | low_conf | keep_on/constraints | seconds | messages`. 각 클립 `keepframe serve --workspace eval/ws`로 열어 검수 화면 스크린샷 1장씩(gstack `/browse`) — 원본 대비 요소가 어떻게 쪼개졌는지 1~2줄 관찰 메모.
+`docs/qa/core-flow/README.md`에 표 기록: `clip | size | frames | live_action | elements | kinds | mean_l1 | low_conf | keep_on/constraints | seconds | messages`. 각 클립 `keepframe serve --workspace eval/ws`로 열어 검수 화면 스크린샷 1장씩(gstack `/browse`), 원본 대비 요소가 어떻게 쪼개졌는지 1~2줄 관찰 메모.
 - [ ] **Step 7:** Commit `feat(gates): cap real-clip gate frames and record baseline metrics` (README만, `eval/` 제외)
 
 ### Task 2: 기본 keep 프리셋과 "keep 0개" 경고
@@ -363,7 +363,7 @@ def test_confirm_without_attachment_does_not_generate(tmp_path, monkeypatch):
     assert res.status == "failed" and res.error == "attachment_required"
 ```
 - [ ] **Step 2:** 실행 → FAIL
-- [ ] **Step 3: 구현** — `apply.py` texture 분기에서 `el.canonical.height/width = img.shape` 두 줄을:
+- [ ] **Step 3: 구현**. `apply.py` texture 분기에서 `el.canonical.height/width = img.shape` 두 줄을:
 ```python
             h, w = img.shape[:2]
             scale = min(el.canonical.width / w, el.canonical.height / h)   # contain-fit: the motion's box stays the box
@@ -405,7 +405,7 @@ def test_ui_parser_runs_only_for_ui_references(tmp_path, monkeypatch):
 ```
 웹 테스트: `tests/test_web_jobs.py`의 `test_full_analyze_accepts_matc*` 요청 준비를 복사해 body에 `"reference": "ui"`를 넣고, 제출된 `JobSpec.args["options"] == {"ui": True}`와 `load_meta(...)["reference"] == "ui"`를 단언.
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `AnalyzeOptions`에 `ui: bool = False`. `analyze_scene_frames`: `try: scene = _parse_ui(...)` 블록을 `if opts.ui:` 안으로. `rerun`도 `_finish` 뒤에 같은 `if opts.ui:` 블록(현재 rerun은 UI 요소를 잃음). CLI: `an.add_argument("--ui", action="store_true")` → `AnalyzeOptions(..., ui=a.ui)`. 서버 `/api/analyze`: `reference = "ui" if data.get("reference") == "ui" else "mg"`, `write_meta(..., reference=reference)`, `JobSpec.args["options"] = {"ui": reference == "ui"}`. `submit_agent_job`의 analyze도 `options={"ui": meta.get("reference") == "ui"}`. 인제스트: 구간/전체 토글 아래 체크박스 `<label><input type="checkbox" data-reference-ui/> <span data-i18n="ingest.uiReference">UI 화면 녹화</span></label>`, `ingest.js`가 `postAnalyze` body에 `reference: box.checked ? "ui" : "mg"`. i18n en `"UI screen recording"`.
+- [ ] **Step 3: 구현**. `AnalyzeOptions`에 `ui: bool = False`. `analyze_scene_frames`: `try: scene = _parse_ui(...)` 블록을 `if opts.ui:` 안으로. `rerun`도 `_finish` 뒤에 같은 `if opts.ui:` 블록(현재 rerun은 UI 요소를 잃음). CLI: `an.add_argument("--ui", action="store_true")` → `AnalyzeOptions(..., ui=a.ui)`. 서버 `/api/analyze`: `reference = "ui" if data.get("reference") == "ui" else "mg"`, `write_meta(..., reference=reference)`, `JobSpec.args["options"] = {"ui": reference == "ui"}`. `submit_agent_job`의 analyze도 `options={"ui": meta.get("reference") == "ui"}`. 인제스트: 구간/전체 토글 아래 체크박스 `<label><input type="checkbox" data-reference-ui/> <span data-i18n="ingest.uiReference">UI 화면 녹화</span></label>`, `ingest.js`가 `postAnalyze` body에 `reference: box.checked ? "ui" : "mg"`. i18n en `"UI screen recording"`.
 - [ ] **Step 4:** PASS (기존 `tests/test_new_contracts.py`의 `_parse_ui` 직접 호출 테스트는 그대로 통과해야 함)
 - [ ] **Step 5:** Commit `fix(analyze): parse UI components only for UI recordings`
 
@@ -534,7 +534,7 @@ def test_agent_sends_attachment_on_confirm():
 ```
 (`STATIC`은 파일 상단의 기존 정적 경로 상수 이름을 따른다.)
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `agent.html` 입력창 옆: `<input type="file" id="agent-attach" accept="image/png,image/jpeg,image/svg+xml,.glb" hidden><button type="button" class="btn btn--secondary" id="agent-attach-btn" data-i18n="agent.attach">첨부</button><span id="agent-attach-name" class="mono"></span>`. `agent.js`:
+- [ ] **Step 3: 구현**. `agent.html` 입력창 옆: `<input type="file" id="agent-attach" accept="image/png,image/jpeg,image/svg+xml,.glb" hidden><button type="button" class="btn btn--secondary" id="agent-attach-btn" data-i18n="agent.attach">첨부</button><span id="agent-attach-name" class="mono"></span>`. `agent.js`:
 ```js
 import { readFileAsDataUrl } from "/static/js/files.js?v=20261003a";
 let pendingAttachment = null;
@@ -554,9 +554,9 @@ function attachmentMeta() {
 - [ ] **Step 4:** PASS + `/browse`로 `/demo` → 에이전트 → 이미지 첨부 → "e1을 첨부 이미지로 바꿔줘" → 확인 → 새 버전, 요소 크기 유지 확인(LLM 미설정이면 검수 화면 편집 폼으로 동일 확인)
 - [ ] **Step 5:** Commit `feat(agent): attach replacement images in chat`
 
----
+***
 
-## Phase B — AI가 장면을 이해하게
+## Phase B: AI가 장면을 이해하게
 
 ### Task 7: 요소 라벨/캡션 필드 + 장면 브리프를 LLM에
 
@@ -611,7 +611,7 @@ def test_session_agent_sends_brief(tmp_path):
     assert "moves right 160px" in llm.messages[1]["content"]
 ```
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `schema.Element`에 (provenance 아래)
+- [ ] **Step 3: 구현**. `schema.Element`에 (provenance 아래)
 ```python
     label: Optional[str] = None     # VLM suggestion (logo/title/...); never used for timing or geometry
     caption: Optional[str] = None   # VLM description; data, not instructions
@@ -780,7 +780,7 @@ def test_session_agent_forwards_llm_targets(tmp_path):
     assert turn.needs_confirm is True
 ```
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `intent.py`:
+- [ ] **Step 3: 구현**. `intent.py`:
 ```python
 from pydantic import BaseModel, Field, model_validator
 
@@ -1031,9 +1031,9 @@ def vision_llm(workspace: Path | None = None) -> LLMClient | None:
 - [ ] **Step 4:** PASS + 전체 스위트. 비전 LLM이 설정되어 있으면 Task 1 클립 하나를 재분석하고 브리프 라벨이 맞는지 눈으로 확인(README에 1줄)
 - [ ] **Step 5:** Commit `feat(analyze): caption elements with the configured vision LLM`
 
----
+***
 
-## Phase C — 재창작 연산 확장
+## Phase C: 재창작 연산 확장
 
 ### Task 10: keep 충돌을 선택지로(렌더 전 검사)
 
@@ -1078,7 +1078,7 @@ def _shifted(scene):
     return out
 ```
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `agent.edit` 루프에서 `edited = apply_edit(...)` 직후:
+- [ ] **Step 3: 구현**. `agent.edit` 루프에서 `edited = apply_edit(...)` 직후:
 ```python
             ctx = build_context(edited)
             violated = [c.pred for c in edited.constraints if c.keep and not eval_pred(c.pred, ctx)]
@@ -1133,7 +1133,7 @@ def test_background_rejects_element_and_names():
         Target(property="background", value="white")
 ```
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `Prop = Literal["text", "color", "texture", "model", "background"]`, `SCENE_LEVEL = frozenset({"background"})`. `_shape`: 색 검사 조건을 `if self.property in ("color", "background"):`로, 추가로 `if self.property == "background" and self.element is not None: raise ValueError("background targets have no element")`.
+- [ ] **Step 3: 구현**. `Prop = Literal["text", "color", "texture", "model", "background"]`, `SCENE_LEVEL = frozenset({"background"})`. `_shape`: 색 검사 조건을 `if self.property in ("color", "background"):`로, 추가로 `if self.property == "background" and self.element is not None: raise ValueError("background targets have no element")`.
 ```python
 COLOR_NAMES = {"흰색": "#ffffff", "하얀": "#ffffff", "white": "#ffffff", "검정": "#000000", "검은": "#000000", "black": "#000000",
                "빨간": "#e53935", "빨강": "#e53935", "red": "#e53935", "파란": "#1e66f5", "파랑": "#1e66f5", "blue": "#1e66f5",
@@ -1200,7 +1200,7 @@ def test_missing_font_is_a_conflict(monkeypatch):
     assert any(c.id == "font_missing" and c.choices == ["use_fallback"] for c in built.conflicts)
 ```
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — `Prop`에 `"font"`. `_shape`에:
+- [ ] **Step 3: 구현**. `Prop`에 `"font"`. `_shape`에:
 ```python
         if self.property == "font":
             if not (self.value or self.weight):
@@ -1220,7 +1220,7 @@ def test_missing_font_is_a_conflict(monkeypatch):
                 conflicts.append(Conflict(id="overflow", element=el.id, choices=["shrink_font", "wrap", "expand_box"],
                                           reason="바꾼 폰트로는 문구가 원래 상자보다 깁니다."))
 ```
-(`from .textraster import resolve_family` — 테스트가 `keepframe.edit.intent.resolve_family`를 패치하므로 모듈 수준 import.) `apply_edit`:
+(`from .textraster import resolve_family`: 테스트가 `keepframe.edit.intent.resolve_family`를 패치하므로 모듈 수준 import.) `apply_edit`:
 ```python
         elif t.property == "font":
             if el.kind != "text" or not el.canonical.text:
@@ -1395,9 +1395,9 @@ def _asset_prompt(scene: Scene, target: Target, prompt: str) -> str:
 - [ ] **Step 4:** PASS + 전체 스위트
 - [ ] **Step 5:** Commit `feat(edit): give asset generation the element's box and context`
 
----
+***
 
-## Phase D — 분석 품질 (실제 클립 지표로만 채택)
+## Phase D: 분석 품질 (실제 클립 지표로만 채택)
 
 각 Task 마지막에 `keepframe gate-m2-real --clips eval/clips --out eval/out/<task> --max-frames 150`과 `keepframe gate-m2 --out eval/out/m2-<task> --n 20`을 돌려 `docs/qa/core-flow/README.md` 표에 추가한다. **채택 기준:** 합성 m2 게이트 `passed`가 유지되고, 실제 클립 4개 중 3개 이상에서 `mean_l1`이 악화(+0.005 초과)되지 않으며, 해당 Task가 겨냥한 지표가 개선. 기준 미달이면 커밋하지 말고 결과만 README에 기록 후 보고.
 
@@ -1474,7 +1474,7 @@ def foreground_mask_plate(frame: np.ndarray, plate: np.ndarray, thr: float = 12.
 bg = scene.background.value if scene.background.kind == "color" else (
     f'#000 url("{_data_uri(scene_dir / scene.background.value)}") 0 0/100% 100% no-repeat')
 ```
-`composite.composite_scene`: `kind == "image"`이면 `cache`에 `load_texture`로 읽은 배경(RGB float, 0–1, 장면 크기)을 캐시해 `canvas[:] = bg`.
+`composite.composite_scene`: `kind == "image"`이면 `cache`에 `load_texture`로 읽은 배경(RGB float, 0~1, 장면 크기)을 캐시해 `canvas[:] = bg`.
 - [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥 지표: 그라데이션 배경 클립의 `elements` 감소와 `mean_l1` 개선)
 - [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): plate backgrounds for gradient and image scenes`
 
@@ -1482,7 +1482,7 @@ bg = scene.background.value if scene.background.kind == "color" else (
 
 **Files:** Modify `keepframe/analyze/regions.py`, `keepframe/analyze/pipeline.py` (`_stage_regions`) · Test: `tests/test_region_merge.py`
 
-**Interfaces:** Produces: `merge_adjacent_regions(frame_idx: int, frame: np.ndarray, regions: list[Region], max_jump: float = 12.0) -> list[Region]` — 경계를 맞댄 두 영역의 **경계 픽셀 평균 LAB 차이**(평균색 차이 아님: 넓은 그라데이션은 양 끝 평균색이 멀어도 경계에서는 거의 안 끊긴다)가 `max_jump` 이하이면 합친다.
+**Interfaces:** Produces: `merge_adjacent_regions(frame_idx: int, frame: np.ndarray, regions: list[Region], max_jump: float = 12.0) -> list[Region]`. 경계를 맞댄 두 영역의 **경계 픽셀 평균 LAB 차이**(평균색 차이 아님: 넓은 그라데이션은 양 끝 평균색이 멀어도 경계에서는 거의 안 끊긴다)가 `max_jump` 이하이면 합친다.
 
 - [ ] **Step 1: 실패하는 테스트**
 ```python
@@ -1570,7 +1570,7 @@ def merge_adjacent_regions(frame_idx: int, frame: np.ndarray, regions: list[Regi
     return out
 ```
 `_stage_regions`: `rbf.append(merge_adjacent_regions(i, frames[i], extract_regions(...)))`.
-- [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥: `elements` 감소, `low_conf` 감소; 합성 m2 `tracking_ok` 유지가 특히 중요 — 겹친 다른 색 스프라이트가 합쳐지면 회귀)
+- [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥: `elements` 감소, `low_conf` 감소; 합성 m2 `tracking_ok`는 반드시 유지: 겹친 다른 색 스프라이트가 합쳐지면 회귀)
 - [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): merge touching regions of close colour`
 
 ### Task 17: 가림(occlusion) 덩어리를 새 요소로 만들지 않기
@@ -1639,11 +1639,11 @@ def _overlaps(a, b) -> bool:
 - [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(겨냥: `elements` 감소, 합성 m2 `tracking_errors` 유지/감소)
 - [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): leave occlusion blobs as tracking gaps`
 
-### Task 20: 텍스트 트랙 위생 — OCR 잡음 제거 (Task 17 다음에 실행; 기준선 측정으로 추가됨)
+### Task 20: 텍스트 트랙 위생, OCR 잡음 제거 (Task 17 다음에 실행; 기준선 측정으로 추가됨)
 
 **Files:** Modify `keepframe/analyze/text.py`, `keepframe/analyze/pipeline.py` (`_stage_text`) · Test: `tests/test_text_hygiene.py`
 
-**Why:** 실제 클립 기준선에서 텍스트 트랙 33–76개 중 다수가 도형 위의 OCR 오인식(`O`, `0`, `·`, 1프레임 트랙, `ust` 같은 부분 노출)이었다. 이들이 텍스트 요소가 되고, 그 박스가 영역 추출에서 제외되어 도형이 스프라이트로 잡히지도 않는다.
+**Why:** 실제 클립 기준선에서 텍스트 트랙 33~76개 중 다수가 도형 위의 OCR 오인식(`O`, `0`, `·`, 1프레임 트랙, `ust` 같은 부분 노출)이었다. 이들이 텍스트 요소가 되고, 그 박스가 영역 추출에서 제외되어 도형이 스프라이트로 잡히지도 않는다.
 
 **Interfaces:** Produces: `MIN_TEXT_FRAMES = 3`, `CONFIDENT_OCR = 0.9`, `keep_text_track(t: TextTrack) -> bool`, `drop_junk_text(boxes_by_frame, tracks) -> tuple[list[list[TextBox]], list[TextTrack], int]`.
 
@@ -1674,7 +1674,7 @@ def test_drop_junk_text_removes_their_boxes_from_frames():
     assert [t.id for t in kept] == [1] and dropped == 1
     assert [len(f) for f in kept_frames] == [1, 1, 1] and junk.boxes[1] not in kept_frames[1]
 ```
-그리고 파이프라인 테스트 1개: 가짜 OCR(`analyze(..., ocr=fake)`)이 프레임 0–5에서 실제 문구 박스 "Sale"(conf 0.95)과, 프레임 2에서만 원형 도형 위에 `"O"`(conf 0.4)를 돌려줄 때 → 장면의 text 요소는 1개("Sale")이고, 도형은 sprite 요소로 잡힌다(그 박스가 영역 제외 마스크에 들어가지 않음). `report.json` `messages`에 `"text tracks dropped as OCR noise: 1"`.
+그리고 파이프라인 테스트 1개: 가짜 OCR(`analyze(..., ocr=fake)`)이 프레임 0~5에서 실제 문구 박스 "Sale"(conf 0.95)과, 프레임 2에서만 원형 도형 위에 `"O"`(conf 0.4)를 돌려줄 때 → 장면의 text 요소는 1개("Sale")이고, 도형은 sprite 요소로 잡힌다(그 박스가 영역 제외 마스크에 들어가지 않음). `report.json` `messages`에 `"text tracks dropped as OCR noise: 1"`.
 - [ ] **Step 2:** FAIL 확인
 - [ ] **Step 3: 구현** (`text.py`)
 ```python
@@ -1779,11 +1779,11 @@ def font_candidates(stroke: np.ndarray, text: str, size_px: float, k: int = 3) -
 - [ ] **Step 4:** PASS + 전체 스위트 + Phase D 측정(OCR 켠 실제 클립에서 텍스트 요소의 후보가 채워지는지, 시간 증가 ≤ 10% 확인)
 - [ ] **Step 5:** 채택 기준 충족 시 Commit `feat(analyze): rank three installed font candidates per text`
 
----
+***
 
-## Phase E — 종단 검증과 문서
+## Phase E: 종단 검증과 문서
 
-### Task 21: ChatGPT 계정 연동 수리 — LiteLLM 대신 직접 Responses 스트리밍 클라이언트 (사용자 요청, 2026-10-04)
+### Task 21: ChatGPT 계정 연동 수리, LiteLLM 대신 직접 Responses 스트리밍 클라이언트 (사용자 요청, 2026-10-04)
 
 **Files:** Create `keepframe/session/chatgpt_client.py` · Modify `keepframe/session/llm.py` (`make_llm`, 비전 마커), `keepframe/session/provider.py` (chatgpt 기본 모델), `keepframe/session/models.py` (CHATGPT_MODELS) · Test: `tests/test_chatgpt_client.py`
 
@@ -1799,15 +1799,15 @@ def font_candidates(stroke: np.ndarray, text: str, size_px: float, k: int = 3) -
   - 헤더: `Authorization: Bearer <access>`, `chatgpt-account-id`, `OpenAI-Beta: responses=experimental`, `originator`, `session_id`(uuid), `accept: text/event-stream`.
   - 만료 토큰(`oauth_expires_at` 과거)은 기존 `refresh_chatgpt_token(refresh_token)`으로 갱신 후 요청(가짜 갱신 함수로 테스트).
 - [ ] **Step 2:** FAIL 확인
-- [ ] **Step 3: 구현** — 표준 라이브러리 `urllib`로 POST, SSE를 줄 단위로 파싱(`data: {...}`), `response.completed`에서 종료. 엔드포인트 `https://chatgpt.com/backend-api/codex/responses`(LiteLLM 어댑터가 쓰던 것과 동일; `litellm/llms/chatgpt/`의 헤더 구성을 참고하되 의존하지 않음). 요청 타임아웃 120초. 비전 마커 목록(두 클라이언트)에 `"gpt-6"` 추가. chatgpt 기본 모델과 `CHATGPT_MODELS`를 실제로 동작하는 모델로 교체.
-- [ ] **Step 4: 실제 백엔드 확인(구현자, 네트워크 허용)** — `eval/ws/admin/llm.json`의 연결된 계정 설정으로 (a) "Reply with exactly: pong" 텍스트 응답, (b) 도구 1개(`edit`) 스키마로 함수 호출 1회, (c) 작은 PNG를 붙인 비전 요청 1회를 후보 모델(`gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.5` 순)로 시험하고, 성공한 첫 모델을 기본값으로. 결과(모델별 성공/실패와 오류 앞 120자)를 보고서에 기록. 토큰·계정 id는 출력하지 않는다. `eval/ws/admin/llm.json`은 수정하지 않는다(갱신된 토큰은 메모리에서만).
+- [ ] **Step 3: 구현**. 표준 라이브러리 `urllib`로 POST, SSE를 줄 단위로 파싱(`data: {...}`), `response.completed`에서 종료. 엔드포인트 `https://chatgpt.com/backend-api/codex/responses`(LiteLLM 어댑터가 쓰던 것과 동일; `litellm/llms/chatgpt/`의 헤더 구성을 참고하되 의존하지 않음). 요청 타임아웃 120초. 비전 마커 목록(두 클라이언트)에 `"gpt-6"` 추가. chatgpt 기본 모델과 `CHATGPT_MODELS`를 실제로 동작하는 모델로 교체.
+- [ ] **Step 4: 실제 백엔드 확인(구현자, 네트워크 허용)**. `eval/ws/admin/llm.json`의 연결된 계정 설정으로 (a) "Reply with exactly: pong" 텍스트 응답, (b) 도구 1개(`edit`) 스키마로 함수 호출 1회, (c) 작은 PNG를 붙인 비전 요청 1회를 후보 모델(`gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.5` 순)로 시험하고, 성공한 첫 모델을 기본값으로. 결과(모델별 성공/실패와 오류 앞 120자)를 보고서에 기록. 토큰·계정 id는 출력하지 않는다. `eval/ws/admin/llm.json`은 수정하지 않는다(갱신된 토큰은 메모리에서만).
 - [ ] **Step 5:** 전체 스위트 → Commit `fix(session): talk to the ChatGPT backend directly with streamed Responses`
 
 ### Task 19: 자연어 프롬프트 평가 스크립트 + 최종 측정 + 문서
 
 **Files:** Create `scripts/eval_prompts.py` · Modify `README.md`, `docs/superpowers/specs/2026-09-05-keepframe-design.md`(구현 상태 주석), `docs/qa/core-flow/README.md`
 
-**Interfaces:** Consumes: Task 7–14 전부, `vision_llm`/`make_llm`.
+**Interfaces:** Consumes: Task 7~14 전부, `vision_llm`/`make_llm`.
 
 - [ ] **Step 1: 스크립트**
 ```python
@@ -1861,7 +1861,7 @@ if __name__ == "__main__":
 - [ ] **Step 5:** `graphify update .` → 전체 스위트 → Commit `docs: record core-flow evaluation and usage`
 - [ ] **Step 6:** 브랜치 전체 리뷰(superpowers:requesting-code-review) 후 superpowers:finishing-a-development-branch.
 
----
+***
 
 ## Verification (전체)
 
@@ -1873,5 +1873,5 @@ if __name__ == "__main__":
 
 ## Self-Review 메모
 
-- 스펙 대응: §5.2 배경 불확실 → Task 15, §5.3 폰트 후보 → Task 18, §5.4 분할 → Task 16, §5.5 매핑(가림) → Task 17, §5.8 VLM → Task 9, §6 프리셋 → Task 2, §7.2 Interpreter·충돌 → Task 8·10–13, §9 미지원 숨기지 않음 → Task 4·12(font_missing), §10 실제 시험셋 → Task 1·19. 스펙 §5.5 differentiable split/merge, §5.7 UI 상태 검출 고도화는 이번 범위 밖(측정 후 다음 라운드).
-- 타입 일관성: `Target(element, property, value, weight, speed, delay)`, `SCENE_LEVEL`, `describe(targets, has_attachment)`, `apply_keep_preset/carry_keep`, `caption_scene/vision_llm`, `retime_element/retimed_range/retime_scene`, `font_path/resolve_family/render_lines/measure` — 정의 Task와 사용 Task 이름 일치 확인.
+- 스펙 대응: §5.2 배경 불확실 → Task 15, §5.3 폰트 후보 → Task 18, §5.4 분할 → Task 16, §5.5 매핑(가림) → Task 17, §5.8 VLM → Task 9, §6 프리셋 → Task 2, §7.2 Interpreter·충돌 → Task 8·10~13, §9 미지원 숨기지 않음 → Task 4·12(font_missing), §10 실제 시험셋 → Task 1·19. 스펙 §5.5 differentiable split/merge, §5.7 UI 상태 검출 고도화는 이번 범위 밖(측정 후 다음 라운드).
+- 타입 일관성: `Target(element, property, value, weight, speed, delay)`, `SCENE_LEVEL`, `describe(targets, has_attachment)`, `apply_keep_preset/carry_keep`, `caption_scene/vision_llm`, `retime_element/retimed_range/retime_scene`, `font_path/resolve_family/render_lines/measure`. 정의 Task와 사용 Task 이름 일치 확인.

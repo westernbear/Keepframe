@@ -1,4 +1,4 @@
-# Reference Analysis — Stage A (clean layers) Implementation Plan
+# Reference Analysis: Stage A (clean layers) Implementation Plan
 
 > For agentic workers: REQUIRED SUB-SKILL superpowers:subagent-driven-development. **Implementers = Claude subagents** (user decision 2026-10-07, not Codex); a task review per task, a whole-branch review at the end. At Task 0 this plan is copied to `docs/superpowers/plans/2026-10-07-reference-analysis-stage-a.md`. Steps use `- [ ]`.
 
@@ -75,7 +75,7 @@ Also: HTML vs numpy vs AE parity for styled text (Task 8 browser tests); compres
 | 14 | AE export: gradient bg, footage, text styles, PostScript | 1, 8, 11, 13 | **extension + spec** | Node fake AE |
 | 15 | Final eval-edits, time gate, sheets, live AE check (controller) | all | live | yes |
 
----
+***
 
 ## Task 0: workspace, baseline, gold titles, fonts (controller)
 

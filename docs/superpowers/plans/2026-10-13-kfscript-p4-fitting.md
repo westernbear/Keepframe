@@ -1,4 +1,4 @@
-# kf-script P4 · fitting the script to the video — Implementation Plan (task level)
+# kf-script P4 · fitting the script to the video: Implementation Plan (task level)
 
 > **For agentic workers:** this plan is task level. Refine each task into Deliverable / Files / Interfaces / Gates / Tests against the code at that commit before starting. One commit per task.
 
