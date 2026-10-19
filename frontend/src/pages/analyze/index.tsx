@@ -18,7 +18,7 @@ const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5'
 type Job = { id: string; project_id: string; status: string; stage?: string; detail?: string; eta_s?: number; error?: string }
 
 function goToReview(projectId: string) {
-  location.assign(reviewHref(projectId)) // shortcut: full load while /review is a legacy page; navigate() once it lives here
+  location.assign(reviewHref(projectId)) // full page load: the router commits after the URL moves, and callers that wait for the URL read the next page at once
 }
 
 export default function Analyze() {

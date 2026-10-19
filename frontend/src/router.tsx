@@ -1,5 +1,8 @@
-import { useEffect } from 'react'
-import { createBrowserRouter, useLocation } from 'react-router'
+import { Link, createBrowserRouter } from 'react-router'
+import { AppHeader } from './components/app/app-header'
+import { Button } from './components/app/button'
+import Empty from './components/smoothui/empty'
+import { useI18n } from './i18n'
 import { AppShell } from './components/app/shell'
 import Landing from './pages/landing'
 import AdminAudit from './pages/admin/audit'
@@ -14,12 +17,14 @@ import Ingest from './pages/ingest'
 import Library from './pages/library'
 import Review from './pages/review'
 
-// shortcut: routes not yet ported fall through to a full page load (the server still serves their legacy HTML);
-// remove once every page lives here.
-function LegacyPage() {
-  const { pathname, search } = useLocation()
-  useEffect(() => { window.location.replace(pathname + search) }, [pathname, search])
-  return null
+function NotFound() {
+  const { T } = useI18n()
+  return (
+    <div className="min-h-dvh">
+      <AppHeader />
+      <Empty className="py-32" title={T('app.notFound')} action={<Button tone="primary" asChild><Link to="/">{T('nav.home')}</Link></Button>} />
+    </div>
+  )
 }
 
 export const router = createBrowserRouter([
@@ -39,7 +44,7 @@ export const router = createBrowserRouter([
       { path: '/admin/quarantine', element: <AdminQuarantine /> },
       { path: '/admin/audit', element: <AdminAudit /> },
       { path: '/admin/llm', element: <AdminLlm /> },
-      { path: '*', element: <LegacyPage /> },
+      { path: '*', element: <NotFound /> },
     ],
   },
 ])

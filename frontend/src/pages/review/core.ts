@@ -255,7 +255,7 @@ export function createReviewCore(start: ReviewView, patch: (p: Patch) => void) {
   }
 
   function goAgent() {
-    location.assign(agentUrl(live.projectId!, live.sceneId, live.versionId)) // shortcut: full load while /agent is a legacy page
+    location.assign(agentUrl(live.projectId!, live.sceneId, live.versionId)) // full page load: the router commits after the URL moves, and callers that wait for the URL read the next page at once
   }
 
   async function approve() {

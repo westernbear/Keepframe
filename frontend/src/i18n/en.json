@@ -136,6 +136,7 @@
   "workflow.status.review": "Step 3 of 3 · Review",
   "workflow.projectFallback": "No project selected",
   "app.name": "Keepframe",
+  "app.notFound": "There is no page at this address.",
   "nav.home": "Home",
   "nav.primary": "Primary navigation",
   "nav.library": "Library",

@@ -56,7 +56,7 @@ function Row({ p }: { p: Project }) {
     </>
   )
   const cls = 'row group flex items-center gap-4 rounded-xl p-2 pr-3'
-  // shortcut: a full page load while the targets are legacy pages; switch to <Link> once they live in the SPA.
+  // full page load: the router commits after the URL moves, and callers that wait for the URL read the next page at once.
   return href
     ? <a href={href} className={cn(cls, 'state-transition hover:bg-surface-1 focus-visible:bg-surface-1')}>{body}</a>
     : <div className={cls}>{body}</div>

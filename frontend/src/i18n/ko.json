@@ -136,6 +136,7 @@
   "workflow.status.review": "3단계 중 3단계 · 검수",
   "workflow.projectFallback": "프로젝트 없음",
   "app.name": "Keepframe",
+  "app.notFound": "이 주소에는 화면이 없습니다.",
   "nav.primary": "주요 탐색",
   "nav.home": "처음",
   "nav.library": "라이브러리",
