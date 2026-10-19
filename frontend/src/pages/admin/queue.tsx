@@ -59,9 +59,9 @@ export default function AdminQueue() {
                       <td className={cn(td, 'font-mono text-caption text-ink-muted')}>{j.kind}</td>
                       <td className={td}>{j.target}</td>
                       {quarantined ? (
-                        <td className={td} colSpan={4}><span className="badge rounded-full bg-warning/10 px-2.5 py-1 text-micro text-warning">{T('admin.queue.movedToQuarantine')}</span></td>
+                        <td className={td} colSpan={4}><span className="badge rounded-md bg-warning/10 px-2.5 py-1 text-micro text-warning">{T('admin.queue.movedToQuarantine')}</span></td>
                       ) : <>
-                        <td className={td}><span className={cn('badge rounded-full px-2.5 py-1 text-micro font-medium', TONE[jobStatusTone(j.status)] || 'bg-surface-3 text-ink-muted')}>{jobStatusLabel(j.status)}</span></td>
+                        <td className={td}><span className={cn('badge rounded-md px-2.5 py-1 text-micro font-medium', TONE[jobStatusTone(j.status)] || 'bg-surface-3 text-ink-muted')}>{jobStatusLabel(j.status)}</span></td>
                         <td className={cn(td, 'font-mono text-caption text-ink-muted')}>{j.gpu || T('common.none')}</td>
                         <td className={cn(td, 'text-ink-muted')}>{T('common.none')}</td>
                         <td className={cn(td, 'tabular-nums', exhausted ? 'retry--exhausted text-danger' : 'text-ink-muted')}>{retryLabel(j, retryCap)}</td>

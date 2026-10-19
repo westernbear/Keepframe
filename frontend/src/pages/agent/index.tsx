@@ -32,6 +32,7 @@ export default function Agent() {
   const [banner, setBannerState] = useState<{ msg: string; error: boolean; retry?: () => void } | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [sending, setSending] = useState(false)
+  const [thinking, setThinking] = useState<string | null>(null)
   const [attachmentNames, setAttachmentNames] = useState<string[]>([])
   const [fonts, setFonts] = useState<any[]>([])
   const [fontStatus, setFontStatus] = useState<{ key: string; vars?: any; error?: boolean } | null>(null)
@@ -39,7 +40,7 @@ export default function Agent() {
   const [elementsOpen, toggleElements] = useStoredOpen('kf.agent.elementsOpen', false)
   const [fontsOpen, toggleFonts] = useStoredOpen('kf.agent.fontsOpen', false)
   const live = useRef({ st: null as any, versionId: params.get('v') || null as string | null, frame: 0, selectedId: null as string | null,
-    pendingIntent: null as any, pendingPrompt: '', attachments: [] as { file: File; data: string }[], nextId: 0 })
+    pendingIntent: null as any, pendingPrompt: '', attachments: [] as { file: File; data: string }[], nextId: 0, fresh: false })
   const choices = useRef<Record<string, string>>({})
   const aeRefresh = useRef<() => Promise<void>>(async () => {})
   const origImg = useRef<HTMLImageElement>(null)
@@ -71,7 +72,7 @@ export default function Agent() {
     return { previews, transport, setFrame }
   })
 
-  const append = (e: any) => setEntries((list) => [...list, { ...e, id: live.current.nextId++ }])
+  const append = (e: any) => setEntries((list) => [...list, { ...e, id: live.current.nextId++, fresh: live.current.fresh }])
   const appendAgent = (text: string) => append({ kind: 'agent', text })
   const appendConfirm = (onConfirm: () => Promise<boolean | undefined>) => append({ kind: 'confirm', onConfirm })
   const appendChoices = (plan: any) => {
@@ -149,8 +150,10 @@ export default function Agent() {
     if (p.needsConfirm) appendConfirm(() => runConfirm(false))
   }
 
-  function paintTurn(turn: any, actionable = true) {
+  function paintTurn(turn: any, actionable = true, seconds: number | null = null) {
     const view = turnView(turn, actionable)
+    const steps = (turn.reasoning || []).filter((s: unknown) => typeof s === 'string' && s.trim())
+    if (steps.length) append({ kind: 'reasoning', steps, seconds })
     view.toolCalls.forEach((tc) => append({ kind: 'tool', ...tc, reply: view.reply }))
     if (view.reply) appendAgent(view.reply)
     if (view.verify) append({ kind: 'verify', chip: view.verify })
@@ -160,21 +163,23 @@ export default function Agent() {
 
   async function send(text: string, again = false) {
     if (!text || !projectId) return
+    live.current.fresh = true
     live.current.pendingPrompt = text
     if (!again) append({ kind: 'user', text })
-    setBanner(T('agent.readingScreen'))
+    setBanner('')
+    setThinking(T('agent.readingScreen'))
     setSending(true)
     try {
       const l = live.current
       const uiContext = await buildUIContext({ project: projectId, scene: sceneId, version: l.versionId, frame: l.frame, selectedElement: l.selectedId,
         attachmentFiles: l.attachments.map((a) => a.file), reviewState: l.st, renderPayload: rcRef.current.payload, orig: origImg.current!, recon: reconImg.current! })
-      setBanner(T('agent.thinking'))
+      setThinking(T('agent.thinking'))
+      const started = performance.now()
       const turn = await postAgent({ project: projectId, scene: sceneId, v: l.versionId, message: text, ui_context: uiContext })
-      setBanner('')
-      paintTurn(turn)
+      paintTurn(turn, true, Math.max(1, Math.round((performance.now() - started) / 1000)))
     } catch (err: any) {
       setBannerState({ msg: err.message || T('agent.failed'), error: true, retry: () => send(text, true) })
-    } finally { setSending(false) }
+    } finally { setSending(false); setThinking(null) }
   }
 
   async function attach(files: File[]) {
@@ -227,6 +232,7 @@ export default function Agent() {
           if (record.actionable) live.current.pendingPrompt = record.user || ''
           paintTurn(record.turn || {}, record.actionable !== false)
         }
+        live.current.fresh = true
       })
       .then(() => rcRef.current.load())
       .catch((err) => setBanner(err.message || T('agent.failed'), true))
@@ -243,9 +249,9 @@ export default function Agent() {
 
   const context = (
     <div className="flex min-w-0 items-center gap-2">
-      <span id="agent-scene" className="rounded-full bg-surface-1 px-3 py-1.5 font-mono text-caption text-ink-muted">{st ? `${sceneId} · ${st.scene.frames}f` : '—'}</span>
+      <span id="agent-scene" className="rounded-md bg-surface-1 px-3 py-1.5 font-mono text-caption text-ink-muted">{st ? `${sceneId} · ${st.scene.frames}f` : '—'}</span>
       <select id="agent-scene-select" aria-label={T('agent.sceneSelect')} hidden={scenes.length < 2} value={sceneId}
-        className="h-9 min-w-0 rounded-full border border-hairline bg-surface-1 px-3 text-body-sm text-ink outline-none focus-visible:border-brand"
+        className="h-9 min-w-0 rounded-md border border-hairline bg-surface-1 px-3 text-body-sm text-ink outline-none focus-visible:border-brand"
         onChange={(e) => location.assign(`/agent?project=${encodeURIComponent(projectId!)}&scene=${encodeURIComponent(e.target.value)}`)}>
         {scenes.map((s: any) => <option key={s.id} value={s.id}>{sceneOptionLabel(s)}</option>)}
       </select>
@@ -261,7 +267,7 @@ export default function Agent() {
             <h2 className="m-0 text-body-sm font-semibold">{T('agent.title')}</h2>
             <span className="agent-chat__meta font-mono text-micro text-ink-muted" id="agent-model">{st ? T('agent.modelLabel') : '—'}</span>
           </div>
-          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} />
+          <ChatLog entries={entries} empty={empty} choices={choices.current} onChoose={() => runConfirm(true)} thinking={thinking} />
           <Composer onSend={send} sending={sending} attachments={attachmentNames} onAttach={attach} onRemoveAttachment={removeAttachment} />
           <div id="agent-banner" role="status" hidden={!banner}
             className={cn('agent-banner flex items-center justify-between gap-3 border-t border-hairline-soft px-4 py-2.5 text-caption', banner?.error ? 'agent-banner--error bg-danger/10 text-danger' : 'text-ink-muted')}>
@@ -275,7 +281,7 @@ export default function Agent() {
             {([['orig', origImg, 'agent.orig', 'agent.origAlt'], ['recon', reconImg, 'agent.recon', 'agent.reconAlt']] as const).map(([kind, ref, label, alt]) => (
               <div key={kind} className="compare-pane flex min-w-0 flex-col gap-1.5">
                 <div className={cn('compare-pane__head text-caption', kind === 'recon' ? 'text-ink' : 'text-ink-muted')}>{T(label)}</div>
-                <div className="compare-pane__body overflow-hidden rounded-xl bg-black ring-1 ring-inset ring-white/5">
+                <div className="compare-pane__body overflow-hidden rounded-xl bg-black ring-1 ring-inset ring-hairline">
                   <img id={`agent-${kind}`} ref={ref} alt={T(alt)} className="block h-auto w-full" src={shown >= 0 ? media.previews.src(kind, shown) : BLANK} />
                 </div>
               </div>
@@ -283,19 +289,19 @@ export default function Agent() {
           </div>
           <div className="agent-transport flex shrink-0 items-center gap-1.5">
             <button type="button" id="agent-play" aria-label={T(playing ? 'review.pause' : 'review.play')} onClick={() => media.transport.setPlaying(!media.transport.isPlaying())}
-              className={cn('grid size-11 place-items-center rounded-full bg-ink text-black transition-transform active:scale-95', playing && 'is-playing')}>
+              className={cn('grid size-11 place-items-center rounded-md bg-ink text-black transition-transform active:scale-95', playing && 'is-playing')}>
               <Play id="agent-play-icon" className="size-4 translate-x-px" fill="currentColor" aria-hidden {...{ hidden: playing }} />
               <Pause id="agent-pause-icon" className="size-4" fill="currentColor" aria-hidden {...{ hidden: !playing }} />
             </button>
-            <button type="button" id="agent-prev" aria-label={T('review.stepBack')} onClick={() => step(-1)} className="transport__step grid size-11 place-items-center rounded-full text-ink-muted hover:bg-white/5 hover:text-ink"><ChevronLeft className="size-4" aria-hidden /></button>
-            <button type="button" id="agent-next" aria-label={T('review.stepFwd')} onClick={() => step(1)} className="transport__step grid size-11 place-items-center rounded-full text-ink-muted hover:bg-white/5 hover:text-ink"><ChevronRight className="size-4" aria-hidden /></button>
+            <button type="button" id="agent-prev" aria-label={T('review.stepBack')} onClick={() => step(-1)} className="transport__step grid size-11 place-items-center rounded-md text-ink-muted hover:bg-white/5 hover:text-ink"><ChevronLeft className="size-4" aria-hidden /></button>
+            <button type="button" id="agent-next" aria-label={T('review.stepFwd')} onClick={() => step(1)} className="transport__step grid size-11 place-items-center rounded-md text-ink-muted hover:bg-white/5 hover:text-ink"><ChevronRight className="size-4" aria-hidden /></button>
             <span className="ml-2 font-mono text-body-sm font-semibold tabular-nums"><span id="agent-frame">{frame}</span> <span className="font-normal text-ink-muted">/ <span id="agent-total">{st?.scene.frames ?? 0}</span></span></span>
           </div>
 
           <RenderCard r={rc} projectId={projectId} reviewStatus={st?.status} />
           <AeCard projectId={projectId} sceneId={sceneId} versionId={versionId} onReady={onAeReady} />
 
-          <div className="agent-elements rounded-2xl bg-surface-1 px-4 py-1 ring-1 ring-inset ring-white/5">
+          <div className="agent-elements rounded-2xl bg-surface-1 px-4 py-1 ring-1 ring-inset ring-hairline">
             <button type="button" id="agent-elements-toggle" className={disclosureHead} aria-expanded={elementsOpen} aria-controls="agent-elements-list" onClick={toggleElements}>
               <span id="agent-count">{Tf('agent.elementCount', { n: elements.length })}</span>
               <ChevronDown aria-hidden className={cn('size-4 text-ink-muted transition-transform', !elementsOpen && '-rotate-90')} />
@@ -316,7 +322,7 @@ export default function Agent() {
             </div>
           </div>
 
-          <div className="agent-elements agent-fonts rounded-2xl bg-surface-1 px-4 py-1 ring-1 ring-inset ring-white/5">
+          <div className="agent-elements agent-fonts rounded-2xl bg-surface-1 px-4 py-1 ring-1 ring-inset ring-hairline">
             <button type="button" id="agent-fonts-toggle" className={disclosureHead} aria-expanded={fontsOpen} aria-controls="agent-fonts-body" onClick={toggleFonts}>
               <span id="agent-fonts-count">{fonts.length ? Tf('fonts.count', { n: fonts.length }) : T('fonts.title')}</span>
               <ChevronDown aria-hidden className={cn('size-4 text-ink-muted transition-transform', !fontsOpen && '-rotate-90')} />

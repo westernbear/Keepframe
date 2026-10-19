@@ -80,7 +80,7 @@ export default function AdminTenants() {
                         <div className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={cn('h-full rounded-full', over ? 'bg-danger' : 'bg-brand')} style={{ width: `${quotaPct(t)}%` }} /></div>
                       </div>
                       <div className="text-right">
-                        <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-micro font-medium', isTenantWarn(t) ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
+                        <span className={cn('inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-micro font-medium', isTenantWarn(t) ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success')}>
                           {t.status === 'ok' && <span aria-hidden className="size-1.5 rounded-full bg-current" />}{tenantStatusLabel(t.status)}
                         </span>
                       </div>

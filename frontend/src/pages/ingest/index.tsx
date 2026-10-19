@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 
 const ESTIMATE_DEBOUNCE_MS = 200 // typing a frame number sends one estimate, not one per digit
-const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5'
+const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-hairline'
 const numInput = 'h-11 w-20 rounded-lg border border-hairline bg-canvas px-2 text-center font-mono text-body-sm tabular-nums outline-none focus-visible:border-brand'
 
 type Project = { id: string; title?: string; status?: string; video?: any; range?: [number, number]; mode?: string; reference?: string }
@@ -161,7 +161,7 @@ export default function Ingest() {
       <main className="mx-auto grid w-full max-w-[1200px] gap-6 px-4 pt-8 pb-16 md:px-8 md:pt-12 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
         <section className="flex min-w-0 flex-col gap-6">
           <div>
-            <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.03em]">{T('ingest.title')}</h1>
+            <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.02em]">{T('ingest.title')}</h1>
             <p className="mt-2 mb-0 text-body text-ink-muted">{T('ingest.desc')}</p>
           </div>
 
@@ -180,7 +180,7 @@ export default function Ingest() {
                 drag ? 'border-brand bg-brand/5' : 'border-hairline bg-surface-1/40 hover:border-ink-muted/40 hover:bg-surface-1',
               )}
             >
-              <span className="grid size-12 place-items-center rounded-full bg-surface-2 text-ink"><Upload className="size-5" aria-hidden /></span>
+              <span className="grid size-12 place-items-center rounded-md bg-surface-2 text-ink"><Upload className="size-5" aria-hidden /></span>
               <span className="text-body-lg font-medium">{T('ingest.pickFile')}</span>
               <span className="text-caption text-ink-muted">{T('ingest.dropHint')}</span>
             </button>
@@ -197,7 +197,7 @@ export default function Ingest() {
               <div className="mt-0.5 truncate font-mono text-micro text-ink-muted" data-video-meta>{project ? videoMeta(project.video || {}, fps) : T('ingest.uploading')}</div>
             </div>
             <button type="button" aria-label={T('ingest.removeVideo')} data-remove-video onClick={() => { reset(); setError('') }}
-              className="state-transition grid size-11 shrink-0 place-items-center rounded-full text-ink-muted hover:bg-white/5 hover:text-ink">
+              className="state-transition grid size-11 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-white/5 hover:text-ink">
               <X className="size-4" aria-hidden />
             </button>
           </div>

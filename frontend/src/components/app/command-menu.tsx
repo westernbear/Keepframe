@@ -83,7 +83,7 @@ export function CommandTrigger() {
       onClick={openCommandMenu}
       aria-label={T('shell.command.title')}
       aria-keyshortcuts="Meta+K Control+K"
-      className="inline-flex h-9 min-w-11 items-center justify-center gap-2 rounded-full px-3 text-body-sm text-ink-muted ring-1 ring-inset ring-hairline transition-colors hover:text-ink hover:ring-white/20"
+      className="inline-flex h-9 min-w-11 items-center justify-center gap-2 rounded-md px-3 text-body-sm text-ink-muted ring-1 ring-inset ring-hairline transition-colors hover:text-ink hover:ring-white/20"
     >
       <Search className="size-4" aria-hidden />
       <Kbd className="hidden md:inline-flex">{isMac() ? '⌘K' : 'Ctrl K'}</Kbd>

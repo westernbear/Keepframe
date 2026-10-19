@@ -61,7 +61,7 @@ export function Viewer({ view, core }: { view: ReviewView; core: ReviewCore }) {
       <div
         ref={pane}
         id="orig-pane"
-        className="relative w-full overflow-hidden rounded-xl bg-black ring-1 ring-inset ring-white/5"
+        className="relative w-full overflow-hidden rounded-xl bg-black ring-1 ring-inset ring-hairline"
         style={{ aspectRatio: scene ? `${scene.size[0]} / ${scene.size[1]}` : '16 / 9', maxHeight: '58vh' }}
       >
         <img
@@ -126,16 +126,16 @@ export function Viewer({ view, core }: { view: ReviewView; core: ReviewCore }) {
       <div className="transport flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <button type="button" id="play-btn" aria-label={T(view.playing ? 'review.pause' : 'review.play')} onClick={() => core.setPlaying(!core.isPlaying())}
-            className={`grid size-11 place-items-center rounded-full bg-ink text-black transition-transform active:scale-95 ${view.playing ? 'is-playing' : ''}`}>
+            className={`grid size-11 place-items-center rounded-md bg-ink text-black transition-transform active:scale-95 ${view.playing ? 'is-playing' : ''}`}>
             <Play id="play-icon" className="size-4 translate-x-px" fill="currentColor" aria-hidden {...{ hidden: view.playing }} />
             <Pause id="pause-icon" className="size-4" fill="currentColor" aria-hidden {...{ hidden: !view.playing }} />
           </button>
           <button type="button" id="step-back" aria-label={T('review.stepBack')} onClick={() => core.setFrame(view.frame - 1, true)}
-            className="transport__step grid size-11 place-items-center rounded-full text-ink-muted hover:bg-white/5 hover:text-ink">
+            className="transport__step grid size-11 place-items-center rounded-md text-ink-muted hover:bg-white/5 hover:text-ink">
             <ChevronLeft className="size-4" aria-hidden />
           </button>
           <button type="button" id="step-fwd" aria-label={T('review.stepFwd')} onClick={() => core.setFrame(view.frame + 1, true)}
-            className="transport__step grid size-11 place-items-center rounded-full text-ink-muted hover:bg-white/5 hover:text-ink">
+            className="transport__step grid size-11 place-items-center rounded-md text-ink-muted hover:bg-white/5 hover:text-ink">
             <ChevronRight className="size-4" aria-hidden />
           </button>
           <span className="ml-2 font-mono text-body-sm font-semibold tabular-nums">

@@ -15,7 +15,7 @@ import {
 import { cn } from '@/lib/utils'
 
 const projectIdOf = (params: URLSearchParams) => params.get('job') || params.get('project')
-const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5'
+const card = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-hairline'
 type Job = { id: string; project_id: string; status: string; stage?: string; detail?: string; eta_s?: number; error?: string; cancel_requested?: boolean }
 
 function goToReview(projectId: string) {
@@ -101,7 +101,7 @@ export default function Analyze() {
       </AppHeader>
       <main className="mx-auto grid w-full max-w-[1200px] gap-6 px-4 pt-8 pb-16 md:px-8 md:pt-12 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-10">
         <section className="flex min-w-0 flex-col gap-4">
-          <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.03em]">{T('analyze.running')}</h1>
+          <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.02em]">{T('analyze.running')}</h1>
           <div className={cn(card, 'p-3')} hidden={idle}>
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8" data-filmstrip>
               {(frames.length && !failed ? frames : Array.from({ length: DEFAULT_FILMSTRIP_COUNT }, () => '')).map((url, i, all) => (

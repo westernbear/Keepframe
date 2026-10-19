@@ -29,6 +29,7 @@ def test_openai_client_parses_tool_calls(monkeypatch):
                         {
                             "message": {
                                 "content": None,
+                                "reasoning_content": " edit가 맞다 ",
                                 "tool_calls": [
                                     {
                                         "id": "call_1",
@@ -48,6 +49,7 @@ def test_openai_client_parses_tool_calls(monkeypatch):
     assert reply.content == ""
     assert reply.tool_calls[0]["name"] == "edit"
     assert reply.tool_calls[0]["arguments"] == {"prompt": "문구를 Hello로"}
+    assert reply.reasoning == "edit가 맞다"
 
 
 def test_openai_client_posts_tools(monkeypatch):
@@ -154,6 +156,7 @@ def test_litellm_client_calls_and_parses(monkeypatch):
     class _Msg:
         content = ""
         tool_calls = [_TC()]
+        reasoning_content = "문구 편집이다"
 
     class _Choice:
         message = _Msg()
@@ -174,6 +177,7 @@ def test_litellm_client_calls_and_parses(monkeypatch):
     assert reply.tool_calls[0]["arguments"] == {"prompt": "문구를 Hello로"}
     assert captured["kwargs"]["model"] == "openai/gpt-4o-mini"
     assert captured["kwargs"]["api_key"] == "k"
+    assert reply.reasoning == "문구 편집이다"
 
 
 @pytest.mark.parametrize("extra, expected", [({}, 120), ({"timeout": 30}, 30)])

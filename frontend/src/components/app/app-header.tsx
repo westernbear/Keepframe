@@ -6,7 +6,7 @@ import { MakerNav, type NavExtra } from './maker-nav'
 export function Brand() {
   const { T } = useI18n()
   return (
-    <Link to="/" className="header__brand flex shrink-0 items-center gap-2.5 font-display text-[17px] font-semibold tracking-[-0.03em]" aria-label="Keepframe">
+    <Link to="/" className="header__brand flex shrink-0 items-center gap-2.5 font-display text-[17px] font-semibold tracking-[-0.02em]" aria-label="Keepframe">
       <img className="header__logo size-7 rounded-md" src="/static/logo.png" width={28} height={28} alt="" />
       <span>{T('app.name')}</span>
     </Link>

@@ -110,7 +110,7 @@ def test_api_prefetches_review_frames():
 
 def test_css_tokens_match_design():
     css = spa_src("styles.css")
-    assert "#090909" in css and "#0099ff" in css and "#ffffff" in css
+    assert "#0b0b0c" in css and "#ffb020" in css and "#eeeef0" in css   # DESIGN.md canvas, signal, ink
 
 
 def test_hidden_wins_over_display():
@@ -226,7 +226,7 @@ def test_final_ae_upgrade_and_live_check_docs_match_slice_one():
     guide = (ROOT / "docs/qa/ae-extension/live-check.md").read_text()
     assert "Scripts/ScriptUI Panels/keepframe_panel.jsx" in readme
     assert "KEEPFRAME_AE_RELAY_*" in readme and "no longer used" in readme
-    assert "Docker images do not include a built ZXP" in readme
+    assert "Docker images build and sign the ZXP themselves" in readme
     assert "scripts/build_zxp.sh" in readme and "keepframe/ae/static/keepframe.zxp" in readme
     assert "source checkout" in readme
     assert "results are not filled in yet" not in guide

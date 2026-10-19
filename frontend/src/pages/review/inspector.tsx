@@ -45,7 +45,7 @@ function ObjectDetail({ view, core }: { view: ReviewView; core: ReviewCore }) {
   const d = objectDetail(item, view.overlay?.objects.find((o: any) => o.id === item.id), st.analysis?.objects.find((o: any) => o.id === item.id), st.analysis, view.versionId, st.project.versions)
   return (
     <section id="object-detail" className="object-detail flex flex-col gap-3 rounded-xl bg-surface-2/60 p-3.5" aria-live="polite">
-      <h2 className="m-0 text-body-sm font-semibold">{d.title}</h2>
+      <h2 className="m-0 text-body-lg font-semibold">{d.title}</h2>
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-caption">
         {d.lines.map(([k, v]) => (
           <div key={k} className="contents"><dt className="text-ink-muted">{T(k)}</dt><dd className="m-0 min-w-0 break-words tabular-nums">{v}</dd></div>
@@ -88,7 +88,7 @@ function EditPanel({ view, core }: { view: ReviewView; core: ReviewCore }) {
         <input id="edit-prompt" className={field} type="text" value={e.prompt} onChange={(ev) => core.setEdit({ prompt: ev.target.value })} />
       </label>
       <label className={labelCls}>{T('review.editAttach')}
-        <input id="edit-file" type="file" accept="image/png,image/jpeg,image/webp" className="text-caption text-ink-muted file:mr-3 file:rounded-full file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-ink"
+        <input id="edit-file" type="file" accept="image/png,image/jpeg,image/webp" className="text-caption text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-ink"
           onChange={(ev) => core.setEdit({ file: ev.target.files?.[0] || null })} />
       </label>
       {e.summary && <p className="m-0 rounded-lg bg-surface-2 p-3 text-body-sm" id="edit-summary">{e.summary}</p>}
@@ -143,13 +143,13 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
         {view.banner?.msg}
       </p>
       {st && !elements.length && <div id="empty-state" className="empty-state rounded-xl bg-surface-1 p-4 text-body-sm text-ink-muted">{T('review.empty')}</div>}
-      <input id="element-filter" type="search" className={cn('element-filter', field, 'rounded-full bg-surface-1')} placeholder={T('review.filter')} aria-label={T('review.filter')}
+      <input id="element-filter" type="search" className={cn('element-filter', field, 'rounded-md bg-surface-1')} placeholder={T('review.filter')} aria-label={T('review.filter')}
         hidden={!elements.length} value={view.filter} onChange={(e) => core.patch({ filter: e.target.value })} />
       <ElementList elements={elements} selectedId={view.selectedId} filter={view.filter} core={core} />
       <ObjectDetail view={view} core={core} />
 
       {st && (
-        <section className="review-constraints flex flex-col gap-3 rounded-xl bg-surface-1 p-3.5 ring-1 ring-inset ring-white/5" aria-labelledby="keep-title">
+        <section className="review-constraints flex flex-col gap-3 rounded-xl bg-surface-1 p-3.5 ring-1 ring-inset ring-hairline" aria-labelledby="keep-title">
           <div className="flex flex-col gap-0.5">
             <h3 id="keep-title" className="m-0 text-body-sm font-medium">{T('review.keep')}</h3>
             <p className="m-0 text-caption text-ink-muted">{!constraints.length ? T('review.keepNone') : Tf('review.keepHint', { n: constraints.filter((c: any) => constraintChecked(c, view.keepPending)).length, total: constraints.length })}</p>
@@ -192,14 +192,14 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
       <Button tone="primary" id="keep-save" hidden={!keepDirty} disabled={!keepDirty || view.jobRunning} onClick={() => core.saveKeep()}>{T('review.keepSave')}</Button>
 
       {item && fontPicker(item) && (
-        <fieldset className="m-0 min-w-0 rounded-xl border-0 bg-surface-1 p-3.5 ring-1 ring-inset ring-white/5" disabled={formsDisabled}>
+        <fieldset className="m-0 min-w-0 rounded-xl border-0 bg-surface-1 p-3.5 ring-1 ring-inset ring-hairline" disabled={formsDisabled}>
           <FontCandidates key={`${item.id}-${view.versionId}`} item={item} core={core} />
         </fieldset>
       )}
       {!(item && fontPicker(item)) && <div id="font-candidates" hidden />}
 
       {st && (
-        <TabsRoot value={view.tool} onValueChange={(v) => core.patch({ tool: v as Tool })} className="rounded-xl bg-surface-1 ring-1 ring-inset ring-white/5">
+        <TabsRoot value={view.tool} onValueChange={(v) => core.patch({ tool: v as Tool })} className="rounded-xl bg-surface-1 ring-1 ring-inset ring-hairline">
           <TabsList variant="underline" className="overflow-x-auto px-1 [scrollbar-width:none]">
             {TOOLS.map(([k, label]) => <TabsTab key={k} value={k} className="px-2.5 py-2.5 text-caption">{T(label)}</TabsTab>)}
             <TabsIndicator />
@@ -231,7 +231,7 @@ export function Inspector({ view, core }: { view: ReviewView; core: ReviewCore }
               </TabsPanel>
               <TabsPanel value="mask" className="flex flex-col gap-3 pt-0 text-ink" id="acc-mask">
                 <label className={labelCls}>{T('review.png')}
-                  <input id="mask-file" type="file" accept="image/png" className="text-caption text-ink-muted file:mr-3 file:rounded-full file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-ink"
+                  <input id="mask-file" type="file" accept="image/png" className="text-caption text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-ink"
                     onChange={(e) => setForm({ maskFile: e.target.files?.[0] || null })} />
                 </label>
                 <label className={labelCls}>{T('review.frame')}<input id="mask-frame" className={field} type="number" value={f.maskFrame} onChange={(e) => setForm({ maskFrame: e.target.value })} /></label>

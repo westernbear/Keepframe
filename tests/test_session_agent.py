@@ -49,6 +49,18 @@ def test_turn_runs_tool_then_replies(tmp_path):
     assert turn.reply == "리포트를 만들었습니다."
 
 
+def test_turn_keeps_each_steps_thinking_trace(tmp_path):
+    replies = [
+        AssistantReply(tool_calls=[{"id": "c1", "name": "report", "arguments": {}}], reasoning="리포트가 먼저 필요하다"),
+        AssistantReply(content="끝"),
+        AssistantReply(content="두 번째", reasoning="짧게 답한다"),
+    ]
+    agent = SessionAgent(StubLLM(replies))
+    ctx = _ctx(_project(tmp_path))
+    assert agent.turn(ctx, "리포트 줘", []).to_json()["reasoning"] == ["리포트가 먼저 필요하다"]
+    assert agent.turn(ctx, "다시", []).reasoning == ["짧게 답한다"]
+
+
 @pytest.mark.parametrize("confirm", [False, True])
 def test_turn_stops_on_pending(tmp_path, confirm):
     root = tmp_path / "proj"

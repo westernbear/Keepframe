@@ -98,3 +98,17 @@ def test_stamp_keeps_the_source_major_and_sorts_after_older_builds(tmp_path, mon
     assert versions == {"1.2.0": "1.20261006.123045123", "2.0.0": "2.20261006.123045123"}
     assert tuple(map(int, versions["1.2.0"].split("."))) > (1, 20261007 - 1, 95826219)
     assert "const SPEC_LEVEL = 4;" in (ROOT / "extension/js/core.js").read_text()
+
+
+def test_docker_build_stamps_without_git(tmp_path, monkeypatch):
+    stage = tmp_path / "stage"
+    for name in ["CSXS/manifest.xml", "js/core.js", "host/keepframe.jsx"]:
+        (stage / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / "extension" / name, stage / name)
+    monkeypatch.setenv("KEEPFRAME_BUILD_REV", "image-0.1.0")
+    monkeypatch.setattr("scripts.zxp.stamp.subprocess.check_output", lambda *a, **k: pytest.fail("no git in a Docker build"))
+    stamp(stage, ROOT)
+    assert '-image-0.1.0"' in (stage / "js/core.js").read_text()
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "COPY --from=zxp /out/keepframe.zxp ./keepframe/ae/static/keepframe.zxp" in dockerfile
+    assert "!scripts/zxp/stamp.py" in (ROOT / ".dockerignore").read_text()

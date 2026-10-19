@@ -183,10 +183,11 @@ When upgrading, remove the old `Scripts/ScriptUI Panels/keepframe_panel.jsx`
 from the After Effects installation, install the new ZXP, then fully quit and
 restart AE. The `KEEPFRAME_AE_RELAY_*` environment variables are no longer used.
 
-Docker images do not include a built ZXP. Build it from a source checkout with
-`scripts/build_zxp.sh` and place it at `keepframe/ae/static/keepframe.zxp` in the
-server's installation (mount that file into a container), or run the server from
-the source checkout where the build script writes it.
+Docker images build and sign the ZXP themselves (a Wine stage in `Dockerfile`), so
+**AE 확장 다운로드** works out of the box. Each image build makes a new self-signed
+certificate; to keep one publisher identity across upgrades, sign from a source checkout with
+`scripts/build_zxp.sh` (it keeps its certificate in `~/.config/keepframe`) and mount
+that `keepframe.zxp` over `keepframe/ae/static/keepframe.zxp` inside the container.
 
 ## CLI
 

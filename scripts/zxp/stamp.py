@@ -1,4 +1,5 @@
 """Stamp the staged extension only; run before ZXP signing."""
+import os
 import re
 import subprocess
 import sys
@@ -26,8 +27,10 @@ def stamp(stage, repo):
     # sorts above the installed one (an equal or older version does not replace it). The minor therefore cannot
     # carry features; the panel declares what it draws in X-Keepframe-Spec-Level. The protocol major is kept.
     version = f"{major}.{date:%Y%m%d}.{int(date.strftime('%H%M%S')) * 1000 + now // 1_000_000 % 1000}"
-    build = version + "-" + git("rev-parse", "--short", "HEAD")
-    if git("status", "--porcelain"):
+    # KEEPFRAME_BUILD_REV: a Docker build has no .git in its context
+    rev = os.environ.get("KEEPFRAME_BUILD_REV")
+    build = version + "-" + (rev or git("rev-parse", "--short", "HEAD"))
+    if not rev and git("status", "--porcelain"):
         build += "-dirty"
     replacements = {
         "CSXS/manifest.xml": [(f'Version="{placeholder}"', f'Version="{version}"', 2)],

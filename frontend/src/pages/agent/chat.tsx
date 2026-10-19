@@ -1,17 +1,45 @@
 import { BarChart3, Download, FileText, Lock, Paperclip, PencilLine, Play, ShieldCheck, Wrench, Workflow, X } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Reasoning } from '@/components/ai-elements/reasoning'
+import { BlurText } from '@/components/reactbits/blur-text'
+import AILoader from '@/components/smoothui/ai-loader'
+import { ShimmeringText } from '@/components/unlumen-ui/shimmering-text'
 import { Button } from '@/components/app/button'
 import { useI18n } from '@/i18n'
 import { toolCallAddsInformation, toolCallLogArgs, toolStatus, verifyChipText, type VerifyChip } from '@/lib/agent-chat'
 import { confirmGuard } from '@/lib/agent-corrections'
 import { cn } from '@/lib/utils'
 
-export type Entry =
+export type Entry = { fresh?: boolean } & (
   | { id: number; kind: 'user' | 'agent'; text: string }
+  | { id: number; kind: 'reasoning'; steps: string[]; seconds: number | null }
   | { id: number; kind: 'tool'; name: string; args: any; result: any; reply: string }
   | { id: number; kind: 'verify'; chip: VerifyChip }
   | { id: number; kind: 'choices'; plan: any }
-  | { id: number; kind: 'confirm'; onConfirm: () => Promise<boolean | undefined> }
+  | { id: number; kind: 'confirm'; onConfirm: () => Promise<boolean | undefined> })
+
+const EASE_OUT = [0.23, 1, 0.32, 1] as const
+
+/** The assistant's slot while a turn runs: what it is doing, a breathing loader and the elapsed time. */
+function Thinking({ label }: { label: string }) {
+  const { T } = useI18n()
+  const reduced = useReducedMotion()
+  return (
+    <motion.div className="msg msg--thinking flex flex-col items-start gap-1" data-thinking
+      initial={reduced ? { opacity: 0 } : { opacity: 0, y: 4, filter: 'blur(4px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.24, ease: EASE_OUT }}>
+      <div className="msg__label text-micro text-ink-muted">{T('agent.assistant')}</div>
+      <div className="flex items-center gap-2.5 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-body-sm">
+        <AILoader variant="dots" showElapsed srLabel={label} className="gap-2.5 text-caption text-ink-muted"
+          label={reduced ? <span className="text-ink">{label}</span>
+            : <motion.span key={label} initial={{ opacity: 0, filter: 'blur(3px)' }} animate={{ opacity: 1, filter: 'blur(0px)' }} transition={{ duration: 0.2 }}>
+                <ShimmeringText text={label} duration={1.6} repeatDelay={0.2} startOnView={false} className="text-body-sm" />
+              </motion.span>} />
+      </div>
+    </motion.div>
+  )
+}
 
 const TOOLS = [
   ['analyze', 'agent.tool.analyze', BarChart3], ['correct', 'agent.tool.correct', Wrench], ['set_keep', 'agent.tool.keep', Lock],
@@ -54,7 +82,7 @@ function ToolCall({ e }: { e: Extract<Entry, { kind: 'tool' }> }) {
   const { T } = useI18n()
   const ok = Boolean(e.result.ok)
   return (
-    <div className="toolcall rounded-xl bg-surface-2/60 px-3 py-2 ring-1 ring-inset ring-white/5" data-tool={e.name} data-ok={String(ok)}>
+    <div className="toolcall rounded-xl bg-surface-2/60 px-3 py-2 ring-1 ring-inset ring-hairline" data-tool={e.name} data-ok={String(ok)}>
       <div className="toolcall__head flex items-center gap-2 text-caption">
         <span className={cn('toolcall__status inline-flex items-center gap-1.5 font-medium', ok ? 'toolcall__status--ok text-success' : 'toolcall__status--fail text-danger')}>
           <span aria-hidden className="size-1.5 rounded-full bg-current" />{toolStatus(e.name, ok)}
@@ -70,33 +98,47 @@ function ToolCall({ e }: { e: Extract<Entry, { kind: 'tool' }> }) {
   )
 }
 
-export function ChatLog({ entries, empty, choices, onChoose }: { entries: Entry[]; empty: string | null; choices: Record<string, string>; onChoose: () => void }) {
-  const { T } = useI18n()
+export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entries: Entry[]; empty: string | null; choices: Record<string, string>;
+  onChoose: () => void; thinking: string | null }) {
+  const { T, Tf } = useI18n()
+  const reduced = useReducedMotion()
   const log = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight }, [entries.length])
+  useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight }, [entries.length, thinking])
+  // Only entries painted by a live turn arrive; replayed history is simply there.
+  const arrive = (e: Entry, node: React.ReactNode) => !e.fresh ? node : (
+    <motion.div key={e.id} className="flex flex-col"
+      initial={reduced ? { opacity: 0 } : { opacity: 0, y: e.kind === 'user' ? 8 : 4, filter: 'blur(4px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} transition={{ duration: 0.22, ease: EASE_OUT }}>{node}</motion.div>
+  )
   return (
     <div className="agent-chat__log flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" id="agent-log" ref={log}>
       <p className="agent-empty m-0 text-body-sm text-ink-muted" id="agent-empty" hidden={!empty}>{empty}</p>
-      {entries.map((e) => {
+      {entries.map((e) => arrive(e, ((): React.ReactNode => {
         if (e.kind === 'user' || e.kind === 'agent') return (
           <div key={e.id} className={cn('msg flex flex-col gap-1', e.kind === 'user' ? 'msg--user items-end' : 'msg--agent items-start')}>
             <div className="msg__label text-micro text-ink-muted">{T(e.kind === 'user' ? 'agent.you' : 'agent.assistant')}</div>
-            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm whitespace-pre-line break-words', e.kind === 'user' ? 'bg-ink text-black' : 'bg-surface-2 text-ink')}>{e.text}</div>
+            <div className={cn('msg__body max-w-[92%] rounded-2xl px-3.5 py-2.5 text-body-sm whitespace-pre-line break-words', e.kind === 'user' ? 'bg-ink text-black' : 'bg-surface-2 text-ink')}>
+              {e.kind === 'agent' && e.fresh ? <BlurText text={e.text} /> : e.text}
+            </div>
           </div>
+        )
+        if (e.kind === 'reasoning') return (
+          <Reasoning key={e.id} steps={e.steps} label={e.seconds == null ? T('agent.reasoning') : Tf('agent.reasoningFor', { n: e.seconds })} />
         )
         if (e.kind === 'tool') return <ToolCall key={e.id} e={e} />
         if (e.kind === 'verify') {
           const { text, title } = verifyChipText(e.chip)
           return (
             <span key={e.id} title={title} aria-label={title}
-              className={cn('verify-chip self-start rounded-full px-3 py-1 text-caption font-medium', `verify-chip--${e.chip.tone}`,
+              className={cn('verify-chip self-start rounded-md px-3 py-1 text-caption font-medium', `verify-chip--${e.chip.tone}`,
                 e.chip.tone === 'pass' ? 'bg-success/15 text-success' : e.chip.tone === 'warn' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger')}>{text}</span>
           )
         }
         if (e.kind === 'choices') return <Choices key={e.id} plan={e.plan} choices={choices} onChoose={onChoose} />
         const c = e as Extract<Entry, { kind: 'confirm' }>
         return <ConfirmButton key={c.id} onConfirm={c.onConfirm} label={T('agent.confirm')} />
-      })}
+      })()))}
+      {thinking && <Thinking label={thinking} />}
     </div>
   )
 }

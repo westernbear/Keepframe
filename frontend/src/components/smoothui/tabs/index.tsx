@@ -53,7 +53,7 @@ const listStyles = (variant: TabsVariant) =>
   cn(
     "relative flex min-w-0",
     variant === "underline" && "w-full gap-1 border-border border-b",
-    variant === "pill" && "w-fit gap-1 rounded-full bg-foreground/10 p-1",
+    variant === "pill" && "w-fit gap-1 rounded-md bg-foreground/10 p-0.5",
     variant === "segment" && "w-full gap-0 rounded-lg bg-foreground/10 p-1"
   );
 
@@ -64,7 +64,7 @@ const tabStyles = (variant: TabsVariant) =>
     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     "data-disabled:pointer-events-none data-active:text-foreground data-disabled:text-muted-foreground",
     variant === "underline" && "rounded-t-md",
-    variant === "pill" && "rounded-full",
+    variant === "pill" && "rounded-sm",
     variant === "segment" && "min-w-0 flex-1 rounded-md"
   );
 
@@ -76,7 +76,7 @@ const indicatorStyles = (variant: TabsVariant, reduceMotion: boolean) =>
       : "transition-[transform,width,height] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
     variant === "underline" && "bg-brand",
     variant === "pill" &&
-      "rounded-full border border-foreground/15 bg-background shadow-sm dark:bg-foreground/15",
+      "rounded-sm border border-foreground/15 bg-background shadow-sm dark:bg-foreground/15",
     variant === "segment" &&
       "rounded-md border border-foreground/15 bg-background shadow-sm dark:bg-foreground/15"
   );

@@ -211,13 +211,15 @@ class ChatGPTClient:
                 result = event.get("response") or {}
                 if result.get("error") or result.get("status") in {"failed", "incomplete"}:
                     raise self._error("ChatGPT 응답 실패", result.get("error") or result) from None
-                reply.content = reply.content.strip()
+                reply.content, reply.reasoning = reply.content.strip(), reply.reasoning.strip()
                 return reply
             if kind != "response.output_item.done":
                 continue
             item = event.get("item") or {}
             if item.get("type") == "message":
                 reply.content += "".join(part.get("text", "") for part in item.get("content") or [] if part.get("type") == "output_text")
+            elif item.get("type") == "reasoning":
+                reply.reasoning += "".join(part.get("text", "") for part in item.get("summary") or [] if part.get("type") == "summary_text")
             elif item.get("type") == "function_call":
                 try:
                     arguments = json.loads(item.get("arguments") or "{}")

@@ -10,7 +10,7 @@ import { Inspector } from './inspector'
 import { Timeline } from './timeline'
 import { Viewer } from './viewer'
 
-const select = 'h-9 min-w-0 rounded-full border border-hairline bg-surface-1 px-3 text-body-sm text-ink outline-none focus-visible:border-brand'
+const select = 'h-9 min-w-0 rounded-md border border-hairline bg-surface-1 px-3 text-body-sm text-ink outline-none focus-visible:border-brand'
 
 export default function Review() {
   const { T } = useI18n()
@@ -34,7 +34,7 @@ export default function Review() {
   )
   const context = (
     <div className="flex min-w-0 flex-wrap items-center gap-2" hidden={!view.projectId}>
-      <span id="scene-badge" className="rounded-full bg-surface-1 px-3 py-1.5 font-mono text-caption text-ink-muted">{st ? sceneBadge(view.sceneId, st.scene.frames) : '—'}</span>
+      <span id="scene-badge" className="rounded-md bg-surface-1 px-3 py-1.5 font-mono text-caption text-ink-muted">{st ? sceneBadge(view.sceneId, st.scene.frames) : '—'}</span>
       <select id="scene-select" className={select} aria-label={T('ingest.scenes')} hidden={scenes.length < 2} value={view.sceneId} onChange={(e) => core.switchScene(e.target.value)}>
         {scenes.map((s: any) => <option key={s.id} value={s.id}>{sceneOptionLabel(s)}</option>)}
       </select>

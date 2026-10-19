@@ -34,7 +34,7 @@ export function AdminShell({ page, title, actions, children }: {
               href={`/admin/${p}`}
               aria-current={p === page ? 'page' : undefined}
               className={cn(
-                'admin-sidebar__link inline-flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-full px-3 text-body-sm font-medium transition-colors md:justify-start md:rounded-lg',
+                'admin-sidebar__link inline-flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-md px-3 text-body-sm font-medium transition-colors md:justify-start md:rounded-lg',
                 p === page ? 'admin-sidebar__link--active bg-surface-2 text-ink' : 'text-ink-muted hover:bg-white/5 hover:text-ink',
               )}
             >
@@ -42,7 +42,7 @@ export function AdminShell({ page, title, actions, children }: {
               <span>{T(`admin.${p}`)}</span>
             </a>
           ))}
-          <a href="/" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-full px-3 text-body-sm text-ink-muted transition-colors hover:text-ink md:mt-auto md:justify-start md:rounded-lg">
+          <a href="/" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-md px-3 text-body-sm text-ink-muted transition-colors hover:text-ink md:mt-auto md:justify-start md:rounded-lg">
             <ArrowLeft className="size-4 shrink-0" aria-hidden />
             <span className="max-md:sr-only">{T('admin.backToApp')}</span>
           </a>

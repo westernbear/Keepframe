@@ -47,8 +47,9 @@ queue, quarantine, audit, LLM settings) is for the operator. Runs as a local or 
 ## Brand Commitments
 
 - Name **Keepframe**, logo at `keepframe/web/static/logo.png` and `docs/assets/logo.png`.
-- Visual system: `DESIGN.md` (dark canvas, white pill CTAs, single blue accent, gradient spotlight tiles). The user
-  decided on 2026-10-19 to keep and refine it.
+- Visual system: `DESIGN.md` "Instrument" (flat near-black surfaces, hairline rules, 4–6px radii, one amber signal
+  colour for measured and selected things). On 2026-10-19 the user asked to replace the earlier Framer-derived look
+  (gradient glows, white pills, numbered cards) as AI slop.
 - Copy is plain and literal: say what the product measures and what it refuses (live-action).
 
 ## Evidence on Hand

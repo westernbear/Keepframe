@@ -45,9 +45,11 @@ class SessionTurn:
     needs_confirm: bool = False
     needs_choice: bool = False
     error: str | None = None
+    reasoning: list[str] = field(default_factory=list)   # one entry per LLM step that returned a thinking trace
 
     def to_json(self) -> dict[str, Any]:
         return {
+            "reasoning": self.reasoning,
             "reply": self.reply,
             "status": self.status,
             "tool_calls": self.tool_calls,
@@ -121,6 +123,8 @@ class SessionAgent:
         turn = SessionTurn()
         for _ in range(MAX_STEPS):
             reply: AssistantReply = self.llm.complete(messages, TOOL_SCHEMAS)
+            if reply.reasoning:
+                turn.reasoning.append(reply.reasoning)
             if not reply.tool_calls:
                 turn.reply = reply.content
                 return turn

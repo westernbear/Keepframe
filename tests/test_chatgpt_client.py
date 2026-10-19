@@ -86,6 +86,14 @@ def test_streamed_text_and_completed_stop(config, backend):
     assert backend["requests"][0]["path"] == "/backend-api/codex/responses"
 
 
+def test_streamed_reasoning_summary(config, backend):
+    backend["events"] = [{"type": "response.output_item.done", "item": {
+        "type": "reasoning", "summary": [{"type": "summary_text", "text": "인사에 답한다"}],
+    }}, message("pong"), COMPLETED]
+    reply = ChatGPTClient(config, base_url=backend["url"]).complete([{"role": "user", "content": "ping"}], [])
+    assert reply == AssistantReply(content="pong", reasoning="인사에 답한다")
+
+
 def test_streamed_function_calls(config, backend):
     backend["events"] = [{"type": "response.output_item.done", "item": {
         "type": "function_call", "call_id": "call_edit", "name": "edit", "arguments": '{"prompt":"문구 변경"}',
