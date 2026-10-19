@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-export const panel = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5'
+export const panel = 'rounded-2xl bg-surface-1 ring-1 ring-inset ring-hairline'
 export const sectionLabel = 'section-label text-micro font-semibold tracking-wide text-ink-muted uppercase'
 export const th = 'px-3 py-2.5 text-left text-micro font-semibold tracking-wide whitespace-nowrap text-ink-muted uppercase'
 export const td = 'px-3 py-3 align-middle'

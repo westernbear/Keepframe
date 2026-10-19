@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n'
 import { storedOpen } from '@/lib/agent-view'
 import { cn } from '@/lib/utils'
 
-export const card = 'render-card flex flex-col gap-3 rounded-2xl bg-surface-1 p-4 ring-1 ring-inset ring-white/5'
+export const card = 'render-card flex flex-col gap-3 rounded-2xl bg-surface-1 p-4 ring-1 ring-inset ring-hairline'
 export const lock = 'render-card__lock m-0 text-caption text-ink-muted'
 // A transparent fill that still differs from a bare <button>: the card's buttons are all visibly styled controls.
 export const toggleCls = 'card-toggle inline-flex min-h-11 items-center gap-2 rounded-lg bg-white/0 text-left text-body-sm font-semibold text-ink hover:text-ink-muted'

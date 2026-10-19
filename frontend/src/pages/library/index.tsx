@@ -28,7 +28,7 @@ function Thumb({ p }: { p: Project }) {
   const [failed, setFailed] = useState(false)
   const src = thumbUrl(p)
   return (
-    <div className="row__thumb relative grid aspect-[16/10] w-24 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-2 text-ink-muted/50 ring-1 ring-inset ring-white/5 sm:w-32">
+    <div className="row__thumb relative grid aspect-[16/10] w-24 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-2 text-ink-muted/50 ring-1 ring-inset ring-hairline sm:w-32">
       <Film className="size-5" aria-hidden />
       {src && !failed && <img className="absolute inset-0 size-full object-cover" src={src} alt="" loading="lazy" onError={() => setFailed(true)} />}
     </div>
@@ -46,7 +46,7 @@ function Row({ p }: { p: Project }) {
       <div className="row__body flex min-w-0 flex-1 flex-col gap-1.5">
         <p className="row__title m-0 truncate text-body font-semibold tracking-[-0.01em]">{p.title || p.id}</p>
         <div className="row__meta flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-muted">
-          <span className={cn('badge inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ring-1 ring-inset', TONE[p.status] || 'bg-surface-2 text-ink ring-hairline')}>
+          <span className={cn('badge inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-0.5 font-medium ring-1 ring-inset', TONE[p.status] || 'bg-surface-2 text-ink ring-hairline')}>
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
             <span className="truncate" title={badgeTitle(p)}>{badgeText(p)}</span>
           </span>
@@ -112,7 +112,7 @@ export default function Library() {
       <AppHeader />
       <main className="main mx-auto flex w-full max-w-[960px] flex-col gap-6 px-4 pt-8 pb-16 md:px-8 md:pt-12">
         <div className="flex items-baseline gap-3">
-          <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.03em]">{T('nav.library')}</h1>
+          <h1 className="m-0 font-display text-display-md font-medium tracking-[-0.02em]">{T('nav.library')}</h1>
           {load.state === 'ready' && all.length > 0 && <span className="text-body text-ink-muted tabular-nums">{Tf('library.count', { n: all.length })}</span>}
         </div>
 
@@ -126,7 +126,7 @@ export default function Library() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={T('library.search')}
-              className="h-11 rounded-full border-hairline bg-surface-1 pl-9 text-body-sm"
+              className="h-11 rounded-md border-hairline bg-surface-1 pl-9 text-body-sm"
             />
           </label>
           <TabsRoot value={filter} onValueChange={(v) => setFilter(String(v))} className="w-auto">
@@ -134,7 +134,7 @@ export default function Library() {
               <TabsTab value="all" data-filter="all" className="min-h-9 px-4 py-1.5 text-body-sm">{T('library.filter.recent')}</TabsTab>
               <TabsTab value="review" data-filter="review" className="min-h-9 gap-1.5 px-4 py-1.5 text-body-sm">
                 {T('library.filter.review')}
-                {reviewCount > 0 && <span className="rounded-full bg-warning/15 px-1.5 text-micro text-warning tabular-nums">{reviewCount}</span>}
+                {reviewCount > 0 && <span className="rounded-md bg-warning/15 px-1.5 text-micro text-warning tabular-nums">{reviewCount}</span>}
               </TabsTab>
               <TabsIndicator />
             </TabsList>
@@ -148,7 +148,7 @@ export default function Library() {
             <Empty
               id="library-empty"
               role="alert"
-              className="rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5"
+              className="rounded-2xl bg-surface-1 ring-1 ring-inset ring-hairline"
               title={load.message}
               action={<Button tone="secondary" onClick={() => { setLoad({ state: 'loading' }); setAttempt((n) => n + 1) }}>{T('library.retry')}</Button>}
             />
@@ -157,7 +157,7 @@ export default function Library() {
           {load.state === 'ready' && !all.length && (
             <Empty
               id="library-empty"
-              className="rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5"
+              className="rounded-2xl bg-surface-1 ring-1 ring-inset ring-hairline"
               icon={<Film />}
               title={T('library.empty')}
               action={
@@ -180,7 +180,7 @@ export default function Library() {
             {shown.map((p) => (
               <li key={p.id} className="group/item flex items-center gap-1">
                 <div className="min-w-0 flex-1"><Row p={p} /></div>
-                <Button tone="ghost" size="icon-sm" shape="pill" aria-label={Tf('library.deleteLabel', { title: p.title || p.id })} data-delete={p.id}
+                <Button tone="ghost" size="icon-sm" aria-label={Tf('library.deleteLabel', { title: p.title || p.id })} data-delete={p.id}
                   className="shrink-0 hover:text-danger pointer-fine:opacity-0 pointer-fine:group-hover/item:opacity-100 focus-visible:opacity-100" onClick={() => remove(p)}>
                   <Trash2 aria-hidden />
                 </Button>

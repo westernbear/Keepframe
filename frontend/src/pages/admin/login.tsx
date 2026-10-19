@@ -31,16 +31,16 @@ export default function AdminLogin() {
 
   return (
     <main className="login-main grid min-h-dvh place-items-center px-4 py-10">
-      <div className="login-card flex w-full max-w-sm flex-col gap-6 rounded-3xl bg-surface-1 p-6 ring-1 ring-inset ring-white/5 sm:p-8">
+      <div className="login-card flex w-full max-w-sm flex-col gap-6 rounded-3xl bg-surface-1 p-6 ring-1 ring-inset ring-hairline sm:p-8">
         <header className="login-header flex flex-col gap-5">
           <div className="flex items-center justify-between gap-3">
             <div className="login-brand flex items-center gap-2.5">
               <Brand />
-              <span className="login-badge rounded-full bg-surface-2 px-2.5 py-1 text-micro font-medium text-ink-muted">{T('admin.ops')}</span>
+              <span className="login-badge rounded-md bg-surface-2 px-2.5 py-1 text-micro font-medium text-ink-muted">{T('admin.ops')}</span>
             </div>
             <LangToggle />
           </div>
-          <h1 className="login-title m-0 font-display text-display-md font-medium tracking-[-0.03em]">{T('admin.login')}</h1>
+          <h1 className="login-title m-0 font-display text-display-md font-medium tracking-[-0.02em]">{T('admin.login')}</h1>
         </header>
         <form className="login-form flex flex-col gap-4" id="login-form" onSubmit={submit}>
           <label className="flex flex-col gap-1.5 text-body-sm text-ink-muted" htmlFor="email">{T('admin.email')}

@@ -39,7 +39,7 @@ export function Timeline({ st, frame, selectedId, filter, core }: { st: any; fra
   const frames = st?.scene.frames || 1
   const pct = playheadPct(frame, frames)
   return (
-    <div className={cn('timeline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-inset ring-white/5', GUTTER)}>
+    <div className={cn('timeline overflow-hidden rounded-xl bg-surface-1 ring-1 ring-inset ring-hairline', GUTTER)}>
       <div className="timeline__ruler flex h-[72px] items-stretch overflow-hidden border-b border-hairline-soft">
         <div className="timeline__labels flex w-(--gutter) shrink-0 items-center px-3 text-caption font-medium text-ink-muted">{T('review.tracks')}</div>
         <svg id="timeline-svg" className="h-full flex-1 cursor-pointer" role="slider" tabIndex={0} aria-label="timeline"

@@ -3,12 +3,13 @@ import { Link } from 'react-router'
 import { AppHeader, Brand } from '@/components/app/app-header'
 import { Button } from '@/components/app/button'
 import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
 import { HeroScrubber } from './hero-scrubber'
 
 const STEPS = [
-  { n: 'stepUpload', title: 'uploadTitle', body: 'uploadBody', tint: 'var(--gradient-violet)' },
-  { n: 'stepAnalyze', title: 'analyzeTitle', body: 'analyzeBody', tint: 'var(--gradient-magenta)' },
-  { n: 'stepReview', title: 'reviewTitle', body: 'reviewBody', tint: 'var(--gradient-orange)' },
+  { title: 'uploadTitle', body: 'uploadBody' },
+  { title: 'analyzeTitle', body: 'analyzeBody' },
+  { title: 'reviewTitle', body: 'reviewBody' },
 ]
 
 export default function Landing() {
@@ -21,7 +22,7 @@ export default function Landing() {
         <section className="land-hero pt-12 pb-20 md:pt-20 md:pb-28">
           <div className={`${wrap} grid items-center gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]`}>
             <div className="flex flex-col gap-6">
-              <h1 className="land-display m-0 font-display text-[clamp(40px,6.4vw,76px)] leading-[0.98] font-medium tracking-[-0.045em]">
+              <h1 className="land-display m-0 font-display text-[clamp(40px,6.4vw,72px)] leading-[1.02] font-semibold tracking-[-0.02em]">
                 {T('landing.headline')}
               </h1>
               <p className="land-lead m-0 max-w-[34ch] text-body-lg text-ink-muted">{T('landing.subhead')}</p>
@@ -40,14 +41,14 @@ export default function Landing() {
 
         <section className="land-section border-t border-hairline-soft py-20 md:py-24">
           <div className={wrap}>
-            <h2 className="land-section__title m-0 mb-10 font-display text-display-md font-medium tracking-[-0.03em]">{T('landing.howTitle')}</h2>
-            <ol className="m-0 grid list-none gap-4 p-0 md:grid-cols-3">
-              {STEPS.map((s) => (
-                <li key={s.n} className="relative overflow-hidden rounded-2xl bg-surface-1 p-6 ring-1 ring-inset ring-white/5">
-                  <div aria-hidden className="absolute -top-16 -right-16 size-48 rounded-full opacity-35 blur-3xl" style={{ background: s.tint }} />
-                  <p className="land-step relative m-0 font-mono text-caption text-ink-muted">{T(`landing.${s.n}`)}</p>
-                  <h3 className="land-h3 relative mt-8 mb-2 text-headline font-semibold tracking-[-0.02em]">{T(`landing.${s.title}`)}</h3>
-                  <p className="land-body relative m-0 text-body text-ink-muted">{T(`landing.${s.body}`)}</p>
+            <h2 className="land-section__title m-0 mb-10 font-display text-display-md font-medium tracking-[-0.02em]">{T('landing.howTitle')}</h2>
+            {/* one flow, drawn as a track: each stage starts at a keyframe on the same line */}
+            <ol className="land-track m-0 grid list-none gap-y-8 p-0 md:grid-cols-3">
+              {STEPS.map((s, i) => (
+                <li key={s.title} className="relative border-t border-hairline pt-6 md:pr-8">
+                  <span aria-hidden className={cn('absolute -top-[5px] left-0 size-2.5 rotate-45 border', i === 0 ? 'border-brand bg-brand' : 'border-ink-muted bg-canvas')} />
+                  <h3 className="land-h3 m-0 mb-2 text-headline font-semibold tracking-[-0.015em]">{T(`landing.${s.title}`)}</h3>
+                  <p className="land-body m-0 max-w-[36ch] text-body text-ink-muted">{T(`landing.${s.body}`)}</p>
                 </li>
               ))}
             </ol>
@@ -56,7 +57,7 @@ export default function Landing() {
 
         <section className="land-section border-t border-hairline-soft py-20 md:py-24">
           <div className={`${wrap} grid gap-8 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]`}>
-            <h2 className="land-section__title m-0 font-display text-display-md font-medium tracking-[-0.03em]">{T('landing.limitsTitle')}</h2>
+            <h2 className="land-section__title m-0 font-display text-display-md font-medium tracking-[-0.02em]">{T('landing.limitsTitle')}</h2>
             <ul className="land-limits m-0 flex list-none flex-col p-0">
               {['limitLive', 'limitScope', 'limitCaps'].map((k) => (
                 <li key={k} className="border-b border-hairline-soft py-4 text-body-lg first:pt-0 last:border-0">{T(`landing.${k}`)}</li>

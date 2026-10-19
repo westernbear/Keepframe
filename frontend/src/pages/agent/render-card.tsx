@@ -101,7 +101,7 @@ export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState;
       <Disclosure id="render-card" storageKey="kf.agent.renderCardOpen" defaultOpen titleKey="agent.renderTitle"
         status={
           <span id="render-status" role="status" aria-live="polite" hidden={!v.hasPlan} title={v.statusTitle}
-            className={cn('render-card__status rounded-full px-2.5 py-1 font-mono text-micro',
+            className={cn('render-card__status rounded-md px-2.5 py-1 font-mono text-micro',
               v.tone === 'failed' ? 'render-card__status--failed bg-danger/10 text-danger' : v.tone === 'active' ? 'render-card__status--active bg-brand/10 text-brand-soft' : 'bg-surface-2 text-ink-muted')}>
             {v.statusText}
           </span>
@@ -137,7 +137,7 @@ export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState;
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
           <div id="render-artifacts" className="render-artifacts flex flex-wrap gap-2" aria-label={T('agent.renderArtifacts')} hidden={!links.length}>
-            {links.map((l) => <a key={l.href} href={l.href} rel="noopener" className="rounded-full bg-surface-2 px-3 py-1.5 text-caption text-brand-soft hover:bg-surface-3">{l.label}</a>)}
+            {links.map((l) => <a key={l.href} href={l.href} rel="noopener" className="rounded-md bg-surface-2 px-3 py-1.5 text-caption text-brand-soft hover:bg-surface-3">{l.label}</a>)}
           </div>
         </div>
         <div className="render-card__actions" id="render-approval" hidden={!v.awaitsApproval}>

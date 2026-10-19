@@ -82,7 +82,7 @@ function ToolCall({ e }: { e: Extract<Entry, { kind: 'tool' }> }) {
   const { T } = useI18n()
   const ok = Boolean(e.result.ok)
   return (
-    <div className="toolcall rounded-xl bg-surface-2/60 px-3 py-2 ring-1 ring-inset ring-white/5" data-tool={e.name} data-ok={String(ok)}>
+    <div className="toolcall rounded-xl bg-surface-2/60 px-3 py-2 ring-1 ring-inset ring-hairline" data-tool={e.name} data-ok={String(ok)}>
       <div className="toolcall__head flex items-center gap-2 text-caption">
         <span className={cn('toolcall__status inline-flex items-center gap-1.5 font-medium', ok ? 'toolcall__status--ok text-success' : 'toolcall__status--fail text-danger')}>
           <span aria-hidden className="size-1.5 rounded-full bg-current" />{toolStatus(e.name, ok)}
@@ -130,7 +130,7 @@ export function ChatLog({ entries, empty, choices, onChoose, thinking }: { entri
           const { text, title } = verifyChipText(e.chip)
           return (
             <span key={e.id} title={title} aria-label={title}
-              className={cn('verify-chip self-start rounded-full px-3 py-1 text-caption font-medium', `verify-chip--${e.chip.tone}`,
+              className={cn('verify-chip self-start rounded-md px-3 py-1 text-caption font-medium', `verify-chip--${e.chip.tone}`,
                 e.chip.tone === 'pass' ? 'bg-success/15 text-success' : e.chip.tone === 'warn' ? 'bg-warning/15 text-warning' : 'bg-danger/15 text-danger')}>{text}</span>
           )
         }

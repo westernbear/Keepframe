@@ -28,7 +28,7 @@ export default function AdminQuarantine() {
         <section className={cn(panel, 'flex min-w-0 flex-col')}>
           <div className="flex items-center justify-between gap-3 border-b border-hairline-soft p-4">
             <h2 className="m-0 text-body font-semibold">{T('admin.quarantine.pendingTitle')}</h2>
-            <span id="quarantine-count" className="chip rounded-full bg-surface-2 px-2.5 py-1 text-micro text-ink-muted tabular-nums">{quarantineCount(items.length)}</span>
+            <span id="quarantine-count" className="chip rounded-md bg-surface-2 px-2.5 py-1 text-micro text-ink-muted tabular-nums">{quarantineCount(items.length)}</span>
           </div>
           <div className="quarantine-rows-scroll overflow-x-auto">
             <div className="min-w-[660px]">

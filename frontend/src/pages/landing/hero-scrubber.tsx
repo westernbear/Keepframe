@@ -10,9 +10,9 @@ import { BADGE, CARD, FPS, FRAMES, MEASURED, TITLE, easeOutCubic, frameAt } from
 
 const WORDS = ['Launch', 'Ship it', '출시']
 const COLOURS = [
-  { key: 'violet', value: 'var(--gradient-violet)' },
-  { key: 'magenta', value: 'var(--gradient-magenta)' },
-  { key: 'orange', value: 'var(--gradient-orange)' },
+  { key: 'violet', value: 'var(--sample-violet)' },
+  { key: 'magenta', value: 'var(--sample-magenta)' },
+  { key: 'orange', value: 'var(--sample-orange)' },
 ] as const
 const HOLD = FPS // frames the settled clip rests before it loops
 const KEYS = [CARD.start, TITLE.start, CARD.start + CARD.frames, BADGE.start, BADGE.start + BADGE.frames]
@@ -66,37 +66,39 @@ export function HeroScrubber() {
     <div className="flex flex-col gap-4" data-hero-demo>
       <figure className="m-0">
         <div
-          className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-surface-1 ring-1 ring-inset ring-white/5"
-          style={{ backgroundImage: `radial-gradient(120% 90% at 85% 15%, color-mix(in srgb, ${tint} 75%, transparent), transparent 60%), radial-gradient(80% 70% at 10% 100%, color-mix(in srgb, ${tint} 35%, transparent), transparent 70%)` }}
+          className="relative aspect-[16/10] overflow-hidden rounded-lg border border-hairline bg-[#0e0e10]"
           role="img"
           aria-label={T('landing.demo.label')}
         >
+          {/* a comp viewer: action-safe and title-safe guides, as in the editor the clip came from */}
+          <div aria-hidden className="pointer-events-none absolute inset-[5%] border border-dashed border-white/[0.07]" />
+          <div aria-hidden className="pointer-events-none absolute inset-[10%] border border-dashed border-white/[0.05]" />
           {/* the clip */}
           <div className="absolute top-[28%] h-[44%] w-[56%]" style={{ left }}>
-            <div className="flex h-full flex-col justify-between rounded-xl bg-white/90 p-[5%] text-black shadow-[0_24px_60px_-20px_rgb(0_0_0/0.6)]">
+            <div className="flex h-full flex-col justify-between rounded-md p-[5%] text-white transition-colors duration-300" style={{ background: tint }}>
               <span
-                className="inline-flex w-fit origin-left rounded-full bg-black px-2.5 py-1 text-[clamp(9px,1.2vw,12px)] font-semibold tracking-wide text-white"
+                className="inline-flex w-fit origin-left rounded-sm bg-black/80 px-2 py-0.5 text-[clamp(9px,1.2vw,12px)] font-semibold tracking-wide text-white"
                 style={{ transform: `scale(${f.badge})`, opacity: f.badge }}
               >NEW</span>
-              <span className="font-display text-[clamp(22px,4.4vw,52px)] leading-none font-medium tracking-[-0.04em]">
+              <span className="font-display text-[clamp(22px,4.4vw,52px)] leading-none font-semibold tracking-[-0.025em]">
                 {word.slice(0, f.letters)}<span className="opacity-0">{word.slice(f.letters)}</span>
               </span>
             </div>
             {measure && (
               <>
-                <div aria-hidden className="pointer-events-none absolute -inset-1.5 rounded-[14px] border border-dashed border-brand" />
-                <div aria-hidden className="pointer-events-none absolute -top-8 left-0 flex items-center gap-2 whitespace-nowrap rounded-md bg-black/75 px-2 py-1 font-mono text-[11px] text-ink backdrop-blur">
+                <div aria-hidden className="pointer-events-none absolute -inset-1.5 rounded-lg border border-dashed border-brand" />
+                <div aria-hidden className="pointer-events-none absolute -top-8 left-0 flex items-center gap-2 whitespace-nowrap rounded-sm bg-black px-2 py-1 font-mono text-[11px] text-ink">
                   <span className="text-brand-soft">{Tf('landing.demo.travel', { px: MEASURED.travelPx })}</span>
                   <span className="text-ink-muted">{Tf('landing.demo.ease', { f: MEASURED.easeFrames, s: MEASURED.easeSeconds })}</span>
                 </div>
-                <div aria-hidden className="pointer-events-none absolute -bottom-7 left-0 whitespace-nowrap rounded-md bg-black/75 px-2 py-1 font-mono text-[11px] text-ink-muted backdrop-blur">
+                <div aria-hidden className="pointer-events-none absolute -bottom-7 left-0 whitespace-nowrap rounded-sm bg-black px-2 py-1 font-mono text-[11px] text-ink-muted">
                   {Tf('landing.demo.letters', { f: TITLE.stagger })}
                 </div>
               </>
             )}
           </div>
           {measure && (
-            <div aria-hidden className="absolute right-3 bottom-3 flex items-center gap-2 rounded-lg bg-black/70 px-2.5 py-1.5 text-ink backdrop-blur">
+            <div aria-hidden className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-hairline bg-black px-2.5 py-1.5 text-ink">
               <EaseCurve frame={frame} />
             </div>
           )}
@@ -110,7 +112,7 @@ export function HeroScrubber() {
           type="button"
           onClick={() => setPlaying((p) => !p)}
           aria-label={T(playing ? 'landing.demo.pause' : 'landing.demo.play')}
-          className="grid size-11 shrink-0 place-items-center rounded-full bg-ink text-black transition-transform active:scale-95"
+          className="grid size-11 shrink-0 place-items-center rounded-md bg-ink text-black transition-transform active:scale-95"
         >
           {playing ? <Pause className="size-4" fill="currentColor" /> : <Play className="size-4 translate-x-px" fill="currentColor" />}
         </button>
@@ -128,12 +130,12 @@ export function HeroScrubber() {
       </div>
 
       {/* keep / change */}
-      <div className="grid gap-4 rounded-2xl bg-surface-1 p-4 ring-1 ring-inset ring-white/5 sm:grid-cols-[auto_1fr]">
+      <div className="grid gap-4 rounded-lg border border-hairline bg-surface-1 p-4 sm:grid-cols-[auto_1fr]">
         <div className="flex flex-col gap-2">
           <span className="text-micro font-semibold tracking-wide text-ink-muted uppercase">{T('landing.demo.keep')}</span>
           <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
             {['keepMotion', 'keepDirection', 'keepTiming'].map((k) => (
-              <li key={k} className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-caption text-ink">
+              <li key={k} className="inline-flex items-center gap-1.5 rounded-sm bg-surface-2 px-2.5 py-1.5 text-caption text-ink">
                 <Check className="size-3.5 text-success" strokeWidth={3} aria-hidden />{T(`landing.demo.${k}`)}
               </li>
             ))}
@@ -157,7 +159,7 @@ export function HeroScrubber() {
                   aria-checked={colour === c.key}
                   aria-label={T(`landing.demo.${c.key}`)}
                   onClick={() => setColour(c.key)}
-                  className={cn('size-8 rounded-full ring-2 ring-offset-2 ring-offset-surface-1 transition-[box-shadow]', colour === c.key ? 'ring-ink' : 'ring-transparent hover:ring-white/30')}
+                  className={cn('size-8 rounded-sm ring-2 ring-offset-2 ring-offset-surface-1 transition-[box-shadow]', colour === c.key ? 'ring-ink' : 'ring-transparent hover:ring-white/30')}
                   style={{ background: c.value }}
                 />
               ))}
