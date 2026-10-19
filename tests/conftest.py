@@ -1,11 +1,11 @@
 
-import pytest, pathlib, tempfile
+import pytest
 
 
 @pytest.fixture
-def tmp_scene_dir():
-    d = tempfile.mkdtemp(prefix="keepframe-")
-    return pathlib.Path(d)
+def tmp_scene_dir(tmp_path_factory):
+    """A fresh dir under pytest's basetemp, which pytest prunes (mkdtemp in /tmp leaked ~255 MB a session)."""
+    return tmp_path_factory.mktemp("scene")
 
 
 @pytest.fixture(autouse=True, scope="session")
