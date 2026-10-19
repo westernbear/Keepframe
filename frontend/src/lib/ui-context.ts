@@ -3,6 +3,7 @@
 import { renderPayloadStatus } from '@/lib/agent-render'
 
 const MAX_TEXT = 12000
+const MAX_SUMMARY_BYTES = 16 * 1024 - 512 // keepframe/session/ui_context.py MAX_SUMMARY_BYTES, with margin
 
 /** Visible page text, skipping [data-ai-private], scripts, styles and hidden nodes. */
 export function visibleText(root: Node = document.body) {
@@ -98,6 +99,11 @@ export async function buildUIContext(s: UIContextInput) {
     render: s.renderPayload ? { plan: s.renderPayload.plan, status: renderPayloadStatus(s.renderPayload) } : null,
     visible_text: visibleText(),
   }
+  // MAX_TEXT counts characters but the server caps UTF-8 bytes (Hangul is 3 each): trim until the summary fits
+  const bytes = () => new TextEncoder().encode(JSON.stringify(summary)).length
+  while (bytes() > MAX_SUMMARY_BYTES && summary.visible_text) summary.visible_text = summary.visible_text.slice(0, Math.floor(summary.visible_text.length * 0.8))
+  if (bytes() > MAX_SUMMARY_BYTES) summary.inputs = []
+  if (bytes() > MAX_SUMMARY_BYTES) summary.render = null
   // the agent sees attached pictures too; a GLB (or a picture that fails to decode) is described by its summary only
   const attached = await Promise.all(s.attachmentFiles.map((file, i) => /^image\/(png|jpeg|svg\+xml)$/.test(file.type) || /\.(png|jpe?g|svg)$/i.test(file.name)
     ? previewForAI(file, `attachment-${i + 1}`).catch(() => null) : null))
