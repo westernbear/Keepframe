@@ -35,6 +35,7 @@ export default function Agent() {
   const [sending, setSending] = useState(false)
   const [thinking, setThinking] = useState<string | null>(null)
   const [liveSteps, setLiveSteps] = useState<string[]>([])
+  const [aeSend, setAeSend] = useState<{ send: () => void; disabled: boolean } | null>(null)
   const [attachmentNames, setAttachmentNames] = useState<string[]>([])
   const [fonts, setFonts] = useState<any[]>([])
   const [fontStatus, setFontStatus] = useState<{ key: string; vars?: any; error?: boolean } | null>(null)
@@ -309,8 +310,8 @@ export default function Agent() {
             <span className="ml-2 font-mono text-body-sm font-semibold tabular-nums"><span id="agent-frame">{frame}</span> <span className="font-normal text-ink-muted">/ <span id="agent-total">{st?.scene.frames ?? 0}</span></span></span>
           </div>
 
-          <RenderCard r={rc} projectId={projectId} reviewStatus={st?.status} />
-          <AeCard projectId={projectId} sceneId={sceneId} versionId={versionId} onReady={onAeReady} />
+          <RenderCard r={rc} projectId={projectId} reviewStatus={st?.status} ae={aeSend} />
+          <AeCard projectId={projectId} sceneId={sceneId} versionId={versionId} onReady={onAeReady} onSendState={setAeSend} />
 
           <div className="agent-elements rounded-2xl bg-surface-1 px-4 py-1 ring-1 ring-inset ring-hairline">
             <button type="button" id="agent-elements-toggle" className={disclosureHead} aria-expanded={elementsOpen} aria-controls="agent-elements-list" onClick={toggleElements}>

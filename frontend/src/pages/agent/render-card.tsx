@@ -90,12 +90,14 @@ export function useRenderCard({ projectId, sceneId, getVersion, setBanner }: { p
 
 export type RenderCardState = ReturnType<typeof useRenderCard>
 
-export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState; projectId: string | null; reviewStatus?: string | null }) {
+export function RenderCard({ r, projectId, reviewStatus, ae }: { r: RenderCardState; projectId: string | null; reviewStatus?: string | null;
+  ae?: { send: () => void; disabled: boolean } | null }) {
   const { T } = useI18n()
   const v = renderCardView(r.payload)
   const controls = renderControls({ payload: r.payload, plans: r.plans, busy: r.busy, mode: r.mode, backend: r.backend, reviewStatus })
   const links = renderArtifactLinks(r.payload?.plan, r.payload, projectId || '')
   const warnings = renderWarningLines(r.payload?.warnings)
+  const toAe = r.backend === 'ae'   // not a render plan: the AE card's send, offered here too
   return (
     <section className={card} id="render-card" aria-labelledby="render-card-title">
       <Disclosure id="render-card" storageKey="kf.agent.renderCardOpen" defaultOpen titleKey="agent.renderTitle"
@@ -107,7 +109,7 @@ export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState;
           </span>
         }>
         <div className="render-card__setup flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-caption text-ink-muted">{T('agent.renderMode')}
+          <label className="flex flex-col gap-1 text-caption text-ink-muted" hidden={toAe}>{T('agent.renderMode')}
             <select id="render-mode" className={select} value={r.mode} onChange={(e) => r.setMode(e.target.value)}>
               <option value="preview">{T('agent.renderPreview')}</option>
               <option value="final">{T('agent.renderFinal')}</option>
@@ -117,15 +119,23 @@ export function RenderCard({ r, projectId, reviewStatus }: { r: RenderCardState;
             <select id="render-backend" className={select} value={r.backend} onChange={(e) => r.setBackend(e.target.value)}>
               <option value="native">{T('agent.renderNative')}</option>
               <option value="lottie">Lottie</option>
+              <option value="ae">After Effects</option>
             </select>
           </label>
-          <label id="render-plan-field" className="flex min-w-0 flex-col gap-1 text-caption text-ink-muted" hidden={r.plans.length <= 1}>{T('agent.renderPlan')}
+          <label id="render-plan-field" className="flex min-w-0 flex-col gap-1 text-caption text-ink-muted" hidden={toAe || r.plans.length <= 1}>{T('agent.renderPlan')}
             <select id="render-plan-selector" className={cn(select, 'max-w-[260px]')} disabled={controls.selectorDisabled} value={r.payload?.plan?.id || ''} onChange={(e) => r.choose(e.target.value)}>
               {r.plans.map((p) => <option key={p.plan.id} value={p.plan.id}>{planOptionLabel(p)}</option>)}
             </select>
           </label>
-          <Button tone={v.awaitsApproval ? 'secondary' : 'primary'} size="sm" className="h-10" id="render-create" disabled={controls.createDisabled} onClick={r.create}>{T('agent.renderCreate')}</Button>
+          {toAe
+            ? <Button tone="primary" size="sm" className="h-10" id="render-ae-send" disabled={!ae || ae.disabled} onClick={() => ae?.send()}>{T('ae.send')}</Button>
+            : <Button tone={v.awaitsApproval ? 'secondary' : 'primary'} size="sm" className="h-10" id="render-create" disabled={controls.createDisabled} onClick={r.create}>{T('agent.renderCreate')}</Button>}
         </div>
+        {toAe && (
+          <p id="render-ae-hint" className="m-0 text-caption text-ink-muted">
+            {T('agent.renderAeHint')}{ae?.disabled ? ` ${T('ae.connectionRequired')}` : ''}
+          </p>
+        )}
         <div className="render-card__facts text-caption" id="render-output-field" hidden={!v.showOutputs}>
           <div className="flex gap-2"><span className="text-ink-muted">{T('agent.renderOutputs')}</span><strong id="render-outputs" className="font-mono font-medium">{v.outputs.join(', ')}</strong></div>
         </div>

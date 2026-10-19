@@ -111,6 +111,7 @@
   "agent.renderBackend": "Renderer",
   "agent.renderNative": "Keepframe default",
   "agent.renderPlan": "Plan",
+  "agent.renderAeHint": "Builds an editable comp in the connected After Effects. Progress and results appear in the After Effects card below.",
   "agent.renderCreate": "Make plan",
   "agent.renderOutputs": "Outputs",
   "agent.renderReason": "Failure reason",
