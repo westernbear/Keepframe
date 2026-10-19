@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Framer-design-analysis
-description: "A confident dark-canvas builder marketing site that treats the page like a working artboard — pure black surfaces, white display type set in GT Walsheim Medium with aggressive negative tracking, and a single confident blue (#0099ff) reserved for hyperlinks and selection states. The page rhythm is broken by oversized vibrant gradient atmosphere panels — magenta, violet, orange spotlights — that act as living showcase tiles, not decoration. Every CTA is a white pill on dark; every card is a translucent or charcoal surface; every section title pulls letter-spacing tight enough to feel like a poster."
+description: "A dark-canvas builder marketing site laid out like an artboard: pure black surfaces, white display type in GT Walsheim Medium with strong negative tracking, and one blue (#0099ff) reserved for hyperlinks and selection states. Oversized magenta, violet and orange gradient panels break up the page and work as showcase tiles. CTAs are white pills on dark, cards are translucent or charcoal surfaces, and section titles use poster-tight letter-spacing."
 
 colors:
   primary: "#ffffff"
@@ -257,18 +257,18 @@ components:
 
 Framer's marketing canvas is a near-pure black artboard. The dominant surface is `{colors.canvas}` (almost pure black with a faint warmth). Oversized white display type sits on top of it, set in **GT Walsheim Medium** with letter-spacing pulled to extreme negative values (-5.5px on the 110px display, -4.25px on the 85px hero). The page reads like a poster: one assertive statement per band, with generous space above and below.
 
-The single accent is `{colors.accent-blue}`. It is used scarcely, mostly for hyperlinks, selection halos, and a subtle blue-tinted shadow ring on focused inputs. The brand chrome is monochrome: white pill buttons, charcoal cards, gray secondary text. Every few sections the page drops in a **vibrant gradient atmosphere card**: a magenta-violet spotlight, a sunset-orange wash, a coral-pink panel. These are not section backgrounds. They are individual cards in a card grid, each a small poster that shows what Framer can produce.
+The single accent is `{colors.accent-blue}`. It appears rarely: on hyperlinks, selection halos, and a faint blue-tinted shadow ring on focused inputs. The brand chrome is monochrome: white pill buttons, charcoal cards, gray secondary text. Every few sections the page drops in a **gradient atmosphere card** (a magenta-violet spotlight, a sunset-orange wash or a coral-pink panel). Each one is a single card in a card grid, a small poster that shows what Framer can produce.
 
-Body type is **Inter Variable**. Framer uses Inter's character variants (`cv01`, `cv05`, `cv09`, `cv11`, `ss03`, `ss07`, `dlig`), so the body has a single-storey "a", straight-leg "l", and tabular figures. The marketing site has no light mode. The brand is dark.
+Body type is **Inter Variable**. Framer uses Inter's character variants (`cv01`, `cv05`, `cv09`, `cv11`, `ss03`, `ss07`, `dlig`), so the body has a single-storey "a", straight-leg "l", and tabular figures. The marketing site has no light mode.
 
 **Key Characteristics:**
 - Black-canvas marketing system: `{colors.canvas}` is the surface for hero, body, pricing, FAQ, and footer. There are no light interludes.
-- Massive negative letter-spacing on display sizes (-5.5px / -4.25px / -3.1px) creates a poster-grade headline cadence.
+- Display sizes use large negative letter-spacing (-5.5px / -4.25px / -3.1px), which makes headlines read like posters.
 - White pill (`{components.button-primary}`) is the only primary CTA shape across the site. Secondary actions live as charcoal pills (`{components.button-secondary}`) or text links.
-- Oversized **gradient spotlight cards** (violet, magenta, orange, coral) act as showcase tiles inside the dark grid. They are individual cards, not section backgrounds.
+- Oversized **gradient spotlight cards** (violet, magenta, orange, coral) act as showcase tiles inside the dark grid. Each is a single card; sections keep the canvas background.
 - Inter Variable with OpenType character variants (`cv01/05/09/11`, `ss03/ss07`, `dlig`) is used everywhere body type appears.
 - Border radius scale runs from 4px utility chips up to 100px pills and full circles. Cards default to 15-20px. Atmospheric gradient cards use 30px.
-- A single chromatic accent `{colors.accent-blue}` is reserved for hyperlinks, focus, and selection. It is never decorative.
+- A single chromatic accent `{colors.accent-blue}` is reserved for hyperlinks, focus, and selection. It is never used as decoration.
 
 ## Colors
 
@@ -288,10 +288,10 @@ Body type is **Inter Variable**. Framer uses Inter's character variants (`cv01`,
 
 ### Text
 - **Ink** ({colors.ink}): All headline and emphasized body type. Pure white.
-- **Ink Muted** ({colors.ink-muted}): Secondary type. Gray (#999999) used for meta info, footer columns, comparison-row labels, and deselected pricing tabs. Hierarchy on the dark canvas is carried by ink → ink-muted contrast, not by weight changes.
+- **Ink Muted** ({colors.ink-muted}): Secondary type. Gray (#999999) used for meta info, footer columns, comparison-row labels, and deselected pricing tabs. Hierarchy on the dark canvas comes from ink → ink-muted contrast; weight stays the same.
 
 ### Semantic
-- **Success Green** ({colors.semantic-success}): Pricing comparison-table checkmarks. Glyph fill, not surface.
+- **Success Green** ({colors.semantic-success}): Pricing comparison-table checkmarks. Used only as a glyph fill, never as a surface.
 
 ### Brand Gradient (signature)
 - **Gradient Magenta** ({colors.gradient-magenta}): Spotlight card variant.
@@ -306,7 +306,7 @@ These four sit as oversized atmospheric tiles inside otherwise monochrome card g
 ### Font Family
 
 - **GT Walsheim Framer Medium** / **GT Walsheim Medium**: Framer's display typeface. Geometric, slightly humanist. It holds at large sizes with extreme negative tracking. Fallbacks: `GT Walsheim Medium Placeholder` system font.
-- **Inter Variable**: System body typeface. Used with extensive OpenType character variants: `cv01` (alternate "1"), `cv05` (alternate "g"), `cv09` (alternate "i" / "l"), `cv11` (alternate "0"), `ss03` / `ss07` stylistic sets, `dlig` discretionary ligatures, and `tnum` for numerics in tabular contexts. The variants give the body a custom cut without commissioning a new face.
+- **Inter Variable**: System body typeface. Used with extensive OpenType character variants: `cv01` (alternate "1"), `cv05` (alternate "g"), `cv09` (alternate "i" / "l"), `cv11` (alternate "0"), `ss03` / `ss07` stylistic sets, `dlig` discretionary ligatures, and `tnum` for numerics in tabular contexts. The variants make the body look like a custom cut without a new typeface.
 - **Inter**: Used selectively for `{typography.headline}` (the 22px / 20px tier). The non-variable cut catches small tracking targets that the variable file rounds.
 
 ### Hierarchy
@@ -330,7 +330,7 @@ These four sit as oversized atmospheric tiles inside otherwise monochrome card g
 
 - **Letter-spacing scales with size, hard.** Display-xxl pulls -5.5px (5% of size); body sticks to about -1% (-0.15px on 15px). Posters at the top, comfortable reading at body.
 - **OpenType character variants are the brand voice.** Switching off `cv11`, `ss03`, etc. visibly changes the body voice. The brand depends on them.
-- **Weight stays in a narrow band.** Display sits at 500, body at 400, body-sm/caption at 500. Hierarchy is carried by size + tracking, not by 700/900 ramps.
+- **Weight stays in a narrow band.** Display sits at 500, body at 400, body-sm/caption at 500. Size + tracking carry the hierarchy; there are no 700/900 ramps.
 - **Tight line-heights everywhere.** Even body runs at 1.30. Framer's editorial tone is denser than typical SaaS marketing.
 
 ### Note on Font Substitutes
@@ -403,7 +403,7 @@ Framer's extracted radius set is unusually granular (1px, 4px, 5px, 6px, 8px, 10
 
 **`button-primary`**: White pill on dark canvas. The primary CTA across home, pricing, AI, and gallery pages.
 - Background `{colors.primary}`, text `{colors.on-primary}`, type `{typography.button}`, padding 10px 15px, rounded `{rounded.pill}`.
-- Pressed state lives in `button-primary-pressed`. The live site uses a transform-scale shrink, not a darkened fill.
+- Pressed state lives in `button-primary-pressed`. The live site shrinks the pill with a transform scale and keeps the fill unchanged.
 
 **`button-secondary`**: Charcoal pill. Used for secondary navigation actions ("Sign in", "Talk to sales") and as the visual counterpart to the primary pill.
 - Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.button}`, padding 10px 15px, rounded `{rounded.pill}`.
@@ -418,7 +418,7 @@ Framer's extracted radius set is unusually granular (1px, 4px, 5px, 6px, 8px, 10
 
 **`pricing-tab-default`** + **`pricing-tab-selected`**: The pill-toggle that switches between Basic / Pro / Business / Enterprise on `/pricing`.
 - Default: `{colors.canvas}` background, `{colors.ink-muted}` text, rounded `{rounded.pill}`.
-- Selected: `{colors.surface-2}` background, `{colors.ink}` text. Selected means lift, not color. Surface depth marks "active" without a chromatic fill.
+- Selected: `{colors.surface-2}` background, `{colors.ink}` text. The selected state is marked by surface lift alone, with no chromatic fill.
 
 ### Inputs & Forms
 
@@ -480,22 +480,22 @@ The main decorative surface of Framer's marketing is oversized atmospheric tiles
 ### Do
 
 - Reserve `{colors.primary}` (white) and `{colors.canvas}` (near-black) as the system's two anchor surfaces. Every band of the page chooses one or the other.
-- Push display-size letter-spacing aggressively negative. `{typography.display-xxl}` at -5.5px is the brand signature, not a stylistic accident.
+- Push display-size letter-spacing aggressively negative. `{typography.display-xxl}` at -5.5px is the brand signature and is deliberate.
 - Use `{colors.accent-blue}` only for hyperlinks, focus rings, and selected indicators. Never as a background or button fill.
-- Drop one or two `gradient-spotlight-card` variants into a card grid; they are the brand's atmosphere device. Three or more in the same viewport reads as a moodboard, not a system.
+- Drop one or two `gradient-spotlight-card` variants into a card grid; they are the brand's atmosphere device. Three or more in the same viewport read as a moodboard.
 - Compose every CTA as a pill (`{rounded.pill}`); secondary actions live as charcoal pills, never as bordered ghost buttons.
 - Keep body type Inter Variable with character variants `cv01`, `cv05`, `cv09`, `cv11`, `ss03`, `ss07` enabled. The brand voice depends on them.
-- Use surface lift (canvas → surface-1 → surface-2) to mark hierarchy on dark, not opacity changes on white type.
+- Use surface lift (canvas → surface-1 → surface-2) to mark hierarchy on dark. Do not change the opacity of white type for this.
 
 ### Don't
 
 - Don't ship a light-mode marketing page. Framer's identity is dark.
 - Don't introduce mid-tone gray text outside `{colors.ink-muted}`. The hierarchy is binary: `ink` or `ink-muted`.
-- Don't use `{colors.accent-blue}` as a brand fill (e.g., a blue CTA pill). The blue is a signal color, not a surface.
+- Don't use `{colors.accent-blue}` as a brand fill (e.g., a blue CTA pill). The blue is a signal color and never fills a surface.
 - Don't square off CTAs. Pill (`{rounded.pill}`) or full circle is the brand vocabulary.
 - Don't reduce the negative letter-spacing on display sizes "for accessibility". The compression is intrinsic to the brand voice; reduce the SIZE if needed, but keep the percentage.
-- Don't apply gradient backgrounds to whole sections. Gradients are CARDS, not section grounds.
-- Don't combine more than one chromatic accent. The palette is monochrome plus one blue plus the gradient family. It is not "blue, green, and red".
+- Don't apply gradient backgrounds to whole sections. Gradients belong on CARDS only.
+- Don't combine more than one chromatic accent. The palette is monochrome plus one blue plus the gradient family; adding green or red as accents breaks it.
 
 ## Responsive Behavior
 
@@ -529,7 +529,7 @@ The main decorative surface of Framer's marketing is oversized atmospheric tiles
 ## Iteration Guide
 
 1. Focus on ONE component at a time and reference it by its `components:` token name (e.g., `{components.button-primary}`, `{components.gradient-spotlight-card}`).
-2. When introducing a new section on the dark canvas, decide first which surface lift it lives on: `{colors.canvas}` for hero/FAQ, `{colors.surface-1}` for cards, `{colors.surface-2}` for featured cards. The depth choice is the most consequential decision.
+2. When introducing a new section on the dark canvas, decide first which surface lift it lives on: `{colors.canvas}` for hero/FAQ, `{colors.surface-1}` for cards, `{colors.surface-2}` for featured cards. Make this choice before anything else.
 3. Default body to `{typography.body}` with all the documented OpenType variants; reach for `{typography.subhead}` only inside spotlight cards.
 4. Run `npx @google/design.md lint DESIGN.md` after edits. `broken-ref`, `contrast-ratio`, and `orphaned-tokens` warnings flag issues automatically.
 5. Add new variants as separate component entries (`-pressed`, `-featured`, `-selected`). Do not bury them in prose.
@@ -538,7 +538,7 @@ The main decorative surface of Framer's marketing is oversized atmospheric tiles
 
 ## Known Gaps
 
-- The exact gradient stops for the spotlight cards are derived from screenshot pixels. They are not taken from CSS variables. Production gradients are likely `linear-gradient` strings on individual elements, not design tokens. Treat the documented `{colors.gradient-*}` hex values as base anchors, not as exact gradient specs.
+- The gradient stops for the spotlight cards are derived from screenshot pixels because no CSS variables expose them. Production gradients are likely `linear-gradient` strings on individual elements. Treat the documented `{colors.gradient-*}` hex values as base anchors; the exact gradient specs are unknown.
 - Form-field validation / error styling is not visible on the inspected pages because no error states render in the static screenshots.
 - Dark mode is the only mode. No light-mode adaptation is documented because the marketing site does not ship one.
-- The marketplace template detail page returned sparser CSS variable data than the other pages. Surface tokens for that page were inferred from the matching home / gallery treatment. They were not extracted from the marketplace page.
+- The marketplace template detail page returned sparser CSS variable data than the other pages. Surface tokens for that page were inferred from the matching home / gallery treatment.

@@ -52,7 +52,7 @@ As P1. Never commit rendered cases or mp4s (`eval/out/`).
 
 **Deliverable**: `make_template(kind, seed) -> Template(doc, truth, size, fps, frames)`; seeded strings, palette, bundled fonts (file URIs), timings, stagger `each`/`from`.
 
-Kinds: `kinetic_title` (word/glyph stagger through a mask, reversed exit); `logo_sting` (centre-out clip, border frame growing in w/h with constant stroke, mark pop, name rising word by word); `chat_ui` (N bubbles from one template, alternating sides, list stepping every k frames); `scroller` (stacked lines, inverse flash); `block_transition` (k blocks wiping shot A → B); `prompt_typing` (bar fade-in, chars with pauses, caret blink, cursor glide + press); `counter` (snap, "K" suffix, slow–fast–slow); `stepped_zoom` (holds).
+Kinds: `kinetic_title` (word/glyph stagger through a mask, reversed exit); `logo_sting` (centre-out clip, border frame growing in w/h with constant stroke, mark pop, name rising word by word); `chat_ui` (N bubbles from one template, alternating sides, list stepping every k frames); `scroller` (stacked lines, inverse flash); `block_transition` (k blocks wiping shot A → B); `prompt_typing` (bar fade-in, chars with pauses, caret blink, cursor glide + press); `counter` (snap, "K" suffix, slow-fast-slow); `stepped_zoom` (holds).
 
 **Files**: new `keepframe/kfscript/synth.py`.
 
@@ -90,7 +90,7 @@ Kinds: `kinetic_title` (word/glyph stagger through a mask, reversed exit); `logo
 
 ## Task 6: baseline (controller)
 
-- [x] 8 kinds × seed 1 (seeds 2–3 not run) + mk571 gold → `docs/qa/kfscript/p2-baseline.{json,md}` and sheets, with commit, timings and the read → measurement → render table.
+- [x] 8 kinds × seed 1 (seeds 2 and 3 not run) + mk571 gold → `docs/qa/kfscript/p2-baseline.{json,md}` and sheets, with commit, timings and the read → measurement → render table.
 - [x] A rerun with `--reuse` gives identical pages, truth and metrics.
 - [x] Review; push.
 

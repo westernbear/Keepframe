@@ -5,7 +5,7 @@
 ## Context
 
 - Spec §Redesigned analysis: the pipeline's job is the shortest kf-script whose render matches the reference.
-- Research §5/§5b: the IR spends dozens of elements and invented transforms where the read sees a few structured things (mk571 frame split into 4 sprites; mk544 glyph fragments; mk543 per-line scroll repeated 5–6 times; e07 counters as 13 texts; e11 typing as "moves right, scales ×1.94").
+- Research §5/§5b: the IR spends dozens of elements and invented transforms where the read sees a few structured things (mk571 frame split into 4 sprites; mk544 glyph fragments; mk543 per-line scroll repeated 5 to 6 times; e07 counters as 13 texts; e11 typing as "moves right, scales ×1.94").
 - P3 provides the vocabulary; P2 provides the measuring stick.
 
 ## Decisions

@@ -8,7 +8,7 @@
 
 **Architecture:** New `keepframe/ae/` (spec, devices, jobs, api, verify) on the existing server and port; `extension/` (CSXS manifest, `index.html` + `panel.js` + a Node-testable `core.js`, `host/keepframe.jsx`). The server sends a declarative `CompSpec`; one ExtendScript routine (`kfSync`) makes AE match it by stable layer tags. HTTP long-poll. The old `keepframe/after_effects/` (~26k lines) is deleted in slice 1.
 
-**Tech stack:** Python 3.12 stdlib server (`ThreadingHTTPServer`), pydantic 2, existing compose/render (Playwright Chromium) for verify; CEP 11 extension in vanilla JS + Node built-ins (no npm deps; `window.__adobe_cep__.evalScript` instead of vendoring CSInterface); ExtendScript ES3; Node 25 for the fake AE and the headless extension tests; Adobe `ZXPSignCmd` under Wine in Docker for signing.
+**Tech stack:** Python 3.12 stdlib server (`ThreadingHTTPServer`), pydantic 2, existing compose/render (Playwright Chromium) for verify; CEP 11 extension in vanilla JS + Node built-ins (no npm deps; `window.__adobe_cep__.evalScript`, with no vendored CSInterface); ExtendScript ES3; Node 25 for the fake AE and the headless extension tests; Adobe `ZXPSignCmd` under Wine in Docker for signing.
 
 ## Context
 
@@ -129,7 +129,7 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 ## Slice 3 — Final render + package
 
 ### Task 16: Final MP4
-**Files:** `kfRender({mode:"final"})` choosing the H.264 output module by its format setting, not its (localized) template name; `render_final` job uploads `final.mp4` streamed; web **Download MP4** per version; tests (fake AE output modules with Korean template names).
+**Files:** `kfRender({mode:"final"})` choosing the H.264 output module by its format setting, since template names are localized; `render_final` job uploads `final.mp4` streamed; web **Download MP4** per version; tests (fake AE output modules with Korean template names).
 - [ ] Commit `feat(ae): final H.264 render from AE`.
 
 ### Task 17: Project package
@@ -161,4 +161,4 @@ On 2026-10-05 the live check never got past pairing: user-site imports hidden fr
 1. Python suite + `node --test extension/test tests/ae_fake` green; `tests/test_ae_e2e.py` green.
 2. `grep` shows no references to the old AE path outside docs.
 3. `scripts/build_zxp.sh` produces a `.zxp` that `ZXPSignCmd -verify` accepts; `/ae/keepframe.zxp` serves it.
-4. Live checks 1–4 in the user's AE pass and are recorded in `docs/qa/ae-extension/README.md` with screenshots: pairing, sync of the three scenes, no-op resend, hand-edit warning, Verify pass with calibrated thresholds, MP4 + zip downloads, Live edits within ~1 s.
+4. Live checks 1 to 4 in the user's AE pass and are recorded in `docs/qa/ae-extension/README.md` with screenshots: pairing, sync of the three scenes, no-op resend, hand-edit warning, Verify pass with calibrated thresholds, MP4 + zip downloads, Live edits within ~1 s.

@@ -3,7 +3,7 @@
 `createAE({state, documents, defaultInterpolation})` returns `{context, serialize, counters, calls, trace}`; JSX executes in a Node `vm` context with `JSON` and the listed ES5+ built-ins deleted.
 Unknown host members and unknown property/effect match names throw `fake AE: unsupported <Type>.<name>`; host internals are private.
 Arrays, plain objects, and errors returned to JSX belong to its VM realm; host objects and methods cross through strict proxies. Font records, source rectangles, TextDocuments, and KeyframeEases are strict host objects.
-This models the Task 7 sync surface; the runner checks the listed ES3 syntax gaps, and broader engine differences remain outside its scope.
+This models the Task 7 sync surface. The runner checks the listed ES3 syntax gaps; it does not model other engine differences.
 
 ## Running
 
@@ -43,9 +43,9 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `SolidSource.color`: read-only RGB array for generated solid/null footage.
 - `FootageItem.replace(file)`: replaces the source File and updates the internal model flag.
 - `CompItem.name` / `comment` / `parentFolder`: settable item metadata.
-- `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0–1; frameRate, duration and colours store `Math.fround` values.
+- `CompItem.width` / `height` / `pixelAspect` / `frameRate` / `duration` / `bgColor`: settable settings; bgColor is RGB in 0 to 1; frameRate, duration and colours store `Math.fround` values.
 - `CompItem.renderer` / `renderers`: renderer defaults to Classic 3D's `ADBE Advanced 3d`; the read-only available list defaults to `["ADBE Advanced 3d", "ADBE Ernst", "ADBE Calder"]`; assignments must be listed. Comp state can seed a shorter available list.
-- `CompItem.saveFrameToPng(time,file)`: writes a valid RGB PNG at the comp's width/height, filled with the bottom-most enabled non-null solid's colour (black without a solid). Ignores text, media, transforms and compositing; this is sufficient for background-only verification, not a general AE renderer. Counts `calls.saveFrameToPng`, with no project writes or undo group.
+- `CompItem.saveFrameToPng(time,file)`: writes a valid RGB PNG at the comp's width/height, filled with the bottom-most enabled non-null solid's colour (black without a solid). Ignores text, media, transforms and compositing, so it supports background-only verification and nothing more. Counts `calls.saveFrameToPng`, with no project writes or undo group.
 - `createAE({frameWriteDelayMs:n,frameWriteFails:true})`: delays PNG output by n ms on a Node timer, or never writes when failure is enabled; the same options may be seeded via `state.testHooks` for CLI host tests. Delayed writes run only after the script returns to Node's event loop; File exists/length reads and blocking `$.sleep` do not flush them. Zero delay writes immediately.
 - `CompItem.layers`: LayerCollection with `.length` and 1-based `[i]`; index 1 is the top of the stack.
 - `comp.layers.add(item)`: adds AVLayer sourced by a FootageItem or CompItem, at the top.
@@ -53,7 +53,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `comp.layers.addSolid(color,name,w,h,pixelAspect,duration)`: creates solid footage and an AVLayer, at the top.
 - `comp.layers.addNull(duration)`: creates white 100×100 footage and an AVLayer named Null, at the top.
 - `CompItem` / `FootageItem` / `FolderItem` / `AVLayer` / `TextLayer`: constructors exposed for `instanceof`; direct construction throws; TextLayer also satisfies `instanceof AVLayer`.
-- `layer.name` / `comment` / `label` / `inPoint` / `outPoint` / `startTime` / `threeDLayer` / `enabled`: settable; label range is 0–16; `enabled` is a boolean, defaults to true and survives serialization.
+- `layer.name` / `comment` / `label` / `inPoint` / `outPoint` / `startTime` / `threeDLayer` / `enabled`: settable; label range is 0 to 16; `enabled` is a boolean, defaults to true and survives serialization.
 - `layer.index`: read-only live stack index, updated after every move/removal.
 - `layer.source`: read-only source item or null for text.
 - `layer.nullLayer`: read-only boolean; true for layers created by `addNull`, preserved in state.
@@ -90,7 +90,7 @@ The context deletes `Array.prototype.indexOf/lastIndexOf/forEach/map/filter/redu
 - `Property.expression` / `expressionEnabled`: settable and serialized; assigning nonempty expression enables it, empty disables it; evaluation is unsupported, while `valueAtTime(t,true)` reads underlying animation.
 - `Property.canSetExpression` / `propertyValueType` / `matchName` / `name`: read-only property metadata.
 - `PropertyValueType`: symbolic `NO_VALUE`, `OneD`, `TwoD`, `TwoD_SPATIAL`, `ThreeD`, `ThreeD_SPATIAL`, `COLOR`, `TEXT_DOCUMENT` constants.
-- `KeyframeEase(speed,influence)`: detached value with settable finite speed/influence; influence must be 0.1–100 inclusive.
+- `KeyframeEase(speed,influence)`: detached value with settable finite speed/influence; influence must be between 0.1 and 100 inclusive.
 - `KeyframeInterpolationType`: symbolic `LINEAR`, `BEZIER`, `HOLD` constants.
 - `TextDocument(text)`: detached value with settable text, font (default ArialMT), fontSize (36), fillColor ([1,1,1]), applyFill (true), justification (LEFT_JUSTIFY); fillColor reads/writes throw while applyFill is false, including after state restoration.
 - `TextDocument.tracking` / `applyStroke` / `strokeColor`: detached unmanaged styling preserved through property assignment; fill colour stores float32 channels.
@@ -118,4 +118,4 @@ Property records contain value, sorted keys with time/value/inEases/outEases/inI
 TextDocuments and KeyframeEases serialize to plain field objects; fonts/env can also be supplied as top-level seed fields.
 RenderQueue, ShapeLayer, scheduling, project saving, other effects/mask attributes, media decoding, and expression evaluation fail when requested or remain outside this modeled surface.
 
-`kfRender` schedules exports and returns frame paths immediately. The real panel core in `extension_runner.js` polls asynchronously every 250 ms until each file has a positive stable size, PNG signature and terminal IEND chunk, then streams uploads. This permits delayed fake writes to exercise the complete render job; the per-frame wait is 60 seconds and the combined wait is 10 minutes. The CLI `run.js` also lets scheduled timers finish after its entry point returns; its JSON result does not imply that a delayed frame already exists.
+`kfRender` schedules exports and returns frame paths immediately. The real panel core in `extension_runner.js` polls asynchronously every 250 ms until each file has a positive stable size, PNG signature and terminal IEND chunk, then streams uploads. Delayed fake writes therefore exercise the complete render job; the per-frame wait is 60 seconds and the combined wait is 10 minutes. The CLI `run.js` also lets scheduled timers finish after its entry point returns; its JSON result does not imply that a delayed frame already exists.
