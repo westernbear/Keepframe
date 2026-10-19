@@ -18,11 +18,11 @@ export interface NavExtra { href: string; label: string }
 export function MakerNav({ extra = [], actions }: { extra?: NavExtra[]; actions?: React.ReactNode }) {
   const { T } = useI18n()
   const { pathname } = useLocation()
-  const link = 'relative inline-flex h-9 shrink-0 items-center rounded-full px-3.5 text-body-sm font-medium transition-colors'
+  const link = 'relative inline-flex h-11 shrink-0 items-center rounded-full px-2.5 text-body-sm font-medium transition-colors sm:h-9 sm:px-3.5'
+  // Phones: the nav dissolves into the header (display: contents) so utilities sit beside the brand and the links get a row.
   return (
-    <nav className="header__nav maker-nav flex min-w-0 items-center gap-1" aria-label={T('nav.primary')}>
-      {actions}
-      <div className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto px-1 [scrollbar-width:none]">
+    <nav className="header__nav maker-nav flex min-w-0 items-center gap-1 max-sm:contents" aria-label={T('nav.primary')}>
+      <div className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto px-1 [scrollbar-width:none] max-sm:order-last max-sm:w-full">
         {PRIMARY.map(({ href, key }) => {
           const active = pathname === href
           return (
@@ -35,10 +35,13 @@ export function MakerNav({ extra = [], actions }: { extra?: NavExtra[]; actions?
         {extra.map((x) => (
           <Link key={x.href} to={x.href} className={cn(link, 'text-ink-muted hover:text-ink')}>{x.label}</Link>
         ))}
+        <a href="/admin" className={cn(link, 'text-ink-muted hover:text-ink')}>{T('admin.manage')}</a>
       </div>
-      <a href="/admin" className={cn(link, 'text-ink-muted hover:text-ink')}>{T('admin.manage')}</a>
-      <CommandTrigger />
-      <LangToggle />
+      <div className="flex items-center gap-1 max-sm:ml-auto">
+        {actions}
+        <CommandTrigger />
+        <LangToggle />
+      </div>
     </nav>
   )
 }

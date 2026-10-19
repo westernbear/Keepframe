@@ -211,7 +211,7 @@ def existing_analyze_job(project_id: str, meta: dict) -> Job | None:
 STATIC = Path(__file__).parent / "static"
 PAGES = {  # pages ported to the React SPA serve its index; the rest still serve their legacy HTML
     "/": "app/index.html",
-    "/library": "library.html",
+    "/library": "app/index.html",
     "/new": "ingest.html",
     "/analyze": "analyze.html",
     "/review": "review.html",

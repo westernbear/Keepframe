@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createBrowserRouter, useLocation } from 'react-router'
 import { AppShell } from './components/app/shell'
 import Landing from './pages/landing'
+import Library from './pages/library'
 
 // shortcut: routes not yet ported fall through to a full page load (the server still serves their legacy HTML);
 // remove once every page lives here.
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { path: '/', element: <Landing /> },
+      { path: '/library', element: <Library /> },
       { path: '*', element: <LegacyPage /> },
     ],
   },

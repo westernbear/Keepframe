@@ -53,7 +53,7 @@ def test_root_is_landing_and_library_moved(tmp_path):
     assert root_code == 200
     assert b'<div id="root">' in root and b"/static/app/assets/" in root   # the SPA renders the landing (browser test)
     assert lib_code == 200
-    assert b"project-list" in lib
+    assert b'<div id="root">' in lib   # the SPA renders the library (browser test)
 
 
 def test_demo_redirects_to_review_and_serves_state(tmp_path):
