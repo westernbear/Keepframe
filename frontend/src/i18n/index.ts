@@ -34,6 +34,7 @@ const ERROR_CODES: Record<string, string> = { // errors that arrive as codes (th
   request_too_large: 'err.requestTooLarge',
   invalid_length: 'err.invalidRequest',
   agent_failed: 'err.agentFailed',
+  llm_unreachable: 'err.llmUnreachable',
   model_list_failed: 'err.modelListFailed',
   invalid_settings: 'err.invalidSettings',
   job_running: 'err.jobRunning',
